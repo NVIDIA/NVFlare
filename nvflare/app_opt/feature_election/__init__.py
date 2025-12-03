@@ -36,7 +36,7 @@ Example:
             target_col='target',
             num_clients=4,
             fs_method='lasso',
-            auto_tune=True
+            freedom_degree=0.3
         )
 
     FLARE deployment::

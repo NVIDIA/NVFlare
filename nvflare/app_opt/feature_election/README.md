@@ -4,7 +4,7 @@ A plug-and-play horizontal federated feature selection framework for tabular dat
 
 ## Overview
 
-This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization, a work presented at [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the Best Student Paper Award.
+This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization, presented at [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the Best Student Paper Award.
 
 Feature Election enables multiple clients with tabular datasets to collaboratively identify the most relevant features without sharing raw data. It works by using conventional feature selection algorithms on the client side and performing a weighted aggregation of their results.
 
@@ -13,9 +13,10 @@ FLASH is available on [GitHub](https://github.com/parasecurity/FLASH)
 ### Key Features
 
 - **Easy Integration**: Simple API for tabular datasets (pandas, numpy)
-- **Multiple Feature Selection Methods**: Lasso, Elastic Net, Mutual Information, RFE, Random Forest, PyImpetus, and more
+- **Multiple Feature Selection Methods**: Lasso, Elastic Net, Mutual Information, Random Forest, PyImpetus, and more
 - **Flexible Aggregation**: Configurable freedom degree (0=intersection, 1=union, 0-1=weighted voting)
-- **Auto-tuning**: Automatic optimization of freedom degree parameter
+- **Auto-tuning**: Automatic optimization of freedom degree using hill-climbing
+- **Multi-phase Workflow**: Local FS → Feature Election with tuning → FL Aggregation
 - **Privacy-Preserving**: Only feature selections and scores are shared, not raw data
 - **Production-Ready**: Fully compatible with NVIDIA FLARE workflows
 
@@ -47,13 +48,12 @@ selected_mask, stats = quick_election(
     target_col='target',
     num_clients=4,
     fs_method='lasso',
-    auto_tune=True
 )
 
 # Get selected features
 selected_features = df.columns[:-1][selected_mask]
 print(f"Selected {len(selected_features)} features: {list(selected_features)}")
-print(f"Optimal freedom_degree: {stats['freedom_degree']}")
+print(f"Freedom degree: {stats['freedom_degree']}")
 ```
 
 ### Custom Configuration
@@ -65,7 +65,9 @@ from nvflare.app_opt.feature_election import FeatureElection
 fe = FeatureElection(
     freedom_degree=0.6,
     fs_method='elastic_net',
-    aggregation_mode='weighted'
+    aggregation_mode='weighted',
+    auto_tune=True,
+    tuning_rounds=5
 )
 
 # Prepare data splits for clients
@@ -84,6 +86,31 @@ selected_features = fe.selected_feature_names
 print(f"Selected {stats['num_features_selected']} features")
 ```
 
+## Workflow Architecture
+
+The Feature Election workflow consists of three phases:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    PHASE 1: Local Feature Selection             │
+│  Clients perform local FS using configured method (lasso, etc.) │
+│  → Each client sends: selected_features, feature_scores         │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│              PHASE 2: Tuning & Global Mask Generation           │
+│  If auto_tune=True: Hill-climbing to find optimal freedom_degree│
+│  → Aggregates selections using weighted voting                  │
+│  → Distributes global feature mask to all clients               │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                 PHASE 3: FL Aggregation (Training)              │
+│  Standard FedAvg training on reduced feature set                │
+│  → num_rounds of federated training                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ## NVIDIA FLARE Deployment
 
 ### 1. Generate Configuration Files
@@ -94,7 +121,9 @@ from nvflare.app_opt.feature_election import FeatureElection
 fe = FeatureElection(
     freedom_degree=0.5,
     fs_method='lasso',
-    aggregation_mode='weighted'
+    aggregation_mode='weighted',
+    auto_tune=True,
+    tuning_rounds=4
 )
 
 # Generate FLARE job configuration
@@ -102,7 +131,7 @@ config_paths = fe.create_flare_job(
     job_name="feature_selection_job",
     output_dir="./jobs/feature_selection",
     min_clients=2,
-    num_rounds=1,
+    num_rounds=5,
     client_sites=['hospital_1', 'hospital_2', 'hospital_3']
 )
 ```
@@ -132,50 +161,39 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
 nvflare job submit -j ./jobs/feature_selection
 ```
 
-### 4. Retrieve Results
-
-```python
-# After job completion
-from nvflare.fuel.flare_api.flare_api import new_secure_session
-
-session = new_secure_session()
-job_result = session.get_job_result(job_id)
-
-# Extract global feature mask
-global_mask = job_result['global_feature_mask']
-selected_features = [feature_names[i] for i, selected in enumerate(global_mask) if selected]
-```
-
 ## Feature Selection Methods
 
 | Method | Description | Best For | Parameters |
 |--------|-------------|----------|------------|
 | `lasso` | L1 regularization | High-dimensional sparse data | `alpha`, `max_iter` |
 | `elastic_net` | L1+L2 regularization | Correlated features | `alpha`, `l1_ratio`, `max_iter` |
-| `random_forest` | Tree-based importance | Non-linear relationships | `n_estimators`, `max_depth`, `k` |
-| `mutual_info` | Information gain | Any data type | `n_neighbors`, `k` |
-| `f_classif` | ANOVA F-test | Gaussian features | `k` |
-| `chi2` | Chi-squared test | Non-negative features | `k` |
-| `rfe` | Recursive Feature Elimination | Iterative selection | `n_features_to_select`, `step` |
-| `selectkbest` | SelectKBest wrapper | General use | `k`, `score_func` |
-| `pyimpetus` | Permutation importance | Robust feature selection | `p_val_thresh`, `num_sim`, `model` |
+| `random_forest` | Tree-based importance | Non-linear relationships | `n_estimators`, `max_depth` |
+| `mutual_info` | Information gain | Any data type | `n_neighbors` |
+| `pyimpetus` | Permutation importance | Robust feature selection | `p_val_thresh`, `num_sim` |
 
 ## Parameters
 
 ### FeatureElection
 
-- **freedom_degree** (float, 0-1): Controls feature selection strategy
-  - 0.0: Intersection only (most conservative)
-  - 0.5: Balanced weighted voting (recommended)
-  - 1.0: Union (most permissive)
-  
-- **fs_method** (str): Feature selection method (see table above)
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `freedom_degree` | float | 0.5 | Controls feature inclusion (0=intersection, 1=union) |
+| `fs_method` | str | "lasso" | Feature selection method |
+| `aggregation_mode` | str | "weighted" | How to weight client votes ('weighted' or 'uniform') |
+| `auto_tune` | bool | False | Enable automatic tuning of freedom_degree |
+| `tuning_rounds` | int | 5 | Number of rounds for auto-tuning |
 
-- **aggregation_mode** (str): 'weighted' or 'uniform'
-  - `weighted`: Weight by number of samples per client
-  - `uniform`: Equal weight for all clients
+### FeatureElectionController
 
-- **auto_tune** (bool): Automatically optimize freedom_degree
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `freedom_degree` | float | 0.5 | Initial freedom degree |
+| `aggregation_mode` | str | "weighted" | Client vote weighting |
+| `min_clients` | int | 2 | Minimum clients required |
+| `num_rounds` | int | 5 | FL training rounds after feature selection |
+| `auto_tune` | bool | False | Enable auto-tuning |
+| `tuning_rounds` | int | 0 | Number of tuning rounds |
+| `train_timeout` | int | 300 | Training phase timeout (seconds) |
 
 ### Data Splitting Strategies
 
@@ -183,85 +201,6 @@ selected_features = [feature_names[i] for i, selected in enumerate(global_mask) 
 - **random**: Random split
 - **sequential**: Sequential split for ordered data
 - **dirichlet**: Non-IID split with Dirichlet distribution (alpha=0.5)
-
-## Advanced Features
-
-### Auto-tuning
-
-Automatically finds the optimal freedom_degree:
-
-```python
-selected_mask, stats = quick_election(
-    df=df,
-    target_col='target',
-    num_clients=4,
-    auto_tune=True
-)
-print(f"Optimal freedom_degree: {stats['freedom_degree']}")
-```
-
-### Applying Feature Mask to New Data
-
-```python
-# After running election
-X_test_selected = fe.apply_mask(X_test)
-```
-
-### Cross-validation
-
-Evaluate feature selection quality:
-
-```python
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import RandomForestClassifier
-
-# Apply selected features
-X_selected = X[:, selected_mask]
-
-# Evaluate
-clf = RandomForestClassifier()
-scores = cross_val_score(clf, X_selected, y, cv=5)
-print(f"CV Score: {scores.mean():.3f} ± {scores.std():.3f}")
-```
-
-### Saving and Loading Results
-
-```python
-# Save results
-fe.save_results("feature_election_results.json")
-
-# Load results
-from nvflare.app_opt.feature_election import load_election_results
-results = load_election_results("feature_election_results.json")
-
-# Or load into an existing FeatureElection instance
-fe.load_results("feature_election_results.json")
-```
-
-## Architecture
-
-```
-Server (Aggregator)
-    │
-    ├── FeatureElectionController
-    │   ├── Collect feature selections from clients
-    │   ├── Aggregate using freedom_degree
-    │   └── Distribute global feature mask
-    │
-Clients (Executors)
-    │
-    ├── FeatureElectionExecutor
-    │   ├── Perform local feature selection
-    │   ├── Evaluate feature quality
-    │   └── Send results to server
-```
-
-## Examples
-
-See the `/examples` directory for comprehensive examples:
-
-- `basic_usage.py`: Simple feature election
-- `flare_deployment.py`: Deployment example
 
 ## API Reference
 
@@ -278,43 +217,16 @@ class FeatureElection:
         freedom_degree: float = 0.5,
         fs_method: str = "lasso",
         aggregation_mode: str = "weighted",
-        auto_tune: bool = False
+        auto_tune: bool = False,
+        tuning_rounds: int = 5,
     )
     
-    def prepare_data_splits(
-        self,
-        df: pd.DataFrame,
-        target_col: str,
-        num_clients: int = 3,
-        split_strategy: str = "stratified",
-        split_ratios: Optional[List[float]] = None,
-        random_state: int = 42
-    ) -> List[Tuple[pd.DataFrame, pd.Series]]
-    
-    def simulate_election(
-        self,
-        client_data: List[Tuple[Union[pd.DataFrame, np.ndarray], Union[pd.Series, np.ndarray]]],
-        feature_names: Optional[List[str]] = None
-    ) -> Dict
-    
-    def create_flare_job(
-        self,
-        job_name: str = "feature_election",
-        output_dir: str = "jobs/feature_election",
-        min_clients: int = 2,
-        num_rounds: int = 1,
-        client_sites: Optional[List[str]] = None
-    ) -> Dict[str, str]
-    
-    def apply_mask(
-        self,
-        X: Union[pd.DataFrame, np.ndarray],
-        feature_names: Optional[List[str]] = None
-    ) -> Union[pd.DataFrame, np.ndarray]
-    
-    def save_results(self, filepath: str)
-    
-    def load_results(self, filepath: str)
+    def prepare_data_splits(...) -> List[Tuple[pd.DataFrame, pd.Series]]
+    def simulate_election(...) -> Dict
+    def create_flare_job(...) -> Dict[str, str]
+    def apply_mask(...) -> Union[pd.DataFrame, np.ndarray]
+    def save_results(filepath: str)
+    def load_results(filepath: str)
 ```
 
 #### FeatureElectionController
@@ -322,18 +234,18 @@ class FeatureElection:
 Server-side controller for NVIDIA FLARE.
 
 ```python
-class FeatureElectionController(ScatterAndGather):
+class FeatureElectionController(Controller):
     def __init__(
         self,
-        freedom_degree: float = 0.1,
-        aggregation_mode: str = 'weighted',
+        freedom_degree: float = 0.5,
+        aggregation_mode: str = "weighted",
         min_clients: int = 2,
-        num_rounds: int = 1,
+        num_rounds: int = 5,
         task_name: str = "feature_election",
-        train_timeout: int = 0
+        train_timeout: int = 300,
+        auto_tune: bool = False,
+        tuning_rounds: int = 0,
     )
-    
-    def get_results(self) -> Dict
 ```
 
 #### FeatureElectionExecutor
@@ -351,25 +263,11 @@ class FeatureElectionExecutor(Executor):
         task_name: str = "feature_election"
     )
     
-    def set_data(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: Optional[np.ndarray] = None,
-        y_val: Optional[np.ndarray] = None,
-        feature_names: Optional[List[str]] = None
-    )
-    
-    def get_selected_features(self) -> Optional[np.ndarray]
-    
-    def get_feature_names(self) -> Optional[List[str]]
-    
-    def get_pyimpetus_info(self) -> Dict[str, Any]
+    def set_data(X_train, y_train, X_val=None, y_val=None, feature_names=None)
+    def evaluate_model(X_train, y_train, X_val, y_val) -> float
 ```
 
 ### Convenience Functions
-
-#### quick_election
 
 ```python
 def quick_election(
@@ -378,35 +276,12 @@ def quick_election(
     num_clients: int = 3,
     freedom_degree: float = 0.5,
     fs_method: str = "lasso",
-    auto_tune: bool = False,
     split_strategy: str = "stratified",
     **kwargs
 ) -> Tuple[np.ndarray, Dict]
-```
 
-#### load_election_results
-
-```python
 def load_election_results(filepath: str) -> Dict
 ```
-
-## Performance Considerations
-
-### Memory Usage
-
-For high-dimensional datasets (>10,000 features):
-- Use sparse methods: `lasso`, `elastic_net`
-- Consider feature batching
-- Set appropriate `max_iter` parameters
-
-### Computational Cost
-
-| Method | Time Complexity | Best For |
-|--------|----------------|----------|
-| Lasso | O(n*p) | p > n |
-| Mutual Info | O(n*p*log(n)) | n > p |
-| Random Forest | O(n*p*log(n)*trees) | Medium datasets |
-| PyImpetus | O(n*p*sim) | When accuracy critical |
 
 ## Troubleshooting
 
@@ -417,19 +292,17 @@ For high-dimensional datasets (>10,000 features):
    - Try different fs_method
    - Check feature scaling
 
-2. **"Memory Error"**
-   - Reduce num_sim for PyImpetus
-   - Use Lasso instead of Random Forest
-   - Enable feature batching
+2. **"No feature votes received"**
+   - Ensure client data is loaded before execution
+   - Check that task_name matches between controller and executor
 
 3. **"Poor performance after selection"**
-   - Enable auto_tune
-   - Increase min_clients
-   - Try weighted aggregation
+   - Enable auto_tune to find optimal freedom_degree
+   - Try weighted aggregation mode
 
 4. **"PyImpetus not available"**
    - Install with: `pip install PyImpetus`
-   - The executor will fall back to mutual information if unavailable
+   - Falls back to mutual information if unavailable
 
 ### Debug Mode
 
@@ -440,32 +313,15 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 ```
 
-### Development Setup
+## Running Tests
 
 ```bash
-git clone https://github.com/NVIDIA/NVFlare.git
-cd NVFlare
-pip install -e ".[dev]"
-```
-
-### Running Tests
-
-```bash
-pytest tests/unit_test/app_opt/feature_election/test_feature_election.py
+pytest tests/unit_test/app_opt/feature_election/test_feature_election.py -v
 ```
 
 ## Citation
 
-If you use Feature Election in your research, please cite (PENDING)
-
-<!--```bibtex
-@inproceedings{flash2025,
-  title={FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization},
-  author={Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis},
-  booktitle={FLTA IEEE 2025},
-  year={2025}
-}
-```-->
+If you use Feature Election in your research, please cite the FLASH framework paper (PENDING, email: jchr2001@gmail.com)
 
 ## License
 
@@ -475,7 +331,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 - NVIDIA FLARE team for the federated learning framework
 - FLASH paper authors (Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis) for the feature election algorithm
-- Future contributors and users of this library
 
 ## Support
 

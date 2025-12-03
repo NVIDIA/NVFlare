@@ -12,353 +12,392 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-"""
-Feature Election Controller for NVIDIA FLARE
-Implements the Feature Election algorithm from the FLASH framework
-"""
-
 import logging
-from typing import Dict, Optional
-
+from typing import Dict, List, Optional
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.apis.impl.controller import Controller, Task
+from nvflare.apis.controller_spec import ClientTask
+from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import ReturnCode
 
 logger = logging.getLogger(__name__)
 
 
-class FeatureElectionController(ScatterAndGather):
+class FeatureElectionController(Controller):
     """
-    Feature Election Controller that aggregates feature selections from multiple clients
-    and produces a global feature mask based on weighted voting.
+    Advanced controller that performs Feature Election, Auto-tuning, and downstream Training.
+    Inherits directly from base Controller for full workflow control.
     """
 
     def __init__(
-        self,
-        freedom_degree: float = 0.1,
-        aggregation_mode: str = "weighted",
-        min_clients: int = 2,
-        num_rounds: int = 1,
-        task_name: str = "feature_election",
-        train_timeout: int = 0,
+            self,
+            freedom_degree: float = 0.5,
+            aggregation_mode: str = "weighted",
+            min_clients: int = 2,
+            num_rounds: int = 5,
+            task_name: str = "feature_election",
+            train_timeout: int = 300,
+            auto_tune: bool = False,
+            tuning_rounds: int = 0,
     ):
-        """
-        Initialize Feature Election Controller
+        super().__init__()
 
-        Args:
-            freedom_degree: Parameter controlling feature selection (0=intersection, 1=union)
-            aggregation_mode: 'weighted' or 'uniform' aggregation
-            min_clients: Minimum number of clients required for election
-            num_rounds: Number of election rounds
-            task_name: Name of the feature election task
-        """
-        super().__init__(
-            min_clients=min_clients,
-            num_rounds=num_rounds,
-            start_round=0,
-            wait_time_after_min_received=10,
-            train_task_name=task_name,
-            train_timeout=train_timeout,
-        )
-
-        # Validate inputs
-        if not 0 <= freedom_degree <= 1:
-            raise ValueError("freedom_degree must be between 0 and 1")
-        if aggregation_mode not in ["weighted", "uniform"]:
-            raise ValueError("aggregation_mode must be 'weighted' or 'uniform'")
-
+        # Configuration
         self.freedom_degree = freedom_degree
         self.aggregation_mode = aggregation_mode
         self.custom_task_name = task_name
+        self.min_clients = min_clients
+        self.fl_rounds = num_rounds
+        self.train_timeout = train_timeout
+        self.auto_tune = auto_tune
+        self.tuning_rounds = tuning_rounds if auto_tune else 0
 
-        # Results storage
+        # State
         self.global_feature_mask = None
-        self.client_scores = {}
-        self.num_features = None
+        self.global_weights = None
+        self.cached_client_selections = {}
+        self.phase_results = {}
+
+        # Hill Climbing for auto-tuning
+        self.tuning_history = []
+        self.search_step = 0.1
+        self.current_direction = 1
+        self.current_tuning_score = 0.0
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        """Start the controller"""
-        logger.info(f"Starting Feature Election Controller with freedom_degree={self.freedom_degree}")
-        super().start_controller(fl_ctx)
+        logger.info("Initializing FeatureElectionController (Base Controller Mode)")
+
+    def stop_controller(self, fl_ctx: FLContext) -> None:
+        logger.info("Stopping Feature Election Controller")
+
+    def process_result_of_unknown_task(
+            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
+        """
+        Called when a result is received for an unknown task.
+        This is a fallback - normally results come through task_done_cb.
+        """
+        logger.warning(f"Received result for unknown task '{task_name}' from {client.name}")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
-        """Main control flow - overrides parent to add custom logging"""
-        logger.info("Starting Feature Election workflow")
-        super().control_flow(abort_signal, fl_ctx)
-        logger.info("Feature Election workflow completed")
+        """Main Orchestration Loop"""
+        try:
+            # --- PHASE 1: LOCAL FEATURE SELECTION (ELECTION) ---
+            if not self._phase_one_election(abort_signal, fl_ctx):
+                return
 
-    def aggregate(self, fl_ctx: FLContext) -> None:
+            # --- PHASE 2: TUNING & GLOBAL MASKING ---
+            self._phase_two_tuning_and_masking(abort_signal, fl_ctx)
+
+            # --- PHASE 3: AGGREGATION ROUNDS (FL TRAINING) ---
+            self._phase_three_aggregation(abort_signal, fl_ctx)
+
+            logger.info("Feature Election Workflow Completed Successfully.")
+
+        except Exception as e:
+            logger.error(f"Workflow failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # ==============================================================================
+    # PHASE IMPLEMENTATIONS
+    # ==============================================================================
+
+    def _result_received_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         """
-        Custom aggregation method for feature election
-        This is called by the parent ScatterAndGather class
+        Callback called when a result is received from a client.
+        This is the proper way to collect results in NVFLARE.
         """
-        # Get the aggregator component
-        aggregator = self._get_aggregator()
-        if aggregator is None:
-            self.panic("No aggregator configured!", fl_ctx)
+        client_name = client_task.client.name
+        result = client_task.result
+
+        if result is None:
+            logger.warning(f"No result from client {client_name}")
             return
 
-        # Reset for new aggregation round
-        self.client_scores = {}
+        rc = result.get_return_code()
+        if rc != ReturnCode.OK:
+            logger.warning(f"Client {client_name} returned error: {rc}")
+            return
 
-        try:
-            # Get client submissions
-            aggr_result = aggregator.aggregate(fl_ctx)
+        # Store the result
+        self.phase_results[client_name] = result
+        logger.debug(f"Received result from {client_name}")
 
-            if not aggr_result:
-                logger.warning("No aggregation results received")
-                return
+    def _broadcast_and_gather(
+            self,
+            task_data: Shareable,
+            abort_signal: Signal,
+            fl_ctx: FLContext,
+            timeout: int = 0
+    ) -> Dict[str, Shareable]:
+        """
+        Helper to send tasks and collect results safely.
+        Uses result_received_cb to properly collect results.
+        """
+        # Clear buffer
+        self.phase_results = {}
 
-            # Process the aggregated results
-            self._process_aggregated_results(aggr_result, fl_ctx)
+        # Create Task with callback
+        task = Task(
+            name=self.custom_task_name,
+            data=task_data,
+            timeout=timeout,
+            result_received_cb=self._result_received_cb,
+        )
 
-        except Exception as e:
-            logger.error(f"Error during feature election aggregation: {e}")
-            self.panic(f"Aggregation failed: {e}", fl_ctx)
+        # Broadcast and wait for results
+        self.broadcast_and_wait(
+            task=task,
+            min_responses=self.min_clients,
+            wait_time_after_min_received=5,
+            fl_ctx=fl_ctx,
+            abort_signal=abort_signal,
+        )
 
-    def _process_aggregated_results(self, aggr_result: Shareable, fl_ctx: FLContext) -> None:
-        """Process aggregated results from clients"""
-        try:
-            # Extract client contributions
-            client_data = self._extract_client_data(aggr_result)
+        # Also collect any results from client_tasks (backup method)
+        for client_task in task.client_tasks:
+            client_name = client_task.client.name
+            if client_name not in self.phase_results and client_task.result is not None:
+                rc = client_task.result.get_return_code()
+                if rc == ReturnCode.OK:
+                    self.phase_results[client_name] = client_task.result
+                    logger.debug(f"Collected result from task.client_tasks: {client_name}")
 
-            if not client_data:
-                logger.warning("No valid client data extracted")
-                return
+        logger.info(f"Collected {len(self.phase_results)} results")
+        return self.phase_results
 
-            # Run feature election algorithm
-            self.global_feature_mask = self._aggregate_selections(client_data)
+    def _phase_one_election(self, abort_signal: Signal, fl_ctx: FLContext) -> bool:
+        logger.info("=== PHASE 1: Local Feature Selection & Election ===")
 
-            # Store results in FLContext for persistence
-            fl_ctx.set_prop("global_feature_mask", self.global_feature_mask.tolist())
-            fl_ctx.set_prop("feature_election_results", self.get_results())
+        task_data = Shareable()
+        task_data["request_type"] = "feature_selection"
 
-            logger.info(f"Feature election completed: {np.sum(self.global_feature_mask)} features selected")
+        # Broadcast and collect results
+        results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
 
-        except Exception as e:
-            logger.error(f"Error processing aggregated results: {e}")
-            raise
-
-    def _extract_client_data(self, aggr_result: Shareable) -> Dict[str, Dict]:
-        """Extract client data from aggregation result"""
-        client_data = {}
-
-        # The aggregator result should contain contributions from all clients
-        # This is a simplified extraction - you may need to adjust based on your aggregator implementation
-
-        # Look for client contributions in the shareable
-        for key in aggr_result.keys():
-            if key.startswith("client_"):
-                client_name = key.replace("client_", "")
-                client_contrib = aggr_result.get(key)
-
-                if self._validate_selection(client_contrib):
-                    client_data[client_name] = {
-                        "selected_features": np.array(client_contrib.get("selected_features")),
-                        "feature_scores": np.array(client_contrib.get("feature_scores")),
-                        "num_samples": client_contrib.get("num_samples", 1),
-                        "initial_score": client_contrib.get("initial_score", 0),
-                        "fs_score": client_contrib.get("fs_score", 0),
-                    }
-
-        logger.info(f"Extracted data from {len(client_data)} clients")
-        return client_data
-
-    def _validate_selection(self, selection_data: Dict) -> bool:
-        """Validate client selection data"""
-        if not selection_data:
+        if not results:
+            logger.error("No feature votes received. Aborting.")
             return False
 
-        required_keys = ["selected_features", "feature_scores"]
+        # Extract client data
+        self.cached_client_selections = self._extract_client_data(results)
 
-        # Check required keys
-        for key in required_keys:
-            if key not in selection_data or selection_data[key] is None:
-                return False
-
-        # Validate array dimensions
-        try:
-            selected = np.array(selection_data["selected_features"])
-            scores = np.array(selection_data["feature_scores"])
-
-            if len(selected) != len(scores):
-                return False
-
-            # Set num_features on first valid response
-            if self.num_features is None:
-                self.num_features = len(selected)
-            elif len(selected) != self.num_features:
-                return False
-
-        except Exception as e:
-            logger.warning(f"Error validating selection data: {e}")
+        if not self.cached_client_selections:
+            logger.error("Received responses, but failed to extract selection data. Aborting.")
             return False
 
+        logger.info(f"Phase 1 Complete. Processed votes from {len(self.cached_client_selections)} clients.")
         return True
+
+    def _phase_two_tuning_and_masking(self, abort_signal: Signal, fl_ctx: FLContext):
+        logger.info("=== PHASE 2: Tuning & Global Mask Generation ===")
+
+        # 1. Run Tuning Loop (if enabled)
+        if self.auto_tune and self.tuning_rounds > 0:
+            logger.info(f"Starting Auto-tuning ({self.tuning_rounds} rounds)...")
+            self.tuning_history.append((self.freedom_degree, 0.0))
+            self.freedom_degree = self._calculate_next_fd(first_step=True)
+
+            for i in range(1, self.tuning_rounds + 1):
+                if abort_signal.triggered:
+                    logger.warning("Abort signal received during tuning")
+                    break
+
+                mask = self._aggregate_selections(self.cached_client_selections)
+
+                task_data = Shareable()
+                task_data["request_type"] = "tuning_eval"
+                task_data["tuning_mask"] = mask.tolist()
+
+                results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
+
+                # Aggregate Scores
+                scores = []
+                for v in results.values():
+                    if "tuning_score" in v:
+                        scores.append(v["tuning_score"])
+                score = sum(scores) / len(scores) if scores else 0.0
+
+                logger.info(f"Tuning Round {i}: FD={self.freedom_degree:.4f} -> Score={score:.4f}")
+                self.tuning_history.append((self.freedom_degree, score))
+
+                if i < self.tuning_rounds:
+                    self.freedom_degree = self._calculate_next_fd(first_step=False)
+
+            # Select best FD
+            best_fd, best_score = max(self.tuning_history, key=lambda x: x[1])
+            self.freedom_degree = best_fd
+            logger.info(f"Tuning Complete. Optimal Freedom Degree: {best_fd:.4f}")
+
+        # 2. Generate Final Mask
+        final_mask = self._aggregate_selections(self.cached_client_selections)
+        self.global_feature_mask = final_mask
+        n_sel = np.sum(final_mask)
+        logger.info(f"Final Global Mask: {n_sel} features selected (FD={self.freedom_degree:.4f})")
+
+        # 3. Distribute mask to clients
+        task_data = Shareable()
+        task_data["request_type"] = "apply_mask"
+        task_data["global_feature_mask"] = final_mask.tolist()
+
+        self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
+        logger.info("Global mask distributed to all clients")
+
+    def _phase_three_aggregation(self, abort_signal: Signal, fl_ctx: FLContext):
+        logger.info(f"=== PHASE 3: Aggregation Rounds (FL Training - {self.fl_rounds} Rounds) ===")
+
+        for i in range(1, self.fl_rounds + 1):
+            if abort_signal.triggered:
+                logger.warning("Abort signal received during FL training")
+                break
+
+            logger.info(f"--- FL Round {i}/{self.fl_rounds} ---")
+
+            task_data = Shareable()
+            task_data["request_type"] = "train"
+            if self.global_weights:
+                task_data["params"] = self.global_weights
+
+            results = self._broadcast_and_gather(
+                task_data, abort_signal, fl_ctx, timeout=self.train_timeout
+            )
+
+            # Aggregate Weights (FedAvg)
+            self._aggregate_weights(results)
+
+        logger.info("FL Training phase complete")
+
+    # ==============================================================================
+    # HELPER METHODS
+    # ==============================================================================
+
+    def _aggregate_weights(self, results: Dict[str, Shareable]):
+        """FedAvg-style weight aggregation"""
+        total_samples = 0
+        weighted_weights = None
+
+        for shareable in results.values():
+            if "params" not in shareable:
+                continue
+            n = shareable.get("num_samples", 1)
+            weights = shareable.get("params")
+
+            if weighted_weights is None:
+                weighted_weights = {k: np.zeros_like(v) for k, v in weights.items()}
+
+            for k, v in weights.items():
+                weighted_weights[k] += np.array(v) * n
+            total_samples += n
+
+        if total_samples > 0 and weighted_weights is not None:
+            self.global_weights = {k: v / total_samples for k, v in weighted_weights.items()}
+            logger.info(f"Aggregated weights from {len(results)} clients ({total_samples} samples)")
+
+    def _extract_client_data(self, results: Dict[str, Shareable]) -> Dict[str, Dict]:
+        """Extract feature selection data from client results"""
+        client_data = {}
+        for key, contrib in results.items():
+            if "selected_features" in contrib:
+                client_data[key] = {
+                    "selected_features": np.array(contrib["selected_features"]),
+                    "feature_scores": np.array(contrib["feature_scores"]),
+                    "num_samples": contrib.get("num_samples", 1),
+                }
+                logger.debug(f"Extracted {np.sum(contrib['selected_features'])} features from {key}")
+        return client_data
 
     def _aggregate_selections(self, client_selections: Dict[str, Dict]) -> np.ndarray:
         """
-        Core Feature Election algorithm implementation
+        Aggregate feature selections from all clients.
 
-        Args:
-            client_selections: Dictionary of client selection data
-
-        Returns:
-            Global feature mask (binary array)
+        Freedom degree controls the blend between intersection and union:
+        - FD=0: Intersection (only features selected by ALL clients)
+        - FD=1: Union (features selected by ANY client)
+        - 0<FD<1: Weighted voting based on scores
         """
-        num_clients = len(client_selections)
-        logger.info(f"Aggregating selections from {num_clients} clients")
+        if not client_selections:
+            logger.warning("No client selections to aggregate")
+            return np.array([])
 
-        # Convert to numpy arrays
-        masks = []
-        scores = []
-        weights = []
-        total_samples = 0
-
-        for client_name, selection in client_selections.items():
-            masks.append(selection["selected_features"])
-            scores.append(selection["feature_scores"])
-            num_samples = selection["num_samples"]
-            weights.append(num_samples)
-            total_samples += num_samples
-
-            # Store client scores
-            self.client_scores[client_name] = {
-                "initial_score": selection.get("initial_score", 0),
-                "fs_score": selection.get("fs_score", 0),
-                "num_features": int(np.sum(selection["selected_features"])),
-                "num_samples": num_samples,
-            }
-
-            # Log client statistics
-            logger.info(f"Client {client_name}: {np.sum(masks[-1])} features selected, " f"{num_samples} samples")
+        masks = [s["selected_features"] for s in client_selections.values()]
+        scores = [s["feature_scores"] for s in client_selections.values()]
+        weights = [s["num_samples"] for s in client_selections.values()]
 
         masks = np.array(masks)
         scores = np.array(scores)
-        weights = np.array(weights) / total_samples if total_samples > 0 else np.ones(len(weights)) / len(weights)
+        total = sum(weights)
+        weights = np.array(weights) / total if total > 0 else np.ones(len(weights)) / len(weights)
 
-        # Calculate intersection and union
-        intersection_mask = self._get_intersection(masks)
-        union_mask = self._get_union(masks)
-
-        logger.info(f"Intersection: {np.sum(intersection_mask)} features")
-        logger.info(f"Union: {np.sum(union_mask)} features")
+        intersection = np.all(masks, axis=0)
+        union = np.any(masks, axis=0)
 
         # Handle edge cases
-        if self.freedom_degree == 0:
-            global_mask = intersection_mask
-        elif self.freedom_degree == 1:
-            global_mask = union_mask
-        else:
-            # Main algorithm: select from difference set based on weighted voting
-            global_mask = self._weighted_election(masks, scores, weights, intersection_mask, union_mask)
+        if self.freedom_degree <= 0.05:
+            return intersection
+        if self.freedom_degree >= 0.99:
+            return union
 
-        logger.info(f"Global mask: {np.sum(global_mask)} features selected")
-
-        return global_mask
+        return self._weighted_election(masks, scores, weights, intersection, union)
 
     def _weighted_election(
-        self,
-        masks: np.ndarray,
-        scores: np.ndarray,
-        weights: np.ndarray,
-        intersection_mask: np.ndarray,
-        union_mask: np.ndarray,
+            self,
+            masks: np.ndarray,
+            scores: np.ndarray,
+            weights: np.ndarray,
+            intersection: np.ndarray,
+            union: np.ndarray
     ) -> np.ndarray:
         """
-        Perform weighted election for features in (union - intersection)
+        Perform weighted voting for features in the difference set.
         """
-        # Get difference set
-        difference_mask = union_mask & ~intersection_mask
+        diff_mask = union & ~intersection
+        if not np.any(diff_mask):
+            return intersection
 
-        if not np.any(difference_mask):
-            # No features in difference, return intersection
-            return intersection_mask
+        # Compute aggregated scores
+        agg_scores = np.zeros(len(intersection))
+        for i, (m, s) in enumerate(zip(masks, scores)):
+            valid = m.astype(bool)
+            if np.any(valid):
+                min_s, max_s = np.min(s[valid]), np.max(s[valid])
+                norm_s = (s - min_s) / (max_s - min_s + 1e-10) if max_s > min_s else s
+                agg_scores += norm_s * weights[i]
 
-        # Scale scores and apply weights
-        scaled_scores = np.zeros_like(scores)
+        # Select top features based on freedom_degree
+        n_add = int(np.ceil(np.sum(diff_mask) * self.freedom_degree))
+        if n_add > 0:
+            diff_scores = agg_scores[diff_mask]
+            n_add = min(n_add, len(diff_scores))
+            if n_add > 0:
+                cutoff = np.partition(diff_scores, -n_add)[-n_add]
+                selected_diff = (agg_scores >= cutoff) & diff_mask
+                return intersection | selected_diff
 
-        for i, (client_mask, client_scores) in enumerate(zip(masks, scores)):
-            # Scale selected features to [0, 1]
-            selected = client_mask.astype(bool)
+        return intersection
 
-            if np.any(selected):
-                selected_scores = client_scores[selected]
-                if len(selected_scores) > 0:
-                    min_score = np.min(selected_scores)
-                    max_score = np.max(selected_scores)
-                    range_score = max_score - min_score
+    def _calculate_next_fd(self, first_step: bool) -> float:
+        """Hill-climbing to find optimal freedom degree"""
+        MIN_FD, MAX_FD = 0.05, 1.0
 
-                    if range_score > 0:
-                        scaled_scores[i][selected] = (client_scores[selected] - min_score) / range_score
-                    else:
-                        scaled_scores[i][selected] = 1.0
+        if first_step:
+            return np.clip(self.freedom_degree + self.search_step, MIN_FD, MAX_FD)
 
-            # Zero out intersection features (they're already selected)
-            scaled_scores[i][intersection_mask] = 0.0
+        if len(self.tuning_history) < 2:
+            return self.freedom_degree
 
-            # Apply client weight if in weighted mode
-            if self.aggregation_mode == "weighted":
-                scaled_scores[i] *= weights[i]
+        curr_fd, curr_score = self.tuning_history[-1]
+        prev_fd, prev_score = self.tuning_history[-2]
 
-        # Aggregate scores across clients
-        aggregated_scores = np.sum(scaled_scores, axis=0)
-
-        # Select top features from difference set based on freedom_degree
-        n_additional = int(np.ceil(np.sum(difference_mask) * self.freedom_degree))
-
-        if n_additional > 0:
-            diff_indices = np.where(difference_mask)[0]
-            diff_scores = aggregated_scores[difference_mask]
-
-            if len(diff_scores) > 0:
-                # Partition index is k, number of features to select is -k
-                k = -min(n_additional, len(diff_scores))
-                # Get indices of top scoring features
-                top_indices = np.argpartition(diff_scores, k)
-                top_indices = top_indices[k:]
-
-                # Create selected difference mask
-                selected_difference = np.zeros_like(difference_mask)
-                selected_difference[diff_indices[top_indices]] = True
-
-                # Combine with intersection
-                global_mask = intersection_mask | selected_difference
-            else:
-                global_mask = intersection_mask
+        if curr_score > prev_score:
+            new_fd = curr_fd + (self.current_direction * self.search_step)
         else:
-            global_mask = intersection_mask
+            self.current_direction *= -1
+            self.search_step *= 0.5
+            new_fd = prev_fd + (self.current_direction * self.search_step)
 
-        return global_mask
-
-    def _get_aggregator(self) -> Optional[Aggregator]:
-        """Get the aggregator component"""
-        return self.aggregator
-
-    @staticmethod
-    def _get_intersection(masks: np.ndarray) -> np.ndarray:
-        """Get intersection of all feature masks"""
-        return np.all(masks, axis=0)
-
-    @staticmethod
-    def _get_union(masks: np.ndarray) -> np.ndarray:
-        """Get union of all feature masks"""
-        return np.any(masks, axis=0)
-
-    def get_results(self) -> Dict:
-        """Get feature election results"""
-        return {
-            "global_feature_mask": self.global_feature_mask.tolist() if self.global_feature_mask is not None else None,
-            "num_features_selected": (
-                int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0
-            ),
-            "freedom_degree": self.freedom_degree,
-            "aggregation_mode": self.aggregation_mode,
-            "client_scores": self.client_scores,
-            "total_clients": len(self.client_scores),
-        }
+        return np.clip(new_fd, MIN_FD, MAX_FD)
