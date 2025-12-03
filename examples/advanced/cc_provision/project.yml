@@ -43,3 +43,8 @@ builders:
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+packager:
+  path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
+  args:
+    # this needs to be replaced with the real path of the image build scripts
+    build_image_cmd: build_cvm_image.sh

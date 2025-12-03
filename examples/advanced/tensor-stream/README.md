@@ -18,17 +18,25 @@ Tensor Streaming is an NVFlare feature that optimizes the communication of large
 - Reducing memory overhead during model exchange
 - Efficient bandwidth utilization in federated learning scenarios
 
+> **📊 Performance Analysis:** For a detailed comparison of tensor streaming vs. vanilla NVFlare, including memory usage, CPU consumption, and communication overhead benchmarks with GPT-2 Large, see [COMPARISON.md](COMPARISON.md).
+
 ## Project Structure
 
 ```
 tensor-stream/
 ├── README.md           # This file
+├── COMPARISON.md       # Performance comparison: Tensor Stream vs Vanilla NVFlare
 ├── job.py             # Main script to define and execute the FL job
 ├── client.py          # Client-side training logic
 ├── trainer.py         # Standalone trainer (for testing)
 ├── model.py           # Model and tokenizer loading utilities
 ├── requirements.txt   # Python dependencies
-└── results/          # Training outputs and checkpoints
+├── data/              # Performance benchmark data and visualizations
+│   ├── nvflare-2.7.1-vanilla-memory-stats.csv
+│   ├── nvflare-2.7.1-with-tensor-stream-memory-stats.csv
+│   ├── nvflare-2.7.1-vanilla-memory.usage.png
+│   └── nvflare-2.7.1-with-tensor-stream-memory.usage.png
+└── results/           # Training outputs and checkpoints
 ```
 
 ## Prerequisites
@@ -379,6 +387,7 @@ To change training parameters, edit the `get_training_arguments()` function in `
 
 ## References
 
+- [COMPARISON.md](COMPARISON.md) - Detailed performance comparison of Tensor Stream vs Vanilla NVFlare
 - [NVFlare Documentation](https://nvflare.readthedocs.io/)
 - [Hugging Face Transformers](https://huggingface.co/docs/transformers/)
 - [TRL Library](https://huggingface.co/docs/trl/)

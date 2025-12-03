@@ -696,7 +696,7 @@ class ClientRunner(TBI):
                 # sync with server runner before starting
                 time.sleep(0.5)
 
-                self.log_info(fl_ctx, f"syncing to parent {target} ...")
+                self.log_debug(fl_ctx, f"syncing to parent {target} ...")
                 resp = self.engine.send_aux_request(
                     targets=[target],
                     topic=ReservedTopic.SYNC_RUNNER,

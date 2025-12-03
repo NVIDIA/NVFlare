@@ -126,18 +126,65 @@ Next Steps
 
 Now you can install NVFlare and transfer your startup kit into this CVM instance and start the NVFlare.
 
-The following is a sample cc_site-1.yml file, which is used with project.yml for cc provision (as described in the README.md file in
-examples/advanced/cc_provision/ folder of source code repo).
+The following is a sample cc_site-1.yml file, which is used with project.yml for cc provision.  A sample project.yml is
+also shown in the following.  Note this project.yml includes the server's cc configuration yaml file, which is described
+in the :ref:`confidential_azure_container_instances_deployment` - Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
 
 The AZCVMAuthorizer uses sharedeus2.eus2.attest.azure.net as the default Microsoft Azure Attestation endpoint.
 
 .. code-block:: yaml
 
-   compute_env: azure_cvm 
-   cc_cpu_mechanism: amd_sev_snp
-   role: client
+  compute_env: azure_cvm
+  cc_cpu_mechanism: amd_sev_snp
+  role: client
+  cc_issuers:
+    - id: az_cvm_authorizer
+      path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer
+      token_expiration: 100 # seconds, needs to be less than check_frequency
 
-   cc_issuers:
-     - id: az_cvm_authorizer
-       path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer
-       token_expiration: 100 # seconds, needs to be less than check_frequency
+
+The following is the sample project.yml file.
+
+.. code-block:: yaml
+
+  api_version: 3
+  name: example_project
+  description: NVIDIA FLARE sample project yaml file
+  participants:
+    # Change the name of the server (server1) to the Fully Qualified Domain Name
+    # (FQDN) of the server, for example: server1.example.com.
+    # Ensure that the FQDN is correctly mapped in the /etc/hosts file.
+    - name: server1
+      type: server
+      org: nvidia
+      fed_learn_port: 8002
+      cc_config: cc_server.yml
+    - name: site-1
+      type: client
+      org: nvidia
+      cc_config: cc_site-1.yml
+      # Specifying listening_host will enable the creation of one pair of
+      # certificate/private key for this client, allowing the client to function
+      # as a server for 3rd-party integration.
+      # The value must be a hostname that the external trainer can reach via the network.
+      # listening_host: site-1-lh
+    - name: admin@nvidia.com
+      type: admin
+      org: nvidia
+      role: project_admin
+  # The same methods in all builders are called in their order defined in builders section
+  builders:
+    - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+      args:
+        # config_folder can be set to inform NVIDIA FLARE where to get configuration
+        config_folder: config
+        # scheme for communication driver (currently supporting the default, grpc, only).
+        # scheme: grpc
+
+        # app_validator is used to verify if uploaded app has proper structures
+        # if not set, no app_validator is included in fed_server.json
+        # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+    - path: nvflare.lighter.impl.cert.CertBuilder
+    - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+    - path: nvflare.lighter.impl.signature.SignatureBuilder

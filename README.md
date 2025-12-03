@@ -1,4 +1,4 @@
-<img src="docs/resources/nvidia_eye.wwPt122j.png" alt="NVIDIA Logo" width="200">
+<img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/main/docs/resources/nvidia_eye.wwPt122j.png" alt="NVIDIA Logo" width="200">
 
 # NVIDIA FLARE
 

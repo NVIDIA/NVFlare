@@ -311,6 +311,15 @@ The drive is not encrypted. You can access it by attaching it to a VM or by usin
     sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
     sudo mount /dev/nbd0 /mnt
 
+  .. note::
+    
+    Please unmount the drive after usage by running:
+    
+    .. code-block:: bash
+    
+        sudo umount /mnt
+        sudo qemu-nbd --disconnect /dev/nbd0
+
 **4.2 Local Data**
 
 If your data resides on the local host, it can be copied directly into the user_data drive. The data is

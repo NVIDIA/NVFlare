@@ -87,7 +87,7 @@ will download the FLARE Console for the logged in user. The package will be zipp
 that will appear upon clicking Download. The name of the package will be the email that the user registered with. Note that the FLARE Console
 was previously called the Admin Client before NVIDIA FLARE 2.2.
 
-.. figure:: ../resources/dashboard_member_download.png
+.. figure:: ../../../resources/dashboard_member_download.png
     :height: 500px
 
     Download page with FLARE Console.
@@ -110,7 +110,7 @@ Org Admin Registration - Configure Client Sites
 :ref:`New User Registration <dashboard_new_user_reg>` are the same as for ``Member`` and ``Lead`` users. After choosing a role of ``Org Admin``, users
 should see an interface to specify client sites.
 
-.. figure:: ../resources/dashboard_org_admin_reg_clients.png
+.. figure:: ../../../resources/dashboard_org_admin_reg_clients.png
     :height: 500px
 
     User Registration for Org Admin configuring client sites after selecting role.
@@ -125,7 +125,7 @@ Org Admin User Dashboard
 The User Dashboard for ``Org Admin`` users is the same as for ``Member`` and ``Lead`` users on the top, but below the user information is an
 interface to add and edit client sites.
 
-.. figure:: ../resources/dashboard_org_admin_dashboard.png
+.. figure:: ../../../resources/dashboard_org_admin_dashboard.png
     :height: 500px
 
     User Dashboard for Org Admin with interface to add and edit client sites.
@@ -149,7 +149,7 @@ by the extension ".zip".
    Each site needs to be approved by the Project Admin, so it is possible to have some sites approved while others are not, in which case the
    ``Download Startup Kit`` button for client sites that have not been approved will not be active.
 
-.. figure:: ../resources/dashboard_org_admin_downloads.png
+.. figure:: ../../../resources/dashboard_org_admin_downloads.png
     :height: 500px
 
     Download page for Org Admin.
@@ -178,7 +178,7 @@ Project Configuration
 Upon the first login, the first page that the Project Admin should be directed to is the Project Configuration page (after the project has been
 frozen, the Project Admin will be directed to the Users Dashboard).
 
-.. figure:: ../resources/dashboard_proj_configuration.png
+.. figure:: ../../../resources/dashboard_proj_configuration.png
     :height: 500px
 
     Project Configuration page.
@@ -200,7 +200,7 @@ On the Project Configuration page, the Project Admin can set:
 Application Configuration
 -------------------------
 
-.. figure:: ../resources/dashboard_app_config.png
+.. figure:: ../../../resources/dashboard_app_config.png
     :height: 500px
 
     Application Configuration page.
@@ -285,7 +285,7 @@ for the FL Server.
 Downloads will be available after the project has been frozen. The name of the FL Server startup kit will be the DNS name that was configured
 on the :ref:`Server Configuration <dashboard_server_configuration>` page followed by the extension ".zip".
 
-.. figure:: ../resources/dashboard_proj_admin_downloads.png
+.. figure:: ../../../resources/dashboard_proj_admin_downloads.png
     :height: 500px
 
     Download page for Project Admin.

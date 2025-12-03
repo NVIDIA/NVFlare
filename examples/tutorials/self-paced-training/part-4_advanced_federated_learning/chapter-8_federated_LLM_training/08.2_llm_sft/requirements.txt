@@ -4,6 +4,7 @@
 # peft==0.17.1
 # trl==0.22.2
 
+nvflare
 torch
 datasets
 tensorboard

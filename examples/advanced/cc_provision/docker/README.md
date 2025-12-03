@@ -18,6 +18,6 @@ To build the NVFlare Docker image, run the following command in your terminal:
 
 Important notes:
 - Code directory: The local ``code`` folder is copied into the Docker image under ``/local/custom``
-- Job configuration: In the [job configuration](../jobs/hello-pt_cifar10_fedavg/app_site-1/config/config_fed_client.json) we configure the task script to be ``/local/custom/hello-pt_cifar10_fl.py``
+- Job configuration: In the [job configuration](../jobs/hello-pt_cifar10_fedavg/app_site-1/config/config_fed_client.json) we configure the task script to be ``/local/custom/client.py``
 
 Make sure to adjust the paths and filenames in your configurations accordingly.
