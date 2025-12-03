@@ -32,7 +32,6 @@ def _check_ctx(ctx: dict):
         Constant.RUNNER_CTX_RANK,
         Constant.RUNNER_CTX_WORLD_SIZE,
         Constant.RUNNER_CTX_SERVER_ADDR,
-        Constant.RUNNER_CTX_MODEL_DIR,
     ]
     for k in required_ctx_keys:
         if k not in ctx:
@@ -112,9 +111,7 @@ class XGBEvalRunner(AppRunner, FLComponent):
         self._rank = ctx[Constant.RUNNER_CTX_RANK]
         self._world_size = ctx[Constant.RUNNER_CTX_WORLD_SIZE]
         self._data_split_mode = ctx.get(Constant.RUNNER_CTX_DATA_SPLIT_MODE, 0)
-        self._secure_training = ctx.get(Constant.RUNNER_CTX_SECURE_TRAINING, False)
         self._server_addr = ctx[Constant.RUNNER_CTX_SERVER_ADDR]
-        self._model_dir = ctx[Constant.RUNNER_CTX_MODEL_DIR]
 
         self.logger.info(f"XGB eval, server address is {self._server_addr}")
 

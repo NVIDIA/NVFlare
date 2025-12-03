@@ -94,7 +94,9 @@ def main():
     # Start workers
     workers = []
     for rank in range(world_size):
-        worker = multiprocessing.Process(target=run_worker, args=(port, world_size, rank, args.data_root, args.model_path))
+        worker = multiprocessing.Process(
+            target=run_worker, args=(port, world_size, rank, args.data_root, args.model_path)
+        )
         workers.append(worker)
         worker.start()
 
