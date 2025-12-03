@@ -227,7 +227,7 @@ class Entity:
 
 
 class Participant(Entity):
-    def __init__(self, type: str, name: str, org: str, props: dict = None, project: Entity = None):
+    def __init__(self, type: str, name: str, org: str, props: Optional[dict] = None, project: Entity = None):
         """Class to represent a participant.
 
         Each participant communicates to other participant.  Therefore, each participant has its
@@ -373,7 +373,7 @@ class Project(Entity):
         name: str,
         description: str,
         participants=None,
-        props: dict = None,
+        props: Optional[dict] = None,
         serialized_root_cert=None,
         root_private_key=None,
     ):

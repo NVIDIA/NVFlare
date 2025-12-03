@@ -65,8 +65,8 @@ __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 class Session(SessionSpec):
     def __init__(
         self,
-        username: str = None,
-        startup_path: str = None,
+        username: str,
+        startup_path: str,
         secure_mode: bool = True,
         debug: bool = False,
     ):
@@ -269,8 +269,8 @@ class Session(SessionSpec):
         self,
         detailed: bool = False,
         limit: Optional[int] = None,
-        id_prefix: str = None,
-        name_prefix: str = None,
+        id_prefix: Optional[str] = None,
+        name_prefix: Optional[str] = None,
         reverse: bool = False,
     ) -> List[dict]:
         """Get the job info from the server.
@@ -557,7 +557,7 @@ class Session(SessionSpec):
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
 
-    def ls_target(self, target: str, options: str = None, path: str = None) -> str:
+    def ls_target(self, target: str, options: Optional[str] = None, path: Optional[str] = None) -> str:
         """Run the "ls" command on the specified target and return the result.
 
         Args:
@@ -570,7 +570,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("ls", target, options, path)
 
-    def cat_target(self, target: str, options: str = None, file: str = None) -> str:
+    def cat_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "cat" command on the specified target and return the result.
 
         Args:
@@ -583,7 +583,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type="file")
 
-    def tail_target(self, target: str, options: str = None, file: str = None) -> str:
+    def tail_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "tail" command on the specified target and return the result.
 
         Args:
@@ -596,7 +596,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type="file")
 
-    def tail_target_log(self, target: str, options: str = None) -> str:
+    def tail_target_log(self, target: str, options: Optional[str] = None) -> str:
         """Run the "tail log.txt" command on the specified target and return the result.
 
         Args:
@@ -608,7 +608,7 @@ class Session(SessionSpec):
         """
         return self.tail_target(target, options, file="log.txt")
 
-    def head_target(self, target: str, options: str = None, file: str = None) -> str:
+    def head_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "head" command on the specified target and return the result.
 
         Args:
@@ -621,7 +621,7 @@ class Session(SessionSpec):
         """
         return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type="file")
 
-    def head_target_log(self, target: str, options: str = None) -> str:
+    def head_target_log(self, target: str, options: Optional[str] = None) -> str:
         """Run the "head log.txt" command on the specified target and return the result.
 
         Args:
@@ -633,7 +633,9 @@ class Session(SessionSpec):
         """
         return self.head_target(target, options, file="log.txt")
 
-    def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
+    def grep_target(
+        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
+    ) -> str:
         """Run the "grep" command on the specified target and return the result.
 
         Args:
