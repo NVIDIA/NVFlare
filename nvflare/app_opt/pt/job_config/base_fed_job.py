@@ -16,12 +16,13 @@ from typing import List, Optional
 
 from torch import nn as nn
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
 from nvflare.job_config.script_runner import FrameworkType
 
@@ -33,7 +34,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
     framework=FrameworkType.PYTORCH.
 
-    Configures ValidationJsonGenerator, IntimeModelSelector, AnalyticsReceiver, ConvertToFedEvent.
+    Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
 
     User must add controllers and executors.
 
@@ -47,8 +48,10 @@ class BaseFedJob(UnifiedBaseFedJob):
             Defaults to "accuracy".
         validation_json_generator (ValidationJsonGenerator | None, optional): A component for generating validation results.
             if not provided, a ValidationJsonGenerator will be configured.
-        intime_model_selector: (IntimeModelSelector | None, optional): A component for select the model.
-            if not provided, an IntimeModelSelector will be configured.
+        model_selector: (FLComponent | None, optional): A component for selecting the best model during training.
+            This event-driven component evaluates and tracks model performance across training rounds,
+            handling workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
+            If not provided, an IntimeModelSelector will be configured based on key_metric.
         convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to covert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
         analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
@@ -65,12 +68,19 @@ class BaseFedJob(UnifiedBaseFedJob):
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        intime_model_selector: Optional[IntimeModelSelector] = None,
+        model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
+        # Add default TBAnalyticsReceiver if not provided (PyTorch-specific)
+        if analytics_receiver is None:
+            analytics_receiver = TBAnalyticsReceiver()
+
+        # Store PyTorch-specific model_locator
+        self.model_locator = model_locator
+
         # Call the unified BaseFedJob with PyTorch-specific settings
         super().__init__(
             initial_model=initial_model,
@@ -79,10 +89,25 @@ class BaseFedJob(UnifiedBaseFedJob):
             mandatory_clients=mandatory_clients,
             key_metric=key_metric,
             validation_json_generator=validation_json_generator,
-            intime_model_selector=intime_model_selector,
+            model_selector=model_selector,
             convert_to_fed_event=convert_to_fed_event,
             analytics_receiver=analytics_receiver,
             model_persistor=model_persistor,
-            model_locator=model_locator,
             framework=FrameworkType.PYTORCH,
         )
+
+        # PyTorch-specific model setup
+        if initial_model is not None:
+            self._setup_pytorch_model(initial_model, model_persistor, model_locator)
+
+    def _setup_pytorch_model(
+        self,
+        model: nn.Module,
+        persistor: Optional[ModelPersistor] = None,
+        locator: Optional[ModelLocator] = None,
+    ):
+        """Setup PyTorch model with persistor and locator."""
+        from nvflare.app_opt.pt.job_config.model import PTModel
+
+        pt_model = PTModel(model=model, persistor=persistor, locator=locator)
+        self.comp_ids.update(self.to_server(pt_model))

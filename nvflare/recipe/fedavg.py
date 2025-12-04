@@ -18,12 +18,10 @@ from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
@@ -49,7 +47,7 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor]
-    model_locator: Optional[ModelLocator]
+    custom_persistor: Optional[ModelPersistor]
 
 
 class FedAvgRecipe(Recipe):
@@ -95,7 +93,9 @@ class FedAvgRecipe(Recipe):
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
             are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, framework-specific defaults will be used.
-        model_locator: Custom model locator. Only used for PyTorch.
+        custom_persistor: Custom persistor for RAW framework (sklearn). Required when framework=RAW.
+            This allows framework-specific wrappers to provide their own persistor without the unified
+            recipe depending on framework-specific components.
 
     Example (PyTorch):
         ```python
@@ -187,7 +187,7 @@ class FedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        model_locator: Optional[ModelLocator] = None,
+        custom_persistor: Optional[ModelPersistor] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -206,7 +206,7 @@ class FedAvgRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            model_locator=model_locator,
+            custom_persistor=custom_persistor,
         )
 
         self.name = v.name
@@ -224,7 +224,7 @@ class FedAvgRecipe(Recipe):
         self.server_expected_format = v.server_expected_format
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
-        self.model_locator = v.model_locator
+        self.custom_persistor = v.custom_persistor
 
         # Validate that only one of initial_model or initial_params is provided
         if self.initial_model is not None and self.initial_params is not None:
@@ -233,130 +233,108 @@ class FedAvgRecipe(Recipe):
                 "Use initial_model for PyTorch/TensorFlow, initial_params for sklearn."
             )
 
-        # For sklearn (RAW framework), we handle persistor differently
+        # Validate RAW framework has custom_persistor
+        if self.framework == FrameworkType.RAW and self.custom_persistor is None:
+            raise ValueError(
+                "custom_persistor is required when framework=FrameworkType.RAW. "
+                "Use framework-specific wrappers (e.g., SklearnFedAvgRecipe) or provide a custom persistor."
+            )
+
+        # Create BaseFedJob - all frameworks use it for consistency
+        # Provide default TBAnalyticsReceiver for PT/TF only
+        analytics_receiver = None
+        if self.framework in (FrameworkType.PYTORCH, FrameworkType.TENSORFLOW):
+            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+            analytics_receiver = TBAnalyticsReceiver()
+
+        job = BaseFedJob(
+            initial_model=self.initial_model,
+            initial_params=self.initial_params,
+            name=self.name,
+            min_clients=self.min_clients,
+            model_persistor=self.model_persistor,
+            framework=self.framework,
+            analytics_receiver=analytics_receiver,
+        )
+
+        # Setup framework-specific model components and persistor
+        persistor_id = ""
         if self.framework == FrameworkType.RAW:
-            # Sklearn case - use JoblibModelParamPersistor
-            persistor = JoblibModelParamPersistor(initial_params=self.initial_params or {})
-            persistor_id = None  # Will be set later
+            # Add sklearn-specific persistor
+            persistor_id = job.to_server(self.custom_persistor, id="persistor")
+        elif self.initial_model is not None:
+            if self.framework == FrameworkType.PYTORCH:
+                self._setup_pytorch_model(job, self.initial_model, self.model_persistor, model_locator=None)
+            elif self.framework == FrameworkType.TENSORFLOW:
+                self._setup_tensorflow_model(job, self.initial_model, self.model_persistor)
+            persistor_id = job.comp_ids.get("persistor_id", "")
 
-            # Create a plain FedJob for sklearn (no BaseFedJob needed for minimal setup)
-            from nvflare import FedJob
-
-            job = FedJob(name=self.name, min_clients=self.min_clients)
-
-            # Add persistor
-            persistor_id = job.to_server(persistor, id="persistor")
-
-            # Add shareable generator
-            shareable_generator = FullModelShareableGenerator()
-            shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
-
-            # Setup aggregator
-            if self.aggregator is None:
-                self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
-            else:
-                if not isinstance(self.aggregator, Aggregator):
-                    raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
-            aggregator_id = job.to_server(self.aggregator, id="aggregator")
-
-            # Add controller
-            controller = ScatterAndGather(
-                min_clients=self.min_clients,
-                num_rounds=self.num_rounds,
-                wait_time_after_min_received=0,
-                aggregator_id=aggregator_id,
-                persistor_id=persistor_id,
-                shareable_generator_id=shareable_generator_id,
-                train_task_name="train",
-            )
-            job.to_server(controller)
-
-            # Add client executors
-            if isinstance(self.train_args, dict):
-                # Per-client configuration
-                for site_name, site_args in self.train_args.items():
-                    executor = ScriptRunner(
-                        script=self.train_script,
-                        script_args=site_args,
-                        launch_external_process=self.launch_external_process,
-                        command=self.command,
-                        framework=self.framework,
-                        server_expected_format=self.server_expected_format,
-                        params_transfer_type=self.params_transfer_type,
-                    )
-                    job.to(executor, site_name)
-            else:
-                # Unified configuration
-                executor = ScriptRunner(
-                    script=self.train_script,
-                    script_args=self.train_args,
-                    launch_external_process=self.launch_external_process,
-                    command=self.command,
-                    framework=self.framework,
-                    server_expected_format=self.server_expected_format,
-                    params_transfer_type=self.params_transfer_type,
-                )
-                job.to_clients(executor)
+        # Setup aggregator
+        if self.aggregator is None:
+            self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
         else:
-            # PyTorch or TensorFlow case - use BaseFedJob
-            job = BaseFedJob(
-                initial_model=self.initial_model,
-                initial_params=self.initial_params,
-                name=self.name,
-                min_clients=self.min_clients,
-                model_persistor=self.model_persistor,
-                model_locator=self.model_locator,
-                framework=self.framework,
-            )
+            if not isinstance(self.aggregator, Aggregator):
+                raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
 
-            # Setup aggregator
-            if self.aggregator is None:
-                self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
-            else:
-                if not isinstance(self.aggregator, Aggregator):
-                    raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
+        # Add shareable generator and aggregator
+        shareable_generator = FullModelShareableGenerator()
+        shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
+        aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
-            # Add shareable generator
-            shareable_generator = FullModelShareableGenerator()
-            shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
-            aggregator_id = job.to_server(self.aggregator, id="aggregator")
+        # Add controller
+        controller = ScatterAndGather(
+            min_clients=self.min_clients,
+            num_rounds=self.num_rounds,
+            wait_time_after_min_received=0,
+            aggregator_id=aggregator_id,
+            persistor_id=persistor_id,
+            shareable_generator_id=shareable_generator_id,
+            train_task_name="train",
+        )
+        job.to_server(controller)
 
-            # Add controller
-            controller = ScatterAndGather(
-                min_clients=self.min_clients,
-                num_rounds=self.num_rounds,
-                wait_time_after_min_received=0,
-                aggregator_id=aggregator_id,
-                persistor_id=job.comp_ids.get("persistor_id", "") if self.initial_model is not None else "",
-                shareable_generator_id=shareable_generator_id,
-            )
-            job.to_server(controller)
-
-            # Add client executors
-            if isinstance(self.train_args, dict):
-                # Per-client configuration
-                for site_name, site_args in self.train_args.items():
-                    executor = ScriptRunner(
-                        script=self.train_script,
-                        script_args=site_args,
-                        launch_external_process=self.launch_external_process,
-                        command=self.command,
-                        framework=self.framework,
-                        server_expected_format=self.server_expected_format,
-                        params_transfer_type=self.params_transfer_type,
-                    )
-                    job.to(executor, site_name)
-            else:
-                # Unified configuration
+        # Add client executors
+        if isinstance(self.train_args, dict):
+            # Per-client configuration
+            for site_name, site_args in self.train_args.items():
                 executor = ScriptRunner(
                     script=self.train_script,
-                    script_args=self.train_args,
+                    script_args=site_args,
                     launch_external_process=self.launch_external_process,
                     command=self.command,
                     framework=self.framework,
                     server_expected_format=self.server_expected_format,
                     params_transfer_type=self.params_transfer_type,
                 )
-                job.to_clients(executor)
+                job.to(executor, site_name)
+        else:
+            # Unified configuration
+            executor = ScriptRunner(
+                script=self.train_script,
+                script_args=self.train_args,
+                launch_external_process=self.launch_external_process,
+                command=self.command,
+                framework=self.framework,
+                server_expected_format=self.server_expected_format,
+                params_transfer_type=self.params_transfer_type,
+            )
+            job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    def _setup_pytorch_model(
+        self, job: BaseFedJob, model: Any, persistor: Optional[ModelPersistor], model_locator: Optional[Any] = None
+    ):
+        """Setup PyTorch model with persistor and locator."""
+        from nvflare.app_opt.pt.job_config.model import PTModel
+
+        pt_model = PTModel(model=model, persistor=persistor, locator=model_locator)
+        job.comp_ids.update(job.to_server(pt_model))
+
+    def _setup_tensorflow_model(self, job: BaseFedJob, model: Any, persistor: Optional[ModelPersistor]):
+        """Setup TensorFlow model with persistor."""
+        from nvflare.app_opt.tf.job_config.model import TFModel
+
+        tf_model = TFModel(model=model, persistor=persistor)
+        job.comp_ids["persistor_id"] = job.to_server(tf_model)

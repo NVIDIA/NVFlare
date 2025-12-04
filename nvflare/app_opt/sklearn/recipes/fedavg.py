@@ -16,6 +16,7 @@ from typing import Dict, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -102,6 +103,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
     ):
+        # Create sklearn-specific persistor
+        persistor = JoblibModelParamPersistor(initial_params=model_params or {})
+
         # Call the unified FedAvgRecipe with sklearn-specific settings
         # Map model_params to initial_params for the unified API
         super().__init__(
@@ -118,4 +122,5 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             framework=FrameworkType.RAW,  # sklearn uses RAW framework
             server_expected_format=ExchangeFormat.RAW,  # sklearn uses RAW exchange format
             params_transfer_type=TransferType.FULL,
+            custom_persistor=persistor,  # Pass sklearn-specific persistor
         )

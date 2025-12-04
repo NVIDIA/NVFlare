@@ -15,13 +15,11 @@
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.app_common.abstract.model_locator import ModelLocator
+from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import FedJob, validate_object_for_job
 from nvflare.job_config.script_runner import FrameworkType
 
@@ -31,6 +29,10 @@ class BaseFedJob(FedJob):
 
     This class consolidates the previously separate PT and TF BaseFedJob implementations
     into a single unified interface that can handle all frameworks.
+
+    Note: This class is framework-agnostic and does not contain framework-specific logic.
+    Framework-specific model setup should be handled by child classes (e.g., PT/TF wrappers)
+    or by the calling code (e.g., recipes).
     """
 
     def __init__(
@@ -42,16 +44,15 @@ class BaseFedJob(FedJob):
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        intime_model_selector: Optional[IntimeModelSelector] = None,
+        model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
-        model_locator: Optional[ModelLocator] = None,
         framework: FrameworkType = FrameworkType.PYTORCH,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 
-        Configures ValidationJsonGenerator, IntimeModelSelector, AnalyticsReceiver, ConvertToFedEvent.
+        Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
 
         User must add controllers and executors.
 
@@ -67,19 +68,26 @@ class BaseFedJob(FedJob):
             mandatory_clients: Mandatory clients to run the job. Default None.
             key_metric: Metric used to determine if the model is globally best.
                 If metrics are a dict, key_metric can select the metric used for global model selection.
-                Defaults to "accuracy".
+                Defaults to "accuracy". Only used if model_selector is not provided.
             validation_json_generator: A component for generating validation results.
                 If not provided, a ValidationJsonGenerator will be configured.
-            intime_model_selector: A component for selecting the model.
-                If not provided, an IntimeModelSelector will be configured.
+            model_selector: A component for selecting the best model during training.
+                This event-driven component evaluates and tracks model performance across training rounds,
+                determining which model is globally best based on validation metrics.
+                It handles workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
+                Common implementations:
+                  - IntimeModelSelector: selects based on a specified key metric
+                  - SimpleIntimeModelSelector: simplified version for basic selection
+                If not provided and key_metric is specified, an IntimeModelSelector will be configured
+                automatically.
             convert_to_fed_event: A component to convert certain events to fed events.
                 If not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver: Receive analytics.
-                If not provided, a TBAnalyticsReceiver will be configured.
-            model_persistor: How to persist the model. Framework-specific defaults will be used if not provided.
-            model_locator: How to locate the model. Only used for PyTorch.
+            analytics_receiver: Receive analytics. If not provided, framework-specific
+                child classes may provide defaults (e.g., TBAnalyticsReceiver for PT/TF).
+            model_persistor: How to persist the model. Stored for child classes to use.
             framework: The framework type (PYTORCH, TENSORFLOW, or RAW for sklearn).
-                Defaults to PYTORCH.
+                Defaults to PYTORCH. Note: Framework-specific model setup should be handled by
+                child classes or calling code.
         """
         super().__init__(
             name=name,
@@ -103,11 +111,14 @@ class BaseFedJob(FedJob):
             validation_json_generator = ValidationJsonGenerator()
         self.to_server(id="json_generator", obj=validation_json_generator)
 
-        # Intime model selector
-        if intime_model_selector:
-            validate_object_for_job("intime_model_selector", intime_model_selector, IntimeModelSelector)
-            self.to_server(id="model_selector", obj=intime_model_selector)
+        # Model selector
+        if model_selector:
+            validate_object_for_job("model_selector", model_selector, FLComponent)
+            self.to_server(id="model_selector", obj=model_selector)
         elif key_metric:
+            # Default to IntimeModelSelector if key_metric is provided
+            from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+
             self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
 
         # Convert to fed event
@@ -117,48 +128,17 @@ class BaseFedJob(FedJob):
             convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
         self.convert_to_fed_event = convert_to_fed_event
 
-        # Analytics receiver
+        # Analytics receiver (child classes should provide defaults if needed)
         if analytics_receiver:
             validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
-        else:
-            analytics_receiver = TBAnalyticsReceiver()
+            self.to_server(
+                id="receiver",
+                obj=analytics_receiver,
+            )
 
-        self.to_server(
-            id="receiver",
-            obj=analytics_receiver,
-        )
-
-        # Handle initial model/params based on framework
-        if framework == FrameworkType.PYTORCH:
-            if initial_model is not None:
-                self._setup_pytorch_model(initial_model, model_persistor, model_locator)
-        elif framework == FrameworkType.TENSORFLOW:
-            if initial_model is not None:
-                self._setup_tensorflow_model(initial_model, model_persistor)
-        elif framework == FrameworkType.RAW:
-            # Sklearn case - handled by the recipe using JoblibModelParamPersistor
-            pass
-        else:
-            raise ValueError(f"Unsupported framework: {framework}")
-
-    def _setup_pytorch_model(
-        self,
-        model: Any,
-        persistor: Optional[ModelPersistor] = None,
-        locator: Optional[ModelLocator] = None,
-    ):
-        """Setup PyTorch model with persistor and locator."""
-        from nvflare.app_opt.pt.job_config.model import PTModel
-
-        pt_model = PTModel(model=model, persistor=persistor, locator=locator)
-        self.comp_ids.update(self.to_server(pt_model))
-
-    def _setup_tensorflow_model(self, model: Any, persistor: Optional[ModelPersistor] = None):
-        """Setup TensorFlow model with persistor."""
-        from nvflare.app_opt.tf.job_config.model import TFModel
-
-        tf_model = TFModel(model=model, persistor=persistor)
-        self.comp_ids["persistor_id"] = self.to_server(tf_model)
+        # Framework-specific model setup should be handled by child classes
+        # Store these for child classes to use
+        self.model_persistor = model_persistor
 
     def set_up_client(self, target: str):
         """Setup client components."""

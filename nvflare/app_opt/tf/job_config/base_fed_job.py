@@ -16,11 +16,12 @@ from typing import List, Optional
 
 import tensorflow as tf
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
 from nvflare.job_config.script_runner import FrameworkType
 
@@ -32,7 +33,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
     framework=FrameworkType.TENSORFLOW.
 
-    Configures ValidationJsonGenerator, IntimeModelSelector, TBAnalyticsReceiver, ConvertToFedEvent.
+    Configures ValidationJsonGenerator, model selector, TBAnalyticsReceiver, ConvertToFedEvent.
 
     User must add controllers and executors.
 
@@ -46,8 +47,10 @@ class BaseFedJob(UnifiedBaseFedJob):
             Defaults to "accuracy".
         validation_json_generator (ValidationJsonGenerator, optional): A component for generating validation results.
             if not provided, a ValidationJsonGenerator will be configured.
-        intime_model_selector: (IntimeModelSelector, optional): A component for select the model.
-            if not provided, an IntimeModelSelector will be configured.
+        model_selector: (FLComponent, optional): A component for selecting the best model during training.
+            This event-driven component evaluates and tracks model performance across training rounds,
+            handling workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
+            If not provided, an IntimeModelSelector will be configured based on key_metric.
         convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
         analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
@@ -63,11 +66,15 @@ class BaseFedJob(UnifiedBaseFedJob):
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
-        intime_model_selector: Optional[IntimeModelSelector] = None,
+        model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
     ):
+        # Add default TBAnalyticsReceiver if not provided (TensorFlow-specific)
+        if analytics_receiver is None:
+            analytics_receiver = TBAnalyticsReceiver()
+
         # Call the unified BaseFedJob with TensorFlow-specific settings
         super().__init__(
             initial_model=initial_model,
@@ -76,10 +83,20 @@ class BaseFedJob(UnifiedBaseFedJob):
             mandatory_clients=mandatory_clients,
             key_metric=key_metric,
             validation_json_generator=validation_json_generator,
-            intime_model_selector=intime_model_selector,
+            model_selector=model_selector,
             convert_to_fed_event=convert_to_fed_event,
             analytics_receiver=analytics_receiver,
             model_persistor=model_persistor,
-            model_locator=None,  # TensorFlow doesn't use model_locator
             framework=FrameworkType.TENSORFLOW,
         )
+
+        # TensorFlow-specific model setup
+        if initial_model is not None:
+            self._setup_tensorflow_model(initial_model, model_persistor)
+
+    def _setup_tensorflow_model(self, model: tf.keras.Model, persistor: Optional[ModelPersistor] = None):
+        """Setup TensorFlow model with persistor."""
+        from nvflare.app_opt.tf.job_config.model import TFModel
+
+        tf_model = TFModel(model=model, persistor=persistor)
+        self.comp_ids["persistor_id"] = self.to_server(tf_model)

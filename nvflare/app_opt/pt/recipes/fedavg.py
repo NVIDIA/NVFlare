@@ -99,6 +99,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
+        # Store PyTorch-specific model_locator before calling parent
+        self._pt_model_locator = model_locator
+
         # Call the unified FedAvgRecipe with PyTorch-specific settings
         super().__init__(
             name=name,
@@ -115,5 +118,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            model_locator=model_locator,
         )
+
+    def _setup_pytorch_model(self, job, model, persistor, model_locator=None):
+        """Override to use PyTorch-specific model_locator."""
+        # Use the model_locator stored during init
+        super()._setup_pytorch_model(job, model, persistor, model_locator=self._pt_model_locator)

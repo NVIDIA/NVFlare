@@ -114,5 +114,4 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            model_locator=None,  # TensorFlow doesn't use model_locator
         )
