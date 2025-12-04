@@ -65,6 +65,10 @@ class FileDownloadable(Downloadable):
         """
         super().__init__(file_name)
         self.name = file_name
+
+        if not (os.path.isfile(file_name) and os.path.exists(file_name)):
+            raise ValueError(f"file {file_name} does not exist or is not a valid file")
+
         self.size = os.path.getsize(file_name)
 
         if not chunk_size:

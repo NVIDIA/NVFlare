@@ -42,7 +42,7 @@ class EncType:
 
 
 class _RefKey:
-    REF_ID = "file_ref_id"
+    REF_ID = "ref_id"
     FQCN = "fqcn"
 
 
@@ -86,10 +86,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
     @abstractmethod
     def to_downloadable(self, items: dict, max_chunk_size: int, fobs_ctx: dict) -> Downloadable:
-        """Dump the items to the file with the specified path
+        """Convert the items Downloadable object.
 
         Args:
-            items: a dict of items of target object type to be dumped to file
+            items: a dict of items of target object type to be converted
             max_chunk_size: max size of one chunk.
             fobs_ctx: FOBS Context
 
@@ -304,7 +304,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         if downloadable_objs:
             downloader = self._create_downloader(fobs_ctx)
             for ref_id, obj in downloadable_objs:
-                self.logger.debug("ViaDownloader: adding object to downloader: {ref_id=}")
+                self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
 
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):

@@ -359,7 +359,7 @@ class DownloadService:
         obj: Downloadable,
         ref_id=None,
     ) -> str:
-        if not issubclass(type(obj), Downloadable):
+        if not isinstance(obj, Downloadable):
             raise ValueError(f"obj must be of type {Downloadable} but got {type(obj)}")
 
         tx = cls._tx_table.get(transaction_id)
