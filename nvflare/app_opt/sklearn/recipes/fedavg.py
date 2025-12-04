@@ -14,39 +14,19 @@
 
 from typing import Dict, Optional, Union
 
-from pydantic import BaseModel
-
-from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.job_config.script_runner import FrameworkType
+from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
-# Internal — not part of the public API
-class _SklearnFedAvgValidator(BaseModel):
-    # Allow custom types (e.g., Aggregator) in validation. Required by Pydantic v2.
-    model_config = {"arbitrary_types_allowed": True}
-
-    name: str
-    min_clients: int
-    num_rounds: int
-    model_params: Optional[dict] = None
-    train_script: str
-    train_args: Union[str, Dict[str, str]]
-    aggregator: Optional[Aggregator] = None
-    aggregator_data_kind: DataKind = DataKind.WEIGHTS
-    launch_external_process: bool = False
-    command: str = "python3 -u"
-
-
-class SklearnFedAvgRecipe(Recipe):
+class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.
+
+    This is a backward-compatible wrapper around the unified FedAvgRecipe.
+    For new code, consider using nvflare.recipe.FedAvgRecipe directly with
+    framework=FrameworkType.RAW.
 
     This recipe sets up a complete federated learning workflow with scatter-and-gather
     communication pattern specifically designed for scikit-learn models.
@@ -122,84 +102,20 @@ class SklearnFedAvgRecipe(Recipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
     ):
-        # Validate inputs internally
-        v = _SklearnFedAvgValidator(
+        # Call the unified FedAvgRecipe with sklearn-specific settings
+        # Map model_params to initial_params for the unified API
+        super().__init__(
             name=name,
+            initial_params=model_params,  # sklearn uses initial_params instead of initial_model
             min_clients=min_clients,
             num_rounds=num_rounds,
-            model_params=model_params,
             train_script=train_script,
             train_args=train_args,
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
             command=command,
+            framework=FrameworkType.RAW,  # sklearn uses RAW framework
+            server_expected_format=ExchangeFormat.RAW,  # sklearn uses RAW exchange format
+            params_transfer_type=TransferType.FULL,
         )
-
-        self.name = v.name
-        self.min_clients = v.min_clients
-        self.num_rounds = v.num_rounds
-        self.model_params = v.model_params
-        self.train_script = v.train_script
-        self.train_args = v.train_args
-        self.aggregator = v.aggregator
-        self.aggregator_data_kind = v.aggregator_data_kind
-        self.launch_external_process = v.launch_external_process
-        self.command = v.command
-
-        # Create FedJob
-        job = FedJob(name=self.name, min_clients=self.min_clients)
-
-        # Server components
-        persistor = JoblibModelParamPersistor(initial_params=self.model_params or {})
-        persistor_id = job.to_server(persistor, id="persistor")
-
-        shareable_generator = FullModelShareableGenerator()
-        shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
-
-        if self.aggregator is None:
-            self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
-        else:
-            if not isinstance(self.aggregator, Aggregator):
-                raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
-        aggregator_id = job.to_server(self.aggregator, id="aggregator")
-
-        controller = ScatterAndGather(
-            min_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            wait_time_after_min_received=0,
-            aggregator_id=aggregator_id,
-            persistor_id=persistor_id,
-            shareable_generator_id=shareable_generator_id,
-            train_task_name="train",
-        )
-        job.to_server(controller)
-
-        # Client components
-        if isinstance(self.train_args, dict):
-            # Per-client configuration: add executor for each client with their specific args
-            for site_name, site_args in self.train_args.items():
-                executor = ScriptRunner(
-                    script=self.train_script,
-                    script_args=site_args,
-                    launch_external_process=self.launch_external_process,
-                    command=self.command,
-                    framework=FrameworkType.RAW,
-                    server_expected_format=ExchangeFormat.RAW,
-                    params_transfer_type=TransferType.FULL,
-                )
-                job.to(executor, site_name)
-        else:
-            # Unified configuration: same args for all clients
-            executor = ScriptRunner(
-                script=self.train_script,
-                script_args=self.train_args,
-                launch_external_process=self.launch_external_process,
-                command=self.command,
-                framework=FrameworkType.RAW,
-                server_expected_format=ExchangeFormat.RAW,
-                params_transfer_type=TransferType.FULL,
-            )
-            job.to_clients(executor)
-
-        Recipe.__init__(self, job)

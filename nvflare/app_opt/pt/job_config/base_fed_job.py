@@ -16,19 +16,47 @@ from typing import List, Optional
 
 from torch import nn as nn
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt.job_config.model import PTModel
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
+from nvflare.job_config.script_runner import FrameworkType
 
 
-class BaseFedJob(FedJob):
+class BaseFedJob(UnifiedBaseFedJob):
+    """PyTorch BaseFedJob.
+
+    This is a backward-compatible wrapper around the unified BaseFedJob.
+    For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
+    framework=FrameworkType.PYTORCH.
+
+    Configures ValidationJsonGenerator, IntimeModelSelector, AnalyticsReceiver, ConvertToFedEvent.
+
+    User must add controllers and executors.
+
+    Args:
+        initial_model (nn.Module, optional): initial PyTorch Model. Defaults to None.
+        name (str, optional): name of the job. Defaults to "fed_job".
+        min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
+        mandatory_clients (list[str] | None, optional): mandatory clients to run the job. Default None.
+        key_metric (str, optional): Metric used to determine if the model is globally best.
+            if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
+            Defaults to "accuracy".
+        validation_json_generator (ValidationJsonGenerator | None, optional): A component for generating validation results.
+            if not provided, a ValidationJsonGenerator will be configured.
+        intime_model_selector: (IntimeModelSelector | None, optional): A component for select the model.
+            if not provided, an IntimeModelSelector will be configured.
+        convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to covert certain events to fed events.
+            if not provided, a ConvertToFedEvent object will be created.
+        analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
+            If not provided, a TBAnalyticsReceiver will be configured.
+        model_persistor (ModelPersistor | None, optional): how to persistor the model.
+        model_locator (ModelLocator | None, optional): how to locate the model.
+    """
+
     def __init__(
         self,
         initial_model: nn.Module = None,
@@ -43,72 +71,18 @@ class BaseFedJob(FedJob):
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
-        """PyTorch BaseFedJob.
-
-        Configures ValidationJsonGenerator, IntimeModelSelector, AnalyticsReceiver, ConvertToFedEvent.
-
-        User must add controllers and executors.
-
-        Args:
-            initial_model (nn.Module, optional): initial PyTorch Model. Defaults to None.
-            name (str, optional): name of the job. Defaults to "fed_job".
-            min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
-            mandatory_clients (list[str] | None, optional): mandatory clients to run the job. Default None.
-            key_metric (str, optional): Metric used to determine if the model is globally best.
-                if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "accuracy".
-            validation_json_generator (ValidationJsonGenerator | None, optional): A component for generating validation results.
-                if not provided, a ValidationJsonGenerator will be configured.
-            intime_model_selector: (IntimeModelSelector | None, optional): A component for select the model.
-                if not provided, an IntimeModelSelector will be configured.
-            convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to covert certain events to fed events.
-                if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
-                If not provided, a TBAnalyticsReceiver will be configured.
-            model_persistor (ModelPersistor | None, optional): how to persistor the model.
-            model_locator (ModelLocator | None, optional): how to locate the model.
-        """
+        # Call the unified BaseFedJob with PyTorch-specific settings
         super().__init__(
+            initial_model=initial_model,
             name=name,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
+            key_metric=key_metric,
+            validation_json_generator=validation_json_generator,
+            intime_model_selector=intime_model_selector,
+            convert_to_fed_event=convert_to_fed_event,
+            analytics_receiver=analytics_receiver,
+            model_persistor=model_persistor,
+            model_locator=model_locator,
+            framework=FrameworkType.PYTORCH,
         )
-
-        self.initial_model = initial_model
-        self.comp_ids = {}
-
-        if validation_json_generator:
-            validate_object_for_job("validation_json_generator", validation_json_generator, ValidationJsonGenerator)
-        else:
-            validation_json_generator = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=validation_json_generator)
-
-        if intime_model_selector:
-            validate_object_for_job("intime_model_selector", intime_model_selector, IntimeModelSelector)
-            self.to_server(id="model_selector", obj=intime_model_selector)
-        elif key_metric:
-            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
-
-        if convert_to_fed_event:
-            validate_object_for_job("convert_to_fed_event", convert_to_fed_event, ConvertToFedEvent)
-        else:
-            convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
-        self.convert_to_fed_event = convert_to_fed_event
-
-        if analytics_receiver:
-            validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
-        else:
-            analytics_receiver = TBAnalyticsReceiver()
-
-        self.to_server(
-            id="receiver",
-            obj=analytics_receiver,
-        )
-
-        if initial_model:
-            self.comp_ids.update(
-                self.to_server(PTModel(model=initial_model, persistor=model_persistor, locator=model_locator))
-            )
-
-    def set_up_client(self, target: str):
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)

@@ -14,40 +14,20 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel
-
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.job_config.script_runner import FrameworkType
+from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
-# Internal — not part of the public API
-class _FedAvgValidator(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+class FedAvgRecipe(UnifiedFedAvgRecipe):
+    """A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.
 
-    name: str
-    initial_model: Any
-    min_clients: int
-    num_rounds: int
-    train_script: str
-    train_args: str
-    aggregator: Optional[Aggregator]
-    aggregator_data_kind: Optional[DataKind]
-    launch_external_process: bool = False
-    command: str = "python3 -u"
-    framework: FrameworkType = FrameworkType.TENSORFLOW
-    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    params_transfer_type: TransferType = TransferType.FULL
-
-
-class FedAvgRecipe(Recipe):
-    """A recipe for implementing Federated Averaging (FedAvg) in NVFlare.
+    This is a backward-compatible wrapper around the unified FedAvgRecipe.
+    For new code, consider using nvflare.recipe.FedAvgRecipe directly with
+    framework=FrameworkType.TENSORFLOW.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
@@ -76,7 +56,8 @@ class FedAvgRecipe(Recipe):
         framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
 
     Example:
         ```python
@@ -115,9 +96,10 @@ class FedAvgRecipe(Recipe):
         framework: FrameworkType = FrameworkType.TENSORFLOW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        model_persistor: Optional[ModelPersistor] = None,
     ):
-        # Validate inputs internally
-        v = _FedAvgValidator(
+        # Call the unified FedAvgRecipe with TensorFlow-specific settings
+        super().__init__(
             name=name,
             initial_model=initial_model,
             min_clients=min_clients,
@@ -131,62 +113,6 @@ class FedAvgRecipe(Recipe):
             framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            model_persistor=model_persistor,
+            model_locator=None,  # TensorFlow doesn't use model_locator
         )
-
-        self.name = v.name
-        self.initial_model = v.initial_model
-        self.min_clients = v.min_clients
-        self.num_rounds = v.num_rounds
-        self.train_script = v.train_script
-        self.train_args = v.train_args
-        self.aggregator = v.aggregator
-        self.aggregator_data_kind = v.aggregator_data_kind
-        self.launch_external_process = v.launch_external_process
-        self.command = v.command
-        self.framework = v.framework
-        self.server_expected_format: ExchangeFormat = v.server_expected_format
-        self.params_transfer_type: TransferType = v.params_transfer_type
-
-        # Create BaseFedJob with initial model
-        job = BaseFedJob(
-            initial_model=self.initial_model,
-            name=self.name,
-            min_clients=self.min_clients,
-        )
-
-        # Define the controller and send to server
-        if self.aggregator is None:
-            self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
-        else:
-            if not isinstance(self.aggregator, Aggregator):
-                raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
-
-        # Define the controller and send to server
-        shareable_generator = FullModelShareableGenerator()
-        shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
-        aggregator_id = job.to_server(self.aggregator, id="aggregator")
-
-        controller = ScatterAndGather(
-            min_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            wait_time_after_min_received=0,
-            aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
-            shareable_generator_id=shareable_generator_id,
-        )
-        # Send the controller to the server
-        job.to_server(controller)
-
-        # Add clients
-        executor = ScriptRunner(
-            script=self.train_script,
-            script_args=self.train_args,
-            launch_external_process=self.launch_external_process,
-            command=self.command,
-            framework=self.framework,
-            server_expected_format=self.server_expected_format,
-            params_transfer_type=self.params_transfer_type,
-        )
-        job.to_clients(executor)
-
-        Recipe.__init__(self, job)
