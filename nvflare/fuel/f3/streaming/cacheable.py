@@ -109,7 +109,7 @@ class CacheableObject(Downloadable):
             if not self.cache:
                 # cache has been cleared
                 return
-            
+
             for i in range(start, start + count):
                 data, num_received = self.cache[i]
                 num_received += 1
