@@ -87,7 +87,7 @@ def add_arrays(
     """Add arrays to be downloaded to the specified downloader.
 
     Args:
-        downloader: the downloader to add tensors to.
+        downloader: the downloader to add arrays to.
         arrays: arrays to be downloaded
         max_chunk_size: max chunk size
 
