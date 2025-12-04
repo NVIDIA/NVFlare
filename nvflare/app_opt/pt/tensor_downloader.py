@@ -74,7 +74,7 @@ def add_tensors(
     tensors: dict[str, torch.Tensor],
     max_chunk_size: int = 1,
 ) -> str:
-    """Add a file to be downloaded to the specified downloader.
+    """Add tensors to be downloaded to the specified downloader.
 
     Args:
         downloader: the downloader to add tensors to.
