@@ -171,7 +171,7 @@ to those obtained from standalone scripts.
 
 ## Inference with Secure Vertical Federated XGBoost
 From the above, we can see that under secure vertical case, we will have different tree recorded at different parties as each party holds different feature subsets.
-Considering this "feature ownership" characteristic, the inference process will also be performed collaboratively: all parties will need to participate in the inference process to produce the final prediction results.
+Considering this "feature ownership" characteristic, the inference process will also be performed collaboratively: all parties will need to participate in the inference process to produce the final prediction results. On the other hand, horizontal collaboration does not have this issue since all parties have access to full feature and can perform inference independently.
 
 To illustrate this, we first provide a script to perform inference with the model trained from secure vertical federated XGBoost using the standalone mode for easy understanding:
 ```
