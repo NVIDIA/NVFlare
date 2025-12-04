@@ -33,7 +33,6 @@ def define_parser():
         "--train_workspace_path",
         type=str,
         default="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/vertical_secure",
-        required=True,
         help="Path to the trained model workspace root",
     )
     return parser.parse_args()
