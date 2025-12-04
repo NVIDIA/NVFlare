@@ -91,7 +91,7 @@ def add_arrays(
         arrays: arrays to be downloaded
         max_chunk_size: max chunk size
 
-    Returns: reference id for the state dict.
+    Returns: reference id for the arrays.
 
     """
     obj = ArrayDownloadable(arrays, max_chunk_size)
