@@ -49,6 +49,8 @@ def main():
     job = FedJob(name=job_name, min_clients=site_num)
 
     # Define the evaluation controller
+    # secure_training flag has impact over the XGB inner logic
+    # set to False explicitly to avoid confusion (although it is evaluation)
     controller = XGBFedController(
         num_rounds=1,
         data_split_mode=1,
