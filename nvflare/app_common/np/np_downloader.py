@@ -117,7 +117,7 @@ def download_arrays(
         per_request_timeout: timeout for requests sent to the data source.
         cell: cell to be used for communicating to the data source.
         secure: P2P private mode for communication
-        optional: supress log messages of communication
+        optional: suppress log messages of communication
         abort_signal: signal for aborting download.
         arrays_received_cb: the callback to be called when one set of arrays are received
 
