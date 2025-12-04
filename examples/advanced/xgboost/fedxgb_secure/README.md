@@ -185,7 +185,7 @@ This is identical to the validation AUC during training. Other training modes (e
 
 Similarly, we can also perform inference with NVFlare using the above model trained by secure vertical federated XGBoost.
 ```
-python xgb_vert_val_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data 
+python xgb_vert_eval_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data 
 ```
 
 We can see the output
