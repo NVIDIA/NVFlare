@@ -3,7 +3,7 @@ This example demonstrates how to use NVFlare to train an XGBoost model in a fede
 Several potential variations of federated XGBoost are illustrated, including:
 - non-secure horizontal collaboration with histogram-based and tree-based mechanisms.
 - non-secure vertical collaboration with histogram-based mechanism.
-- secure horizontal and vertical collaboration with histogram-based mechanism and homomorphic encryption.
+- secure horizontal and vertical collaboration with histogram-based mechanism and Homomorphic Encryption (HE).
 
 To run the examples and notebooks, please make sure you set up a virtual environment and Jupyterlab, following [the example root readme](../../README.md)
 and install the additional requirements:
@@ -45,12 +45,12 @@ The following table outlines the different collaboration modes, algorithms, and 
 ## GPU Accelerations
 There are two levels of GPU accelerations in federated XGBoost:
 1. XGBoost itself has built-in GPU acceleration for training. To enable it, set the `tree_method` parameter to `gpu_hist` when initializing the XGBoost model. [GPU XGBoost Blog](https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/) shows that this method can achieve a **4.15x** speed improvement compared to CPU-based training for the dataset and testing environment.
-2. NVFlare provides GPU acceleration for homomorphic encryption operations. To enable it, use different encryption plugins. This can significantly speed up the encryption and decryption processes, as shown in [NVFlare Secure XGBoost Blog](https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/), GPU acceleration can achieve **up to 36.5x** speed improvement compared to CPU-based encryption for the dataset and testing environment.
+2. NVFlare provides GPU acceleration for HE operations. To enable it, use different encryption plugins. This can significantly speed up the encryption and decryption processes, as shown in [NVFlare Secure XGBoost Blog](https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/), GPU acceleration can achieve **up to 36.5x** speed improvement compared to CPU-based encryption for the dataset and testing environment.
 
 We will refer to them as "CPU / GPU XGBoost" and "CPU / GPU Encryption"
 
 ## Security Implementation Matrix
-As shown above, histogram-based XGBoost in horizontal and vertical collaboration modes can utilize homomorphic encryption to enhance data privacy. The following table shows which security measures are implemented (as shown by ✅) across different combinations of XGBoost and encryption modes:
+As shown above, histogram-based XGBoost in horizontal and vertical collaboration modes can utilize HE to enhance data privacy. The following table shows which security measures are implemented (as shown by ✅) across different combinations of XGBoost and encryption modes:
 
 | Collaboration Mode | Security Goal | CPU XGBoost + CPU Encryption | CPU XGBoost + GPU Encryption | GPU XGBoost + CPU Encryption | GPU XGBoost + GPU Encryption |
 |-------------------|---------------|------------------------------|------------------------------|------------------------------|------------------------------|
@@ -58,7 +58,20 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
 | **Vertical** | **Primary:** Protection of sample gradients against passive parties | ✅ | ✅ | ✅ | ✅ |
 | **Vertical** | **Secondary:** Protection of split values against non-feature owners | ✅ | ✅ | ❌ | ❌ |
 
-### Implementation Notes:
+### Note on Client-side Horizontal Vulnerabilities
+In this example, we utilize HE to protect histograms against server without considering client-side vulnerabilities. 
+
+For client-side privacy, a recent research [TimberStrike](https://arxiv.org/pdf/2506.07605) highlights privacy vulnerabilities in federated tree-based systems. The attack exploits split values and decision paths to reconstruct training data, achieving reconstruction accuracies around 80% on certain benchmark datasets.
+
+The vulnerability affects both collaboration modes:
+- **Tree-based collaboration**: Since local trees are shared directly, they allow for **local reconstruction** of specific client's private data.
+- **Histogram-based collaboration**: As data is aggregated, the resulting global histogram still leaks enough information for **global reconstruction** of the overall underlying data distribution.
+
+One potential solution as proposed in this work is that we can move the split finding phase to the server, such that clients will not have access to the histograms. This indeed will handle the client-side leakage. Unfortunately, we note that this solution is not compatible with existing server-end protection schemes of HE due to computations needed (e.g. division / argmax) are beyond the capability of standard HE. Therefore, implementing this would only "move" the vulnerability to the server-side rather than "address" it. Even worse, since serve can potentially have access to individual histograms, it will be able to perform **local reconstruction** for each client's data at a higher accuracy than tree-based collaboration as shown in the paper.
+
+Future work combining HE with Confidential Computing (CC) could potentially address the issue effectively.
+
+### Note on Implementation:
 - **Horizontal mode**: 
   - Histogram-based horizontal model does not need GPU encryption, as it is not as computationally intensive (encrypt histogram vectors) as in vertical mode (encrypt gradients).
 - **Vertical mode**: 
@@ -71,7 +84,7 @@ to perform the experiments, both of them are binary classification task, but of 
 HIGGS dataset contains 11 million instances, each with 28 attributes; while creditcardfraud dataset contains 284,807 instances, each with 30 attributes.
 
 We use the HIGGS dataset to compare the performance of different federated learning settings for its large scale; 
-and the creditcardfraud dataset to demonstrate the secure federated learning with homomorphic encryption for computation efficiency.
+and the creditcardfraud dataset to demonstrate the secure federated learning with HE for computation efficiency.
 Please note that the websites may experience occasional downtime.
 
 First download the dataset from the links above, which is a single zipped `HIGGS.csv.gz` file and a single `creditcard.csv` file.
@@ -87,6 +100,6 @@ This example includes instructions on running federated XGBoost without encrypti
 collaboration, and histogram-based vertical collaboration.
 
 ### [Secure Federated XGBoost with Homomorphic Encryption](./fedxgb_secure/README.md)
-This example includes instructions on running secure federated XGBoost with homomorphic encryption under 
+This example includes instructions on running secure federated XGBoost with HE under 
 histogram-based horizontal and vertical collaboration. Note that tree-based collaboration does not have security concerns 
 that can be handled by encryption.
