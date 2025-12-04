@@ -28,7 +28,7 @@ def define_parser():
         required=True,
         help="Path to dataset files for each site",
     )
-    parser.add_argument("--site_num", type=int, default=3, required=True, help="Total number of sites")
+    parser.add_argument("--site_num", type=int, default=3, help="Total number of sites")
     parser.add_argument(
         "--train_workspace_path",
         type=str,
