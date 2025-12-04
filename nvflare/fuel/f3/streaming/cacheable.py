@@ -154,6 +154,7 @@ class ItemConsumer(Consumer):
         self.error = None
         self.result = None
 
+    @abstractmethod
     def consume_items(self, items: List[Any], result: Any) -> Any:
         """Process items and return updated result."""
         pass
