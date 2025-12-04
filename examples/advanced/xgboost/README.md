@@ -59,7 +59,7 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
 | **Vertical** | **Secondary:** Protection of split values against non-feature owners | ✅ | ✅ | ❌ | ❌ |
 
 ### Note on Client-side Horizontal Vulnerabilities
-In this example, we utilize HE to protect histograms against server without considering client-side vulnerabilities. 
+In this example, we utilize HE to protect histograms against server. Client-side vulnerabilities are not considered. 
 
 For client-side, a recent research [TimberStrike](https://arxiv.org/pdf/2506.07605) highlights privacy vulnerabilities in federated tree-based systems. The attack exploits split values and decision paths to reconstruct training data, achieving reconstruction accuracies around 80% on certain benchmark datasets.
 
