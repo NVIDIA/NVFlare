@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import time
 from typing import List
 
 from nvflare.apis.fl_exception import RunAborted
@@ -133,6 +134,10 @@ class Group:
                     check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
                     waiter = ResultWaiter([p.name for p in self._proxies])
+                    max_parallel = self._call_opt.parallel
+                    if max_parallel <= 0:
+                        max_parallel = len(self._proxies)
+
                     for p in self._proxies:
                         p = self._get_work_proxy(p, func_name)
                         func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(
@@ -155,7 +160,18 @@ class Group:
                             context=ctx,
                             waiter=waiter,
                         )
-                        func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
+
+                        gcc.set_send_complete_cb(self._request_sent, waiter=waiter)
+
+                        while True:
+                            in_sending = waiter.in_sending_count
+                            if in_sending < max_parallel:
+                                waiter.inc_sending()
+                                func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
+                                break
+                            else:
+                                # self._logger.debug(f"requests being sent: {in_sending} - wait for runway")
+                                time.sleep(0.1)
 
                     if not self._call_opt.expect_result:
                         # do not wait for responses
@@ -182,6 +198,10 @@ class Group:
                     the_backend.handle_exception(ex)
 
         return method
+
+    def _request_sent(self, waiter: ResultWaiter):
+        self._logger.info("received _request_sent ...")
+        waiter.dec_sending()
 
 
 def group(

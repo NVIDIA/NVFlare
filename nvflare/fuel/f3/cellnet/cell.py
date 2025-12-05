@@ -360,9 +360,8 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal: Signal = None,
-        progress_wait_cb=None,
-        num_receivers=1,
-        receiver_ids=None,
+        send_complete_cb=None,
+        **cb_kwargs,
     ):
         """Stream one request to the target
 
@@ -379,9 +378,9 @@ class Cell(StreamCell):
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
+        self._encode_message(request, abort_signal)
         return self._send_one_request(
-            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+            channel, target, topic, request, timeout, secure, optional, abort_signal, send_complete_cb, **cb_kwargs
         )
 
     def _send_one_request(
@@ -394,7 +393,8 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal=None,
-        progress_wait_cb=None,
+        send_complete_cb=None,
+        **cb_kwargs,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -416,6 +416,10 @@ class Cell(StreamCell):
             # sending with progress timeout
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
+
+            if send_complete_cb:
+                send_complete_cb(**cb_kwargs)
+
             if not sending_complete:
                 self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)

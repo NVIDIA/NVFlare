@@ -16,13 +16,13 @@ from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPFedAvgParallel:
+class NPFedAvgParallelWithTrafficControl:
 
-    def __init__(self, initial_model, num_rounds=10):
+    def __init__(self, initial_model, num_rounds=10, parallel=2):
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self._initial_model = parse_array_def(initial_model)
-        self.name = "NPFedAvgParallel"
+        self.parallel = parallel
         self.logger = get_obj_logger(self)
 
     @fox.algo
@@ -31,21 +31,14 @@ class NPFedAvgParallel:
         current_model = self._initial_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
-            score = self._do_eval(current_model)
-            self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         return current_model
-
-    def _do_eval(self, model):
-        results = fox.clients.evaluate(model)
-        total = 0.0
-        for n, v in results:
-            self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
-            total += v
-        return total / len(results)
 
     def _do_one_round(self, r, current_model):
         total = 0
-        results = fox.clients(timeout=4, blocking=False, target="client").train(r, current_model)
+        results = fox.clients(timeout=4, blocking=False, target="client", parallel=self.parallel).train(
+            r, current_model
+        )
+
         for n, v in results:
             # the value 'v' could be an exception!
             if isinstance(v, Exception):
