@@ -110,7 +110,23 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
      - ❌
      - ❌
 
-Implementation Notes:
+Note on Client-side Horizontal Vulnerabilities:
+---------------------
+
+In this example, we utilize HE to protect histograms against a potentially malicious server. Client-side vulnerabilities are not considered.
+
+For client-side, a recent research [TimberStrike](https://arxiv.org/pdf/2506.07605) highlights privacy vulnerabilities in federated tree-based systems. The attack exploits split values and decision paths to reconstruct training data, achieving reconstruction accuracies around 80% on certain benchmark datasets.
+
+The vulnerability affects both collaboration modes:
+- **Tree-based collaboration**: Since local trees are shared directly, they allow for **local reconstruction** of specific client's private data.
+- **Histogram-based collaboration**: As data is aggregated, the resulting global histogram still leaks enough information for **global reconstruction** of the overall underlying data distribution.
+
+One potential solution as proposed in this work is that we can move the split finding phase to the server, such that clients will not have access to the histograms. This indeed will handle the client-side leakage. Unfortunately, we note that this solution is not compatible with existing server-end protection schemes of HE because the computations needed (e.g. division / argmax) are beyond the capability of standard HE. Therefore, implementing this would only "move" the vulnerability to the server-side rather than "address" it. Even worse, in this solution where the server performs split finding, the server would have access to individual histograms, enabling **local reconstruction** for each client's data at a higher accuracy than tree-based collaboration as shown in the paper.
+
+Future work combining HE with Confidential Computing (CC) could potentially address the issue effectively.
+
+
+Note on Implementation:
 ---------------------
 
 - **Horizontal mode**:
