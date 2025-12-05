@@ -120,7 +120,9 @@ class DeviceManagerConfig:
             raise ValueError("min_hole_to_fill needs to be smaller than or equal to device_selection_size")
         self.device_reuse = device_reuse
         if device_sampling_strategy not in ("balanced", "random"):
-            raise ValueError(f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'")
+            raise ValueError(
+                f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'"
+            )
         self.device_sampling_strategy = device_sampling_strategy
 
 
