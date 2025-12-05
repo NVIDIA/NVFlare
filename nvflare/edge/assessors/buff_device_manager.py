@@ -52,7 +52,9 @@ class BuffDeviceManager(DeviceManager):
         check_positive_int("min_hole_to_fill", min_hole_to_fill)
         check_positive_int("initial_min_client_num", initial_min_client_num)
         if device_sampling_strategy not in ("balanced", "random"):
-            raise ValueError(f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'")
+            raise ValueError(
+                f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'"
+            )
         self.device_selection_size = device_selection_size
         self.initial_min_client_num = initial_min_client_num
         self.min_hole_to_fill = min_hole_to_fill
