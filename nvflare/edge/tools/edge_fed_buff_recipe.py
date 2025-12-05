@@ -84,6 +84,9 @@ class DeviceManagerConfig:
     Attributes:
         device_selection_size: Number of devices to select for each training round.
             Default: 100
+        initial_min_client_num: Minimum number of clients to have at the beginning.
+            This can be useful for initial model dispatch.
+            Default: 1
         min_hole_to_fill: Minimum number of model updates to wait for before
             sampling the next batch of devices and dispatching the current global model.
             - If set to 1, the server immediately dispatch the current global model to a sampled device.
@@ -95,20 +98,32 @@ class DeviceManagerConfig:
             if False, devices will be selected only once, which could be realistic for real-world scenarios where the
             device pool is huge while participation is random.
             Default: True (always reuse / include the existing devices for further learning)
+        device_sampling_strategy: Strategy for sampling devices when filling selection.
+            - "balanced": try to balance the usage of devices across clients.
+            - "random": randomly select devices from the available pool.
+            Default: "balanced"
     """
 
     def __init__(
         self,
         device_selection_size: int = 100,
+        initial_min_client_num: int = 1,
         min_hole_to_fill: int = 1,
         device_reuse: bool = True,
+        device_sampling_strategy: str = "balanced",
     ):
         self.device_selection_size = device_selection_size
+        self.initial_min_client_num = initial_min_client_num
         self.min_hole_to_fill = min_hole_to_fill
         # check if min_hole_to_fill is smaller than device_selection_size
         if min_hole_to_fill > device_selection_size:
             raise ValueError("min_hole_to_fill needs to be smaller than or equal to device_selection_size")
         self.device_reuse = device_reuse
+        if device_sampling_strategy not in ("balanced", "random"):
+            raise ValueError(
+                f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'"
+            )
+        self.device_sampling_strategy = device_sampling_strategy
 
 
 class SimulationConfig:
@@ -310,8 +325,10 @@ class EdgeFedBuffRecipe(Recipe):
 
         device_manager = BuffDeviceManager(
             device_selection_size=self.device_manager_config.device_selection_size,
+            initial_min_client_num=self.device_manager_config.initial_min_client_num,
             min_hole_to_fill=self.device_manager_config.min_hole_to_fill,
             device_reuse=self.device_manager_config.device_reuse,
+            device_sampling_strategy=self.device_manager_config.device_sampling_strategy,
         )
         device_manager_id = job.to_server(device_manager, id="device_manager")
 

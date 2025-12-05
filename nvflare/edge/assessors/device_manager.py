@@ -103,14 +103,14 @@ class DeviceManager(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def has_enough_devices(self, fl_ctx: FLContext) -> bool:
-        """Check if there are enough devices available to start task distribution.
+    def has_enough_devices_and_clients(self, fl_ctx: FLContext) -> bool:
+        """Check if there are enough devices and clients available to start task distribution.
 
         Args:
             fl_ctx: FLContext object
 
         Returns:
-            bool: True if there are enough devices to start task distribution, False otherwise
+            bool: True if there are enough devices and clients to start task distribution, False otherwise
         """
         pass
 

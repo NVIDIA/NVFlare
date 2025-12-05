@@ -189,7 +189,7 @@ class ModelUpdateAssessor(Assessor):
         if report.available_devices:
             self.device_manager.update_available_devices(report.available_devices, fl_ctx)
             # Reset wait timer if we now have enough devices
-            if self.device_wait_start_time is not None and self.device_manager.has_enough_devices(fl_ctx):
+            if self.device_wait_start_time is not None and self.device_manager.has_enough_devices_and_clients(fl_ctx):
                 self.device_wait_start_time = None
                 self.log_info(fl_ctx, "Sufficient devices now available, resetting wait timer")
 
@@ -235,7 +235,7 @@ class ModelUpdateAssessor(Assessor):
         # Handle device selection
         if self.device_manager.should_fill_selection(fl_ctx):
             # check if we have enough devices to fill selection
-            if self.device_manager.has_enough_devices(fl_ctx):
+            if self.device_manager.has_enough_devices_and_clients(fl_ctx):
                 if self.model_manager.current_model_version == 0:
                     self.log_info(fl_ctx, "Generate initial model and fill selection")
                     self.model_manager.generate_new_model(fl_ctx)
