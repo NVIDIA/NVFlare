@@ -50,11 +50,11 @@ class BaseFedJob(UnifiedBaseFedJob):
             This event-driven component evaluates and tracks model performance across training rounds,
             handling workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
             If not provided, an IntimeModelSelector will be configured based on key_metric.
-        convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
+        convert_to_fed_event: (ConvertToFedEvent, optional): A component to convert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
-        analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
+        analytics_receiver (AnalyticsReceiver, optional): Receive analytics.
             If not provided, a TBAnalyticsReceiver will be configured.
-        model_persistor (optional, ModelPersistor): how to persistor the model.
+        model_persistor (optional, ModelPersistor): how to persist the model.
     """
 
     def __init__(

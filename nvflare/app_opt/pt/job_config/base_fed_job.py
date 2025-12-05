@@ -51,11 +51,11 @@ class BaseFedJob(UnifiedBaseFedJob):
             This event-driven component evaluates and tracks model performance across training rounds,
             handling workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
             If not provided, an IntimeModelSelector will be configured based on key_metric.
-        convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to covert certain events to fed events.
+        convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to convert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
         analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
             If not provided, a TBAnalyticsReceiver will be configured.
-        model_persistor (ModelPersistor | None, optional): how to persistor the model.
+        model_persistor (ModelPersistor | None, optional): how to persist the model.
         model_locator (ModelLocator | None, optional): how to locate the model.
     """
 
@@ -76,9 +76,6 @@ class BaseFedJob(UnifiedBaseFedJob):
         # Add default TBAnalyticsReceiver if not provided (PyTorch-specific)
         if analytics_receiver is None:
             analytics_receiver = TBAnalyticsReceiver()
-
-        # Store PyTorch-specific model_locator
-        self.model_locator = model_locator
 
         # Call the unified BaseFedJob
         super().__init__(
