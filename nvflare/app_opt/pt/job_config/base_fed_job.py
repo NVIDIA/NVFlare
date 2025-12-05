@@ -24,7 +24,6 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
-from nvflare.job_config.script_runner import FrameworkType
 
 
 class BaseFedJob(UnifiedBaseFedJob):
@@ -81,9 +80,8 @@ class BaseFedJob(UnifiedBaseFedJob):
         # Store PyTorch-specific model_locator
         self.model_locator = model_locator
 
-        # Call the unified BaseFedJob with PyTorch-specific settings
+        # Call the unified BaseFedJob
         super().__init__(
-            initial_model=initial_model,
             name=name,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
@@ -92,12 +90,14 @@ class BaseFedJob(UnifiedBaseFedJob):
             model_selector=model_selector,
             convert_to_fed_event=convert_to_fed_event,
             analytics_receiver=analytics_receiver,
-            model_persistor=model_persistor,
-            framework=FrameworkType.PYTORCH,
         )
 
         # PyTorch-specific model setup
         if initial_model is not None:
+            if not isinstance(initial_model, nn.Module):
+                raise TypeError(
+                    f"initial_model must be an instance of nn.Module, but got {type(initial_model).__name__}"
+                )
             self._setup_pytorch_model(initial_model, model_persistor, model_locator)
 
     def _setup_pytorch_model(

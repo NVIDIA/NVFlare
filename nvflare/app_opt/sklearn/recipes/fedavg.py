@@ -107,10 +107,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         persistor = JoblibModelParamPersistor(initial_params=model_params or {})
 
         # Call the unified FedAvgRecipe with sklearn-specific settings
-        # Map model_params to initial_params for the unified API
         super().__init__(
             name=name,
-            initial_params=model_params,  # sklearn uses initial_params instead of initial_model
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,

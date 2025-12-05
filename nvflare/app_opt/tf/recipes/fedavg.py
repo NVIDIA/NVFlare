@@ -115,3 +115,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
         )
+
+    def _setup_model_and_persistor(self, job) -> str:
+        """Override to handle TensorFlow-specific model setup."""
+        if self.initial_model is not None:
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            tf_model = TFModel(model=self.initial_model, persistor=self.model_persistor)
+            job.comp_ids["persistor_id"] = job.to_server(tf_model)
+            return job.comp_ids.get("persistor_id", "")
+        return ""

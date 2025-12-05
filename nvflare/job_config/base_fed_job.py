@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.fl_component import FLComponent
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.api import FedJob, validate_object_for_job
-from nvflare.job_config.script_runner import FrameworkType
 
 
 class BaseFedJob(FedJob):
@@ -37,8 +35,6 @@ class BaseFedJob(FedJob):
 
     def __init__(
         self,
-        initial_model: Any = None,
-        initial_params: Optional[Dict] = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
@@ -47,22 +43,15 @@ class BaseFedJob(FedJob):
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        model_persistor: Optional[ModelPersistor] = None,
-        framework: FrameworkType = FrameworkType.PYTORCH,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 
         Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
+        Framework-specific model setup should be handled by child classes or calling code (recipes).
 
         User must add controllers and executors.
 
         Args:
-            initial_model: Initial model object. Can be:
-                - nn.Module for PyTorch
-                - tf.keras.Model for TensorFlow
-                - None if using initial_params for sklearn
-            initial_params: Initial model parameters (dict). Used for sklearn.
-                If provided, initial_model should be None.
             name: Name of the job. Defaults to "fed_job".
             min_clients: The minimum number of clients for the job. Defaults to 1.
             mandatory_clients: Mandatory clients to run the job. Default None.
@@ -84,10 +73,6 @@ class BaseFedJob(FedJob):
                 If not provided, a ConvertToFedEvent object will be created.
             analytics_receiver: Receive analytics. If not provided, framework-specific
                 child classes may provide defaults (e.g., TBAnalyticsReceiver for PT/TF).
-            model_persistor: How to persist the model. Stored for child classes to use.
-            framework: The framework type (PYTORCH, TENSORFLOW, or RAW for sklearn).
-                Defaults to PYTORCH. Note: Framework-specific model setup should be handled by
-                child classes or calling code.
         """
         super().__init__(
             name=name,
@@ -95,14 +80,7 @@ class BaseFedJob(FedJob):
             mandatory_clients=mandatory_clients,
         )
 
-        self.initial_model = initial_model
-        self.initial_params = initial_params
-        self.framework = framework
         self.comp_ids = {}
-
-        # Validate that only one of initial_model or initial_params is provided
-        if initial_model is not None and initial_params is not None:
-            raise ValueError("Cannot provide both initial_model and initial_params. Choose one based on framework.")
 
         # Validation JSON generator
         if validation_json_generator:
@@ -137,8 +115,7 @@ class BaseFedJob(FedJob):
             )
 
         # Framework-specific model setup should be handled by child classes
-        # Store these for child classes to use
-        self.model_persistor = model_persistor
+        # (they receive parameters directly, no need to store them here)
 
     def set_up_client(self, target: str):
         """Setup client components."""

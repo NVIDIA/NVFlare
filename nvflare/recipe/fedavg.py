@@ -249,26 +249,14 @@ class FedAvgRecipe(Recipe):
             analytics_receiver = TBAnalyticsReceiver()
 
         job = BaseFedJob(
-            initial_model=self.initial_model,
-            initial_params=self.initial_params,
             name=self.name,
             min_clients=self.min_clients,
-            model_persistor=self.model_persistor,
-            framework=self.framework,
             analytics_receiver=analytics_receiver,
         )
 
         # Setup framework-specific model components and persistor
-        persistor_id = ""
-        if self.framework == FrameworkType.RAW:
-            # Add sklearn-specific persistor
-            persistor_id = job.to_server(self.custom_persistor, id="persistor")
-        elif self.initial_model is not None:
-            if self.framework == FrameworkType.PYTORCH:
-                self._setup_pytorch_model(job, self.initial_model, self.model_persistor, model_locator=None)
-            elif self.framework == FrameworkType.TENSORFLOW:
-                self._setup_tensorflow_model(job, self.initial_model, self.model_persistor)
-            persistor_id = job.comp_ids.get("persistor_id", "")
+        # Child classes (PT/TF wrappers) override this method for framework-specific logic
+        persistor_id = self._setup_model_and_persistor(job)
 
         # Setup aggregator
         if self.aggregator is None:
@@ -323,18 +311,23 @@ class FedAvgRecipe(Recipe):
 
         Recipe.__init__(self, job)
 
-    def _setup_pytorch_model(
-        self, job: BaseFedJob, model: Any, persistor: Optional[ModelPersistor], model_locator: Optional[Any] = None
-    ):
-        """Setup PyTorch model with persistor and locator."""
-        from nvflare.app_opt.pt.job_config.model import PTModel
+    def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
+        """Setup framework-specific model components and persistor.
 
-        pt_model = PTModel(model=model, persistor=persistor, locator=model_locator)
-        job.comp_ids.update(job.to_server(pt_model))
+        Returns:
+            str: The persistor_id to be used by the controller.
 
-    def _setup_tensorflow_model(self, job: BaseFedJob, model: Any, persistor: Optional[ModelPersistor]):
-        """Setup TensorFlow model with persistor."""
-        from nvflare.app_opt.tf.job_config.model import TFModel
-
-        tf_model = TFModel(model=model, persistor=persistor)
-        job.comp_ids["persistor_id"] = job.to_server(tf_model)
+        Note:
+            - RAW framework (sklearn): Handled in base implementation
+            - PT/TF frameworks: Must be overridden by child classes
+        """
+        if self.framework == FrameworkType.RAW:
+            # Sklearn: Add custom persistor
+            return job.to_server(self.custom_persistor, id="persistor")
+        elif self.initial_model is not None:
+            # PT/TF: Should be overridden by child classes
+            raise NotImplementedError(
+                f"Model setup for framework {self.framework} must be implemented by child class. "
+                f"Use framework-specific wrappers (e.g., PT FedAvgRecipe, TF FedAvgRecipe)."
+            )
+        return ""

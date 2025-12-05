@@ -120,7 +120,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
         )
 
-    def _setup_pytorch_model(self, job, model, persistor, model_locator=None):
-        """Override to use PyTorch-specific model_locator."""
-        # Use the model_locator stored during init
-        super()._setup_pytorch_model(job, model, persistor, model_locator=self._pt_model_locator)
+    def _setup_model_and_persistor(self, job) -> str:
+        """Override to handle PyTorch-specific model setup."""
+        if self.initial_model is not None:
+            from nvflare.app_opt.pt.job_config.model import PTModel
+
+            pt_model = PTModel(model=self.initial_model, persistor=self.model_persistor, locator=self._pt_model_locator)
+            job.comp_ids.update(job.to_server(pt_model))
+            return job.comp_ids.get("persistor_id", "")
+        return ""
