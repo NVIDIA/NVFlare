@@ -85,7 +85,16 @@ class ResultWaiter(threading.Event):
         super().__init__()
         self.sites = sites
         self.results = ResultQueue(len(sites))
+        self.in_sending_count = 0
         self.lock = threading.Lock()
+
+    def inc_sending(self):
+        with self.lock:
+            self.in_sending_count += 1
+
+    def dec_sending(self):
+        with self.lock:
+            self.in_sending_count -= 1
 
     @staticmethod
     def _get_site_name(target_name: str):
@@ -139,7 +148,13 @@ class GroupCallContext:
         self.cb_kwargs = cb_kwargs
         self.context = context
         self.waiter = waiter
+        self.send_complete_cb = None
+        self.cb_kwargs = {}
         self.logger = get_obj_logger(self)
+
+    def set_send_complete_cb(self, cb, **cb_kwargs):
+        self.send_complete_cb = cb
+        self.cb_kwargs = cb_kwargs
 
     def set_result(self, result):
         """This is called by the backend to set the result received from the remote app.

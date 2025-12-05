@@ -50,6 +50,7 @@ class ProxyList(list):
         optional: bool = False,
         secure: bool = False,
         target=None,
+        parallel=0,
         process_resp_cb=None,
         **cb_kwargs,
     ):
@@ -62,6 +63,7 @@ class ProxyList(list):
             optional:
             secure:
             target:
+            parallel:
             process_resp_cb:
             **cb_kwargs:
 
@@ -78,6 +80,7 @@ class ProxyList(list):
                 optional=optional,
                 secure=secure,
                 target=target,
+                parallel=parallel,
             ),
             process_resp_cb=process_resp_cb,
             **cb_kwargs,

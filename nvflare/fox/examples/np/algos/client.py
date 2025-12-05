@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import random
+import time
 
 from nvflare.fox import fox
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -19,8 +20,9 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 class NPTrainer:
 
-    def __init__(self, delta: float):
+    def __init__(self, delta: float, delay=0):
         self.delta = delta
+        self.delay = delay
         self.logger = get_obj_logger(self)
 
     @fox.init
@@ -39,11 +41,11 @@ class NPTrainer:
             self.logger.debug("training aborted")
             return 0
         self.logger.info(f"[{fox.call_info}] training round {current_round=} {weights=}")
-        result = fox.server(expect_result=True).fire_event("metrics", {"round": current_round, "y": 10})
-        self.logger.info(f"[{fox.call_info}] got event result: {result}")
+        # result = fox.server(expect_result=True).fire_event("metrics", {"round": current_round, "y": 10})
+        # self.logger.info(f"[{fox.call_info}] got event result: {result}")
 
-        # force timeout to test timeout handling
-        # time.sleep(10)
+        if self.delay > 0:
+            time.sleep(self.delay)
         return weights + self.delta
 
     @fox.collab

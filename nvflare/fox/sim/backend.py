@@ -131,6 +131,8 @@ class SimBackend(Backend):
         try:
             target_name = gcc.target_name
             result = self.call_target(target_name, gcc.call_opt, func_name, *args, **kwargs)
+            if gcc.send_complete_cb:
+                gcc.send_complete_cb(**gcc.cb_kwargs)
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)

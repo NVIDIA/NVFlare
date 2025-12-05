@@ -21,6 +21,7 @@ class CallOption:
         secure: bool = False,
         optional: bool = False,
         target=None,
+        parallel=0,
     ):
         """CallOption defines behavior of a collab call.
 
@@ -31,6 +32,7 @@ class CallOption:
             secure: whether to use P2P secure messaging.
             optional: whether the call is optional.
             target: name of the collab object to be called.
+            parallel: number of parallel outgoing messages.
         """
         self.expect_result = expect_result
         self.blocking = blocking
@@ -38,9 +40,14 @@ class CallOption:
         self.secure = secure
         self.optional = optional
         self.target = target
+        self.parallel = parallel
+
+        if not self.expect_result:
+            # fire and forget - no need to control parallel
+            self.parallel = 0
 
     def __str__(self):
         return (
             f"expect_result={self.expect_result} blocking={self.blocking} timeout={self.timeout} "
-            f"secure={self.secure} optional={self.optional} target={self.target}"
+            f"secure={self.secure} optional={self.optional} target={self.target} parallel={self.parallel}"
         )

@@ -36,6 +36,19 @@ class FlareBackend(Backend):
         self.thread_executor = thread_executor
 
     def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
+        return self._call_target(
+            target_name=target_name,
+            call_opt=call_opt,
+            send_complete_cb=None,
+            cb_kwargs={},
+            func_name=func_name,
+            *args,
+            **kwargs,
+        )
+
+    def _call_target(
+        self, target_name: str, call_opt: CallOption, send_complete_cb, cb_kwargs, func_name: str, *args, **kwargs
+    ):
         ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
         set_call_context(ctx)
 
@@ -61,6 +74,8 @@ class FlareBackend(Backend):
                 secure=call_opt.secure,
                 optional=call_opt.optional,
                 abort_signal=self.abort_signal,
+                send_complete_cb=send_complete_cb,
+                **cb_kwargs,
             )
             assert isinstance(reply, Message)
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
@@ -97,7 +112,15 @@ class FlareBackend(Backend):
 
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
         try:
-            result = self.call_target(gcc.target_name, gcc.call_opt, func_name, *args, **kwargs)
+            result = self._call_target(
+                target_name=gcc.target_name,
+                call_opt=gcc.call_opt,
+                func_name=func_name,
+                send_complete_cb=gcc.send_complete_cb,
+                cb_kwargs=gcc.cb_kwargs,
+                *args,
+                **kwargs,
+            )
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
