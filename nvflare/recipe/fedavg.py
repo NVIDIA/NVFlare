@@ -278,7 +278,6 @@ class FedAvgRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            train_task_name="train",
         )
         job.to_server(controller)
 
