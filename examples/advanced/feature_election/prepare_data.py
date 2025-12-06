@@ -300,6 +300,15 @@ def prepare_data_for_all_clients(
     }
 
     import json
+import logging
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
     with open(output_path / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
