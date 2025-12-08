@@ -25,10 +25,6 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class FedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.
 
-    This is a backward-compatible wrapper around the unified FedAvgRecipe.
-    For new code, consider using nvflare.recipe.FedAvgRecipe directly with
-    framework=FrameworkType.TENSORFLOW.
-
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
@@ -115,6 +111,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
         )
+
+    def _get_analytics_receiver(self):
+        """Override to provide TensorFlow-specific default TBAnalyticsReceiver."""
+        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+        return TBAnalyticsReceiver()
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle TensorFlow-specific model setup."""

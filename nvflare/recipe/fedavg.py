@@ -34,7 +34,6 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     initial_model: Any
-    initial_params: Optional[dict]
     min_clients: int
     num_rounds: int
     train_script: str
@@ -47,7 +46,6 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor]
-    custom_persistor: Optional[ModelPersistor]
 
 
 class FedAvgRecipe(Recipe):
@@ -69,9 +67,9 @@ class FedAvgRecipe(Recipe):
         initial_model: Initial model to start federated training with. Can be:
             - nn.Module for PyTorch
             - tf.keras.Model for TensorFlow
-            - None for sklearn (use initial_params instead)
-        initial_params: Initial model parameters (dict). Used for sklearn.
-            If provided, initial_model should be None.
+            - dict for sklearn/RAW frameworks (model parameters)
+            - ModelPersistor for any framework (custom persistence logic)
+            - None (no initial model)
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -87,78 +85,15 @@ class FedAvgRecipe(Recipe):
         framework: The framework type. One of:
             - FrameworkType.PYTORCH (default)
             - FrameworkType.TENSORFLOW
-            - FrameworkType.RAW (for sklearn)
+            - FrameworkType.RAW (for custom frameworks, e.g., sklearn, XGBoost)
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
             are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-        model_persistor: Custom model persistor. If None, framework-specific defaults will be used.
-        custom_persistor: Custom persistor for RAW framework (sklearn). Required when framework=RAW.
-            This allows framework-specific wrappers to provide their own persistor without the unified
-            recipe depending on framework-specific components.
-
-    Example (PyTorch):
-        ```python
-        import torch.nn as nn
-        from nvflare.recipe.fedavg import FedAvgRecipe
-        from nvflare.job_config.script_runner import FrameworkType
-
-        model = nn.Sequential(nn.Linear(10, 5), nn.ReLU(), nn.Linear(5, 2))
-
-        recipe = FedAvgRecipe(
-            name="pt_fedavg",
-            initial_model=model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="train.py",
-            train_args="--epochs 5",
-            framework=FrameworkType.PYTORCH,
-        )
-        ```
-
-    Example (TensorFlow):
-        ```python
-        import tensorflow as tf
-        from nvflare.recipe.fedavg import FedAvgRecipe
-        from nvflare.job_config.script_runner import FrameworkType
-
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(5, activation='relu', input_shape=(10,)),
-            tf.keras.layers.Dense(2)
-        ])
-
-        recipe = FedAvgRecipe(
-            name="tf_fedavg",
-            initial_model=model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="train.py",
-            train_args="--epochs 5",
-            framework=FrameworkType.TENSORFLOW,
-        )
-        ```
-
-    Example (Scikit-learn):
-        ```python
-        from nvflare.recipe.fedavg import FedAvgRecipe
-        from nvflare.job_config.script_runner import FrameworkType
-        from nvflare.client.config import ExchangeFormat
-
-        recipe = FedAvgRecipe(
-            name="sklearn_fedavg",
-            initial_params={
-                "n_classes": 2,
-                "learning_rate": "constant",
-                "eta0": 1e-4,
-            },
-            min_clients=5,
-            num_rounds=50,
-            train_script="train.py",
-            train_args="--data_path /tmp/data.csv",
-            framework=FrameworkType.RAW,
-            server_expected_format=ExchangeFormat.RAW,
-        )
-        ```
+        model_persistor: Custom model persistor for any framework.
+            - For PyTorch/TensorFlow: Optional (defaults will be used if not provided)
+            - For RAW frameworks: Can be provided here OR passed as initial_model
+            If None, framework-specific defaults will be used (PT/TF only).
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -174,7 +109,6 @@ class FedAvgRecipe(Recipe):
         *,
         name: str = "fedavg",
         initial_model: Any = None,
-        initial_params: Optional[dict] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -187,13 +121,11 @@ class FedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        custom_persistor: Optional[ModelPersistor] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
             name=name,
             initial_model=initial_model,
-            initial_params=initial_params,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -206,12 +138,10 @@ class FedAvgRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            custom_persistor=custom_persistor,
         )
 
         self.name = v.name
         self.initial_model = v.initial_model
-        self.initial_params = v.initial_params
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -224,34 +154,21 @@ class FedAvgRecipe(Recipe):
         self.server_expected_format = v.server_expected_format
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
-        self.custom_persistor = v.custom_persistor
 
-        # Validate that only one of initial_model or initial_params is provided
-        if self.initial_model is not None and self.initial_params is not None:
-            raise ValueError(
-                "Cannot provide both initial_model and initial_params. "
-                "Use initial_model for PyTorch/TensorFlow, initial_params for sklearn."
-            )
-
-        # Validate RAW framework has custom_persistor
-        if self.framework == FrameworkType.RAW and self.custom_persistor is None:
-            raise ValueError(
-                "custom_persistor is required when framework=FrameworkType.RAW. "
-                "Use framework-specific wrappers (e.g., SklearnFedAvgRecipe) or provide a custom persistor."
-            )
+        # Validate RAW framework requirements
+        if self.framework == FrameworkType.RAW:
+            if self.initial_model is None and self.model_persistor is None:
+                raise ValueError(
+                    "RAW framework requires either initial_model (dict or ModelPersistor) or model_persistor. "
+                    "Consider using framework-specific wrappers (e.g., SklearnFedAvgRecipe) for convenience."
+                )
 
         # Create BaseFedJob - all frameworks use it for consistency
-        # Provide default TBAnalyticsReceiver for PT/TF only
-        analytics_receiver = None
-        if self.framework in (FrameworkType.PYTORCH, FrameworkType.TENSORFLOW):
-            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-            analytics_receiver = TBAnalyticsReceiver()
-
+        # Child classes (PT/TF wrappers) can override _get_analytics_receiver() for framework-specific defaults
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
-            analytics_receiver=analytics_receiver,
+            analytics_receiver=self._get_analytics_receiver(),
         )
 
         # Setup framework-specific model components and persistor
@@ -310,23 +227,21 @@ class FedAvgRecipe(Recipe):
 
         Recipe.__init__(self, job)
 
+    def _get_analytics_receiver(self):
+        """Get the analytics receiver for this recipe.
+
+        Returns:
+            AnalyticsReceiver or None: The analytics receiver to use, or None for no analytics.
+
+        Note:
+            Child classes (PT/TF wrappers) can override this to provide framework-specific defaults.
+        """
+        return None
+
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
         """Setup framework-specific model components and persistor.
 
         Returns:
             str: The persistor_id to be used by the controller.
-
-        Note:
-            - RAW framework (sklearn): Handled in base implementation
-            - PT/TF frameworks: Must be overridden by child classes
         """
-        if self.framework == FrameworkType.RAW:
-            # Sklearn: Add custom persistor
-            return job.to_server(self.custom_persistor, id="persistor")
-        elif self.initial_model is not None:
-            # PT/TF: Should be overridden by child classes
-            raise NotImplementedError(
-                f"Model setup for framework {self.framework} must be implemented by child class. "
-                f"Use framework-specific wrappers (e.g., PT FedAvgRecipe, TF FedAvgRecipe)."
-            )
-        return ""
+        return job.to_server(self.model_persistor, id="persistor")

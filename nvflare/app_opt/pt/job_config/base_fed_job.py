@@ -30,8 +30,6 @@ class BaseFedJob(UnifiedBaseFedJob):
     """PyTorch BaseFedJob.
 
     This is a backward-compatible wrapper around the unified BaseFedJob.
-    For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
-    framework=FrameworkType.PYTORCH.
 
     Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
 

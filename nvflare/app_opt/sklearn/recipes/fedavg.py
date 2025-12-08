@@ -25,10 +25,6 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.
 
-    This is a backward-compatible wrapper around the unified FedAvgRecipe.
-    For new code, consider using nvflare.recipe.FedAvgRecipe directly with
-    framework=FrameworkType.RAW.
-
     This recipe sets up a complete federated learning workflow with scatter-and-gather
     communication pattern specifically designed for scikit-learn models.
 
@@ -120,5 +116,5 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             framework=FrameworkType.RAW,  # sklearn uses RAW framework
             server_expected_format=ExchangeFormat.RAW,  # sklearn uses RAW exchange format
             params_transfer_type=TransferType.FULL,
-            custom_persistor=persistor,  # Pass sklearn-specific persistor
+            model_persistor=persistor,  # Pass sklearn-specific persistor
         )
