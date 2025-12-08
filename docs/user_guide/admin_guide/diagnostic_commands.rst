@@ -82,15 +82,6 @@ To enable statistics pool saving for a job, add the following configuration to y
      }
    }
 
-.. code-block:: json
-
-   # Save specific pools plus all others
-   {
-     "stats_pool_config": {
-       "save_pools": ["my_custom_pool", "*"]
-     }
-   }
-
 Output Files
 ------------
 
@@ -258,83 +249,6 @@ Different jobs may create custom pools based on their workflows. Use the ``list_
    
    > list_pools server.job_abc-123
 
-Best Practices
---------------
-
-1. **Selective Saving**: Save only the pools you need for analysis to minimize storage and I/O overhead:
-
-   .. code-block:: json
-
-      {"save_pools": ["request_processing", "request_response"]}
-
-2. **Use Wildcard for Comprehensive Analysis**: When troubleshooting or doing exploratory analysis:
-
-   .. code-block:: json
-
-      {"save_pools": ["*"]}
-
-3. **Archive Historical Data**: Keep statistics from multiple job runs for trend analysis:
-
-   .. code-block:: shell
-
-      mkdir -p historical_stats/job_run_001
-      cp stats_pool_summary.json historical_stats/job_run_001/
-      cp stats_pool_records.csv historical_stats/job_run_001/
-
-4. **Monitor Storage**: Raw records can grow large for long-running jobs. Monitor disk usage and consider:
-
-   * Saving only summary (modify configuration to exclude certain pools from records)
-   * Periodic cleanup of old statistics
-   * Compression of archived statistics
-
-5. **Automate Analysis**: Create scripts to automatically process and report on statistics:
-
-   .. code-block:: python
-
-      # analyze_job_stats.py
-      def analyze_job_performance(summary_file):
-          with open(summary_file) as f:
-              data = json.load(f)
-          
-          # Extract key metrics
-          processing_times = data.get('request_processing', {})
-          # ... perform analysis
-          return report
-
-6. **Compare Across Jobs**: Use consistent pool names across jobs to enable comparison:
-
-   .. code-block:: python
-
-      # compare_jobs.py
-      import json
-      
-      def compare_job_stats(job1_summary, job2_summary):
-          with open(job1_summary) as f1, open(job2_summary) as f2:
-              stats1 = json.load(f1)
-              stats2 = json.load(f2)
-          
-          # Compare metrics
-          for pool_name in stats1.keys():
-              if pool_name in stats2:
-                  # Compare statistics
-                  print(f"Pool: {pool_name}")
-                  # ... comparison logic
-
-Performance Considerations
---------------------------
-
-Enabling statistics pool saving has minimal impact on job performance:
-
-* **Memory**: Statistics are collected in memory regardless of save configuration
-* **Disk I/O**: Writing occurs at job completion, not during execution
-* **Network**: No additional network traffic
-* **Processing**: Minimal CPU overhead for serialization
-
-However, for very long-running jobs with high message volumes:
-
-* Raw records files can become large (several MB to GB)
-* Consider disk space requirements before enabling wildcard saving
-* Use selective pool saving for production deployments
 
 Integration with Monitoring
 ----------------------------
