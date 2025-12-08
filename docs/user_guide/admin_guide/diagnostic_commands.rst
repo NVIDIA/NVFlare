@@ -225,6 +225,72 @@ Navigate to the downloaded job workspace and examine:
    print(f"Average: {timing_data['value'].mean()}")
    print(f"95th percentile: {timing_data['value'].quantile(0.95)}")
 
+Using the Stats Viewer Tool
+----------------------------
+
+NVFLARE provides a convenient command-line tool called ``stats_viewer`` for interactively exploring statistics files. This tool allows you to view and analyze the ``stats_pool_summary.json`` files without writing custom scripts.
+
+**Starting the Stats Viewer:**
+
+.. code-block:: shell
+
+   python -m nvflare.fuel.f3.qat.stats_viewer -f stats_pool_summary.json
+
+This launches an interactive shell where you can explore the statistics data.
+
+**Available Commands:**
+
+The stats viewer provides the following commands:
+
+* ``list_pools``: Display all available statistics pools with their types and descriptions
+* ``show_pool <pool_name> [mode]``: Display detailed statistics for a specific pool
+  
+  * ``pool_name``: Name of the pool to display
+  * ``mode`` (optional): Histogram display mode - one of: ``count``, ``total``, ``min``, ``max``, ``avg``
+
+* ``help`` or ``?``: List available commands
+* ``bye``: Exit the stats viewer
+
+**Example Session:**
+
+.. code-block:: shell
+
+   $ python -m nvflare.fuel.f3.qat.stats_viewer -f stats_pool_summary.json
+   Type help or ? to list commands.
+   
+   > list_pools
+   Name                  Type    Description
+   -------------------- ------- ------------------------------
+   request_processing   hist    Request processing time
+   request_response     hist    Request-response round trip
+   msg_sizes            hist    Message size distribution
+   
+   > show_pool request_processing avg
+   Range         Count    Average
+   ------------ ------- -----------
+   0-10ms           150     5.2ms
+   10-100ms          80    45.3ms
+   100-1000ms        20   425.8ms
+   
+   > show_pool msg_sizes count
+   Range         Count
+   ------------ -------
+   0-1KB           200
+   1KB-10KB        150
+   10KB-100KB       50
+   
+   > bye
+
+**Server-Side vs Client-Side Statistics:**
+
+The ``stats_viewer`` tool can analyze statistics from both server and client sides:
+
+* **Server-side statistics**: Available in the server's job workspace after job completion. Can be retrieved using ``download_job`` command.
+* **Client-side statistics**: Currently stored locally on each client site in their respective job workspaces.
+
+.. note::
+   Currently, client-side statistics files are not automatically sent to the server after job completion. To analyze client statistics, you need to access the ``stats_pool_summary.json`` file directly on each client site's job workspace.
+
 Common Pool Names
 -----------------
 
