@@ -32,6 +32,325 @@ NVIDIA FLARE's statistics system uses "pools" to organize different types of met
 
 Each pool has a name, type, and description. The system automatically creates pools for tracking message statistics, and applications can create custom pools for tracking domain-specific metrics.
 
+Configuring Statistics Pool Saving
+===================================
+
+By default, statistics pools are maintained in memory during job execution. However, you can configure NVFLARE to save pool statistics to disk for later analysis and record-keeping.
+
+Configuration in meta.json
+---------------------------
+
+To enable statistics pool saving for a job, add the following configuration to your job's ``meta.json`` file:
+
+.. code-block:: json
+
+   {
+     "stats_pool_config": {
+       "save_pools": [
+         "request_processing",
+         "request_response",
+         "*"
+       ]
+     }
+   }
+
+**Configuration Options:**
+
+* ``save_pools``: A list of pool names to save. Supports:
+  
+  * **Specific pool names**: e.g., ``"request_processing"``, ``"msg_sizes"``
+  * **Wildcard**: Use ``"*"`` to save all pools
+  * **Mixed**: Combine specific names and wildcards
+
+**Examples:**
+
+.. code-block:: json
+
+   # Save only specific pools
+   {
+     "stats_pool_config": {
+       "save_pools": ["request_processing", "request_response"]
+     }
+   }
+
+.. code-block:: json
+
+   # Save all pools
+   {
+     "stats_pool_config": {
+       "save_pools": ["*"]
+     }
+   }
+
+.. code-block:: json
+
+   # Save specific pools plus all others
+   {
+     "stats_pool_config": {
+       "save_pools": ["my_custom_pool", "*"]
+     }
+   }
+
+Output Files
+------------
+
+When statistics pool saving is enabled, NVFLARE generates two files for each job at the end of job execution:
+
+stats_pool_summary.json
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Location:** Job workspace directory
+
+**Content:** Contains histogram summaries and aggregated statistics for each saved pool.
+
+**Format:** JSON file with the following structure:
+
+.. code-block:: json
+
+   {
+     "pool_name": {
+       "name": "pool_name",
+       "type": "hist",
+       "description": "Pool description",
+       "marks": [0, 10, 100, 1000],
+       "bins": [
+         {"range": "0-10", "count": 150, "total": 750.5, "min": 0.1, "max": 9.9},
+         {"range": "10-100", "count": 80, "total": 4200.0, "min": 10.2, "max": 99.8},
+         {"range": "100-1000", "count": 20, "total": 12000.0, "min": 105.0, "max": 950.0}
+       ]
+     },
+     "another_pool": {
+       ...
+     }
+   }
+
+**Use Cases:**
+
+* Post-job analysis of communication patterns
+* Historical comparison across multiple job runs
+* Generating reports for system performance
+* Identifying trends over time
+
+stats_pool_records.csv
+^^^^^^^^^^^^^^^^^^^^^^^
+
+**Location:** Job workspace directory
+
+**Content:** Contains raw, timestamped recordings for each data point collected in the saved pools.
+
+**Format:** CSV file with columns that vary by pool type:
+
+For histogram pools:
+
+.. code-block:: text
+
+   timestamp,pool_name,value,additional_metadata
+   2024-01-15T10:30:45.123Z,request_processing,0.025,
+   2024-01-15T10:30:45.456Z,request_processing,0.031,
+   2024-01-15T10:30:46.789Z,request_response,0.120,
+
+For counter pools:
+
+.. code-block:: text
+
+   timestamp,pool_name,counter_name,value
+   2024-01-15T10:30:45.123Z,event_counts,task_received,1
+   2024-01-15T10:30:46.456Z,event_counts,task_completed,1
+
+**Use Cases:**
+
+* Detailed timeline analysis
+* Custom data processing and visualization
+* Integration with external analytics tools
+* Machine learning on system behavior patterns
+* Debugging specific events or anomalies
+
+Workflow Example
+----------------
+
+**Step 1: Configure Your Job**
+
+Create or edit your job's ``meta.json``:
+
+.. code-block:: json
+
+   {
+     "name": "my_federated_job",
+     "resource_spec": {},
+     "min_clients": 2,
+     "stats_pool_config": {
+       "save_pools": ["*"]
+     }
+   }
+
+**Step 2: Submit the Job**
+
+.. code-block:: shell
+
+   > submit_job my_job_folder
+
+**Step 3: Run the Job**
+
+The job executes normally, with statistics being collected in the background.
+
+**Step 4: Retrieve Statistics After Job Completion**
+
+.. code-block:: shell
+
+   > download_job job_abc-123-def
+
+**Step 5: Analyze the Output**
+
+Navigate to the downloaded job workspace and examine:
+
+.. code-block:: shell
+
+   cd downloaded_job/workspace/
+   
+   # View summary statistics
+   cat stats_pool_summary.json
+   
+   # Analyze raw records
+   cat stats_pool_records.csv
+
+**Step 6: Use Statistics for Analysis**
+
+.. code-block:: python
+
+   import json
+   import pandas as pd
+   
+   # Load summary data
+   with open('stats_pool_summary.json', 'r') as f:
+       summary = json.load(f)
+   
+   # Load raw records
+   records = pd.read_csv('stats_pool_records.csv')
+   
+   # Analyze timing patterns
+   timing_data = records[records['pool_name'] == 'request_processing']
+   print(f"Average: {timing_data['value'].mean()}")
+   print(f"95th percentile: {timing_data['value'].quantile(0.95)}")
+
+Common Pool Names
+-----------------
+
+The following pools are commonly available in NVFLARE jobs:
+
+Communication Pools
+^^^^^^^^^^^^^^^^^^^
+
+* ``request_processing``: Time spent processing requests
+* ``request_response``: End-to-end request-response times
+* ``msg_sizes``: Distribution of message sizes
+* ``msg_travel_time``: Message transmission times
+
+Job-Specific Pools
+^^^^^^^^^^^^^^^^^^
+
+Different jobs may create custom pools based on their workflows. Use the ``list_pools`` command during job execution to discover available pools:
+
+.. code-block:: shell
+
+   > cells
+   server.job_abc-123
+   site1.job_abc-123
+   
+   > list_pools server.job_abc-123
+
+Best Practices
+--------------
+
+1. **Selective Saving**: Save only the pools you need for analysis to minimize storage and I/O overhead:
+
+   .. code-block:: json
+
+      {"save_pools": ["request_processing", "request_response"]}
+
+2. **Use Wildcard for Comprehensive Analysis**: When troubleshooting or doing exploratory analysis:
+
+   .. code-block:: json
+
+      {"save_pools": ["*"]}
+
+3. **Archive Historical Data**: Keep statistics from multiple job runs for trend analysis:
+
+   .. code-block:: shell
+
+      mkdir -p historical_stats/job_run_001
+      cp stats_pool_summary.json historical_stats/job_run_001/
+      cp stats_pool_records.csv historical_stats/job_run_001/
+
+4. **Monitor Storage**: Raw records can grow large for long-running jobs. Monitor disk usage and consider:
+
+   * Saving only summary (modify configuration to exclude certain pools from records)
+   * Periodic cleanup of old statistics
+   * Compression of archived statistics
+
+5. **Automate Analysis**: Create scripts to automatically process and report on statistics:
+
+   .. code-block:: python
+
+      # analyze_job_stats.py
+      def analyze_job_performance(summary_file):
+          with open(summary_file) as f:
+              data = json.load(f)
+          
+          # Extract key metrics
+          processing_times = data.get('request_processing', {})
+          # ... perform analysis
+          return report
+
+6. **Compare Across Jobs**: Use consistent pool names across jobs to enable comparison:
+
+   .. code-block:: python
+
+      # compare_jobs.py
+      import json
+      
+      def compare_job_stats(job1_summary, job2_summary):
+          with open(job1_summary) as f1, open(job2_summary) as f2:
+              stats1 = json.load(f1)
+              stats2 = json.load(f2)
+          
+          # Compare metrics
+          for pool_name in stats1.keys():
+              if pool_name in stats2:
+                  # Compare statistics
+                  print(f"Pool: {pool_name}")
+                  # ... comparison logic
+
+Performance Considerations
+--------------------------
+
+Enabling statistics pool saving has minimal impact on job performance:
+
+* **Memory**: Statistics are collected in memory regardless of save configuration
+* **Disk I/O**: Writing occurs at job completion, not during execution
+* **Network**: No additional network traffic
+* **Processing**: Minimal CPU overhead for serialization
+
+However, for very long-running jobs with high message volumes:
+
+* Raw records files can become large (several MB to GB)
+* Consider disk space requirements before enabling wildcard saving
+* Use selective pool saving for production deployments
+
+Integration with Monitoring
+----------------------------
+
+Statistics pool data complements external monitoring systems:
+
+* **Statistics Pools**: Detailed, job-specific metrics saved with job artifacts
+* **External Monitoring** (Prometheus/Grafana): Real-time system-wide monitoring
+
+Use both approaches together:
+
+1. External monitoring for real-time alerting and dashboards
+2. Statistics pool saving for detailed post-job analysis and historical records
+
+See :ref:`monitoring` for information on setting up external monitoring.
+
 Available Commands
 ==================
 
