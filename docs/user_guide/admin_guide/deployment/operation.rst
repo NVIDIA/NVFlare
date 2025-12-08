@@ -58,6 +58,16 @@ commands shown as examples of how they may be run with a description.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
+    cells,``cells``,"Lists all active cells in the system with their FQCNs (Fully Qualified Cell Names). Use this to discover available targets for other diagnostic commands."
+    list_pools,``list_pools target``,"Lists all statistics pools on the target cell. Shows the pool name, type (hist or counter), and description for each pool."
+    show_pool,``show_pool target pool_name [mode]``,"Shows detailed statistics for a specific pool on the target cell. Optional *mode* parameter can be one of: count, percent, avg, min, max (defaults to count for histogram pools)."
+    msg_stats,``msg_stats target [mode]``,"Shows message request statistics for the target cell. Optional *mode* parameter can be one of: count, percent, avg, min, max (defaults to count). Displays statistics about message sizes and timing."
+
+.. note::
+
+   The ``cells``, ``list_pools``, ``show_pool``, and ``msg_stats`` commands are diagnostic commands that are only available 
+   when the system is configured with diagnose mode enabled. For detailed information about these commands, including usage 
+   examples, statistical modes, and troubleshooting, see :ref:`diagnostic_commands`.
 
 .. tip::
 
