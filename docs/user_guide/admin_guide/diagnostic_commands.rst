@@ -64,18 +64,20 @@ To enable statistics pool saving for a job, add the following configuration to y
 
 **Examples:**
 
+1. Save only specific pools:
+
 .. code-block:: json
 
-   # Save only specific pools
    {
      "stats_pool_config": {
        "save_pools": ["request_processing", "request_response"]
      }
    }
 
+2. Save all pools:
+
 .. code-block:: json
 
-   # Save all pools
    {
      "stats_pool_config": {
        "save_pools": ["*"]
