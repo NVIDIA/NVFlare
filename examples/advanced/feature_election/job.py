@@ -40,18 +40,7 @@ def create_feature_election_job(
     n_features: int = 100,
     n_informative: int = 20,
     n_redundant: int = 30,
-    executor = SyntheticDataExecutor(
-        fs_method=fs_method,
-        eval_metric=eval_metric,
-        num_clients=num_clients,
-        split_strategy=split_strategy,
-        n_samples=n_samples,
-        n_features=n_features,
-        n_informative=n_informative,
-        n_redundant=n_redundant,
-        n_repeated=n_repeated,
-        task_name="feature_election",
-    )
+    n_repeated: int = 30,
     export_dir: Optional[str] = None,
 ) -> FedJob:
     job = FedJob(name=job_name)
