@@ -42,6 +42,7 @@ def main():
     max_model_version = 200
     max_model_history = None
     min_hole_to_fill = 10
+
     eval_frequency = 1
     local_batch_size = 10
     local_epochs = 4
@@ -72,6 +73,8 @@ def main():
     )
     device_manager_config = DeviceManagerConfig(
         device_selection_size=device_selection_size,
+        # wait for all clients report to server before starting
+        initial_min_client_num=num_leaf_nodes,
         min_hole_to_fill=min_hole_to_fill,
         device_reuse=False,
     )
