@@ -555,10 +555,10 @@ def download_object(
         from_fqcn: the FQCN of the object owner
         ref_id: reference id of the object to be downloaded
         per_request_timeout: timeout for each request to the object owner.
-        cell: the cell to be used for communication withe object owner.
+        cell: the cell to be used for communication with the object owner.
         consumer: the Consumer object used for processing received data
         secure: use P2P private communication with the data owner
-        optional: supress log messages
+        optional: suppress log messages
         abort_signal: for signaling abort
 
     Returns: None

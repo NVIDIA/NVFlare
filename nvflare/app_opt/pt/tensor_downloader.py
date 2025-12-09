@@ -22,6 +22,8 @@ from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 
+_TWO_MB = 2 * 1024 * 1024
+
 
 class TensorDownloadable(CacheableObject):
 
@@ -33,7 +35,7 @@ class TensorDownloadable(CacheableObject):
     def get_item_count(self) -> int:
         return self.size
 
-    def produce_item(self, index: int) -> Any:
+    def produce_item(self, index: int) -> bytes:
         key = self.keys[index]
         tensor_to_send = {key: self.base_obj[key]}
         return save_tensors(tensor_to_send)
@@ -72,7 +74,7 @@ class TensorConsumer(ItemConsumer):
 def add_tensors(
     downloader: ObjectDownloader,
     tensors: dict[str, torch.Tensor],
-    max_chunk_size: int = 1,
+    max_chunk_size: int = _TWO_MB,
 ) -> str:
     """Add tensors to be downloaded to the specified downloader.
 

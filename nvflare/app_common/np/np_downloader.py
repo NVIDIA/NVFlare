@@ -21,6 +21,8 @@ from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 
+_TWO_MB = 2 * 1024 * 1024
+
 
 class ArrayDownloadable(CacheableObject):
 
@@ -32,7 +34,7 @@ class ArrayDownloadable(CacheableObject):
     def get_item_count(self) -> int:
         return self.size
 
-    def produce_item(self, index: int) -> Any:
+    def produce_item(self, index: int) -> bytes:
         key = self.keys[index]
         arrays_to_send = {key: self.base_obj[key]}
         stream = BytesIO()
@@ -82,7 +84,7 @@ class ArrayConsumer(ItemConsumer):
 def add_arrays(
     downloader: ObjectDownloader,
     arrays: dict[str, np.ndarray],
-    max_chunk_size: int = 1,
+    max_chunk_size: int = _TWO_MB,
 ) -> str:
     """Add arrays to be downloaded to the specified downloader.
 
