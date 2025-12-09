@@ -44,7 +44,7 @@ def start(args):
         environment[EnvVar.DASHBOARD_PP] = passphrase
     if args.cred:
         environment.update({EnvVar.CREDENTIAL: args.cred})
-    elif not os.path.exists(os.path.join(folder, ".db_init_done")):
+    elif EnvVar.CREDENTIAL not in environment and not os.path.exists(os.path.join(folder, ".db_init_done")):
         need_email = True
         while need_email:
             answer = input(
