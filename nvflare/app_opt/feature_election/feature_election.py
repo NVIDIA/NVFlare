@@ -269,7 +269,7 @@ class FeatureElection:
             executor.set_data(X_np, y_np, feature_names=feature_names)
 
             # Local Selection
-            selected_mask, feature_scores = executor._perform_feature_selection()
+            selected_mask, feature_scores = executor.perform_feature_selection()
             initial_score = executor.evaluate_model(X_np, y_np, X_np, y_np)
 
             # Apply mask to evaluate

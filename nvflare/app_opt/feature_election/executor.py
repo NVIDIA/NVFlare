@@ -135,7 +135,7 @@ class FeatureElectionExecutor(Executor):
         if self.X_train is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         try:
-            mask, scores = self._perform_feature_selection()
+            mask, scores = self.perform_feature_selection()
             resp = make_reply(ReturnCode.OK)
             resp["selected_features"] = mask.tolist()
             resp["feature_scores"] = scores.tolist()
@@ -198,7 +198,7 @@ class FeatureElectionExecutor(Executor):
             logger.error(f"Training failed: {e}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def _perform_feature_selection(self) -> Tuple[np.ndarray, np.ndarray]:
+    def perform_feature_selection(self) -> Tuple[np.ndarray, np.ndarray]:
         n_features = self.X_train.shape[1]
 
         scaler = StandardScaler()
