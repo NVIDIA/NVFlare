@@ -53,7 +53,7 @@ recipe = NumpyFedAvgRecipe(
 |----------|-------------|---------|
 | `--n_clients` | Number of clients | 2 |
 | `--num_rounds` | Number of training rounds | 5 |
-| `--model_mode` | Parameter transfer mode: `full` or `diff` | `full` |
+| `--update_type` | Parameter transfer mode: `full` or `diff` | `full` |
 | `--metrics_tracking` | Enable MLflow metrics streaming | False |
 | `--launch_process` | Launch client in external process | False |
 | `--export_config` | Export job config instead of running | False |
@@ -65,7 +65,7 @@ recipe = NumpyFedAvgRecipe(
 Send complete model parameters back to the server:
 
 ```bash
-python job.py --model_mode full
+python job.py --update_type full
 ```
 
 ### Diff Model Transfer
@@ -73,18 +73,7 @@ python job.py --model_mode full
 Send only the parameter differences (delta) back to the server.
 
 ```bash
-python job.py --model_mode diff
-```
-
-The client script calculates the difference:
-
-```python
-if args.mode == "diff":
-    params_to_send = output_numpy_array - input_numpy_array
-    params_type = "DIFF"
-else:
-    params_to_send = output_numpy_array
-    params_type = "FULL"
+python job.py --update_type diff
 ```
 
 ## Metrics Streaming
@@ -154,8 +143,8 @@ The configuration will be saved to `/tmp/nvflare/jobs/job_config`.
 # Basic run with defaults
 python job.py
 
-# Run with diff mode and 3 clients for 10 rounds
-python job.py --model_mode diff --n_clients 3 --num_rounds 10
+# Run with "diff" and 3 clients for 10 rounds
+python job.py --update_type diff --n_clients 3 --num_rounds 10
 
 # Run with metrics tracking enabled
 python job.py --metrics_tracking
@@ -177,4 +166,4 @@ The `client.py` implements the standard NVFlare Client API pattern:
 4. **Train Locally**: Update model with local data
 5. **Send Results**: `flare.send(flare.FLModel(...))`
 
-The script supports both `full` and `diff` modes via the `--mode` argument, and optional metrics tracking via `--metrics_tracking`.
+The script supports both `full` and `diff` update type via the `--update_type` argument, and optional metrics tracking via `--metrics_tracking`.

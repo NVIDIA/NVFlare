@@ -49,7 +49,7 @@ def evaluate(input_arr):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["full", "diff"], default="full")
+    parser.add_argument("--update_type", choices=["full", "diff"], default="full")
     parser.add_argument("--metrics_tracking", action="store_true")
     args = parser.parse_args()
 
@@ -82,12 +82,12 @@ def main():
 
         print(f"finish round: {input_model.current_round}", flush=True)
 
-        if args.mode == "diff":
+        if args.update_type == "diff":
             params_to_send = output_numpy_array - input_numpy_array
-            params_type = "DIFF"
+            params_type = flare.ParamsType.DIFF
         else:
             params_to_send = output_numpy_array
-            params_type = "FULL"
+            params_type = flare.ParamsType.FULL
 
         # send back the model
         print(f"send back: {params_to_send}", flush=True)

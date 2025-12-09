@@ -23,7 +23,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
-    parser.add_argument("--model_mode", type=str, default="full", choices=["full", "diff"])
+    parser.add_argument("--update_type", type=str, default="full", choices=["full", "diff"])
     parser.add_argument("--metrics_tracking", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
@@ -39,7 +39,7 @@ def main():
     num_rounds = args.num_rounds
     launch_process = args.launch_process
 
-    train_args = f"--mode {args.model_mode}"
+    train_args = f"--update_type {args.update_type}"
     if args.metrics_tracking:
         train_args += " --metrics_tracking"
 

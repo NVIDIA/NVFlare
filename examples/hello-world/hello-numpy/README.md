@@ -32,10 +32,10 @@ Install the dependencies:
 ## Code Structure
 
 ```
-    hello-fedavg-numpy
+    hello-numpy
     |
     |-- client.py         # client local training script
-    |-- server.py         # server recipe that defines client and server configurations
+    |-- job.py            # creates the FL recipe and executes it using SimEnv
     |-- requirements.txt  # dependencies
 ```
 
@@ -74,7 +74,7 @@ This example uses NVIDIA FLARE's **Recipe API**, which provides a high-level, de
 
 - **`NumpyFedAvgRecipe`**: Custom recipe for NumPy models (located in `nvflare.app_common.np.recipes`)
 - **`SimEnv`**: Simulation environment for running FL jobs locally
-- **`ScriptRunner`**: Executes client training scripts with proper framework configuration
+
 
 ## Customization
 
