@@ -244,4 +244,6 @@ class FedAvgRecipe(Recipe):
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        return job.to_server(self.model_persistor, id="persistor")
+        if self.model_persistor is not None:
+            return job.to_server(self.model_persistor, id="persistor")
+        return ""
