@@ -71,7 +71,7 @@ class FeatureElectionExecutor(Executor):
         defaults = {
             "lasso": {"alpha": 0.01},
             "elastic_net": {"alpha": 0.01, "l1_ratio": 0.5},
-            "mutual_info": {"n_neighbors": 3},
+            "mutual_info": {},
             "random_forest": {"n_estimators": 100},
             "pyimpetus": {"p_val_thresh": 0.05},
         }
