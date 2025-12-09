@@ -20,6 +20,7 @@ FeatureElectionExecutor from nvflare.app_opt.feature_election.
 """
 
 import logging
+import re
 from typing import Optional
 
 from prepare_data import load_client_data
@@ -157,8 +158,6 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
                 # Try to extract any number
-                import re
-
                 match = re.search(r"\d+", site_name)
                 client_id = int(match.group()) - 1 if match else 0
         except (ValueError, AttributeError):

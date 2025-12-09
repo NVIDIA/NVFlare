@@ -321,7 +321,9 @@ class FeatureElection:
         if isinstance(X, pd.DataFrame):
             if self.selected_feature_names:
                 return X[self.selected_feature_names]
-            return X.iloc[:, self.global_mask]
+            # Convert boolean mask to integer indices for iloc
+            selected_indices = np.where(self.global_mask)[0]
+            return X.iloc[:, selected_indices]
         return X[:, self.global_mask]
 
     def save_results(self, filepath: str):

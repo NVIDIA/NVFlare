@@ -236,7 +236,10 @@ class FeatureElectionController(Controller):
         final_mask = self._aggregate_selections(self.cached_client_selections)
         self.global_feature_mask = final_mask
         n_sel = np.sum(final_mask)
-        logger.info(f"Final Global Mask: {n_sel} features selected (FD={self.freedom_degree:.4f})")
+        logger.info(
+            f"Final Global Mask: {n_sel} features selected "
+            f"(FD={self.freedom_degree:.4f}, aggregation_mode={self.aggregation_mode})"
+        )
 
         # 3. Distribute mask to clients
         task_data = Shareable()
@@ -342,23 +345,34 @@ class FeatureElectionController(Controller):
         return self._weighted_election(masks, scores, weights, intersection, union)
 
     def _weighted_election(
-        self, masks: np.ndarray, scores: np.ndarray, weights: np.ndarray, intersection: np.ndarray, union: np.ndarray
+            self, masks: np.ndarray, scores: np.ndarray, weights: np.ndarray, intersection: np.ndarray,
+            union: np.ndarray
     ) -> np.ndarray:
         """
         Perform weighted voting for features in the difference set.
+        Uses aggregation_mode to determine weighting strategy.
         """
         diff_mask = union & ~intersection
         if not np.any(diff_mask):
             return intersection
 
-        # Compute aggregated scores
+        # Compute aggregated scores based on aggregation_mode
         agg_scores = np.zeros(len(intersection))
+
+        # Determine weights based on aggregation mode
+        if self.aggregation_mode == "uniform":
+            # Equal weight for all clients
+            effective_weights = np.ones(len(weights)) / len(weights)
+        else:  # "weighted" mode (default)
+            # Use sample-size-based weights
+            effective_weights = weights
+
         for i, (m, s) in enumerate(zip(masks, scores)):
             valid = m.astype(bool)
             if np.any(valid):
                 min_s, max_s = np.min(s[valid]), np.max(s[valid])
                 norm_s = (s - min_s) / (max_s - min_s + 1e-10) if max_s > min_s else s
-                agg_scores += norm_s * weights[i]
+                agg_scores += norm_s * effective_weights[i]
 
         # Select top features based on freedom_degree
         n_add = int(np.ceil(np.sum(diff_mask) * self.freedom_degree))

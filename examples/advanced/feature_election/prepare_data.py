@@ -173,7 +173,7 @@ def _split_non_iid(
 
         start = 0
         for i, prop in enumerate(proportions):
-            client_indices[i].extend(idx_k[start : start + prop])
+            client_indices[i].extend(idx_k[start: start + prop])
             start += prop
 
     return [df.iloc[indices].copy() for indices in client_indices]
@@ -246,9 +246,22 @@ def load_client_data(
     y = client_df["target"].values
 
     # Train/validation split
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
-    )
+    # Check if stratification is possible (all classes must have at least 2 samples)
+    unique, counts = np.unique(y, return_counts=True)
+    can_stratify = np.all(counts >= 2)
+
+    if can_stratify:
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
+        )
+    else:
+        logger.warning(
+            f"Client {client_id}: Cannot stratify (some classes have <2 samples). "
+            f"Using random split instead. Class distribution: {dict(zip(unique, counts))}"
+        )
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=test_size, random_state=random_state + client_id
+        )
 
     logger.info(f"Client {client_id}: {len(X_train)} train samples, {len(X_val)} val samples")
 
