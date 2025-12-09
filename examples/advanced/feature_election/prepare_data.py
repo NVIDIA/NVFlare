@@ -107,15 +107,60 @@ def split_data_for_clients(
 
 def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Stratified split maintaining class distribution across clients."""
-    df_shuffled = df.sample(frac=1, random_state=random_state).reset_index(drop=True)
+    y = df["target"].values
 
+    # Use iterative stratified splitting to maintain class distribution
+    from sklearn.model_selection import StratifiedKFold
+
+    # If we can't use StratifiedKFold (fewer samples than clients), fall back to simple split
+    if len(df) < num_clients:
+        logger.warning(f"Not enough samples ({len(df)}) for {num_clients} clients. Using simple split.")
+        return _split_random(df, num_clients, random_state)
+
+    # For small client counts, use direct stratified splitting
+    if num_clients == 2:
+        indices = np.arange(len(df))
+        train_idx, test_idx = train_test_split(
+            indices, test_size=0.5, random_state=random_state, stratify=y
+        )
+        return [df.iloc[train_idx].copy(), df.iloc[test_idx].copy()]
+
+    # For more clients, use iterative approach
     client_dfs = []
-    rows_per_client = len(df) // num_clients
+    remaining_df = df.copy()
+    remaining_indices = np.arange(len(df))
 
-    for i in range(num_clients):
-        start = i * rows_per_client
-        end = start + rows_per_client if i < num_clients - 1 else len(df)
-        client_dfs.append(df_shuffled.iloc[start:end].copy())
+    for i in range(num_clients - 1):
+        # Calculate target size for this client
+        samples_remaining = len(remaining_df)
+        clients_remaining = num_clients - i
+        target_size = samples_remaining // clients_remaining
+        test_size = max(0.01, min(0.99, target_size / samples_remaining))
+
+        try:
+            # Try stratified split
+            train_idx, client_idx = train_test_split(
+                np.arange(len(remaining_df)),
+                test_size=test_size,
+                random_state=random_state + i,
+                stratify=remaining_df["target"].values
+            )
+            client_dfs.append(remaining_df.iloc[client_idx].copy())
+            remaining_df = remaining_df.iloc[train_idx].reset_index(drop=True)
+        except ValueError:
+            # If stratification fails, use random split
+            logger.warning(f"Stratification failed for client {i}, using random split")
+            indices = np.arange(len(remaining_df))
+            np.random.seed(random_state + i)
+            np.random.shuffle(indices)
+            split_point = int(len(indices) * test_size)
+            client_idx = indices[:split_point]
+            train_idx = indices[split_point:]
+            client_dfs.append(remaining_df.iloc[client_idx].copy())
+            remaining_df = remaining_df.iloc[train_idx].reset_index(drop=True)
+
+    # Add remaining data as last client
+    client_dfs.append(remaining_df)
 
     return client_dfs
 
@@ -221,9 +266,22 @@ def load_client_data(
             X = df.drop(columns=["target"]).values
             y = df["target"].values
 
-            X_train, X_val, y_train, y_val = train_test_split(
-                X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
-            )
+            # Check if stratification is possible (all classes must have at least 2 samples)
+            unique, counts = np.unique(y, return_counts=True)
+            can_stratify = np.all(counts >= 2)
+
+            if can_stratify:
+                X_train, X_val, y_train, y_val = train_test_split(
+                    X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
+                )
+            else:
+                logger.warning(
+                    f"Client {client_id}: Cannot stratify pre-generated data (some classes have <2 samples). "
+                    f"Using random split instead. Class distribution: {dict(zip(unique, counts))}"
+                )
+                X_train, X_val, y_train, y_val = train_test_split(
+                    X, y, test_size=test_size, random_state=random_state + client_id
+                )
             return X_train, y_train, X_val, y_val, feature_names
 
     # Generate synthetic data

@@ -90,6 +90,7 @@ def main():
     parser.add_argument("--auto-tune", action="store_true")
     parser.add_argument("--tuning-rounds", type=int, default=4)
     parser.add_argument("--fs-method", default="lasso")
+    parser.add_argument("--eval-metric", default="f1")
     parser.add_argument("--split-strategy", default="stratified")
     parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--n-features", type=int, default=100)
@@ -111,6 +112,7 @@ def main():
         auto_tune=args.auto_tune,
         tuning_rounds=args.tuning_rounds,
         fs_method=args.fs_method,
+        eval_metric=args.eval_metric,
         split_strategy=args.split_strategy,
         n_samples=args.n_samples,
         n_features=args.n_features,

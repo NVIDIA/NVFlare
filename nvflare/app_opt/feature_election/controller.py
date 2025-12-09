@@ -288,10 +288,13 @@ class FeatureElectionController(Controller):
             
             if weights is not None:
                 if weighted_weights is None:
-                    weighted_weights = {k: np.zeros_like(v) for k, v in weights.items()}
+                    # Initialize with proper numpy arrays
+                    weighted_weights = {k: np.zeros_like(np.array(v)) for k, v in weights.items()}
 
                 for k, v in weights.items():
-                    weighted_weights[k] += np.array(v) * n
+                    # Ensure v is a numpy array before operations
+                    v_array = np.array(v)
+                    weighted_weights[k] += v_array * n
                 total_samples += n
 
         if total_samples > 0 and weighted_weights is not None:
@@ -371,7 +374,12 @@ class FeatureElectionController(Controller):
             valid = m.astype(bool)
             if np.any(valid):
                 min_s, max_s = np.min(s[valid]), np.max(s[valid])
-                norm_s = (s - min_s) / (max_s - min_s + 1e-10) if max_s > min_s else s
+                if max_s > min_s:
+                    # Normal case: normalize to [0, 1]
+                    norm_s = (s - min_s) / (max_s - min_s)
+                else:
+                    # All scores are equal: use uniform scores of 0.5 for consistency
+                    norm_s = np.full_like(s, 0.5)
                 agg_scores += norm_s * effective_weights[i]
 
         # Select top features based on freedom_degree
