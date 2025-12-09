@@ -17,8 +17,6 @@ and run it under different environments
 """
 import argparse
 
-from model import SimpleNumpyModel
-
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
@@ -43,7 +41,7 @@ def main():
         name="hello-numpy",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=SimpleNumpyModel(),
+        initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         train_script="client.py",
         train_args=f"--learning_rate {learning_rate}",
     )

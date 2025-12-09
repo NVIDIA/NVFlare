@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""PyTorch Lightning model definition for CIFAR-10."""
+
 from typing import Any
 
 import torch
@@ -26,6 +28,8 @@ criterion = nn.CrossEntropyLoss()
 
 
 class Net(nn.Module):
+    """Simple CNN for CIFAR-10."""
+
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -38,7 +42,7 @@ class Net(nn.Module):
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = torch.flatten(x, 1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -46,18 +50,18 @@ class Net(nn.Module):
 
 
 class LitNet(LightningModule):
+    """Lightning wrapper for Net."""
+
     def __init__(self):
         super().__init__()
         self.save_hyperparameters()
         self.model = Net()
         self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
-        # (optional) pass additional information via self.__fl_meta__
         self.__fl_meta__ = {}
 
     def forward(self, x):
-        out = self.model(x)
-        return out
+        return self.model(x)
 
     def training_step(self, batch, batch_idx):
         x, labels = batch
@@ -73,7 +77,6 @@ class LitNet(LightningModule):
         outputs = self(x)
         loss = criterion(outputs, labels)
         self.valid_acc(outputs, labels)
-
         if stage:
             self.log(f"{stage}_loss", loss)
             self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)

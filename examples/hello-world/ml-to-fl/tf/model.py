@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""TensorFlow model definition for CIFAR-10."""
+
 from tensorflow.keras import layers, models
 
 
 class TFNet(models.Sequential):
+    """Simple CNN for CIFAR-10 classification."""
+
     def __init__(self, input_shape=(None, 32, 32, 3)):
         super().__init__()
         self._input_shape = input_shape
-        # Do not specify input as we will use delayed built only during runtime of the model
-        # self.add(layers.Input(shape=(32, 32, 3)))
         self.add(layers.Conv2D(32, (3, 3), activation="relu"))
         self.add(layers.MaxPooling2D((2, 2)))
         self.add(layers.Conv2D(64, (3, 3), activation="relu"))

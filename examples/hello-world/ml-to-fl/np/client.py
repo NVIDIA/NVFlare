@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import copy
 import time
 
 import nvflare.client as flare
-from nvflare.client.tracking import MLflowWriter
+from nvflare.app_common.np.constants import NPConstants
 
 
-def train(input_arr, current_round, epochs=3):
-    writer = MLflowWriter()
+def train(input_arr, current_round, epochs=3, writer=None):
     output_arr = copy.deepcopy(input_arr)
     num_of_data = 2000
     batch_size = 16
@@ -28,11 +28,12 @@ def train(input_arr, current_round, epochs=3):
     for i in range(epochs):
         for j in range(num_of_batches):
             global_step = current_round * num_of_batches * epochs + i * num_of_batches + j
-            writer.log_metric(
-                key="global_step",
-                value=global_step,
-                step=global_step,
-            )
+            if writer:
+                writer.log_metric(
+                    key="global_step",
+                    value=global_step,
+                    step=global_step,
+                )
         print(f"logged records from epoch: {i}")
         # mock training with plus 1
         output_arr += 1
@@ -47,6 +48,11 @@ def evaluate(input_arr):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["full", "diff"], default="full")
+    parser.add_argument("--metrics_tracking", action="store_true")
+    args = parser.parse_args()
+
     # initializes NVFlare interface
     flare.init()
 
@@ -54,26 +60,41 @@ def main():
     sys_info = flare.system_info()
     print(f"system info is: {sys_info}")
 
-    while flare.is_running():
-        input_model = flare.receive()
-        print(f"received weights is: {input_model.params}")
+    writer = None
+    if args.metrics_tracking:
+        from nvflare.client.tracking import MLflowWriter
 
-        input_numpy_array = input_model.params["numpy_key"]
+        writer = MLflowWriter()
+
+    while flare.is_running():
+
+        # get model from NVFlare
+        input_model = flare.receive()
+        print(f"received weights is: {input_model.params}", flush=True)
+
+        input_numpy_array = input_model.params[NPConstants.NUMPY_KEY]
 
         # training
-        output_numpy_array = train(input_numpy_array, current_round=input_model.current_round, epochs=3)
+        output_numpy_array = train(input_numpy_array, current_round=input_model.current_round, epochs=3, writer=writer)
 
         # evaluation
         metrics = evaluate(input_numpy_array)
 
-        print(f"finish round: {input_model.current_round}")
+        print(f"finish round: {input_model.current_round}", flush=True)
+
+        if args.mode == "diff":
+            params_to_send = output_numpy_array - input_numpy_array
+            params_type = "DIFF"
+        else:
+            params_to_send = output_numpy_array
+            params_type = "FULL"
 
         # send back the model
-        print(f"send back: {output_numpy_array}")
+        print(f"send back: {params_to_send}", flush=True)
         flare.send(
             flare.FLModel(
-                params={"numpy_key": output_numpy_array},
-                params_type="FULL",
+                params={NPConstants.NUMPY_KEY: params_to_send},
+                params_type=params_type,
                 metrics={"accuracy": metrics},
                 current_round=input_model.current_round,
             )

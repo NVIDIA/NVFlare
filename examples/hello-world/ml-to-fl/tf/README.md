@@ -1,111 +1,113 @@
-# TensorFlow Deep Learning to Federated Learning transition with NVFlare
+# ML to FL with TensorFlow
 
-We will demonstrate how to transform an existing DL code into an FL application step-by-step:
+This example demonstrates federated learning with TensorFlow, supporting 2 training modes:
 
-1. [How to modify an existing training script using the DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
+| Mode | Description | Requirements |
+|------|-------------|--------------|
+| `tf` | Standard TensorFlow | 1 GPU |
+| `tf_multi` | TensorFlow with MirroredStrategy | 2+ GPUs |
 
-2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
+## Quick Start
 
-## Software Requirements
+1. **Prepare data:**
+```bash
+bash ./prepare_data.sh
+```
 
-We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.
-If you don't need to run using GPU, you can just use python virtual environment.
+2. **Run federated learning:**
+```bash
+# Standard TensorFlow
+python job.py --mode tf
 
-### Run NVIDIA TensorFlow container
+# TensorFlow with MirroredStrategy (multi-GPU)
+python job.py --mode tf_multi --launch_process
+```
 
-Please install the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) first.
-Then run the following command:
+## Project Structure
+
+```
+tf/
+├── job.py              # Unified job config (both modes)
+├── model.py            # TFNet class
+├── client.py           # Standard TensorFlow client
+├── client_multi_gpu.py # Multi-GPU client with MirroredStrategy
+├── prepare_data.sh
+└── requirements.txt
+```
+
+## Command Line Options
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--mode` | Training mode: `tf`, `tf_multi` | `tf` |
+| `--n_clients` | Number of clients | 2 |
+| `--num_rounds` | Number of training rounds | 5 |
+| `--use_tracking` | Enable TensorBoard tracking | False |
+| `--launch_process` | Launch in external process | False |
+| `--export_config` | Export job config only | False |
+
+## Examples
+
+```bash
+# Basic TensorFlow with 3 clients, 10 rounds
+python job.py --mode tf --n_clients 3 --num_rounds 10
+
+# Multi-GPU with external process
+python job.py --mode tf_multi --launch_process
+
+# Export config for deployment
+python job.py --mode tf --export_config
+```
+
+## Client Scripts
+
+### `client.py` - Standard TensorFlow
+
+Uses `nvflare.client` API:
+```python
+import nvflare.client as flare
+
+flare.init()
+while flare.is_running():
+    input_model = flare.receive()
+    
+    # Load weights
+    for k, v in input_model.params.items():
+        model.get_layer(k).set_weights(v)
+    
+    # Train
+    model.fit(train_images, train_labels, epochs=1)
+    
+    # Send back
+    flare.send(flare.FLModel(
+        params={layer.name: layer.get_weights() for layer in model.layers},
+        metrics={"accuracy": accuracy}
+    ))
+```
+
+### `client_multi_gpu.py` - Multi-GPU with MirroredStrategy
+
+Uses TensorFlow's `MirroredStrategy` for multi-GPU training:
+```python
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    model = TFNet()
+    model.compile(...)
+```
+
+## Notes on Running with GPUs
+
+By default, TensorFlow will attempt to allocate all available GPU memory. When running multiple clients, set these environment variables:
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python job.py
+```
+
+## Requirements
+
+We recommend using [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) for GPU support:
 
 ```bash
 docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
+pip install nvflare
 ```
-
-### Install NVFlare
-
-```bash
-pip3 install nvflare
-```
-
-## Minimum Hardware Requirements
-
-| Example name | minimum requirements |
-| ------------ | -------------------- |
-| [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api) | 1 CPU or 1 GPU* |
-| [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api) | 2 CPUs or 2 GPUs* |
-
-\* depends on whether TF can found GPU or not
-
-
-## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
-
-Given a TensorFlow CIFAR-10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py).
-
-You can run it using
-
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 ./src/cifar10_tf_original.py
-```
-
-To transform the existing code into FL training code, we made the following changes:
-
-1. Import NVFlare Client API: ```import nvflare.client as flare```
-2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side: ```input_model = flare.receive()```
-4. Load the received aggregated/global model weights into the model structure: ```model.get_layer(k).set_weights(v)```
-5. Evaluate on the model with aggregated/global weights loaded to get the metrics for model selection: via regular ```evaluate()``` function
-6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(params={layer.name: layer.get_weights() for layer in model.layers}, xxx)```
-7. Send the model back to NVFlare: ```flare.send(output_model)```
-
-Notice that we need to get / load the model weights as a ``dict`` of arrays because we want to reuse existing NVFlare components.
-
-The modified code can be found here: [./src/cifar10_tf_fl.py](./src/cifar10_tf_fl.py), [./src/tf_net.py](./src/tf_net.py).
-
-After we modify our training script, we can create a job using the in-process ScriptRunner: [tf_client_api_job.py](tf_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
-
-Then we can run the job using the simulator:
-
-```bash
-bash ./prepare_data.sh
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_fl.py
-```
-
-
-## Transform CIFAR10 TensorFlow multi GPU training code to FL with NVFLARE Client API
-
-Following the [official documentation](https://www.tensorflow.org/guide/keras/distributed_training#single-host_multi-device_synchronous_training), we modified the single 
-device TensorFlow CIFAR10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py) to
-a multi-device version: [./src/cifar10_tf_multi_gpu_original.py](./src/cifar10_tf_multi_gpu_original.py)
-
-You can run it using
-
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 ./src/cifar10_tf_multi_gpu_original.py
-```
-
-To transform the existing multi-gpu code to FL training code, we can apply the same changes as in [single GPU case](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api).
-
-The modified code can be found here: [./src/cifar10_tf_multi_gpu_fl.py](./src/cifar10_tf_multi_gpu_fl.py).
-
-After we modify our training script, we can create a job using the ScriptRunner to launch our script: [tf_client_api_job.py](tf_client_api_job.py).
-
-Then we can run the job using the simulator:
-
-```bash
-bash ./prepare_data.sh
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_multi_gpu_fl.py --launch_process
-```
-
-
-### Notes on running with GPUs
-
-If you choose to run the example using GPUs, it is important to note that,
-by default, TensorFlow will attempt to allocate all available GPU memory at the start.
-In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory 
-by setting the following flags.
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
-```
-
-If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
-This can be achieved by using the `--gpu` argument during simulation, e.g., `nvflare simulator -n 2 --gpu 0,1 [job]`.

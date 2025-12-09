@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+TensorFlow client for federated learning (single GPU).
+"""
+
 import tensorflow as tf
+from model import TFNet
 from tensorflow.keras import datasets
-from tf_net import TFNet
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -41,11 +45,7 @@ def main():
     # (3) gets FLModel from NVFlare
     while flare.is_running():
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
-
-        # (optional) print system info
-        system_info = flare.system_info()
-        print(f"NVFlare system info: {system_info}")
+        print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
 
         # (4) loads model from NVFlare
         for k, v in input_model.params.items():
@@ -53,20 +53,20 @@ def main():
 
         # (5) evaluate aggregated/received model
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
-        print(
-            f"Accuracy of the received model on round {input_model.current_round} on the 10000 test images: {test_global_acc * 100} %"
-        )
+        print(f"Accuracy of received model: {test_global_acc * 100:.2f}%")
 
+        # Train
         model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
-
         print("Finished Training")
 
+        # Save weights
         model.save_weights(PATH)
 
+        # Evaluate trained model
         _, test_acc = model.evaluate(test_images, test_labels, verbose=2)
-        print(f"Accuracy of the model on the 10000 test images: {test_acc * 100} %")
+        print(f"Accuracy of trained model: {test_acc * 100:.2f}%")
 
-        # (6) construct trained FL model (A dict of {layer name: layer weights} from the keras model)
+        # (6) construct trained FL model
         output_model = flare.FLModel(
             params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc}
         )

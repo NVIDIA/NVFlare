@@ -16,16 +16,27 @@
 """
 
 import numpy as np
-from model import SimpleNumpyModel
 
 import nvflare.client as flare
+from nvflare.app_common.np.constants import NPConstants
 from nvflare.client.tracking import SummaryWriter
 
 
-def main():
-    # Initialize the model
-    model = SimpleNumpyModel()
+def train(input_numpy_array: np.ndarray) -> np.ndarray:
+    """Mock training the model by adding 1 to the input numpy array.
+    In a real application, this would be actual model training.
+    """
+    return input_numpy_array + 1
 
+
+def evaluate(input_numpy_array: np.ndarray) -> dict:
+    """Mock evaluation the model by returning the mean of the input numpy array.
+    In a real application, this would be actual model evaluation.
+    """
+    return {"weight_mean": np.mean(input_numpy_array)}
+
+
+def main():
     # Initialize FLARE
     flare.init()
     sys_info = flare.system_info()
@@ -42,21 +53,10 @@ def main():
         print(f"Client {client_name}, current_round={input_model.current_round}")
         print(f"Received weights: {input_model.params}")
 
-        # Load the received model weights
-        if input_model.params == {}:
-            # Initialize with default weights if this is the first round
-            params = model.get_weights()
-        else:
-            params = np.array(input_model.params["numpy_key"], dtype=np.float32)
-
-        model.set_weights(params)
-
-        # Perform local training
-        print(f"Client {client_name} starting training...")
-        new_params = model.train_step(learning_rate=1.0)
+        new_params = train(input_model.params[NPConstants.NUMPY_KEY])
 
         # Evaluate the model
-        metrics = model.evaluate()
+        metrics = evaluate(new_params)
         print(f"Client {client_name} evaluation metrics: {metrics}")
 
         # Log metrics to summary writer
@@ -68,7 +68,7 @@ def main():
 
         # Send updated model back to server
         output_model = flare.FLModel(
-            params={"numpy_key": new_params},
+            params={NPConstants.NUMPY_KEY: new_params},
             params_type="FULL",
             metrics=metrics,
             current_round=input_model.current_round,

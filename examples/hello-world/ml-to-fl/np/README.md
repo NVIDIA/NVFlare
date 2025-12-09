@@ -1,10 +1,10 @@
-# NVFlare Client API
+# ML to FL with NumPy
 
-In this example we use simple numpy scripts to showcase the Client API with the ScriptRunner in both in-process and sub-process settings.
+This example demonstrates how to convert a simple NumPy-based ML training script to federated learning using NVFlare's Client API and Recipe pattern.
 
 ## Software Requirements
 
-Please install the requirements first, it is suggested to install inside a virtual environment:
+Please install the requirements first (recommended to install inside a virtual environment):
 
 ```bash
 pip install -r requirements.txt
@@ -14,86 +14,167 @@ pip install -r requirements.txt
 
 1 CPU
 
+## Quick Start
 
-## In-process Client API
-
-The default mode of the `ScriptRunner` with `launch_external_process=False` uses the `InProcessClientAPIExecutor` for in-process script execution.
-With the `InProcessClientAPIExecutor`, the client training script operates within the same process as the NVFlare Client job.
-This provides benefits with efficient shared the memory usage and a simple configuration useful for development or single GPU use cases.
-
-### Send model parameters back to the NVFlare server
-
-We use the mock training script in [./src/train_full.py](./src/train_full.py)
-And we send back the FLModel with "params_type"="FULL" in [./src/train_full.py](./src/train_full.py)
-
-After we modify our training script, we can create a job using the ScriptRunner: [np_client_api_job.py](./np_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
-
-Then we can run the job using the simulator with the Job API. (This is equivalent to using the CLI command `nvflare simulator <job_folder>`)
+Run the default FedAvg training with 2 clients:
 
 ```bash
-python3 np_client_api_job.py --script src/train_full.py
+python job.py
 ```
 
-Note: We can instead export the job configuration to use in other modes with the flag `--export_config`.
+## Project Structure
 
-### Send model parameters differences back to the NVFlare server
+```
+np/
+├── job.py         # Job configuration using NumpyFedAvgRecipe
+├── client.py      # Client training script (supports full/diff modes and metrics tracking)
+├── README.md
+└── requirements.txt
+```
 
-We can send model parameter differences back to the NVFlare server by calculating the parameters differences and sending it back: [./src/train_diff.py](./src/train_diff.py)
+## Job Configuration
 
-Note that we set the "params_type" to DIFF when creating flare.FLModel.
+The `job.py` uses the `NumpyFedAvgRecipe` to configure a complete federated learning workflow:
 
-Then we can run it using the NVFlare Simulator:
+```python
+recipe = NumpyFedAvgRecipe(
+    name="np_client_api",
+    initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],  # Initial model as list
+    min_clients=n_clients,
+    num_rounds=num_rounds,
+    train_script="client.py",
+    train_args=train_args,
+)
+```
+
+### Command Line Options
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--n_clients` | Number of clients | 2 |
+| `--num_rounds` | Number of training rounds | 5 |
+| `--model_mode` | Parameter transfer mode: `full` or `diff` | `full` |
+| `--metrics_tracking` | Enable MLflow metrics streaming | False |
+| `--launch_process` | Launch client in external process | False |
+| `--export_config` | Export job config instead of running | False |
+
+## Training Modes
+
+### Full Model Transfer (Default)
+
+Send complete model parameters back to the server:
 
 ```bash
-python3 np_client_api_job.py --script src/train_diff.py
+python job.py --model_mode full
 ```
 
-### Metrics streaming
+### Diff Model Transfer
 
-Sometimes we want to stream the training progress to the server.
-
-We have several ways of doing that:
-
-  - `SummaryWriter` mimics Tensorboard `SummaryWriter`'s `add_scalar`, `add_scalars` method
-  - `WandBWriter` mimics Weights And Biases's `log` method
-  - `MLflowWriter` mimics MLflow's tracking api
-
-In this example we use `MLflowWriter` in [./src/train_metrics.py](./src/train_metrics.py) and configure a corresponding `MLflowReceiver` in the job script [np_client_api_job.py](np_client_api_job.py)
-
-Then we can run it using the NVFlare Simulator:
+Send only the parameter differences (delta) back to the server.
 
 ```bash
-python3 np_client_api_job.py --script src/train_metrics.py
+python job.py --model_mode diff
 ```
 
-After the experiment is finished, you can view the results by running the the mlflow command: `mlflow ui --port 5000` inside the directory `/tmp/nvflare/jobs/workdir/server/simulate_job/`.
+The client script calculates the difference:
 
-Please refer to MLflow examples and documentation for more information.
+```python
+if args.mode == "diff":
+    params_to_send = output_numpy_array - input_numpy_array
+    params_type = "DIFF"
+else:
+    params_to_send = output_numpy_array
+    params_type = "FULL"
+```
 
+## Metrics Streaming
 
-## Sub-process Client API
-
-The `ScriptRunner` with `launch_external_process=True` uses the `ClientAPILauncherExecutor` for external process script execution.
-This configuration is ideal for scenarios requiring multi-GPU or distributed PyTorch training.
-
-### Launching the script
-
-When launching a script in an external process, it is launched once for the entire job.
-We must ensure our training script [./src/train_full.py](./src/train_full.py) is in a loop to support this.
-
-Then we can run it using the NVFlare Simulator:
+Enable MLflow metrics tracking to monitor training progress:
 
 ```bash
-python3 np_client_api_job.py --script src/train_full.py --launch_process
+python job.py --metrics_tracking
 ```
 
-### Metrics streaming
+This uses the `MLflowWriter` in the client script to log metrics during training:
 
-In this example we use `MLflowWriter` in [./src/train_metrics.py](./src/train_metrics.py) and configure a corresponding `MLflowReceiver` in the job script [np_client_api_job.py](np_client_api_job.py)
+```python
+if args.metrics_tracking:
+    from nvflare.client.tracking import MLflowWriter
+    writer = MLflowWriter()
+    # ... in training loop:
+    writer.log_metric(key="global_step", value=global_step, step=global_step)
+```
 
-Then we can run it using the NVFlare Simulator:
+After the experiment finishes, view results with:
 
 ```bash
-python3 np_client_api_job.py --script src/train_metrics.py --launch_process
+mlflow ui --port 5000
 ```
+
+Navigate to the MLflow tracking directory shown in the output.
+
+### Other Tracking Options
+
+NVFlare supports multiple tracking backends:
+- `SummaryWriter` - TensorBoard compatible
+- `WandBWriter` - Weights & Biases compatible
+- `MLflowWriter` - MLflow compatible
+
+## In-Process vs Sub-Process Execution
+
+### In-Process (Default)
+
+The client script runs within the same process as the NVFlare job. Best for development and single-GPU scenarios:
+
+```bash
+python job.py
+```
+
+### Sub-Process (External Process)
+
+Launch the client script as a separate process. Ideal for multi-GPU or distributed training:
+
+```bash
+python job.py --launch_process
+```
+
+## Export Job Configuration
+
+Export the job configuration to a folder instead of running it (useful for deployment):
+
+```bash
+python job.py --export_config
+```
+
+The configuration will be saved to `/tmp/nvflare/jobs/job_config`.
+
+## Example Commands
+
+```bash
+# Basic run with defaults
+python job.py
+
+# Run with diff mode and 3 clients for 10 rounds
+python job.py --model_mode diff --n_clients 3 --num_rounds 10
+
+# Run with metrics tracking enabled
+python job.py --metrics_tracking
+
+# Run in external process mode with metrics
+python job.py --launch_process --metrics_tracking
+
+# Export configuration only
+python job.py --export_config
+```
+
+## Client Script Details
+
+The `client.py` implements the standard NVFlare Client API pattern:
+
+1. **Initialize**: `flare.init()`
+2. **Training Loop**: `while flare.is_running()`
+3. **Receive Model**: `input_model = flare.receive()`
+4. **Train Locally**: Update model with local data
+5. **Send Results**: `flare.send(flare.FLModel(...))`
+
+The script supports both `full` and `diff` modes via the `--mode` argument, and optional metrics tracking via `--metrics_tracking`.

@@ -392,6 +392,30 @@ class FedJobConfig:
             app_config_filters.append({"tasks": list(task_set), "filters": filters})
         return app_config_filters
 
+    def _values_differ(self, default_val, attr_val):
+        """Check if attribute value differs from default. Returns True if they differ."""
+        # If default is None and attr is not None, they differ
+        if default_val is None:
+            return attr_val is not None
+        # If both are None, they're equal
+        if attr_val is None:
+            return True
+        # For lists, compare carefully
+        if isinstance(attr_val, list) or isinstance(default_val, list):
+            try:
+                return default_val != attr_val
+            except (ValueError, TypeError):
+                return True
+        # Regular comparison
+        try:
+            result = default_val == attr_val
+            # Ensure we get a boolean
+            if not isinstance(result, bool):
+                return True
+            return not result
+        except (ValueError, TypeError):
+            return True
+
     def _get_args(self, component, custom_dir):
         args = {}
         if hasattr(component, "__dict__"):
@@ -404,7 +428,7 @@ class FedJobConfig:
                 if attr_key in ["args", "kwargs"]:
                     continue
 
-                if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
+                if attr_key in attrs.keys() and self._values_differ(parameters[param].default, attrs[attr_key]):
                     if type(attrs[attr_key]).__name__ in dir(builtins):
                         args[param] = attrs[attr_key]
                     elif issubclass(attrs[attr_key].__class__, Enum):
