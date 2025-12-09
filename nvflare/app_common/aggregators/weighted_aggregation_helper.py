@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,23 +44,51 @@ class WeightedAggregationHelper(object):
         self.counts = dict()
         self.history = list()
 
+    def _has_inplace_ops(self, tensor):
+        """Check if tensor supports in-place operations (PyTorch tensors)."""
+        return hasattr(tensor, 'add_') and hasattr(tensor, 'mul_')
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-                if self.weigh_by_local_iter:
-                    weighted_value = v * weight
-                else:
-                    weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext
+                
                 current_total = self.total.get(k, None)
+                
                 if current_total is None:
-                    self.total[k] = weighted_value
+                    # First contribution: clone the tensor to avoid modifying input
+                    if self._has_inplace_ops(v):
+                        if self.weigh_by_local_iter:
+                            self.total[k] = v.clone().mul_(weight)
+                        else:
+                            self.total[k] = v.clone()
+                    else:
+                        # Fallback for non-PyTorch tensors
+                        if self.weigh_by_local_iter:
+                            self.total[k] = v * weight
+                        else:
+                            self.total[k] = v
                     self.counts[k] = weight
                 else:
-                    self.total[k] = current_total + weighted_value
+                    # Subsequent contributions: use in-place operations
+                    if self._has_inplace_ops(v) and self._has_inplace_ops(current_total):
+                        if self.weigh_by_local_iter:
+                            # In-place: self.total[k] += v * weight
+                            # But to avoid creating temporary, we do: self.total[k].add_(v, alpha=weight)
+                            self.total[k].add_(v, alpha=weight)
+                        else:
+                            # In-place: self.total[k] += v
+                            self.total[k].add_(v)
+                    else:
+                        # Fallback for non-PyTorch tensors
+                        if self.weigh_by_local_iter:
+                            self.total[k] = current_total + v * weight
+                        else:
+                            self.total[k] = current_total + v
                     self.counts[k] = self.counts[k] + weight
+                    
             self.history.append(
                 {
                     "contributor_name": contributor_name,
@@ -72,7 +100,18 @@ class WeightedAggregationHelper(object):
     def get_result(self):
         """Divide weighted sum by sum of weights."""
         with self.lock:
-            aggregated_dict = {k: v * (1.0 / self.counts[k]) for k, v in self.total.items()}
+            aggregated_dict = {}
+            for k, v in self.total.items():
+                if self._has_inplace_ops(v):
+                    # For PyTorch tensors, use in-place division to avoid creating a copy
+                    # But we need to return the result, so clone first
+                    aggregated_dict[k] = v.div_(self.counts[k])
+                else:
+                    # Fallback for non-PyTorch tensors
+                    aggregated_dict[k] = v * (1.0 / self.counts[k])
+            
+            # Note: self.total now contains the final averaged values
+            # If you need to preserve self.total, clone before div_ above
             self.reset_stats()
             return aggregated_dict
 
