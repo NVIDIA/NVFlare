@@ -117,7 +117,7 @@ class TestDataPreparation:
 
         assert len(splits) == 3
         # Check that we haven't lost data
-        total_len = sum(len(x) for x, _ in splits)
+        total_len = sum(len(split_data) for split_data, _ in splits)
         assert total_len == 200
 
     def test_split_invalid_ratios(self, sample_data):

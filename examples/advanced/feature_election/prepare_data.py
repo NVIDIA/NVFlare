@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import json
 import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification
@@ -298,8 +299,6 @@ def prepare_data_for_all_clients(
         "feature_names": feature_names,
         "total_samples": total_samples,
     }
-
-    import json
 
     with open(output_path / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
