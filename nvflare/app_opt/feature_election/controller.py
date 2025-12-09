@@ -282,13 +282,14 @@ class FeatureElectionController(Controller):
                 continue
             n = shareable.get("num_samples", 1)
             weights = shareable.get("params")
+            
+            if weights is not None:
+                if weighted_weights is None:
+                    weighted_weights = {k: np.zeros_like(v) for k, v in weights.items()}
 
-            if weighted_weights is None:
-                weighted_weights = {k: np.zeros_like(v) for k, v in weights.items()}
-
-            for k, v in weights.items():
-                weighted_weights[k] += np.array(v) * n
-            total_samples += n
+                for k, v in weights.items():
+                    weighted_weights[k] += np.array(v) * n
+                total_samples += n
 
         if total_samples > 0 and weighted_weights is not None:
             self.global_weights = {k: v / total_samples for k, v in weighted_weights.items()}
