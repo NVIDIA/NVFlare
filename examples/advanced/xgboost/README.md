@@ -28,19 +28,32 @@ In this case, everyone holds equal status as "label owner".
 We assume that only one is the "label owner" (or we call it as the "active party"), all other clients are "passive parties".
 
 ## Security Measures
-The following table outlines the different collaboration modes, algorithms, and security measures available in federated XGBoost:
+The security risks are based on existing works like [TimberStrike](https://arxiv.org/pdf/2506.07605) which exploits: sample-wise gradient for label recovery, gradient histograms for data recovery, and final model statistics for model inversion. We have three basic assumptions:
+- [1] The default xgboost model json with "sum_hessian" statistics will enable model inversion.
+- [2] Same information can be recovered from gradient histograms
+- [3] Sample-wise gradients will leak label information.
 
-| Collaboration Mode | Algorithm | Data Exchange | Security Measures                                                              | Notes                                                                                                                         |
-|-------------------|-----------|---------------|--------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | None                                                                           | All trees become part of the final model.                                                                                     |
-| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | Encryption of histograms                                                       | Local histograms encrypted before sending to server.                                                                          |
-| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership. |
+Based on the above vulnerabilities, the following table outlines the different collaboration modes, algorithms, assumptions, and security measures available in federated XGBoost:
+
+| Collaboration Mode | Algorithm | Data Exchange | Security Assumptions | Security Measures                                                              | Notes                                                                                                                         |
+|-------------------|-----------|---------------|---------------|--------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | No trust over either server or other clients. [1] applies. | Remove "sum_hessian" from json model before sending to server                                                                             | All trees become part of the final model. SHAP calculation will be disabled without the knowledge of "sum_hessian"                                                                                    |
+| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | No trust over server, trust other clients. [2] applies. | Encryption of histograms                                                       | Local histograms encrypted before sending to server.                                                                          |
+| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | No trust over passive parties, trust over active party. [3] applies. | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership. |
 
 ### Notes:
-- In horizontal mode, tree-based collaboration does not have security concerns that can be handled by encryption.
+- In horizontal mode, tree-based collaboration will be secured by removal of "sum_hessian", while it does not have security concerns that can be further handled by encryption.
 - In vertical mode, histogram-based collaboration has two security goals:
-  - **Primary** goal is to protect the sample gradients sent to passive parties, as they can be used to recover the labels of every single data samples.
+  - **Primary** goal is to protect the sample gradients sent to passive parties.
   - **Secondary** goal is to let clients only see split values for their own features. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
+- Other security assumption scenarios and potential solutions:
+
+| Collaboration Mode | Algorithm | Security Assumptions | Possible Security Measures | Notes |
+|--------------------|-----------|----------------------|-----------------|------|
+| **Horizontal** | Histogram-based | Trust over server, no trust other clients. [2] applies. | Perform most calculations on the server, only distribute the final splits to clients | Such assumption is rare, not common in practice |
+| **Horizontal** | Histogram-based | No trust over server, no trust other clients. [2] applies. | Confidential computing | HE is not compatible with performing calculation till splits, so they cannot co-exist to address both. |
+| **Vertical** | Histogram-based | Trust over passive parties, no trust over active party. [2] applies. | Perform most calculations on passive parties, only send the final splits to active party | Such assumption is rare, not common in practice |
+| **Vertical** | Histogram-based | No trust over passive parties, no trust over active party. Both [2] and [3] apply. | Confidential computing | HE is not compatible with performing calculation till splits, so they cannot co-exist to address both. |
 
 ## GPU Accelerations
 There are two levels of GPU accelerations in federated XGBoost:
@@ -57,19 +70,6 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
 | **Horizontal** | Protection of histograms against server | ✅ | Not needed | ✅ | Not needed |
 | **Vertical** | **Primary:** Protection of sample gradients against passive parties | ✅ | ✅ | ✅ | ✅ |
 | **Vertical** | **Secondary:** Protection of split values against non-feature owners | ✅ | ✅ | ❌ | ❌ |
-
-### Note on Client-side Horizontal Vulnerabilities
-In this example, we utilize HE to protect histograms against a potentially malicious server. Client-side vulnerabilities are not considered. 
-
-For client-side, a recent research [TimberStrike](https://arxiv.org/pdf/2506.07605) highlights privacy vulnerabilities in federated tree-based systems. The attack exploits split values and decision paths to reconstruct training data, achieving reconstruction accuracies around 80% on certain benchmark datasets.
-
-The vulnerability affects both collaboration modes:
-- **Tree-based collaboration**: Since local trees are shared directly, they allow for **local reconstruction** of specific client's private data.
-- **Histogram-based collaboration**: As data is aggregated, the resulting global histogram still leaks enough information for **global reconstruction** of the overall underlying data distribution.
-
-One potential solution as proposed in this work is that we can move the split finding phase to the server, such that clients will not have access to the histograms. This indeed will handle the client-side leakage. Unfortunately, we note that this solution is not compatible with existing server-end protection schemes of HE because the computations needed (e.g. division / argmax) are beyond the capability of standard HE. Therefore, implementing this would only "move" the vulnerability to the server-side rather than "address" it. Even worse, in this solution where the server performs split finding, the server would have access to individual histograms, enabling **local reconstruction** for each client's data at a higher accuracy than tree-based collaboration as shown in the paper.
-
-Future work combining HE with Confidential Computing (CC) could potentially address the issue effectively.
 
 ### Note on Implementation:
 - **Horizontal mode**: 
