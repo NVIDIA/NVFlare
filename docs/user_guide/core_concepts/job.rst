@@ -82,6 +82,10 @@ Pay attention to the following:
     - min_clients: minimum clients required for this job
     - mandatory_clients: mandatory clients required for this job
 
+Additional optional configuration parameters:
+
+    - stats_pool_config: configure statistics pool saving for post-job analysis (see :ref:`diagnostic_commands` for details)
+
 The system also keeps additional information about the job such as:
 
     - Submitter name
