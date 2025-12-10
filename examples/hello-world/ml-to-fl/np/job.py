@@ -51,7 +51,7 @@ def main():
         train_script="client.py",
         train_args=train_args,
         launch_external_process=launch_process,
-        aggregator_data_kind=DataKind.WEIGHTS if args.model_mode == "full" else DataKind.WEIGHT_DIFF,
+        aggregator_data_kind=DataKind.WEIGHTS if args.update_type == "full" else DataKind.WEIGHT_DIFF,
     )
     if args.metrics_tracking:
         add_experiment_tracking(
@@ -71,7 +71,9 @@ def main():
         )
 
     if args.export_config:
-        recipe.export_job("/tmp/nvflare/jobs/job_config")
+        job_dir = "/tmp/nvflare/jobs/job_config"
+        recipe.export(job_dir)
+        print(f"Job config exported to {job_dir}")
     else:
         env = SimEnv(num_clients=n_clients)
         run = recipe.execute(env)

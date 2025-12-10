@@ -394,26 +394,19 @@ class FedJobConfig:
 
     def _values_differ(self, default_val, attr_val):
         """Check if attribute value differs from default. Returns True if they differ."""
-        # If default is None and attr is not None, they differ
-        if default_val is None:
-            return attr_val is not None
-        # If both are None, they're equal
-        if attr_val is None:
-            return True
-        # For lists, compare carefully
-        if isinstance(attr_val, list) or isinstance(default_val, list):
-            try:
-                return default_val != attr_val
-            except (ValueError, TypeError):
-                return True
-        # Regular comparison
+        # Handle None values
+        if default_val is None or attr_val is None:
+            return default_val is not attr_val
+
+        # General comparison
         try:
-            result = default_val == attr_val
-            # Ensure we get a boolean
-            if not isinstance(result, bool):
-                return True
-            return not result
-        except (ValueError, TypeError):
+            result = default_val != attr_val
+            # Ensure we get a boolean (numpy arrays return arrays, not bool)
+            if isinstance(result, bool):
+                return result
+            # Non-bool result, assume different
+            return True
+        except Exception:
             return True
 
     def _get_args(self, component, custom_dir):

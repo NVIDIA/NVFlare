@@ -60,8 +60,6 @@ class NPModelPersistor(ModelPersistor):
         """Convert initial_model to numpy array."""
         if self.initial_model is None:
             return np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
-        elif isinstance(self.initial_model, np.ndarray):
-            return self.initial_model
         else:
             return np.array(self.initial_model, dtype=np.float32)
 
