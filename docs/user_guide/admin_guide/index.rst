@@ -14,4 +14,5 @@ Guide for project Admin and Org Admin
    deployment/index
    nvflare_security
    monitoring
+   diagnostic_commands
 
