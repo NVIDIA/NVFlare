@@ -42,7 +42,7 @@ class EncType:
 
 
 class _RefKey:
-    FILE_REF_ID = "file_ref_id"
+    REF_ID = "ref_id"
     FQCN = "fqcn"
 
 
@@ -86,10 +86,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
     @abstractmethod
     def to_downloadable(self, items: dict, max_chunk_size: int, fobs_ctx: dict) -> Downloadable:
-        """Dump the items to the file with the specified path
+        """Convert the items Downloadable object.
 
         Args:
-            items: a dict of items of target object type to be dumped to file
+            items: a dict of items of target object type to be converted
             max_chunk_size: max size of one chunk.
             fobs_ctx: FOBS Context
 
@@ -180,7 +180,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self._config_var_name(ConfigVarName.DOWNLOAD_CHUNK_SIZE),
             self.max_chunk_size,
         )
-        if max_chunk_size <= 0:
+        fobs_ctx = manager.fobs_ctx
+        use_native = fobs_ctx.get("native", False)
+        if max_chunk_size <= 0 or use_native:
             # use native decompose
             self.logger.info("using native_decompose")
             data = self.native_decompose(target, manager)
@@ -288,7 +290,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         ref = {
             _RefKey.FQCN: cell.get_fqcn(),
-            _RefKey.FILE_REF_ID: ref_id,
+            _RefKey.REF_ID: ref_id,
         }
         self.logger.info(f"ViaDownloader: created download ref for target type {self.__class__.__name__}: {ref=}")
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
@@ -302,7 +304,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         if downloadable_objs:
             downloader = self._create_downloader(fobs_ctx)
             for ref_id, obj in downloadable_objs:
-                self.logger.debug("ViaDownloader: adding object to downloader: {ref_id=}")
+                self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
 
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):
@@ -381,9 +383,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self.logger.error("cannot download from remote cell since cell not available in fobs context")
             raise RuntimeError("FOBS Protocol Error")
 
-        ref_id = ref.get(_RefKey.FILE_REF_ID)
+        ref_id = ref.get(_RefKey.REF_ID)
         if not ref_id:
-            self.logger.error(f"missing {_RefKey.FILE_REF_ID} from {ref}")
+            self.logger.error(f"missing {_RefKey.REF_ID} from {ref}")
             raise RuntimeError("FOBS Protocol Error")
 
         fqcn = ref.get(_RefKey.FQCN)

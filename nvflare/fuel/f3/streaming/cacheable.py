@@ -26,8 +26,21 @@ class _StateKey:
 
 
 class CacheableObject(Downloadable):
+    """This class provides cache capability for managing chunks generated during streaming.
+    When the object is to be sent to multiple sites, each chunk is generated only once and cached for other
+    sites. Once all sites received the chunk, it's removed from the cache.
+
+    """
 
     def __init__(self, obj: Any, max_chunk_size: int):
+        """Constructor of CacheableObject.
+
+        Args:
+            obj: the object to be downloaded.
+            max_chunk_size: max number of bytes for each chunk.
+
+        Notes: The object must be able to be divided into multiple items. A chunk is generated for each item.
+        """
         super().__init__(obj)
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
@@ -39,10 +52,23 @@ class CacheableObject(Downloadable):
 
     @abstractmethod
     def get_item_count(self) -> int:
+        """The subclass must implement this method to return the number of items the object contains.
+
+        Returns: the number of items the object contains
+
+        """
         pass
 
     @abstractmethod
-    def produce_item(self, index: int) -> Any:
+    def produce_item(self, index: int) -> bytes:
+        """This method is called to produce the chunk for the specified item.
+
+        Args:
+            index: index of the item.
+
+        Returns: a chunk for the item
+
+        """
         pass
 
     def set_transaction(self, tx_id, ref_id):
@@ -63,17 +89,27 @@ class CacheableObject(Downloadable):
 
     def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:
-            data, _ = self.cache[index]
+            if not self.cache:
+                # the cache has been cleared
+                data = None
+            else:
+                data, _ = self.cache[index]
+
             if data is None:
                 data = self.produce_item(index)
-                self.cache[index] = (data, 0)
-                self.logger.info(f"created and cached item {index} for {requester}: {len(data)} bytes")
+                if self.cache:
+                    self.cache[index] = (data, 0)
+                    self.logger.info(f"created and cached item {index} for {requester}: {len(data)} bytes")
             else:
                 self.logger.info(f"got item {index} from cache for {requester}")
             return data
 
     def _adjust_cache(self, start: int, count: int):
         with self.lock:
+            if not self.cache:
+                # cache has been cleared
+                return
+
             for i in range(start, start + count):
                 data, num_received = self.cache[i]
                 num_received += 1
@@ -122,6 +158,7 @@ class ItemConsumer(Consumer):
         self.error = None
         self.result = None
 
+    @abstractmethod
     def consume_items(self, items: List[Any], result: Any) -> Any:
         """Process items and return updated result."""
         pass

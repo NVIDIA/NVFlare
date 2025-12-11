@@ -39,12 +39,15 @@ class BinaryTransfer:
         tx_path = self.tx_path(conn, tx_id, folder_name)
 
         engine = conn.get_prop(ConnProps.ENGINE)
+        admin = conn.get_prop(ConnProps.ADMIN_SERVER)
+        timeout = admin.timeout if admin else 5
+
         cell = engine.get_cell()
         source_fqcn = cell.get_fqcn()
         downloader = ObjectDownloader(
             num_receivers=1,
             cell=engine.get_cell(),
-            timeout=5,
+            timeout=timeout,
             transaction_done_cb=self._cleanup_tx,
             tx_path=tx_path,
         )

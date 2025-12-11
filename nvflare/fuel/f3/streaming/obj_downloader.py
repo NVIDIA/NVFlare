@@ -16,9 +16,7 @@ from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadSer
 
 
 class ObjectDownloader:
-    """Defines a universal object downloader that can be used to download any Downloadable objects.
-
-    """
+    """Defines a universal object downloader that can be used to download any Downloadable objects."""
 
     def __init__(
         self,

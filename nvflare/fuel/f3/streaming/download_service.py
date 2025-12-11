@@ -25,8 +25,8 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
-OBJ_DOWNLOADER_CHANNEL = "obj_downloader__"
-OBJ_DOWNLOADER_TOPIC = "obj_downloader__download"
+OBJ_DOWNLOADER_CHANNEL = "download_service__"
+OBJ_DOWNLOADER_TOPIC = "download_service__download"
 
 """
 This package provides a framework for building object downloading capability (file download, tensor download, etc.).
@@ -194,15 +194,15 @@ class ProduceRC:
 
 
 class DownloadStatus:
-    """Constants for object download status.
-    """
+    """Constants for object download status."""
+
     SUCCESS = "success"
     FAILED = "failed"
 
 
 class TransactionDoneStatus:
-    """Constants for transaction completion status.
-    """
+    """Constants for transaction completion status."""
+
     FINISHED = "finished"
     TIMEOUT = "timeout"
     DELETED = "deleted"
@@ -359,7 +359,7 @@ class DownloadService:
         obj: Downloadable,
         ref_id=None,
     ) -> str:
-        if not issubclass(type(obj), Downloadable):
+        if not isinstance(obj, Downloadable):
             raise ValueError(f"obj must be of type {Downloadable} but got {type(obj)}")
 
         tx = cls._tx_table.get(transaction_id)
@@ -555,10 +555,10 @@ def download_object(
         from_fqcn: the FQCN of the object owner
         ref_id: reference id of the object to be downloaded
         per_request_timeout: timeout for each request to the object owner.
-        cell: the cell to be used for communication withe object owner.
+        cell: the cell to be used for communication with the object owner.
         consumer: the Consumer object used for processing received data
         secure: use P2P private communication with the data owner
-        optional: supress log messages
+        optional: suppress log messages
         abort_signal: for signaling abort
 
     Returns: None
