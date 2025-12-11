@@ -1,0 +1,7 @@
+nvflare
+torch>=2.2.0
+torchvision
+tensorboard
+transformers>=4.40.0
+pandas
+seqeval

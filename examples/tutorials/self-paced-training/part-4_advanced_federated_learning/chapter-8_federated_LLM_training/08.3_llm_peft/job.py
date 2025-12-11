@@ -26,7 +26,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 
 def main():
     args = define_parser()
-    train_script = "src/hf_sft_peft_fl.py"
+    train_script = "client.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
 
@@ -74,10 +74,14 @@ def main():
 
     # Define the model persistor and send to server
     # First send the model to the server
-    job.to("src/hf_sft_model.py", "server")
+    job.to("model.py", "server")
     # Then send the model persistor to the server
-    model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
-    job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
+    model_args = {"path": "model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
+    # When using message_mode="tensor", we need to set allow_numpy_conversion=False
+    allow_numpy_conversion = message_mode != "tensor"
+    job.to(
+        PTFileModelPersistor(model=model_args, allow_numpy_conversion=allow_numpy_conversion), "server", id="persistor"
+    )
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
@@ -126,13 +130,13 @@ def define_parser():
         nargs="+",
         type=str,
         default="",
-        help="Clinet IDs, used to get the data path for each client",
+        help="Client IDs, used to get the data path for each client",
     )
     parser.add_argument(
         "--num_rounds",
         type=int,
         default=3,
-        help="Number of rounds, default to 5",
+        help="Number of rounds, default to 3",
     )
     parser.add_argument(
         "--workspace_dir",

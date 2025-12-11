@@ -3,7 +3,7 @@ import NvidiaLogo from '../images/nvidia_eye.png'
 import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 const base_url = import.meta.env.BASE_URL;
 ---
 <ClickTracker div_id="hero_div" eventLabel="Hero"/>
