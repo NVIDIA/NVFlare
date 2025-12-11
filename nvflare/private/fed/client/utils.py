@@ -51,8 +51,6 @@ def determine_parent_fqcn(client_config: dict, fl_ctx: FLContext) -> str:
 
     """
     fox_mode = fl_ctx.get_prop(FLContextKey.FOX_MODE, False)
-    my_identity = fl_ctx.get_identity_name()
-    print(f"FOX MODE FOR {my_identity}: {fox_mode}")
     if fox_mode:
         return FQCN.ROOT_SERVER
 
