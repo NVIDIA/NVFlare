@@ -286,9 +286,9 @@ class FedXGBTreeExecutor(Executor):
                 trees = gradient_booster["model"]["trees"]
                 for tree in trees:
                     if "sum_hessian" in tree:
-                        # Hide sum_hessian with all-1 
+                        # Hide sum_hessian with all-1
                         tree["sum_hessian"] = [1.0] * len(tree["sum_hessian"])
-        
+
         # report updated model in shareable
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
