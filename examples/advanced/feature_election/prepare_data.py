@@ -19,11 +19,11 @@ Creates synthetic high-dimensional datasets for testing federated
 feature selection across multiple clients.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import json
 import numpy as np
 import pandas as pd
 from sklearn.datasets import make_classification
@@ -107,60 +107,32 @@ def split_data_for_clients(
 
 def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Stratified split maintaining class distribution across clients."""
-    y = df["target"].values
+    np.random.seed(random_state)
 
-    # Use iterative stratified splitting to maintain class distribution
-    from sklearn.model_selection import StratifiedKFold
-
-    # If we can't use StratifiedKFold (fewer samples than clients), fall back to simple split
     if len(df) < num_clients:
         logger.warning(f"Not enough samples ({len(df)}) for {num_clients} clients. Using simple split.")
         return _split_random(df, num_clients, random_state)
 
-    # For small client counts, use direct stratified splitting
-    if num_clients == 2:
-        indices = np.arange(len(df))
-        train_idx, test_idx = train_test_split(
-            indices, test_size=0.5, random_state=random_state, stratify=y
-        )
-        return [df.iloc[train_idx].copy(), df.iloc[test_idx].copy()]
+    client_indices = [[] for _ in range(num_clients)]
 
-    # For more clients, use iterative approach
+    for class_label in df["target"].unique():
+        class_indices = df.index[df["target"] == class_label].tolist()
+        np.random.shuffle(class_indices)
+
+        if len(class_indices) >= num_clients:
+            # Enough samples: distribute round-robin
+            for i, idx in enumerate(class_indices):
+                client_indices[i % num_clients].append(idx)
+        else:
+            # Fewer samples than clients: distribute to random clients
+            chosen_clients = np.random.choice(num_clients, size=len(class_indices), replace=False)
+            for client_id, idx in zip(chosen_clients, class_indices):
+                client_indices[client_id].append(idx)
+
     client_dfs = []
-    remaining_df = df.copy()
-    remaining_indices = np.arange(len(df))
-
-    for i in range(num_clients - 1):
-        # Calculate target size for this client
-        samples_remaining = len(remaining_df)
-        clients_remaining = num_clients - i
-        target_size = samples_remaining // clients_remaining
-        test_size = max(0.01, min(0.99, target_size / samples_remaining))
-
-        try:
-            # Try stratified split
-            train_idx, client_idx = train_test_split(
-                np.arange(len(remaining_df)),
-                test_size=test_size,
-                random_state=random_state + i,
-                stratify=remaining_df["target"].values
-            )
-            client_dfs.append(remaining_df.iloc[client_idx].copy())
-            remaining_df = remaining_df.iloc[train_idx].reset_index(drop=True)
-        except ValueError:
-            # If stratification fails, use random split
-            logger.warning(f"Stratification failed for client {i}, using random split")
-            indices = np.arange(len(remaining_df))
-            np.random.seed(random_state + i)
-            np.random.shuffle(indices)
-            split_point = int(len(indices) * test_size)
-            client_idx = indices[:split_point]
-            train_idx = indices[split_point:]
-            client_dfs.append(remaining_df.iloc[client_idx].copy())
-            remaining_df = remaining_df.iloc[train_idx].reset_index(drop=True)
-
-    # Add remaining data as last client
-    client_dfs.append(remaining_df)
+    for indices in client_indices:
+        np.random.shuffle(indices)
+        client_dfs.append(df.loc[indices].copy())
 
     return client_dfs
 
@@ -218,7 +190,7 @@ def _split_non_iid(
 
         start = 0
         for i, prop in enumerate(proportions):
-            client_indices[i].extend(idx_k[start: start + prop])
+            client_indices[i].extend(idx_k[start : start + prop])
             start += prop
 
     return [df.iloc[indices].copy() for indices in client_indices]

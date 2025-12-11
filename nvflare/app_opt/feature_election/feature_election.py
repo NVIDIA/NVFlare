@@ -311,9 +311,7 @@ class FeatureElection:
 
         return self.election_stats
 
-    def apply_mask(
-        self, X: Union[pd.DataFrame, np.ndarray]
-    ) -> Union[pd.DataFrame, np.ndarray]:
+    def apply_mask(self, X: Union[pd.DataFrame, np.ndarray]) -> Union[pd.DataFrame, np.ndarray]:
         """Apply global feature mask to new data."""
         if self.global_mask is None:
             raise ValueError("No global mask available. Run simulate_election() first.")

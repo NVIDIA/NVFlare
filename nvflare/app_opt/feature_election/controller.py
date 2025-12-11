@@ -285,7 +285,7 @@ class FeatureElectionController(Controller):
                 continue
             n = shareable.get("num_samples", 1)
             weights = shareable.get("params")
-            
+
             if weights is not None:
                 if weighted_weights is None:
                     # Initialize with proper numpy arrays
@@ -348,8 +348,7 @@ class FeatureElectionController(Controller):
         return self._weighted_election(masks, scores, weights, intersection, union)
 
     def _weighted_election(
-            self, masks: np.ndarray, scores: np.ndarray, weights: np.ndarray, intersection: np.ndarray,
-            union: np.ndarray
+        self, masks: np.ndarray, scores: np.ndarray, weights: np.ndarray, intersection: np.ndarray, union: np.ndarray
     ) -> np.ndarray:
         """
         Perform weighted voting for features in the difference set.
