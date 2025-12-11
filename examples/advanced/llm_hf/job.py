@@ -14,7 +14,7 @@
 
 import argparse
 import os
-from typing import List
+from typing import List, Optional
 
 from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
@@ -44,17 +44,19 @@ class LLMHFRecipe(Recipe):
         data_path: str,
         train_mode: str,
         message_mode: str,
-        quantize_mode: str,
+        quantize_mode: Optional[str],
         gpus: List[List[str]],
         ports: List[str],
         multi_node: bool,
-        wandb_project: str,
-        wandb_run_name: str,
+        wandb_project: Optional[str],
+        wandb_run_name: Optional[str],
     ):
         self.client_ids = client_ids
         self.client_names: List[str] = []
         self.num_clients = len(client_ids)
         self.train_mode = train_mode.lower()
+        self.message_mode = message_mode.lower()
+        self.quantize_mode = quantize_mode.lower() if quantize_mode else None
 
         # Create FedJob and controller
         if self.train_mode == "sft":
@@ -68,7 +70,9 @@ class LLMHFRecipe(Recipe):
             model_file = "hf_peft_model.py"
             model_args = {"path": "hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
         else:
-            raise ValueError(f"Invalid train_mode: {train_mode}, only SFT and PEFT are supported.")
+            raise ValueError(
+                f"Invalid train_mode: {self.train_mode}, only SFT and PEFT are supported (case-insensitive)."
+            )
 
         job = FedJob(name=job_name, min_clients=self.num_clients)
         controller = FedAvg(num_clients=self.num_clients, num_rounds=num_rounds)
@@ -77,14 +81,14 @@ class LLMHFRecipe(Recipe):
         # Optional quantization filters
         quantizer = None
         dequantizer = None
-        if quantize_mode:
-            quantizer = ModelQuantizer(quantization_type=quantize_mode)
+        if self.quantize_mode:
+            quantizer = ModelQuantizer(quantization_type=self.quantize_mode)
             dequantizer = ModelDequantizer()
             job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
             job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
         # Persistor and model selector on server
-        allow_numpy_conversion = message_mode != "tensor"
+        allow_numpy_conversion = self.message_mode != "tensor"
         job.to(model_file, "server")
         persistor = PTFileModelPersistor(model=model_args, allow_numpy_conversion=allow_numpy_conversion)
         job.to(persistor, "server", id="persistor")
@@ -102,8 +106,8 @@ class LLMHFRecipe(Recipe):
                 f"--data_path_train {data_path_train} "
                 f"--data_path_valid {data_path_valid} "
                 f"--output_path {output_path} "
-                f"--train_mode {train_mode} "
-                f"--message_mode {message_mode} "
+                f"--train_mode {self.train_mode} "
+                f"--message_mode {self.message_mode} "
                 f"--num_rounds {num_rounds}"
             )
 
@@ -111,24 +115,29 @@ class LLMHFRecipe(Recipe):
                 run_name = wandb_run_name if wandb_run_name else f"nvflare_{self.train_mode}_{client_id}"
                 script_args += f" --wandb_project {wandb_project} --wandb_run_name {run_name}"
 
-            if message_mode == "tensor":
+            if self.message_mode == "tensor":
                 server_expected_format = "pytorch"
-            elif message_mode == "numpy":
+            elif self.message_mode == "numpy":
                 server_expected_format = "numpy"
             else:
-                raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
+                raise ValueError(
+                    f"Invalid message_mode: {self.message_mode}, only numpy and tensor are supported (case-insensitive)."
+                )
 
-            launch_external_process = True
+            # Default: run in-process for single-GPU unless overridden below.
+            launch_external_process = False
             site_gpus = gpus[idx]
             command = None
             if multi_node:
                 job.to("client_wrapper.sh", site_name)
                 command = "bash custom/client_wrapper.sh"
+                launch_external_process = True
             elif len(site_gpus) > 1:
                 command = (
                     f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(site_gpus)} "
                     f"--master_port={ports[idx]}"
                 )
+                launch_external_process = True
 
             runner = ScriptRunner(
                 script="client.py",
@@ -178,7 +187,7 @@ def define_parser():
         default="0",
         help="GPU assignments for simulated clients, comma separated, default single GPU",
     )
-    parser.add_argument("--ports", nargs="+", default="7777", help="Ports for clients, default to 7777")
+    parser.add_argument("--ports", nargs="+", default=["7777"], help="Ports for clients, default to 7777")
     parser.add_argument("--multi_node", action="store_true", help="Enable multi-node training")
     parser.add_argument("--startup_kit_location", type=str, default=None, help="Startup kit location")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Username for production mode")
@@ -196,7 +205,7 @@ def main():
     num_clients = len(client_ids)
     gpus = split_gpus(args.gpu)
     gpus = [g.split(",") for g in gpus]
-    ports = args.ports
+    ports = args.ports if isinstance(args.ports, list) else [args.ports]
 
     print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
     if len(gpus) != num_clients:
