@@ -149,12 +149,18 @@ class GroupCallContext:
         self.context = context
         self.waiter = waiter
         self.send_complete_cb = None
-        self.cb_kwargs = {}
+        self.send_complete_cb_kwargs = {}
         self.logger = get_obj_logger(self)
 
     def set_send_complete_cb(self, cb, **cb_kwargs):
+        if not callable(cb):
+            raise ValueError("send_complete_cb must be callable")
         self.send_complete_cb = cb
-        self.cb_kwargs = cb_kwargs
+        self.send_complete_cb_kwargs = cb_kwargs
+
+    def send_completed(self):
+        if self.send_complete_cb:
+            self.send_complete_cb(**self.send_complete_cb_kwargs)
 
     def set_result(self, result):
         """This is called by the backend to set the result received from the remote app.

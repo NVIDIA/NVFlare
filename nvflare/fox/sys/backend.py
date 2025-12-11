@@ -116,14 +116,17 @@ class FlareBackend(Backend):
                 target_name=gcc.target_name,
                 call_opt=gcc.call_opt,
                 func_name=func_name,
-                send_complete_cb=gcc.send_complete_cb,
-                cb_kwargs=gcc.cb_kwargs,
+                send_complete_cb=self._msg_sent,
+                cb_kwargs={"gcc": gcc},
                 *args,
                 **kwargs,
             )
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
+
+    def _msg_sent(self, gcc: GroupCallContext):
+        gcc.send_completed()
 
     def handle_exception(self, exception: Exception):
         fl_ctx = self.engine.new_context()

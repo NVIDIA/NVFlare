@@ -255,4 +255,4 @@ class FoxController(Controller, FoxAdaptor):
         pass
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.thread_executor.shutdown(wait=False, cancel_futures=True)
+        self.thread_executor.shutdown(wait=True, cancel_futures=True)
