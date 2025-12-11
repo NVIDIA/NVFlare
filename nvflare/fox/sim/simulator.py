@@ -180,7 +180,7 @@ class AppRunner:
             self.abort_signal.trigger(True)
             result = None
         finally:
-            self.thread_executor.shutdown(wait=False, cancel_futures=True)
+            self.thread_executor.shutdown(wait=True, cancel_futures=True)
         self.logger.info(f"Experiment results are in {self.exp_dir}")
         return result
 

@@ -85,7 +85,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         if self.client_ctx:
             self.logger.info(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
-        self.thread_executor.shutdown(wait=False, cancel_futures=True)
+        self.thread_executor.shutdown(wait=True, cancel_futures=True)
 
     def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"

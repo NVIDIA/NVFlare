@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 
+from ...security.logging import secure_log_traceback
 from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
@@ -122,5 +123,5 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}
         )
     except Exception as ex:
-        traceback.print_exc()
+        secure_log_traceback(logger)
         return _error_reply(f"exception {type(ex)}", logger)
