@@ -91,7 +91,11 @@ def main(args):
         job.to("hf_peft_model.py", "server")
         # Then send the model persistor to the server
         model_args = {"path": "hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
-    job.to(PTFileModelPersistor(model=model_args, allow_numpy_conversion=False), "server", id="persistor")
+    # When using message_mode="tensor", we need to set allow_numpy_conversion=False
+    allow_numpy_conversion = message_mode != "tensor"
+    job.to(
+        PTFileModelPersistor(model=model_args, allow_numpy_conversion=allow_numpy_conversion), "server", id="persistor"
+    )
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")

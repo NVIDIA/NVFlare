@@ -155,5 +155,5 @@ class TestCommonDecomposers:
 
     @staticmethod
     def _run_fobs(data: Any) -> Any:
-        buf = fobs.dumps(data)
+        buf = fobs.dumps(data, fobs_ctx={"native": True})
         return fobs.loads(buf)
