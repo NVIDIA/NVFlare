@@ -18,9 +18,11 @@ from dataclasses import dataclass
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 
+from nvflare.dashboard.utils import EnvVar
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
-dashboard_pp = os.environ.get("NVFL_DASHBOARD_PP")
+dashboard_pp = os.environ.get(EnvVar.DASHBOARD_PP)
+
 if dashboard_pp is not None:
     dashboard_pp = dashboard_pp.encode("utf-8")
 
