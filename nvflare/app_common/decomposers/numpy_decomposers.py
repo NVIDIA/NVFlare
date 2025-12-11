@@ -27,6 +27,8 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
+_NPZ_EXTENSION = ".npz"
+
 
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):
     """Decomposer base class for all numpy types with item method."""
@@ -61,7 +63,6 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
 class NumpyArrayDecomposer(ViaDownloaderDecomposer):
 
     def __init__(self):
-        # by default do not use file downloading.
         ViaDownloaderDecomposer.__init__(self, 1024 * 1024 * 2, "np_")
 
     def supported_type(self):

@@ -43,24 +43,24 @@ class FileDownloadable(Downloadable):
         file_downloaded_cb=None,
         **cb_kwargs,
     ):
-        """This is the "object" to be downloaded.
+        """Constructor of FileDownloadable.
 
         Args:
             file_name: name of the file to be downloaded.
             chunk_size: size of each chunk
-            file_downloaded_cb: if specified, the callback to be called when the file is downloaded to a receiver.
+            file_downloaded_cb: if specified, the callback to be called when the file is downloaded to a site.
             cb_kwargs: kwargs passed to the CB.
 
         Notes: The file_downloaded_cb will be called as follows:
 
-            file_downloaded_cb(to_receiver, status, file_name, **cb_kwargs)
+            file_downloaded_cb(to_site, status, file_name, **cb_kwargs)
 
-        where: to_receiver is the name of the receiver that the file is just downloaded to;
+        where: to_site is the name of the site that the file is just downloaded to;
         status is a value of DownloadStatus as defined in nvflare.fuel.f3.streaming.download_service;
         file_name is the name of the file downloaded.
 
-        The file_downloaded_cb is also called after it's downloaded to all receivers. In this case, the value of
-        "to_receiver" is empty, and the value of "status" is also empty.
+        The file_downloaded_cb is also called after it's downloaded to all sites. In this case, the value of
+        "to_site" is empty, and the value of "status" is also empty.
 
         """
         super().__init__(file_name)
