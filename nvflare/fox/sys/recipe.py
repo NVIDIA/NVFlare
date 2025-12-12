@@ -167,14 +167,14 @@ class FoxRecipe(Recipe):
         self._create_filter_components(to_f, outgoing_result_filters, filter_comp_table)
 
         # filters
-        in_cf_arg = self._create_filer_chain_arg(incoming_call_filters, filter_comp_table)
-        out_cf_arg = self._create_filer_chain_arg(outgoing_call_filters, filter_comp_table)
-        in_rf_arg = self._create_filer_chain_arg(incoming_result_filters, filter_comp_table)
-        out_rf_arg = self._create_filer_chain_arg(outgoing_result_filters, filter_comp_table)
+        in_cf_arg = self._create_filter_chain_arg(incoming_call_filters, filter_comp_table)
+        out_cf_arg = self._create_filter_chain_arg(outgoing_call_filters, filter_comp_table)
+        in_rf_arg = self._create_filter_chain_arg(incoming_result_filters, filter_comp_table)
+        out_rf_arg = self._create_filter_chain_arg(outgoing_result_filters, filter_comp_table)
         return collab_obj_ids, in_cf_arg, out_cf_arg, in_rf_arg, out_rf_arg
 
     @staticmethod
-    def _create_filer_chain_arg(filter_chains: list, comp_table: dict):
+    def _create_filter_chain_arg(filter_chains: list, comp_table: dict):
         result = []
         for chain in filter_chains:
             assert isinstance(chain, FilterChain)

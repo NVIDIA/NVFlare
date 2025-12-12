@@ -35,7 +35,7 @@ def main():
         ),
         client=PTTrainer(delta=1.0),
     )
-    recipe.add_decomposers([TensorDecomposer(), NumpyArrayDecomposer])
+    recipe.add_decomposers([TensorDecomposer(), NumpyArrayDecomposer()])
     recipe.export(JOB_ROOT_DIR)
 
 

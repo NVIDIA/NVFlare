@@ -48,7 +48,7 @@ class Downloader(ObjectDownloader):
         ctx = fox.context
         backend = ctx.backend
         if not isinstance(backend, FlareBackend):
-            raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+            raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
 
         super().__init__(
             cell=backend.cell,

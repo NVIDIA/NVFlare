@@ -101,13 +101,14 @@ class PTFedAvgStream:
             if err:
                 raise RuntimeError(f"failed to download model {model}: {err}")
         else:
-            for k, v in model.items():
-                if k not in aggr_result.total:
-                    aggr_result.total[k] = v
-                else:
-                    aggr_result.total[k] += v
+            with aggr_result.lock:
+                for k, v in model.items():
+                    if k not in aggr_result.total:
+                        aggr_result.total[k] = v
+                    else:
+                        aggr_result.total[k] += v
 
-        aggr_result.count += 1
+                aggr_result.count += 1
         return None
 
     def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult):
@@ -118,6 +119,7 @@ class PTFedAvgStream:
                     aggr_result.total[k] = v
                 else:
                     aggr_result.total[k] += v
+            aggr_result.count += 1
 
 
 class PTTrainer:
@@ -130,7 +132,8 @@ class PTTrainer:
     def train(self, current_round, model1, model2, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None, "model"
+
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {model1=} {model2=}")
         if model_type == "ref":
             err, model1 = download_tensors(ref=model1, per_request_timeout=5.0)

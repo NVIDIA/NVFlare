@@ -27,7 +27,7 @@ class CallOption:
 
         Args:
             expect_result: whether result is expected from the remote object.
-            blocking: whether rhe call is blocking. Only for group calls.
+            blocking: whether the call is blocking. Only for group calls.
             timeout: when expecting result, the max number of secs to wait for result.
             secure: whether to use P2P secure messaging.
             optional: whether the call is optional.

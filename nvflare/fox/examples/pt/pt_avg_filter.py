@@ -12,23 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import threading
-
-import torch
 
 from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples.pt.utils import add as add_pt
+from nvflare.fox.examples.pt.utils import div as div_pt
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.simulator import Simulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
-
-
-class _AggrResult:
-
-    def __init__(self):
-        self.total = {}
-        self.count = 0
-        self.lock = threading.Lock()  # ensure update integrity
 
 
 class PTFedAvg:
@@ -47,37 +38,23 @@ class PTFedAvg:
         current_model = self._init_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
+            if not current_model:
+                self.logger.error(f"training failed at round {i}")
+                break
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
     def _do_one_round(self, r, current_model):
-        aggr_result = _AggrResult()
+        aggr_result = {}
 
-        fox.clients(
-            process_resp_cb=self._accept_train_result,
-            aggr_result=aggr_result,
-        ).train(r, current_model)
+        results = fox.clients.train(r, current_model)
+        for n, v in results:
+            add_pt(v, aggr_result)
 
-        if aggr_result.count == 0:
-            return None
-        else:
-            result = {}
-            for k, v in aggr_result.total.items():
-                result[k] = torch.div(v, aggr_result.count)
-            self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
-            return result
-
-    def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
-        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
-
-        for k, v in result.items():
-            if k not in aggr_result.total:
-                aggr_result.total[k] = v
-            else:
-                aggr_result.total[k] += v
-
-        aggr_result.count += 1
-        return None
+        num_results = len(results)
+        aggr_result = div_pt(aggr_result, num_results) if num_results > 0 else None
+        self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {num_results} clients: {aggr_result}")
+        return aggr_result
 
 
 class PTTrainer:

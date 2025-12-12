@@ -192,7 +192,6 @@ class FoxController(Controller, FoxAdaptor):
         all_clients = engine.get_clients()
         num_clients = len(all_clients)
         for c in all_clients:
-            assert isinstance(c, ClientSite)
             self.client_info[c.name] = None
 
         start_time = time.time()
@@ -229,7 +228,7 @@ class FoxController(Controller, FoxAdaptor):
         client_proxies = []
         for c in all_clients:
             info = self.client_info[c.name]
-            assert isinstance(info, _ClientInfo)
+            # assert isinstance(info, _ClientInfo)
             client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal, fl_ctx))
 
         ws = FlareWorkspace(fl_ctx)

@@ -23,7 +23,7 @@ def main():
 
     simulator = Simulator(
         root_dir="/tmp/fox",
-        experiment_name="fedavg_intime",
+        experiment_name="fedavg_stream",
         server=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=4),
         client=NPTrainer(delta=1.0),
         num_clients=2,

@@ -21,7 +21,8 @@ class FlareWorkspace(Workspace):
     def __init__(self, fl_ctx: FLContext):
         super().__init__()
         ws_obj = fl_ctx.get_workspace()
-        assert isinstance(ws_obj, NVFWorkspace)
+        if not isinstance(ws_obj, NVFWorkspace):
+            raise RuntimeError(f"the ws_obj must be NVFWorkspace but got {type(ws_obj)}")
         self.flare_ws = ws_obj
         self.job_id = fl_ctx.get_job_id()
 

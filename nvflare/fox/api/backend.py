@@ -55,7 +55,7 @@ class Backend(ABC):
 
         Args:
             gcc: contextual information about group call.
-            func_name: mame of the function to be called in the remote app.
+            func_name: name of the function to be called in the remote app.
             *args: args to pass to the target function.
             **kwargs: kwargs to pass to the target function.
 

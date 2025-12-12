@@ -84,7 +84,7 @@ class PTFedAvgMixed:
         grp.train(r, pt_model, np_model, model_type)
 
         if aggr_result.count == 0:
-            return None
+            return None, None
         else:
             pt_result = aggr_result.pt_total
             div_pt(pt_result, aggr_result.count)
@@ -122,10 +122,12 @@ class PTFedAvgMixed:
             if err:
                 raise RuntimeError(f"failed to download NP model file {np_result}: {err}")
         else:
-            add_pt(pt_result, aggr_result.pt_total)
-            add_np(np_result, aggr_result.np_total)
+            with aggr_result.lock:
+                add_pt(pt_result, aggr_result.pt_total)
+                add_np(np_result, aggr_result.np_total)
 
-        aggr_result.count += 1
+        with aggr_result.lock:
+            aggr_result.count += 1
         return None
 
     def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult):

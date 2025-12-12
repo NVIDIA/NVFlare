@@ -27,7 +27,7 @@ def parse_array_def(array_def):
         raise ValueError(f"unsupported array def: {array_def}")
 
 
-def parse_state_dict(d: dict[str, list]):
+def parse_state_dict(d):
     result = {}
     for k, v in d.items():
         result[k] = parse_array_def(v)
@@ -47,8 +47,10 @@ def add(value: dict, to_model: dict):
             to_model[k] = v
         else:
             to_model[k] += v
+    return to_model
 
 
 def div(model: dict, value):
     for k, v in model.items():
         model[k] = torch.div(v, value)
+    return model

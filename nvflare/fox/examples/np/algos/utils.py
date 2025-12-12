@@ -32,7 +32,7 @@ def parse_array_def(array_def):
         raise ValueError(f"unsupported array def: {array_def}")
 
 
-def parse_state_dict(d: dict[str, list]):
+def parse_state_dict(d):
     result = {}
     for k, v in d.items():
         result[k] = parse_array_def(v)

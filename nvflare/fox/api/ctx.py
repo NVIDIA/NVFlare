@@ -84,6 +84,8 @@ class Context:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.parent_ctx:
             set_call_context(self.parent_ctx)
+        else:
+            set_call_context(None)
 
 
 def get_call_context():

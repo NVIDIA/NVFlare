@@ -65,7 +65,7 @@ class PTFedAvgMixed:
         ).train(r, pt_model, np_model)
 
         if aggr_result.count == 0:
-            return None
+            return None, None
         else:
             pt_result = aggr_result.pt_total
             div_pt(pt_result, aggr_result.count)
@@ -84,9 +84,10 @@ class PTFedAvgMixed:
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         pt_result, np_result = result
-        add_pt(pt_result, aggr_result.pt_total)
-        add_np(np_result, aggr_result.np_total)
-        aggr_result.count += 1
+        with aggr_result.lock:
+            add_pt(pt_result, aggr_result.pt_total)
+            add_np(np_result, aggr_result.np_total)
+            aggr_result.count += 1
         return None
 
 
