@@ -118,8 +118,8 @@ def main(args):
             print(
                 f"site={client_name}, Epoch: {epoch}/{epochs}, Loss: {avg_loss:.6f}, LR: {scheduler.get_last_lr()[0]:.6f}"
             )
-            global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-            summary_writer.add_scalar(tag="loss_for_each_batch", scalar=float(avg_loss), global_step=global_step)
+            global_step = input_model.current_round * epochs + epoch
+            summary_writer.add_scalar(tag="loss_for_each_epoch", scalar=float(avg_loss), global_step=global_step)
             summary_writer.add_scalar(tag="learning_rate", scalar=scheduler.get_last_lr()[0], global_step=global_step)
             # Step the learning rate scheduler after each epoch
             scheduler.step()
