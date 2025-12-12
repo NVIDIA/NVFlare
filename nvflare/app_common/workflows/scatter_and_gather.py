@@ -268,7 +268,7 @@ class ScatterAndGather(Controller):
                     AppEventType.AFTER_AGGREGATION, fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
                 )
                 self.log_info(fl_ctx, "End aggregation.")
-
+                
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
@@ -300,6 +300,10 @@ class ScatterAndGather(Controller):
                 # the last finished round's result
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     self._engine.persist_components(fl_ctx, completed=False)
+
+                # Reset aggregator state for next round
+                if hasattr(self.aggregator, 'reset'):
+                    self.aggregator.reset(fl_ctx)
 
                 gc.collect()
 

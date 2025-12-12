@@ -14,7 +14,7 @@
 
 import re
 import time
-from typing import Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import tenseal as ts
@@ -33,11 +33,11 @@ from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_
 class HEModelEncryptor(DXOFilter):
     def __init__(
         self,
-        tenseal_context_file="client_context.tenseal",
-        encrypt_layers=None,
-        aggregation_weights=None,
-        weigh_by_local_iter=True,
-        data_kinds=None,
+        tenseal_context_file: str = "client_context.tenseal",
+        encrypt_layers: Optional[Union[List[str], str]] = None,
+        aggregation_weights: Optional[Dict[str, float]] = None,
+        weigh_by_local_iter: bool = True,
+        data_kinds: Optional[List[DataKind]] = None,
     ):
         """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL
            https://github.com/OpenMined/TenSEAL.
@@ -72,37 +72,33 @@ class HEModelEncryptor(DXOFilter):
         self.n_iter = None
         self.client_name = None
         self.aggregation_weight = None
-
-        # choose which layers to encrypt
-        if encrypt_layers is not None:
-            if not (isinstance(encrypt_layers, list) or isinstance(encrypt_layers, str)):
-                raise ValueError(
-                    "Must provide a list of layer names or a string for regex matching, but got {}".format(
-                        type(encrypt_layers)
-                    )
-                )
-        if isinstance(encrypt_layers, list):
-            for encrypt_layer in encrypt_layers:
-                if not isinstance(encrypt_layer, str):
-                    raise ValueError(
-                        "encrypt_layers needs to be a list of layer names to encrypt, but found element of type {}".format(
-                            type(encrypt_layer)
-                        )
-                    )
-            self.encrypt_layers = encrypt_layers
-            self.logger.info(f"Encrypting {len(encrypt_layers)} layers")
-        elif isinstance(encrypt_layers, str):
-            self.encrypt_layers = re.compile(encrypt_layers) if encrypt_layers else None
-            self.logger.info(f'Encrypting all layers based on regex matches with "{encrypt_layers}"')
-        else:
-            self.encrypt_layers = [True]  # needs to be list for logic in encryption()
-            self.logger.info("Encrypting all layers")
+        self.encrypt_layers = encrypt_layers
 
         decomposers.register()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+
+            # choose which layers to encrypt
+            if self.encrypt_layers is not None:
+                if not (isinstance(self.encrypt_layers, list) or isinstance(self.encrypt_layers, str)):
+                    raise ValueError(
+                        f"Must provide a list of layer names or a string for regex matching, but got {type(self.encrypt_layers)}"
+                    )
+            if isinstance(self.encrypt_layers, list):
+                for encrypt_layer in self.encrypt_layers:
+                    if not isinstance(encrypt_layer, str):
+                        raise ValueError(
+                            f"encrypt_layers needs to be a list of layer names to encrypt, but found element of type {type(encrypt_layer)}"
+                        )
+                self.logger.info(f"Encrypting {len(self.encrypt_layers)} layers")
+            elif isinstance(self.encrypt_layers, str):
+                self.encrypt_layers = re.compile(self.encrypt_layers) if self.encrypt_layers else None
+                self.logger.info(f'Encrypting all layers based on regex matches with "{self.encrypt_layers}"')
+            else:
+                self.encrypt_layers = [True]  # needs to be list for logic in encryption()
+                self.logger.info("Encrypting all layers")
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
