@@ -114,24 +114,6 @@ python3 job.py \
   --threads 2
 ```
 
-#### Programmatic Usage Example
-For users who want to integrate the recipe into their own Python workflows, see `run_gnn_recipe_example.py`:
-
-```bash
-# Run protein classification example
-python3 run_gnn_recipe_example.py protein
-
-# Run financial transaction classification example
-python3 run_gnn_recipe_example.py finance
-```
-
-This example demonstrates how to:
-- Import and use `create_protein_job()` or `create_finance_job()` functions
-- Configure task-specific parameters
-- Get a configured `FedAvgRecipe` instance
-- Export the job and execute it programmatically
-- Access job status and results
-
 ###  Results
 We can access the results inside the local and fl workspaces under `/tmp/nvflare/gnn`.
 #### Color Scheme
