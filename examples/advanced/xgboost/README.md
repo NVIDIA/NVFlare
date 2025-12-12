@@ -53,7 +53,7 @@ Based on the above vulnerabilities, the following table outlines the different c
 |--------------------|-----------|----------------------|-----------------|------|
 | **Horizontal** | Histogram-based | Trust server, no trust in other clients. [2] applies. | Perform most calculations on the server, only distribute the final splits to clients | Such an assumption (trusting the server with data distributions) is rare and not common in practice |
 | **Horizontal** | Histogram-based | No trust in server, no trust in other clients. [2] applies. | Confidential computing | HE is not compatible with performing calculations until splits, so they cannot co-exist to address both concerns. |
-| **Vertical** | Histogram-based | Trust passive parties, no trust in active party. [2] applies. | Perform most calculations on passive parties, only send the final splits to active party | Such an assumption is rare (trusting passive parties with sample labels) and not common in practice |
+| **Vertical** | Histogram-based | Trust passive parties, no trust in active party. [2] applies. | Perform most calculations on passive parties, only send the final splits to active party | Such an assumption (trusting passive parties with sample labels) is rare and not common in practice |
 | **Vertical** | Histogram-based | No trust in passive parties, no trust in active party. Both [2] and [3] apply. | Local secret data preprocessing and anonymization, Confidential computing | HE is not compatible with performing calculations until splits, so they cannot co-exist to address both concerns. |
 
 ## GPU Accelerations
