@@ -277,7 +277,9 @@ class FedXGBTreeExecutor(Executor):
             else:
                 bst = self._local_boost_cyclic(fl_ctx)
 
-        self.local_model = bst.save_raw("json")
+        # save_raw returns bytes, need to parse to dict first
+        raw_model = bst.save_raw("json")
+        self.local_model = json.loads(raw_model)
 
         # remove the sum_hessian from local_model for privacy
         if "learner" in self.local_model and "gradient_booster" in self.local_model["learner"]:
