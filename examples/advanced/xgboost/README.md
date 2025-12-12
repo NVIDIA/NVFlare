@@ -60,7 +60,7 @@ The following table summarizes the available security measures for different col
 
 | Collaboration Mode | Algorithm | Data Exchange | Security Risk | Security Measure | Implementation |
 |-------------------|-----------|---------------|---------------|------------------|----------------|
-| **Horizontal** | Tree-based | Clients send locally boosted trees to server; server combines and distributes trees | Model statistics leakage | Remove "sum_hessian" values from JSON model | Prevents inversion attacks |
+| **Horizontal** | Tree-based | Clients send locally boosted trees to server; server combines and distributes trees | Model statistics leakage | Remove "sum_hessian" values from JSON model | Removed before clients sending local trees to server |
 | **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | Histogram leakage | Encrypt histograms | Local histograms encrypted before transmission |
 | **Vertical** | Histogram-based | Active party computes gradients; passive parties receive gradients and compute histograms | Gradient leakage | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending to passive parties |
 
