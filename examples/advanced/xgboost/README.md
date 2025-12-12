@@ -31,7 +31,7 @@ We assume that only one client is the "label owner" (also called the "active par
 Security risks exist based on prior research that exploits several types of information: sample-wise gradients for label recovery, gradient histograms for distribution recovery, and final model statistics for model inversion. We have three basic assumptions:
 - [1] The default XGBoost model JSON with "sum_hessian" statistics can enable model inversion to recover data distribution.
 - [2] The same information can be recovered from gradient histograms and can be used for the same purpose.
-- [3] Sample-wise gradients will leak label information.
+- [3] Sample-wise gradients may leak label information.
 
 Based on the above vulnerabilities, the following table outlines the different collaboration modes, algorithms, assumptions, and security measures available in secure federated XGBoost:
 
