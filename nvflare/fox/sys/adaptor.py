@@ -79,10 +79,10 @@ class FoxAdaptor:
             return f"{name} must be a list but got {type(filters)}"
 
         for chain_dict in filters:
-            pattern, filters, err = self._parse_filter_chain(name, chain_dict, fl_ctx)
+            pattern, filter_components, err = self._parse_filter_chain(name, chain_dict, fl_ctx)
             if err:
                 return err
-            add_f(pattern, filters)
+            add_f(pattern, filter_components)
         return None
 
     @staticmethod

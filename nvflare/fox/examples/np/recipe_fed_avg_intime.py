@@ -31,7 +31,7 @@ def main():
     )
 
     print_filter = Print()
-    recipe.add_server_outgoing_call_filters("*.train", [AddNoiseToModel(0.3)])
+    recipe.add_server_outgoing_call_filters("*.train", [AddNoiseToModel()])
     recipe.add_server_incoming_result_filters("*.train", [print_filter])
     recipe.set_server_prop("default_timeout", 5.0)
 

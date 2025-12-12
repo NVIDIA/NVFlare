@@ -43,7 +43,7 @@ class TensorReceiver:
                 gcc=gcc,
             )
             if err:
-                return RuntimeError(f"failed to download model {model}: {err}")
+                raise RuntimeError(f"failed to download model {model}: {err}")
             else:
                 return None
         else:

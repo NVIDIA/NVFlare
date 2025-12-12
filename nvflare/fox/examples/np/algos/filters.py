@@ -19,9 +19,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 class AddNoiseToModel:
 
-    def __init__(self, x=0.1):
+    def __init__(self):
         self.logger = get_obj_logger(self)
-        self.x = x
 
     @fox.call_filter
     def add_noise(self, func_kwargs: dict):

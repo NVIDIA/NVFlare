@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import traceback
-
 from nvflare.fox.api.app import App
 from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.dec import adjust_kwargs
@@ -61,7 +59,8 @@ def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func,
 def _call_app_method(request: Message, app: App, logger) -> Message:
     logger.debug("got a remote call")
     payload = request.payload
-    assert isinstance(payload, dict)
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"request payload must be dict but got {type(payload)}")
 
     caller = payload.get(ObjectCallKey.CALLER)
     if not caller:

@@ -15,11 +15,10 @@ import threading
 import time
 
 from nvflare.apis.fl_exception import RunAborted
-from nvflare.fox import fox
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.call_opt import CallOption
-from nvflare.fox.api.constants import CollabMethodArgName, ContextKey
+from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fox.api.utils import check_call_args
@@ -65,6 +64,7 @@ class SimBackend(Backend):
             while True:
                 if self.abort_signal.triggered:
                     waiter.result = RunAborted("job is aborted")
+                    break
 
                 ok = waiter.wait(0.1)
                 if ok:

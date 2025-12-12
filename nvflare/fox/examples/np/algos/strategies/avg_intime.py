@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
+
 from nvflare.fox import fox
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.examples.np.algos.utils import parse_array_def
@@ -22,6 +24,7 @@ class _AggrResult:
     def __init__(self):
         self.total = 0
         self.count = 0
+        self.lock = threading.Lock()
 
 
 class NPFedAvgInTime:
@@ -40,7 +43,9 @@ class NPFedAvgInTime:
         current_model = fox.get_prop(ContextKey.RESULT, self._init_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
-            # current_model = self._do_one_round_non_blocking(i, current_model)
+            if current_model is None:
+                self.logger.error(f"training failed at round {i}")
+                break
             score = self._do_eval(current_model)
             self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
@@ -52,11 +57,15 @@ class NPFedAvgInTime:
         for n, v in results:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
-        return total / len(results)
+
+        num_results = len(results)
+        return total / num_results if num_results > 0 else 0.0
 
     def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
-        timeout = fox.get_app_prop("default_timeout", 10)
+
+        # try to get the configured timeout value
+        timeout = fox.get_app_prop("default_timeout", self.timeout)
         self.logger.info(f"got timeout: {timeout}")
         fox.clients(
             timeout=timeout,
@@ -71,24 +80,9 @@ class NPFedAvgInTime:
             self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
-    def _do_one_round_non_blocking(self, r, current_model):
-        timeout = fox.get_app_prop("default_timeout", 10)
-        self.logger.info(f"got timeout: {timeout}")
-        results = fox.clients(
-            timeout=timeout,
-            blocking=False,
-        ).train(r, current_model)
-
-        total = 0
-        for n, v in results:
-            self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
-            total += v
-        result = total / len(results)
-        self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {len(results)} clients: {result}")
-        return result
-
     def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller} {result}")
-        aggr_result.total += result
-        aggr_result.count += 1
+        with aggr_result.lock:
+            aggr_result.total += result
+            aggr_result.count += 1
         return None

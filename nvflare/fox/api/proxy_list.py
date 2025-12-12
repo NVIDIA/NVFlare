@@ -19,8 +19,7 @@ from .group import group
 class ProxyList(list):
 
     def __init__(self, proxies: list):
-        super().__init__()
-        self.extend(proxies)
+        super().__init__(proxies)
 
     def __getattr__(self, func_name):
         """This is called to invoke the specified func without specifying call option.

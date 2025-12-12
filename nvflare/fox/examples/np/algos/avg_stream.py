@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os.path
+import threading
 import uuid
 
 from nvflare.fox import fox
@@ -26,6 +27,7 @@ class _AggrResult:
     def __init__(self):
         self.total = 0
         self.count = 0
+        self.lock = threading.Lock()
 
 
 class NPFedAvgStream:
@@ -73,6 +75,9 @@ class NPFedAvgStream:
         grp.train(r, model, model_type)
 
         if file_name:
+            # train is a blocking call that does not return until train results (success or not) are received
+            # from all clients.
+            # remove the file regardless.
             os.remove(file_name)
 
         if aggr_result.count == 0:
@@ -94,8 +99,9 @@ class NPFedAvgStream:
             model = load_np_model(file_path)
             os.remove(file_path)
 
-        aggr_result.total += model
-        aggr_result.count += 1
+        with aggr_result.lock:
+            aggr_result.total += model
+            aggr_result.count += 1
         return None
 
     def _model_downloaded(self, to_site: str, status: str, file_name):

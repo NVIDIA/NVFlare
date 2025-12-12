@@ -23,8 +23,14 @@ class SimWorkspace(Workspace):
         if not isinstance(root_dir, str):
             raise ValueError(f"root_dir must be str but got {type(root_dir)}")
 
+        if not isinstance(exp_id, str):
+            raise ValueError(f"exp_id must be str but got {type(exp_id)}")
+
         if not isinstance(experiment_name, str):
             raise ValueError(f"experiment_name must be str but got {type(experiment_name)}")
+
+        if not isinstance(site_name, str):
+            raise ValueError(f"site_name must be str but got {type(site_name)}")
 
         self.root_dir = root_dir
         self.site_name = site_name

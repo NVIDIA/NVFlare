@@ -100,7 +100,8 @@ class PTTrainer:
     def train(self, current_round, model, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None, "model"
+
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {model=}")
         if model_type == "ref":
             err, model = download_tensors(ref=model, per_request_timeout=5.0)

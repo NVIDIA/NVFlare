@@ -80,16 +80,16 @@ class FlareBackend(Backend):
             assert isinstance(reply, Message)
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc == ReturnCode.TIMEOUT:
-                return TimeoutError(f"function {func_name} timed out after {timeout} seconds")
+                raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
             elif rc != ReturnCode.OK:
-                return RuntimeError(f"function {func_name} failed: {rc}")
+                raise RuntimeError(f"function {func_name} failed: {rc}")
 
             if not isinstance(reply.payload, dict):
-                return RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
+                raise RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
 
             error = reply.payload.get(CallReplyKey.ERROR)
             if error:
-                return RuntimeError(f"function {func_name} failed: {error}")
+                raise RuntimeError(f"function {func_name} failed: {error}")
 
             result = reply.payload.get(CallReplyKey.RESULT)
             self.logger.info(f"got result from {self.target_fqcn} {func_name=}")

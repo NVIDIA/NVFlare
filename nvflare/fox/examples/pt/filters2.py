@@ -53,7 +53,6 @@ class ModelFilter:
             self.logger.error(f"error filtering call arg {arg_value}: {err}")
         else:
             func_kwargs[self.model_arg_name] = model
-            return func_kwargs
         return func_kwargs
 
     @fox.out_result_filter

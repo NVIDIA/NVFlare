@@ -41,12 +41,12 @@ class App:
 
     def __init__(self, obj, name: str):
         self.obj = obj
-        self.name = None
-        self.fqn = None
-        self.server = None
-        self.clients = None
-        self.client_hierarchy = None
-        self.backend_type = None
+        self.name = name
+        self._fqn = None
+        self._server_proxy = None
+        self._client_proxies = None
+        self._client_hierarchy = None
+        self._backend_type = None
         self._me = None
         self._collab_objs = {}
         self._abort_signal = None
@@ -84,10 +84,10 @@ class App:
         return self._workspace
 
     def get_server_proxy(self):
-        return self.server
+        return self._server_proxy
 
     def get_client_proxies(self):
-        return copy.copy(self.clients)
+        return copy.copy(self._client_proxies)
 
     def _add_filters(self, pattern: str, filters, to_list: list, filter_type, incoming):
         if not filters:
@@ -134,7 +134,8 @@ class App:
     def get_outgoing_result_filters(self):
         return self._outgoing_result_filter_chains
 
-    def _find_filter_chain(self, direction, chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
+    @staticmethod
+    def _find_filter_chain(direction, chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
         """
 
         Args:
@@ -216,7 +217,7 @@ class App:
         if name in self._collab_objs:
             raise ValueError(f"conflict with existing collab object '{name}' of {type(self._collab_objs[name])}")
 
-        if hasattr(obj, name):
+        if hasattr(self, name):
             raise ValueError(f"conflict with reserved name {name}")
 
         setattr(self, name, obj)
@@ -231,10 +232,10 @@ class App:
         self._workspace = workspace
         workspace.resource_dirs = self._resource_dirs
 
-        self.server = server
+        self._server_proxy = server
         self._abort_signal = abort_signal
 
-        self.clients = clients
+        self._client_proxies = clients
         self._me = None
         if not self.name or self.name == "server":
             self._me = server
@@ -248,7 +249,7 @@ class App:
             raise ValueError(f"cannot find site for {self.name}")
 
         forest = build_forest(objs=clients, get_fqn_f=lambda c: c.fqn, get_name_f=lambda c: c.name)
-        self.client_hierarchy = forest
+        self._client_hierarchy = forest
 
     def get_my_site(self) -> Proxy:
         return self._me
@@ -308,7 +309,7 @@ class App:
     def finalize(self, context: Context):
         self._fox_finalize(self, context)
 
-        # initialize target objects
+        # finalize target objects
         for obj in self._managed_objects.values():
             self._fox_finalize(obj, context)
 
@@ -354,8 +355,8 @@ class App:
         return True
 
     def get_leaf_clients(self):
-        assert isinstance(self.client_hierarchy, Forest)
-        leaf_nodes = [self.client_hierarchy.nodes[n] for n in self.client_hierarchy.leaves]
+        assert isinstance(self._client_hierarchy, Forest)
+        leaf_nodes = [self._client_hierarchy.nodes[n] for n in self._client_hierarchy.leaves]
         return [node.obj for node in leaf_nodes]
 
 
@@ -370,8 +371,8 @@ class ServerApp(App):
             raise ValueError("server object must have at least one algo")
 
     def get_children(self):
-        assert isinstance(self.client_hierarchy, Forest)
-        root_nodes = [self.client_hierarchy.nodes[n] for n in self.client_hierarchy.roots]
+        assert isinstance(self._client_hierarchy, Forest)
+        root_nodes = [self._client_hierarchy.nodes[n] for n in self._client_hierarchy.roots]
         return [node.obj for node in root_nodes]
 
     def has_children(self):
@@ -386,8 +387,8 @@ class ClientApp(App):
         super().__init__(obj, name)
 
     def get_children(self):
-        assert isinstance(self.client_hierarchy, Forest)
-        my_node = self.client_hierarchy.nodes[self.name]
+        assert isinstance(self._client_hierarchy, Forest)
+        my_node = self._client_hierarchy.nodes[self.name]
         assert isinstance(my_node, Node)
         if my_node.children:
             return [node.obj for node in my_node.children]
@@ -395,8 +396,8 @@ class ClientApp(App):
             return None
 
     def has_children(self):
-        assert isinstance(self.client_hierarchy, Forest)
-        my_node = self.client_hierarchy.nodes[self.name]
+        assert isinstance(self._client_hierarchy, Forest)
+        my_node = self._client_hierarchy.nodes[self.name]
         assert isinstance(my_node, Node)
         if my_node.children:
             return True

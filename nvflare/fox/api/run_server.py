@@ -13,6 +13,8 @@
 # limitations under the License.
 import traceback
 
+from nvflare.security.logging import secure_log_traceback
+
 from .app import ServerApp
 from .constants import CollabMethodArgName, ContextKey
 from .dec import supports_context
@@ -39,7 +41,7 @@ def run_server(server_app: ServerApp, logger):
             result = f(**kwargs)
             server_ctx.set_prop(ContextKey.RESULT, result)
         except Exception as ex:
-            traceback.print_exc()
+            secure_log_traceback(logger)
             backend = server_app.get_backend()
             backend.handle_exception(ex)
             break

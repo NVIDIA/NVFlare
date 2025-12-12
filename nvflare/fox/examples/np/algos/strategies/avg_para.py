@@ -31,6 +31,9 @@ class NPFedAvgParallel:
         current_model = self._initial_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
+            if current_model is None:
+                self.logger.error(f"training failed at round {i}")
+                break
             score = self._do_eval(current_model)
             self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         return current_model
@@ -41,7 +44,9 @@ class NPFedAvgParallel:
         for n, v in results:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
-        return total / len(results)
+
+        num_results = len(results)
+        return total / len(results) if num_results > 0 else 0.0
 
     def _do_one_round(self, r, current_model):
         total = 0
@@ -55,4 +60,5 @@ class NPFedAvgParallel:
 
             self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
-        return total / len(results)
+        num_results = len(results)
+        return total / len(results) if num_results > 0 else None

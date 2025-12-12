@@ -67,7 +67,7 @@ class facade:
     @classproperty
     def server(cls):
         ctx = get_call_context()
-        return ctx.app.server
+        return ctx.server
 
     @classproperty
     def clients(cls):
@@ -77,6 +77,9 @@ class facade:
     @classproperty
     def other_clients(cls):
         ctx = get_call_context()
+
+        # Note that ctx.clients returns a copy of client proxies, not the original client proxy list!
+        # So it is safe to manipulate the candidates here.
         candidates = ctx.clients
         me = ctx.app.get_my_site()
         if me in candidates:
