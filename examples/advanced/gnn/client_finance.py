@@ -19,12 +19,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from process_elliptic import process_ellipitc
-from pyg_sage import SAGE
+from model import SAGE
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
+from utils.process_elliptic import process_ellipitc
 
 DEVICE = "cuda:0"
 

@@ -1,5 +1,5 @@
 # Federated GNN on Graph Dataset using Inductive Learning
-In this example, we will demonstrate how to train a classification model using Graph Neural Network (GNN). 
+In this example, we will demonstrate how to train a classification model using Graph Neural Network (GNN) using a modern **recipe-based approach**. 
 
 ### Background of Graph Neural Network
 Graph Neural Networks (GNNs) show a promising future in research and industry, with potential applications in various domains, including social networks, e-commerce, recommendation systems, and more.
@@ -34,63 +34,103 @@ To support functions of PyTorch Geometric necessary for this example, we need ex
 python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
 ```
 
-#### Job Template
-We reuse the job templates from [sag_gnn](../../../job_templates/sag_gnn), let's set the job template path with the following command.
-```bash
-nvflare config -jt ../../../job_templates/
+#### Recipe-based Approach
+
+This example uses **NVFlare's FedAvgRecipe** to create federated GNN training jobs. The approach offers several advantages:
+- **Built-in functionality**: Leverages NVFlare's standard FedAvg recipe
+- **Cleaner API**: Python-native configuration without complex CLI arguments
+- **Better IDE support**: Type hints and autocomplete for all parameters
+- **Programmatic control**: Integrate into larger Python workflows easily
+
+We provide two task-specific job creation functions:
+- `create_protein_job()`: For PPI protein classification
+- `create_finance_job()`: For Elliptic++ financial transaction classification
+
+Both functions return a configured `FedAvgRecipe` instance that can be executed in simulation or production mode.
+
+The recipe can be used in two ways:
+1. **Command-line**: Run `job.py` directly with command-line arguments
+2. **Programmatic**: Import and use `create_protein_job()` or `create_finance_job()` from `job.py` in your own Python code
+
+#### Folder Structure
 ```
-Then we can check the available templates with the following command.
-```bash
-nvflare job list_templates
+gnn/
+├── job.py                          # Job creation functions using FedAvgRecipe
+├── model.py                        # Custom SAGE model for finance task
+├── client_protein.py               # FL client for protein classification
+├── client_finance.py               # FL client for financial transaction classification
+└── utils/                          # Utilities and local training scripts
+    ├── graphsage_protein_local.py  # Local training for protein task
+    ├── graphsage_finance_local.py  # Local training for finance task
+    └── process_elliptic.py         # Elliptic++ data preprocessing
 ```
-We can see the "sag_gnn" template is available
 
 #### Protein Classification
-The PPI dataset is directly available via torch_geometric library, we randomly split the dataset to 2 subsets, one for each client (`--client_id 1` and `--client_id 2`).
-First, we run the local training on each client, as well as the whole dataset with `--client_id 0`.
-```
-python3 code/graphsage_protein_local.py --client_id 0
-python3 code/graphsage_protein_local.py --client_id 1
-python3 code/graphsage_protein_local.py --client_id 2 
-```
-Then, we create NVFlare job based on GNN template.
-```
-nvflare job create -force -j "/tmp/nvflare/jobs/gnn_protein" -w "sag_gnn" -sd "code" \
-  -f app_1/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 1 --epochs 10" \
-  -f app_2/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 2 --epochs 10" \
-  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1" model_class_path="torch_geometric.nn.GraphSAGE" components[0].args.model.args.in_channels=50  components[0].args.model.args.hidden_channels=64 components[0].args.model.args.num_layers=2 components[0].args.model.args.out_channels=64  
-```
-For client configs, we set client_ids for each client, and the number of local epochs per round for each client's local training. 
+The PPI dataset is directly available via torch_geometric library. We randomly split the dataset to 2 subsets, one for each client.
 
-For server configs, we set the number of rounds for federated training, the key metric for model selection, and the model class path with model hyperparameters.
-
-With the produced job, we run the federated training on both clients via FedAvg using the NVFlare Simulator.
+First, run local training to establish baselines:
+```bash
+python3 utils/graphsage_protein_local.py --client_id 0
+python3 utils/graphsage_protein_local.py --client_id 1
+python3 utils/graphsage_protein_local.py --client_id 2
 ```
-nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_protein
+
+Then, run federated training using the recipe:
+```bash
+python3 job.py \
+  --task_type protein \
+  --client_ids 1 2 \
+  --num_rounds 7 \
+  --epochs_per_round 10 \
+  --data_path /tmp/nvflare/datasets/ppi \
+  --workspace_dir /tmp/nvflare/gnn/protein_fl_workspace \
+  --job_dir /tmp/nvflare/jobs/gnn_protein \
+  --threads 2
 ```
 
 #### Financial Transaction Classification
-We first download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. In this example, we will use the following three files:
+First, download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. In this example, we will use the following three files:
 - `txs_classes.csv`: transaction id and its class (licit or illicit)
 - `txs_edgelist.csv`: connections for transaction ids 
 - `txs_features.csv`: transaction id and its features
-Then, we run the local training on each client, as well as the whole dataset. Again, `--client_id 0` uses all data.
+
+Run local training to establish baselines:
+```bash
+python3 utils/graphsage_finance_local.py --client_id 0
+python3 utils/graphsage_finance_local.py --client_id 1
+python3 utils/graphsage_finance_local.py --client_id 2
 ```
-python3 code/graphsage_finance_local.py --client_id 0
-python3 code/graphsage_finance_local.py --client_id 1
-python3 code/graphsage_finance_local.py --client_id 2 
+
+Then, run federated training using the recipe:
+```bash
+python3 job.py \
+  --task_type finance \
+  --client_ids 1 2 \
+  --num_rounds 7 \
+  --epochs_per_round 10 \
+  --data_path /tmp/nvflare/datasets/elliptic_pp \
+  --workspace_dir /tmp/nvflare/gnn/finance_fl_workspace \
+  --job_dir /tmp/nvflare/jobs/gnn_finance \
+  --threads 2
 ```
-Similarly, we create NVFlare job based on GNN template.
+
+#### Programmatic Usage Example
+For users who want to integrate the recipe into their own Python workflows, see `run_gnn_recipe_example.py`:
+
+```bash
+# Run protein classification example
+python3 run_gnn_recipe_example.py protein
+
+# Run financial transaction classification example
+python3 run_gnn_recipe_example.py finance
 ```
-nvflare job create -force -j "/tmp/nvflare/jobs/gnn_finance" -w "sag_gnn" -sd "code" \
-  -f app_1/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 1 --epochs 10" \
-  -f app_2/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 2 --epochs 10" \
-  -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc" model_class_path="pyg_sage.SAGE" components[0].args.model.args.in_channels=165  components[0].args.model.args.hidden_channels=256 components[0].args.model.args.num_layers=3 components[0].args.model.args.num_classes=2  
-```
-And with the produced job, we run the federated training on both clients via FedAvg using the NVFlare Simulator.
-```
-nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_finance
-```
+
+This example demonstrates how to:
+- Import and use `create_protein_job()` or `create_finance_job()` functions
+- Configure task-specific parameters
+- Get a configured `FedAvgRecipe` instance
+- Export the job and execute it programmatically
+- Access job status and results
 
 ###  Results
 We can access the results inside the local and fl workspaces under `/tmp/nvflare/gnn`.
