@@ -47,7 +47,7 @@ Based on the above vulnerabilities, the following table outlines the different c
   - **Primary** goal is to protect the sample gradients sent to passive parties.
   - **Secondary** goal is to let clients only see split values for their own features. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
 
-**\*Disclaimer:** Other security assumption scenarios listed below are not included in our current secure xgboost solution. Histogram communication in Plaintext can reveal data distribution information, and users should be aware of their indications in data reconstruction, and choose proper action accordingly:
+### **\*Disclaimer:** Other security assumption scenarios listed below are not included in our current secure xgboost solution. Histogram communication in Plaintext can reveal data distribution information, and users should be aware of their indications in potential data reconstruction, and choose proper action accordingly:
 
 | Collaboration Mode | Algorithm | Security Assumptions | Possible Security Measures | Notes |
 |--------------------|-----------|----------------------|-----------------|------|
