@@ -16,6 +16,20 @@ The Encodon model family uses masked language modeling over codons with architec
 - **HuggingFace**: [80M](https://huggingface.co/nvidia/NV-CodonFM-Encodon-80M-v1) | [600M](https://huggingface.co/nvidia/NV-CodonFM-Encodon-600M-v1) | [1B](https://huggingface.co/nvidia/NV-CodonFM-Encodon-1B-v1) | [1B-Cdwt](https://huggingface.co/nvidia/NV-CodonFM-Encodon-Cdwt-1B-v1)
 - **NGC**: [Model catalog](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/models/nv_codonfm_encodon)
 
+### About the Dataset
+
+This example uses the **RiboNN dataset** for translation efficiency (TE) prediction. The dataset contains human mRNA sequences with experimentally measured translation efficiency values across multiple cell lines. Translation efficiency measures how effectively an mRNA sequence is translated into protein, which is a critical factor in gene expression and cellular function.
+
+The dataset includes:
+- **mRNA sequences**: Complete transcript sequences including 5' UTR, CDS, and 3' UTR regions
+- **Translation efficiency measurements**: Experimentally determined TE values from ribosome profiling
+- **Cell line annotations**: Translation efficiency data from multiple human cell lines
+- **Sequence features**: Pre-computed features including UTR sizes, CDS sizes, and sequence compositions
+
+This data is particularly well-suited for federated learning scenarios where genomic data from different sources (e.g., different labs, hospitals, or cell lines) needs to remain decentralized while still enabling collaborative model training.
+
+The dataset is automatically downloaded from the [CenikLab/TE_classic_ML](https://github.com/CenikLab/TE_classic_ML) repository during the setup process.
+
 ## Getting Started
 
 All steps should be run using the provided Docker environment for consistent dependencies and GPU access.
@@ -137,7 +151,7 @@ With embeddings extracted, we can now train a simple neural network in a federat
 python /data/jobs/train-nn/job.py --n_clients 3 --n_rounds 30
 ```
 
-> **Performance Note**: On an NVIDIA RTX A6000 GPU, this command completes in approximately 2 minutes to complete.
+> **Performance Note**: On an NVIDIA A6000 GPU, this command completes in approximately 2 minutes to complete.
 
 During training, each round consists of:
 1. Clients receiving the current global model
@@ -185,6 +199,8 @@ This workflow demonstrates how NVIDIA FLARE enables collaborative training on ge
 
 This example builds upon the [CodonFM repository](https://github.com/NVIDIA-Digital-Bio/CodonFM) developed by NVIDIA Digital Biology.
 
+The example uses the RiboNN dataset for translation efficiency prediction from [CenikLab/TE_classic_ML](https://github.com/CenikLab/TE_classic_ML).
+
 ### Citation
 
 If you use CodonFM in your research, please cite:
@@ -195,6 +211,19 @@ If you use CodonFM in your research, please cite:
   title = {{Learning the language of codon translation with CodonFM}},
   url = {https://research.nvidia.com/labs/dbr/assets/data/manuscripts/nv-codonfm-preprint.pdf},
   year = {2025}
+}
+```
+
+If you use the RiboNN dataset in your research, please cite:
+
+```bibtex
+@article{zheng2025predicting,
+  title={Predicting the translation efficiency of messenger RNA in mammalian cells},
+  author={Zheng, Dinghai and Persyn, Logan and Wang, Jun and Liu, Yue and Ulloa-Montoya, Fernando and Cenik, Can and Agarwal, Vikram},
+  journal={Nature biotechnology},
+  pages={1--14},
+  year={2025},
+  publisher={Nature Publishing Group US New York}
 }
 ```
 
