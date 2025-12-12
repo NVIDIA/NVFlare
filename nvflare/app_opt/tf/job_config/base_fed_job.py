@@ -21,7 +21,6 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
 
 
@@ -72,6 +71,8 @@ class BaseFedJob(UnifiedBaseFedJob):
     ):
         # Add default TBAnalyticsReceiver if not provided (TensorFlow-specific)
         if analytics_receiver is None:
+            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
             analytics_receiver = TBAnalyticsReceiver()
 
         # Call the unified BaseFedJob
