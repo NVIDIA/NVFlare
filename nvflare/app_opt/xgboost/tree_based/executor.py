@@ -292,7 +292,7 @@ class FedXGBTreeExecutor(Executor):
                         # Hide sum_hessian with all-1
                         tree["sum_hessian"] = [1.0] * len(tree["sum_hessian"])
                         masked_count += 1
-        
+
         if masked_count > 0:
             self.log_info(fl_ctx, f"Privacy protection: masked sum_hessian in {masked_count} trees")
 
