@@ -31,7 +31,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
     framework=FrameworkType.TENSORFLOW.
 
-    Configures ValidationJsonGenerator, model selector, TBAnalyticsReceiver, ConvertToFedEvent.
+    Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
 
     User must add controllers and executors.
 
@@ -51,8 +51,9 @@ class BaseFedJob(UnifiedBaseFedJob):
             If not provided, an IntimeModelSelector will be configured based on key_metric.
         convert_to_fed_event: (ConvertToFedEvent, optional): A component to convert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
-        analytics_receiver (AnalyticsReceiver, optional): Receive analytics.
-            If not provided, a TBAnalyticsReceiver will be configured.
+        analytics_receiver (AnalyticsReceiver | None, optional): Component for receiving analytics data.
+            If not provided, no analytics tracking will be enabled. For experiment tracking (e.g., TensorBoard),
+            explicitly pass a TBAnalyticsReceiver instance.
         model_persistor (optional, ModelPersistor): how to persist the model.
     """
 
@@ -69,12 +70,6 @@ class BaseFedJob(UnifiedBaseFedJob):
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
     ):
-        # Add default TBAnalyticsReceiver if not provided (TensorFlow-specific)
-        if analytics_receiver is None:
-            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-            analytics_receiver = TBAnalyticsReceiver()
-
         # Call the unified BaseFedJob
         super().__init__(
             name=name,

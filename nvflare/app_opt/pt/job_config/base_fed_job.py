@@ -50,8 +50,9 @@ class BaseFedJob(UnifiedBaseFedJob):
             If not provided, an IntimeModelSelector will be configured based on key_metric.
         convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to convert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
-        analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
-            If not provided, a TBAnalyticsReceiver will be configured.
+        analytics_receiver (AnalyticsReceiver | None, optional): Component for receiving analytics data.
+            If not provided, no analytics tracking will be enabled. For experiment tracking (e.g., TensorBoard),
+            explicitly pass a TBAnalyticsReceiver instance.
         model_persistor (ModelPersistor | None, optional): how to persist the model.
         model_locator (ModelLocator | None, optional): how to locate the model.
     """
@@ -70,12 +71,6 @@ class BaseFedJob(UnifiedBaseFedJob):
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
-        # Add default TBAnalyticsReceiver if not provided (PyTorch-specific)
-        if analytics_receiver is None:
-            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-            analytics_receiver = TBAnalyticsReceiver()
-
         # Call the unified BaseFedJob
         super().__init__(
             name=name,
