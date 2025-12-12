@@ -28,16 +28,16 @@ In this case, everyone holds equal status as "label owner".
 We assume that only one is the "label owner" (or we call it as the "active party"), all other clients are "passive parties".
 
 ## Security Measures
-The security risks are based on existing works like [TimberStrike](https://arxiv.org/pdf/2506.07605) which exploits: sample-wise gradient for label recovery, gradient histograms for data recovery, and final model statistics for model inversion. We have three basic assumptions:
-- [1] The default xgboost model json with "sum_hessian" statistics will enable model inversion.
-- [2] Same information can be recovered from gradient histograms
+The security risks can exist based on existing works which exploit several potential information: sample-wise gradient for label recovery, gradient histograms for distribution recovery, and final model statistics for model inversion. We have three basic assumptions:
+- [1] The default xgboost model json with "sum_hessian" statistics can enable model inversion for data distribution.
+- [2] Same information can be recovered from gradient histograms and can be used for the same purpose.
 - [3] Sample-wise gradients will leak label information.
 
-Based on the above vulnerabilities, the following table outlines the different collaboration modes, algorithms, assumptions, and security measures available in federated XGBoost:
+Based on the above vulnerabilities, the following table outlines the different collaboration modes, algorithms, assumptions, and security measures available in secure federated XGBoost:
 
 | Collaboration Mode | Algorithm | Data Exchange | Security Assumptions | Security Measures                                                              | Notes                                                                                                                         |
 |-------------------|-----------|---------------|---------------|--------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | No trust over either server or other clients. [1] applies. | Remove "sum_hessian" from json model before sending to server                                                                             | All trees become part of the final model. SHAP calculation will be disabled without the knowledge of "sum_hessian"                                                                                    |
+| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | No trust over either server or other clients. [1] applies. | Remove the actual "sum_hessian" numbers from json model before sending to server                                                                             | All trees become part of the final model.  |
 | **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | No trust over server, trust other clients. [2] applies. | Encryption of histograms                                                       | Local histograms encrypted before sending to server.                                                                          |
 | **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | No trust over passive parties, trust over active party. [3] applies. | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership. |
 
@@ -46,14 +46,15 @@ Based on the above vulnerabilities, the following table outlines the different c
 - In vertical mode, histogram-based collaboration has two security goals:
   - **Primary** goal is to protect the sample gradients sent to passive parties.
   - **Secondary** goal is to let clients only see split values for their own features. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
-- Other security assumption scenarios and potential solutions:
+
+**\*Disclaimer:** Other security assumption scenarios listed below are not included in our current secure xgboost solution. Histogram communication in Plaintext can reveal data distribution information, and users should be aware of their indications in data reconstruction, and choose proper action accordingly:
 
 | Collaboration Mode | Algorithm | Security Assumptions | Possible Security Measures | Notes |
 |--------------------|-----------|----------------------|-----------------|------|
-| **Horizontal** | Histogram-based | Trust over server, no trust other clients. [2] applies. | Perform most calculations on the server, only distribute the final splits to clients | Such assumption is rare, not common in practice |
+| **Horizontal** | Histogram-based | Trust over server, no trust other clients. [2] applies. | Perform most calculations on the server, only distribute the final splits to clients | Such assumption (trust server over data distributions) is rare, not common in practice |
 | **Horizontal** | Histogram-based | No trust over server, no trust other clients. [2] applies. | Confidential computing | HE is not compatible with performing calculation till splits, so they cannot co-exist to address both. |
-| **Vertical** | Histogram-based | Trust over passive parties, no trust over active party. [2] applies. | Perform most calculations on passive parties, only send the final splits to active party | Such assumption is rare, not common in practice |
-| **Vertical** | Histogram-based | No trust over passive parties, no trust over active party. Both [2] and [3] apply. | Confidential computing | HE is not compatible with performing calculation till splits, so they cannot co-exist to address both. |
+| **Vertical** | Histogram-based | Trust over passive parties, no trust over active party. [2] applies. | Perform most calculations on passive parties, only send the final splits to active party | Such assumption is rare (trust passive parties over sample labels), not common in practice |
+| **Vertical** | Histogram-based | No trust over passive parties, no trust over active party. Both [2] and [3] apply. | Local secret data preprocessing and anonymization, Confidential computing | HE is not compatible with performing calculation till splits, so they cannot co-exist to address both. |
 
 ## GPU Accelerations
 There are two levels of GPU accelerations in federated XGBoost:
