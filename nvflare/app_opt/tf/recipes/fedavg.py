@@ -17,6 +17,7 @@ from typing import Any, Optional
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -54,6 +55,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
+        analytics_receiver: Component for receiving analytics data. If not provided, defaults to TBAnalyticsReceiver
+            for TensorBoard experiment tracking.
 
     Example:
         ```python
@@ -93,7 +96,14 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
+        # Default to TBAnalyticsReceiver for TensorFlow if not provided
+        if analytics_receiver is None:
+            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+            analytics_receiver = TBAnalyticsReceiver()
+
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
             name=name,
@@ -110,13 +120,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
+            analytics_receiver=analytics_receiver,
         )
-
-    def _get_analytics_receiver(self):
-        """Override to provide TensorFlow-specific default TBAnalyticsReceiver."""
-        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-        return TBAnalyticsReceiver()
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle TensorFlow-specific model setup."""

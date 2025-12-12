@@ -18,6 +18,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -55,6 +56,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
+        analytics_receiver: Component for receiving analytics data. If not provided, defaults to TBAnalyticsReceiver
+            for TensorBoard experiment tracking.
 
     Example:
         ```python
@@ -94,9 +97,16 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
+
+        # Default to TBAnalyticsReceiver for PyTorch if not provided
+        if analytics_receiver is None:
+            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+            analytics_receiver = TBAnalyticsReceiver()
 
         # Call the unified FedAvgRecipe with PyTorch-specific settings
         super().__init__(
@@ -114,13 +124,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
+            analytics_receiver=analytics_receiver,
         )
-
-    def _get_analytics_receiver(self):
-        """Override to provide PyTorch-specific default TBAnalyticsReceiver."""
-        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-        return TBAnalyticsReceiver()
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
