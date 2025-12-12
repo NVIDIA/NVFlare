@@ -4,69 +4,91 @@ NVFlare XGBoost User Guide
 
 Overview
 ========
-NVFlare supports federated training with XGBoost. It provides the following advantages over doing the training natively with XGBoost:
+NVIDIA FLARE (NVFlare) supports federated training with XGBoost, providing the following advantages over native XGBoost training:
 
 - Secure training with Homomorphic Encryption (HE)
-- Lifecycle management of XGBoost processes.
-- Reliable messaging which can overcome network glitches
-- Training over complicated networks with relays.
+- Lifecycle management of XGBoost processes
+- Reliable messaging that can overcome network glitches
+- Training over complex networks with relays
 
-It supports federated training in the following 4 modes:
+What is XGBoost?
+----------------
+XGBoost (eXtreme Gradient Boosting) is a powerful machine learning algorithm that uses decision/regression trees for classification and regression tasks. It excels particularly with tabular data and remains widely used due to its:
 
-1. Row split without encryption
-2. Column split without encryption
-3. Row split with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
-4. Column split with HE
+- **High performance** on structured data
+- **Explainability** of predictions
+- **Computational efficiency**
 
-When running with NVFlare, all communications in XGBoost are local and the messages are forwarded through NVFlare's communication.
+These examples use `DMLC XGBoost <https://github.com/dmlc/xgboost>`_, which provides GPU acceleration capabilities, distributed and federated learning support, and optimized gradient boosting implementations.
+
+Supported Training Modes
+-------------------------
+NVFlare supports federated training in the following 4 modes:
+
+1. Row split (horizontal) without encryption
+2. Column split (vertical) without encryption
+3. Row split (horizontal) with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
+4. Column split (vertical) with HE
+
+When running with NVFlare, all XGBoost communications are local and messages are forwarded through NVFlare's communication infrastructure.
 
 The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime.
 
 Collaboration Modes and Data Split
 ===================================
-Essentially there are two collaboration modes: horizontal and vertical:
+Essentially, there are two collaboration modes: horizontal and vertical:
 
-- In horizontal case, each participant has access to the same features (columns) of different data samples (rows).
-  In this case, everyone holds equal status as "label owner".
-- In vertical case, each client has access to different features (columns) of the same data samples (rows).
-  We assume that only one is the "label owner" (or we call it as the "active party"), all other clients are "passive parties".
+- In the horizontal case, each participant has access to the same features (columns) of different data samples (rows).
+  In this case, everyone holds equal status as a "label owner".
+- In the vertical case, each client has access to different features (columns) of the same data samples (rows).
+  We assume that only one client is the "label owner" (also called the "active party"), while all other clients are "passive parties".
 
 Security Measures
 =================
+Security risks exist based on prior research [e.g. `SecureBoost <https://arxiv.org/abs/1901.08755>`_, `TimberStrike <https://arxiv.org/abs/2506.07605>`_] that exploits several types of information: sample-wise gradients for label recovery, gradient histograms for distribution recovery, and final model statistics for model inversion. We have three basic security categories:
+
+- **Model statistics leakage:** The default XGBoost model JSON with "sum_hessian" statistics can enable model inversion to recover data distribution.
+- **Histogram leakage:** Information can be recovered from gradient histograms and used to reconstruct data distributions.
+- **Gradient leakage:** Sample-wise gradients may leak label information.
+
 The following table outlines the different collaboration modes, algorithms, and security measures available in federated XGBoost:
 
 .. list-table:: Security Measures by Collaboration Mode
-   :widths: 20 15 30 25 30
+   :widths: 15 12 25 15 20 25
    :header-rows: 1
 
    * - Collaboration Mode
      - Algorithm
      - Data Exchange
+     - Security Category
      - Security Measures
      - Notes
    * - **Horizontal**
      - Tree-based
      - Clients submit locally boosted trees to server; server combines and routes trees back to clients
-     - None
+     - Model statistics leakage
+     - Remove the actual "sum_hessian" numbers from JSON model before sending to server
      - All trees become part of the final model.
    * - **Horizontal**
      - Histogram-based
      - Clients submit local histograms to server; server aggregates them to global histogram
+     - Histogram leakage
      - Encryption of histograms
      - Local histograms encrypted before sending to server.
    * - **Vertical**
      - Histogram-based
      - Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party
+     - Gradient leakage
      - **Primary:** encryption of gradients; **Secondary:** feature ownership masking
      - Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership.
 
 Notes:
 ------
 
-- In horizontal mode, tree-based collaboration does not have security concerns that can be handled by encryption.
+- In horizontal mode, tree-based collaboration is secured by removing "sum_hessian" values so that it cannot be exploited for inversion attacks.
 - In vertical mode, histogram-based collaboration has two security goals:
-  - **Primary** goal is to protect the sample gradients sent to passive parties, as they can be used to recover the labels of every single data samples.
-  - **Secondary** goal is to let clients only see split values for their own features. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
+  - **Primary** goal is to protect the sample gradients sent to passive parties.
+  - **Secondary** goal is to allow clients to only see split values for their own features. This is a desirable feature, but it does not pose as significant a security risk as the primary goal.
 
 GPU Accelerations
 =================
@@ -75,11 +97,11 @@ There are two levels of GPU accelerations in federated XGBoost:
 1. XGBoost itself has built-in GPU acceleration for training. To enable it, set the ``tree_method`` parameter to ``gpu_hist`` when initializing the XGBoost model. `GPU XGBoost Blog <https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/>`_ shows that this method can achieve a **4.15x** speed improvement compared to CPU-based training for the dataset and testing environment.
 2. NVFlare provides GPU acceleration for homomorphic encryption operations. To enable it, use different encryption plugins. This can significantly speed up the encryption and decryption processes, as shown in `NVFlare Secure XGBoost Blog <https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/>`_, GPU acceleration can achieve **up to 36.5x** speed improvement compared to CPU-based encryption for the dataset and testing environment.
 
-We will refer to them as "CPU / GPU XGBoost" and "CPU / GPU Encryption"
+We will refer to them as "CPU/GPU XGBoost" and "CPU/GPU Encryption".
 
 Security Implementation Matrix
 ==============================
-As shown above, histogram-based XGBoost in horizontal and vertical collaboration modes can utilize homomorphic encryption to enhance data privacy. The following table shows which security measures are implemented (as shown by ✅) across different combinations of XGBoost and encryption modes:
+As shown above, histogram-based XGBoost in horizontal and vertical collaboration modes can utilize HE to enhance data privacy. The following table shows which security measures are implemented (as shown by ✅) across different combinations of XGBoost and encryption modes:
 
 .. list-table:: Security Implementation Matrix
    :widths: 20 25 20 20 20 20
@@ -110,31 +132,59 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
      - ❌
      - ❌
 
-Note on Client-side Horizontal Vulnerabilities:
----------------------
-
-In this example, we utilize HE to protect histograms against a potentially malicious server. Client-side vulnerabilities are not considered.
-
-For client-side, a recent research [TimberStrike](https://arxiv.org/pdf/2506.07605) highlights privacy vulnerabilities in federated tree-based systems. The attack exploits split values and decision paths to reconstruct training data, achieving reconstruction accuracies around 80% on certain benchmark datasets.
-
-The vulnerability affects both collaboration modes:
-- **Tree-based collaboration**: Since local trees are shared directly, they allow for **local reconstruction** of specific client's private data.
-- **Histogram-based collaboration**: As data is aggregated, the resulting global histogram still leaks enough information for **global reconstruction** of the overall underlying data distribution.
-
-One potential solution as proposed in this work is that we can move the split finding phase to the server, such that clients will not have access to the histograms. This indeed will handle the client-side leakage. Unfortunately, we note that this solution is not compatible with existing server-end protection schemes of HE because the computations needed (e.g. division / argmax) are beyond the capability of standard HE. Therefore, implementing this would only "move" the vulnerability to the server-side rather than "address" it. Even worse, in this solution where the server performs split finding, the server would have access to individual histograms, enabling **local reconstruction** for each client's data at a higher accuracy than tree-based collaboration as shown in the paper.
-
-Future work combining HE with Confidential Computing (CC) could potentially address the issue effectively.
-
-
 Note on Implementation:
 ---------------------
 
 - **Horizontal mode**:
-  - Histogram-based horizontal model does not need GPU encryption, as it is not as computationally intensive (encrypt histogram vectors) as in vertical mode (encrypt gradients).
+  - The histogram-based horizontal model does not need GPU encryption, as it is not as computationally intensive (encrypting histogram vectors) as vertical mode (encrypting gradients).
 - **Vertical mode**:
-  - Primary goal (gradient protection) is fully supported across all combinations
-  - Secondary goal (split value masking) is only supported with CPU XGBoost, regardless of encryption type
+  - Primary goal (gradient protection) is fully supported across all combinations.
+  - Secondary goal (split value masking) is only supported with CPU XGBoost, regardless of encryption type.
 
+Advanced Topics: Future Security Scenarios
+===========================================
+
+The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication can reveal data distribution information**, which may enable data reconstruction attacks.
+
+Potential Future Enhancements
+------------------------------
+
+.. list-table:: Future Security Scenarios
+   :widths: 15 12 15 20 25 20
+   :header-rows: 1
+
+   * - Collaboration Mode
+     - Algorithm
+     - Security Risk
+     - Trust Model
+     - Possible Approach
+     - Challenges
+   * - **Horizontal**
+     - Histogram-based
+     - Histogram leakage
+     - Trust server, no trust in clients
+     - Server performs calculations; distributes only final splits
+     - Rare trust assumption; uncommon in practice
+   * - **Horizontal**
+     - Histogram-based
+     - Histogram leakage
+     - No trust in server or clients
+     - Confidential computing
+     - HE compatibility issue [*]_
+   * - **Vertical**
+     - Histogram-based
+     - Histogram leakage
+     - Trust passive parties, no trust in active party
+     - Passive parties perform calculations; send only final splits
+     - Rare trust assumption; uncommon in practice
+   * - **Vertical**
+     - Histogram-based
+     - Histogram + Gradient leakage
+     - No trust in any party
+     - Local data preprocessing, anonymization, confidential computing
+     - HE compatibility issue [*]_
+
+.. [*] **HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, HE cannot be combined with approaches that require "performing calculations until splits on the server/passive parties."
 
 Prerequisites
 =============
@@ -199,14 +249,14 @@ Building Encryption Plugins
 The secure training requires encryption plugins, which need to be built from the source code
 for your specific environment.
 
-To build the plugins, check out the NVFlare source code from https://github.com/NVIDIA/NVFlare and following the
-instructions in :github_nvflare_link:`this document. <integration/xgboost/encryption_plugins/README.md>`
+To build the plugins, check out the NVFlare source code from https://github.com/NVIDIA/NVFlare and follow the
+instructions in :github_nvflare_link:`this document <integration/xgboost/encryption_plugins/README.md>`.
 
 .. _xgb_provisioning:
 
 NVFlare Provisioning
 --------------------
-For horizontal secure training, the NVFlare system must be provisioned with homomorphic encryption context. The HEBuilder in ``project.yml`` is used to achieve this.
+For horizontal secure training, the NVFlare system must be provisioned with a homomorphic encryption context. The HEBuilder in ``project.yml`` is used to achieve this.
 An example configuration can be found at :github_nvflare_link:`secure_project.yml <examples/advanced/cifar10/cifar10-real-world/workspaces/secure_project.yml#L64>`.
 
 This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
