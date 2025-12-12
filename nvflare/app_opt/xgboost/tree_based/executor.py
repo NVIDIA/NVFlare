@@ -277,9 +277,28 @@ class FedXGBTreeExecutor(Executor):
             else:
                 bst = self._local_boost_cyclic(fl_ctx)
 
-        self.local_model = bst.save_raw("json")
+        # save_raw returns bytes, need to parse to dict first
+        raw_model = bst.save_raw("json")
+        self.local_model = json.loads(raw_model)
+
+        # remove the sum_hessian from local_model for privacy
+        masked_count = 0
+        if "learner" in self.local_model and "gradient_booster" in self.local_model["learner"]:
+            gradient_booster = self.local_model["learner"]["gradient_booster"]
+            if "model" in gradient_booster and "trees" in gradient_booster["model"]:
+                trees = gradient_booster["model"]["trees"]
+                for tree in trees:
+                    if "sum_hessian" in tree:
+                        # Hide sum_hessian with all-1
+                        tree["sum_hessian"] = [1.0] * len(tree["sum_hessian"])
+                        masked_count += 1
+
+        if masked_count > 0:
+            self.log_info(fl_ctx, f"Privacy protection: masked sum_hessian in {masked_count} trees")
 
         # report updated model in shareable
+        # Convert dict back to bytearray for compatibility with downstream code
+        self.local_model = bytearray(json.dumps(self.local_model), "utf-8")
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model_data": self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
