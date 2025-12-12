@@ -155,60 +155,65 @@ def main(args):
         print("\nExtracting embeddings...")
         all_embeddings = []
 
-        for i in tqdm(range(0, len(sequences), batch_size)):
-            batch_seqs = sequences[i : i + batch_size]
+        with torch.no_grad():
+            for i in tqdm(range(0, len(sequences), batch_size)):
+                batch_seqs = sequences[i : i + batch_size]
 
-            # Prepare batch
-            batch_items = []
-            for j, seq in enumerate(batch_seqs):
-                seq = seq.upper().replace("U", "T")
-                tokens = encodon_model.tokenizer.tokenize(seq)
-                input_ids = encodon_model.tokenizer.convert_tokens_to_ids(tokens)
+                # Prepare batch
+                batch_items = []
+                for j, seq in enumerate(batch_seqs):
+                    seq = seq.upper().replace("U", "T")
+                    tokens = encodon_model.tokenizer.tokenize(seq)
+                    input_ids = encodon_model.tokenizer.convert_tokens_to_ids(tokens)
 
-                # Truncate if needed
-                if len(input_ids) > encodon_model.model.hparams.max_position_embeddings - 2:  # Leave room for CLS/SEP
-                    input_ids = input_ids[: encodon_model.model.hparams.max_position_embeddings - 2]
+                    # Truncate if needed
+                    if (
+                        len(input_ids) > encodon_model.model.hparams.max_position_embeddings - 2
+                    ):  # Leave room for CLS/SEP
+                        input_ids = input_ids[: encodon_model.model.hparams.max_position_embeddings - 2]
 
-                # Add special tokens
-                input_ids = [encodon_model.tokenizer.cls_token_id] + input_ids + [encodon_model.tokenizer.sep_token_id]
-                attention_mask = [1] * len(input_ids)
+                    # Add special tokens
+                    input_ids = (
+                        [encodon_model.tokenizer.cls_token_id] + input_ids + [encodon_model.tokenizer.sep_token_id]
+                    )
+                    attention_mask = [1] * len(input_ids)
 
-                batch_items.append(
-                    {
-                        MetadataFields.INPUT_IDS: input_ids,
-                        MetadataFields.ATTENTION_MASK: attention_mask,
-                    }
-                )
+                    batch_items.append(
+                        {
+                            MetadataFields.INPUT_IDS: input_ids,
+                            MetadataFields.ATTENTION_MASK: attention_mask,
+                        }
+                    )
 
-            # Pad batch
-            max_len = encodon_model.model.hparams.max_position_embeddings
+                # Pad batch
+                max_len = encodon_model.model.hparams.max_position_embeddings
 
-            padded_input_ids = []
-            padded_attention_masks = []
+                padded_input_ids = []
+                padded_attention_masks = []
 
-            for item in batch_items:
-                input_ids = item[MetadataFields.INPUT_IDS]
-                attention_mask = item[MetadataFields.ATTENTION_MASK]
+                for item in batch_items:
+                    input_ids = item[MetadataFields.INPUT_IDS]
+                    attention_mask = item[MetadataFields.ATTENTION_MASK]
 
-                # Pad
-                pad_len = max_len - len(input_ids)
-                input_ids.extend([encodon_model.tokenizer.pad_token_id] * pad_len)
-                attention_mask.extend([0] * pad_len)
+                    # Pad
+                    pad_len = max_len - len(input_ids)
+                    input_ids.extend([encodon_model.tokenizer.pad_token_id] * pad_len)
+                    attention_mask.extend([0] * pad_len)
 
-                padded_input_ids.append(input_ids)
-                padded_attention_masks.append(attention_mask)
+                    padded_input_ids.append(input_ids)
+                    padded_attention_masks.append(attention_mask)
 
-            # Create batch tensor
-            batch = {
-                MetadataFields.INPUT_IDS: torch.tensor(padded_input_ids, dtype=torch.long).to(encodon_model.device),
-                MetadataFields.ATTENTION_MASK: torch.tensor(padded_attention_masks, dtype=torch.long).to(
-                    encodon_model.device
-                ),
-            }
+                # Create batch tensor
+                batch = {
+                    MetadataFields.INPUT_IDS: torch.tensor(padded_input_ids, dtype=torch.long).to(encodon_model.device),
+                    MetadataFields.ATTENTION_MASK: torch.tensor(padded_attention_masks, dtype=torch.long).to(
+                        encodon_model.device
+                    ),
+                }
 
-            # Extract embeddings
-            output = encodon_model.extract_embeddings(batch)
-            all_embeddings.append(output.embeddings)
+                # Extract embeddings
+                output = encodon_model.extract_embeddings(batch)
+                all_embeddings.append(output.embeddings)
 
         # Combine embeddings
         embeddings = np.vstack(all_embeddings)

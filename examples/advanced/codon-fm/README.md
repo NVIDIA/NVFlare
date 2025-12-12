@@ -137,6 +137,8 @@ With embeddings extracted, we can now train a simple neural network in a federat
 python /data/jobs/train-nn/job.py --n_clients 3 --n_rounds 30
 ```
 
+> **Performance Note**: On an NVIDIA RTX A6000 GPU, this command completes in approximately 2 minutes to complete.
+
 During training, each round consists of:
 1. Clients receiving the current global model
 2. Training locally on their data
