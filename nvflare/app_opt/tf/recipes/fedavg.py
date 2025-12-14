@@ -55,10 +55,15 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        analytics_receiver: Component for receiving analytics data. If not provided, defaults to TBAnalyticsReceiver
-            for TensorBoard experiment tracking.
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
+            If not provided, no experiment tracking will be enabled.
+            To enable experiment tracking, either:
+            - Pass an AnalyticsReceiver instance explicitly, OR
+            - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
 
     Example:
+        Basic usage without experiment tracking:
+
         ```python
         recipe = FedAvgRecipe(
             name="my_fedavg_job",
@@ -70,10 +75,39 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         )
         ```
 
+        Enable TensorBoard experiment tracking (Option 1 - pass explicitly):
+
+        ```python
+        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            train_args="--epochs 5 --batch_size 32",
+            analytics_receiver=TBAnalyticsReceiver()
+        )
+        ```
+
+        Enable experiment tracking (Option 2 - add after creation):
+
+        ```python
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = FedAvgRecipe(...)  # Create recipe first
+        add_experiment_tracking(recipe, "tensorboard")  # Add tracking later
+        # Also supports: "mlflow", "wandb"
+        ```
+
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
         are aggregated using weighted averaging based on the number of training
         samples provided by each client.
+
+        Experiment tracking is opt-in. No tracking components are configured by default,
+        avoiding unnecessary dependencies.
 
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
@@ -98,12 +132,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
-        # Default to TBAnalyticsReceiver for TensorFlow if not provided
-        if analytics_receiver is None:
-            from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-            analytics_receiver = TBAnalyticsReceiver()
-
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
             name=name,
