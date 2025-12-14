@@ -11,18 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fox.examples import export_recipe
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, Print
 from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
-
 
 def main():
+    export_recipe("fox_fedavg_intime", _make_recipe)
+
+
+def _make_recipe(job_name):
     recipe = FoxRecipe(
-        job_name="fox_fedavg_intime",
+        job_name=job_name,
         server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
         server_objects={
             "metric_receiver": MetricReceiver(),
@@ -38,8 +41,7 @@ def main():
     recipe.add_client_incoming_call_filters("*.train", [print_filter])
     recipe.add_client_outgoing_result_filters("*.train", [print_filter])
     recipe.set_client_prop("default_timeout", 8.0)
-
-    recipe.export(JOB_ROOT_DIR)
+    return recipe
 
 
 if __name__ == "__main__":

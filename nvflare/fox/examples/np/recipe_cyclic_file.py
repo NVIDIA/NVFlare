@@ -11,22 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fox.examples import export_recipe
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
-
 
 def main():
+    export_recipe("fox_cyclic_file", _make_recipe)
+
+
+def _make_recipe(job_name):
     recipe = FoxRecipe(
-        job_name="fox_cyclic_file",
+        job_name=job_name,
         server=NPCyclic(initial_model="initial_model.npy", num_rounds=2),
         client=NPTrainer(delta=1.0),
     )
     recipe.set_server_resource_dirs({"data": "/Users/yanc/NVFlare/sandbox/data"})
-
-    recipe.export(JOB_ROOT_DIR)
+    return recipe
 
 
 if __name__ == "__main__":

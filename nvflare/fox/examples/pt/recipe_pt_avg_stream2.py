@@ -11,15 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fox.examples import export_recipe
 from nvflare.fox.examples.pt.pt_avg_stream2 import PTFedAvgStream, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
-
 
 def main():
-    recipe = FoxRecipe(
-        job_name="fox_pt_fedavg_stream2",
+    export_recipe("fox_pt_fedavg_stream2", _make_recipe)
+
+
+def _make_recipe(job_name):
+    return FoxRecipe(
+        job_name=job_name,
         server=PTFedAvgStream(
             initial_model={
                 "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -30,7 +33,6 @@ def main():
         ),
         client=PTTrainer(delta=1.0),
     )
-    recipe.export(JOB_ROOT_DIR)
 
 
 if __name__ == "__main__":

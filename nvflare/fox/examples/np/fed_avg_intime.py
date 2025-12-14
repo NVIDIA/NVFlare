@@ -14,6 +14,7 @@
 import logging
 
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, Print
 from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
@@ -25,7 +26,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="fedavg_intime",
         server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
         client=NPTrainer(delta=1.0),

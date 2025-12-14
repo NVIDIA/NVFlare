@@ -15,6 +15,7 @@ import logging
 
 from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
 from nvflare.fox.sim.simulator import AppRunner
@@ -24,8 +25,8 @@ def main():
     simple_logging(logging.DEBUG)
 
     runner = AppRunner(
-        root_dir="/tmp/fox",
-        experiment_name="cyclic",
+        root_dir=get_experiment_root(),
+        experiment_name="cyclic_runner",
         server_app=ServerApp(NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)),
         client_app=ClientApp(NPTrainer(delta=1.0)),
         num_clients=2,
