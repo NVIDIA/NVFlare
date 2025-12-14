@@ -14,6 +14,7 @@
 import logging
 
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
@@ -26,7 +27,7 @@ def main():
     server = NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], num_rounds=2)
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="fedavg_para",
         server=server,
         client=NPTrainer(delta=1.0),

@@ -16,6 +16,7 @@ import threading
 
 from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.utils import add as add_np
 from nvflare.fox.examples.np.algos.utils import div as div_np
 from nvflare.fox.examples.np.algos.utils import parse_state_dict as parse_np
@@ -132,7 +133,7 @@ def main():
     )
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="pt_np",
         server=server,
         client=PTTrainer(delta=1.0),

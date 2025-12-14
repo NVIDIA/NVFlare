@@ -14,6 +14,7 @@
 import logging
 
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_seq import NPFedAvgSequential
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
@@ -29,7 +30,7 @@ def main():
     )
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="fedavg_seq",
         server=server,
         client=NPTrainer(delta=1.0),

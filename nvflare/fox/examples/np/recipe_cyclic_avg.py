@@ -14,14 +14,13 @@
 import os
 
 from nvflare.fox import fox
+from nvflare.fox.examples import export_recipe
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
 from nvflare.fox.examples.np.algos.utils import save_np_model
 from nvflare.fox.sys.recipe import FoxRecipe
 from nvflare.fuel.utils.log_utils import get_obj_logger
-
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 class Controller:
@@ -60,8 +59,12 @@ class Controller:
 
 
 def main():
-    recipe = FoxRecipe(
-        job_name="fox_cyclic_avg",
+    export_recipe("fox_cyclic_avg", _make_recipe)
+
+
+def _make_recipe(job_name):
+    return FoxRecipe(
+        job_name=job_name,
         server=Controller(
             initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
             cyclic_rounds=2,
@@ -69,7 +72,6 @@ def main():
         ),
         client=NPTrainer(delta=1.0),
     )
-    recipe.export(JOB_ROOT_DIR)
 
 
 if __name__ == "__main__":

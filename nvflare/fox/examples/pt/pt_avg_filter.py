@@ -15,6 +15,7 @@ import logging
 
 from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.pt.utils import add as add_pt
 from nvflare.fox.examples.pt.utils import div as div_pt
 from nvflare.fox.examples.pt.utils import parse_state_dict
@@ -91,7 +92,7 @@ def main():
     client = PTTrainer(delta=1.0)
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="pt_fedavg_intime",
         server=server,
         client=client,

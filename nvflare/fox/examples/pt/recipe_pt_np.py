@@ -13,13 +13,16 @@
 # limitations under the License.
 from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.fox.examples import export_recipe
 from nvflare.fox.examples.pt.pt_np import PTFedAvgMixed, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
-
 
 def main():
+    export_recipe("fox_pt_np", _make_recipe)
+
+
+def _make_recipe(job_name):
     init_model = {
         "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -27,7 +30,7 @@ def main():
     }
 
     recipe = FoxRecipe(
-        job_name="fox_pt_np",
+        job_name=job_name,
         server=PTFedAvgMixed(
             pt_model=init_model,
             np_model=init_model,
@@ -36,7 +39,7 @@ def main():
         client=PTTrainer(delta=1.0),
     )
     recipe.add_decomposers([TensorDecomposer(), NumpyArrayDecomposer()])
-    recipe.export(JOB_ROOT_DIR)
+    return recipe
 
 
 if __name__ == "__main__":

@@ -11,3 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+
+
+def get_job_root_dir():
+    return os.getenv("FOX_JOB_ROOT", ".")
+
+
+def get_experiment_root():
+    return os.getenv("FOX_EXP_ROOT", ".")
+
+
+def export_recipe(job_name: str, make_recipe_f):
+    recipe = make_recipe_f(job_name)
+    job_root = get_job_root_dir()
+    recipe.export(job_root)
+    print(f"job exported at {job_root}/{job_name}")

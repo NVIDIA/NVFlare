@@ -14,6 +14,7 @@
 import logging
 
 from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPHierarchicalTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_h import NPHierarchicalFedAvg
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
@@ -24,7 +25,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     simulator = Simulator(
-        root_dir="/tmp/fox",
+        root_dir=get_experiment_root(),
         experiment_name="fedavg_h",
         server=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
         client=NPHierarchicalTrainer(delta=1.0),
