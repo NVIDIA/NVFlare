@@ -1,15 +1,22 @@
-##########################
-NVFlare XGBoost User Guide
-##########################
+######################################
+Federated Learning for XGBoost
+######################################
 
 Overview
 ========
-NVIDIA FLARE (NVFlare) supports federated training with XGBoost, providing the following advantages over native XGBoost training:
+This guide demonstrates how to use NVIDIA FLARE (NVFlare) to train XGBoost models in a federated learning environment. It showcases multiple collaboration strategies with varying levels of security.
 
-- Secure training with Homomorphic Encryption (HE)
+NVFlare provides the following advantages:
+
+- Secure training with Homomorphic Encryption (HE), protecting local histograms and gradients from the federated server and passive parties.
 - Lifecycle management of XGBoost processes
 - Reliable messaging that can overcome network glitches
 - Training over complex networks with relays
+
+This guide covers several federated XGBoost configurations:
+
+- **Horizontal Collaboration**: Histogram-based and tree-based approaches (non-secure and secure)
+- **Vertical Collaboration**: Histogram-based approach (non-secure and secure with Homomorphic Encryption)
 
 What is XGBoost?
 ----------------
@@ -19,92 +26,130 @@ XGBoost (eXtreme Gradient Boosting) is a powerful machine learning algorithm tha
 - **Explainability** of predictions
 - **Computational efficiency**
 
-These examples use `DMLC XGBoost <https://github.com/dmlc/xgboost>`_, which provides GPU acceleration capabilities, distributed and federated learning support, and optimized gradient boosting implementations.
+These examples use `DMLC XGBoost <https://github.com/dmlc/xgboost>`_, which provides:
+
+- GPU acceleration capabilities
+- Distributed and federated learning support
+- Optimized gradient boosting implementations
+
+Federated Learning Modes
+=========================
+
+Horizontal Federated Learning
+------------------------------
+In horizontal collaboration, each participant has:
+
+- **Same features** (columns) across all sites
+- **Different data samples** (rows) at each site
+- **Equal status** as label owners
+
+**Example**: Multiple hospitals each have complete patient records (all features), but different patients.
+
+Vertical Federated Learning
+----------------------------
+In vertical collaboration, each participant has:
+
+- **Different features** (columns) at each site
+- **Same data samples** (rows) across all sites
+- **One "active party"** (label owner) and multiple "passive parties"
+
+**Example**: A bank and a retailer have data about the same customers, but different attributes (financial vs. shopping behavior).
 
 Supported Training Modes
 -------------------------
+When running with NVFlare, all XGBoost communications are local and messages are forwarded through NVFlare's communication infrastructure. The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime.
+
 NVFlare supports federated training in the following 4 modes:
 
-1. Row split (horizontal) without encryption
-2. Column split (vertical) without encryption
-3. Row split (horizontal) with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
-4. Column split (vertical) with HE
+1. **Horizontal without HE-based security protection** - Histogram-based or tree-based (tree-based is secured by removing "sum_hessian" values before transmission)
+2. **Vertical without HE-based security protection** - Histogram-based
+3. **Horizontal with HE** - Histogram-based (histograms secured against federated server)
+4. **Vertical with HE** - Histogram-based (gradients secured against passive parties)
 
-When running with NVFlare, all XGBoost communications are local and messages are forwarded through NVFlare's communication infrastructure.
+Security Risks and Mitigations
+=======================
 
-The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime.
+Security Risks
+--------------
 
-Collaboration Modes and Data Split
-===================================
-Essentially, there are two collaboration modes: horizontal and vertical:
+Federated XGBoost faces three main security risks:
 
-- In the horizontal case, each participant has access to the same features (columns) of different data samples (rows).
-  In this case, everyone holds equal status as a "label owner".
-- In the vertical case, each client has access to different features (columns) of the same data samples (rows).
-  We assume that only one client is the "label owner" (also called the "active party"), while all other clients are "passive parties".
+1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions.
 
-Security Measures
-=================
-Security risks exist based on prior research [e.g. `SecureBoost <https://arxiv.org/abs/1901.08755>`_, `TimberStrike <https://arxiv.org/abs/2506.07605>`_] that exploits several types of information: sample-wise gradients for label recovery, gradient histograms for distribution recovery, and final model statistics for model inversion. We have three basic security categories:
+2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions.
 
-- **Model statistics leakage:** The default XGBoost model JSON with "sum_hessian" statistics can enable model inversion to recover data distribution.
-- **Histogram leakage:** Information can be recovered from gradient histograms and used to reconstruct data distributions.
-- **Gradient leakage:** Sample-wise gradients may leak label information.
+3. **Gradient Leakage**: Sample-wise gradients may reveal label information.
 
-The following table outlines the different collaboration modes, algorithms, and security measures available in federated XGBoost:
+See references: `SecureBoost <https://arxiv.org/abs/1901.08755>`_, `TimberStrike <https://arxiv.org/abs/2506.07605>`_
+
+Security Solutions
+------------------
+
+The following table summarizes the available security measures for different collaboration scenarios:
 
 .. list-table:: Security Measures by Collaboration Mode
-   :widths: 15 12 25 15 20 25
+   :widths: 15 12 28 18 20 20
    :header-rows: 1
 
    * - Collaboration Mode
      - Algorithm
      - Data Exchange
-     - Security Category
-     - Security Measures
-     - Notes
+     - Security Risk
+     - Security Measure
+     - Implementation
    * - **Horizontal**
      - Tree-based
-     - Clients submit locally boosted trees to server; server combines and routes trees back to clients
+     - Clients send locally boosted trees to server; server combines and distributes trees
      - Model statistics leakage
-     - Remove the actual "sum_hessian" numbers from JSON model before sending to server
-     - All trees become part of the final model.
+     - Remove "sum_hessian" values from JSON model
+     - Removed before clients sending local trees to server
    * - **Horizontal**
      - Histogram-based
-     - Clients submit local histograms to server; server aggregates them to global histogram
+     - Clients send local histograms to server; server aggregates to global histogram
      - Histogram leakage
-     - Encryption of histograms
-     - Local histograms encrypted before sending to server.
+     - Encrypt histograms
+     - Local histograms encrypted before transmission
    * - **Vertical**
      - Histogram-based
-     - Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party
+     - Active party computes gradients; passive parties receive gradients and compute histograms
      - Gradient leakage
-     - **Primary:** encryption of gradients; **Secondary:** feature ownership masking
-     - Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership.
+     - **Primary**: Encrypt gradients; **Secondary**: Mask feature ownership in split values
+     - Gradients encrypted before sending to passive parties
 
-Notes:
-------
+**Notes:**
 
-- In horizontal mode, tree-based collaboration is secured by removing "sum_hessian" values so that it cannot be exploited for inversion attacks.
-- In vertical mode, histogram-based collaboration has two security goals:
-  - **Primary** goal is to protect the sample gradients sent to passive parties.
-  - **Secondary** goal is to allow clients to only see split values for their own features. This is a desirable feature, but it does not pose as significant a security risk as the primary goal.
+- **Horizontal tree-based**: Security achieved by removing "sum_hessian" values before transmission
+- **Vertical histogram-based**: 
+  
+  - **Primary goal**: Protect sample gradients from passive parties (critical)
+  - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
 
-GPU Accelerations
-=================
-There are two levels of GPU accelerations in federated XGBoost:
+GPU Acceleration
+================
 
-1. XGBoost itself has built-in GPU acceleration for training. To enable it, set the ``tree_method`` parameter to ``gpu_hist`` when initializing the XGBoost model. `GPU XGBoost Blog <https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/>`_ shows that this method can achieve a **4.15x** speed improvement compared to CPU-based training for the dataset and testing environment.
-2. NVFlare provides GPU acceleration for homomorphic encryption operations. To enable it, use different encryption plugins. This can significantly speed up the encryption and decryption processes, as shown in `NVFlare Secure XGBoost Blog <https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/>`_, GPU acceleration can achieve **up to 36.5x** speed improvement compared to CPU-based encryption for the dataset and testing environment.
+Federated XGBoost supports two levels of GPU acceleration:
 
-We will refer to them as "CPU/GPU XGBoost" and "CPU/GPU Encryption".
+1. XGBoost GPU Training
+-----------------------
+Enable GPU-accelerated training by setting ``tree_method='gpu_hist'`` when initializing the XGBoost model.
+
+- **Performance**: Up to **4.15x speedup** vs. CPU training (`GPU XGBoost Blog <https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/>`_)
+
+2. GPU-Accelerated Homomorphic Encryption (HE)
+-----------------------------------------------
+NVFlare provides GPU acceleration for HE operations using specialized encryption plugins.
+
+- **Performance**: Up to **36.5x speedup** vs. CPU encryption (`NVFlare Secure XGBoost Blog <https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/>`_)
+
+We will refer to these as "CPU/GPU XGBoost" and "CPU/GPU Encryption".
 
 Security Implementation Matrix
 ==============================
-As shown above, histogram-based XGBoost in horizontal and vertical collaboration modes can utilize HE to enhance data privacy. The following table shows which security measures are implemented (as shown by ✅) across different combinations of XGBoost and encryption modes:
+
+The following table shows which security measures are supported across different hardware configurations:
 
 .. list-table:: Security Implementation Matrix
-   :widths: 20 25 20 20 20 20
+   :widths: 18 30 13 13 13 13
    :header-rows: 1
 
    * - Collaboration Mode
@@ -114,32 +159,30 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
      - GPU XGBoost + CPU Encryption
      - GPU XGBoost + GPU Encryption
    * - **Horizontal**
-     - Protection of histograms against server
+     - Histogram protection against server
      - ✅
-     - Not needed
+     - N/A\*
      - ✅
-     - Not needed
+     - N/A\*
    * - **Vertical**
-     - **Primary:** Protection of sample gradients against passive parties
+     - **Primary**: Gradient protection
      - ✅
      - ✅
      - ✅
      - ✅
    * - **Vertical**
-     - **Secondary:** Protection of split values against non-feature owners
+     - **Secondary**: Split value masking
      - ✅
      - ✅
      - ❌
      - ❌
 
-Note on Implementation:
----------------------
+**\*Note**: Horizontal histogram encryption is not computationally intensive (encrypting histogram vectors), so GPU encryption is not needed.
 
-- **Horizontal mode**:
-  - The histogram-based horizontal model does not need GPU encryption, as it is not as computationally intensive (encrypting histogram vectors) as vertical mode (encrypting gradients).
-- **Vertical mode**:
-  - Primary goal (gradient protection) is fully supported across all combinations.
-  - Secondary goal (split value masking) is only supported with CPU XGBoost, regardless of encryption type.
+**Implementation Notes**:
+
+- **Vertical mode primary goal** (gradient protection): Fully supported across all configurations
+- **Vertical mode secondary goal** (split value masking): Only supported with CPU XGBoost
 
 Advanced Topics: Future Security Scenarios
 ===========================================
@@ -150,7 +193,7 @@ Potential Future Enhancements
 ------------------------------
 
 .. list-table:: Future Security Scenarios
-   :widths: 15 12 15 20 25 20
+   :widths: 15 12 15 18 25 22
    :header-rows: 1
 
    * - Collaboration Mode
@@ -162,32 +205,21 @@ Potential Future Enhancements
    * - **Horizontal**
      - Histogram-based
      - Histogram leakage
-     - Trust server, no trust in clients
-     - Server performs calculations; distributes only final splits
-     - Rare trust assumption; uncommon in practice
-   * - **Horizontal**
-     - Histogram-based
-     - Histogram leakage
      - No trust in server or clients
-     - Confidential computing
-     - HE compatibility issue [*]_
-   * - **Vertical**
-     - Histogram-based
-     - Histogram leakage
-     - Trust passive parties, no trust in active party
-     - Passive parties perform calculations; send only final splits
-     - Rare trust assumption; uncommon in practice
+     - Confidential computing, advanced HE
+     - HE compatibility issue [*]_ with server performing calculations and distributing only final splits
    * - **Vertical**
      - Histogram-based
      - Histogram + Gradient leakage
      - No trust in any party
-     - Local data preprocessing, anonymization, confidential computing
-     - HE compatibility issue [*]_
+     - Local data preprocessing, anonymization, confidential computing, advanced HE
+     - HE compatibility issue [*]_ with passive parties performing calculations and sending only final splits
 
 .. [*] **HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, HE cannot be combined with approaches that require "performing calculations until splits on the server/passive parties."
 
 Prerequisites
 =============
+
 Required Python Packages
 ------------------------
 
@@ -291,15 +323,21 @@ This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
 
 Data Preparation
 ================
-Data must be properly formatted for federated XGBoost training based on split mode (row or column).
+Data must be properly formatted for federated XGBoost training based on the collaboration mode.
 
-For horizontal (row-split) training, the datasets on all clients must share the same columns.
+Horizontal Training
+-------------------
+For horizontal training, the datasets on all clients must share the same columns (features). Each client has different data samples (rows).
 
-For vertical (column-split) training, the datasets on all clients contain different columns, but must share overlapping rows. For more details on vertical split preprocessing, refer to the :github_nvflare_link:`Vertical XGBoost Example <examples/advanced/vertical_xgboost>`.
+Vertical Training
+-----------------
+For vertical training, the datasets on all clients contain different columns (features), but must share overlapping rows (data samples). The label column is typically assigned to site-1 (the "active party") by default.
+
+For more details on vertical split preprocessing, refer to the :github_nvflare_link:`Vertical XGBoost Example <examples/advanced/vertical_xgboost>`.
 
 XGBoost Plugin Configuration
 ============================
-XGBoost requires an encryption plugin to handle secure training.
+XGBoost requires an encryption plugin to handle secure training. Two plugins are available:
 
 - **cuda_paillier**: The default plugin. This plugin uses GPU for cryptographic operations.
 - **nvflare**: This plugin forwards data locally to NVFlare process for encryption.
@@ -315,18 +353,19 @@ The **cuda_paillier** plugin requires NVIDIA GPUs that support compute capabilit
 The two included plugins are only different in vertical secure training. For horizontal secure training, both
 plugins work exactly the same by forwarding the data to NVFlare for encryption.
 
-Here are plugin configurations needed for each training mode.
+Plugin Configuration by Training Mode
+--------------------------------------
 
 Vertical (Non-secure)
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 No plugin is needed.
 
 Horizontal (Non-secure)
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 No plugin is needed.
 
 Vertical Secure
----------------
+~~~~~~~~~~~~~~~
 Both plugins can be used for vertical secure training.
 
 The default cuda_paillier plugin is preferred because it uses GPU for faster cryptographic operations.
@@ -371,7 +410,7 @@ The following environment variables can be used to override the values in the JS
    as it does not support resources.json.
 
 Horizontal Secure
------------------
+~~~~~~~~~~~~~~~~~
 The plugin setup is the same as vertical secure.
 
 This mode requires the tenseal package for all plugins.
@@ -407,7 +446,7 @@ Even though the XGBoost training is performed on clients, the parameters are con
 XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/python/python_intro.html#setting-parameters
 
 - **num_rounds**: Number of training rounds.
-- **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for row-split, 1 for column-split.
+- **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for horizontal, 1 for vertical.
 - **secure_training**: If true, XGBoost will train in secure mode using the plugin.
 - **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost parameter.
 - **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only **early_stopping_rounds** is supported.
@@ -443,8 +482,8 @@ On the client side, a data loader must be configured in the components. The CSVD
 If the data requires any special processing, a custom loader can be implemented. The loader must implement the XGBDataLoader interface.
 
 
-Job Example
-===========
+Job Examples
+============
 
 Vertical Training
 -----------------
@@ -664,3 +703,11 @@ The default configuration can only handle 20 clients. This parameter needs to be
         ...
     }
 
+
+Additional Resources
+====================
+
+- `NVIDIA FLARE Documentation <https://nvflare.readthedocs.io/>`_
+- `XGBoost Documentation <https://xgboost.readthedocs.io/>`_
+- `GPU XGBoost Blog <https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/>`_
+- `NVFlare Secure XGBoost Blog <https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/>`_

@@ -1,8 +1,13 @@
 # Federated Learning for XGBoost
 
-This example demonstrates how to use NVIDIA FLARE (NVFlare) to train XGBoost models in a federated learning environment. It showcases multiple collaboration strategies with varying levels of security.
+This guide demonstrates how to use NVIDIA FLARE (NVFlare) to train XGBoost models in a federated learning environment. It showcases multiple collaboration strategies with varying levels of security.
 
-## Overview
+NVFlare provides the following advantages:
+
+- Secure training with Homomorphic Encryption (HE), protecting local histograms and gradients from the federated server and passive parties.
+- Lifecycle management of XGBoost processes
+- Reliable messaging that can overcome network glitches
+- Training over complex networks with relays
 
 This guide covers several federated XGBoost configurations:
 - **Horizontal Collaboration**: Histogram-based and tree-based approaches (non-secure and secure)
@@ -42,17 +47,19 @@ In vertical collaboration, each participant has:
 
 ---
 
-## Security Considerations
+## Security Risks and Mitigations
 
 ### Security Risks
 
-Based on research ([SecureBoost](https://arxiv.org/abs/1901.08755), [TimberStrike](https://arxiv.org/abs/2506.07605)), federated XGBoost faces three main security risks:
+Federated XGBoost faces three main security risks:
 
 1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions.
 
 2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions.
 
 3. **Gradient Leakage**: Sample-wise gradients may reveal label information.
+
+See references: [SecureBoost](https://arxiv.org/abs/1901.08755), [TimberStrike](https://arxiv.org/abs/2506.07605)
 
 ### Security Solutions
 
@@ -171,10 +178,8 @@ The following security scenarios are not currently implemented in our solution. 
 
 | Collaboration Mode | Algorithm | Security Risk | Trust Model | Possible Approach | Challenges |
 |--------------------|-----------|---------------|-------------|-------------------|------------|
-| **Horizontal** | Histogram-based | Histogram leakage | Trust server,<br>no trust in clients | Server performs calculations;<br>distributes only final splits | Rare trust assumption;<br>uncommon in practice |
-| **Horizontal** | Histogram-based | Histogram leakage | No trust in server<br>or clients | Confidential computing | HE compatibility issue* |
-| **Vertical** | Histogram-based | Histogram leakage | Trust passive parties,<br>no trust in active party | Passive parties perform calculations;<br>send only final splits | Rare trust assumption;<br>uncommon in practice |
-| **Vertical** | Histogram-based | Histogram +<br>Gradient leakage | No trust in any party | Local data preprocessing,<br>anonymization,<br>confidential computing | HE compatibility issue* |
+| **Horizontal** | Histogram-based | Histogram leakage | No trust in server<br>or clients | Confidential computing,<br>advanced HE | HE compatibility issue* with server performing calculations and distributing only final splits |
+| **Vertical** | Histogram-based | Histogram +<br>Gradient leakage | No trust in any party | Local data preprocessing,<br>anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
 
 **\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, HE cannot be combined with approaches that require "performing calculations until splits on the server/passive parties."
 
