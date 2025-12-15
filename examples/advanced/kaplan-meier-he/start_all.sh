@@ -67,7 +67,6 @@ echo "To start admin console:"
 echo "  cd ${WORKSPACE_ROOT}/admin@nvidia.com"
 echo "  ./startup/fl_admin.sh"
 echo ""
-echo "To stop all parties, run:"
-echo "  ./stop_all.sh"
+echo "To stop all parties, use Admin Console"
 echo ""
 
