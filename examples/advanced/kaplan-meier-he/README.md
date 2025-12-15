@@ -142,8 +142,6 @@ If you want to quickly test production mode on a single machine, use the conveni
 5. Monitor job via admin console (use `list_jobs`, `check_status client`)
 6. Stop all parties with admin console
 
-**Note:** You may see SSL handshake warnings in local testing - these are harmless and can be ignored.
-
 For detailed steps and distributed deployment, continue below:
 
 **Step 1: Install NVFlare with HE Support**
