@@ -215,7 +215,7 @@ Potential Future Enhancements
      - Local data preprocessing and anonymization, confidential computing, advanced HE
      - HE compatibility issue [*]_ with passive parties performing calculations and sending only final splits
 
-.. [*] **HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, only advanced HE may have a chance to be combined with approaches that require "performing calculations until splits on the server/passive parties."
+.. [*] **HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. It requires advanced HE features to support approaches that require "performing calculations until splits on the server/passive parties."
 
 Prerequisites
 =============
