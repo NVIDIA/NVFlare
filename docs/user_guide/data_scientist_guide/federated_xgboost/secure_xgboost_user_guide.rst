@@ -212,7 +212,7 @@ Potential Future Enhancements
      - Histogram-based
      - Histogram + Gradient leakage
      - No trust in any party
-     - Local data preprocessing, anonymization, confidential computing, advanced HE
+     - Local data preprocessing and anonymization, confidential computing, advanced HE
      - HE compatibility issue [*]_ with passive parties performing calculations and sending only final splits
 
 .. [*] **HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, HE cannot be combined with approaches that require "performing calculations until splits on the server/passive parties."

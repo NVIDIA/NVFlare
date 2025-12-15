@@ -176,10 +176,10 @@ The following security scenarios are not currently implemented in our solution. 
 
 ### Potential Future Enhancements
 
-| Collaboration Mode | Algorithm | Security Risk | Trust Model | Possible Approach | Challenges |
-|--------------------|-----------|---------------|-------------|-------------------|------------|
-| **Horizontal** | Histogram-based | Histogram leakage | No trust in server<br>or clients | Confidential computing,<br>advanced HE | HE compatibility issue* with server performing calculations and distributing only final splits |
-| **Vertical** | Histogram-based | Histogram +<br>Gradient leakage | No trust in any party | Local data preprocessing,<br>anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
+| Collaboration Mode | Algorithm | Security Risk | Trust Model | Possible Approach                                                                     | Challenges |
+|--------------------|-----------|---------------|-------------|---------------------------------------------------------------------------------------|------------|
+| **Horizontal** | Histogram-based | Histogram leakage | No trust in server<br>or clients | Confidential computing,<br>advanced HE                                                | HE compatibility issue* with server performing calculations and distributing only final splits |
+| **Vertical** | Histogram-based | Histogram +<br>Gradient leakage | No trust in any party | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
 
 **\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Therefore, HE cannot be combined with approaches that require "performing calculations until splits on the server/passive parties."
 
