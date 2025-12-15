@@ -116,10 +116,12 @@ python utils/prepare_data.py --site_num 5 --bin_days 7 --out_path "/tmp/nvflare/
 
 **Step 2: Prepare HE Context (Simulation Only)**
 
-For simulation mode, manually prepare the HE context with BFV scheme:
+For simulation mode, manually prepare the HE context with CKKS scheme:
 ```commandline
 python utils/prepare_he_context.py --out_path "/tmp/nvflare/he_context"
 ```
+
+(By default uses CKKS scheme. To use BFV, add `--scheme BFV`)
 
 **Step 3: Run the Job**
 
@@ -301,18 +303,18 @@ By default, this will generate a KM curve image `km_curve_fl.png` (or `km_curve_
 ### HE Context and Data Management
 
 - **Simulation Mode**: 
-  - Uses **BFV scheme** (integer arithmetic, suitable for histogram aggregation)
+  - Uses **CKKS scheme** (approximate arithmetic, compatible with production)
   - HE context files are manually created via `prepare_he_context.py`
   - Data prepared at `/tmp/nvflare/dataset/km_data`
   - Paths specified via `--he_context_path` and `--data_root`
 - **Production Mode**: 
-  - Uses **CKKS scheme** (approximate arithmetic, easier provisioning)
+  - Uses **CKKS scheme** (same as simulation for consistency)
   - HE context is automatically provisioned into startup kits via `nvflare provision`
   - Clients use: `<startup_kit>/client_context.tenseal`
   - Server uses: `<startup_kit>/server_context.tenseal`
   - **Reuses the same data** from simulation mode at `/tmp/nvflare/dataset/km_data` by default
 
-**Note:** Both BFV and CKKS schemes provide strong encryption and work well for this Kaplan-Meier analysis. BFV is used in simulation for exact integer operations, while CKKS is used in production for simpler provisioning and broader compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
+**Note:** CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption. Both simulation and production modes use the same CKKS scheme for consistency and compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
 
 ## Display Result
 

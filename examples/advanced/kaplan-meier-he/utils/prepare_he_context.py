@@ -21,8 +21,8 @@ import tenseal as ts
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate HE context")
-    parser.add_argument("--scheme", type=str, default="BFV", help="HE scheme, default is BFV")
-    parser.add_argument("--poly_modulus_degree", type=int, default=4096, help="Poly modulus degree, default is 4096")
+    parser.add_argument("--scheme", type=str, default="CKKS", help="HE scheme, default is CKKS")
+    parser.add_argument("--poly_modulus_degree", type=int, default=8192, help="Poly modulus degree, default is 8192")
     parser.add_argument("--out_path", type=str, help="Output root path for HE context files for client and server")
     return parser
 
