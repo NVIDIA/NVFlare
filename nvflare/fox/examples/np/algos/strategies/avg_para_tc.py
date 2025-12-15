@@ -34,6 +34,7 @@ class NPFedAvgParallelWithTrafficControl:
             if current_model is None:
                 self.logger.error(f"training failed at round {i}")
                 break
+        self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
     def _do_one_round(self, r, current_model):
