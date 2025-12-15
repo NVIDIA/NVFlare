@@ -173,6 +173,9 @@ class AppRunner:
         return client_apps
 
     def run(self):
+        self.logger.debug(f"Server Collab Interface: {self.server_app.get_collab_interface()}")
+        self.logger.debug(f"Client Collab Interface: {self.client_app.get_collab_interface()}")
+
         try:
             result = self._try_run()
         except KeyboardInterrupt:
