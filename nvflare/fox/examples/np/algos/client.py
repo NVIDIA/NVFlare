@@ -13,7 +13,6 @@
 # limitations under the License.
 import random
 import time
-import traceback
 
 from nvflare.fox import fox
 from nvflare.fuel.utils.log_utils import get_obj_logger
