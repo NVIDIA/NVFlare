@@ -77,12 +77,18 @@ class FlareBackend(Backend):
                 send_complete_cb=send_complete_cb,
                 **cb_kwargs,
             )
-            assert isinstance(reply, Message)
+            if not isinstance(reply, Message):
+                self.logger.error(f"cell message reply must be Message but got {type(reply)}")
+                raise TimeoutError(f"function {func_name} failed with internal error")
+
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc == ReturnCode.TIMEOUT:
                 raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
             elif rc != ReturnCode.OK:
-                raise RuntimeError(f"function {func_name} failed: {rc}")
+                error = None
+                if isinstance(reply.payload, dict):
+                    error = reply.payload.get(CallReplyKey.ERROR)
+                raise RuntimeError(f"function {func_name} failed: {rc=} {error=}")
 
             if not isinstance(reply.payload, dict):
                 raise RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
