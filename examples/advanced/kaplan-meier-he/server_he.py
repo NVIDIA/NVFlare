@@ -25,7 +25,7 @@ from nvflare.app_common.workflows.model_controller import ModelController
 
 class KM_HE(ModelController):
     def __init__(self, min_clients: int, he_context_path: str):
-        super(KM_HE, self).__init__()
+        super(KM_HE, self).__init__(persistor_id="")
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
         self.he_context_path = he_context_path
