@@ -198,29 +198,26 @@ Advanced Topics: Future Security Scenarios
 
 The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication can reveal data distribution information**, which may enable data reconstruction attacks.
 
-Potential Future Enhancements
-------------------------------
+Potential Future Enhancements to Protect Against All Parties
+-------------------------------------------------------------
 
 .. list-table:: Future Security Scenarios
-   :widths: 15 12 15 18 25 22
+   :widths: 15 12 20 25 28
    :header-rows: 1
 
    * - Collaboration Mode
      - Algorithm
-     - Security Risk
-     - Trust Model
+     - Remaining Security Risk
      - Possible Approach
      - Challenges
    * - **Horizontal**
      - Histogram-based
-     - Histogram leakage
-     - No trust in server or clients
+     - Histogram leakage on clients (in addition to server as addressed above)
      - Confidential computing, advanced HE
      - HE compatibility issue [*]_ with server performing calculations and distributing only final splits
    * - **Vertical**
      - Histogram-based
-     - Histogram + Gradient leakage
-     - No trust in any party
+     - Histogram leakage on active party (in addition to Gradient leakage on server and passive parties as addressed above)
      - Local data preprocessing and anonymization, confidential computing, advanced HE
      - HE compatibility issue [*]_ with passive parties performing calculations and sending only final splits
 
