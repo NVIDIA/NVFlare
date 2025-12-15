@@ -1,6 +1,6 @@
 # Sample project.yml for Kaplan-Meier production deployment with HE (CKKS)
 # This file is used for provisioning secure startup kits with HE context
-# Note: Simulation mode uses BFV scheme, production mode uses CKKS scheme
+# Note: Both simulation and production modes use CKKS scheme for consistency
 
 api_version: 3
 name: km_he_project

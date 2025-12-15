@@ -42,8 +42,14 @@ def main():
         context = ts.context(scheme, poly_modulus_degree=args.poly_modulus_degree, plain_modulus=1032193)
     elif args.scheme == "CKKS":
         scheme = ts.SCHEME_TYPE.CKKS
-        # Generate HE context, CKKS does not need plain_modulus
-        context = ts.context(scheme, poly_modulus_degree=args.poly_modulus_degree)
+        # Generate HE context for CKKS
+        coeff_mod_bit_sizes = [60, 40, 40]
+        context = ts.context(
+            scheme, poly_modulus_degree=args.poly_modulus_degree, coeff_mod_bit_sizes=coeff_mod_bit_sizes
+        )
+        # CKKS requires global scale to be set
+        context.generate_relin_keys()
+        context.global_scale = 2**40
     else:
         raise ValueError("HE scheme not supported")
 

@@ -78,14 +78,14 @@ def define_parser():
     parser.add_argument(
         "--workspace_dir",
         type=str,
-        default="/tmp/nvflare/workspaces/km",
-        help="Work directory for simulator runs, default to '/tmp/nvflare/workspaces/km'",
+        default="/tmp/nvflare/workspaces",
+        help="Work directory for simulator runs, default to '/tmp/nvflare/workspaces'",
     )
     parser.add_argument(
         "--job_dir",
         type=str,
-        default="/tmp/nvflare/jobs/km",
-        help="Directory for job export, default to '/tmp/nvflare/jobs/km'",
+        default="/tmp/nvflare/jobs",
+        help="Directory for job export, default to '/tmp/nvflare/jobs'",
     )
     parser.add_argument(
         "--encryption",
@@ -140,7 +140,7 @@ def main():
 
     # Determine job name for workspace directory
     job_name = "KM_HE" if args.encryption else "KM"
-    workspace_dir = args.workspace_dir.replace("/km/", f"/{job_name}/")
+    workspace_dir = f"{args.workspace_dir}/{job_name}"
 
     # Create the recipe
     recipe = KMRecipe(
