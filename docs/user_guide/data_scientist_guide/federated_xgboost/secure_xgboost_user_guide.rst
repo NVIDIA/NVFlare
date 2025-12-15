@@ -84,11 +84,11 @@ See references: `SecureBoost <https://arxiv.org/abs/1901.08755>`_, `TimberStrike
 
 Attack Surface
 --------------
-The attack surface for federated XGBoost is the following:
+The attack surface for federated XGBoost is as follows:
 
-**Server**: depending on the collaboration mode, the server may have access to the local model (horizontal tree-based), local histograms (horizontal histogram-based, vertical histogram-based - from passive parties), or sample-wise gradients (vertical histogram-based - from active party).
+**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based), local histograms (horizontal histogram-based, vertical histogram-based - from passive parties), or sample-wise gradients (vertical histogram-based - from active party).
 
-**Clients**: depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based), global histograms (horizontal histogram-based), local histograms (vertical histogram-based - to active party), or sample-wise gradients (vertical histogram-based - to passive parties).
+**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based), global histograms (horizontal histogram-based), local histograms (vertical histogram-based - to active party), or sample-wise gradients (vertical histogram-based - to passive parties).
 
 
 Mitigations
@@ -111,7 +111,7 @@ The following table summarizes the available mitigations for different collabora
      - Clients send locally boosted trees to server; server combines and distributes trees
      - Model statistics leakage on both server and clients
      - Remove "sum_hessian" values from JSON model
-     - Removed before clients sending local trees to server
+     - Removed before clients send local trees to server
    * - **Horizontal**
      - Histogram-based
      - Clients send local histograms to server; server aggregates to global histogram

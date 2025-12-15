@@ -63,11 +63,11 @@ See references: [SecureBoost](https://arxiv.org/abs/1901.08755), [TimberStrike](
 
 ### Attack Surface
 
-The attack surface for federated XGBoost is the following:
+The attack surface for federated XGBoost is as follows:
 
-**Server**: depending on the collaboration mode, the server may have access to the local model (horizontal tree-based), local histograms (horizontal histogram-based, vertical histogram-based - from passive parties), or sample-wise gradients (vertical histogram-based - from active party).
+**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based), local histograms (horizontal histogram-based, vertical histogram-based - from passive parties), or sample-wise gradients (vertical histogram-based - from active party).
 
-**Clients**: depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based), global histograms (horizontal histogram-based), local histograms (vertical histogram-based - to active party), or sample-wise gradients (vertical histogram-based - to passive parties).
+**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based), global histograms (horizontal histogram-based), local histograms (vertical histogram-based - to active party), or sample-wise gradients (vertical histogram-based - to passive parties).
 
 ### Mitigations
 
@@ -75,7 +75,7 @@ The following table summarizes the available mitigations for different collabora
 
 | Collaboration Mode | Algorithm | Data Exchange | Security Risk | Security Measure | Implementation |
 |-------------------|-----------|---------------|---------------|------------------|----------------|
-| **Horizontal** | Tree-based | Clients send locally boosted trees to server; server combines and distributes trees | Model statistics leakage on both server and clients | Remove "sum_hessian" values from JSON model | Removed before clients sending local trees to server |
+| **Horizontal** | Tree-based | Clients send locally boosted trees to server; server combines and distributes trees | Model statistics leakage on both server and clients | Remove "sum_hessian" values from JSON model | Removed before clients send local trees to server |
 | **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | Histogram leakage on server | Encrypt histograms | Local histograms encrypted before transmission |
 | **Vertical** | Histogram-based | Active party computes gradients; routed by server, passive parties receive gradients and compute histograms | Gradient leakage on both server and passive parties | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending out to passive parties |
 
@@ -189,7 +189,7 @@ The following security scenarios are not currently implemented in our solution. 
 | **Horizontal** | Histogram-based | Histogram leakage | No trust in server<br>or clients | Confidential computing,<br>advanced HE                                                | HE compatibility issue* with server performing calculations and distributing only final splits |
 | **Vertical** | Histogram-based | Histogram +<br>Gradient leakage | No trust in any party | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
 
-**\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Advanced HE features are needed to support approaches that "performs calculations until splits on the server/passive parties."
+**\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Advanced HE features are needed to support approaches that "perform calculations until splits on the server/passive parties."
 
 ---
 
