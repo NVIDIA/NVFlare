@@ -66,17 +66,17 @@ The attack surface for federated XGBoost is as follows:
 
 **Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based: **Model Statistics Leakage** over each client's data distribution), local histograms (horizontal histogram-based, vertical histogram-based: **Histogram Leakage** over each client / passive party's data distribution), or sample-wise gradients (vertical histogram-based: **Gradient Leakage** over active party's label information). 
 
-**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** over global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** over global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** over each passive party's data distribution), or sample-wise gradients (**Gradient Leakage** over active party's label information).
+**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** over global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** over global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** over each passive party's data distribution on active party), or sample-wise gradients (**Gradient Leakage** over active party's label information on passive parties).
 
 ### Mitigations
 
 The following table summarizes the available mitigations for different collaboration scenarios:
 
-| Collaboration Mode | Algorithm | Data Exchange | Security Risk | Security Measure | Implementation |
+| Collaboration Mode | Algorithm | Data Exchange | Risk Mitigated | Security Measure | Implementation |
 |-------------------|-----------|---------------|---------------|------------------|----------------|
 | **Horizontal** | Tree-based | Clients send locally boosted trees to server; server combines and distributes trees | **Model statistics leakage** on both server and clients | Remove "sum_hessian" values from JSON model | Removed before clients send local trees to server |
-| **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | **Histogram leakage** on server | Encrypt histograms | Local histograms encrypted before transmission |
-| **Vertical** | Histogram-based | Active party computes gradients; routed by server, passive parties receive gradients and compute histograms | **Histogram leakage** on server, **Gradient leakage** on both server and passive parties | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending out to passive parties |
+| **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | **Histogram leakage** on server (client-side remain) | Encrypt histograms | Local histograms encrypted before transmission |
+| **Vertical** | Histogram-based | Active party computes gradients; routed by server, passive parties receive gradients and compute histograms | **Histogram leakage** on server (active party-side remain), **Gradient leakage** on both server and passive parties | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending out to passive parties |
 
 **Notes on Vertical histogram-based**: 
 - **Primary goal**: Protect sample gradients from passive parties (critical)
