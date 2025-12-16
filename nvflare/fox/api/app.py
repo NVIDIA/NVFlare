@@ -215,7 +215,10 @@ class App:
         # name must be acceptable str
         pattern = r"^[A-Za-z][A-Za-z0-9_]*$"
         if not re.match(pattern, name):
-            raise ValueError(f"invalid name {name} for collab object - must be simple name starting with a letter")
+            raise ValueError(
+                f"invalid name {name} for collab object - must start with a letter, "
+                "followed by one or more alphanumeric and/or underscore chars"
+            )
 
         if name in self._collab_objs:
             raise ValueError(f"conflict with existing collab object '{name}' of {type(self._collab_objs[name])}")

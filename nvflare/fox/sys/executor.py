@@ -64,7 +64,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.client_ctx = None
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
+        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="fox_call")
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)

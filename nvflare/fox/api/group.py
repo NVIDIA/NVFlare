@@ -161,6 +161,9 @@ class Group:
                         gcc.set_send_complete_cb(self._request_sent, waiter=waiter)
 
                         while True:
+                            if self._abort_signal.triggered:
+                                raise RunAborted("run is aborted")
+
                             # No need to use lock here even if in_sending could change after we read it
                             # from waiter.in_sending_count and use it to compare with max_parallel.
                             # This is because waiter.in_sending_count can only decrease (by other threads)
@@ -171,7 +174,7 @@ class Group:
                                 func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
                                 break
                             else:
-                                # self._logger.debug(f"requests being sent: {in_sending} - wait for runway")
+                                # wait a short time for sending count to decrease and to check abort signal
                                 time.sleep(0.1)
 
                     if not self._call_opt.expect_result:
