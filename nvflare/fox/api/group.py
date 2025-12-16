@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import time
 from typing import List
 
 from nvflare.apis.fl_exception import RunAborted
@@ -159,23 +158,9 @@ class Group:
                         )
 
                         gcc.set_send_complete_cb(self._request_sent, waiter=waiter)
-
-                        while True:
-                            if self._abort_signal.triggered:
-                                raise RunAborted("run is aborted")
-
-                            # No need to use lock here even if in_sending could change after we read it
-                            # from waiter.in_sending_count and use it to compare with max_parallel.
-                            # This is because waiter.in_sending_count can only decrease (by other threads)
-                            # after we read it here. If this happens, we will catch it in next iteration.
-                            in_sending = waiter.in_sending_count
-                            if in_sending < max_parallel:
-                                waiter.inc_sending()
-                                func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
-                                break
-                            else:
-                                # wait a short time for sending count to decrease and to check abort signal
-                                time.sleep(0.1)
+                        waiter.wait_for_sending_available(max_parallel, 1.0, self._abort_signal)
+                        waiter.inc_sending()
+                        func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
                     if not self._call_opt.expect_result:
                         # do not wait for responses
@@ -191,7 +176,7 @@ class Group:
                             raise RunAborted("run is aborted")
 
                         # wait for a short time, so we can check other conditions
-                        done = waiter.wait(0.1)
+                        done = waiter.wait(1.0)
                         if done:
                             break
 
