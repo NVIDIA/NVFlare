@@ -75,7 +75,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         app = ClientApp(client_obj)
 
         # If the app contains "make_client_app" method, call it to make the app instance!
-        make_client_app_f = getattr(self.client_app, MAKE_CLIENT_APP_METHOD, None)
+        make_client_app_f = getattr(app, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(client_name, BackendType.FLARE)
 
