@@ -78,11 +78,9 @@ The following table summarizes the available mitigations for different collabora
 | **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | **Histogram leakage** on server | Encrypt histograms | Local histograms encrypted before transmission |
 | **Vertical** | Histogram-based | Active party computes gradients; routed by server, passive parties receive gradients and compute histograms | **Histogram leakage** on server, **Gradient leakage** on both server and passive parties | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending out to passive parties |
 
-**Notes:**
-- **Horizontal tree-based**: Security achieved by removing "sum_hessian" values before transmission
-- **Vertical histogram-based**: 
-  - **Primary goal**: Protect sample gradients from passive parties (critical)
-  - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
+**Notes on Vertical histogram-based**: 
+- **Primary goal**: Protect sample gradients from passive parties (critical)
+- **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
 
 ---
 
