@@ -185,8 +185,8 @@ The following security scenarios are not currently implemented in our solution. 
 
 | Collaboration Mode | Algorithm | Remaining Security Risk | Possible Approach | Challenges |
 |--------------------|-----------|---------------|-------------------|------------|
-| **Horizontal** | Histogram-based | Histogram leakage on clients (in addition to server as addressed above) | Confidential computing,<br>advanced HE | HE compatibility issue* with server performing calculations and distributing only final splits |
-| **Vertical** | Histogram-based | Histogram leakage on active party (in addition to Histogram leakage on server, and Gradient leakage on server and passive parties as addressed above) | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
+| **Horizontal** | Histogram-based | Histogram leakage over global data distribution on clients (in addition to server as addressed above) | Confidential computing,<br>advanced HE | HE compatibility issue* with server performing calculations and distributing only final splits |
+| **Vertical** | Histogram-based | Histogram leakage over each passive party's data distribution on active party (in addition to Histogram leakage on server, and Gradient leakage on server and passive parties as addressed above) | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
 
 **\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Advanced HE features are needed to support approaches that "perform calculations until splits on the server/passive parties."
 
