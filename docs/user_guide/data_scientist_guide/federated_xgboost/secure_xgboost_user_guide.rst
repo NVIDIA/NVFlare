@@ -82,12 +82,32 @@ Federated XGBoost faces three main security risks:
 
 Attack Surface
 --------------
-The attack surface for federated XGBoost is as follows:
 
-**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based: **Model Statistics Leakage** over each client's data distribution), local histograms (horizontal histogram-based, vertical histogram-based: **Histogram Leakage** over each client / passive party's data distribution), or sample-wise gradients (vertical histogram-based: **Gradient Leakage** over active party's label information).
+The attack surface varies by collaboration mode and party role:
 
-**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** over global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** over global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** over each passive party's data distribution on active party), or sample-wise gradients (**Gradient Leakage** over active party's label information on passive parties).
+**Server**: Depending on the collaboration mode, the server may have access to 
+1. The local model:
+   - Horizontal tree-based:
+      - **Model Statistics Leakage** over each client's data distribution
+2. Local histograms:
+   - Horizontal histogram-based / vertical histogram-based:
+      - **Histogram Leakage** over each client / passive party's data distribution
+3. Sample-wise gradients:
+   - Vertical histogram-based:
+      - **Gradient Leakage** over active party's label information
 
+**Clients**: Depending on the collaboration mode, the clients may have access to
+1. The aggregated global model:
+   - Horizontal tree-based:
+      - **Model Statistics Leakage** over global data distribution 
+2. Global histograms:
+   - Horizontal histogram-based:
+      - **Histogram Leakage** over global data distribution 
+3. Local histograms:
+   - Vertical histogram-based: 
+      - **Histogram Leakage** over each passive party's data distribution on active party
+3. Sample-wise gradients:
+   - **Gradient Leakage** over active party's label information on passive parties
 
 Mitigations
 ------------------
@@ -130,7 +150,7 @@ The following table summarizes the available mitigations for different collabora
   - **Primary goal**: Protect sample gradients from passive parties (critical)
   - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
 
-- **The remaining two risks** will be discussed in the last section.
+- **The remaining two risks** will be discussed in the `Advanced Topics: Future Security Scenarios`_ section.
 
 GPU Acceleration
 ================
@@ -228,11 +248,11 @@ Prerequisites
 Required Python Packages
 ------------------------
 
-NVFlare 2.5.0 or above,
+NVFlare 2.7.2 or above,
 
 .. code-block:: bash
 
-    pip install nvflare~=2.5.0
+    pip install nvflare~=2.7.2
 
 Federated Secure XGBoost, which can be installed from the binary build using this command,
 
