@@ -115,14 +115,21 @@ class ProcessAdapter:
 
         try:
             pgid = os.getpgid(self.pid)
-        except Exception:
+        except ProcessLookupError:
+            # Process already gone; nothing left to terminate.
+            return
+        except PermissionError as exc:
+            self.logger.warning("Unable to read pgid for %s (%s)", self.pid, exc)
             pgid = self.pid
 
         try:
             os.killpg(pgid, signal.SIGKILL)
             self.logger.debug("kill signal sent")
-        except Exception:
-            pass
+        except ProcessLookupError:
+            # Group already terminated, treat as success.
+            return
+        except Exception as exc:
+            self.logger.warning("Failed to kill process group %s (%s)", pgid, exc)
 
 
 def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
@@ -147,7 +154,11 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             pid = os.posix_spawn(path, cmd_args, env, setsid=True)
             log.info("Launch the job in process ID: %s (posix_spawn)", pid)
             return ProcessAdapter(pid=pid)
+        except TypeError as exc:
+            # Happens when this interpreter lacks posix_spawn(..., setsid=...) support and silently falls back to fork.
+            log.warning("posix_spawn missing setsid support (%s); falling back to subprocess.", exc)
         except Exception as exc:
+            # Covers launch failures unrelated to setsid (e.g. binary missing, permission issues).
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
     preexec_fn = os.setsid if hasattr(os, "setsid") else None
