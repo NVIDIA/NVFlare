@@ -78,9 +78,11 @@ The following table summarizes the available mitigations for different collabora
 | **Horizontal** | Histogram-based | Clients send local histograms to server; server aggregates to global histogram | **Histogram leakage** on server (client-side remain) | Encrypt histograms | Local histograms encrypted before transmission |
 | **Vertical** | Histogram-based | Active party computes gradients; routed by server, passive parties receive gradients and compute histograms | **Histogram leakage** on server (active party-side remain), **Gradient leakage** on both server and passive parties | **Primary**: Encrypt gradients<br>**Secondary**: Mask feature ownership in split values | Gradients encrypted before sending out to passive parties |
 
-**Notes on Vertical histogram-based**: 
-- **Primary goal**: Protect sample gradients from passive parties (critical)
-- **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
+**Notes**
+- **Vertical histogram-based**: 
+   - **Primary goal**: Protect sample gradients from passive parties (critical)
+   - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
+- **The remaining two riskes** will be discussed in the last section.
 
 ---
 
@@ -184,7 +186,7 @@ The following security scenarios are not currently implemented in our solution. 
 | Collaboration Mode | Algorithm | Remaining Security Risk | Possible Approach | Challenges |
 |--------------------|-----------|---------------|-------------------|------------|
 | **Horizontal** | Histogram-based | Histogram leakage on clients (in addition to server as addressed above) | Confidential computing,<br>advanced HE | HE compatibility issue* with server performing calculations and distributing only final splits |
-| **Vertical** | Histogram-based | Histogram leakage on active party (in addition to Gradient leakage on server and passive parties as addressed above) | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
+| **Vertical** | Histogram-based | Histogram leakage on active party (in addition to Histogram leakage on server, and Gradient leakage on server and passive parties as addressed above) | Local data preprocessing and anonymization,<br>confidential computing,<br>advanced HE | HE compatibility issue* with passive parties performing calculations and sending only final splits |
 
 **\*HE Compatibility Challenge**: Current Homomorphic Encryption schemes do not efficiently support operations like ciphertext division and argmax, which are required for performing split calculations on encrypted data. Advanced HE features are needed to support approaches that "perform calculations until splits on the server/passive parties."
 
