@@ -53,13 +53,12 @@ In vertical collaboration, each participant has:
 
 Federated XGBoost faces three main security risks:
 
-1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions.
+1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions. (Reference: [TimberStrike](https://arxiv.org/abs/2506.07605))
 
-2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions.
+2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions. The same model statistics of "sum_hessian" can be derived from histograms. (Reference: [TimberStrike](https://arxiv.org/abs/2506.07605))
 
-3. **Gradient Leakage**: Sample-wise gradients may reveal label information.
+3. **Gradient Leakage**: Sample-wise gradients may reveal label information. (Reference: [SecureBoost](https://arxiv.org/abs/1901.08755))
 
-See references: [SecureBoost](https://arxiv.org/abs/1901.08755), [TimberStrike](https://arxiv.org/abs/2506.07605)
 
 ### Attack Surface
 
