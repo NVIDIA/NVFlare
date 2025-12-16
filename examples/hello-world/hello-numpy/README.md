@@ -49,7 +49,7 @@ Install the dependencies:
 ## Files
 
 - **`client.py`** - Client-side training script that receives models, trains locally, and sends updates
-- **`server.py`** - Server-side script that creates and runs the federated learning job using the Recipe API
+- **`job.py`** - Script that creates and runs the federated learning job using the Recipe API
 - **`requirements.txt`** - Python dependencies
 
 ## How It Works
