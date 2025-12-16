@@ -74,21 +74,19 @@ Risks
 
 Federated XGBoost faces three main security risks:
 
-1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions.
+1. **Model Statistics Leakage**: The default XGBoost JSON model contains "sum_hessian" statistics that enable model inversion attacks to recover data distributions. (Reference: `TimberStrike <https://arxiv.org/abs/2506.07605>`_)
 
-2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions.
+2. **Histogram Leakage**: Gradient histograms can be exploited to reconstruct data distributions. The same model statistics of "sum_hessian" can be derived from histograms. (Reference: `TimberStrike <https://arxiv.org/abs/2506.07605>`_)
 
-3. **Gradient Leakage**: Sample-wise gradients may reveal label information.
-
-See references: `SecureBoost <https://arxiv.org/abs/1901.08755>`_, `TimberStrike <https://arxiv.org/abs/2506.07605>`_
+3. **Gradient Leakage**: Sample-wise gradients may reveal label information. (Reference: `SecureBoost <https://arxiv.org/abs/1901.08755>`_)
 
 Attack Surface
 --------------
 The attack surface for federated XGBoost is as follows:
 
-**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based), local histograms (horizontal histogram-based, vertical histogram-based - from passive parties), or sample-wise gradients (vertical histogram-based - from active party).
+**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based: **Model Statistics Leakage** over each client's data distribution), local histograms (horizontal histogram-based, vertical histogram-based: **Histogram Leakage** over each client / passive party's data distribution), or sample-wise gradients (vertical histogram-based: **Gradient Leakage** over active party's label information).
 
-**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based), global histograms (horizontal histogram-based), local histograms (vertical histogram-based - to active party), or sample-wise gradients (vertical histogram-based - to passive parties).
+**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** over global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** over global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** over each passive party's data distribution on active party), or sample-wise gradients (**Gradient Leakage** over active party's label information on passive parties).
 
 
 Mitigations
@@ -103,35 +101,36 @@ The following table summarizes the available mitigations for different collabora
    * - Collaboration Mode
      - Algorithm
      - Data Exchange
-     - Security Risk
+     - Risk Mitigated
      - Security Measure
      - Implementation
    * - **Horizontal**
      - Tree-based
-     - Clients send locally boosted trees to server; server combines and distributes trees
-     - Model statistics leakage on both server and clients
+     - Clients send locally boosted trees to server; server combines and distributes trees back to clients
+     - **Model statistics leakage** on both server and clients
      - Remove "sum_hessian" values from JSON model
      - Removed before clients send local trees to server
    * - **Horizontal**
      - Histogram-based
-     - Clients send local histograms to server; server aggregates to global histogram
-     - Histogram leakage on server
+     - Clients send local histograms to server; server aggregates to global histogram and distributes it back to clients
+     - **Histogram leakage** on server (client-side remain)
      - Encrypt histograms
      - Local histograms encrypted before transmission
    * - **Vertical**
      - Histogram-based
-     - Active party computes gradients; routed by server, passive parties receive gradients and compute histograms
-     - Gradient leakage on both server and passive parties
+     - Active party computes gradients; routed by server, passive parties receive gradients, compute histograms, and send them back to active party through server
+     - **Histogram leakage** on server (active party-side remain), **Gradient leakage** on both server and passive parties
      - **Primary**: Encrypt gradients; **Secondary**: Mask feature ownership in split values
      - Gradients encrypted before sending out to passive parties
 
 **Notes:**
 
-- **Horizontal tree-based**: Security achieved by removing "sum_hessian" values before transmission
 - **Vertical histogram-based**: 
   
   - **Primary goal**: Protect sample gradients from passive parties (critical)
   - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
+
+- **The remaining two risks** will be discussed in the last section.
 
 GPU Acceleration
 ================
@@ -196,7 +195,7 @@ The following table shows which security measures are supported across different
 Advanced Topics: Future Security Scenarios
 ===========================================
 
-The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication can reveal data distribution information**, which may enable data reconstruction attacks.
+The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication** can reveal data distribution information, which may enable data reconstruction attacks as stated above. On the other hand, similar statistics can also be derived from common practices such as `federated statistics <https://nvflare.readthedocs.io/en/main/examples/federated_statistics.html>`_. As the attack potency depends on multiple factors including data complexity, model hyperparameters, and the data distribution information that can be utilized, the corresponding indications of a certain type of attack can vary significantly. This is still an open and active research area.
 
 Potential Future Enhancements to Protect Against All Parties
 -------------------------------------------------------------
@@ -212,12 +211,12 @@ Potential Future Enhancements to Protect Against All Parties
      - Challenges
    * - **Horizontal**
      - Histogram-based
-     - Histogram leakage on clients (in addition to server as addressed above)
+     - Histogram leakage over global data distribution on clients (in addition to server as addressed above)
      - Confidential computing, advanced HE
      - HE compatibility issue [*]_ with server performing calculations and distributing only final splits
    * - **Vertical**
      - Histogram-based
-     - Histogram leakage on active party (in addition to Gradient leakage on server and passive parties as addressed above)
+     - Histogram leakage over each passive party's data distribution on active party (in addition to Histogram leakage on server, and Gradient leakage on server and passive parties as addressed above)
      - Local data preprocessing and anonymization, confidential computing, advanced HE
      - HE compatibility issue [*]_ with passive parties performing calculations and sending only final splits
 
