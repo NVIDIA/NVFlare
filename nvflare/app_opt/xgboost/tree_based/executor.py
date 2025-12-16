@@ -300,7 +300,6 @@ class FedXGBTreeExecutor(Executor):
                 bst = self._local_boost_cyclic(fl_ctx)
 
         self.log_info(fl_ctx, f"Client {self.client_id} model boosting rounds: {bst.num_boosted_rounds()}")
-
         # save_raw returns bytes, need to parse to dict first
         raw_model = bst.save_raw("json")
         self.local_model = json.loads(raw_model)
