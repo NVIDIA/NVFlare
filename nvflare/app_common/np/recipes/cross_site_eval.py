@@ -17,14 +17,14 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from nvflare import FedJob
-from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.np_formatter import NPFormatter
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.np.np_trainer import NPTrainer
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
+from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.recipe.spec import Recipe
 
 
@@ -36,7 +36,6 @@ class _CrossSiteEvalValidator(BaseModel):
     min_clients: int
     initial_model: Optional[Any]
     model_locator_config: Optional[Dict[str, Any]]
-    server_models: List[str]
     cross_val_dir: str
     submit_model_timeout: int
     validation_timeout: int
@@ -54,22 +53,28 @@ class NumpyCrossSiteEvalRecipe(Recipe):
     sharing the data itself.
 
     The recipe configures:
-    - A federated job with optional initial model or pre-trained models
-    - CrossSiteEval controller for coordinating the evaluation workflow
-    - Model locator for finding server models (optional)
-    - Validators for client-side model evaluation
-    - Trainers for submitting client models
-    - JSON generator for saving cross-validation results
+        - A federated job with optional initial model or pre-trained models
+        - CrossSiteModelEval controller for coordinating the evaluation workflow
+        - Model locator for finding server models (optional)
+        - Validators for client-side model evaluation
+        - Trainers for submitting client models
+        - JSON generator for saving cross-validation results
 
     Args:
         name: Name of the federated learning job. Defaults to "cross_site_eval".
         min_clients: Minimum number of clients required to start evaluation.
-        initial_model: Initial model to evaluate. If None and model_locator_config is None,
-            will only evaluate client models. Defaults to None.
+        initial_model: Initial model to evaluate. If provided, creates a persistor
+            and model locator to enable server model evaluation. Defaults to None.
         model_locator_config: Configuration for NPModelLocator to locate pre-trained models.
-            Should be a dict with 'model_dir' and 'model_name' keys. If None,
-            uses initial_model. Defaults to None.
-        server_models: List of server model names to evaluate. Defaults to ["best_model"].
+            Should be a dict with 'model_dir' and 'model_name' keys. If provided,
+            server models will be loaded from the specified directory.
+
+            Server Model Evaluation Modes:
+                - If `initial_model` is provided: Uses persistor + default model locator
+                - If `model_locator_config` is provided: Uses custom model locator
+                - If BOTH are None: Client-only evaluation (no server models loaded)
+
+            Defaults to None.
         cross_val_dir: Directory for cross-validation results. Defaults to "cross_site_val".
         submit_model_timeout: Timeout in seconds for submit_model task. Defaults to 600.
         validation_timeout: Timeout in seconds for validation task. Defaults to 6000.
@@ -104,7 +109,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         recipe = NumpyCrossSiteEvalRecipe(
             name="numpy_cse",
             min_clients=2,
-            server_models=[],  # Empty list - no server models
+            # No initial_model or model_locator_config - only client models evaluated
         )
         ```
 
@@ -113,9 +118,22 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         combined with a training workflow (like FedAvg) to evaluate models
         after training completes.
 
-        The results are saved as a JSON file in the cross_val_dir directory,
-        creating an all-to-all matrix showing how each model performs on
-        each client's dataset.
+        Server Model Evaluation Modes:
+            The recipe supports three modes:
+
+            1. Pre-trained models: Set `model_locator_config` to load from disk
+            2. Initial model: Set `initial_model` to use a model object
+            3. Client-only: Leave both None to evaluate only client models
+
+            When no server models are configured (`initial_model=None` and
+            `model_locator_config=None`), the recipe creates formatter and result
+            generator components, but the controller will skip server model loading
+            and only perform client-to-client evaluation.
+
+        Results:
+            The evaluation results are saved as a JSON file in the cross_val_dir
+            directory, creating an all-to-all matrix showing how each model
+            performs on each client's dataset.
     """
 
     def __init__(
@@ -125,7 +143,6 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         min_clients: int,
         initial_model: Optional[Any] = None,
         model_locator_config: Optional[Dict[str, Any]] = None,
-        server_models: List[str] = None,
         cross_val_dir: str = AppConstants.CROSS_VAL_DIR,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
@@ -133,17 +150,12 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         client_model_dir: str = "model",
         client_model_name: str = "best_numpy.npy",
     ):
-        # Set default for server_models
-        if server_models is None:
-            server_models = [DefaultCheckpointFileName.GLOBAL_MODEL]
-
         # Validate inputs internally
         v = _CrossSiteEvalValidator(
             name=name,
             min_clients=min_clients,
             initial_model=initial_model,
             model_locator_config=model_locator_config,
-            server_models=server_models,
             cross_val_dir=cross_val_dir,
             submit_model_timeout=submit_model_timeout,
             validation_timeout=validation_timeout,
@@ -156,7 +168,6 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         self.min_clients = v.min_clients
         self.initial_model = v.initial_model
         self.model_locator_config = v.model_locator_config
-        self.server_models = v.server_models
         self.cross_val_dir = v.cross_val_dir
         self.submit_model_timeout = v.submit_model_timeout
         self.validation_timeout = v.validation_timeout
@@ -167,36 +178,37 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
-        # Decide on persistor and model locator
-        persistor_id = ""
+        # Configure model locator based on input
+        # When model_locator_id is empty string, CrossSiteModelEval will skip server model loading
         model_locator_id = ""
-
-        # If initial_model is provided, use persistor
         if self.initial_model is not None:
-            persistor_id = job.to_server(NPModelPersistor(), id="persistor")
+            # Use persistor for initial model
+            job.to_server(NPModelPersistor(), id="persistor")
             job.to(self.initial_model, "server")
             # Use default model locator for the persistor's models
             model_locator = NPModelLocator()
             model_locator_id = job.to_server(model_locator, id="model_locator")
-
-        # If model_locator_config is provided, create custom model locator
         elif self.model_locator_config is not None:
+            # Use custom model locator for pre-trained models
             model_dir = self.model_locator_config.get("model_dir", "models")
             model_name = self.model_locator_config.get("model_name", "server.npy")
             model_locator = NPModelLocator(model_dir=model_dir, model_name=model_name)
             model_locator_id = job.to_server(model_locator, id="model_locator")
+        # else: model_locator_id remains "" - client-only evaluation
+        # CrossSiteModelEval checks 'if self._model_locator_id:' and skips server model loading if empty
 
         # Add formatter and validation JSON generator to server
         formatter_id = job.to_server(NPFormatter(), id="formatter")
         job.to_server(ValidationJsonGenerator())
 
-        # Create CrossSiteEval controller
-        controller = CrossSiteEval(
-            persistor_id=persistor_id,
+        # Create CrossSiteModelEval controller
+        # Note: Uses CrossSiteModelEval (not CrossSiteEval) to support model_locator_id and formatter_id
+        controller = CrossSiteModelEval(
+            model_locator_id=model_locator_id,
+            formatter_id=formatter_id,
             cross_val_dir=self.cross_val_dir,
             submit_model_timeout=self.submit_model_timeout,
             validation_timeout=self.validation_timeout,
-            server_models=self.server_models,
             participating_clients=self.participating_clients,
         )
         job.to_server(controller)

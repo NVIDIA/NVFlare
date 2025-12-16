@@ -50,9 +50,6 @@ class TestNumpyCrossSiteEvalRecipe:
         assert_recipe_basics(recipe, "test_cse", base_recipe_params)
         assert recipe.initial_model is None
         assert recipe.model_locator_config is None
-        assert recipe.server_models == [
-            "FL_global_model.pt"
-        ]  # Default value from DefaultCheckpointFileName.GLOBAL_MODEL
         assert recipe.cross_val_dir == "cross_site_val"  # Default value
         assert recipe.submit_model_timeout == 600
         assert recipe.validation_timeout == 6000
@@ -79,23 +76,6 @@ class TestNumpyCrossSiteEvalRecipe:
         assert_recipe_basics(recipe, "test_cse_with_locator", base_recipe_params)
         assert recipe.initial_model is None
         assert recipe.model_locator_config == model_locator_config
-
-    def test_recipe_with_custom_server_models(self, base_recipe_params):
-        """Test NumpyCrossSiteEvalRecipe with custom server models list."""
-        custom_server_models = ["model_1", "model_2", "model_3"]
-        recipe = NumpyCrossSiteEvalRecipe(
-            name="test_cse_custom_models", server_models=custom_server_models, **base_recipe_params
-        )
-
-        assert_recipe_basics(recipe, "test_cse_custom_models", base_recipe_params)
-        assert recipe.server_models == custom_server_models
-
-    def test_recipe_with_empty_server_models(self, base_recipe_params):
-        """Test NumpyCrossSiteEvalRecipe with empty server models (only client models)."""
-        recipe = NumpyCrossSiteEvalRecipe(name="test_cse_client_only", server_models=[], **base_recipe_params)
-
-        assert_recipe_basics(recipe, "test_cse_client_only", base_recipe_params)
-        assert recipe.server_models == []
 
     def test_recipe_with_custom_timeouts(self, base_recipe_params):
         """Test NumpyCrossSiteEvalRecipe with custom timeout values."""
@@ -134,19 +114,18 @@ class TestNumpyCrossSiteEvalRecipe:
         assert recipe.client_model_name == "my_model.npy"
 
     @pytest.mark.parametrize(
-        "min_clients,server_models,cross_val_dir",
+        "min_clients,cross_val_dir",
         [
-            (1, [], "cse_results"),  # Minimal: single client, no server models
-            (2, ["best_model"], "cross_site_val"),  # Standard configuration
-            (5, ["model_1", "model_2", "model_3"], "evaluation_results"),  # Multiple server models
+            (1, "cse_results"),  # Minimal: single client
+            (2, "cross_site_val"),  # Standard configuration
+            (5, "evaluation_results"),  # Multiple clients
         ],
     )
-    def test_recipe_configurations(self, min_clients, server_models, cross_val_dir):
+    def test_recipe_configurations(self, min_clients, cross_val_dir):
         """Test various NumpyCrossSiteEvalRecipe configurations using parametrized tests."""
         recipe = NumpyCrossSiteEvalRecipe(
             name=f"test_config_{min_clients}",
             min_clients=min_clients,
-            server_models=server_models,
             cross_val_dir=cross_val_dir,
         )
 
@@ -154,7 +133,6 @@ class TestNumpyCrossSiteEvalRecipe:
             "min_clients": min_clients,
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}", expected_params)
-        assert recipe.server_models == server_models
         assert recipe.cross_val_dir == cross_val_dir
 
     def test_recipe_with_all_parameters(self, base_recipe_params, numpy_model):
@@ -164,7 +142,6 @@ class TestNumpyCrossSiteEvalRecipe:
             name="test_cse_full",
             min_clients=2,
             initial_model=numpy_model,
-            server_models=["best_model", "final_model"],
             cross_val_dir="custom_cross_val",
             submit_model_timeout=900,
             validation_timeout=4500,
@@ -176,7 +153,6 @@ class TestNumpyCrossSiteEvalRecipe:
         assert recipe.name == "test_cse_full"
         assert recipe.min_clients == 2
         assert recipe.initial_model == numpy_model
-        assert recipe.server_models == ["best_model", "final_model"]
         assert recipe.cross_val_dir == "custom_cross_val"
         assert recipe.submit_model_timeout == 900
         assert recipe.validation_timeout == 4500
