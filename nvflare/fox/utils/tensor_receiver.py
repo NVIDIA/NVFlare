@@ -36,7 +36,7 @@ class TensorReceiver:
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
         model, model_type = result
         if model_type == "ref":
-            err, model = download_tensors(
+            err, _ = download_tensors(
                 ref=model,
                 per_request_timeout=5.0,
                 tensors_received_cb=self._receive_tensors,

@@ -55,13 +55,34 @@ def load_np_model(file_name: str):
 
 
 def add(model: dict, to_model: dict):
+    """Add specified model to another model
+
+    Args:
+        model: the model to be added
+        to_model: the model to be added to.
+
+    Returns: the updated model
+    Notes: the to_model is updated
+
+    """
     for k, v in model.items():
         if k not in to_model:
             to_model[k] = v
         else:
             to_model[k] += v
+    return to_model
 
 
 def div(model: dict, value):
+    """Divide a model by a specified value
+
+    Args:
+        model: the model to be divided
+        value: the value to divide the model with
+
+    Returns: the updated model
+
+    """
     for k, v in model.items():
         model[k] = v / value
+    return model

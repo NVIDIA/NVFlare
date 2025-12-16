@@ -210,5 +210,15 @@ def supports_context(func):
 
 
 def adjust_kwargs(func, kwargs):
+    """Adjust the kwargs and remove keys that are not supported by the func.
+
+    Args:
+        func: the func to be checked
+        kwargs: the kwargs to be adjusted
+
+    Returns: the adjusted kwargs
+
+    """
     if not supports_context(func):
         kwargs.pop(CollabMethodArgName.CONTEXT, None)
+    return kwargs

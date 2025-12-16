@@ -82,6 +82,10 @@ class FoxController(Controller, FoxAdaptor):
         engine = fl_ctx.get_engine()
 
         server_obj = engine.get_component(self.server_obj_id)
+        if not server_obj:
+            self.system_panic(f"no component defined for {self.server_obj_id}", fl_ctx)
+            return
+
         app = ServerApp(server_obj)
 
         app.name = "server"

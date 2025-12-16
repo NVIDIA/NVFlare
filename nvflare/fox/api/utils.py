@@ -63,8 +63,9 @@ def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
     """
     num_call_args = len(call_args) + len(call_kwargs)
     if num_call_args > len(func_itf):
+        # For security, collab funcs must only have fixed args - no flexible args are allowed.
         raise RuntimeError(
-            f"there are {num_call_args} call args ({call_args=} {call_kwargs=}), "
+            f"there are {num_call_args} call args ({len(call_args)=} {len(call_kwargs)=}), "
             f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
         )
 

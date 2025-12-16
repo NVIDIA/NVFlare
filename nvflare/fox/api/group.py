@@ -21,7 +21,6 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
 from .call_opt import CallOption
-from .constants import CollabMethodArgName
 from .ctx import Context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
@@ -147,8 +146,6 @@ class Group:
                         ctx = self._app.new_context(
                             func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
                         )
-
-                        call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
                         gcc = GroupCallContext(
                             app=self._app,

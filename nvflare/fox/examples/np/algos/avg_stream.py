@@ -46,6 +46,9 @@ class NPFedAvgStream:
         current_model = self._init_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
+            if current_model is None:
+                self.logger.error(f"training failed at round {i}")
+                break
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
@@ -118,7 +121,8 @@ class NPTrainer:
     def train(self, current_round, weights, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None, ""
+
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {weights=}")
         if model_type == "ref":
             err, file_path = download_file(ref=weights, per_request_timeout=5.0)
