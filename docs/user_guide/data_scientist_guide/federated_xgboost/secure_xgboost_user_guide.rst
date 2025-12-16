@@ -195,7 +195,7 @@ The following table shows which security measures are supported across different
 Advanced Topics: Future Security Scenarios
 ===========================================
 
-The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication** can reveal data distribution information, which may enable data reconstruction attacks as stated above. On the other hand, similar statistics can also be derived from common practices such as `federated statistics <https://nvflare.readthedocs.io/en/main/examples/federated_statistics.html>`_. As the attack potency depends on multiple factors including data complexity, model hyperparameters, and the data distribution information that can be utilized, the corresponding indications of a certain type of attack can vary significantly. This is still an open and active research area.
+The following security scenarios are not currently implemented in our solution. Users should be aware that **plaintext histogram communication** can reveal data distribution information, which may enable data reconstruction attacks as stated above. On the other hand, similar statistics can also be derived from common practices such as `federated statistics <https://nvflare.readthedocs.io/en/main/examples/federated_statistics_overview.html>`_. As the attack potency depends on multiple factors including data complexity, model hyperparameters, and the data distribution information that can be utilized, the corresponding indications of a certain type of attack can vary significantly. This is still an open and active research area.
 
 Potential Future Enhancements to Protect Against All Parties
 -------------------------------------------------------------
