@@ -98,6 +98,9 @@ class FoxAdaptor:
         if not filter_ids:
             return None, None, f"missing 'filters' in {chain_name}"
 
+        if not isinstance(filter_ids, list):
+            return None, None, f"invalid 'filters' in {chain_name}: expect list got {type(filter_ids)}"
+
         engine = fl_ctx.get_engine()
         filters = []
         for fid in filter_ids:

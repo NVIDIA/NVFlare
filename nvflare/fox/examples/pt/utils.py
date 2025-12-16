@@ -22,7 +22,7 @@ def parse_array_def(array_def):
         return array_def
 
     if isinstance(array_def, list):
-        return torch.Tensor(array_def)
+        return torch.tensor(array_def)
     else:
         raise ValueError(f"unsupported array def: {array_def}")
 
@@ -42,6 +42,15 @@ def parse_model_def(model_def):
 
 
 def add(value: dict, to_model: dict):
+    """Add value to a specified model in-place.
+
+    Args:
+        value:
+        to_model:
+
+    Returns:
+
+    """
     for k, v in value.items():
         if k not in to_model:
             to_model[k] = v
@@ -51,6 +60,15 @@ def add(value: dict, to_model: dict):
 
 
 def div(model: dict, value):
+    """Divide the model in-place by a specified value.
+
+    Args:
+        model:
+        value:
+
+    Returns:
+
+    """
     for k, v in model.items():
         model[k] = torch.div(v, value)
     return model

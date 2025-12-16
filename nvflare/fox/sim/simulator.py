@@ -18,7 +18,7 @@ from typing import List, Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
-from nvflare.fox.api.constants import BackendType
+from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
@@ -57,14 +57,26 @@ class AppRunner:
             app_proxy.add_child(name, p)
         return app_proxy
 
-    def _make_app(self, name, fqn):
-        make_client_app_f = getattr(self.client_app, "make_client_app", None)
+    def _make_app(self, site_name, fqn):
+        """Make a new client app instance for the specified site
+
+        Args:
+            site_name: nme of the site
+            fqn: fully qualified name of the site
+
+        Returns: a new instance of the app
+
+        """
+        # If the app contains "make_client_app" method, call it to make the app instance!
+        # Otherwise, make the instance by deep copying.
+        # If the client_app object cannot be deep-copied, then it must provide the make_client_app method.
+        make_client_app_f = getattr(self.client_app, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
-            app = make_client_app_f(name)
+            app = make_client_app_f(site_name, BackendType.SIMULATION)
         else:
             app = copy.deepcopy(self.client_app)
 
-        app.name = name
+        app.name = site_name
         app.fqn = fqn
         app.backend_type = BackendType.SIMULATION
         return app

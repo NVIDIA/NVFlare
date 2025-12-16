@@ -43,7 +43,7 @@ class SimBackend(Backend):
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)
 
-    def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
+    def call_target(self, context, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
@@ -58,7 +58,7 @@ class SimBackend(Backend):
         if expect_result:
             waiter = _Waiter()
 
-        self.executor.submit(self._run_func, waiter, target_name, func_name, func, args, kwargs)
+        self.executor.submit(self._run_func, waiter, context, target_name, func_name, func, args, kwargs)
         if waiter:
             start_time = time.time()
             while True:
@@ -80,8 +80,8 @@ class SimBackend(Backend):
         else:
             return None
 
-    def _preprocess(self, target_name, func_name, func, kwargs):
-        caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
+    def _preprocess(self, context, target_name, func_name, func, kwargs):
+        caller_ctx = context
         my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.callee)
         kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
 
@@ -99,11 +99,10 @@ class SimBackend(Backend):
         adjust_kwargs(func, kwargs)
         return my_ctx, kwargs
 
-    def _run_func(self, waiter: _Waiter, target_name, func_name, func, args, kwargs):
+    def _run_func(self, waiter: _Waiter, context, target_name, func_name, func, args, kwargs):
         try:
-            ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
+            ctx, kwargs = self._preprocess(context, target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
-            # set_call_context(ctx)
 
             # apply result filter
             result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
@@ -130,7 +129,7 @@ class SimBackend(Backend):
     def _run_func_in_group(self, gcc: GroupCallContext, func_name, args, kwargs):
         try:
             target_name = gcc.target_name
-            result = self.call_target(target_name, gcc.call_opt, func_name, *args, **kwargs)
+            result = self.call_target(gcc.context, target_name, gcc.call_opt, func_name, *args, **kwargs)
             gcc.send_completed()
             gcc.set_result(result)
         except Exception as ex:

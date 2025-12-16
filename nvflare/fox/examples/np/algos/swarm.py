@@ -89,8 +89,9 @@ class NPSwarmClient:
             self.logger.info("notify server all done!")
             try:
                 fox.server(expect_result=False).all_done("OK")
-            except:
+            except Exception as ex:
                 traceback.print_exc()
+                self.logger.error(f"exception occurred in learning: {type(ex)}")
             self.logger.info("Swarm Training is DONE!")
             return
 

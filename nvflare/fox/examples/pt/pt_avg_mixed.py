@@ -59,6 +59,9 @@ class PTFedAvgMixed:
         pt_model, np_model = self._pt_model, self._np_model
         for i in range(self.num_rounds):
             pt_model, np_model = self._do_one_round(i, pt_model, np_model)
+            if pt_model is None or np_model is None:
+                self.logger.error(f"training failed at round {i}")
+                break
         self.logger.info(f"FINAL MODEL: {pt_model=} {np_model=}")
         return pt_model, np_model
 
@@ -152,7 +155,7 @@ class PTTrainer:
     def train(self, current_round, pt_model, np_model, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None, None, ""
 
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {pt_model=} {np_model=}")
 

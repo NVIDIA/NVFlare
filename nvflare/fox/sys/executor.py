@@ -23,7 +23,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ClientApp
-from nvflare.fox.api.constants import BackendType
+from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
@@ -73,6 +73,12 @@ class FoxExecutor(Executor, FoxAdaptor):
         client_name = fl_ctx.get_identity_name()
 
         app = ClientApp(client_obj)
+
+        # If the app contains "make_client_app" method, call it to make the app instance!
+        make_client_app_f = getattr(self.client_app, MAKE_CLIENT_APP_METHOD, None)
+        if make_client_app_f and callable(make_client_app_f):
+            app = make_client_app_f(client_name, BackendType.FLARE)
+
         app.name = client_name
         app.backend_type = BackendType.FLARE
         self.client_app = app

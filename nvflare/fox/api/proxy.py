@@ -17,7 +17,6 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
 from .call_opt import CallOption
-from .constants import CollabMethodArgName
 from .utils import check_call_args
 
 
@@ -218,8 +217,7 @@ class Proxy:
                 call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
                 check_call_args(func_name, func_itf, call_args, call_kwargs)
 
-                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
-                result = p.backend.call_target(p.target_name, call_opt, func_name, *call_args, **call_kwargs)
+                result = p.backend.call_target(ctx, p.target_name, call_opt, func_name, *call_args, **call_kwargs)
                 if isinstance(result, Exception):
                     raise result
 
@@ -229,6 +227,9 @@ class Proxy:
                 return result
         except Exception as ex:
             self.backend.handle_exception(ex)
+
+            # Must return the exception as the result of the func call.
+            # Do NOT raise it!
             return ex
 
     def __getattr__(self, func_name):

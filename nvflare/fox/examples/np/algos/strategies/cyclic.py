@@ -43,6 +43,9 @@ class NPCyclic:
         current_model = self._initial_model
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model)
+            if current_model is None:
+                self.logger.error(f"training failed at round {current_round}")
+                break
         self.logger.info(f"[{fox.call_info}] final result: {current_model}")
         self.final_model = current_model
         return current_model
@@ -60,5 +63,7 @@ class NPCyclic:
         random.shuffle(clients)
         for c in clients:
             current_model = c.train(current_round, current_model)
+            if current_model is None:
+                return None
             self.logger.info(f"[{fox.call_info}] result from {c.name}: {current_model}")
         return current_model

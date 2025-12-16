@@ -13,7 +13,6 @@
 # limitations under the License.
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.call_opt import CallOption
-from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.ctx import set_call_context
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -35,8 +34,9 @@ class FlareBackend(Backend):
         self.target_fqcn = target_fqcn
         self.thread_executor = thread_executor
 
-    def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
+    def call_target(self, context, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
         return self._call_target(
+            context=context,
             target_name=target_name,
             call_opt=call_opt,
             send_complete_cb=None,
@@ -47,10 +47,17 @@ class FlareBackend(Backend):
         )
 
     def _call_target(
-        self, target_name: str, call_opt: CallOption, send_complete_cb, cb_kwargs, func_name: str, *args, **kwargs
+        self,
+        context,
+        target_name: str,
+        call_opt: CallOption,
+        send_complete_cb,
+        cb_kwargs,
+        func_name: str,
+        *args,
+        **kwargs,
     ):
-        ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
-        set_call_context(ctx)
+        set_call_context(context)
 
         payload = {
             ObjectCallKey.CALLER: self.caller,
@@ -79,7 +86,7 @@ class FlareBackend(Backend):
             )
             if not isinstance(reply, Message):
                 self.logger.error(f"cell message reply must be Message but got {type(reply)}")
-                raise TimeoutError(f"function {func_name} failed with internal error")
+                raise RuntimeError(f"function {func_name} failed with internal error")
 
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc == ReturnCode.TIMEOUT:
@@ -119,6 +126,7 @@ class FlareBackend(Backend):
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
         try:
             result = self._call_target(
+                context=gcc.context,
                 target_name=gcc.target_name,
                 call_opt=gcc.call_opt,
                 func_name=func_name,

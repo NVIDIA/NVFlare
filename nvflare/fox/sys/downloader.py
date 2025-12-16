@@ -86,7 +86,7 @@ def download_file(ref: dict, per_request_timeout: float):
     ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
-        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+        raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
     if obj_type != ObjectType.FILE:
@@ -105,7 +105,7 @@ def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=
     ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
-        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+        raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
     if obj_type != ObjectType.TENSORS:
@@ -126,7 +126,7 @@ def download_arrays(ref: dict, per_request_timeout: float, arrays_received_cb=No
     ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
-        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+        raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
     if obj_type != ObjectType.ARRAYS:

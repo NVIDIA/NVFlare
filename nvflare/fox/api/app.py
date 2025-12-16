@@ -103,8 +103,11 @@ class App:
                 filter_obj = filter_type(f, incoming)
             else:
                 filter_obj = f
-            self._add_managed_object(f)
+
             filter_objs.append(filter_obj)
+
+            # f is a managed object, but the filter_obj (if wrapped) is not!
+            self._add_managed_object(f)
 
         chain = FilterChain(pattern, filter_type)
         chain.add_filters(filter_objs)
@@ -393,7 +396,7 @@ class ClientApp(App):
         if my_node.children:
             return [node.obj for node in my_node.children]
         else:
-            return None
+            return []
 
     def has_children(self):
         assert isinstance(self._client_hierarchy, Forest)
