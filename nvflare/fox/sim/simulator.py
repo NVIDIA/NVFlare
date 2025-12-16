@@ -73,8 +73,17 @@ class AppRunner:
         make_client_app_f = getattr(self.client_app, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(site_name, BackendType.SIMULATION)
+            if not isinstance(app, ClientApp):
+                raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
         else:
-            app = copy.deepcopy(self.client_app)
+            try:
+                app = copy.deepcopy(self.client_app)
+            except Exception as ex:
+                self.logger.error(
+                    f"exception occurred {type(ex)} creating client app with deepcopy. "
+                    f"Please implement the {MAKE_CLIENT_APP_METHOD} method in the client app class"
+                )
+                raise ex
 
         app.name = site_name
         app.fqn = fqn

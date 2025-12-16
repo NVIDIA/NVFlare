@@ -70,6 +70,10 @@ class FoxExecutor(Executor, FoxAdaptor):
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()
         client_obj = engine.get_component(self.client_obj_id)
+        if not client_obj:
+            self.system_panic(f"cannot get client component {self.client_obj_id}", fl_ctx)
+            return
+
         client_name = fl_ctx.get_identity_name()
 
         app = ClientApp(client_obj)
@@ -78,6 +82,8 @@ class FoxExecutor(Executor, FoxAdaptor):
         make_client_app_f = getattr(app, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(client_name, BackendType.FLARE)
+            if not isinstance(app, ClientApp):
+                raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
 
         app.name = client_name
         app.backend_type = BackendType.FLARE

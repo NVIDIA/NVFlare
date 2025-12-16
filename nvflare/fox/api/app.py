@@ -213,7 +213,7 @@ class App:
 
     def add_collab_object(self, name: str, obj):
         # name must be acceptable str
-        pattern = r"^[A-Za-z][A-Za-z0-9_]+$"
+        pattern = r"^[A-Za-z][A-Za-z0-9_]*$"
         if not re.match(pattern, name):
             raise ValueError(f"invalid name {name} for collab object - must be simple name starting with a letter")
 

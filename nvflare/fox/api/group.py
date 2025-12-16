@@ -161,6 +161,10 @@ class Group:
                         gcc.set_send_complete_cb(self._request_sent, waiter=waiter)
 
                         while True:
+                            # No need to use lock here even if in_sending could change after we read it
+                            # from waiter.in_sending_count and use it to compare with max_parallel.
+                            # This is because waiter.in_sending_count can only decrease (by other threads)
+                            # after we read it here. If this happens, we will catch it in next iteration.
                             in_sending = waiter.in_sending_count
                             if in_sending < max_parallel:
                                 waiter.inc_sending()
