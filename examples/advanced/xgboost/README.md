@@ -65,9 +65,9 @@ See references: [SecureBoost](https://arxiv.org/abs/1901.08755), [TimberStrike](
 
 The attack surface for federated XGBoost is as follows:
 
-**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based: **Model Statistics Leakage** on each client's data distribution), local histograms (horizontal histogram-based, vertical histogram-based: **Histogram Leakage** on each client / passive party's data distribution), or sample-wise gradients (vertical histogram-based: **Gradient Leakage** on active party). 
+**Server**: Depending on the collaboration mode, the server may have access to the local model (horizontal tree-based: **Model Statistics Leakage** over each client's data distribution), local histograms (horizontal histogram-based, vertical histogram-based: **Histogram Leakage** over each client / passive party's data distribution), or sample-wise gradients (vertical histogram-based: **Gradient Leakage** over active party's label information). 
 
-**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** on global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** on global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** on each passive party's data distribution), or sample-wise gradients (**Gradient Leakage** on active party).
+**Clients**: Depending on the collaboration mode, the clients may have access to the aggregated global model (horizontal tree-based: **Model Statistics Leakage** over global data distribution), global histograms (horizontal histogram-based: **Histogram Leakage** over global data distribution), local histograms (vertical histogram-based: **Histogram Leakage** over each passive party's data distribution), or sample-wise gradients (**Gradient Leakage** over active party's label information).
 
 ### Mitigations
 
