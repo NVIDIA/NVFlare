@@ -15,6 +15,7 @@ import copy
 import queue
 import threading
 
+from nvflare.apis.fl_exception import RunAborted
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .call_opt import CallOption
@@ -87,14 +88,37 @@ class ResultWaiter(threading.Event):
         self.results = ResultQueue(len(sites))
         self.in_sending_count = 0
         self.lock = threading.Lock()
+        self.sending_decreased = threading.Condition()
 
     def inc_sending(self):
-        with self.lock:
+        with self.sending_decreased:
             self.in_sending_count += 1
 
     def dec_sending(self):
-        with self.lock:
+        with self.sending_decreased:
             self.in_sending_count -= 1
+            self.sending_decreased.notify()
+
+    def wait_for_sending_available(self, limit, timeout, abort_signal):
+        """Wait for sending count to be decreased if current count exceeds limit
+
+        Args:
+            limit: to limit to check
+            timeout: time to wait
+            abort_signal: abort signal
+
+        Returns: the sending count after waiting
+
+        """
+        while True:
+            if abort_signal and abort_signal.triggered:
+                raise RunAborted("run is aborted")
+
+            with self.sending_decreased:
+                if self.in_sending_count < limit:
+                    return
+                else:
+                    self.sending_decreased.wait(timeout)
 
     @staticmethod
     def _get_site_name(target_name: str):
