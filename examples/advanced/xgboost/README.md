@@ -82,7 +82,7 @@ The following table summarizes the available mitigations for different collabora
 - **Vertical histogram-based**: 
    - **Primary goal**: Protect sample gradients from passive parties (critical)
    - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
-- **The remaining two riskes** will be discussed in the last section.
+- **The remaining two risks** will be discussed in the last section.
 
 ---
 
