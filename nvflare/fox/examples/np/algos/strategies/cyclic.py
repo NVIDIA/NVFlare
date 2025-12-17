@@ -64,6 +64,7 @@ class NPCyclic:
         for c in clients:
             current_model = c.train(current_round, current_model)
             if current_model is None:
+                self.logger.error(f"training failed on client {c.name} at round {current_round}")
                 return None
             self.logger.info(f"[{fox.call_info}] result from {c.name}: {current_model}")
         return current_model

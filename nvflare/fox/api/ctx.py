@@ -37,7 +37,7 @@ class Context:
 
     @property
     def backend(self):
-        return self.app.get_backend()
+        return self.app.backend
 
     @property
     def backend_type(self):
@@ -45,11 +45,11 @@ class Context:
 
     @property
     def clients(self):
-        return self.app.get_client_proxies()
+        return self.app.client_proxies
 
     @property
     def server(self):
-        return self.app.get_server_proxy()
+        return self.app.server_proxy
 
     @property
     def client_hierarchy(self):
@@ -57,7 +57,7 @@ class Context:
 
     @property
     def workspace(self):
-        return self.app.get_workspace()
+        return self.app.workspace
 
     @property
     def target_group_size(self):

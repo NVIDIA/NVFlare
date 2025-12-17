@@ -46,7 +46,7 @@ class NPHierarchicalFedAvg:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
         num_results = len(results)
-        return total / len(results) if num_results > 0 else 0.0
+        return total / num_results if num_results > 0 else 0.0
 
     def _do_one_round(self, r, current_model):
         total = 0
@@ -56,4 +56,4 @@ class NPHierarchicalFedAvg:
             total += v
 
         num_results = len(results)
-        return total / len(results) if num_results > 0 else None
+        return total / num_results if num_results > 0 else None

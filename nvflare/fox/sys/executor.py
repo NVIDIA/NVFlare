@@ -86,7 +86,7 @@ class FoxExecutor(Executor, FoxAdaptor):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
 
         app.name = client_name
-        app.backend_type = BackendType.FLARE
+        app.set_backend_type(BackendType.FLARE)
         self.client_app = app
 
         err = self.process_config(self.client_app, fl_ctx)

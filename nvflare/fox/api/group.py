@@ -120,7 +120,7 @@ class Group:
                 the_backend = p.backend
 
                 with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
-                    self._logger.debug(
+                    self._logger.info(
                         f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
                     )
 
@@ -189,7 +189,7 @@ class Group:
         return method
 
     def _request_sent(self, waiter: ResultWaiter):
-        self._logger.info("received _request_sent ...")
+        self._logger.debug("received _request_sent ...")
         waiter.dec_sending()
 
 

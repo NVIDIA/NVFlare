@@ -31,7 +31,7 @@ class AddNoiseToModel:
         weights = func_kwargs.get(weights_key)
         if weights is None:
             # nothing to filter
-            print(f"nothing to filter in {func_kwargs}")
+            self.logger.info(f"nothing to filter in {func_kwargs}")
             return func_kwargs
 
         # add some noise to weights
@@ -46,7 +46,6 @@ class AddNoiseToModel:
 class Print:
 
     def __init__(self):
-        super().__init__()
         self.logger = get_obj_logger(self)
 
     @fox.call_filter
