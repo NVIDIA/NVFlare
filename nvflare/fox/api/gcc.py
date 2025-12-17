@@ -88,7 +88,7 @@ class ResultWaiter(threading.Event):
         self.results = ResultQueue(len(sites))
         self.in_sending_count = 0
         self.lock = threading.Lock()
-        self.sending_decreased = threading.Condition()
+        self.sending_decreased = threading.Condition(self.lock)
 
     def inc_sending(self):
         with self.sending_decreased:
