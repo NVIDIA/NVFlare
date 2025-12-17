@@ -27,7 +27,6 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument("--update_type", type=str, default="full", choices=["full", "diff"])
-    parser.add_argument("--learning_rate", type=float, default=1.0)
     parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 

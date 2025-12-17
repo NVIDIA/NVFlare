@@ -84,22 +84,6 @@ You can modify the example by:
 - **Adding more clients**: Use `--n_clients` parameter
 - **Changing rounds**: Use `--num_rounds` parameter
 
-## Example Output
-
-```
-Client site-1 initialized
-Client site-2 initialized
-Client site-1, current_round=1
-Received weights: {'numpy_key': array([[1., 2., 3.],
-       [4., 5., 6.],
-       [7., 8., 9.]], dtype=float32)}
-Client site-1 starting training...
-Client site-1 evaluation metrics: {'accuracy': 5.0}
-Client site-1 finished training for round 1
-Sending weights: [[2. 3. 4.]
- [5. 6. 7.]
- [8. 9. 10.]]
-```
 
 ## Run the Experiment
 
