@@ -53,7 +53,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
     args = parser.parse_args()
     batch_size = args.batch_size
     epochs = args.epochs
