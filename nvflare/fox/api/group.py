@@ -185,6 +185,7 @@ class Group:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
                 if the_backend:
                     the_backend.handle_exception(ex)
+                raise ex
 
         return method
 
