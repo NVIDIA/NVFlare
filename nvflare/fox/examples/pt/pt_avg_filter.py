@@ -29,7 +29,7 @@ class PTFedAvg:
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self.timeout = timeout
-        self.name = "PTFedAvgStream"
+        self.name = "PTFedAvg"
         self.logger = get_obj_logger(self)
         self._init_model = parse_state_dict(initial_model)
 
@@ -48,7 +48,7 @@ class PTFedAvg:
     def _do_one_round(self, r, current_model):
         aggr_result = {}
 
-        results = fox.clients.train(r, current_model)
+        results = fox.clients(timeout=self.timeout).train(r, current_model)
         for n, v in results:
             add_pt(v, aggr_result)
 

@@ -390,7 +390,8 @@ class App:
         return False
 
     def get_leaf_clients(self):
-        assert isinstance(self._client_hierarchy, Forest)
+        if not isinstance(self._client_hierarchy, Forest):
+            raise RuntimeError(f"client_hierarchy must be Forest but got {type(self._client_hierarchy)}")
         leaf_nodes = [self._client_hierarchy.nodes[n] for n in self._client_hierarchy.leaves]
         return [node.obj for node in leaf_nodes]
 

@@ -16,14 +16,13 @@ import torch
 
 from nvflare.app_common.np.np_downloader import add_arrays
 from nvflare.app_common.np.np_downloader import download_arrays as pull_arrays
+from nvflare.app_opt.pt.tensor_downloader import add_tensors
+from nvflare.app_opt.pt.tensor_downloader import download_tensors as pull_tensors
 from nvflare.fox import fox
 from nvflare.fox.sys.backend import FlareBackend
 from nvflare.fuel.f3.streaming.file_downloader import add_file
 from nvflare.fuel.f3.streaming.file_downloader import download_file as pull_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
-
-from ...app_opt.pt.tensor_downloader import add_tensors
-from ...app_opt.pt.tensor_downloader import download_tensors as pull_tensors
 
 
 class DownloadRefKey:
