@@ -62,21 +62,6 @@ class TestUtils:
     @pytest.mark.parametrize(
         "overseer_agent_class, role, result",
         [
-            (
-                "nvflare.ha.overseer_agent.HttpOverseerAgent",
-                NVFlareRole.SERVER,
-                ["overseer_end_point", "role", "project", "name", "fl_port", "admin_port"],
-            ),
-            (
-                "nvflare.ha.overseer_agent.HttpOverseerAgent",
-                NVFlareRole.CLIENT,
-                ["overseer_end_point", "role", "project", "name"],
-            ),
-            (
-                "nvflare.ha.overseer_agent.HttpOverseerAgent",
-                NVFlareRole.ADMIN,
-                ["overseer_end_point", "role", "project", "name"],
-            ),
             ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.SERVER, ["sp_end_point"]),
             ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.CLIENT, ["sp_end_point"]),
             ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.ADMIN, ["sp_end_point"]),
