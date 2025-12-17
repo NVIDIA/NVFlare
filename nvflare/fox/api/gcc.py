@@ -45,6 +45,9 @@ class ResultQueue:
 
         Returns: whether the queue has received all whole items.
 
+        Notes: though this method is not thread safe, it is only called from ResultWaiter, which ensures
+        thread safety!
+
         """
         if self.num_whole_items_received == self.limit:
             raise RuntimeError(f"queue is full: {self.limit} items are already appended")

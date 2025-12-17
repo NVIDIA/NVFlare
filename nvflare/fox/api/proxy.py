@@ -226,7 +226,12 @@ class Proxy:
                     result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
                 return result
         except Exception as ex:
-            self.backend.handle_exception(ex)
+            if self.backend:
+                try:
+                    self.backend.handle_exception(ex)
+                except Exception as ex2:
+                    # ignore exception from backend handling
+                    self.logger.error(f"ignored backend's exception {type(ex2)}")
 
             # Must return the exception as the result of the func call.
             # Do NOT raise it!
