@@ -61,7 +61,7 @@ class AppRunner:
         """Make a new client app instance for the specified site
 
         Args:
-            site_name: nme of the site
+            site_name: name of the site
             fqn: fully qualified name of the site
 
         Returns: a new instance of the app
@@ -86,8 +86,8 @@ class AppRunner:
                 raise ex
 
         app.name = site_name
-        app.fqn = fqn
-        app.backend_type = BackendType.SIMULATION
+        app.set_fqn(fqn)
+        app.set_backend_type(BackendType.SIMULATION)
         return app
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):
@@ -117,8 +117,8 @@ class AppRunner:
         self.logger = get_obj_logger(self)
         self.abort_signal = Signal()
         server_app.name = "server"
-        server_app.fqn = server_app.name
-        server_app.backend_type = BackendType.SIMULATION
+        server_app.set_fqn(server_app.name)
+        server_app.set_backend_type(BackendType.SIMULATION)
         self.server_app = server_app
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fox_call")

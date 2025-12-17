@@ -68,9 +68,9 @@ class PTTrainer:
     def train(self, current_round, weights):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
-        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {weights=}")
+            return None
 
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {weights=}")
         result = {}
         for k, v in weights.items():
             result[k] = v + self.delta

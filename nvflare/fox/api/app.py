@@ -20,7 +20,7 @@ from typing import List
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
-from .constants import CollabMethodArgName, ContextKey, FilterDirection
+from .constants import BackendType, CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context, set_call_context
 from .dec import (
     collab,
@@ -56,11 +56,11 @@ class App:
         self._outgoing_call_filter_chains = []
         self._incoming_result_filter_chains = []
         self._outgoing_result_filter_chains = []
-        self._collab_interface = {"": get_object_collab_interface(self)}
         self._workspace = None
         self._resource_dirs = {}
         self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
+        self._collab_interface = {"": get_object_collab_interface(self)}
         self.add_collab_object(name, obj)
 
     def set_resource_dirs(self, resource_dirs: dict[str, str]):
@@ -77,17 +77,45 @@ class App:
     def _add_managed_object(self, obj):
         self._managed_objects[id(obj)] = obj
 
-    def get_backend(self):
-        return self._me.backend
+    def set_fqn(self, fqn):
+        self._fqn = fqn
 
-    def get_workspace(self):
+    @property
+    def fqn(self):
+        return self._fqn
+
+    @property
+    def backend(self):
+        if not self._me:
+            return None
+        else:
+            return self._me.backend
+
+    @property
+    def backend_type(self):
+        return self._backend_type
+
+    def set_backend_type(self, t: str):
+        valid_types = [BackendType.SIMULATION, BackendType.FLARE]
+        if t not in valid_types:
+            raise ValueError(f"bad backend type: {t}: must be one of {valid_types}")
+        self._backend_type = t
+
+    @property
+    def workspace(self):
         return self._workspace
 
-    def get_server_proxy(self):
+    @property
+    def server_proxy(self):
         return self._server_proxy
 
-    def get_client_proxies(self):
+    @property
+    def client_proxies(self):
         return copy.copy(self._client_proxies)
+
+    @property
+    def client_hierarchy(self):
+        return self._client_hierarchy
 
     def _add_filters(self, pattern: str, filters, to_list: list, filter_type, incoming):
         if not filters:
@@ -257,7 +285,8 @@ class App:
         forest = build_forest(objs=clients, get_fqn_f=lambda c: c.fqn, get_name_f=lambda c: c.name)
         self._client_hierarchy = forest
 
-    def get_my_site(self) -> Proxy:
+    @property
+    def my_site(self) -> Proxy:
         return self._me
 
     def find_method(self, target_obj, method_name):
@@ -358,7 +387,7 @@ class App:
         return []
 
     def has_children(self):
-        return True
+        return False
 
     def get_leaf_clients(self):
         assert isinstance(self._client_hierarchy, Forest)
@@ -377,7 +406,10 @@ class ServerApp(App):
             raise ValueError("server object must have at least one algo")
 
     def get_children(self):
-        assert isinstance(self._client_hierarchy, Forest)
+        if not isinstance(self._client_hierarchy, Forest):
+            raise RuntimeError(
+                f"client_hierarchy in app {self.name} must be Forest but got {type(self._client_hierarchy)}"
+            )
         root_nodes = [self._client_hierarchy.nodes[n] for n in self._client_hierarchy.roots]
         return [node.obj for node in root_nodes]
 
@@ -392,20 +424,24 @@ class ClientApp(App):
             raise ValueError("client object must be specified")
         super().__init__(obj, name)
 
+    def _get_my_node(self):
+        if not isinstance(self._client_hierarchy, Forest):
+            raise RuntimeError(
+                f"client_hierarchy in app {self.name} must be Forest but got {type(self._client_hierarchy)}"
+            )
+
+        node = self._client_hierarchy.nodes.get(self.name)
+        if not isinstance(node, Node):
+            raise RuntimeError(f"node for site {self.name} must be a Node but got {type(node)}")
+        return node
+
     def get_children(self):
-        assert isinstance(self._client_hierarchy, Forest)
-        my_node = self._client_hierarchy.nodes[self.name]
-        assert isinstance(my_node, Node)
+        my_node = self._get_my_node()
         if my_node.children:
             return [node.obj for node in my_node.children]
         else:
             return []
 
     def has_children(self):
-        assert isinstance(self._client_hierarchy, Forest)
-        my_node = self._client_hierarchy.nodes[self.name]
-        assert isinstance(my_node, Node)
-        if my_node.children:
-            return True
-        else:
-            return False
+        my_node = self._get_my_node()
+        return True if my_node.children else False

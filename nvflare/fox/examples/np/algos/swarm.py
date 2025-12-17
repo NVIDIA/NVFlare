@@ -60,6 +60,7 @@ class NPSwarmClient:
 
     @fox.init
     def init(self):
+        # This example shows that there could be multiple listeners for the same event
         fox.register_event_handler("final_model", self._accept_final_model)
         fox.register_event_handler("final_model", self._save_final_model)
 
@@ -69,7 +70,8 @@ class NPSwarmClient:
         return weights + self.delta
 
     def sag(self, model, current_round):
-        results = fox.clients.train(model, current_round)
+        # results = fox.clients.train(model, current_round)
+        results = fox.other_clients.train(model, current_round)
         total = 0
         for n, v in results:
             total += v
@@ -104,6 +106,7 @@ class NPSwarmClient:
 
     @fox.collab
     def start(self, num_rounds, initial_model):
+        self.logger.info(f"[{fox.call_info}]: starting swarm learning")
         self.swarm_learn(num_rounds, initial_model, 0)
 
     def _accept_final_model(self, event_type: str, model):

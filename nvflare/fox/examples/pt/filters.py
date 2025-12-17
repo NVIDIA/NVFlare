@@ -35,7 +35,7 @@ class OutgoingModelCallFilter(CallFilter):
         self.logger.info(f"target group size={num_receivers}")
 
         downloader = Downloader(
-            num_receivers=context.target_group_size,
+            num_receivers=num_receivers,
             timeout=5.0,
         )
         model = downloader.add_tensors(arg_value, 0)

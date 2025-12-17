@@ -125,7 +125,7 @@ class facade:
         # Note that ctx.clients returns a copy of client proxies, not the original client proxy list!
         # So it is safe to manipulate the candidates here.
         candidates = ctx.clients
-        me = ctx.app.get_my_site()
+        me = ctx.app.my_site
         if me in candidates:
             candidates.remove(me)
         return ProxyList(candidates)
