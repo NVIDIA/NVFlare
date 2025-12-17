@@ -27,6 +27,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
 
@@ -82,11 +83,7 @@ def main():
     client_name = sys_info["site_name"]
 
     # (optional) metrics tracking
-    summary_writer = None
-    if args.use_tracking:
-        from nvflare.client.tracking import SummaryWriter
-
-        summary_writer = SummaryWriter()
+    summary_writer = SummaryWriter()
 
     while flare.is_running():
         # (4) receives FLModel from NVFlare
@@ -116,9 +113,8 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {avg_loss:.3f}")
 
                     # Optional: Log metrics
-                    if summary_writer:
-                        global_step = input_model.current_round * steps + epoch * len(trainloader) + i
-                        summary_writer.add_scalar(tag="loss", scalar=avg_loss, global_step=global_step)
+                    global_step = input_model.current_round * steps + epoch * len(train_loader) + i
+                    summary_writer.add_scalar(tag="loss", scalar=avg_loss, global_step=global_step)
 
                     print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss}")
                     running_loss = 0.0
