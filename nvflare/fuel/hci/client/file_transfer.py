@@ -243,19 +243,24 @@ class FileTransferModule(CommandModule):
         if not error:
             # unzip downloaded zip files
             for f in files_to_unzip:
-                self._unzip_file(api, f)
+                try:
+                    self._unzip_file(api, f)
+                except Exception as ex:
+                    return {
+                        ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                        ProtoKey.DETAILS: f"failed to unzip file '{f}': {type(ex)}",
+                    }
 
             tx_path = self._tx_path(tx_id, folder_name)
             destination_path = os.path.join(self.download_dir, destination_name)
             location = self._rename_folder(tx_path, destination_path)
-            reply = {
+            return {
                 ProtoKey.STATUS: APIStatus.SUCCESS,
                 ProtoKey.DETAILS: f"content downloaded to {location}",
                 ProtoKey.META: {MetaKey.LOCATION: location},
             }
         else:
-            reply = error
-        return reply
+            return error
 
     @staticmethod
     def _rename_folder(src: str, destination: str):
