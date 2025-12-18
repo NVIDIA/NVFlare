@@ -14,7 +14,6 @@
 import copy
 from typing import List
 
-from nvflare.apis.fl_exception import RunAborted
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -157,9 +156,12 @@ class Group:
                             waiter=waiter,
                         )
 
-                        gcc.set_send_complete_cb(self._request_sent, waiter=waiter)
-                        waiter.wait_for_sending_available(max_parallel, 1.0, self._abort_signal)
-                        waiter.inc_sending()
+                        # try to get permission to make next call
+                        gcc.set_send_complete_cb(self._request_sent, gcc=gcc, proxy=func_proxy)
+                        waiter.wait_for_call_permission(max_parallel, self._abort_signal)
+
+                        # make next call
+                        waiter.inc_call_count()
                         func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
                     if not self._call_opt.expect_result:
@@ -171,15 +173,7 @@ class Group:
                         return waiter.results
 
                     # wait for responses
-                    while True:
-                        if self._abort_signal.triggered:
-                            raise RunAborted("run is aborted")
-
-                        # wait for a short time, so we can check other conditions
-                        done = waiter.wait(1.0)
-                        if done:
-                            break
-
+                    waiter.wait_for_responses(self._abort_signal)
                     return waiter.results
             except Exception as ex:
                 self._logger.error(f"exception {type(ex)} occurred: {ex}")
@@ -189,9 +183,9 @@ class Group:
 
         return method
 
-    def _request_sent(self, waiter: ResultWaiter):
-        self._logger.debug("received _request_sent ...")
-        waiter.dec_sending()
+    def _request_sent(self, gcc: GroupCallContext, proxy: Proxy):
+        self._logger.debug(f"[{gcc.context}] call has been sent to '{proxy.name}' for func '{gcc.func_name}'")
+        gcc.waiter.dec_call_count()
 
 
 def group(

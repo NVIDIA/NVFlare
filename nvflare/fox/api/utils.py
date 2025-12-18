@@ -76,4 +76,4 @@ def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
 
 
 def simple_logging(level=logging.INFO):
-    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
