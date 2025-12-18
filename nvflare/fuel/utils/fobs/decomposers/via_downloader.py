@@ -195,8 +195,6 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             self.logger.info(f"using download decompose: {max_chunk_size=}")
 
-        fobs_ctx = manager.fobs_ctx
-
         # Create a DecomposeCtx for this target type.
         # Note: there could be multiple target types - each target type has its own DecomposeCtx!
         dc = fobs_ctx.get(self.decompose_ctx_key)
