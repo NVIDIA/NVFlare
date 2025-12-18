@@ -23,6 +23,8 @@ from .constants import CollabMethodArgName
 from .ctx import Context, set_call_context
 from .utils import check_context_support
 
+_SHORT_WAIT = 1.0
+
 
 class ResultQueue:
     def __init__(self, limit: int):
@@ -35,6 +37,7 @@ class ResultQueue:
         # num_whole_items_received is the number of WHOLE items received.
         # the queue could contain partial results.
         self.num_whole_items_received = 0
+        self.update_lock = threading.Lock()
 
     def append(self, item, is_whole=True):
         """Append an item to the result queue.
@@ -49,14 +52,15 @@ class ResultQueue:
         thread safety!
 
         """
-        if self.num_whole_items_received == self.limit:
-            raise RuntimeError(f"queue is full: {self.limit} items are already appended")
-        self.q.put_nowait(item)
+        with self.update_lock:
+            if self.num_whole_items_received == self.limit:
+                raise RuntimeError(f"queue is full: {self.limit} items are already appended")
+            self.q.put_nowait(item)
 
-        if is_whole:
-            # increment num_whole_items_received only if the item is whole!
-            self.num_whole_items_received += 1
-        return self.num_whole_items_received == self.limit
+            if is_whole:
+                # increment num_whole_items_received only if the item is whole!
+                self.num_whole_items_received += 1
+            return self.num_whole_items_received == self.limit
 
     def __iter__(self):
         return self
@@ -89,39 +93,57 @@ class ResultWaiter(threading.Event):
         super().__init__()
         self.sites = sites
         self.results = ResultQueue(len(sites))
-        self.in_sending_count = 0
-        self.lock = threading.Lock()
-        self.sending_decreased = threading.Condition(self.lock)
+        self.standing_call_count = 0
+        self.call_count_decreased = threading.Condition(threading.Lock())
 
-    def inc_sending(self):
-        with self.sending_decreased:
-            self.in_sending_count += 1
+    def inc_call_count(self):
+        """Increment standing call count by 1.
 
-    def dec_sending(self):
-        with self.sending_decreased:
-            self.in_sending_count -= 1
-            self.sending_decreased.notify()
+        Returns: None
 
-    def wait_for_sending_available(self, limit, timeout, abort_signal):
-        """Wait for sending count to be decreased if current count exceeds limit
+        """
+        with self.call_count_decreased:
+            self.standing_call_count += 1
+
+    def dec_call_count(self):
+        """Decrease standing call count by 1, and notify other threads waiting for call count decreased.
+
+        Returns: None
+
+        """
+        with self.call_count_decreased:
+            self.standing_call_count -= 1
+            self.call_count_decreased.notify()
+
+    def wait_for_call_permission(self, limit, abort_signal):
+        """Wait for the permission to make next call.
+        The permission is granted when parallel call count is lower than the specified limit.
 
         Args:
             limit: to limit to check
-            timeout: time to wait
             abort_signal: abort signal
 
-        Returns: the sending count after waiting
+        Returns: None
 
         """
         while True:
-            if abort_signal and abort_signal.triggered:
-                raise RunAborted("run is aborted")
+            with self.call_count_decreased:
+                if abort_signal and abort_signal.triggered:
+                    raise RunAborted("run is aborted while waiting for sending availability")
 
-            with self.sending_decreased:
-                if self.in_sending_count < limit:
+                if self.standing_call_count < limit:
                     return
                 else:
-                    self.sending_decreased.wait(timeout)
+                    self.call_count_decreased.wait(_SHORT_WAIT)
+
+    def wait_for_responses(self, abort_signal):
+        while True:
+            if abort_signal.triggered:
+                raise RunAborted("run is aborted while waiting for remote responses")
+
+            done = self.wait(_SHORT_WAIT)
+            if done:
+                break
 
     @staticmethod
     def _get_site_name(target_name: str):
@@ -131,15 +153,13 @@ class ResultWaiter(threading.Event):
 
     def set_result(self, target_name: str, result):
         site_name = self._get_site_name(target_name)
-        with self.lock:
-            all_received = self.results.append((site_name, result))
-            if all_received:
-                self.set()
+        all_received = self.results.append((site_name, result))
+        if all_received:
+            self.set()
 
     def add_partial_result(self, target_name: str, partial_result):
         site_name = self._get_site_name(target_name)
-        with self.lock:
-            self.results.append((site_name, partial_result), is_whole=False)
+        self.results.append((site_name, partial_result), is_whole=False)
 
 
 class GroupCallContext:
