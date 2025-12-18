@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 from abc import abstractmethod
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -45,7 +45,7 @@ class CacheableObject(Downloadable):
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()
-        self.cache = [(None, 0)] * self.size
+        self.cache: list[tuple[Optional[bytes], int]] = [(None, 0)] * self.size
         self.lock = threading.Lock()
         self.num_receivers = 0
         self.logger = get_obj_logger(self)
@@ -99,9 +99,9 @@ class CacheableObject(Downloadable):
                 data = self.produce_item(index)
                 if self.cache:
                     self.cache[index] = (data, 0)
-                    self.logger.info(f"created and cached item {index} for {requester}: {len(data)} bytes")
+                    self.logger.debug(f"created and cached item {index} for {requester}: {len(data)} bytes")
             else:
-                self.logger.info(f"got item {index} from cache for {requester}")
+                self.logger.debug(f"got item {index} from cache for {requester}")
             return data
 
     def _adjust_cache(self, start: int, count: int):
@@ -114,7 +114,7 @@ class CacheableObject(Downloadable):
                 data, num_received = self.cache[i]
                 num_received += 1
                 if num_received >= self.num_receivers:
-                    self.logger.info(f"item {i} was received by {num_received} sites - clear cache")
+                    self.logger.debug(f"item {i} was received by {num_received} sites - clear cache")
                     self.cache[i] = (None, num_received)
                 else:
                     self.cache[i] = (data, num_received)
@@ -147,7 +147,7 @@ class CacheableObject(Downloadable):
             else:
                 break
 
-        self.logger.info(f"produced {len(result)} items for {requester}: {total_size} bytes")
+        self.logger.debug(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 
