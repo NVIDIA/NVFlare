@@ -45,7 +45,7 @@ def _define_parser() -> argparse.Namespace:
     parser.add_argument(
         "--workspace_root",
         type=str,
-        default="/tmp/nvflare/psi/job",
+        default="/tmp/nvflare/psi",
         help="Simulation workspace root (results will be under <workspace_root>/<job_name>/...).",
     )
     parser.add_argument(
@@ -71,7 +71,7 @@ def _define_parser() -> argparse.Namespace:
 def main() -> None:
     args = _define_parser()
 
-    local_psi = LocalPSI(psi_writer_id="psi_writer", data_root_dir=args.data_root_dir)
+    local_psi = LocalPSI(data_root_dir=args.data_root_dir)
 
     recipe = DhPSIRecipe(
         name="user_email_match",

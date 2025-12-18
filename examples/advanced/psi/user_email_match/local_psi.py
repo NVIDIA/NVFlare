@@ -19,10 +19,13 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class LocalPSI(PSI):
-    def __init__(self, psi_writer_id: str, data_root_dir: str = "/tmp/nvflare/psi/data"):
+    def __init__(
+        self,
+        data_root_dir: str = "/tmp/nvflare/psi/data",
+        psi_writer_id: str = "psi_writer",
+    ) -> None:
         super().__init__(psi_writer_id)
         self.data_root_dir = data_root_dir
-        self.data = {}
 
     def load_items(self) -> list[str]:
         site = self.fl_ctx.get_identity_name()

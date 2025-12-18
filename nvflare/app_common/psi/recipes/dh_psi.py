@@ -48,7 +48,6 @@ class DhPSIRecipe(Recipe):
         # These IDs and task name must be consistent across PSI components.
         psi_task_name = "PSI"
         local_psi_id = "local_psi"
-        psi_writer_id = "psi_writer"
         psi_algo_id = "dh_psi"
 
         job = FedJob(name=name, min_clients=min_clients)
@@ -67,6 +66,6 @@ class DhPSIRecipe(Recipe):
             id=psi_algo_id,
         )
         job.to_clients(local_psi, id=local_psi_id)
-        job.to_clients(FilePSIWriter(output_path=output_path), id=psi_writer_id)
+        job.to_clients(FilePSIWriter(output_path=output_path), id=local_psi.psi_writer_id)
 
         super().__init__(job)
