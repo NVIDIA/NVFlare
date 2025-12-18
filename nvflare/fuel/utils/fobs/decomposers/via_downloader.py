@@ -181,6 +181,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self.max_chunk_size,
         )
         fobs_ctx = manager.fobs_ctx
+        cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
+        if not cell:
+            # If no cell, only support native decomposers
+            fobs_ctx["native"] = True
+
         use_native = fobs_ctx.get("native", False)
         if max_chunk_size <= 0 or use_native:
             # use native decompose
