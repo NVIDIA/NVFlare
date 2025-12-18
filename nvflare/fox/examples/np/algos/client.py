@@ -64,7 +64,7 @@ class NPHierarchicalTrainer:
     def train(self, current_round, weights):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None
 
         self.logger.debug(f"[{fox.call_info}] training round {current_round}")
         if fox.has_children:
@@ -83,7 +83,7 @@ class NPHierarchicalTrainer:
     def _local_train(self, current_round, weights):
         if fox.is_aborted:
             self.logger.debug("training aborted")
-            return 0
+            return None
         self.logger.info(f"[{fox.call_info}] local trained round {current_round} {weights} {type(weights)}")
         return weights + self.delta
 

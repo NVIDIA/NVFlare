@@ -47,20 +47,20 @@ class ResultQueue:
             is_whole: whether the item is whole.
 
         Returns: whether the queue has received all whole items.
-
-        Notes: though this method is not thread safe, it is only called from ResultWaiter, which ensures
-        thread safety!
-
         """
         with self.update_lock:
-            if self.num_whole_items_received == self.limit:
-                raise RuntimeError(f"queue is full: {self.limit} items are already appended")
-            self.q.put_nowait(item)
-
-            if is_whole:
-                # increment num_whole_items_received only if the item is whole!
-                self.num_whole_items_received += 1
-            return self.num_whole_items_received == self.limit
+            if self.num_whole_items_received < self.limit:
+                self.q.put_nowait(item)
+                if is_whole:
+                    # increment num_whole_items_received only if the item is whole!
+                    # note: num_whole_items_received is not the number of all items received.
+                    # partial items could be added to the queue but do not count as whole items.
+                    self.num_whole_items_received += 1
+                return self.num_whole_items_received == self.limit
+            else:
+                # do not allow any items (partial or whole) to be added to the queue if the queue
+                # has already received all expected whole items.
+                raise RuntimeError(f"queue is full: {self.limit} whole items are already appended")
 
     def __iter__(self):
         return self
