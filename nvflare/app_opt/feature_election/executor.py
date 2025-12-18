@@ -233,7 +233,7 @@ class FeatureElectionExecutor(Executor):
         elif self.fs_method == "pyimpetus":
             if not PYIMPETUS_AVAILABLE:
                 logger.warning("PyImpetus not available, falling back to mutual_info")
-                scores = mutual_info_classif(self.X_train, self.y_train, random_state=42)
+                scores = mutual_info_classif(X_scaled, self.y_train, random_state=42)
                 mask = np.zeros(n_features, dtype=bool)
                 k = max(1, n_features // 2)
                 mask[np.argsort(scores)[-k:]] = True
