@@ -46,7 +46,6 @@ class FeatureElectionExecutor(Executor):
         fs_method: str = "lasso",
         fs_params: Optional[Dict] = None,
         eval_metric: str = "f1",
-        quick_eval: bool = True,
         task_name: str = "feature_election",
     ):
         super().__init__()
@@ -87,6 +86,7 @@ class FeatureElectionExecutor(Executor):
         self.y_train = y_train
         self.X_val = X_val if X_val is not None else X_train
         self.y_val = y_val if y_val is not None else y_train
+        self.feature_names = feature_names
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name != self.task_name:
@@ -240,7 +240,7 @@ class FeatureElectionExecutor(Executor):
                 return mask, scores
 
             model = PPIMBC(self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42)))
-            selected_features = model.fit(self.X_train, self.y_train, self.fs_params.get("p_val_thresh", 0.05))
+            selected_features = model.fit(self.X_train, self.y_train)
             mask = np.zeros(n_features, dtype=bool)
             mask[selected_features] = True
             scores = np.zeros(n_features)

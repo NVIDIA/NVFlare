@@ -285,7 +285,6 @@ class FeatureElectionController(Controller):
                 continue
             n = shareable.get("num_samples", 1)
             weights = shareable.get("params")
-
             if weights is not None:
                 if weighted_weights is None:
                     # Initialize with proper numpy arrays

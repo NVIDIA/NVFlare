@@ -86,8 +86,8 @@ class MyDataExecutor(FeatureElectionExecutor):
         if self._data_loaded:
             return
         
-        # Load your data here
-        X_train, y_train = load_my_data(client_id)
+        # Load your data
+        X_train, y_train = load_my_data(self.client_id)
         self.set_data(X_train, y_train)
         self._data_loaded = True
 ```
