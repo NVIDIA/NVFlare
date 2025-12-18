@@ -15,7 +15,7 @@
 import os
 import shutil
 
-from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader, add_file
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -39,12 +39,16 @@ class BinaryTransfer:
         tx_path = self.tx_path(conn, tx_id, folder_name)
 
         engine = conn.get_prop(ConnProps.ENGINE)
+        admin = conn.get_prop(ConnProps.ADMIN_SERVER)
+        timeout = admin.timeout if admin else 5
+
         cell = engine.get_cell()
         source_fqcn = cell.get_fqcn()
-        download_tid = FileDownloader.new_transaction(
+        downloader = ObjectDownloader(
+            num_receivers=1,
             cell=engine.get_cell(),
-            timeout=5,
-            timeout_cb=self._cleanup_tx,
+            timeout=timeout,
+            transaction_done_cb=self._cleanup_tx,
             tx_path=tx_path,
         )
 
@@ -53,12 +57,7 @@ class BinaryTransfer:
         for dir_path, dir_names, file_names in os.walk(tx_path):
             for f in file_names:
                 full_path = os.path.join(dir_path, f)
-
-                ref_id = FileDownloader.add_file(
-                    transaction_id=download_tid,
-                    file_name=full_path,
-                )
-
+                ref_id = add_file(downloader, file_name=full_path)
                 p = os.path.relpath(full_path, tx_path)
                 files.append([p, ref_id])
 
@@ -85,9 +84,9 @@ class BinaryTransfer:
                 ),
             )
 
-    def _cleanup_tx(self, tx_id: str, files, tx_path):
+    def _cleanup_tx(self, tx_id: str, status, files, tx_path):
         """
         Remove the job download folder
         """
         shutil.rmtree(tx_path, ignore_errors=True)
-        self.logger.debug(f"deleted download path: {tx_id=} {tx_path=} {files=}")
+        self.logger.debug(f"deleted download path: {tx_id=} {status=} {tx_path=} {files=}")
