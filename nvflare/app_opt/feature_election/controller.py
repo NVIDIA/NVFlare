@@ -324,7 +324,7 @@ class FeatureElectionController(Controller):
         """
         if not client_selections:
             logger.warning("No client selections to aggregate")
-            return np.array([])
+            return np.zeros(getattr(self, "n_features", 0), dtype=bool)
 
         masks = [s["selected_features"] for s in client_selections.values()]
         scores = [s["feature_scores"] for s in client_selections.values()]

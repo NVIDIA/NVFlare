@@ -270,6 +270,9 @@ class FeatureElection:
 
             # Local Selection
             selected_mask, feature_scores = executor.perform_feature_selection()
+            if not isinstance(result, tuple) or len(result) != 2:
+                raise ValueError(f"perform_feature_selection() must return (mask, scores) tuple, got {type(result)}")
+
             initial_score = executor.evaluate_model(X_np, y_np, X_np, y_np)
 
             # Apply mask to evaluate

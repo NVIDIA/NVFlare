@@ -323,10 +323,6 @@ pytest tests/unit_test/app_opt/feature_election/test_feature_election.py -v
 
 If you use Feature Election in your research, please cite the FLASH framework paper (PENDING, email: jchr2001@gmail.com)
 
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
 ## Acknowledgments
 
 - NVIDIA FLARE team for the federated learning framework
