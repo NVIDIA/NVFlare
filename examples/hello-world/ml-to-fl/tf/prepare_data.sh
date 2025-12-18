@@ -1,1 +1,0 @@
-python3 -c "from tensorflow.keras.datasets import cifar10; cifarData = cifar10.load_data()"
