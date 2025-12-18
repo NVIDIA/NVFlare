@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -46,6 +47,7 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor]
+    analytics_receiver: Any
 
 
 class FedAvgRecipe(Recipe):
@@ -94,6 +96,8 @@ class FedAvgRecipe(Recipe):
             - For PyTorch/TensorFlow: Optional (defaults will be used if not provided)
             - For RAW frameworks: Can be provided here OR passed as initial_model
             If None, framework-specific defaults will be used (PT/TF only).
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
+            If not provided, no experiment tracking will be enabled. Pass explicitly to enable tracking.
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -121,6 +125,7 @@ class FedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -138,6 +143,7 @@ class FedAvgRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
+            analytics_receiver=analytics_receiver,
         )
 
         self.name = v.name
@@ -154,6 +160,7 @@ class FedAvgRecipe(Recipe):
         self.server_expected_format = v.server_expected_format
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
+        self.analytics_receiver = v.analytics_receiver
 
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
@@ -164,11 +171,10 @@ class FedAvgRecipe(Recipe):
                 )
 
         # Create BaseFedJob - all frameworks use it for consistency
-        # Child classes (PT/TF wrappers) can override _get_analytics_receiver() for framework-specific defaults
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
-            analytics_receiver=self._get_analytics_receiver(),
+            analytics_receiver=self.analytics_receiver,
         )
 
         # Setup framework-specific model components and persistor
@@ -226,17 +232,6 @@ class FedAvgRecipe(Recipe):
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
-
-    def _get_analytics_receiver(self):
-        """Get the analytics receiver for this recipe.
-
-        Returns:
-            AnalyticsReceiver or None: The analytics receiver to use, or None for no analytics.
-
-        Note:
-            Child classes (PT/TF wrappers) can override this to provide framework-specific defaults.
-        """
-        return None
 
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
         """Setup framework-specific model components and persistor.
