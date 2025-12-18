@@ -37,6 +37,14 @@ class DhPSIRecipe(Recipe):
         local_psi: PSI,
         output_path: str = "psi/intersection.txt",
     ):
+        """Constructor of DhPSIRecipe.
+
+        Args:
+            name: Name of the federated job.
+            min_clients: Minimum number of clients required to start the PSI workflow.
+            local_psi: PSI component implementation used on each client to compute local PSI artifacts.
+            output_path: Local file path on each client where the PSI intersection result will be written.
+        """
         # These IDs and task name must be consistent across PSI components.
         psi_task_name = "PSI"
         local_psi_id = "local_psi"
