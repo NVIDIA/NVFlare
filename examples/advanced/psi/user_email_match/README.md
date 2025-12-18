@@ -2,14 +2,14 @@
 
 ## How to use FLARE PSI operator
 
-For User ids matching, the usage is really simple. 
+For user IDs matching, the usage is straightforward.
 
 * Step 1: user needs to implement the PSI interface where the client side's items need to be loaded.
-These items could be user_ids or feature names depending on your use case.
+These items could be user IDs or feature names depending on your use case.
 
 ```
 class LocalPSI(PSI):
-    def load_items(self) -> List[str]:
+    def load_items(self) -> list[str]:
         pass
 
 ```
@@ -34,11 +34,11 @@ recipe = DhPSIRecipe(
 
 **prepare data**
 
-change to the PSI example directory
+Change to the PSI example directory
 ```
 cd NVFlare/examples/advanced/psi/user_email_match
 ```
-We have already prepared some random fake emails as data, all we need to copy this dat to a location 
+We have already prepared some random fake emails as data, all we need to copy this data to a location
 that used by the data loading code, we have specified "/tmp/nvflare/psi" in our sample code, so we copy the data to
 "/tmp/nvflare/psi" directory
 
@@ -59,14 +59,15 @@ copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi dir
 ```
 python job.py --n_clients 3 --workspace_root /tmp/nvflare/psi/
 ```
-Once job completed and succeed, you should be able to find the intersection for different sites at
+Once the job has completed successfully, you should be able to find the intersection for different sites at
 
 ```
 /tmp/nvflare/psi/user_email_match/site-1/simulate_job/site-1/psi/intersection.txt
 /tmp/nvflare/psi/user_email_match/site-2/simulate_job/site-2/psi/intersection.txt
 /tmp/nvflare/psi/user_email_match/site-3/simulate_job/site-3/psi/intersection.txt
 ```
-to compare these intersections, you can check with the followings:
+
+To compare these intersections, you can check with the followings:
 
 ```bash
 diff <(sort /tmp/nvflare/psi/user_email_match/site-1/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/user_email_match/site-2/simulate_job/site-2/psi/intersection.txt)
