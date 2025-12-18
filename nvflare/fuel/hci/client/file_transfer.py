@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -246,9 +247,11 @@ class FileTransferModule(CommandModule):
                 try:
                     self._unzip_file(api, f)
                 except Exception as ex:
+                    # Clean up temp folder on failure
+                    shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)
                     return {
                         ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
-                        ProtoKey.DETAILS: f"failed to unzip file '{f}': {type(ex)}",
+                        ProtoKey.DETAILS: f"failed to unzip file '{f}': {ex}",
                     }
 
             tx_path = self._tx_path(tx_id, folder_name)
