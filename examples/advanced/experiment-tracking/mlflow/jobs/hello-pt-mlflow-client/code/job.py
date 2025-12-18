@@ -11,14 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import argparse
 
 from src.network import SimpleNetwork
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-from nvflare.job_config.script_runner import ScriptRunner
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
 
@@ -35,57 +35,40 @@ def define_parser():
 
 
 if __name__ == "__main__":
-
     args = define_parser()
-    n_clients = args.n_clients
-    job_configs = args.job_configs
-    work_dir = args.work_dir
-    export_config = args.export_config
-    log_config = args.log_config
 
-    num_rounds = 5
-
-    train_script = "src/train_script.py"
-
-    job_name = "fedavg"
-
-    # create a FedAvg job but not registered the default components for fed_event converter and analytics receiver.
-    # As we are going to add ourselves.
-
-    job = FedAvgJob(
-        name=job_name,
-        n_clients=n_clients,
-        num_rounds=num_rounds,
+    # Create FedAvg recipe (without default server-side tracking)
+    recipe = FedAvgRecipe(
+        name="fedavg_mlflow_client",
+        min_clients=args.n_clients,
+        num_rounds=5,
         initial_model=SimpleNetwork(),
-        convert_to_fed_event=False,
-        analytics_receiver=False,
+        train_script="src/training_script.py",
+        analytics_receiver=False,  # Disable server-side tracking
     )
 
-    # Add a MLFlow Receiver component to the Client site
+    # Add site-specific MLflow tracking for each client
+    for i in range(args.n_clients):
+        site_name = f"site-{i + 1}"
+        tracking_uri = f"file://{args.work_dir}/{site_name}/mlruns"
 
-    # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i + 1}")
-
-        tracking_uri = f"file://{work_dir}/site-{i + 1}/mlruns"
         receiver = MLflowReceiver(
             tracking_uri=tracking_uri,
-            events=[ANALYTIC_EVENT_TYPE],
+            events=[ANALYTIC_EVENT_TYPE],  # Track local events (not federated)
             kw_args={
                 "experiment_name": "nvflare-fedavg-experiment",
-                "run_name": "nvflare-fedavg-with-mlflow",
-                "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"},
-                "run_tags": {"mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"},
+                "run_name": f"nvflare-fedavg-{site_name}",
+                "experiment_tags": {"mlflow.note.content": f"## **NVFlare FedAvg experiment - {site_name}**"},
+                "run_tags": {"mlflow.note.content": f"## Site-specific tracking for {site_name}.\n"},
             },
         )
 
-        job.to(receiver, target="site-{i + 1}")
+        # Add receiver to this specific client
+        recipe.job.to(receiver, site_name, id="mlflow_receiver")
 
-    if export_config:
-        print(f"Exporting job config...{job_configs}/{job_name}")
-        job.export_job(job_root=job_configs)
+    # Run or export
+    if args.export_config:
+        print(f"Exporting job config...{args.job_configs}/fedavg_mlflow_client")
+        recipe.export(args.job_configs)
     else:
-        job.simulator_run(workspace=work_dir, log_config=log_config)
+        recipe.run(workspace=args.work_dir, log_config=args.log_config)

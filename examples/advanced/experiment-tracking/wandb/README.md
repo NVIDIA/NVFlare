@@ -1,89 +1,316 @@
-# Hello PyTorch with Weights and Biases
+# Hello PyTorch with Weights & Biases
 
 Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
-as the deep learning training framework.
-
-This example also highlights the Weights and Biases streaming capability from the clients to the server.
+with **Weights & Biases (WandB)** experiment tracking.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-### 1. Install requirements
+## What's New: Recipe API + Flexible Tracking
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
-Wwe are assuming the current directory is `examples/advanced/experiment-tracking/wandb`,
+This example demonstrates the **Recipe API** with **flexible tracking options**:
 
+```python
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.recipe.utils import add_experiment_tracking
+
+# Create FedAvg recipe
+recipe = FedAvgRecipe(
+    name="fedavg_wandb",
+    min_clients=2,
+    num_rounds=5,
+    initial_model=Net(),
+    train_script="src/train_script.py",
+    analytics_receiver=False,  # We'll add WandB manually
+)
+
+# Configure WandB settings
+wandb_config = {
+    "mode": "online",
+    "wandb_args": {
+        "project": "wandb-experiment",
+        "name": "federated-learning",
+        "tags": ["baseline", "cifar10"],
+        "config": {"architecture": "CNN", "optimizer": "SGD"},
+    }
+}
+
+# Server-side tracking (centralized)
+add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
+
+recipe.run()
 ```
+
+**Key Features**:
+- **Server-side tracking** (default) - All metrics in one WandB run
+- **Client-side tracking** (optional) - Each site logs separately
+- **Mixed mode** - Both server and client tracking simultaneously
+- Simple CLI flags to switch between modes
+
+---
+
+## Setup and Running
+
+### 1. Install Requirements
+
+```bash
+cd examples/advanced/experiment-tracking/wandb
 python -m pip install -r requirements.txt
 ```
 
-### 2. Download data
-Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
-
-again, we are assuming the current directory is `examples/advanced/experiment-tracking/wandb`,
+### 2. Download Data
 
 ```bash
-examples/advanced/experiment-tracking/prepare_data.sh
+cd examples/advanced/experiment-tracking
+./prepare_data.sh
 ```
-### 3. Make sure the FL server is logged into Weights and Biases
 
-Import the W&B Python SDK and log in:
+### 3. Login to Weights & Biases
 
-```
+**IMPORTANT**: You must login before running:
+
+```bash
 python3
 >>> import wandb
 >>> wandb.login()
 ```
 
-Provide your API key when prompted.
+Provide your API key when prompted. Get your key from https://wandb.ai/authorize
 
-### 4. Run the experiment
+### 4. Run the Experiment
 
-Use job api to run the example:
-
+**Server-side tracking** (default - centralized metrics):
+```bash
+python job.py
 ```
-python wandb_job.py
+
+**Client-side tracking** (decentralized - each site separate):
+```bash
+python job.py --streamed_to_clients --no-streamed_to_server
 ```
 
-### 5. Access the logs and results
+**Both server and client tracking**:
+```bash
+python job.py --streamed_to_clients --streamed_to_server
+```
 
-By default, Weights and Biases will create a directory named "wandb" in the server workspace. With "mode": "online" in the WandBReceiver, the
-files will be synced with the Weights and Biases server. You can visit https://wandb.ai/ and log in to see your run data.
+---
 
-### 6. How it works
+## Accessing Results
 
-To enable tracking with Weights & Biases (WandB), you can use the `WandBWriter` utility provided by NVFlare. Here's a basic example of how to integrate it into your training script:
+### View on WandB Dashboard
+
+1. Visit https://wandb.ai/
+2. Login with your credentials
+3. Navigate to your project ("wandb-experiment" by default)
+4. View your runs with metrics, charts, and system info
+
+### Local Files
+
+WandB also creates a local `wandb` directory:
+```bash
+ls /tmp/nvflare/jobs/workdir/server/wandb/
+```
+
+With `mode: "online"`, these files sync automatically to the WandB cloud.
+
+---
+
+## How It Works
+
+### Server-Side Tracking (Centralized)
+
+```python
+# All clients stream to server, server logs to WandB
+add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
+```
+
+**Flow**:
+1. Client logs metric → `WandBWriter.log({"loss": 0.5})`
+2. Creates `analytix_log_stats` event
+3. ConvertToFedEvent → `fed.analytix_log_stats`
+4. Server receives event
+5. WandBReceiver on server → Logs to WandB
+
+**Benefit**: Single centralized view of all clients' metrics
+
+---
+
+### Client-Side Tracking (Decentralized)
+
+```python
+# Each client logs to its own WandB run
+for site_name in ["site-1", "site-2"]:
+    receiver = WandBReceiver(**client_config)
+    recipe.job.to(receiver, site_name, id="wandb_receiver")
+```
+
+**Flow**:
+1. Client logs metric → `WandBWriter.log({"loss": 0.5})`
+2. Creates `analytix_log_stats` event (local)
+3. WandBReceiver on client → Logs to WandB directly
+4. No server involvement
+
+**Benefit**: Each site maintains its own WandB run and authentication
+
+---
+
+## Configuration Options
+
+### Change Project/Run Name
+
+```python
+wandb_config = {
+    "mode": "online",
+    "wandb_args": {
+        "project": "my-fl-project",
+        "name": "experiment-001",
+        "tags": ["production", "v2"],
+        "notes": "Testing new architecture",
+        "config": {
+            "learning_rate": 0.001,
+            "batch_size": 32,
+        }
+    }
+}
+```
+
+### Offline Mode
+
+For environments without internet:
+
+```python
+wandb_config = {
+    "mode": "offline",  # Logs locally, sync later
+    "wandb_args": {...}
+}
+```
+
+Then sync later:
+```bash
+wandb sync /tmp/nvflare/jobs/workdir/server/wandb/
+```
+
+### CLI Arguments
+
+The example supports several CLI arguments:
+
+```bash
+python job.py \
+    --n_clients 3 \
+    --num_rounds 10 \
+    --script src/train_script.py \
+    --streamed_to_server \
+    --no-streamed_to_clients \
+    --export_config
+```
+
+- `--n_clients`: Number of clients
+- `--num_rounds`: Training rounds
+- `--script`: Training script path
+- `--launch_external_process`: Run training in external process
+- `--streamed_to_server`: Enable server-side tracking
+- `--streamed_to_clients`: Enable client-side tracking
+- `--export_config`: Export config without running
+
+---
+
+## Tracking Modes Comparison
+
+| Mode | Command | Use Case | WandB Runs |
+|------|---------|----------|------------|
+| **Server-only** | `python job.py` | Centralized monitoring | 1 run (all clients combined) |
+| **Client-only** | `python job.py --streamed_to_clients --no-streamed_to_server` | Site-specific analysis | N runs (1 per client) |
+| **Both** | `python job.py --streamed_to_clients --streamed_to_server` | Complete visibility | N+1 runs (1 per client + 1 aggregated) |
+
+---
+
+## Client Code Integration
+
+In your training script:
 
 ```python
 from nvflare.client.tracking import WandBWriter
 
-wandb_writer = WandBWriter()
-wandb_writer.log({"train_loss": cost.item()}, current_step)
+# Create writer
+wandb = WandBWriter()
 
+# Log metrics
+for epoch in range(num_epochs):
+    loss = train_one_epoch()
+    accuracy = evaluate()
+
+    # Log to WandB (through NVFlare)
+    wandb.log({
+        "train/loss": loss,
+        "train/accuracy": accuracy,
+        "epoch": epoch,
+    }, step=global_step)
+
+# Log artifacts
+wandb.log_artifact("/path/to/model.pth", "model", "checkpoint")
 ```
 
-The `WandBWriter` follows a syntax similar to the native WandB API, making it easy to adopt.
+**Note**: Uses `WandBWriter` instead of native `wandb.log()` for NVFlare integration.
 
-Internally, `WandBWriter` leverages the NVFlare client API to send metrics and trigger an `analytix_log_stats` event. This event can be received and processed by our `AnalyticsReceiver`, with the `WandBReceiver` being one implementation of it.
+---
 
-In `wandb_job.py`, we configure the following components by default:
+## Advanced: Custom WandB Configuration
 
-  - The `ConvertToFedEvent` widget on the NVFlare client side, which transforms the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`. This enables the event to be sent from the NVFlare client to the NVFlare server.
+### Add Custom Metrics
 
-  - The `WandBReceiver` on the NVFlare server side, which listens for `fed.analytix_log_stats` events and forwards the metric data to the WandB tracking server.
+```python
+wandb.log({
+    "metrics/accuracy": accuracy,
+    "metrics/f1_score": f1,
+    "metrics/confusion_matrix": wandb.plot.confusion_matrix(
+        y_true=y_true,
+        preds=y_pred,
+        class_names=class_names
+    )
+}, step=step)
+```
 
-This setup ensures that the server handles all authentication with the WandB tracking server and buffers events from multiple clients, effectively managing the load of requests to the server.
+### Log System Metrics
 
-### 7. Optional: Stream Metrics Directly from Clients
+WandB automatically tracks:
+- GPU utilization
+- CPU usage
+- Memory consumption
+- Network I/O
 
-Alternatively, you can stream metrics **directly from each NVFlare client** to WandB, bypassing the NVFlare server entirely.
+View in the "System" tab of your run.
 
-To enable this mode, run your training script with the following flags:
+---
 
+## Troubleshooting
+
+### "Not logged in" Error
+
+Make sure to run `wandb.login()` before starting the job:
 ```bash
-python wandb_job.py --streamed_to_clients --no-streamed_to_server
+python3 -c "import wandb; wandb.login()"
 ```
 
-In this configuration, the `WandBReceiver` is set up on the NVFlare client side to process the `analytix_log_stats` event.
+### Metrics Not Appearing
 
-As a result, each NVFlare client sends its metrics directly to its corresponding WandB server.
+Check that WandB mode is "online":
+```python
+wandb_config = {"mode": "online", ...}
+```
+
+### Multiple Clients Same Run
+
+Ensure client-side tracking uses unique run names:
+```python
+"run_name": f"nvflare-{site_name}",  # Different per client
+```
+
+---
+
+## Additional Resources
+
+- [Weights & Biases Documentation](https://docs.wandb.ai/)
+- [WandB Python Library](https://docs.wandb.ai/ref/python/)
+- [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)

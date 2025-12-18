@@ -1,87 +1,178 @@
-# Hello PyTorch with MLflow: Streaming metrics to client side 
+# Hello PyTorch with MLflow: Client-Side Metric Streaming
 
-NVIDIA FLARE's metrics streaming capability is quite flexible. If you decide to stream the metrics to the client side instead of passing through the NVFlare server, you can do that as well. 
-This example demonstrates how to set up such a configuration. 
+This example demonstrates **site-specific (decentralized) MLflow tracking** using the Recipe API. Each client tracks its own metrics locally, enabling privacy-preserving metric collection without centralized server aggregation.
 
-Here we use the CIFAR10 example to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+## Key Differences from Server-Side Tracking
 
-The basic setup and code is almost the same as the ```hello-pt-mlflow``` example. 
+**Server-Side** (`hello-pt-mlflow`):
+- All client metrics stream to the server
+- Centralized view in one MLflow instance
+- Server handles MLflow authentication
 
-The only differences are the following:
-1) We will add a ```MLflowReceiver``` component on the client side instead of on the server side
-2) We don't need to convert the local event to federated event, i.e., we don't need to register the ```ConvertToFedEvent``` component
+**Client-Side** (this example):
+- Each client has its own MLflow instance
+- Site-specific metric tracking
+- Each site manages its own MLflow server
 
+## What's New: Recipe API
 
-In the FLARE job API, 
+This example uses the **Recipe API** for simplified configuration:
 
-we add two arguments to indicate that we don't need to use ```convert_to_fed_event``` and don't need to
-set a default ```analytics_receiver```
+```python
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 
-convert_to_fed_event = False,
-analytics_receiver =False
+# Create recipe WITHOUT default server-side tracking
+recipe = FedAvgRecipe(
+    name="fedavg_mlflow_client",
+    min_clients=2,
+    num_rounds=5,
+    initial_model=SimpleNetwork(),
+    train_script="src/training_script.py",
+    analytics_receiver=False,  # Disable server-side tracking
+)
+
+# Add MLflow receiver to each client
+for i in range(2):
+    site_name = f"site-{i + 1}"
+    tracking_uri = f"file:///tmp/nvflare/jobs/workdir/{site_name}/mlruns"
+
+    receiver = MLflowReceiver(
+        tracking_uri=tracking_uri,
+        events=[ANALYTIC_EVENT_TYPE],  # Listen to LOCAL events (not federated)
+        kw_args={"experiment_name": f"site-{site_name}-experiment"}
+    )
+
+    recipe.job.to(receiver, site_name, id="mlflow_receiver")
+
+recipe.run()
 ```
-    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork(), 
-                    convert_to_fed_event = False,
-                    analytics_receiver =False)
-```
 
-For the MLflowReceiver configuration:
-```
-        tracking_uri = f"file://{work_dir}/site-{i + 1}/mlruns"
-        receiver = MLflowReceiver(
-            tracking_uri=tracking_uri,
-            events=[ANALYTIC_EVENT_TYPE],
-            ...
-            )
-```
-We set the events we listen to with `events=[ANALYTIC_EVENT_TYPE]`. By default, it listens to Fed Events `[f"fed.{ANALYTIC_EVENT_TYPE}"]`
+**Key points**:
+- `analytics_receiver=False` - Disables default server-side tracking
+- `events=[ANALYTIC_EVENT_TYPE]` - Listen to local events (not `fed.` events)
+- Each site gets its own `tracking_uri`
 
-### 1. Install requirements
+---
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare from the requirements to avoid reinstalling it):
+## Setup and Running
 
+### 1. Install Requirements
 
-```
+```bash
+cd examples/advanced/experiment-tracking/mlflow
 python -m pip install -r requirements.txt
 ```
-### 2. Download data
 
-Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
-
-```bash
-../../../prepare_data.sh
-```
-
-### 3. Run the experiment
-
-Use nvflare job api with simulator to run the example:
+### 2. Download Data
 
 ```bash
-../prepare_data.sh
+cd examples/advanced/experiment-tracking
+./prepare_data.sh
 ```
 
-### 3. Run the experiment
+### 3. Run the Experiment
 
-Use nvflare job api with simulator to run the example:
-
-```
-cd ./jobs/hello-pt-mlflow-client/code
-
-python3 fl_job.py
+```bash
+cd jobs/hello-pt-mlflow-client/code
+python job.py
 ```
 
-### 4. Access the logs and results
+---
 
-You can find the running logs and results inside the server simulator's workspace in a directory named "simulate_job".
+## Accessing Results
 
-```WORKSPACE = "/tmp/nvflare/jobs/workdir"```
-  
-Now, since each site has a receiver, and we have set the tracking URI as:
+Since each site has its own MLflow receiver, metrics are stored separately:
 
-```tracking_uri = f"file://{work_dir}/site-{i + 1}/mlruns"```
-
-We should be able to access the tracking data at:
-```
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-2/mlruns
+### View Site-1 Metrics:
+```bash
+mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-1/mlruns
 ```
 
+Open browser to `http://localhost:5000`
+
+### View Site-2 Metrics:
+```bash
+mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-2/mlruns --port 5001
+```
+
+Open browser to `http://localhost:5001`
+
+---
+
+## How It Works
+
+### Client-Side Tracking Flow
+
+1. **Training Script** (`src/training_script.py`):
+   ```python
+   from nvflare.client.tracking import MLflowWriter
+
+   mlflow = MLflowWriter()
+   mlflow.log_metric("accuracy", acc, step=epoch)
+   ```
+
+2. **Local Event Generated**:
+   - Creates `analytix_log_stats` event (not federated)
+
+3. **MLflowReceiver on Client**:
+   - Configured with `events=[ANALYTIC_EVENT_TYPE]`
+   - Receives local events directly
+   - Writes to site-specific MLflow directory
+
+4. **No Server Involvement**:
+   - Metrics stay local to each site
+   - No centralized aggregation
+   - Each site controls its own data
+
+---
+
+## Comparison: Server vs Client Tracking
+
+| Aspect | Server-Side | Client-Side (This Example) |
+|--------|-------------|----------------------------|
+| **Metrics Location** | Centralized on server | Distributed per site |
+| **Event Type** | `fed.analytix_log_stats` | `analytix_log_stats` |
+| **Receiver Location** | Server | Each client |
+| **MLflow UI** | Single instance | One per site |
+| **Privacy** | Server sees all metrics | Sites keep metrics local |
+| **Use Case** | Centralized monitoring | Site-specific analysis |
+
+---
+
+## Customization
+
+### Change Tracking Location
+
+```python
+tracking_uri = f"file:///my/custom/path/{site_name}/mlruns"
+```
+
+### Add Experiment Tags
+
+```python
+receiver = MLflowReceiver(
+    tracking_uri=tracking_uri,
+    events=[ANALYTIC_EVENT_TYPE],
+    kw_args={
+        "experiment_name": f"{site_name}-experiment",
+        "run_name": f"{site_name}-run-001",
+        "experiment_tags": {"site": site_name, "privacy": "local"},
+    }
+)
+```
+
+### Remote MLflow Server
+
+```python
+tracking_uri = "http://mlflow-server.site-1.local:5000"
+```
+
+---
+
+## Additional Resources
+
+- [MLflow Documentation](https://www.mlflow.org/docs/latest/index.html)
+- [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)

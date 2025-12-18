@@ -2,9 +2,9 @@
 
 Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
-as the deep learning training framework.
+as the deep learning training framework with **MLflow experiment tracking**.
 
-This example also highlights the MLflow streaming capability from the clients to the server.
+This example demonstrates the **Recipe API** for easily adding MLflow tracking to FL training jobs.
 
 ### 1. Install requirements
 
@@ -23,12 +23,41 @@ Here we just use the same data for each site. It's better to pre-downloaded data
 
 ### 3. Run the experiment
 
-Use nvflare job api with simulator to run the example:
+Navigate to the job directory and run:
 
-```
+```bash
 cd ./jobs/hello-pt-mlflow/code
+python3 job.py
+```
 
-python3 fl_job.py
+The Recipe API makes it simple:
+```python
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.recipe.utils import add_experiment_tracking
+
+# Create training recipe
+recipe = FedAvgRecipe(
+    name="fedavg_mlflow",
+    min_clients=2,
+    num_rounds=5,
+    initial_model=SimpleNetwork(),
+    train_script="src/train_script.py",
+)
+
+# Add MLflow tracking
+add_experiment_tracking(
+    recipe,
+    "mlflow",
+    tracking_config={
+        "tracking_uri": "file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
+        "kw_args": {
+            "experiment_name": "nvflare-fedavg-experiment",
+            "run_name": "nvflare-fedavg-with-mlflow",
+        }
+    }
+)
+
+recipe.run()
 ```
 
 ### 4. Access the logs and results
@@ -37,7 +66,7 @@ You can find the running logs and results inside the server's simulator's worksp
 
 ```WORKSPACE = "/tmp/nvflare/jobs/workdir"```
 
-By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace. 
+By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace.
 If you ran the simulator with "/tmp/nvflare/jobs/workdir" as the workspace, then you can launch the MLflow UI with:
 
 ```bash
@@ -75,15 +104,15 @@ can buffer the events from many clients to better manage the load of requests to
 
 NVIDIA FLARE experiment tracking is designed in such a way that, the metrics collector ( such as MLflowWriter, or SummaryWriter) are not directly tie to the metrics receivers (such as MLflowReceiver or TBAnalyticsReceiver)
 
-The metrics collected can also streamed to any number of supported receivers, as long as it has registered receiver component.  By default, the ```BaseFedJob``` always pre-registered TensorBoard receiver for easy of use.  We can take a look at this by generating the job configuration of above job.  
+The metrics collected can also streamed to any number of supported receivers, as long as it has registered receiver component.  By default, the ```BaseFedJob``` always pre-registered TensorBoard receiver for easy of use.  We can take a look at this by generating the job configuration of above job.
 
 
 ```
 cd ./jobs/hello-pt-mlflow/code
 
-python3 fl_job.py -e 
+python3 fl_job.py -e
 ```
-The output will be something like this if the default values are used. 
+The output will be something like this if the default values are used.
 
 ```Exporting job config... /tmp/nvflare/jobs/fedavg```
 
@@ -103,10 +132,10 @@ tmp/nvflare/jobs/fedavg
 Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default, so the data is also written into TB files on the server.
 
 ```
-cat /tmp/nvflare/jobs/fedavg/app_server/config/config_fed_server.json 
+cat /tmp/nvflare/jobs/fedavg/app_server/config/config_fed_server.json
 
 ```
-Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, which means we should also have a tensorboard results. 
+Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, which means we should also have a tensorboard results.
 
 ```
 
@@ -124,7 +153,7 @@ Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, whi
                 ]
             }
         },
-       
+
         {
             "id": "component",
             "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
@@ -152,14 +181,14 @@ Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, whi
 ```
 
 Now, let's take a look at this by directly loading the tensorboard
- 
+
 ```
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
 ```
 
 **Note**
-If you prefer not receive tensorboard metrics on server, you can simply remove the following 
-component from the job configuration  
+If you prefer not receive tensorboard metrics on server, you can simply remove the following
+component from the job configuration
 ```json
         {
             "id": "receiver",
@@ -171,6 +200,5 @@ component from the job configuration
                 ]
             }
         }
-       
-```
 
+```

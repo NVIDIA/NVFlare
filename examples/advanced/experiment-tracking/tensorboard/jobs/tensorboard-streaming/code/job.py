@@ -14,22 +14,21 @@
 
 from src.network import SimpleNetwork
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.recipe.utils import add_experiment_tracking
 
 if __name__ == "__main__":
-    n_clients = 2
-    num_rounds = 5
+    # Create FedAvg recipe
+    recipe = FedAvgRecipe(
+        name="fedavg_tensorboard",
+        min_clients=2,
+        num_rounds=5,
+        initial_model=SimpleNetwork(),
+        train_script="src/train_script.py",
+    )
 
-    train_script = "src/train_script.py"
+    # Add TensorBoard tracking
+    add_experiment_tracking(recipe, "tensorboard", tracking_config={"tb_folder": "tb_events"})
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
-
-    # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i + 1}")
-
-    job.simulator_run(workspace="/tmp/nvflare/jobs/workdir")
+    # Run in simulator
+    recipe.run(workspace="/tmp/nvflare/jobs/workdir")
