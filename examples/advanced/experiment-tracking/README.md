@@ -25,21 +25,64 @@ add_experiment_tracking(recipe, "mlflow")  # or "tensorboard" or "wandb"
 recipe.run()
 ```
 
-## Key Highlights
+## How Metric Tracking Works
 
-1. **Centralized Streaming to Server Receiver**
-   FLARE can stream all client training metrics to a server-side receiver, allowing a consolidated view of all clients' training progress.
+Understanding the flow from logging metrics in your training code to viewing them in tracking tools:
 
-2. **Pluggable Metrics Receivers**
-   FLARE allows plugging in different metrics receivers, independent of whether they are used on the server side or client side. This enables streaming metrics to various observability frameworks such as:
-   - MLflow
-   - TensorBoard
-   - Weights & Biases
+### 1. Logging Metrics (in `client.py`)
 
-   **Benefit**: This makes it easy to switch between different experiment tracking frameworks without modifying the training code that logs metrics—only the receiver configuration needs to change.
+Your training script logs metrics using NVFlare's tracking API:
 
-3. **Site-Specific Metric Streaming**
-   FLARE also supports streaming metrics from each client to site-specific receivers. This enables local tracking at each site, with configuration changes only.
+```python
+from nvflare.client.tracking import SummaryWriter
+
+summary_writer = SummaryWriter()
+summary_writer.add_scalar("train_loss", loss_value, step=epoch)
+```
+
+This creates a **local event** called `analytix_log_stats` on the **NVFlare Client** side.
+
+### 2. Event Flow
+
+There are two patterns for metric delivery:
+
+#### Pattern A: Server-Side Tracking (Default, Centralized)
+
+**Flow**:
+1. User's training script (`client.py`) logs metrics via `SummaryWriter`
+2. NVFlare Client creates local event: `analytix_log_stats`
+3. `ConvertToFedEvent` widget converts event to federated event: `fed.analytix_log_stats`
+4. Federated event sent to NVFlare Server
+5. Receiver on server listens for `fed.analytix_log_stats`
+6. Receiver writes to tracking backend (MLflow/TensorBoard/WandB)
+
+**Result**: All client metrics collected in one central location.
+
+#### Pattern B: Client-Side Tracking (Decentralized)
+
+**Flow**:
+1. User's training script (`client.py`) logs metrics via `SummaryWriter`
+2. NVFlare Client creates local event: `analytix_log_stats`
+3. Receiver on NVFlare Client listens for `analytix_log_stats` (no conversion to federated event)
+4. Receiver writes to local tracking backend (MLflow/TensorBoard/WandB)
+
+**Result**: Each client has its own separate tracking instance. Metrics never leave the client.
+
+### 3. Key Terminology
+
+To avoid confusion:
+
+- **`client.py`**: Your training script (user code that logs metrics)
+- **NVFlare Client**: The FL client runtime that executes your training script
+- **NVFlare Server**: The FL server that coordinates training
+- **Server-Side Tracking**: Receiver deployed on NVFlare Server (listens for `fed.analytix_log_stats`)
+- **Client-Side Tracking**: Receiver deployed on NVFlare Client (listens for `analytix_log_stats`)
+
+### 4. Benefits
+
+**Pluggable Backends**: Your training script (`client.py`) doesn't change when switching between MLflow, TensorBoard, or WandB. Only the receiver configuration changes.
+
+**Flexible Deployment**: Choose centralized (server-side) or decentralized (client-side) tracking based on your privacy and operational needs.
 
 ## Configuration Flexibility
 

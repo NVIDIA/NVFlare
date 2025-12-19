@@ -102,105 +102,36 @@ This allows for the server to be the only party that needs to deal with authenti
 can buffer the events from many clients to better manage the load of requests to the tracking server.
 
 
-### 6. Experimental tracking with multi-receivers
+### 6. How It Works
 
-NVIDIA FLARE experiment tracking is designed in such a way that, the metrics collector ( such as MLflowWriter, or SummaryWriter) are not directly tie to the metrics receivers (such as MLflowReceiver or TBAnalyticsReceiver)
+This example demonstrates **server-side tracking** where all client metrics are centralized.
 
-The metrics collected can also streamed to any number of supported receivers, as long as it has registered receiver component.  By default, the ```BaseFedJob``` always pre-registered TensorBoard receiver for easy of use.  We can take a look at this by generating the job configuration of above job.
+#### Step 1: Logging Metrics (in `client.py`)
 
+Your training script logs metrics using NVFlare's tracking API:
 
-```
-cd ./jobs/hello-pt-mlflow/code
+```python
+from nvflare.client.tracking import SummaryWriter
 
-python3 fl_job.py -e
-```
-The output will be something like this if the default values are used.
-
-```Exporting job config... /tmp/nvflare/jobs/fedavg```
-
-
-We can now take a look at the configuration on the server
-
-```
-tmp/nvflare/jobs/fedavg
-├── app_server
-│ ├── config
-│ │    └── config_fed_server.json
-
+summary_writer = SummaryWriter()
+summary_writer.add_scalar("train_loss", loss, global_step=epoch)
 ```
 
+This creates a **local event** (`analytix_log_stats`) on the **NVFlare Client** side.
 
+#### Step 2: Event Streaming
 
-Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default, so the data is also written into TB files on the server.
+The `add_experiment_tracking()` utility automatically configures:
 
-```
-cat /tmp/nvflare/jobs/fedavg/app_server/config/config_fed_server.json
+1. **`ConvertToFedEvent` widget** (deployed to NVFlare Clients)
+   - Listens for local event: `analytix_log_stats`
+   - Converts it to federated event: `fed.analytix_log_stats`
+   - Sends to server
 
-```
-Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, which means we should also have a tensorboard results.
+2. **`MLflowReceiver`** (deployed to NVFlare Server)
+   - Listens for federated event: `fed.analytix_log_stats`
+   - Writes metrics to MLflow tracking server
 
-```
+#### Result
 
-{
- ...
-    "components": [
-      ....
-        {
-            "id": "receiver",
-            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
-            "args": {
-                "events": [
-                    "analytix_log_stats",
-                    "fed.analytix_log_stats"
-                ]
-            }
-        },
-
-        {
-            "id": "component",
-            "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
-            "args": {
-                "tracking_uri": "file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
-                "kw_args": {
-                    "experiment_name": "nvflare-fedavg-experiment",
-                    "run_name": "nvflare-fedavg-with-mlflow",
-                    "experiment_tags": {
-                        "mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"
-                    },
-                    "run_tags": {
-                        "mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"
-                    }
-                },
-                "artifact_location": "artifacts",
-                "events": [
-                    "fed.analytix_log_stats"
-                ]
-            }
-        }
-    ],
-...
-
-```
-
-Now, let's take a look at this by directly loading the tensorboard
-
-```
-tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
-```
-
-**Note**
-If you prefer not receive tensorboard metrics on server, you can simply remove the following
-component from the job configuration
-```json
-        {
-            "id": "receiver",
-            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
-            "args": {
-                "events": [
-                    "analytix_log_stats",
-                    "fed.analytix_log_stats"
-                ]
-            }
-        }
-
-```
+All metrics from all clients are aggregated into a **single centralized MLflow experiment** on the server!

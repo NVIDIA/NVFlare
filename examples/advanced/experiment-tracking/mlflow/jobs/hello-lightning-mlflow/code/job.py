@@ -14,7 +14,7 @@
 
 import argparse
 
-from src.model import LitNet
+from model import LitNet
 
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
@@ -45,7 +45,7 @@ if __name__ == "__main__":
         min_clients=args.n_clients,
         num_rounds=2,
         initial_model=LitNet(),
-        train_script="src/client.py",
+        train_script="client.py",
     )
 
     # Add MLflow tracking

@@ -14,7 +14,7 @@
 
 import argparse
 
-from src.model import Net
+from model import Net
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -26,7 +26,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
-    parser.add_argument("--script", type=str, default="src/client.py")
+    parser.add_argument("--script", type=str, default="client.py")
     parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--streamed_to_clients",

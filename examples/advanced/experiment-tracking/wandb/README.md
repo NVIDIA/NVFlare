@@ -110,25 +110,39 @@ With `mode: "online"`, these files sync automatically to the WandB cloud.
 
 ## How It Works
 
-### Server-Side Tracking (Centralized)
+This example supports both **server-side** and **client-side** tracking modes.
+
+### Logging Metrics (in `client.py`)
+
+Your training script logs metrics using NVFlare's tracking API:
+
+```python
+from nvflare.client.tracking import WandBWriter
+
+wandb = WandBWriter()
+wandb.log({"train/loss": loss, "train/accuracy": accuracy}, step=epoch)
+```
+
+This creates a **local event** (`analytix_log_stats`) on the **NVFlare Client** side.
+
+### Mode 1: Server-Side Tracking (Centralized)
 
 ```python
 # All clients stream to server, server logs to WandB
 add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 ```
 
-**Flow**:
-1. Client logs metric → `WandBWriter.log({"loss": 0.5})`
-2. Creates `analytix_log_stats` event
-3. ConvertToFedEvent → `fed.analytix_log_stats`
-4. Server receives event
-5. WandBReceiver on server → Logs to WandB
+**Event Flow**:
+1. User's training script (`client.py`) logs metrics via `WandBWriter`
+2. NVFlare Client creates local event: `analytix_log_stats`
+3. `ConvertToFedEvent` widget converts event to federated event: `fed.analytix_log_stats`
+4. Federated event sent to NVFlare Server
+5. `WandBReceiver` on server listens for `fed.analytix_log_stats`
+6. Receiver writes to WandB
 
-**Benefit**: Single centralized view of all clients' metrics
+**Result**: Single centralized WandB run with all clients' metrics combined.
 
----
-
-### Client-Side Tracking (Decentralized)
+### Mode 2: Client-Side Tracking (Decentralized)
 
 ```python
 # Each client logs to its own WandB run
@@ -137,13 +151,22 @@ for site_name in ["site-1", "site-2"]:
     recipe.job.to(receiver, site_name, id="wandb_receiver")
 ```
 
-**Flow**:
-1. Client logs metric → `WandBWriter.log({"loss": 0.5})`
-2. Creates `analytix_log_stats` event (local)
-3. WandBReceiver on client → Logs to WandB directly
-4. No server involvement
+**Event Flow**:
+1. User's training script (`client.py`) logs metrics via `WandBWriter`
+2. NVFlare Client creates local event: `analytix_log_stats`
+3. `WandBReceiver` on NVFlare Client listens for `analytix_log_stats` (no conversion to federated event)
+4. Receiver writes to WandB
 
-**Benefit**: Each site maintains its own WandB run and authentication
+**Result**: Each client has its own separate WandB run. Metrics never leave the client.
+
+### Key Terminology
+
+To avoid confusion:
+- **`client.py`**: Your training script (user code that logs metrics)
+- **NVFlare Client**: The FL client runtime that executes your training script
+- **NVFlare Server**: The FL server that coordinates training
+- **Server-Side Tracking**: Receiver on NVFlare Server (listens for `fed.analytix_log_stats`)
+- **Client-Side Tracking**: Receiver on NVFlare Client (listens for `analytix_log_stats`)
 
 ---
 

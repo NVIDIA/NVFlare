@@ -106,9 +106,11 @@ ssh -L 6006:127.0.0.1:6006 user@server_ip
 
 ## How It Works
 
-### Client-Side Tracking
+This example demonstrates **server-side tracking** where all client metrics are centralized.
 
-In `client.py`, the client code uses the NVFlare tracking API:
+### Step 1: Logging Metrics (in `client.py`)
+
+Your training script logs metrics using NVFlare's tracking API:
 
 ```python
 from nvflare.client.tracking import SummaryWriter
@@ -116,20 +118,29 @@ from nvflare.client.tracking import SummaryWriter
 # Create writer
 summary_writer = SummaryWriter()
 
-# Log metrics
+# Log metrics during training
 summary_writer.add_scalar("train_loss", loss, global_step=epoch)
 summary_writer.add_scalar("train_accuracy", accuracy, global_step=epoch)
 ```
 
-This generates NVIDIA FLARE events of type `analytix_log_stats`.
+This creates a **local event** (`analytix_log_stats`) on the **NVFlare Client** side.
 
-### Server-Side Tracking
+### Step 2: Event Streaming
 
 The `add_experiment_tracking()` utility automatically configures:
-1. **`TBAnalyticsReceiver`** on the server - receives and writes metrics to TensorBoard files
-2. **`ConvertToFedEvent`** on clients - converts local events to federated events for streaming
 
-All metrics from all clients are aggregated into a single TensorBoard view on the server!
+1. **`ConvertToFedEvent` widget** (deployed to NVFlare Clients)
+   - Listens for local event: `analytix_log_stats`
+   - Converts it to federated event: `fed.analytix_log_stats`
+   - Sends to server
+
+2. **`TBAnalyticsReceiver`** (deployed to NVFlare Server)
+   - Listens for federated event: `fed.analytix_log_stats`
+   - Writes metrics to TensorBoard files on the server
+
+### Result
+
+All metrics from all clients are aggregated into a **single centralized TensorBoard view** on the server!
 
 ---
 

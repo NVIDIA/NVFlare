@@ -101,28 +101,46 @@ Open browser to `http://localhost:5001`
 
 ## How It Works
 
-### Client-Side Tracking Flow
+This example demonstrates **client-side tracking** where each client keeps its own metrics locally.
 
-1. **Training Script** (`src/client.py`):
-   ```python
-   from nvflare.client.tracking import MLflowWriter
+### Step 1: Logging Metrics (in `client.py`)
 
-   mlflow = MLflowWriter()
-   mlflow.log_metric("accuracy", acc, step=epoch)
-   ```
+Your training script logs metrics using NVFlare's tracking API:
 
-2. **Local Event Generated**:
-   - Creates `analytix_log_stats` event (not federated)
+```python
+from nvflare.client.tracking import MLflowWriter
 
-3. **MLflowReceiver on Client**:
-   - Configured with `events=[ANALYTIC_EVENT_TYPE]`
-   - Receives local events directly
-   - Writes to site-specific MLflow directory
+mlflow = MLflowWriter()
+mlflow.log_metric("accuracy", acc, step=epoch)
+```
 
-4. **No Server Involvement**:
-   - Metrics stay local to each site
-   - No centralized aggregation
-   - Each site controls its own data
+This creates a **local event** (`analytix_log_stats`) on the **NVFlare Client** side.
+
+### Step 2: Local Event Handling
+
+Unlike server-side tracking, there is **no event conversion** to federated events:
+
+1. **`MLflowReceiver`** (deployed to each NVFlare Client)
+   - Listens for **local event**: `analytix_log_stats` (NOT `fed.analytix_log_stats`)
+   - Writes metrics to **local MLflow directory** on that client
+   - Metrics **never leave the client**
+
+2. **No `ConvertToFedEvent` widget**
+   - Local events stay local
+   - Server never receives metrics
+
+### Result
+
+Each client has its own **separate MLflow instance** with only its own metrics. Complete data privacy!
+
+### Key Terminology
+
+To avoid confusion:
+- **`client.py`**: Your training script (user code that logs metrics)
+- **NVFlare Client**: The FL client runtime that executes your training script
+- **Client-Side Tracking**: Receiver deployed on NVFlare Client (this example)
+- **Local Event**: `analytix_log_stats` - stays on the client
+- **Federated Event**: `fed.analytix_log_stats` - sent to server (NOT used in this example)
 
 ---
 
