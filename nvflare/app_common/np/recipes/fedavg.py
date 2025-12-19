@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -33,7 +33,7 @@ class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    initial_model: Optional[list] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -62,7 +62,8 @@ class NumpyFedAvgRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
+        initial_model: Initial model (as list or numpy array) to start federated training with.
+            Lists are preferred for JSON serialization compatibility. If None,
             clients will start with their own local models.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
@@ -102,7 +103,7 @@ class NumpyFedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        initial_model: Optional[list] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -162,8 +163,7 @@ class NumpyFedAvgRecipe(Recipe):
         persistor_id = ""
         if self.initial_model is not None:
             # Add persistor and initial model directly
-            persistor_id = job.to_server(NPModelPersistor(), id="persistor")
-            job.to(self.initial_model, "server")
+            persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
 
         controller = ScatterAndGather(
             min_clients=self.min_clients,
@@ -177,13 +177,12 @@ class NumpyFedAvgRecipe(Recipe):
         # Send the controller to the server
         job.to_server(controller)
 
-        # Add clients with NUMPY framework
         executor = ScriptRunner(
             script=self.train_script,
             script_args=self.train_args,
             launch_external_process=self.launch_external_process,
             command=self.command,
-            framework=FrameworkType.NUMPY,  # Use NUMPY framework instead of PYTORCH
+            framework=FrameworkType.NUMPY,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
         )
