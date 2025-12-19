@@ -15,7 +15,7 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from lit_net import LitNet
+from model import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from torch.utils.data import DataLoader, random_split
 

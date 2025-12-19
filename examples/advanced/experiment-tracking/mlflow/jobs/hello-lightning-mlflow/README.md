@@ -6,15 +6,15 @@ as the deep learning training framework with **MLflow experiment tracking**.
 
 > **Minimum Hardware Requirements**: 1 CPU or 1 GPU
 
-## What's New: Recipe API + Lightning
+## Overview
 
-This example demonstrates the **Lightning-specific Recipe API** for PyTorch Lightning integration:
+This example demonstrates PyTorch Lightning integration with MLflow tracking:
 
 ```python
-from nvflare.app_opt.lightning.recipes import FedAvgRecipe  # Lightning Recipe!
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
-# Create Lightning FedAvg recipe
+# Create FedAvg recipe for Lightning model
 recipe = FedAvgRecipe(
     name="fedavg_lightning_mlflow",
     min_clients=2,
@@ -39,13 +39,7 @@ add_experiment_tracking(
 recipe.run()
 ```
 
-**Key Features**:
-- Uses Lightning-specific `FedAvgRecipe` from `nvflare.app_opt.lightning.recipes`
-- Automatically handles Lightning model serialization
-- Integrates with Lightning's callback system
-- Same simple tracking API as PyTorch examples
-
----
+**Note:** This example uses the standard PyTorch `FedAvgRecipe` which automatically handles Lightning models. The recipe integrates with Lightning's callback system and trainer, while maintaining the same simple tracking API as regular PyTorch examples.
 
 ## Setup and Running
 
@@ -105,56 +99,32 @@ Then open your browser to `http://localhost:5000`
 
 ### 1. Client-Side Logging
 
-In your Lightning training script (`src/client.py`):
+In your Lightning model (`src/model.py`), use standard Lightning logging:
 
 ```python
-from nvflare.client.tracking import MLflowWriter
-
 class LitNet(LightningModule):
-    def __init__(self):
-        super().__init__()
-        self.mlflow_writer = MLflowWriter()
-
     def training_step(self, batch, batch_idx):
         loss = ...
-        # Log metrics
-        self.mlflow_writer.log_metric("train_loss", loss, step=self.global_step)
+        # Use Lightning's built-in logging
+        self.log("train_loss", loss)
         return loss
+```
+
+In your training script (`src/client.py`), use the NVFlare Lightning logger:
+
+```python
+import nvflare.client.lightning as flare
+
+flare_logger = flare.logger()  # Creates analytics events from Lightning logs
+trainer = Trainer(logger=flare_logger)
 ```
 
 ### 2. Event Flow
 
-1. **Lightning trains** → Model updates via callbacks
-2. **MLflowWriter logs metrics** → Creates `analytix_log_stats` events
+1. **Lightning trains** → Calls `self.log()` in model
+2. **`flare.logger()`** → Captures logs and creates `analytix_log_stats` events
 3. **ConvertToFedEvent** (automatic) → Converts to `fed.analytix_log_stats`
 4. **Server-side MLflowReceiver** → Writes to MLflow tracking server
-
-### 3. Automatic Components
-
-The Recipe API automatically configures:
-- ✅ Lightning-compatible model serialization
-- ✅ Event conversion widgets
-- ✅ MLflow receiver on server
-- ✅ Proper callback integration
-
----
-
-## Lightning-Specific Features
-
-### Using Lightning Logger
-
-You can also use NVFlare's Lightning logger directly:
-
-```python
-from nvflare.app_opt.lightning.loggers import ClientLogger
-
-trainer = Trainer(
-    logger=ClientLogger(),
-    max_epochs=1,
-)
-```
-
-This integrates seamlessly with the MLflow tracking.
 
 ### Lightning Callbacks
 
@@ -174,9 +144,9 @@ trainer = Trainer(
 
 ## Comparison: PyTorch vs Lightning
 
-| Aspect | PyTorch Recipe | Lightning Recipe (This Example) |
-|--------|----------------|--------------------------------|
-| **Recipe Import** | `nvflare.app_opt.pt.recipes` | `nvflare.app_opt.lightning.recipes` |
+| Aspect | PyTorch (vanilla) | PyTorch Lightning (This Example) |
+|--------|-------------------|----------------------------------|
+| **Recipe Import** | `nvflare.app_opt.pt.recipes` | `nvflare.app_opt.pt.recipes` (same) |
 | **Model Type** | `torch.nn.Module` | `LightningModule` |
 | **Training Loop** | Custom script | Lightning Trainer |
 | **Logging** | `MLflowWriter` | `MLflowWriter` or `ClientLogger` |
@@ -211,16 +181,6 @@ add_experiment_tracking(
     }
 )
 ```
-
-### Switch to TensorBoard
-
-Simply change the tracking type:
-
-```python
-add_experiment_tracking(recipe, "tensorboard")
-```
-
----
 
 ## Additional Resources
 

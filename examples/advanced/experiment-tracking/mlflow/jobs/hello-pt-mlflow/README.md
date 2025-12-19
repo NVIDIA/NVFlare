@@ -6,6 +6,8 @@ as the deep learning training framework with **MLflow experiment tracking**.
 
 This example demonstrates the **Recipe API** for easily adding MLflow tracking to FL training jobs.
 
+## Setup
+
 ### 1. Install requirements
 
 Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
@@ -41,7 +43,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-    train_script="src/train_script.py",
+        train_script="src/client.py",
 )
 
 # Add MLflow tracking

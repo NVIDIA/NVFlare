@@ -14,7 +14,7 @@
 
 import argparse
 
-from src.network import SimpleNetwork
+from src.model import SimpleNetwork
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -43,7 +43,7 @@ if __name__ == "__main__":
         min_clients=args.n_clients,
         num_rounds=5,
         initial_model=SimpleNetwork(),
-        train_script="src/training_script.py",
+        train_script="src/client.py",
         analytics_receiver=False,  # Disable server-side tracking
     )
 

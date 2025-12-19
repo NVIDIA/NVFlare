@@ -8,9 +8,9 @@ This example demonstrates the **Recipe API** for easily adding TensorBoard strea
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-## What's New: Recipe API + Experiment Tracking
+## Overview
 
-This example uses the new `FedAvgRecipe` combined with the `add_experiment_tracking()` utility:
+This example uses the `FedAvgRecipe` with the `add_experiment_tracking()` utility to easily add TensorBoard streaming:
 
 ```python
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -22,7 +22,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-    train_script="src/train_script.py",
+    train_script="src/client.py",
 )
 
 # Add TensorBoard tracking with one line!
@@ -32,10 +32,7 @@ add_experiment_tracking(recipe, "tensorboard", tracking_config={"tb_folder": "tb
 recipe.run()
 ```
 
-Benefits:
-- **70% less code** compared to manual FedJob configuration
-- **Cleaner separation** between training workflow and experiment tracking
-- **Easy to switch** tracking backends (just change "tensorboard" to "mlflow" or "wandb")
+## Setup
 
 ### 1. Install requirements
 
@@ -111,7 +108,7 @@ ssh -L 6006:127.0.0.1:6006 user@server_ip
 
 ### Client-Side Tracking
 
-In `train_script.py`, the client code uses the NVFlare tracking API:
+In `client.py`, the client code uses the NVFlare tracking API:
 
 ```python
 from nvflare.client.tracking import SummaryWriter

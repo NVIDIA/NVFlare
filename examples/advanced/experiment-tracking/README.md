@@ -1,10 +1,10 @@
 # Experiment Tracking Overview
 
-This section demonstrates how NVIDIA FLARE supports flexible experiment tracking through various backends such as MLflow, TensorBoard, and Weights & Biases using the **Recipe API**.
+This section demonstrates how NVIDIA FLARE supports flexible experiment tracking through various backends such as MLflow, TensorBoard, and Weights & Biases.
 
-## ✨ What's New: Recipe API + Experiment Tracking
+## Overview
 
-All examples now use the **Recipe API** with the `add_experiment_tracking()` utility for simplified configuration:
+These examples use the Recipe API with the `add_experiment_tracking()` utility for simplified configuration:
 
 ```python
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -24,12 +24,6 @@ add_experiment_tracking(recipe, "mlflow")  # or "tensorboard" or "wandb"
 
 recipe.run()
 ```
-
-**Benefits**:
-- **70% less code** compared to manual configuration
-- **Easy to switch** tracking backends (just change the string!)
-- **Cleaner separation** between training workflow and experiment tracking
-- **Type-safe** and validated configurations
 
 ## Key Highlights
 

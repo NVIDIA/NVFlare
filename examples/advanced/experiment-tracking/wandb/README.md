@@ -6,9 +6,9 @@ with **Weights & Biases (WandB)** experiment tracking.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-## What's New: Recipe API + Flexible Tracking
+## Overview
 
-This example demonstrates the **Recipe API** with **flexible tracking options**:
+This example demonstrates Weights & Biases tracking with flexible options for server-side or client-side metric collection:
 
 ```python
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -20,7 +20,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=Net(),
-    train_script="src/train_script.py",
+    train_script="src/client.py",
     analytics_receiver=False,  # We'll add WandB manually
 )
 
@@ -40,14 +40,6 @@ add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
 recipe.run()
 ```
-
-**Key Features**:
-- **Server-side tracking** (default) - All metrics in one WandB run
-- **Client-side tracking** (optional) - Each site logs separately
-- **Mixed mode** - Both server and client tracking simultaneously
-- Simple CLI flags to switch between modes
-
----
 
 ## Setup and Running
 
@@ -199,7 +191,7 @@ The example supports several CLI arguments:
 python job.py \
     --n_clients 3 \
     --num_rounds 10 \
-    --script src/train_script.py \
+    --script src/client.py \
     --streamed_to_server \
     --no-streamed_to_clients \
     --export_config

@@ -14,9 +14,9 @@
 
 import argparse
 
-from src.lit_net import LitNet
+from src.model import LitNet
 
-from nvflare.app_opt.lightning.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"

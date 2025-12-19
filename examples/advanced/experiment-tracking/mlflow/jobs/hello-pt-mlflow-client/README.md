@@ -14,9 +14,9 @@ This example demonstrates **site-specific (decentralized) MLflow tracking** usin
 - Site-specific metric tracking
 - Each site manages its own MLflow server
 
-## What's New: Recipe API
+## Overview
 
-This example uses the **Recipe API** for simplified configuration:
+This example shows how to configure per-client MLflow tracking:
 
 ```python
 from nvflare.app_opt.pt.recipes import FedAvgRecipe
@@ -29,7 +29,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-    train_script="src/training_script.py",
+        train_script="src/client.py",
     analytics_receiver=False,  # Disable server-side tracking
 )
 
@@ -54,9 +54,7 @@ recipe.run()
 - `events=[ANALYTIC_EVENT_TYPE]` - Listen to local events (not `fed.` events)
 - Each site gets its own `tracking_uri`
 
----
-
-## Setup and Running
+## Setup
 
 ### 1. Install Requirements
 
@@ -105,7 +103,7 @@ Open browser to `http://localhost:5001`
 
 ### Client-Side Tracking Flow
 
-1. **Training Script** (`src/training_script.py`):
+1. **Training Script** (`src/client.py`):
    ```python
    from nvflare.client.tracking import MLflowWriter
 
