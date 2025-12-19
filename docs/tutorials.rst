@@ -25,12 +25,6 @@ Step-by-Step Walkthroughs
 - Covers FedAvg, Cyclic, Swarm Learning, Federated Statistics, Scikit-learn, XGBoost, and more.
 - `Step-by-step examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`_
 
-ML-to-FL Conversion
--------------------
-
-- Learn to convert standalone or centralized training code to FL code with various deep learning frameworks.
-- `ML-to-FL walkthroughs <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`_
-
 Feature Tutorials
 -----------------
 
