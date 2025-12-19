@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import Optional
 
 import numpy as np
 
@@ -33,7 +34,7 @@ def _get_run_dir(fl_ctx: FLContext):
 
 
 class NPModelPersistor(ModelPersistor):
-    def __init__(self, model_dir="models", model_name="server.npy"):
+    def __init__(self, model_dir="models", model_name="server.npy", initial_model: Optional[list] = None):
         """Model persistor for numpy arrays.
 
         Note:
@@ -43,14 +44,24 @@ class NPModelPersistor(ModelPersistor):
         Args:
             model_dir (str, optional): model directory. Defaults to "models".
             model_name (str, optional): model name. Defaults to "server.npy".
+            initial_model (list, optional): initial model as a list.
+                Will be converted to numpy array when load_model is called.
+                Defaults to None.
         """
         super().__init__()
 
         self.model_dir = model_dir
         self.model_name = model_name
+        # Keep as list for JSON serialization during job config generation.
+        # Conversion to numpy happens in load_model().
+        self.initial_model = initial_model
 
-        # This is default model that will be used if not local model is provided.
-        self.default_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+    def _get_initial_model_as_numpy(self) -> np.ndarray:
+        """Convert initial_model to numpy array."""
+        if self.initial_model is None:
+            return np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
+        else:
+            return np.array(self.initial_model, dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
@@ -64,7 +75,7 @@ class NPModelPersistor(ModelPersistor):
                 f"Unable to load model from {model_path}: {secure_format_exception(e)}. Using default data instead.",
                 fire_event=False,
             )
-            data = self.default_data.copy()
+            data = self._get_initial_model_as_numpy().copy()
 
         model_learnable = make_model_learnable(weights={NPConstants.NUMPY_KEY: data}, meta_props={})
 
