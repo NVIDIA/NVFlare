@@ -14,13 +14,17 @@
 
 import argparse
 import os
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 from process_elliptic import process_ellipitc
-from pyg_sage import SAGE
+
+sys.path.append(str(Path(__file__).parent.parent))
+from model import SAGE
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
