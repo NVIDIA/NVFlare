@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from .nvf_test_driver import NVFTestDriver, NVFTestError
-from .oa_laucher import OALauncher
 from .poc_site_launcher import POCSiteLauncher
 from .provision_site_launcher import ProvisionSiteLauncher
 from .site_launcher import ServerProperties, SiteProperties
