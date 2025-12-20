@@ -212,8 +212,20 @@ class TestSpawnProcess:
     def test_spawn_uses_posix_spawn_when_available(self, monkeypatch):
         spawned = {}
 
-        def fake_posix_spawn(path, argv, env, *, file_actions=None, setpgroup=0, resetids=False, setsid=False,
-                             sched_param=None, sched_scheduler=None, sigmask=(), sigdef=()):
+        def fake_posix_spawn(
+            path,
+            argv,
+            env,
+            *,
+            file_actions=None,
+            setpgroup=0,
+            resetids=False,
+            setsid=False,
+            sched_param=None,
+            sched_scheduler=None,
+            sigmask=(),
+            sigdef=(),
+        ):
             spawned["path"] = path
             spawned["argv"] = argv
             spawned["setsid"] = setsid

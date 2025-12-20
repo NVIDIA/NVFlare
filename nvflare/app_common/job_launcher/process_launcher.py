@@ -30,8 +30,12 @@ JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_
 
 
 class ProcessHandle(JobHandleSpec):
-    def __init__(self, process: Optional[subprocess.Popen] = None, pid: Optional[int] = None,
-                 process_adapter: Optional[ProcessAdapter] = None):
+    def __init__(
+        self,
+        process: Optional[subprocess.Popen] = None,
+        pid: Optional[int] = None,
+        process_adapter: Optional[ProcessAdapter] = None,
+    ):
         super().__init__()
 
         if process_adapter:

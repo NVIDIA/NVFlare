@@ -166,4 +166,3 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)
-

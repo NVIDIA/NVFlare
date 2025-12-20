@@ -58,8 +58,20 @@ def test_launch_job_uses_posix_spawn_when_supported(monkeypatch):
 
     spawned = {}
 
-    def fake_spawn(path, argv, env, *, file_actions=None, setpgroup=0, resetids=False, setsid=False, sched_param=None,
-                   sched_scheduler=None, sigmask=(), sigdef=()):
+    def fake_spawn(
+        path,
+        argv,
+        env,
+        *,
+        file_actions=None,
+        setpgroup=0,
+        resetids=False,
+        setsid=False,
+        sched_param=None,
+        sched_scheduler=None,
+        sigmask=(),
+        sigdef=(),
+    ):
         spawned["path"] = path
         spawned["argv"] = tuple(argv)
         spawned["setsid"] = setsid
