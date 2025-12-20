@@ -72,7 +72,7 @@ class Store(object):
             "role": "project_admin",
             "approval_state": 200,
         }
-        cls.create_user(seed_user)
+        cls.create_user(seed_user, seeding=True)
         cls.create_project()
         return email, pwd
 
@@ -277,7 +277,7 @@ class Store(object):
         return add_ok({})
 
     @classmethod
-    def create_user(cls, req):
+    def create_user(cls, req, seeding=False):
         name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
@@ -285,7 +285,13 @@ class Store(object):
         organization = req.get("organization", "")
         role_name = req.get("role", "")
         description = req.get("description", "")
-        approval_state = req.get("approval_state", 0)
+        if seeding:
+            approval_state = 200
+        else:
+            if role_name == "project_admin":
+                log.error("Non-seeding create_user cannot create project_admin")
+                return None
+            approval_state = 0
         org = get_or_create(db.session, Organization, name=organization)
         role = get_or_create(db.session, Role, name=role_name)
         try:
@@ -361,6 +367,8 @@ class Store(object):
         user = User.query.get(id)
         _ = req.pop("approval_state", None)
         role = req.pop("role", None)
+        if role == "project_admin":
+            return {"status": "error"}
         if role is not None and user.role.name == "":
             role = get_or_create(db.session, Role, name=role)
             user.role_id = role.id

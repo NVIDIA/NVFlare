@@ -360,7 +360,7 @@ def main():
         WorkspaceBuilder(["master_template.yml"]),
         StaticFileBuilder(
             config_folder="config",
-            scheme="grpc",
+            scheme="http",
         ),
         CertBuilder(),
         SignatureBuilder(),
