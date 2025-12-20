@@ -136,9 +136,9 @@ def main():
             for i in range(len(idx)):
                 hist_obs[idx[i]] = observed[i]
                 hist_cen[idx[i]] = censored[i]
-            # Encrypt with tenseal using BFV scheme since observations are integers
-            hist_obs_he = ts.bfv_vector(he_context, list(hist_obs.values()))
-            hist_cen_he = ts.bfv_vector(he_context, list(hist_cen.values()))
+            # Encrypt with tenseal using CKKS scheme
+            hist_obs_he = ts.ckks_vector(he_context, list(hist_obs.values()))
+            hist_cen_he = ts.ckks_vector(he_context, list(hist_cen.values()))
             # Serialize for transmission
             hist_obs_he_serial = hist_obs_he.serialize()
             hist_cen_he_serial = hist_cen_he.serialize()
@@ -153,19 +153,20 @@ def main():
             hist_obs_global_serial = global_msg.params["hist_obs_global"]
             hist_cen_global_serial = global_msg.params["hist_cen_global"]
             # Deserialize
-            hist_obs_global = ts.bfv_vector_from(he_context, hist_obs_global_serial)
-            hist_cen_global = ts.bfv_vector_from(he_context, hist_cen_global_serial)
+            hist_obs_global = ts.ckks_vector_from(he_context, hist_obs_global_serial)
+            hist_cen_global = ts.ckks_vector_from(he_context, hist_cen_global_serial)
             # Decrypt
-            hist_obs_global = hist_obs_global.decrypt()
-            hist_cen_global = hist_cen_global.decrypt()
+            hist_obs_global = [int(round(x)) for x in hist_obs_global.decrypt()]
+            hist_cen_global = [int(round(x)) for x in hist_cen_global.decrypt()]
             # Unfold histogram to event list
+            # CKKS returns floats, so we round to nearest integer
             time_unfold = []
             event_unfold = []
             for i in range(max_idx_global):
-                for j in range(hist_obs_global[i]):
+                for j in range(int(hist_obs_global[i])):
                     time_unfold.append(i)
                     event_unfold.append(True)
-                for k in range(hist_cen_global[i]):
+                for k in range(int(hist_cen_global[i])):
                     time_unfold.append(i)
                     event_unfold.append(False)
             time_unfold = np.array(time_unfold)

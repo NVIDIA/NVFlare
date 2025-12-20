@@ -25,7 +25,7 @@ from nvflare.app_common.workflows.model_controller import ModelController
 
 class KM_HE(ModelController):
     def __init__(self, min_clients: int, he_context_path: str):
-        super(KM_HE, self).__init__()
+        super(KM_HE, self).__init__(persistor_id="")
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
         self.he_context_path = he_context_path
@@ -92,9 +92,9 @@ class KM_HE(ModelController):
         for fl_model in sag_result:
             site = fl_model.meta.get("client_name", None)
             hist_obs_he_serial = fl_model.params["hist_obs"]
-            hist_obs_he = ts.bfv_vector_from(he_context, hist_obs_he_serial)
+            hist_obs_he = ts.ckks_vector_from(he_context, hist_obs_he_serial)
             hist_cen_he_serial = fl_model.params["hist_cen"]
-            hist_cen_he = ts.bfv_vector_from(he_context, hist_cen_he_serial)
+            hist_cen_he = ts.ckks_vector_from(he_context, hist_cen_he_serial)
 
             if not hist_obs_global:
                 print(f"assign global hist with result from {site}")

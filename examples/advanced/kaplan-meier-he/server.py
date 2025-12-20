@@ -21,7 +21,7 @@ from nvflare.app_common.workflows.model_controller import ModelController
 # Controller Workflow
 class KM(ModelController):
     def __init__(self, min_clients: int):
-        super(KM, self).__init__()
+        super(KM, self).__init__(persistor_id="")
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
         self.num_rounds = 2
