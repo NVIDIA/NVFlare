@@ -16,8 +16,6 @@ import os
 import signal
 from unittest import mock
 
-import pytest
-
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobReturnCode

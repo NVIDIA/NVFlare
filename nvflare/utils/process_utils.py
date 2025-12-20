@@ -16,7 +16,7 @@ import logging
 import os
 import signal
 import subprocess
-from typing import List, Optional, Union
+from typing import List, Optional
 
 log = logging.getLogger(__name__)
 
