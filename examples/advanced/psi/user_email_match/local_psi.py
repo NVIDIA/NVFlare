@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,10 +19,13 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class LocalPSI(PSI):
-    def __init__(self, psi_writer_id: str, data_root_dir: str = "/tmp/nvflare/psi/data"):
+    def __init__(
+        self,
+        data_root_dir: str = "/tmp/nvflare/psi/data",
+        psi_writer_id: str = "psi_writer",
+    ) -> None:
         super().__init__(psi_writer_id)
         self.data_root_dir = data_root_dir
-        self.data = {}
 
     def load_items(self) -> list[str]:
         site = self.fl_ctx.get_identity_name()
@@ -34,5 +37,6 @@ class LocalPSI(PSI):
             raise RuntimeError(f"invalid data path {data_path}")
 
         # important the PSI algorithms requires the items are unique
-        items = df.email_address.to_list()
+        # PSI requires unique, non-null string items
+        items = df["email_address"].dropna().astype(str).drop_duplicates().tolist()
         return items
