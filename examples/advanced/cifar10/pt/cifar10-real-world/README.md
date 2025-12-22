@@ -169,7 +169,7 @@ In MLFlow, you can group the runs by `job_id` and compare the global model perfo
 
 ## Tips & Tricks
 
-After submitting jobs with `job.py` using the production environment (ProdEnv), you can also monitor the status of running jobs using the [admin console](https://nvflare.readthedocs.io/en/main/user_guide/admin_commands.html).
+After submitting jobs with `job.py` using the production environment (ProdEnv), you can also monitor the status of running jobs using the [admin console](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 
 In a new terminal, run:
 ```bash
@@ -177,7 +177,7 @@ In a new terminal, run:
 ```
 Type `admin@nvidia.com` when prompted for a user name. 
 
-You can check the status of running jobs using `list_jobs`, or abort jobs using the `abort_job` command. For a full list of admin commands, see the [Admin Commands documentation](https://nvflare.readthedocs.io/en/main/user_guide/admin_commands.html).
+You can check the status of running jobs using `list_jobs`, or abort jobs using the `abort_job` command. For a full list of admin commands, see the [Admin Commands documentation](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 
 ### Additional Resources
 
