@@ -189,11 +189,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         use_native = fobs_ctx.get("native", False)
         if max_chunk_size <= 0 or use_native:
             # use native decompose
-            self.logger.info("using native_decompose")
+            self.logger.debug("using native_decompose")
             data = self.native_decompose(target, manager)
             return {EncKey.TYPE: EncType.NATIVE, EncKey.DATA: data}
         else:
-            self.logger.info(f"using download decompose: {max_chunk_size=}")
+            self.logger.debug(f"using download decompose: {max_chunk_size=}")
 
         # Create a DecomposeCtx for this target type.
         # Note: there could be multiple target types - each target type has its own DecomposeCtx!
@@ -203,7 +203,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             fobs_ctx[self.decompose_ctx_key] = dc
 
         item_id, target_id = self._create_ref(target, manager, fobs_ctx)
-        self.logger.info(f"ViaDownloader: created ref for target {target_id}: {item_id}")
+        self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
     def _create_downloader(self, fobs_ctx: dict):
@@ -295,12 +295,12 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             _RefKey.FQCN: cell.get_fqcn(),
             _RefKey.REF_ID: ref_id,
         }
-        self.logger.info(f"ViaDownloader: created download ref for target type {self.__class__.__name__}: {ref=}")
+        self.logger.debug(f"ViaDownloader: created download ref for target type {self.__class__.__name__}: {ref=}")
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
         return datum
 
     def _finalize_download_tx(self, mgr: DatumManager):
-        self.logger.info("ViaDownloader: finalizing download tx")
+        self.logger.debug("ViaDownloader: finalizing download tx")
         fobs_ctx = mgr.fobs_ctx
         downloadable_objs = fobs_ctx.get(_CtxKey.OBJECTS)
 
@@ -312,7 +312,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):
         # this CB is triggered when msg root is deleted.
-        self.logger.info(f"ViaDownloader: deleting download transaction associated with {msg_root_id=}")
+        self.logger.debug(f"ViaDownloader: deleting download transaction associated with {msg_root_id=}")
         downloader.delete_transaction()
 
     def process_datum(self, datum: Datum, manager: DatumManager):
@@ -332,7 +332,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         Returns: None
 
         """
-        self.logger.info(f"ViaDownloader: pre-processing datum {datum.dot=} before recompose")
+        self.logger.debug(f"ViaDownloader: pre-processing datum {datum.dot=} before recompose")
         fobs_ctx = manager.fobs_ctx
 
         # data is to be downloaded
@@ -356,7 +356,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             raise RuntimeError("FOBS protocol error")
 
         if enc_type == EncType.NATIVE:
-            self.logger.info("using native_recompose")
+            self.logger.debug("using native_recompose")
             return self.native_recompose(data, manager)
         elif enc_type != EncType.REF:
             self.logger.error(f"invalid enc_type {enc_type} in recompose data")
@@ -368,19 +368,19 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         # data is the item id
         tid = threading.get_ident()
-        self.logger.info(f"ViaDownloader: {tid=} recomposing data item {data}")
+        self.logger.debug(f"ViaDownloader: {tid=} recomposing data item {data}")
         item_id = data
         fobs_ctx = manager.fobs_ctx
         items = fobs_ctx.get(self.items_key)
-        self.logger.info(f"trying to get item for {item_id=} from {type(items)=}")
+        self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
         item = items.get(item_id)
-        self.logger.info(f"{tid=} found item {item_id}: {type(item)}")
+        self.logger.debug(f"{tid=} found item {item_id}: {type(item)}")
         if item is None:
             self.logger.error(f"cannot find item {item_id} from loaded data")
         return item
 
     def _download_from_remote_cell(self, fobs_ctx: dict, ref: dict):
-        self.logger.info(f"trying to download from remote cell for {ref=}")
+        self.logger.debug(f"trying to download from remote cell for {ref=}")
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if not cell:
             self.logger.error("cannot download from remote cell since cell not available in fobs context")
@@ -401,11 +401,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             req_timeout = acu.get_positive_float_var(
                 self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 10.0
             )
-        self.logger.info(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
+        self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
 
-        self.logger.info(f"trying to download: {ref_id=} {fqcn=}")
+        self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
         err, items = self.download(
             from_fqcn=fqcn,
             ref_id=ref_id,
@@ -417,5 +417,5 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
             raise RuntimeError(f"failed to download from {fqcn}")
         else:
-            self.logger.info(f"downloaded {len(items)} items successfully")
+            self.logger.debug(f"downloaded {len(items)} items successfully")
         return items
