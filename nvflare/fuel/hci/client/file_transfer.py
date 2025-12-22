@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -166,16 +167,31 @@ class FileTransferModule(CommandModule):
             EventType.AFTER_DOWNLOAD_FILE,
             f"downloaded {file_name} ({receiver.num_bytes_received} bytes) in {download_end - download_start} seconds",
         )
+
         dir_name, ext = os.path.splitext(file_path)
         if ext == ".zip":
-            # unzip the file
-            api.debug(f"unzipping file {file_path} to {dir_name}")
-            os.makedirs(dir_name, exist_ok=True)
-            unzip_all_from_file(file_path, dir_name)
-
-            # remove the zip file
-            os.remove(file_path)
+            # Do not unzip the file here since it could take a long time for large file, which could delay the
+            # downloading of other files in the same transaction.
+            # We'll keep info here and unzip the file after all files are downloaded.
+            result[ProtoKey.APP_DATA] = file_path
         return result
+
+    @staticmethod
+    def _unzip_file(api, file_path):
+        # unzip the file
+        start = time.time()
+        base_name = os.path.basename(file_path)
+        dir_name, _ = os.path.splitext(file_path)
+        api.debug(f"unzipping file {file_path} to {dir_name}")
+        os.makedirs(dir_name, exist_ok=True)
+        unzip_all_from_file(file_path, dir_name)
+
+        # remove the zip file
+        os.remove(file_path)
+        api.fire_session_event(
+            EventType.AFTER_DOWNLOAD_FILE,
+            f"unzipped {base_name} in {time.time() - start} seconds",
+        )
 
     def pull_folder(self, args, ctx: CommandContext):
         cmd_entry = ctx.get_command_entry()
@@ -206,6 +222,7 @@ class FileTransferModule(CommandModule):
 
         cmd_name = self.PULL_BINARY_FILE_CMD
         error = None
+        files_to_unzip = []
         for i, f in enumerate(files):
             file_name = f[0]
             ref_id = f[1]
@@ -219,19 +236,34 @@ class FileTransferModule(CommandModule):
             if reply.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
                 error = reply
                 break
+            else:
+                file_to_unzip = reply.get(ProtoKey.APP_DATA)
+                if file_to_unzip:
+                    files_to_unzip.append(file_to_unzip)
 
         if not error:
+            # unzip downloaded zip files
+            for f in files_to_unzip:
+                try:
+                    self._unzip_file(api, f)
+                except Exception as ex:
+                    # Clean up temp folder on failure
+                    shutil.rmtree(self._tx_path(tx_id, folder_name), ignore_errors=True)
+                    return {
+                        ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                        ProtoKey.DETAILS: f"failed to unzip file '{f}': {ex}",
+                    }
+
             tx_path = self._tx_path(tx_id, folder_name)
             destination_path = os.path.join(self.download_dir, destination_name)
             location = self._rename_folder(tx_path, destination_path)
-            reply = {
+            return {
                 ProtoKey.STATUS: APIStatus.SUCCESS,
                 ProtoKey.DETAILS: f"content downloaded to {location}",
                 ProtoKey.META: {MetaKey.LOCATION: location},
             }
         else:
-            reply = error
-        return reply
+            return error
 
     @staticmethod
     def _rename_folder(src: str, destination: str):
