@@ -269,6 +269,7 @@ def main(args):
 
         # Calculate total steps
         steps = args.aggregation_epochs * len(train_loader)
+        curr_lr = get_lr_values(optimizer)[0]  # Initialize learning rate before training loop
         for epoch in range(args.aggregation_epochs):  # loop over the dataset multiple times
             model.train()
             running_loss = 0.0
@@ -291,7 +292,7 @@ def main(args):
                 loss.backward()
                 optimizer.step()
 
-                curr_lr = get_lr_values(optimizer)[0]
+                curr_lr = get_lr_values(optimizer)[0]  # Update learning rate after optimizer step
                 if args.scaffold:
                     # SCAFFOLD step
                     scaffold_helper.model_update(
