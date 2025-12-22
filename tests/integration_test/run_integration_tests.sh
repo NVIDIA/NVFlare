@@ -9,7 +9,7 @@ PYTHONPATH="${PWD}/../.."
 export GRPC_POLL_STRATEGY="poll"
 export GRPC_ENABLE_FORK_SUPPORT="False"
 
-backends=(numpy tensorflow pytorch overseer auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
+backends=(numpy tensorflow pytorch auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
 
 usage()
 {
