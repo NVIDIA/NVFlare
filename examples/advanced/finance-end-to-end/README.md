@@ -1,0 +1,1 @@
+Please refer to https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.1_end_to_end_federated_fraud_detection
