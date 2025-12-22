@@ -43,7 +43,6 @@ class _FedOptValidator(BaseModel):
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    params_transfer_type: TransferType = TransferType.FULL
     device: Optional[str] = None
 
 
@@ -53,6 +52,8 @@ class FedOptRecipe(Recipe):
     FedOpt is a federated learning algorithm that optimizes the global model using a server-side optimizer and learning rate scheduler.
     After each round, the global model is updated using the specified optimizer and learning rate scheduler.
     The algorithm is proposed in Reddi et al. "Adaptive Federated Optimization." arXiv preprint arXiv:2003.00295 (2020).
+
+    Note: FedOpt is only implemented for params_transfer_type == TransferType.DIFF and DataKind.WEIGHT_DIFF in the aggregator.
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
@@ -67,8 +68,6 @@ class FedOptRecipe(Recipe):
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         server_expected_format (str): What format to exchange the parameters between server and client.
-        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         device (str): Device to use for server-side optimization. Defaults to "cpu".
         source_model (str): ID of the source model component. Defaults to "model".
         optimizer_args (dict): Configuration for server-side optimizer with keys:
@@ -128,7 +127,6 @@ class FedOptRecipe(Recipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        params_transfer_type: TransferType = TransferType.FULL,
         device: Optional[str] = None,
         source_model: str = "model",
         optimizer_args: Optional[dict] = None,
@@ -146,7 +144,6 @@ class FedOptRecipe(Recipe):
             launch_external_process=launch_external_process,
             command=command,
             server_expected_format=server_expected_format,
-            params_transfer_type=params_transfer_type,
             device=device,
         )
 
@@ -160,7 +157,6 @@ class FedOptRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
-        self.params_transfer_type: TransferType = v.params_transfer_type
         self.device = device
         self.source_model = source_model
         self.optimizer_args = optimizer_args
@@ -231,7 +227,7 @@ class FedOptRecipe(Recipe):
             command=self.command,
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
-            params_transfer_type=self.params_transfer_type,
+            params_transfer_type=TransferType.DIFF,
         )
         job.to_clients(executor)
 

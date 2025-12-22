@@ -3,8 +3,8 @@
 # download dataset
 ./prepare_data.sh
 
-# FedAvg with TensorBoard streaming
-./submit_job.sh cifar10_fedavg_stream_tb 1.0
+# FedAvg with MLFlow streaming
+python ./jobs/cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
 
 # FedAvg with HE
-./submit_job.sh cifar10_fedavg_he 1.0
+python ./jobs/cifar10_fedavg_he/job.py --n_clients 8 --num_rounds 50 --alpha 1.0

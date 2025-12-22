@@ -14,7 +14,7 @@
 
 import re
 import time
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import tenseal as ts
@@ -34,10 +34,10 @@ class HEModelEncryptor(DXOFilter):
     def __init__(
         self,
         tenseal_context_file: str = "client_context.tenseal",
-        encrypt_layers: Optional[Union[List[str], str]] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        encrypt_layers: Optional[Union[list[str], str]] = None,
+        aggregation_weights: Optional[dict[str, float]] = None,
         weigh_by_local_iter: bool = True,
-        data_kinds: Optional[List[DataKind]] = None,
+        data_kinds: Optional[list[DataKind]] = None,
     ):
         """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL
            https://github.com/OpenMined/TenSEAL.
