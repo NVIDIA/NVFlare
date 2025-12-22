@@ -269,6 +269,7 @@ class FeatureElection:
             executor.set_data(X_np, y_np, feature_names=feature_names)
 
             # Local Selection
+
             try:
                 selected_mask, feature_scores = executor.perform_feature_selection()
             except (TypeError, ValueError) as e:

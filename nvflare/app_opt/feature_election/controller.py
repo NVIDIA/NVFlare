@@ -69,6 +69,8 @@ class FeatureElectionController(Controller):
         self.current_direction = 1
         self.current_tuning_score = 0.0
 
+        self.n_features = None
+
     def start_controller(self, fl_ctx: FLContext) -> None:
         logger.info("Initializing FeatureElectionController (Base Controller Mode)")
 
@@ -305,8 +307,15 @@ class FeatureElectionController(Controller):
         client_data = {}
         for key, contrib in results.items():
             if "selected_features" in contrib:
+                selected = np.array(contrib["selected_features"])
+
+                # Get n_features from first client response
+                if self.n_features is None:
+                    self.n_features = len(selected)
+                    logger.debug(f"Inferred n_features={self.n_features} from {key}")
+
                 client_data[key] = {
-                    "selected_features": np.array(contrib["selected_features"]),
+                    "selected_features": selected,
                     "feature_scores": np.array(contrib["feature_scores"]),
                     "num_samples": contrib.get("num_samples", 1),
                 }
