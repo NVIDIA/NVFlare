@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import shutil
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -33,7 +31,6 @@ from nvflare.apis.fl_constant import (
     ServerCommandKey,
     ServerCommandNames,
     SiteType,
-    SnapshotKey,
     SystemComponents,
     SystemConfigs,
 )
@@ -56,8 +53,6 @@ from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
-from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import (
     CellChannel,
     CellChannelTopic,
@@ -955,8 +950,7 @@ class FederatedServer(BaseServer):
             self.server_state.service_port = target.split(":")[1]
 
         self.overseer_agent = self._init_agent(args)
-        if isinstance(self.overseer_agent, HttpOverseerAgent):
-            self.ha_mode = True
+        self.ha_mode = False
 
         if secure_train:
             if self.overseer_agent:
@@ -1049,42 +1043,9 @@ class FederatedServer(BaseServer):
 
     def _turn_to_hot(self):
         # Restore Snapshot
-        if self.ha_mode:
-            restored_job_ids = []
-            with self.snapshot_lock:
-                fl_snapshot = self.snapshot_persistor.retrieve()
-                if fl_snapshot:
-                    for run_number, snapshot in fl_snapshot.run_snapshots.items():
-                        if snapshot and not snapshot.completed:
-                            # Restore the workspace
-                            workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                            ws = Workspace(self.workspace)
-                            dst = ws.get_run_dir(str(run_number))
-                            if os.path.exists(dst):
-                                shutil.rmtree(dst, ignore_errors=True)
-
-                            os.makedirs(dst, exist_ok=True)
-                            unzip_all_from_bytes(workspace_data, dst)
-
-                            job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
-                            job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(
-                                SnapshotKey.JOB_CLIENTS
-                            )
-                            self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
-                            with self.engine.new_context() as fl_ctx:
-                                self.engine.job_runner.restore_running_job(
-                                    job_id=job_id,
-                                    job_clients=job_clients,
-                                    snapshot=snapshot,
-                                    fl_ctx=fl_ctx,
-                                )
-                            restored_job_ids.append(job_id)
-            with self.engine.new_context() as fl_ctx:
-                self.engine.job_runner.update_abnormal_finished_jobs(restored_job_ids, fl_ctx=fl_ctx)
-        else:
-            with self.engine.new_context() as fl_ctx:
-                self.snapshot_persistor.delete()
-                self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
+        with self.engine.new_context() as fl_ctx:
+            self.snapshot_persistor.delete()
+            self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
 
         with self.lock:
             self.server_state = HotState(

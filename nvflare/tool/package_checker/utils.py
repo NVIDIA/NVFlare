@@ -109,12 +109,7 @@ def construct_dummy_overseer_response(overseer_agent_conf: dict, role: str) -> R
 
 def get_required_args_for_overseer_agent(overseer_agent_class: str, role: str) -> list:
     """Gets required argument list for a specific overseer agent class."""
-    if overseer_agent_class == "nvflare.ha.overseer_agent.HttpOverseerAgent":
-        required_args = ["overseer_end_point", "role", "project", "name"]
-        if role == NVFlareRole.SERVER:
-            required_args.extend(["fl_port", "admin_port"])
-        return required_args
-    elif overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
+    if overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
         required_args = ["sp_end_point"]
         return required_args
     else:
