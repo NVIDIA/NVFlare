@@ -261,8 +261,8 @@ class MyCustomAggregator(ModelAggregator):
     
     def aggregate_model(self) -> FLModel:
         """Called after all clients submit - perform aggregation and return result."""
-        # Important: Return FLModel with params_type=ParamsType.DIFF
-        return FLModel(params=aggregated_params, params_type=ParamsType.DIFF)
+        # Important: Return FLModel with params_type matching the received model type
+        return FLModel(params=aggregated_params, params_type=self.received_params_type)
     
     def reset_stats(self):
         """Reset internal state for the next round."""
@@ -336,7 +336,6 @@ See the [custom job README](./jobs/my_custom_job/README.md) for more details.
 ### 5.5 Compare the results
 
 After running the three custom aggregator experiments, you can visualize and compare their performance (using [figs/plot_tensorboard_events.py](figs/plot_tensorboard_events.py)):
-```
 
 ![Custom Aggregators Comparison](figs/custom_aggregators.png)
 
