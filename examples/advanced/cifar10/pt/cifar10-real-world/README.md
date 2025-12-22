@@ -3,7 +3,7 @@
 This example demonstrates real-world federated learning deployment using [FedAvg](https://arxiv.org/abs/1602.05629) with:
 - **Experiment tracking**: Streaming training metrics to centralized tracking systems (MLFlow, TensorBoard, or Weights & Biases)
 - **Secure aggregation**: Using [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/) for privacy-preserving model updates
-- **Production-ready setup**: Using secure [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) and the [admin API](https://nvflare.readthedocs.io/en/main/user_guide/admin_commands.html) to monitor jobs, similar to how one would set up experiments in real-world deployment
+- **Production-ready setup**: Using secure [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) and the [admin API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/flare_api.html#flare-api) to monitor jobs, similar to how one would set up experiments in real-world deployment
 
 For more details on the training code and instructions on how to run CIFAR-10 with FL simulator to compare different FL algorithms, 
 see the example on ["Simulated Federated Learning with CIFAR-10"](../cifar10-sim/README.md).
@@ -120,7 +120,7 @@ On your MLFlow server UI (typically at `http://localhost:5000`), you should see 
 
 ### 4.2 Secure aggregation using homomorphic encryption
 
-Next we run FedAvg using [homomorphic encryption (HE)](https://nvflare.readthedocs.io/en/main/programming_guide/filters/filters_for_privacy.html) for secure aggregation on the server in non-heterogeneous setting (`alpha=1`).
+Next we run FedAvg using [homomorphic encryption (HE)](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html) for secure aggregation on the server in non-heterogeneous setting (`alpha=1`).
 
 Homomorphic encryption allows the server to aggregate encrypted model updates from clients without decrypting them, providing an additional layer of privacy protection. The server only sees the final aggregated result after decryption.
 
@@ -184,5 +184,5 @@ You can check the status of running jobs using `list_jobs`, or abort jobs using 
 - [NVFLARE Documentation](https://nvflare.readthedocs.io/en/main/)
 - [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
 - [Provisioning System](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)
-- [Recipe API](https://nvflare.readthedocs.io/en/main/programming_guide/recipe.html)
-- [Privacy Filters (including HE)](https://nvflare.readthedocs.io/en/main/programming_guide/filters/filters_for_privacy.html)
+- [Recipe API](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.recipe.spec.html#nvflare.recipe.spec.Recipe)
+- [Privacy Filters (including HE)](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html)
