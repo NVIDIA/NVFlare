@@ -302,8 +302,7 @@ class ScatterAndGather(Controller):
                     self._engine.persist_components(fl_ctx, completed=False)
 
                 # Reset aggregator state for next round
-                if hasattr(self.aggregator, "reset"):
-                    self.aggregator.reset(fl_ctx)
+                self.aggregator.reset(fl_ctx)
 
                 gc.collect()
 

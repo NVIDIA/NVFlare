@@ -159,21 +159,16 @@ def main():
     custom_aggregator = get_aggregator(aggregator_type)
 
     # Create recipe with or without custom aggregator
-    recipe_kwargs = {
-        "name": job_name,
-        "min_clients": n_clients,
-        "num_rounds": num_rounds,
-        "initial_model": ModerateCNN(seed=seed),  # Use seed for reproducible initialization
-        "train_script": f"{os.getcwd()}/../src/client.py",
-        "train_args": f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
-        "aggregator_data_kind": DataKind.WEIGHT_DIFF,
-    }
-
-    # Only add aggregator if it's not None (i.e., not using default)
-    if custom_aggregator is not None:
-        recipe_kwargs["aggregator"] = custom_aggregator
-
-    recipe = FedAvgRecipe(**recipe_kwargs)
+    recipe = FedAvgRecipe(
+        name=job_name,
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        initial_model=ModerateCNN(seed=seed),  # Use seed for reproducible initialization
+        train_script=f"{os.getcwd()}/../src/client.py",
+        train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
+        aggregator_data_kind=DataKind.WEIGHT_DIFF,
+        aggregator=custom_aggregator,
+    )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Run simulation
