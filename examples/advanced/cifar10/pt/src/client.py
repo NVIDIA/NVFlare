@@ -166,7 +166,7 @@ def compute_model_diff(model, global_model):
             missing_params.append(name)
             continue
         # Use PyTorch operations for subtraction and convert to numpy for serialization
-        model_diff[name] = local_weights[name] - global_weights[name]
+        model_diff[name] = (local_weights[name] - global_weights[name]).cpu()
         diff_norm += torch.linalg.norm(model_diff[name])
 
     if len(model_diff) == 0 or len(missing_params) > 0:
@@ -346,7 +346,7 @@ def main(args):
             meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = scaffold_helper.get_delta_controls()
 
         output_model = flare.FLModel(
-            params=model_diff.cpu(),
+            params=model_diff,
             params_type=ParamsType.DIFF,
             metrics={"accuracy": val_acc_global_model},
             meta=meta,
