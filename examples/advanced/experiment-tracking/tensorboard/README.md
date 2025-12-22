@@ -22,7 +22,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-    train_script="src/client.py",
+    train_script="client.py",
 )
 
 # Add TensorBoard tracking with one line!
@@ -34,62 +34,55 @@ recipe.run()
 
 ## Setup
 
-### 1. Install requirements
+### 1. Install Requirements
 
 Install additional requirements:
 
-Assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`, run the following command to install the requirements:
-
-```
+```bash
+cd examples/advanced/experiment-tracking/tensorboard
 python -m pip install -r requirements.txt
 ```
 
-### 2. Download data
-Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
+### 2. Download Data
 
-again, we are assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`,
+Pre-download the CIFAR-10 dataset to avoid multiple sites downloading simultaneously:
 
 ```bash
-examples/advanced/experiment-tracking/prepare_data.sh
+cd examples/advanced/experiment-tracking
+./prepare_data.sh
 ```
-### 3. Run the experiment
 
-Navigate to the job directory and run:
+### 3. Run the Experiment
+
+From the tensorboard directory, run:
 
 ```bash
-cd ./jobs/tensorboard-streaming/code
+cd examples/advanced/experiment-tracking/tensorboard
 python3 job.py
 ```
 
+### 4. Access the Logs and Results
 
-### 4. Access the logs and results
+The simulator workspace is defined in `job.py` as `/tmp/nvflare/jobs/workdir`.
 
-You can find the running logs and results inside the simulator's workspace/`<server name>`/simulate_job
-
-The workspace in `job.py` is defined as `/tmp/nvflare/jobs/workdir`:
-
-```
-The results will be at:
+After running, you'll find the TensorBoard event files at:
 
 ```bash
 $ tree /tmp/nvflare/jobs/workdir/server/simulate_job/
 
 /tmp/nvflare/jobs/workdir/server/simulate_job/
 ├── app_server
- <... skip ...>
+│   <... skip ...>
 └── tb_events
     ├── site-1
-    │ └── events.out.tfevents.1744857479.rtx.30497.0
+    │   └── events.out.tfevents.1744857479.rtx.30497.0
     └── site-2
-      └── events.out.tfevents.1744857479.rtx.30497.1
-
+        └── events.out.tfevents.1744857479.rtx.30497.1
 ```
-
 
 ### 5. View TensorBoard Results
 
 To view training metrics that are being streamed to the server, run:
-
 
 ```bash
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events

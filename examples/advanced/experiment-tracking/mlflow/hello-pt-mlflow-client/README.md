@@ -29,7 +29,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-        train_script="src/client.py",
+    train_script="client.py",
     analytics_receiver=False,  # Disable server-side tracking
 )
 
@@ -73,7 +73,7 @@ cd examples/advanced/experiment-tracking
 ### 3. Run the Experiment
 
 ```bash
-cd jobs/hello-pt-mlflow-client/code
+cd examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow-client
 python job.py
 ```
 

@@ -25,10 +25,10 @@ Here we just use the same data for each site. It's better to pre-downloaded data
 
 ### 3. Run the experiment
 
-Navigate to the job directory and run:
+Navigate to the example directory and run:
 
 ```bash
-cd ./jobs/hello-pt-mlflow/code
+cd examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow
 python3 job.py
 ```
 
@@ -43,7 +43,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=5,
     initial_model=SimpleNetwork(),
-        train_script="src/client.py",
+    train_script="client.py",
 )
 
 # Add MLflow tracking
@@ -83,13 +83,18 @@ mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlru
 
 tracking_uri=f"file://{WORKSPACE}/server/simulate_job/mlruns",
 
-For the job `hello-pt-mlflow`, on the client side, the client code in `client.py`
+For the job `hello-pt-mlflow`, on the client side, the client code in `client.py` uses the generic tracking API:
 
-```
-mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
+```python
+from nvflare.client.tracking import SummaryWriter
+
+summary_writer = SummaryWriter()
+summary_writer.add_scalar("train_accuracy", accuracy, global_step=epoch)
 ```
 
-The `MLflowWriter` actually mimics the mlflow to send the information in events to the server through NVFlare events
+**Note**: The `SummaryWriter` works with any tracking backend (MLflow, TensorBoard, WandB). When you use `add_experiment_tracking(recipe, "mlflow")`, the metrics are automatically routed to MLflow.
+
+The `SummaryWriter` sends information in events to the server through NVFlare events
 of type `analytix_log_stats` for the server to write the data to the MLflow tracking server.
 
 The `ConvertToFedEvent` widget turns the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`,

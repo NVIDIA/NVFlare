@@ -15,12 +15,14 @@ from nvflare.app_opt.pt.recipes import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create FedAvg recipe
+from model import Net  # Your model definition
+
 recipe = FedAvgRecipe(
     name="fedavg_wandb",
     min_clients=2,
     num_rounds=5,
     initial_model=Net(),
-    train_script="src/client.py",
+    train_script="client.py",
     analytics_receiver=False,  # We'll add WandB manually
 )
 
@@ -275,16 +277,22 @@ wandb.log_artifact("/path/to/model.pth", "model", "checkpoint")
 ### Add Custom Metrics
 
 ```python
-wandb.log({
+from nvflare.client.tracking import WandBWriter
+
+writer = WandBWriter()
+
+# Log metrics
+writer.log({"metrics/accuracy": accuracy}, step=step)
+
+# Log multiple metrics at once
+writer.log({
     "metrics/accuracy": accuracy,
     "metrics/f1_score": f1,
-    "metrics/confusion_matrix": wandb.plot.confusion_matrix(
-        y_true=y_true,
-        preds=y_pred,
-        class_names=class_names
-    )
+    "metrics/precision": precision
 }, step=step)
 ```
+
+**Note**: For advanced WandB visualizations (like `wandb.plot.*`), use the native WandB API directly in your script alongside WandBWriter for basic metrics.
 
 ### Log System Metrics
 
@@ -318,7 +326,7 @@ wandb_config = {"mode": "online", ...}
 
 Ensure client-side tracking uses unique run names:
 ```python
-"run_name": f"nvflare-{site_name}",  # Different per client
+"name": f"nvflare-{site_name}",  # Different per client
 ```
 
 ---

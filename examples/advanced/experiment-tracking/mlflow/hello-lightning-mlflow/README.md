@@ -20,7 +20,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=2,
     initial_model=LitNet(),  # Lightning model
-    train_script="src/client.py",
+    train_script="client.py",
 )
 
 # Add MLflow tracking with one line!
@@ -46,8 +46,8 @@ recipe.run()
 ### 1. Install Requirements
 
 ```bash
-cd examples/advanced/experiment-tracking/mlflow/jobs/hello-lightning-mlflow
-python -m pip install -r requirements.txt
+cd examples/advanced/experiment-tracking/mlflow/hello-lightning-mlflow
+python -m pip install -r ../requirements.txt
 ```
 
 ### 2. Download Data
@@ -60,7 +60,7 @@ cd examples/advanced/experiment-tracking
 ### 3. Run the Experiment
 
 ```bash
-cd jobs/hello-lightning-mlflow/code
+cd examples/advanced/experiment-tracking/mlflow/hello-lightning-mlflow
 python job.py
 ```
 

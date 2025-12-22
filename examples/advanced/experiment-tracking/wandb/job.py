@@ -65,7 +65,13 @@ def main():
         "wandb_args": {
             "project": "wandb-experiment",
             "name": "wandb",
-            "notes": "Federated Experiment tracking with W&B \n Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the Flare streaming capability from the clients to the server and deliver to WandB.\\n\\n> **_NOTE:_** \\n This example uses the *[CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.\n",
+            "notes": (
+                "Federated Experiment tracking with W&B\n\n"
+                "Example of using NVIDIA FLARE to train an image classifier using federated averaging (FedAvg) "
+                "and PyTorch as the deep learning training framework. This example also highlights the FLARE "
+                "streaming capability from the clients to the server and deliver to WandB.\n\n"
+                "NOTE: This example uses the CIFAR-10 dataset and will load its data within the trainer code."
+            ),
             "tags": ["baseline"],
             "job_type": "train-validate",
             "config": {"architecture": "CNN", "dataset_id": "CIFAR10", "optimizer": "SGD"},
@@ -78,11 +84,14 @@ def main():
 
     # Add client-side tracking if requested
     if args.streamed_to_clients:
+        import copy
+
         for i in range(args.n_clients):
             site_name = f"site-{i + 1}"
 
             # Client-side receivers listen to local events (not federated)
-            client_config = wandb_config.copy()
+            # Use deepcopy to avoid shared mutable state
+            client_config = copy.deepcopy(wandb_config)
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
             receiver = WandBReceiver(**client_config)

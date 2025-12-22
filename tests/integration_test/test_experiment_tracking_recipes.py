@@ -30,9 +30,11 @@ class TestExperimentTrackingRecipes:
 
     @property
     def client_script_path(self):
-        """Get absolute path to client.py script."""
+        """Get absolute path to client.py script from tensorboard example."""
+        # Use the tensorboard example's client script for testing
         test_dir = os.path.dirname(__file__)
-        return os.path.join(test_dir, "client.py")
+        repo_root = os.path.dirname(os.path.dirname(test_dir))
+        return os.path.join(repo_root, "examples/advanced/experiment-tracking/tensorboard/client.py")
 
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""
@@ -75,3 +77,4 @@ class TestExperimentTrackingRecipes:
         # Run and verify completion
         run = recipe.execute(env)
         assert run.get_result() is not None
+        assert os.path.exists(run.get_result())
