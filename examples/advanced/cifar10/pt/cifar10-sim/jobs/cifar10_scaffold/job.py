@@ -78,7 +78,7 @@ def main():
         min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=ModerateCNN(),
-        train_script=os.path.join(os.path.dirname(__file__), "../../src/client.py"),
+        train_script=os.path.join(os.path.dirname(__file__), "../../../src/client.py"),
         train_args=f"--scaffold --train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
