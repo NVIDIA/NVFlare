@@ -74,29 +74,30 @@ class HEModelEncryptor(DXOFilter):
         self.aggregation_weight = None
         self.encrypt_layers = encrypt_layers
 
+        # choose which layers to encrypt
+        if self.encrypt_layers is not None:
+            if not (isinstance(self.encrypt_layers, list) or isinstance(self.encrypt_layers, str)):
+                raise ValueError(
+                    f"Must provide a list of layer names or a string for regex matching, but got {type(self.encrypt_layers)}"
+                )
+        if isinstance(self.encrypt_layers, list):
+            for encrypt_layer in self.encrypt_layers:
+                if not isinstance(encrypt_layer, str):
+                    raise ValueError(
+                        f"encrypt_layers needs to be a list of layer names to encrypt, but found element of type {type(encrypt_layer)}"
+                    )
+            self.logger.info(f"Encrypting {len(self.encrypt_layers)} layers")
+        elif isinstance(self.encrypt_layers, str):
+            self.encrypt_layers = re.compile(self.encrypt_layers) if self.encrypt_layers else None
+            self.logger.info(f'Encrypting all layers based on regex matches with "{self.encrypt_layers}"')
+
         decomposers.register()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
 
-            # choose which layers to encrypt
-            if self.encrypt_layers is not None:
-                if not (isinstance(self.encrypt_layers, list) or isinstance(self.encrypt_layers, str)):
-                    raise ValueError(
-                        f"Must provide a list of layer names or a string for regex matching, but got {type(self.encrypt_layers)}"
-                    )
-            if isinstance(self.encrypt_layers, list):
-                for encrypt_layer in self.encrypt_layers:
-                    if not isinstance(encrypt_layer, str):
-                        raise ValueError(
-                            f"encrypt_layers needs to be a list of layer names to encrypt, but found element of type {type(encrypt_layer)}"
-                        )
-                self.logger.info(f"Encrypting {len(self.encrypt_layers)} layers")
-            elif isinstance(self.encrypt_layers, str):
-                self.encrypt_layers = re.compile(self.encrypt_layers) if self.encrypt_layers else None
-                self.logger.info(f'Encrypting all layers based on regex matches with "{self.encrypt_layers}"')
-            else:
+            if self.encrypt_layers is None:
                 self.encrypt_layers = [True]  # needs to be list for logic in encryption()
                 self.logger.info("Encrypting all layers")
         elif event_type == EventType.END_RUN:

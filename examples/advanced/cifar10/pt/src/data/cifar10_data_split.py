@@ -110,10 +110,10 @@ def split_and_save(split_dir_prefix, num_sites, alpha, seed=0):
         seed: Random seed for reproducibility
     """
 
-    split_dir = f"{split_dir_prefix}_{num_sites}sites_alpha{alpha:.2f}_seed{seed}"
-
     if alpha < 0.0:
         raise ValueError(f"Alpha should be larger or equal 0.0 but was {alpha}!")
+
+    split_dir = f"{split_dir_prefix}_{num_sites}sites_alpha{alpha:.2f}_seed{seed}"
 
     print(f"Partitioning CIFAR-10 dataset into {num_sites} sites with Dirichlet sampling under alpha {alpha}")
 

@@ -346,7 +346,7 @@ def main(args):
             meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = scaffold_helper.get_delta_controls()
 
         output_model = flare.FLModel(
-            params=model_diff,
+            params=model_diff.cpu(),
             params_type=ParamsType.DIFF,
             metrics={"accuracy": val_acc_global_model},
             meta=meta,

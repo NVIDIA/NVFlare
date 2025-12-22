@@ -186,7 +186,7 @@ class FedAvgRecipeWithHE(Recipe):
         if self.aggregator is None:
             self.aggregator = HEInTimeAccumulateWeightedAggregator(
                 expected_data_kind=self.aggregator_data_kind,
-                weigh_by_local_iter=False,  # HE recommendation: weighting happens in HEModelEncryptor
+                weigh_by_local_iter=False,  # HE: weighting happens client-side in HEModelEncryptor (train task)
             )
         else:
             if not isinstance(self.aggregator, Aggregator):
@@ -225,14 +225,19 @@ class FedAvgRecipeWithHE(Recipe):
 
         # Add HE model encryptor as task result filter after training (encrypt outgoing results to server)
         job.to_clients(
-            HEModelEncryptor(encrypt_layers=encrypt_layers, weigh_by_local_iter=True),
+            HEModelEncryptor(
+                encrypt_layers=encrypt_layers,
+                weigh_by_local_iter=True,  # Client-side weighting for HE (aggregator has weigh_by_local_iter=False)
+            ),
             tasks=["train"],
             filter_type=FilterType.TASK_RESULT,
         )
 
         # Add HE model encryptor as task result filter when submitting model (encrypt outgoing results to server)
         job.to_clients(
-            HEModelEncryptor(encrypt_layers=encrypt_layers, weigh_by_local_iter=False),
+            HEModelEncryptor(
+                encrypt_layers=encrypt_layers, weigh_by_local_iter=False
+            ),  # We don't need to weight by local iter when submitting model for evaluation
             tasks=["submit_model"],
             filter_type=FilterType.TASK_RESULT,
         )
