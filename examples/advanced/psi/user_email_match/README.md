@@ -29,7 +29,7 @@ recipe = DhPSIRecipe(
 ## Run PSI job
 
 ### User_email_match 
-   in this example, we generated some random emails addresses in three sites. 
+   in this example, we generated some random email addresses in three sites. 
    you need to copy the data to tmp location first. 
 
 **prepare data**
@@ -39,13 +39,13 @@ Change to the PSI example directory
 cd NVFlare/examples/advanced/psi/user_email_match
 ```
 We have already prepared some random fake emails as data, all we need to copy this data to a location
-that used by the data loading code, we have specified "/tmp/nvflare/psi" in our sample code, so we copy the data to
+that is used by the data loading code, we have specified "/tmp/nvflare/psi" in our sample code, so we copy the data to
 "/tmp/nvflare/psi" directory
 
 ```
 ./prepare_data.sh
 ```   
-You will see something like the followings
+You will see something like the following
 
 ```
 copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi directory
@@ -74,6 +74,3 @@ diff <(sort /tmp/nvflare/psi/user_email_match/site-1/simulate_job/site-1/psi/int
 diff <(sort /tmp/nvflare/psi/user_email_match/site-2/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/user_email_match/site-3/simulate_job/site-3/psi/intersection.txt)
 ```
 
-**NOTE**
->>The PSI operator depends on openmind-psi. It now supports up-to-python 3.11
-python 3.12 is still working in progress
