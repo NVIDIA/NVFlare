@@ -80,12 +80,12 @@ python job.py
 
 **Client-side tracking** (decentralized - each site separate):
 ```bash
-python job.py --streamed_to_clients --no-streamed_to_server
+python job.py --streamed_to_clients --disable_server_tracking
 ```
 
 **Both server and client tracking**:
 ```bash
-python job.py --streamed_to_clients --streamed_to_server
+python job.py --streamed_to_clients
 ```
 
 ---
@@ -237,8 +237,8 @@ python job.py \
 | Mode | Command | Use Case | WandB Runs |
 |------|---------|----------|------------|
 | **Server-only** | `python job.py` | Centralized monitoring | 1 run (all clients combined) |
-| **Client-only** | `python job.py --streamed_to_clients --no-streamed_to_server` | Site-specific analysis | N runs (1 per client) |
-| **Both** | `python job.py --streamed_to_clients --streamed_to_server` | Complete visibility | N+1 runs (1 per client + 1 aggregated) |
+| **Client-only** | `python job.py --streamed_to_clients --disable_server_tracking` | Site-specific analysis | N runs (1 per client) |
+| **Both** | `python job.py --streamed_to_clients` | Complete visibility | N+1 runs (1 per client + 1 aggregated) |
 
 ---
 

@@ -27,20 +27,18 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="client.py")
-    parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_external_process", action="store_true", help="Launch as external process")
     parser.add_argument(
         "--streamed_to_clients",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="whether to stream to NVFlare client or not",
+        action="store_true",
+        help="Enable client-side tracking (each client logs to its own WandB run)",
     )
     parser.add_argument(
-        "--streamed_to_server",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="whether to stream to NVFlare server or not",
+        "--disable_server_tracking",
+        action="store_true",
+        help="Disable server-side tracking (by default, server-side tracking is enabled)",
     )
-    parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--export_config", action="store_true", help="Export config without running")
 
     return parser.parse_args()
 
@@ -78,8 +76,8 @@ def main():
         },
     }
 
-    # Add server-side tracking if requested
-    if args.streamed_to_server:
+    # Add server-side tracking (enabled by default unless disabled)
+    if not args.disable_server_tracking:
         add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
     # Add client-side tracking if requested
