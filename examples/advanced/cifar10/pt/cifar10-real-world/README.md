@@ -67,7 +67,7 @@ Next, we will submit jobs to start FL training automatically.
 
 Similar to the simulation example, we will split the CIFAR-10 dataset to simulate each client having different data distributions using the `alpha` parameter to control hereterogenity (see [simuluation example](../cifar10-sim/README.md#33-fedavg-on-different-data-splits)).
 
-Each `job.py` script will use the [Production Environment (ProdEnv)](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) to submit the jobs via [Recipe API](https://nvflare.readthedocs.io/en/main/programming_guide/recipe.html). 
+Each `job.py` script will use the [Production Environment (ProdEnv)](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) to submit the jobs via [Recipe API](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.recipe.spec.html#nvflare.recipe.spec.Recipe). 
 
 ### 4.1 Streaming metrics to an experiment tracking system
 

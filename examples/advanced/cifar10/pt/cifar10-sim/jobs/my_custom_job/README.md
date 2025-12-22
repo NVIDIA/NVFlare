@@ -177,7 +177,7 @@ After running a job, view the training curves with TensorBoard:
 tensorboard --logdir=/tmp/nvflare/simulation
 ```
 
-Then open http://localhost:6006 in your browser.
+Then open `http://localhost:6006` in your browser.
 
 ## Extending This Example
 
