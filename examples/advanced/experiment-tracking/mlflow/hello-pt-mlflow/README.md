@@ -15,11 +15,12 @@ Install additional requirements (if you already have a specific version of nvfla
 ```
 python -m pip install -r requirements.txt
 ```
-### 2. Download data
-Here we just use the same data for each site. It's better to pre-downloaded data to avoid multiple sites to concurrent download the same data.
+### 2. Download Data
+Pre-download the CIFAR-10 dataset to avoid multiple sites downloading simultaneously.
 
 ```bash
-../../../prepare_data.sh
+cd examples/advanced/experiment-tracking
+./prepare_data.sh
 ```
 
 

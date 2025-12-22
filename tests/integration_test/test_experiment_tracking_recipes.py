@@ -38,41 +38,49 @@ class TestExperimentTrackingRecipes:
 
     def test_tensorboard_tracking_integration(self):
         """Test TensorBoard tracking can be added and job completes."""
-        env = SimEnv(num_clients=2, workspace_root="/tmp/test_tensorboard")
-        recipe = FedAvgRecipe(
-            name="test_tensorboard",
-            min_clients=2,
-            num_rounds=1,
-            train_script=self.client_script_path,
-        )
+        import tempfile
 
-        # Add TensorBoard tracking
-        add_experiment_tracking(recipe, "tensorboard")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_tensorboard"))
+            recipe = FedAvgRecipe(
+                name="test_tensorboard",
+                min_clients=2,
+                num_rounds=1,
+                train_script=self.client_script_path,
+            )
 
-        # Run and verify completion
-        run = recipe.execute(env)
-        assert run.get_result() is not None
-        assert os.path.exists(run.get_result())
+            # Add TensorBoard tracking
+            add_experiment_tracking(recipe, "tensorboard")
+
+            # Run and verify completion
+            run = recipe.execute(env)
+            assert run.get_result() is not None
+            assert os.path.exists(run.get_result())
 
     def test_mlflow_tracking_integration(self):
         """Test MLflow tracking can be added and job completes."""
-        env = SimEnv(num_clients=2, workspace_root="/tmp/test_mlflow")
-        recipe = FedAvgRecipe(
-            name="test_mlflow",
-            min_clients=2,
-            num_rounds=1,
-            train_script=self.client_script_path,
-        )
+        import tempfile
 
-        # Add MLflow tracking
-        add_experiment_tracking(
-            recipe,
-            "mlflow",
-            tracking_config={
-                "tracking_uri": "file:///tmp/test_mlflow/mlruns",
-                "kw_args": {"experiment_name": "test", "run_name": "test"},
-            },
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mlflow_dir = os.path.join(tmpdir, "test_mlflow")
+            env = SimEnv(num_clients=2, workspace_root=mlflow_dir)
+            recipe = FedAvgRecipe(
+                name="test_mlflow",
+                min_clients=2,
+                num_rounds=1,
+                train_script=self.client_script_path,
+            )
+
+            # Add MLflow tracking
+            mlflow_uri = os.path.join(mlflow_dir, "mlruns")
+            add_experiment_tracking(
+                recipe,
+                "mlflow",
+                tracking_config={
+                    "tracking_uri": f"file:///{mlflow_uri}",
+                    "kw_args": {"experiment_name": "test", "run_name": "test"},
+                },
+            )
 
         # Run and verify completion
         run = recipe.execute(env)
