@@ -164,7 +164,7 @@ def main():
         min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=ModerateCNN(seed=seed),  # Use seed for reproducible initialization
-        train_script=f"{os.getcwd()}/../src/client.py",
+        train_script=os.path.join(os.path.dirname(__file__), "../../src/client.py"),
         train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
         aggregator=custom_aggregator,

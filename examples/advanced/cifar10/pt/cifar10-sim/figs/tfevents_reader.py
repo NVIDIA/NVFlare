@@ -138,16 +138,3 @@ def get_available_tags(filepath):
         print(f"Error scanning {filepath}: {e}")
 
     return sorted(list(tags))
-
-
-if __name__ == "__main__":
-    # Simple test
-    import sys
-
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
-        print(f"Reading {filepath}")
-        print(f"Available tags: {get_available_tags(filepath)}")
-        data = read_tfevents_file(filepath)
-        for tag, values in data.items():
-            print(f"  {tag}: {len(values)} events")

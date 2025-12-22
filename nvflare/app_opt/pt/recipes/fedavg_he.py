@@ -131,7 +131,7 @@ class FedAvgRecipeWithHE(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        encrypt_layers: Optional[List[str]] = None,
+        encrypt_layers: Optional[Union[List[str], str]] = None,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
@@ -162,7 +162,7 @@ class FedAvgRecipeWithHE(Recipe):
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.encrypt_layers: Optional[List[str]] = v.encrypt_layers
+        self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
 
         # Create a persistor with HE serialization filter if initial model is provided
         model_persistor = None

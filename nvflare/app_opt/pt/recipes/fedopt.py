@@ -68,7 +68,6 @@ class FedOptRecipe(Recipe):
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         server_expected_format (str): What format to exchange the parameters between server and client.
-        device (str): Device to use for server-side optimization. Defaults to "cpu".
         source_model (str): ID of the source model component. Defaults to "model".
         optimizer_args (dict): Configuration for server-side optimizer with keys:
             - path: Path to optimizer class (e.g., "torch.optim.SGD")
@@ -78,8 +77,8 @@ class FedOptRecipe(Recipe):
             - path: Path to scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR")
             - args: Dictionary of scheduler arguments (e.g., {"T_max": 100, "eta_min": 0.9})
             - config_type: Type of configuration, typically "dict"
-        device (str): specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
-            (default is None; will default to cuda if available and no device is specified).
+        device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
+            Defaults to None; will default to cuda if available and no device is specified.
 
     Example:
         ```python
@@ -105,13 +104,6 @@ class FedOptRecipe(Recipe):
         )
         ```
 
-    Note:
-        By default, this recipe implements the standard FedAvg algorithm where model updates
-        are aggregated using weighted averaging based on the number of training
-        samples provided by each client.
-
-        If you want to use a custom aggregator, you can pass it in the aggregator parameter.
-        The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
     """
 
     def __init__(

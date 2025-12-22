@@ -67,11 +67,6 @@ class ScaffoldRecipe(Recipe):
             train_args="--epochs 5 --batch_size 32"
         )
         ```
-
-    Note:
-        By default, this recipe implements the standard FedAvg algorithm where model updates
-        are aggregated using weighted averaging based on the number of training
-        samples provided by each client.
     """
 
     def __init__(

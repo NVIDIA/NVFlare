@@ -65,7 +65,7 @@ For starting the FL system with 8 clients in the secure workspace, run
 
 Next, we will submit jobs to start FL training automatically. 
 
-Similar to the simulation example, we will split the CIFAR-10 dataset to simulate each client having different data distributions using the `alpha` parameter to control hereterogenity (see [simuluation example](../cifar10-sim/README.md#33-fedavg-on-different-data-splits)).
+Similar to the simulation example, we will split the CIFAR-10 dataset to simulate each client having different data distributions using the `alpha` parameter to control heterogeneity (see [simulation example](../cifar10-sim/README.md#33-fedavg-on-different-data-splits)).
 
 Each `job.py` script will use the [Production Environment (ProdEnv)](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) to submit the jobs via [Recipe API](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.recipe.spec.html#nvflare.recipe.spec.Recipe). 
 
@@ -152,7 +152,7 @@ You can visualize results directly in your experiment tracking system (MLFlow UI
 With a data split using `alpha=1.0` (i.e., a non-heterogeneous split), we achieve the following final validation scores.
 The results demonstrate that:
 - FedAvg can achieve similar performance to centralized training
-- Homomorphic encryption does **not** impact model accuracy while providing strong security & privacy guarantees for the aggregation step, protecting against a potentially malicous actor with access to the server.
+- Homomorphic encryption does **not** impact model accuracy while providing strong security & privacy guarantees for the aggregation step, protecting against a potentially malicious actor with access to the server.
 - The computational overhead of HE is relatively minor compared to the security benefits
 
 In MLFlow, you can group the runs by `job_id` and compare the global model performances. 
