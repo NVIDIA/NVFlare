@@ -15,7 +15,7 @@
 
 """
 Script to visualize label distributions across clients for different alpha values.
-Generates stacked bar charts showing how the Dirichlet distribution parameter 
+Generates stacked bar charts showing how the Dirichlet distribution parameter
 controls data heterogeneity in federated learning.
 """
 

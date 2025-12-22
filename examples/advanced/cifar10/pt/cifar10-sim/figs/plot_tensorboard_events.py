@@ -15,17 +15,16 @@
 
 import glob
 import json
+import logging
 import os
-import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
 # Import our standalone tfevents reader (avoids C++ mutex issues)
-from tfevents_reader import read_tfevents_file, get_available_tags
+from tfevents_reader import read_tfevents_file
 
-import logging
 logging.basicConfig(level=logging.ERROR)
 
 # secure workspace
@@ -75,6 +74,7 @@ def read_eventfile(filepath, tags=["val_acc_global_model"]):
     except Exception as e:
         print(f"Warning: Error reading {filepath}: {e}")
         import traceback
+
         traceback.print_exc()
         return {}
 
@@ -86,7 +86,7 @@ def add_eventdata(data, config, filepath, tag="val_acc_global_model"):
     if tag not in event_data or len(event_data[tag]) == 0:
         print(f"  Warning: No data for tag '{tag}' in {filepath}")
         return
-    
+
     # Add data to the collection
     for e in event_data[tag]:
         data["Config"].append(config)
@@ -113,7 +113,7 @@ def main():
     print("=" * 60)
     print("Processing experiments...")
     print("=" * 60)
-    
+
     for config, exp in experiments.items():
         if not isinstance(exp, dict):
             continue
@@ -126,11 +126,11 @@ def main():
             os.path.join(client_results_root, config_name, "**", "site-1", "events.*"), recursive=True
         )
         assert len(eventfiles) > 0, f"No event file found in {os.path.join(client_results_root, config_name)}!"
-        
+
         # Sort by modification time and use the most recent one
         eventfiles.sort(key=os.path.getmtime, reverse=True)
         eventfile = eventfiles[0]
-        
+
         print(f"\n[{config}]")
         add_eventdata(data, config, eventfile, tag=exp["tag"])
 

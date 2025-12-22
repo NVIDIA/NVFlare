@@ -46,17 +46,17 @@ def define_parser():
 Examples:
   # Run with weighted aggregator
   python job.py --aggregator weighted --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
-  
+
   # Run with median aggregator  
   python job.py --aggregator median --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
-  
+
   # Run with default aggregator
   python job.py --aggregator default --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
 
 Note: Use the same --seed for reproducible model initialization!
         """,
     )
-    
+
     # Custom aggregator selection
     parser.add_argument(
         "--aggregator",
@@ -66,7 +66,7 @@ Note: Use the same --seed for reproducible model initialization!
         help="Type of aggregator to use: 'weighted' (weight by data size), "
         "'median' (robust to Byzantine clients), or 'default' (standard FedAvg)",
     )
-    
+
     # Standard federated learning parameters
     parser.add_argument("--n_clients", type=int, default=8, help="Number of federated learning clients to simulate")
     parser.add_argument(
@@ -88,10 +88,7 @@ Note: Use the same --seed for reproducible model initialization!
         "lower values create more heterogeneous distributions)",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Random seed for model initialization and reproducibility (default: 0)"
+        "--seed", type=int, default=0, help="Random seed for model initialization and reproducibility (default: 0)"
     )
     parser.add_argument("--name", type=str, default=None, help="Custom name for the recipe (overrides default naming)")
 
@@ -101,10 +98,10 @@ Note: Use the same --seed for reproducible model initialization!
 def get_aggregator(aggregator_type: str):
     """
     Factory function to create the appropriate aggregator based on user selection.
-    
+
     Args:
         aggregator_type: One of 'weighted', 'median', or 'default'
-        
+
     Returns:
         Aggregator instance or None (for default)
     """
@@ -133,12 +130,12 @@ def main():
     batch_size = args.batch_size
     aggregation_epochs = args.aggregation_epochs
     aggregator_type = args.aggregator
-    
+
     # Generate job name
     job_name = args.name if args.name else f"cifar10_custom_{aggregator_type}_alpha{alpha}"
 
     print("=" * 80)
-    print(f"Running FedAvg with Custom Aggregator")
+    print("Running FedAvg with Custom Aggregator")
     print("=" * 80)
     print(f"Aggregator Type: {aggregator_type}")
     print(f"Number of Rounds: {num_rounds}")
@@ -171,7 +168,7 @@ def main():
         "train_args": f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
         "aggregator_data_kind": DataKind.WEIGHT_DIFF,
     }
-    
+
     # Only add aggregator if it's not None (i.e., not using default)
     if custom_aggregator is not None:
         recipe_kwargs["aggregator"] = custom_aggregator
@@ -180,10 +177,10 @@ def main():
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Run simulation
-    print(f"\nStarting simulation...")
+    print("\nStarting simulation...")
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
-    
+
     # Print results
     print()
     print("=" * 80)
@@ -200,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
