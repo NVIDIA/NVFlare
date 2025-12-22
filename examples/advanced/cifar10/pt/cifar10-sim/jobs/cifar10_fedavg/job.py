@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-This code show to use NVIDIA FLARE Job Recipe to connect both Federated learning client and server algorithm
+This code shows how to use NVIDIA FLARE Job Recipe to connect both Federated learning client and server algorithm
 and run it under different environments
 """
 import argparse

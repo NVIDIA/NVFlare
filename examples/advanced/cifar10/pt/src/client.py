@@ -65,7 +65,7 @@ def evaluate(model, data_loader):
 
 
 def create_datasets(site_name, train_idx_root, central=False):
-    """To be called only after cifar10_data_split.save_split_data() downloaded the data and computed splits"""
+    """To be called only after cifar10_data_split.split_and_save() downloaded the data and computed splits"""
 
     transform_train = transforms.Compose(
         [
