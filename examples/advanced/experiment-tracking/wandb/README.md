@@ -216,18 +216,17 @@ The example supports several CLI arguments:
 python job.py \
     --n_clients 3 \
     --num_rounds 10 \
-    --script src/client.py \
-    --streamed_to_server \
-    --no-streamed_to_clients \
-    --export_config
+    --script client.py \
+    --streamed_to_clients \
+    --disable_server_tracking
 ```
 
-- `--n_clients`: Number of clients
-- `--num_rounds`: Training rounds
-- `--script`: Training script path
+- `--n_clients`: Number of clients (default: 2)
+- `--num_rounds`: Training rounds (default: 5)
+- `--script`: Training script path (default: client.py)
 - `--launch_external_process`: Run training in external process
-- `--streamed_to_server`: Enable server-side tracking
-- `--streamed_to_clients`: Enable client-side tracking
+- `--streamed_to_clients`: Enable client-side tracking (default: disabled)
+- `--disable_server_tracking`: Disable server-side tracking (default: enabled)
 - `--export_config`: Export config without running
 
 ---

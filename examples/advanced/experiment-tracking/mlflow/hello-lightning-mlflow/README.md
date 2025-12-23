@@ -99,7 +99,7 @@ Then open your browser to `http://localhost:5000`
 
 ### 1. Client-Side Logging
 
-In your Lightning model (`src/model.py`), use standard Lightning logging:
+In your Lightning model (`model.py`), use standard Lightning logging:
 
 ```python
 class LitNet(LightningModule):
@@ -110,7 +110,7 @@ class LitNet(LightningModule):
         return loss
 ```
 
-In your training script (`src/client.py`), use the NVFlare Lightning logger:
+In your training script (`client.py`), use the NVFlare Lightning logger:
 
 ```python
 import nvflare.client.lightning as flare

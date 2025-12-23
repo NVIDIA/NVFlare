@@ -82,8 +82,6 @@ mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlru
 
 ### 5. MLflow Streaming
 
-tracking_uri=f"file://{WORKSPACE}/server/simulate_job/mlruns",
-
 For the job `hello-pt-mlflow`, on the client side, the client code in `client.py` uses the generic tracking API:
 
 ```python

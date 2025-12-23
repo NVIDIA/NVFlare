@@ -82,7 +82,7 @@ class TestExperimentTrackingRecipes:
                 },
             )
 
-        # Run and verify completion
-        run = recipe.execute(env)
-        assert run.get_result() is not None
-        assert os.path.exists(run.get_result())
+            # Run and verify completion
+            run = recipe.execute(env)
+            assert run.get_result() is not None
+            assert os.path.exists(run.get_result())
