@@ -17,11 +17,8 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
@@ -71,26 +68,6 @@ class MyAggregator(ModelAggregator):
         # reset the sum and count
         self.sum = {}
         self.count = 0
-
-    def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """Accept a shareable from a client."""
-        dxo = from_shareable(shareable)
-        if dxo.data_kind == DataKind.WEIGHTS:
-            # Convert to FLModel format for our custom logic
-            model = FLModel(params=dxo.data, params_type=ParamsType.FULL)
-            self.accept_model(model)
-            return True
-        return False
-
-    def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """Perform aggregation and return result as Shareable."""
-        aggregated_model = self.aggregate_model()
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=aggregated_model.params)
-        return dxo.to_shareable()
-
-    def reset(self, fl_ctx: FLContext):
-        """Reset the aggregator state."""
-        self.reset_stats()
 
 
 class InvalidAggregator:

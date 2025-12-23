@@ -1,0 +1,53 @@
+api_version: 3
+name: secure_project
+description: NVIDIA FLARE sample project yaml file for CIFAR-10 example
+
+participants:
+  - name: localhost
+    type: server
+    org: nvidia
+    fed_learn_port: 8102
+    admin_port: 8103
+  - name: site-1
+    type: client
+    org: nvidia
+  - name: site-2
+    type: client
+    org: nvidia
+  - name: site-3
+    type: client
+    org: nvidia
+  - name: site-4
+    type: client
+    org: nvidia
+  - name: site-5
+    type: client
+    org: nvidia
+  - name: site-6
+    type: client
+    org: nvidia
+  - name: site-7
+    type: client
+    org: nvidia
+  - name: site-8
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
