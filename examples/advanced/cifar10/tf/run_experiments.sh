@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-export PYTHONPATH=${PYTHONPATH}:${PWD}/..
-export TF_FORCE_GPU_ALLOW_GROWTH=true
-export TF_GPU_ALLOCATOR=cuda_malloc_asyncp
+# Source TensorFlow environment variables
+source ./set_tf_env_vars.sh
 
 # download dataset
 ./prepare_data.sh
