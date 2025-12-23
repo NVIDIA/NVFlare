@@ -37,13 +37,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import torch
-import numpy as np
-import torchvision.datasets as datasets
-import torchvision
-from torchvision import transforms
 import os
+
+import numpy as np
+import torch
+import torchvision
+import torchvision.datasets as datasets
 from data.cifar10_dataset import CIFAR10_Idx
+from torchvision import transforms
 
 CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 

@@ -14,15 +14,13 @@
 
 import argparse
 import copy
-import os
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from data.cifar10_data_utils import create_datasets, create_data_loaders
+from data.cifar10_data_utils import create_data_loaders, create_datasets
 from model import ModerateCNN
-from train_utils import evaluate, compute_model_diff, get_lr_values
+from train_utils import compute_model_diff, evaluate, get_lr_values
 
 # Import nvflare client API
 import nvflare.client as flare
@@ -40,6 +38,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # Enable cuDNN auto-tuner for optimal algorithms (speeds up training with fixed input sizes)
 if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
+
 
 def main(args):
     model = ModerateCNN()

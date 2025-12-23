@@ -1,6 +1,3 @@
-import os
-
-import numpy as np
 import torch
 from torch.optim import Optimizer
 
@@ -26,7 +23,6 @@ def evaluate(model, data_loader, device=None):
             correct += (predicted == labels).sum().item()
 
     return correct / total
-
 
 
 def compute_model_diff(model, global_model):
@@ -66,6 +62,7 @@ def compute_model_diff(model, global_model):
     print(f"Computed weight differences on {len(model_diff)} layers. Diff norm: {diff_norm}")
 
     return model_diff, diff_norm
+
 
 def get_lr_values(optimizer: Optimizer):
     """

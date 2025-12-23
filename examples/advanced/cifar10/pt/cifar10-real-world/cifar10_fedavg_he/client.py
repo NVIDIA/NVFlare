@@ -14,15 +14,13 @@
 
 import argparse
 import copy
-import os
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from data.cifar10_data_utils import create_datasets, create_data_loaders
-from train_utils import evaluate, compute_model_diff, get_lr_values
+from data.cifar10_data_utils import create_data_loaders, create_datasets
 from model import ModerateCNN
+from train_utils import compute_model_diff, evaluate, get_lr_values
 
 # Import nvflare client API
 import nvflare.client as flare

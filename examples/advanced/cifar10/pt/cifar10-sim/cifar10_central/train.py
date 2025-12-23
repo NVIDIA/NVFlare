@@ -18,10 +18,10 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from data.cifar10_data_utils import create_data_loaders, create_datasets
+from model import ModerateCNN
 from torch.utils.tensorboard import SummaryWriter
 from train_utils import evaluate, get_lr_values
-from data.cifar10_data_utils import create_datasets, create_data_loaders
-from model import ModerateCNN
 
 # Use GPU if available, otherwise use CPU
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -58,7 +58,7 @@ def main(args):
 
     # Move model to GPU
     model.to(DEVICE)
-    
+
     # Evaluate initial model
     val_acc = evaluate(model, valid_loader)
     print(f"Initial model accuracy on validation set: {100 * val_acc:.2f} %")
@@ -67,11 +67,11 @@ def main(args):
     # Training loop
     print(f"\nStarting training for {args.epochs} epochs...\n")
     curr_lr = get_lr_values(optimizer)[0]  # Initialize learning rate before training loop
-    
+
     for epoch in range(args.epochs):
         model.train()
         running_loss = 0.0
-        
+
         for i, data in enumerate(train_loader, 0):
             # Get the inputs; data is a list of [inputs, labels]
             inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
@@ -107,11 +107,11 @@ def main(args):
         if scheduler is not None:
             scheduler.step()
 
-    print(f"Finished training!")
-    
+    print("Finished training!")
+
     # Close TensorBoard writer
     summary_writer.close()
-    
+
     # Save the final model
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
@@ -146,7 +146,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training. Default is 64.")
     parser.add_argument("--num_workers", type=int, default=2, help="Number of workers for data loading. Default is 2.")
-    parser.add_argument("--output_dir", type=str, default="/tmp/nvflare/simulation/cifar10_central", help="Directory to save the trained model. Default is /tmp/nvflare/simulation/cifar10_central.")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="/tmp/nvflare/simulation/cifar10_central",
+        help="Directory to save the trained model. Default is /tmp/nvflare/simulation/cifar10_central.",
+    )
     args = parser.parse_args()
 
     main(args)
