@@ -37,8 +37,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import torch
 import numpy as np
 import torchvision.datasets as datasets
+import torchvision
+from torchvision import transforms
+import os
+from data.cifar10_dataset import CIFAR10_Idx
 
 CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 
@@ -60,6 +65,83 @@ def get_site_class_summary(train_label, site_idx):
         tmp = {int(unq[i]): int(unq_cnt[i]) for i in range(len(unq))}
         class_sum[site] = tmp
     return class_sum
+
+
+def create_datasets(site_name, train_idx_root, central=False):
+    """To be called only after cifar10_data_split.split_and_save() downloaded the data and computed splits"""
+
+    transform_train = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.ToPILImage(),
+            transforms.Pad(4, padding_mode="reflect"),
+            transforms.RandomCrop(32),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+                std=[x / 255.0 for x in [63.0, 62.1, 66.7]],
+            ),
+        ]
+    )
+    transform_valid = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+                std=[x / 255.0 for x in [63.0, 62.1, 66.7]],
+            ),
+        ]
+    )
+
+    if not central:
+        # Set datalist, here the path and filename are hard-coded, can also be fed as an argument
+        site_idx_file_name = os.path.join(train_idx_root, site_name + ".npy")
+        if os.path.exists(site_idx_file_name):
+            print(f"Loading subset index for client {site_name} from {site_idx_file_name}")
+            site_idx = np.load(site_idx_file_name).tolist()
+        else:
+            raise FileNotFoundError(f"No subset index found! File {site_idx_file_name} does not exist!")
+        print(f"Client {site_name} subset size: {len(site_idx)}")
+    else:
+        site_idx = None  # use whole training dataset if central=True
+
+    train_dataset = CIFAR10_Idx(
+        root=CIFAR10_ROOT,
+        data_idx=site_idx,
+        train=True,
+        download=False,
+        transform=transform_train,
+    )
+
+    valid_dataset = torchvision.datasets.CIFAR10(
+        root=CIFAR10_ROOT,
+        train=False,
+        download=False,
+        transform=transform_valid,
+    )
+
+    return train_dataset, valid_dataset
+
+
+def create_data_loaders(train_dataset, valid_dataset, batch_size, num_workers):
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,  # Faster data transfer to GPU
+        persistent_workers=True if num_workers > 0 else False,  # Keep workers alive between epochs
+    )
+    valid_loader = torch.utils.data.DataLoader(
+        valid_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True if num_workers > 0 else False,
+    )
+    return train_loader, valid_loader
 
 
 def main():
