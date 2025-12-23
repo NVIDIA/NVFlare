@@ -434,7 +434,7 @@ def _prepare_poc(
     clients: List[str],
     number_of_clients: int,
     workspace: str,
-    docker_image: str = None,
+    docker_image: Optional[str] = None,
     use_he: bool = False,
     project_conf_path: str = "",
     examples_dir: Optional[str] = None,
