@@ -15,7 +15,7 @@ import io
 import os.path
 import struct
 import uuid
-from typing import Any, BinaryIO, Union
+from typing import Any, BinaryIO, Optional, Union
 
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import deserialize, get_dot_handler, serialize
@@ -68,7 +68,7 @@ def _write_datum_header(stream: BinaryIO, marker, dot, datum_id: str, value_size
     stream.write(datum_id_bytes)
 
 
-def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: dict = None):
+def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: Optional[dict] = None):
     """
     Serialize the specified object to a stream of bytes. If the object contains any datums, they will be included
     into the result.
@@ -227,7 +227,7 @@ def get_datum_dir():
     return dir_name
 
 
-def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
+def load_from_stream(stream: BinaryIO, fobs_ctx: Optional[dict] = None):
     """Load/deserialize data from the specified stream into an object.
 
     The data in the stream must be a well-formed serialized data. It has one or more sections:
@@ -288,7 +288,7 @@ def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
     return deserialize(main_body, mgr)
 
 
-def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None, fobs_ctx: dict = None):
+def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None, fobs_ctx: Optional[dict] = None):
     """Serialize an object to bytes
 
     Args:
@@ -309,7 +309,7 @@ def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None, fobs_ctx: di
     return bio.getvalue()
 
 
-def load_from_bytes(data: Union[bytes, list], fobs_ctx: dict = None) -> Any:
+def load_from_bytes(data: Union[bytes, list], fobs_ctx: Optional[dict] = None) -> Any:
     """Deserialize the bytes into an object
 
     Args:
@@ -327,7 +327,7 @@ def load_from_bytes(data: Union[bytes, list], fobs_ctx: dict = None) -> Any:
     return load_from_stream(stream, fobs_ctx=fobs_ctx)
 
 
-def dump_to_file(obj: Any, file_path: str, max_value_size=None, fobs_ctx: dict = None):
+def dump_to_file(obj: Any, file_path: str, max_value_size=None, fobs_ctx: Optional[dict] = None):
     """Serialize the object and save result to the specified file.
 
     Args:
@@ -344,7 +344,7 @@ def dump_to_file(obj: Any, file_path: str, max_value_size=None, fobs_ctx: dict =
         dump_to_stream(obj, f, max_value_size, fobs_ctx=fobs_ctx)
 
 
-def load_from_file(file_path: str, fobs_ctx: dict = None) -> Any:
+def load_from_file(file_path: str, fobs_ctx: Optional[dict] = None) -> Any:
     """Deserialized data in the specified file into an object
 
     Args:
