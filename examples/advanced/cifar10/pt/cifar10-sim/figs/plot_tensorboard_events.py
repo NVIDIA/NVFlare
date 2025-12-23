@@ -32,7 +32,7 @@ client_results_root = "/tmp/nvflare/simulation"
 
 # 4.1 Central vs. FedAvg
 experiments = {
-    "cifar10_central": {"tag": "val_acc_local_model"},
+    "cifar10_central": {"tag": "val_acc"},
     "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
     "save_path": "figs/central_vs_fedavg.png",
 }
