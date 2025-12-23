@@ -37,31 +37,28 @@ experiments = {
     "save_path": "figs/central_vs_fedavg.png",
 }
 
-# 4.2 Impact of client data heterogeneity
-experiments = {
-    "cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
-    "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
-    "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
-    "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "save_path": "figs/fedavg_alpha.png",
-}
+# # 4.2 Impact of client data heterogeneity
+# experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
+#               "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
+#               "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
+#               "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "save_path": "figs/fedavg_alpha.png"
+# }
 
-# 4.3 FedProx vs. FedOpt vs. SCAFFOLD
-experiments = {
-    "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "save_path": "figs/fedopt_fedprox_scaffold.png",
-}
+# # 4.3 FedProx vs. FedOpt vs. SCAFFOLD
+# experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "save_path": "figs/fedopt_fedprox_scaffold.png"
+# }
 
-# 5.4 Custom Aggregators Comparison
-experiments = {
-    "cifar10_custom_default": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
-    "save_path": "figs/custom_aggregators.png",
-}
+# # 5.4 Custom Aggregators Comparison
+# experiments = {"cifar10_custom_default": {"tag": "val_acc_global_model", "alpha": 0.1},
+#                "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
+#                "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
+#                "save_path": "figs/custom_aggregators.png"
+# }
 
 add_cross_site_val = False
 
