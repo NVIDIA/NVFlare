@@ -186,8 +186,8 @@ One can see that FedAvg can achieve similar performance to central training.
 
 | Config	| Alpha	| 	Val score	| 
 | ----------- | ----------- |  ----------- |
-| cifar10_central | 1.0	| 	0.8747	| 
-| cifar10_fedavg  | 1.0	| 	0.8943	| 
+| cifar10_central | 1.0	| 	0.8876	| 
+| cifar10_fedavg  | 1.0	| 	0.8911	| 
 
 ![Central vs. FedAvg](./figs/central_vs_fedavg.png)
 
@@ -198,10 +198,10 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	1.0 |	0.8943 |
-| cifar10_fedavg |	0.5 |	0.8845 |
-| cifar10_fedavg |	0.3 |	0.8511 |
-| cifar10_fedavg |	0.1 |	0.8070 |
+| cifar10_fedavg |	1.0 |	0.8911 |
+| cifar10_fedavg |	0.5 |	0.8787 |
+| cifar10_fedavg |	0.3 |	0.8527 |
+| cifar10_fedavg |	0.1 |	0.8045 |
 
 ![Impact of client data heterogeneity](./figs/fedavg_alpha.png)
 
@@ -227,10 +227,10 @@ Both FedOpt and SCAFFOLD achieve significantly better performance with the same 
 
 | Config           |	Alpha |	Val score |
 |------------------| ----------- |  ---------- |
-| cifar10_fedavg   |	0.1 |	0.8070 |
-| cifar10_fedprox  |	0.1 |	0.8051 |
-| cifar10_fedopt   |	0.1 |	0.8124 |
-| cifar10_scaffold |	0.1 |	0.8299 |
+| cifar10_fedavg   |	0.1 |	0.8045 |
+| cifar10_fedprox  |	0.1 |	0.8059 |
+| cifar10_fedopt   |	0.1 |	0.8058 |
+| cifar10_scaffold |	0.1 |	0.8260 |
 
 ![FedProx vs. FedOpt](./figs/fedopt_fedprox_scaffold.png)
 

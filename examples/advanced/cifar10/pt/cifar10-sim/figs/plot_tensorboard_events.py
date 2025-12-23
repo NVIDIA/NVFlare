@@ -37,28 +37,31 @@ experiments = {
     "save_path": "figs/central_vs_fedavg.png",
 }
 
-# # 4.2 Impact of client data heterogeneity
-# experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
-#               "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
-#               "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
-#               "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "save_path": "figs/fedavg_alpha.png"
-# }
+# 4.2 Impact of client data heterogeneity
+experiments = {
+    "cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
+    "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
+    "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
+    "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "save_path": "figs/fedavg_alpha.png",
+}
 
-# # 4.3 FedProx vs. FedOpt vs. SCAFFOLD
-# experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "save_path": "figs/fedopt_fedprox_scaffold.png"
-# }
+# 4.3 FedProx vs. FedOpt vs. SCAFFOLD
+experiments = {
+    "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "save_path": "figs/fedopt_fedprox_scaffold.png",
+}
 
 # 5.4 Custom Aggregators Comparison
-# experiments = {"cifar10_custom_default": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "save_path": "figs/custom_aggregators.png"
-# }
+experiments = {
+    "cifar10_custom_default": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
+    "save_path": "figs/custom_aggregators.png",
+}
 
 add_cross_site_val = False
 
@@ -122,9 +125,13 @@ def main():
         if alpha is not None:
             config_name = config_name + f"*alpha{alpha}"
 
+        # Try to find event files in site-1 subdirectory first, then in root
         eventfiles = glob.glob(
             os.path.join(client_results_root, config_name, "**", "site-1", "events.*"), recursive=True
         )
+        if len(eventfiles) == 0:
+            # Fallback: search for event files directly in the config directory
+            eventfiles = glob.glob(os.path.join(client_results_root, config_name, "events.*"))
         assert len(eventfiles) > 0, f"No event file found in {os.path.join(client_results_root, config_name)}!"
 
         # Sort by modification time and use the most recent one
