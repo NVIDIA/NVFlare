@@ -34,7 +34,8 @@ def load_cifar10_with_retry(max_retries=3, retry_delay=5):
     Returns:
         Tuple of (train_images, train_labels), (test_images, test_labels)
     """
-    lock = FileLock("cifar10_download.lock")
+    lock_path = os.path.join("/tmp", "cifar10_download.lock")
+    lock = FileLock(lock_path)
 
     for attempt in range(max_retries):
         try:
@@ -99,6 +100,7 @@ def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5,
         sum_file.write("Class counts for each client: \n")
         sum_file.write(json.dumps(class_sum))
 
+    # save site data files
     site_file_path = os.path.join(split_dir, "site-")
     for site in range(num_sites):
         site_file_name = site_file_path + str(site + 1) + ".npy"
@@ -106,6 +108,13 @@ def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5,
         np.save(site_file_name, np.array(site_idx[site]))
         train_idx_paths.append(site_file_name)
 
+    print("\nData splitting completed successfully!")
+    print("\nClass distribution summary:")
+    for site, classes in class_sum.items():
+        total_samples = sum(classes.values())
+        print(f"  Site {site + 1}: {total_samples} samples - {classes}")
+
+    print(f"Split data saved to: {split_dir}")
     return train_idx_paths
 
 
@@ -123,7 +132,7 @@ def _get_site_class_summary(train_label, site_idx):
 def _partition_data(num_sites, alpha):
     """Partition data using Dirichlet sampling."""
     # only training label is needed for doing split
-    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+    (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
 
     min_size = 0
     K = 10

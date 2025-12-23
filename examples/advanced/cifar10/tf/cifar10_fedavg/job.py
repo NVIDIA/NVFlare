@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import argparse
-import multiprocessing
+import os
 
 from data.cifar10_data_utils import cifar10_split
-from src.model import ModerateTFNet
+from model import ModerateTFNet
 
-from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
-from nvflare.job_config.api import FedJob
+from nvflare.app_opt.tf.recipes import FedAvgRecipe
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=8)
     parser.add_argument("--num_rounds", type=int, default=50)
@@ -30,16 +30,18 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--workspace", type=str, default="/tmp")
-    parser.add_argument("--gpu", type=str, default="0")
+    parser.add_argument("--name", type=str, default="", help="Optional job name")
 
     args = parser.parse_args()
-    multiprocessing.set_start_method("spawn")
 
+    job_name = args.name if args.name else f"cifar10_tf_fedavg_alpha{args.alpha}"
     train_split_root = f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"
+
+    print(f"Running FedAvg ({args.num_rounds} rounds) with alpha = {args.alpha} and {args.n_clients} clients")
 
     # Prepare data splits
     if args.alpha > 0.0:
-        print(f"preparing CIFAR10 and doing alpha split with alpha = {args.alpha}")
+        print(f"Preparing CIFAR10 and doing data split with alpha = {args.alpha}")
         train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
         print(train_idx_paths)
     else:
@@ -50,16 +52,23 @@ if __name__ == "__main__":
 
     # Create FedAvg recipe
     recipe = FedAvgRecipe(
-        name=f"cifar10_tf_fedavg_alpha{args.alpha}",
+        name=job_name,
         initial_model=initial_model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        train_script="cifar10_fedavg/client.py",
+        train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_root {train_split_root}",
     )
+    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    # Build the job
-    job: FedJob = recipe.create_job()
+    # Run using SimEnv
+    env = SimEnv(num_clients=args.n_clients)
+    run = recipe.execute(env)
+    print()
+    print("Job Status is:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
 
-    # Run the job using simulator
-    job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}", gpu=args.gpu)
+
+if __name__ == "__main__":
+    main()

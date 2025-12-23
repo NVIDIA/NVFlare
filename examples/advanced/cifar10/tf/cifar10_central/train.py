@@ -16,7 +16,7 @@ import argparse
 
 import tensorflow as tf
 from data.cifar10_data_utils import load_cifar10_with_retry, preprocess_dataset
-from src.model import ModerateTFNet
+from model import ModerateTFNet
 from tensorflow.keras import losses
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
