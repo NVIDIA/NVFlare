@@ -15,19 +15,11 @@
 import argparse
 import multiprocessing
 
-import tensorflow as tf
-from model import ModerateTFNet
 from data.cifar10_data_utils import cifar10_split
+from src.model import ModerateTFNet
 
-from nvflare import FedJob
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-
-gpu_devices = tf.config.experimental.list_physical_devices("GPU")
-for device in gpu_devices:
-    tf.config.experimental.set_memory_growth(device, True)
+from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
+from nvflare.job_config.api import FedJob
 
 
 if __name__ == "__main__":
@@ -43,7 +35,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     multiprocessing.set_start_method("spawn")
 
-    train_script = "cifar10_fedavg/client.py"
     train_split_root = f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"
 
     # Prepare data splits
@@ -52,32 +43,23 @@ if __name__ == "__main__":
         train_idx_paths = cifar10_split(num_sites=args.n_clients, alpha=args.alpha, split_dir=train_split_root)
         print(train_idx_paths)
     else:
-        train_idx_paths = [None for __ in range(args.n_clients)]
+        raise ValueError("Alpha must be greater than 0 for federated settings")
 
-    # Define job
-    job = FedJob(name=f"cifar10_tf_fedavg_alpha{args.alpha}")
+    # Create initial model
+    initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
 
-    # Define the FedAvg controller workflow and send to server
-    controller = FedAvg(
-        num_clients=args.n_clients,
+    # Create FedAvg recipe
+    recipe = FedAvgRecipe(
+        name=f"cifar10_tf_fedavg_alpha{args.alpha}",
+        initial_model=initial_model,
+        min_clients=args.n_clients,
         num_rounds=args.num_rounds,
+        train_script="cifar10_fedavg/client.py",
+        train_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_root {train_split_root}",
     )
-    job.to(controller, "server")
 
-    # Define the initial global model and send to server
-    job.to(TFModel(ModerateTFNet(input_shape=(None, 32, 32, 3))), "server")
-    job.to(IntimeModelSelector(key_metric="accuracy"), "server")
-
-    # Add clients
-    task_script_args = f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_root {train_split_root}"
-    
-    for i in range(args.n_clients):
-        executor = ScriptRunner(
-            script=train_script, 
-            script_args=task_script_args, 
-            framework=FrameworkType.TENSORFLOW
-        )
-        job.to(executor, f"site-{i + 1}")
+    # Build the job
+    job: FedJob = recipe.create_job()
 
     # Run the job using simulator
     job.simulator_run(f"{args.workspace}/nvflare/jobs/{job.name}", gpu=args.gpu)

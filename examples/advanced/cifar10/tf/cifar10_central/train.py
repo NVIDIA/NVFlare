@@ -15,42 +15,13 @@
 import argparse
 
 import tensorflow as tf
-from model import ModerateTFNet
-from data.cifar10_data_utils import load_cifar10_with_retry
+from data.cifar10_data_utils import load_cifar10_with_retry, preprocess_dataset
+from src.model import ModerateTFNet
 from tensorflow.keras import losses
 
 gpu_devices = tf.config.experimental.list_physical_devices("GPU")
 for device in gpu_devices:
     tf.config.experimental.set_memory_growth(device, True)
-
-
-def preprocess_dataset(dataset, is_training, batch_size=1):
-    """Apply pre-processing transformations to CIFAR10 dataset."""
-    mean_cifar10 = tf.constant([125.3, 123.0, 113.9], dtype=tf.float32)
-    std_cifar10 = tf.constant([63.0, 62.1, 66.7], dtype=tf.float32)
-
-    if is_training:
-        dataset = dataset.map(
-            lambda image, label: (
-                tf.stack(
-                    [
-                        tf.pad(tf.squeeze(t, [2]), [[4, 4], [4, 4]], mode="REFLECT")
-                        for t in tf.split(image, num_or_size_splits=3, axis=2)
-                    ],
-                    axis=2,
-                ),
-                label,
-            )
-        )
-        dataset = dataset.map(lambda image, label: (tf.image.random_crop(image, size=(32, 32, 3)), label))
-        dataset = dataset.map(lambda image, label: (tf.image.random_flip_left_right(image), label))
-        dataset = dataset.map(lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label))
-        dataset = dataset.shuffle(len(dataset), reshuffle_each_iteration=True)
-        return dataset.batch(batch_size)
-    else:
-        return dataset.map(
-            lambda image, label: ((tf.cast(image, tf.float32) - mean_cifar10) / std_cifar10, label)
-        ).batch(batch_size)
 
 
 def main():
