@@ -74,7 +74,6 @@ def create_datasets(site_name, train_idx_root, central=False):
     transform_train = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.ToPILImage(),
             transforms.Pad(4, padding_mode="reflect"),
             transforms.RandomCrop(32),
             transforms.RandomHorizontalFlip(),
