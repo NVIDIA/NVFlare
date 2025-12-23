@@ -116,17 +116,38 @@ recipe = NumpyCrossSiteEvalRecipe(
   - `model_name`: Dict mapping model names to file names
 - `client_model_dir`: Directory where client models are stored
 
-### Mode 2: Training + CSE (FedJob API)
+### Mode 2: Training + CSE (Recipe API)
 
-Uses `FedJob` to chain two workflows:
-1. `ScatterAndGather` controller for training
+Uses `FedAvgWithCrossSiteEvalRecipe` to combine training and evaluation:
+
+```python
+from nvflare.app_common.np.recipes import FedAvgWithCrossSiteEvalRecipe
+
+recipe = FedAvgWithCrossSiteEvalRecipe(
+    name="hello-numpy-train-cse",
+    min_clients=2,
+    num_rounds=1,
+    train_script="client.py",
+)
+```
+
+This recipe runs two workflows sequentially:
+1. `ScatterAndGather` controller for FedAvg training
 2. `CrossSiteModelEval` controller for evaluation
 
-This allows both workflows to run sequentially in a single job.
+**Key Parameters:**
+- `name`: Job name
+- `min_clients`: Minimum clients required
+- `num_rounds`: Number of training rounds
+- `train_script`: Path to training script
+- `train_args`: Arguments to pass to training script (optional)
+- Other CSE parameters: `cross_val_dir`, `submit_model_timeout`, `validation_timeout`
 
 ## Files Overview
 
-- `job.py`: **Main script** - Supports both standalone CSE and training+CSE modes
+- `job.py`: Main script supporting both modes
+  - Mode 1: Uses `NumpyCrossSiteEvalRecipe`
+  - Mode 2: Uses `FedAvgWithCrossSiteEvalRecipe`
 - `client.py`: Training script for Mode 2 (training+CSE)
 - `generate_pretrain_models.py`: Utility to create pre-trained models for Mode 1
 - `README.md`: This file

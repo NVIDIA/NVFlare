@@ -17,9 +17,9 @@ This example demonstrates Cross-Site Evaluation using NVFlare.
 
 Two modes are supported:
 1. Standalone CSE: Evaluate pre-trained models (run generate_pretrain_models.py first)
-   - Uses Recipe API (NumpyCrossSiteEvalRecipe)
+   - Uses NumpyCrossSiteEvalRecipe
 2. Training + CSE: Run FedAvg training followed by cross-site evaluation
-   - Uses FedJob API to chain both workflows
+   - Uses FedAvgWithCrossSiteEvalRecipe
 
 Usage:
     # Mode 1: Standalone CSE with pre-trained models
@@ -31,25 +31,11 @@ Usage:
 
 import argparse
 
-from nvflare import FedJob
-from nvflare.apis.dxo import DataKind
-from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.np.np_formatter import NPFormatter
-from nvflare.app_common.np.np_model_locator import NPModelLocator
-from nvflare.app_common.np.np_model_persistor import NPModelPersistor
-from nvflare.app_common.np.np_trainer import NPTrainer
-from nvflare.app_common.np.np_validator import NPValidator
-from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
-from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.app_common.np.recipes import FedAvgWithCrossSiteEvalRecipe, NumpyCrossSiteEvalRecipe
 from nvflare.recipe import SimEnv
 
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
 CLIENT_MODEL_DIR = "/tmp/nvflare/client_pretrain_models"
-WORKSPACE_DIR = "/tmp/nvflare/jobs/workdir"
 
 
 def define_parser():
@@ -96,63 +82,32 @@ def run_pretrained_cse(n_clients: int):
 
 
 def run_training_and_cse(n_clients: int, num_rounds: int):
-    """Run FedAvg training followed by cross-site evaluation using FedJob API."""
+    """Run FedAvg training followed by cross-site evaluation using Recipe API."""
     print("\n=== Running Training + Cross-Site Evaluation ===\n")
     print(f"Configuration: {n_clients} clients, {num_rounds} training rounds\n")
 
-    # Create FedJob with both training and CSE workflows
-    job = FedJob(name="hello-numpy-train-cse", min_clients=n_clients)
-
-    # Server components
-    persistor_id = job.to_server(NPModelPersistor())
-    aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS))
-    shareable_generator_id = job.to_server(FullModelShareableGenerator())
-    model_locator_id = job.to_server(NPModelLocator())  # Will locate models from persistor
-    formatter_id = job.to_server(NPFormatter())
-    job.to_server(ValidationJsonGenerator())
-
-    # Workflow 1: Training (ScatterAndGather)
-    controller = ScatterAndGather(
+    # Create recipe that combines training and CSE
+    recipe = FedAvgWithCrossSiteEvalRecipe(
+        name="hello-numpy-train-cse",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        persistor_id=persistor_id,
-        aggregator_id=aggregator_id,
-        shareable_generator_id=shareable_generator_id,
+        train_script="client.py",
     )
-    job.to_server(controller)
 
-    # Workflow 2: Cross-Site Evaluation (runs after training)
-    controller = CrossSiteModelEval(
-        model_locator_id=model_locator_id,
-        formatter_id=formatter_id,
-    )
-    job.to_server(controller)
-
-    # Client components
-    trainer = NPTrainer(
-        train_task_name=AppConstants.TASK_TRAIN,
-        submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
-    )
-    job.to_clients(trainer, tasks=[AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL])
-
-    validator = NPValidator(
-        validate_task_name=AppConstants.TASK_VALIDATION,
-    )
-    job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
-
-    # Run in simulator
-    job.export_job("/tmp/nvflare/jobs")
-    job.simulator_run(WORKSPACE_DIR, gpu="0", n_clients=n_clients)
+    # Run in simulation environment
+    env = SimEnv(num_clients=n_clients)
+    run = recipe.execute(env)
 
     print()
     print("Training and cross-site evaluation complete!")
-    print(f"  Result location: {WORKSPACE_DIR}/server/simulate_job")
+    print("  Result location:", run.get_result())
+    print("  Job status:", run.get_status())
     print()
     print("To view training results:")
-    print(f"  ls {WORKSPACE_DIR}/server/simulate_job/")
+    print(f"  ls {run.get_result()}/")
     print()
     print("To view CSE results:")
-    print(f"  cat {WORKSPACE_DIR}/server/simulate_job/cross_site_val/cross_val_results.json")
+    print(f"  cat {run.get_result()}/cross_site_val/cross_val_results.json")
     print()
 
 

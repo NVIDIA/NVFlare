@@ -14,5 +14,6 @@
 
 from .cross_site_eval import NumpyCrossSiteEvalRecipe
 from .fedavg import NumpyFedAvgRecipe
+from .fedavg_with_cse import FedAvgWithCrossSiteEvalRecipe
 
-__all__ = ["NumpyFedAvgRecipe", "NumpyCrossSiteEvalRecipe"]
+__all__ = ["NumpyFedAvgRecipe", "NumpyCrossSiteEvalRecipe", "FedAvgWithCrossSiteEvalRecipe"]
