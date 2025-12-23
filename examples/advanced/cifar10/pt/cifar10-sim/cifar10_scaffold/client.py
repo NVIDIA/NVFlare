@@ -148,9 +148,8 @@ def main(args):
                 loss.backward()
                 optimizer.step()
 
-                curr_lr = get_lr_values(optimizer)[0]  # Update learning rate after optimizer step
-
                 # SCAFFOLD step
+                curr_lr = get_lr_values(optimizer)[0]  # Update learning rate after optimizer step
                 scaffold_helper.model_update(
                     model=model, curr_lr=curr_lr, c_global_para=c_global_para, c_local_para=c_local_para
                 )
@@ -163,10 +162,10 @@ def main(args):
             global_epoch = input_model.current_round * args.aggregation_epochs + epoch
             summary_writer.add_scalar(tag="global_round", scalar=input_model.current_round, global_step=global_epoch)
             summary_writer.add_scalar(tag="global_epoch", scalar=global_epoch, global_step=global_epoch)
+            summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_epoch)
             print(
                 f"{site_name}: Epoch [{epoch + 1}/{args.aggregation_epochs}] - Average Loss: {avg_loss:.4f} - Learning Rate: {curr_lr:.6f}"
             )
-            summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_epoch)
             summary_writer.add_scalar(tag="learning_rate", scalar=curr_lr, global_step=global_epoch)
 
             # Optionally evaluate the current local model on validation set only
@@ -227,7 +226,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lr", type=float, default=1e-2, help="Learning rate. Default is 1e-2.")
     parser.add_argument(
-        "--no_lr_scheduler", action="store_true", help="Whether to use a learning rate scheduler. Default is False."
+        "--no_lr_scheduler",
+        action="store_true",
+        help="Whether to disable the learning rate scheduler. Default is False.",
     )
     parser.add_argument(
         "--cosine_lr_eta_min_factor",

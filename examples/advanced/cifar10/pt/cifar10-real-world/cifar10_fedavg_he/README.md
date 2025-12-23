@@ -14,7 +14,7 @@ Homomorphic encryption enables the server to aggregate encrypted model updates f
 **Key Benefits:**
 - **Privacy protection**: Server cannot inspect individual client contributions
 - **Byzantine robustness**: Prevents malicious server from cherry-picking favorable updates
-- **No accuracy loss**: HE is mathematically exact, preserving model quality
+- **No accuracy loss**: Encrypted aggregation is approximating the aggregation of raw updates
 - **Production-ready**: Uses secure provisioning with encrypted communication
 
 ## Prerequisites
@@ -177,7 +177,6 @@ For this CIFAR-10 example with a small CNN, we use the default (encrypt all laye
 ✅ **Client privacy**: Server cannot see individual model updates  
 ✅ **Secure communication**: TLS encryption for data in transit  
 ✅ **Authentication**: Secure provisioning with certificates  
-✅ **No accuracy loss**: Encrypted aggregation is approximating the aggregation of raw updates
 
 ### Performance Considerations
 
@@ -213,7 +212,7 @@ Homomorphic encryption introduces computational overhead:
 *Results from 8 clients, 50 rounds, 4 local epochs per round on NVIDIA H100 GPU.*
 
 **Key Observations:**
-- ✅ **No accuracy loss**: HE preserves exact model quality
+- ✅ **No accuracy loss**: HE preserves model quality
 - ⏱️ **2.7x slower**: Due to encryption/decryption overhead
 - 🔒 **Stronger privacy**: Server cannot inspect client updates
 

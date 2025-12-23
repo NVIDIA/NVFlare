@@ -101,7 +101,7 @@ def main(args):
         # Evaluate the model on validation set
         val_acc = evaluate(model, valid_loader)
         print(f"Model accuracy on validation set: {100 * val_acc:.2f} %\n")
-        summary_writer.add_scalar("val_acc_local_model", val_acc, epoch)
+        summary_writer.add_scalar("val_acc", val_acc, epoch)
 
         # Step the learning rate scheduler at the end of each epoch
         if scheduler is not None:
@@ -136,7 +136,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lr", type=float, default=1e-2, help="Learning rate. Default is 1e-2.")
     parser.add_argument(
-        "--no_lr_scheduler", action="store_true", help="Whether to use a learning rate scheduler. Default is False."
+        "--no_lr_scheduler",
+        action="store_true",
+        help="Whether to disable the learning rate scheduler. Default is False.",
     )
     parser.add_argument(
         "--cosine_lr_eta_min_factor",
