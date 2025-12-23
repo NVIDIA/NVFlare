@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib
+from typing import Optional
 
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.recipe.spec import Recipe
@@ -36,7 +37,7 @@ TRACKING_REGISTRY = {
 }
 
 
-def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: dict = None):
+def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: Optional[dict] = None):
     """Enable experiment tracking.
 
     Args:
