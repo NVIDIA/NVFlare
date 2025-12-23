@@ -15,7 +15,7 @@ import json
 import threading
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName
@@ -110,7 +110,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         secure=False,
         optional=False,
         abort_signal=None,
-    ) -> Tuple[str, dict]:
+    ) -> tuple[str, dict]:
         pass
 
     def supported_dots(self):

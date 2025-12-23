@@ -51,7 +51,7 @@ class Table(object):
         self.rows = rows
         self.meta_rows = meta_rows
 
-    def add_row(self, row: List[str], meta: dict = None):
+    def add_row(self, row: List[str], meta: Optional[dict] = None):
         """Adds a record."""
         self.rows.append(row)
         if meta:
