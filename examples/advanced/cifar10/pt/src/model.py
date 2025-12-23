@@ -54,9 +54,8 @@ def set_seed(seed):
 
 
 class SimpleCNN(nn.Module):
-    def __init__(self, seed=None):
-        if seed is not None:
-            set_seed(seed)
+    def __init__(self, seed=42):
+        set_seed(seed)
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
@@ -76,9 +75,8 @@ class SimpleCNN(nn.Module):
 
 
 class ModerateCNN(nn.Module):
-    def __init__(self, seed=None):
-        if seed is not None:
-            set_seed(seed)
+    def __init__(self, seed=42):
+        set_seed(seed)
         super(ModerateCNN, self).__init__()
         self.conv_layer = nn.Sequential(
             # Conv Layer block 1

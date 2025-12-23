@@ -22,8 +22,8 @@ from data.cifar10_data_split import split_and_save
 from model import ModerateCNN
 
 from nvflare.apis.dxo import DataKind
-from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
-from nvflare.recipe import ProdEnv, add_experiment_tracking
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def define_parser():
@@ -47,9 +47,8 @@ def define_parser():
         help="Dirichlet distribution parameter (controls data heterogeneity: "
         "lower values create more heterogeneous distributions)",
     )
+    parser.add_argument("--fedproxloss_mu", type=float, default=1e-5, help="FedProx regularization parameter (mu)")
     parser.add_argument("--name", type=str, default=None, help="Custom name for the recipe (overrides default naming)")
-
-    parser.add_argument("--tracking_uri", type=str, default="http://localhost:5000", help="MLFlow tracking URI")
 
     return parser.parse_args()
 
@@ -64,35 +63,34 @@ def main():
     lr = args.lr
     batch_size = args.batch_size
     aggregation_epochs = args.aggregation_epochs
-    job_name = args.name if args.name else f"cifar10_fedavg_he_alpha{alpha}"
+    fedproxloss_mu = args.fedproxloss_mu
+    job_name = args.name if args.name else f"cifar10_fedprox_alpha{alpha}"
 
     print(
-        f"Running FedAvg with Homomorphic Encryption ({num_rounds} rounds) with alpha = {alpha} and {n_clients} clients"
+        f"Running FedProx ({num_rounds} rounds) with alpha = {alpha} and {n_clients} clients and fedproxloss_mu = {fedproxloss_mu}"
     )
 
     if alpha > 0.0:
         print(f"Preparing CIFAR10 and doing data split with alpha = {alpha}")
         train_idx_root = split_and_save(
-            num_sites=n_clients, alpha=alpha, split_dir_prefix="/tmp/cifar10_splits/cifar10_fedavg_he"
+            num_sites=n_clients, alpha=alpha, split_dir_prefix="/tmp/cifar10_splits/cifar10_fedprox"
         )
     else:
         raise ValueError("Alpha must be greater than 0 for federated settings")
 
-    recipe = FedAvgRecipeWithHE(
+    # FedProx is just FedAvg with a FedProx loss term added to the client training loss (see train_args in client.py)
+    recipe = FedAvgRecipe(
         name=job_name,
         min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=ModerateCNN(),
-        train_script=os.path.join(os.path.dirname(__file__), "../../../src/client.py"),
-        train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
+        train_script=os.path.join(os.path.dirname(__file__), "client.py"),
+        train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs} --fedproxloss_mu {fedproxloss_mu}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
     )
-    add_experiment_tracking(recipe, tracking_type="mlflow", tracking_config={"tracking_uri": args.tracking_uri})
+    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    # Optionally export the job configuration for debugging
-    # recipe.export(job_dir=f"./exported_jobs")
-
-    env = ProdEnv(startup_kit_location="workspaces/secure_workspace/admin@nvidia.com", username="admin@nvidia.com")
+    env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
     print()
     print("Job Status is:", run.get_status())

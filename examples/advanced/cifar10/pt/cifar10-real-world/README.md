@@ -89,17 +89,17 @@ First, let's start an MLFlow server in a separate terminal:
 mlflow server --host 0.0.0.0 --port 5000
 ```
 
-In our [job.py](./jobs/cifar10_fedavg_mlflow/job.py), all we need to do is add the MLFlow tracking with the corresponding URI (here `http://localhost:5000`):
+In our [job.py](./cifar10_fedavg_mlflow/job.py), all we need to do is add the MLFlow tracking with the corresponding URI (here `http://localhost:5000`):
 
 ```python
-from nvflare.recipe.utils import add_experiment_tracking
+from nvflare.recipe import add_experiment_tracking
 
 add_experiment_tracking(recipe, tracking_type="mlflow", tracking_config={"tracking_uri": mlflow_tracking_uri})
 ```
 
 For an example using FedAvg and metric streaming during training, run:
 ```
-python ./jobs/cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
+python cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
 ```
 
 > **_NOTE:_** You can use `tracking_type="tensorboard"` or `tracking_type="wandb"` to stream metrics to TensorBoard or Weights & Biases instead. 
@@ -108,7 +108,7 @@ python ./jobs/cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha
 
 For more details on experiment tracking configuration, see the [Experiment Tracking documentation](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html).
 
-After training, the results are automatically downloaded using `run.get_result()` inside [job.py](./jobs/cifar10_fedavg_mlflow/job.py). You will see output similar to this:
+After training, the results are automatically downloaded using `run.get_result()` inside [job.py](./cifar10_fedavg_mlflow/job.py). You will see output similar to this:
 
 ```
 Result can be found in : workspaces/secure_workspace/admin@nvidia.com/transfer/75d261cc-a9ef-40a4-8d0d-36e454653968
@@ -130,7 +130,7 @@ Homomorphic encryption allows the server to aggregate encrypted model updates fr
 
 FedAvg with HE: 
 ```
-python ./jobs/cifar10_fedavg_he/job.py --n_clients 8 --num_rounds 50 --alpha 1.0
+python cifar10_fedavg_he/job.py --n_clients 8 --num_rounds 50 --alpha 1.0
 ```
 
 > **_NOTE:_** Currently, FedOpt is not supported with HE as it would involve running the optimizer on encrypted values.
