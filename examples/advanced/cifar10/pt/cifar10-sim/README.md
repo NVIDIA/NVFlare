@@ -37,7 +37,9 @@ To speed up the following experiments, first download the [CIFAR-10](https://www
 
 We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) to run the following experiments. 
 
-Jobs are executed using the recipe pattern: `python ./jobs/<job_name>/job.py [arguments]`
+Jobs are executed using the recipe pattern: `python <job_name>/job.py [arguments]`
+
+> **_NOTE:_** You can use `./run_experiments.sh` to run all experiments in this example sequentially.
 
 > **_NOTE:_** By default, all experiments use a **cosine annealing learning rate scheduler** that smoothly decays the learning rate over all FL rounds. To disable this, add `--no_lr_scheduler` to the training arguments.
 
@@ -70,7 +72,7 @@ This will generate a stacked bar chart in the `figs` directory with stacked bar 
 To simulate a centralized training baseline, we run FL with 1 client for 25 local epochs but only for one round. 
 It takes circa 5 minutes on an NVIDIA A6000 GPU.
 ```
-python ./jobs/cifar10_central/job.py --epochs 25
+python cifar10_central/train.py --epochs 25
 ```
 Note: The centralized training uses `alpha=0.0`, meaning no heterogeneous data splits are generated (all data is used by the single client).
 
@@ -85,10 +87,10 @@ Each job will takes about 10 minutes, depending on your system or how many you r
 
 You can copy the whole block into the terminal, and it will execute each experiment one after the other.
 ```
-python ./jobs/cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 1.0
-python ./jobs/cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.5
-python ./jobs/cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.3
-python ./jobs/cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
+python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 1.0
+python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.5
+python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.3
+python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 ### 3.4 Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
@@ -99,13 +101,13 @@ Next, let's try some different FL algorithms on a more heterogeneous split. Each
 
 [FedProx](https://arxiv.org/abs/1812.06127) adds a proximal regularization term to the loss function to prevent client models from drifting too far from the global model during local training. This is particularly effective when clients have heterogeneous data or varying computational capabilities.
 
-**Implementation in client.py** (lines 278-280):
+**Implementation in client.py**:
 - During training, FedProx adds a proximal loss term: `L_total = L_task + (μ/2) * ||w - w_global||²`
 - The `fedproxloss_mu` parameter controls the strength of the regularization
 - The `PTFedProxLoss` class computes the L2 distance between local and global model parameters
 
 ```python
-python ./jobs/cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
+python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedproxloss_mu 1e-5
 ```
 
 #### 3.4.2 FedOpt: Server-Side Adaptive Optimization
@@ -113,12 +115,12 @@ python ./jobs/cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 -
 [FedOpt](https://arxiv.org/abs/2003.00295) applies adaptive optimization algorithms (like SGD with momentum, Adam, Yogi, or Adagrad) on the server side when aggregating client updates, rather than simple averaging. This allows the global model to benefit from momentum and adaptive learning rates.
 
 **Implementation**:
-- This example uses server-side SGD with momentum to update the global model (set in [./jobs/cifar10_fedopt/job.py](./jobs/cifar10_fedopt/job.py))
+- This example uses server-side SGD with momentum to update the global model (set in [./cifar10_fedopt/job.py](./cifar10_fedopt/job.py))
 - Client training remains standard (no changes in client.py)
 - The server applies momentum to the aggregated updates before updating the global model
 
 ```python
-python ./jobs/cifar10_fedopt/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
+python cifar10_fedopt/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 #### 3.4.3 SCAFFOLD: Control Variates for Variance Reduction
@@ -141,7 +143,7 @@ python ./jobs/cifar10_fedopt/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 The implementation follows [NIID-Bench](https://github.com/Xtra-Computing/NIID-Bench) as described in [Li et al.](https://arxiv.org/abs/2102.02079).
 
 ```python
-python ./jobs/cifar10_scaffold/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
+python cifar10_scaffold/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 **Key Benefits of SCAFFOLD**:
@@ -157,13 +159,13 @@ For example, you can run the following commands in two separate terminals:
 Terminal 1:
 ```
 export CUDA_VISIBLE_DEVICES=0
-python ./jobs/cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
+python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 Terminal 2:
 ```
 export CUDA_VISIBLE_DEVICES=1
-python ./jobs/cifar10_scaffold/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
+python cifar10_scaffold/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 > **_NOTE:_** You can run all experiments mentioned in Section 3 sequentially using the `run_experiments.sh` script.
@@ -184,8 +186,8 @@ One can see that FedAvg can achieve similar performance to central training.
 
 | Config	| Alpha	| 	Val score	| 
 | ----------- | ----------- |  ----------- |
-| cifar10_central | 1.0	| 	0.8747	| 
-| cifar10_fedavg  | 1.0	| 	0.8943	| 
+| cifar10_central | 1.0	| 	0.8876	| 
+| cifar10_fedavg  | 1.0	| 	0.8911	| 
 
 ![Central vs. FedAvg](./figs/central_vs_fedavg.png)
 
@@ -196,10 +198,10 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 
 | Config |	Alpha |	Val score |
 | ----------- | ----------- |  ----------- |
-| cifar10_fedavg |	1.0 |	0.8943 |
-| cifar10_fedavg |	0.5 |	0.8845 |
-| cifar10_fedavg |	0.3 |	0.8511 |
-| cifar10_fedavg |	0.1 |	0.8070 |
+| cifar10_fedavg |	1.0 |	0.8911 |
+| cifar10_fedavg |	0.5 |	0.8787 |
+| cifar10_fedavg |	0.3 |	0.8527 |
+| cifar10_fedavg |	0.1 |	0.8045 |
 
 ![Impact of client data heterogeneity](./figs/fedavg_alpha.png)
 
@@ -225,10 +227,10 @@ Both FedOpt and SCAFFOLD achieve significantly better performance with the same 
 
 | Config           |	Alpha |	Val score |
 |------------------| ----------- |  ---------- |
-| cifar10_fedavg   |	0.1 |	0.8070 |
-| cifar10_fedprox  |	0.1 |	0.8051 |
-| cifar10_fedopt   |	0.1 |	0.8124 |
-| cifar10_scaffold |	0.1 |	0.8299 |
+| cifar10_fedavg   |	0.1 |	0.8045 |
+| cifar10_fedprox  |	0.1 |	0.8059 |
+| cifar10_fedopt   |	0.1 |	0.8058 |
+| cifar10_scaffold |	0.1 |	0.8260 |
 
 ![FedProx vs. FedOpt](./figs/fedopt_fedprox_scaffold.png)
 
@@ -278,7 +280,7 @@ class MyCustomAggregator(ModelAggregator):
 
 #### 5.2 Complete working examples
 
-See [`jobs/my_custom_job/custom_aggregators.py`](./jobs/my_custom_job/custom_aggregators.py) for two complete implementations:
+See [`cifar10_custom_aggr/custom_aggregators.py`](./cifar10_custom_aggr/custom_aggregators.py) for two complete implementations:
 
 1. **`WeightedAggregator`**: Weights each client's contribution by their training steps (dataset size)
 2. **`MedianAggregator`**: Uses median aggregation for Byzantine robustness
@@ -310,17 +312,17 @@ recipe.simulator_run("/tmp/nvflare/simulation", gpu="0")
 
 #### 5.4 Running the example
 
-The complete working example is in `jobs/my_custom_job/`:
+The complete working example is in `cifar10_custom_aggr/`:
 
 ```bash
 # Run with weighted aggregator
-python ./jobs/my_custom_job/job.py --aggregator weighted --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
+python cifar10_custom_aggr/job.py --aggregator weighted --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
 
 # Run with median aggregator (Byzantine-robust)
-python ./jobs/my_custom_job/job.py --aggregator median --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
+python cifar10_custom_aggr/job.py --aggregator median --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
 
 # Run with default aggregator for comparison
-python ./jobs/my_custom_job/job.py --aggregator default --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
+python cifar10_custom_aggr/job.py --aggregator default --n_clients 8 --num_rounds 50 --alpha 0.1 --seed 0
 ```
 
 **Note on Reproducibility**: Even with the same `--seed`, you may observe small differences (typically < 1%) between mathematically equivalent aggregators (e.g., `weighted` vs `default`) due to:
@@ -331,7 +333,7 @@ python ./jobs/my_custom_job/job.py --aggregator default --n_clients 8 --num_roun
 
 For fully deterministic results, additional seeding of augmentations and disabling CUDNN benchmark mode would be required.
 
-See the [custom job README](./jobs/my_custom_job/README.md) for more details.
+See the [custom job README](./cifar10_custom_aggr/README.md) for more details.
 
 ### 5.5 Compare the results
 

@@ -21,8 +21,7 @@ import os
 from data.cifar10_data_split import split_and_save
 from model import ModerateCNN
 
-from nvflare.apis.dxo import DataKind
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -47,7 +46,6 @@ def define_parser():
         help="Dirichlet distribution parameter (controls data heterogeneity: "
         "lower values create more heterogeneous distributions)",
     )
-    parser.add_argument("--fedproxloss_mu", type=float, default=1e-5, help="FedProx regularization parameter (mu)")
     parser.add_argument("--name", type=str, default=None, help="Custom name for the recipe (overrides default naming)")
 
     return parser.parse_args()
@@ -63,30 +61,31 @@ def main():
     lr = args.lr
     batch_size = args.batch_size
     aggregation_epochs = args.aggregation_epochs
-    fedproxloss_mu = args.fedproxloss_mu
-    job_name = args.name if args.name else f"cifar10_fedprox_alpha{alpha}"
+    job_name = args.name if args.name else f"cifar10_fedopt_alpha{alpha}"
 
-    print(
-        f"Running FedProx ({num_rounds} rounds) with alpha = {alpha} and {n_clients} clients and fedproxloss_mu = {fedproxloss_mu}"
-    )
+    print(f"Running FedOpt ({num_rounds} rounds) with alpha = {alpha} and {n_clients} clients")
 
     if alpha > 0.0:
         print(f"Preparing CIFAR10 and doing data split with alpha = {alpha}")
         train_idx_root = split_and_save(
-            num_sites=n_clients, alpha=alpha, split_dir_prefix="/tmp/cifar10_splits/cifar10_fedprox"
+            num_sites=n_clients, alpha=alpha, split_dir_prefix="/tmp/cifar10_splits/cifar10_fedopt"
         )
     else:
         raise ValueError("Alpha must be greater than 0 for federated settings")
 
-    # FedProx is just FedAvg with a FedProx loss term added to the client training loss (see train_args in client.py)
-    recipe = FedAvgRecipe(
+    recipe = FedOptRecipe(
         name=job_name,
         min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=ModerateCNN(),
-        train_script=os.path.join(os.path.dirname(__file__), "../../../src/client.py"),
-        train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs} --fedproxloss_mu {fedproxloss_mu}",
-        aggregator_data_kind=DataKind.WEIGHT_DIFF,
+        train_script=os.path.join(os.path.dirname(__file__), "client.py"),
+        train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}, "config_type": "dict"},
+        lr_scheduler_args={
+            "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "args": {"T_max": num_rounds, "eta_min": 0.9},
+            "config_type": "dict",
+        },
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

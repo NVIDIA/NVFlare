@@ -32,7 +32,7 @@ client_results_root = "/tmp/nvflare/simulation"
 
 # 4.1 Central vs. FedAvg
 experiments = {
-    "cifar10_central": {"tag": "val_acc_local_model"},
+    "cifar10_central": {"tag": "val_acc"},
     "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
     "save_path": "figs/central_vs_fedavg.png",
 }
@@ -53,11 +53,11 @@ experiments = {
 #               "save_path": "figs/fedopt_fedprox_scaffold.png"
 # }
 
-# 5.4 Custom Aggregators Comparison
+# # 5.4 Custom Aggregators Comparison
 # experiments = {"cifar10_custom_default": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "save_path": "figs/custom_aggregators.png"
+#                "cifar10_custom_weighted": {"tag": "val_acc_global_model", "alpha": 0.1},
+#                "cifar10_custom_median": {"tag": "val_acc_global_model", "alpha": 0.1},
+#                "save_path": "figs/custom_aggregators.png"
 # }
 
 add_cross_site_val = False
@@ -122,9 +122,13 @@ def main():
         if alpha is not None:
             config_name = config_name + f"*alpha{alpha}"
 
+        # Try to find event files in site-1 subdirectory first, then in root
         eventfiles = glob.glob(
             os.path.join(client_results_root, config_name, "**", "site-1", "events.*"), recursive=True
         )
+        if len(eventfiles) == 0:
+            # Fallback: search for event files directly in the config directory
+            eventfiles = glob.glob(os.path.join(client_results_root, config_name, "events.*"))
         assert len(eventfiles) > 0, f"No event file found in {os.path.join(client_results_root, config_name)}!"
 
         # Sort by modification time and use the most recent one
