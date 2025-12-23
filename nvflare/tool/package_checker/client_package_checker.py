@@ -18,7 +18,7 @@ import sys
 
 from .check_rule import CheckGRPCServerAvailable
 from .package_checker import PackageChecker
-from .utils import NVFlareConfig, NVFlareRole
+from .utils import NVFlareConfig, NVFlareRole, get_communication_scheme
 
 CLIENT_SCRIPT = "nvflare.private.fed.app.client.client_train"
 
@@ -35,9 +35,20 @@ class ClientPackageChecker(PackageChecker):
         return False
 
     def init_rules(self, package_path):
-        self.rules = [
-            CheckGRPCServerAvailable(name="Check GRPC server available", role=self.NVF_ROLE),
-        ]
+        """Initialize preflight check rules based on communication scheme."""
+        scheme = get_communication_scheme(package_path)
+
+        # Only check GRPC connectivity if actually using GRPC
+        # For TCP-based schemes, skip connectivity check as it requires different approach
+        # TODO: Add TCP connectivity check in the future
+        if scheme in ["grpc", "agrpc"]:
+            self.rules = [
+                CheckGRPCServerAvailable(name="Check GRPC server available", role=self.NVF_ROLE),
+            ]
+        else:
+            # For non-GRPC schemes (tcp, atcp, stcp, http, etc.), skip server availability check
+            # The dry run will still verify end-to-end connectivity
+            self.rules = []
 
     def get_uid_from_startup_script(self) -> str:
         """Extract uid from sub_start.sh"""

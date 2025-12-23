@@ -162,27 +162,26 @@ def _get_conn_sec(startup: str):
 
 
 def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
-    with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
-        trusted_certs = f.read()
-    with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
-        private_key = f.read()
-    with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
-        certificate_chain = f.read()
 
     conn_sec = _get_conn_sec(startup)
     secure = True
     if conn_sec == "clear":
         secure = False
 
-    call_credentials = grpc.metadata_call_credentials(
-        lambda context, callback: callback((("x-custom-token", token),), None)
-    )
-    credentials = grpc.ssl_channel_credentials(
-        certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
-    )
-
-    composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
     if secure:
+        with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
+            trusted_certs = f.read()
+        with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
+            private_key = f.read()
+        with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
+            certificate_chain = f.read()
+        call_credentials = grpc.metadata_call_credentials(
+            lambda context, callback: callback((("x-custom-token", token),), None)
+        )
+        credentials = grpc.ssl_channel_credentials(
+            certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
+        )
+        composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
         channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
     else:
         channel = grpc.insecure_channel(target=f"{host}:{port}")
@@ -206,3 +205,50 @@ def run_command_in_subprocess(command):
         universal_newlines=True,
     )
     return process
+
+
+def get_communication_scheme(package_path: str, default_scheme: str = "tcp") -> str:
+    """Read the communication scheme from package configuration files.
+
+    This function checks multiple sources to determine the communication scheme:
+    1. For servers: fed_server.json (service.scheme)
+    2. For all packages: comm_config.json in local/ or startup/ directories
+
+    Args:
+        package_path: Path to the package directory
+
+    Returns:
+        The communication scheme (e.g., 'tcp', 'grpc', 'http') or 'tcp' as default
+    """
+    # First try to read from fed_server.json (for server packages)
+    startup = os.path.join(package_path, "startup")
+    fed_server_config = os.path.join(startup, NVFlareConfig.SERVER)
+    if os.path.exists(fed_server_config):
+        try:
+            with open(fed_server_config, "r") as f:
+                fed_config = json.load(f)
+                server_conf = fed_config.get("servers", [{}])[0]
+                service_config = server_conf.get("service", {})
+                scheme = service_config.get("scheme")
+                if scheme:
+                    return scheme.lower()
+        except Exception:
+            pass
+
+    # Try to read from comm_config.json (for all package types)
+    for subdir in ["local", "startup"]:
+        comm_config_path = os.path.join(package_path, subdir, "comm_config.json")
+        if os.path.exists(comm_config_path):
+            try:
+                with open(comm_config_path, "r") as f:
+                    comm_config = json.load(f)
+                    # Check internal scheme first, then external
+                    scheme = comm_config.get("internal", {}).get("scheme")
+                    if not scheme:
+                        scheme = comm_config.get("external", {}).get("scheme")
+                    if scheme:
+                        return scheme.lower()
+            except Exception:
+                pass
+
+    return default_scheme

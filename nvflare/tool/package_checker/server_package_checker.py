@@ -19,7 +19,7 @@ import sys
 
 from .check_rule import CheckAddressBinding, CheckWriting
 from .package_checker import PackageChecker
-from .utils import NVFlareConfig
+from .utils import NVFlareConfig, get_communication_scheme
 
 SERVER_SCRIPT = "nvflare.private.fed.app.server.server_train"
 
@@ -54,12 +54,16 @@ def _get_job_storage_root(package_path: str) -> str:
     return job_storage_root
 
 
-def _get_grpc_host_and_port(package_path: str) -> (str, int):
+def _get_fl_host_and_port(package_path: str) -> (str, int):
+    """Get federated learning service host and port.
+
+    This is the main communication port for FL, which could use GRPC, TCP, or HTTP scheme.
+    """
     fed_config = _get_server_fed_config(package_path)
     server_conf = fed_config["servers"][0]
-    grpc_service_config = server_conf["service"]
-    grpc_target_address = grpc_service_config["target"]
-    _, port = grpc_target_address.split(":")
+    service_config = server_conf["service"]
+    target_address = service_config["target"]
+    _, port = target_address.split(":")
     return "localhost", int(port)
 
 
@@ -77,8 +81,22 @@ class ServerPackageChecker(PackageChecker):
 
     def init_rules(self, package_path):
         self.dry_run_timeout = 3
+
+        # Determine the communication scheme
+        scheme = get_communication_scheme(package_path)
+
+        # Create check name based on actual scheme
+        if scheme in ["grpc", "agrpc"]:
+            fl_check_name = "Check grpc port binding"
+        elif scheme in ["tcp", "atcp", "stcp"]:
+            fl_check_name = "Check tcp port binding"
+        elif scheme in ["http", "https"]:
+            fl_check_name = "Check http port binding"
+        else:
+            fl_check_name = f"Check {scheme} port binding"
+
         self.rules = [
-            CheckAddressBinding(name="Check grpc port binding", get_host_and_port_from_package=_get_grpc_host_and_port),
+            CheckAddressBinding(name=fl_check_name, get_host_and_port_from_package=_get_fl_host_and_port),
             CheckAddressBinding(
                 name="Check admin port binding", get_host_and_port_from_package=_get_admin_host_and_port
             ),
