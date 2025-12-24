@@ -166,4 +166,4 @@ You can also switch to other tracking systems by changing the tracking type:
 
 - [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
 - [TensorBoard Streaming Details](https://nvflare.readthedocs.io/en/main/examples/tensorboard_streaming.html)
-- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)

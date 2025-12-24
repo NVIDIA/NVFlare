@@ -334,4 +334,4 @@ Ensure client-side tracking uses unique run names:
 - [Weights & Biases Documentation](https://docs.wandb.ai/)
 - [WandB Python Library](https://docs.wandb.ai/ref/python/)
 - [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
-- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)

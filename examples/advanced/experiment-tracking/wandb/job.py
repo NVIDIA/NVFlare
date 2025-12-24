@@ -100,7 +100,7 @@ def main():
         print(f"job exported to {export_dir}")
         recipe.export(export_dir)
     else:
-        recipe.run("/tmp/nvflare/jobs/workdir", gpu="0")
+        recipe.run(workspace="/tmp/nvflare/jobs/workdir")
 
 
 if __name__ == "__main__":

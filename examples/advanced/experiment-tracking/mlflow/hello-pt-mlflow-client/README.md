@@ -190,4 +190,4 @@ tracking_uri = "http://mlflow-server.site-1.local:5000"
 
 - [MLflow Documentation](https://www.mlflow.org/docs/latest/index.html)
 - [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
-- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)

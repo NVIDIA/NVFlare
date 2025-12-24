@@ -185,6 +185,5 @@ add_experiment_tracking(
 ## Additional Resources
 
 - [PyTorch Lightning Documentation](https://lightning.ai/docs/pytorch/stable/)
-- [NVFlare Lightning Integration](https://nvflare.readthedocs.io/en/main/programming_guide/lightning_integration.html)
 - [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
-- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)

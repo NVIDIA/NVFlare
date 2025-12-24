@@ -224,5 +224,5 @@ for site_name in ["site-1", "site-2"]:
 ## Additional Resources
 
 - [Experiment Tracking Programming Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
-- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/programming_guide/job_recipes.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)
 - [Client Tracking APIs](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking/experiment_tracking_apis.html)
