@@ -5,17 +5,24 @@
 Please make sure you set up virtual environment and follows [example root readme](../../README.md)
 
 ### [Simulated Federated Learning with CIFAR-10](./pt/cifar10-sim/README.md)
-This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
+This example includes instructions on running job recipes for [FedAvg](https://arxiv.org/abs/1602.05629), 
 [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
 and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms with NVFlare's 
 [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html) using the **SimEnv**.
 
 ### [Real-world Federated Learning with CIFAR-10](./pt/cifar10-real-world/README.md)
 Real-world FL deployment requires secure [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) and the [admin API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/flare_api.html#flare-api) to manage jobs via **ProdEnv**. 
-This example runs you through the process and includes instructions on running 
+This example runs you through the process and includes instructions on running job recipes for
 [FedAvg](https://arxiv.org/abs/1602.05629) with [experiment tracking](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html) (supporting MLFlow, TensorBoard, or Weights & Biases) 
 and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/) for secure server-side aggregation.
 
 ## TensorFlow Version
 
-An implementation of the CIFAR-10 simulation experiments is also available in TensorFlow [here](tf) using the [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html).
+### [Simulated Federated Learning with CIFAR-10](./tf/README.md)
+This example includes instructions on running job recipes for [FedAvg](https://arxiv.org/abs/1602.05629), 
+[FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
+and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms with NVFlare's 
+[FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html) using the **SimEnv**
+and [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html).
+The example demonstrates federated learning with TensorFlow on the CIFAR-10 dataset, 
+including centralized training baseline and experiments with different data heterogeneity levels.

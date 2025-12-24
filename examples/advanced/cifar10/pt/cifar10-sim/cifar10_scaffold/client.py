@@ -117,7 +117,7 @@ def main(args):
         c_global_para, c_local_para = scaffold_helper.get_params()
 
         # Evaluate on received global model for model selection
-        val_acc_global_model = evaluate(global_model, valid_loader, device=DEVICE)
+        val_acc_global_model = evaluate(global_model, valid_loader)
         print(f"Global model accuracy on validation set: {100 * val_acc_global_model:.2f} %")
         summary_writer.add_scalar(
             tag="val_acc_global_model", scalar=val_acc_global_model, global_step=input_model.current_round
@@ -170,7 +170,7 @@ def main(args):
 
             # Optionally evaluate the current local model on validation set only
             if args.evaluate_local:
-                val_acc_local_model = evaluate(model, valid_loader, device=DEVICE)
+                val_acc_local_model = evaluate(model, valid_loader)
                 print(f"Local model accuracy on validation set: {100 * val_acc_local_model:.2f} %")
                 summary_writer.add_scalar(
                     tag="val_acc_local_model", scalar=val_acc_local_model, global_step=global_epoch
