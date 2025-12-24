@@ -38,7 +38,7 @@ class _ScaffoldValidator(BaseModel):
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    params_transfer_type: TransferType = (TransferType.FULL,)
+    params_transfer_type: TransferType = TransferType.FULL
 
 
 class ScaffoldRecipe(Recipe):
