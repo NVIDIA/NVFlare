@@ -51,7 +51,6 @@ class LRModelPersistor(NPModelPersistor):
         self.model_dir = model_dir
         self.model_name = model_name
         self.n_features = n_features
-
         # A default model is loaded when no local model is available.
         # This happens when training starts.
         #
@@ -61,4 +60,8 @@ class LRModelPersistor(NPModelPersistor):
         #
         # A default matrix with value 0s is created.
         #
-        self.default_data = np.zeros((self.n_features + 1, 1), dtype=np.float32)
+        self.initial_model = np.zeros((self.n_features + 1, 1), dtype=np.float32)
+
+    def _get_initial_model_as_numpy(self) -> np.ndarray:
+        """Fallback initializer used by NPModelPersistor when no saved model exists."""
+        return self.initial_model.copy()

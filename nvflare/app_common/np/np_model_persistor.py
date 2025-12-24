@@ -38,14 +38,20 @@ class NPModelPersistor(ModelPersistor):
         """Model persistor for numpy arrays.
 
         Note:
-            If the specified model can't be found using "model_dir"/"model_name"
-            Then default array of [[1, 2, 3], [4, 5, 6], [7, 8, 9]] is used.
+            This persistor first tries to load a previously saved numpy array from
+            ``<run_dir>/<model_dir>/<model_name>``.
+
+            If the file cannot be loaded (e.g. does not exist on the first run),
+            it falls back to an "initial model" provided via ``initial_model``.
+            If ``initial_model`` is not provided, a small built-in default array
+            (``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``) is used.
 
         Args:
             model_dir (str, optional): model directory. Defaults to "models".
             model_name (str, optional): model name. Defaults to "server.npy".
-            initial_model (list, optional): initial model as a list.
-                Will be converted to numpy array when load_model is called.
+            initial_model (list, optional): fallback initial model as a (JSON-serializable) list.
+                This is only used when a previously saved model cannot be loaded.
+                It will be converted to numpy array when ``load_model`` is called.
                 Defaults to None.
         """
         super().__init__()
@@ -57,7 +63,10 @@ class NPModelPersistor(ModelPersistor):
         self.initial_model = initial_model
 
     def _get_initial_model_as_numpy(self) -> np.ndarray:
-        """Convert initial_model to numpy array."""
+        """Return the fallback initial model as a numpy array.
+
+        This is used by ``load_model`` when the model file cannot be loaded.
+        """
         if self.initial_model is None:
             return np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
         else:

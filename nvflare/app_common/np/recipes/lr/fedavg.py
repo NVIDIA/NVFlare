@@ -100,13 +100,13 @@ class FedAvgLrRecipe(Recipe):
 
         # Create FedJob.
         job = FedJob(name=self.name)
-        persistor_id = job.to_server(LRModelPersistor(n_features=13), id="lr_persistor")
+        persistor_id = job.to_server(LRModelPersistor(n_features=self.num_features), id="lr_persistor")
 
         # Send custom controller to server
         controller = FedAvgLR(
             num_clients=0,
             damping_factor=self.damping_factor,
-            n_features=num_features,
+            n_features=self.num_features,
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
         )

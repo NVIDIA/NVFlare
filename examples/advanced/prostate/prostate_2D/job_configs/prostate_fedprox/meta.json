@@ -1,9 +1,0 @@
-{
-  "name": "prostate_fedprox",
-  "resource_spec": {},
-  "deploy_map": {
-    "app": [
-      "@ALL"
-    ]
-  }
-}
