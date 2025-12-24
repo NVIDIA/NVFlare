@@ -63,4 +63,3 @@ class ModerateTFNet(models.Sequential):
         self.add(layers.Dense(512, activation="relu"))
         self.add(layers.Dropout(rate=0.1))
         self.add(layers.Dense(10))
-

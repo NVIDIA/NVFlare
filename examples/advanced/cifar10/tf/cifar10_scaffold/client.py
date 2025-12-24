@@ -60,7 +60,7 @@ def main():
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
     optimizer = tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, clipnorm=args.clip_norm)
-    
+
     model.compile(optimizer=optimizer, loss=loss, metrics=["accuracy"])
     model.summary()
 
@@ -81,7 +81,7 @@ def main():
         global_ctrl_weights = input_model.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL)
         if not global_ctrl_weights:
             raise ValueError("global_ctrl_weights were empty!")
-        
+
         scaffold_helper.load_global_controls(weights=global_ctrl_weights)
         c_global_para, c_local_para = scaffold_helper.get_params()
 
@@ -111,7 +111,7 @@ def main():
         )
 
         curr_lr = get_lr_values(optimizer=optimizer)
-        
+
         print("Finished Training")
 
         # Update SCAFFOLD terms
@@ -132,7 +132,7 @@ def main():
 
         # Send model back to server with SCAFFOLD controls
         output_model = flare.FLModel(
-            params={layer.name: layer.get_weights() for layer in model.layers}, 
+            params={layer.name: layer.get_weights() for layer in model.layers},
             metrics={"accuracy": test_global_acc},
             meta={
                 AlgorithmConstants.SCAFFOLD_CTRL_DIFF: scaffold_helper.get_delta_controls(),

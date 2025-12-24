@@ -45,7 +45,7 @@ class FedOptRecipe(Recipe):
     """A recipe for implementing Federated Optimization (FedOpt) in NVFlare with TensorFlow.
 
     FedOpt is a federated learning algorithm that uses server-side optimization with momentum
-    to improve convergence. The algorithm is proposed in Reddi et al. "Adaptive Federated 
+    to improve convergence. The algorithm is proposed in Reddi et al. "Adaptive Federated
     Optimization." arXiv preprint arXiv:2003.00295 (2020).
 
     This recipe sets up a complete federated learning workflow with FedOpt controller that
@@ -66,7 +66,7 @@ class FedOptRecipe(Recipe):
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script. Defaults to "".
         launch_external_process: Whether to launch the script in external process. Defaults to False.
-        command: If launch_external_process=True, command to run script (prepended to script). 
+        command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
@@ -75,16 +75,16 @@ class FedOptRecipe(Recipe):
             Defaults to TransferType.FULL.
         optimizer_args: Dictionary of server-side optimizer arguments with keys 'path' and 'args'.
             Defaults to SGD with learning_rate=1.0 and momentum=0.6.
-        lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys 
+        lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys
             'path' and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
 
     Example:
         ```python
         from nvflare.app_opt.tf.recipes import FedOptRecipe
         from src.model import ModerateTFNet
-        
+
         model = ModerateTFNet(input_shape=(None, 32, 32, 3))
-        
+
         recipe = FedOptRecipe(
             name="my_fedopt_job",
             initial_model=model,
@@ -93,7 +93,7 @@ class FedOptRecipe(Recipe):
             train_script="cifar10_fedopt/client.py",
             train_args="--batch_size 64 --epochs 4"
         )
-        
+
         job = recipe.create_job()
         job.simulator_run("/tmp/nvflare/jobs/my_fedopt_job", gpu="0")
         ```
@@ -164,9 +164,9 @@ class FedOptRecipe(Recipe):
             controller_kwargs["optimizer_args"] = self.optimizer_args
         if self.lr_scheduler_args is not None:
             controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
-        
+
         controller = FedOpt(**controller_kwargs)
-        
+
         # Send the controller to the server
         job.to(controller, "server")
 

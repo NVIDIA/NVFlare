@@ -48,11 +48,7 @@ def main():
     callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs", write_graph=False)]
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), 
-        loss=loss, 
-        metrics=["accuracy"]
-    )
+    model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"])
     model.summary()
 
     # Train

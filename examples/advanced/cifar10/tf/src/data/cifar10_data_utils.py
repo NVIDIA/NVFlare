@@ -15,8 +15,8 @@
 import json
 import os
 import time
-import _pickle
 
+import _pickle
 import numpy as np
 import tensorflow as tf
 from filelock import FileLock, Timeout
@@ -46,6 +46,7 @@ def load_cifar10_with_retry(max_retries=3, retry_delay=5):
                     cifar10_path = os.path.join(cache_dir, "cifar-10-batches-py")
                     if os.path.exists(cifar10_path):
                         import shutil
+
                         shutil.rmtree(cifar10_path)
 
                 # Load the dataset
@@ -63,16 +64,16 @@ def load_cifar10_with_retry(max_retries=3, retry_delay=5):
 def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
     """
     Partition CIFAR-10 dataset into multiple sites using Dirichlet sampling.
-    
+
     This Dirichlet sampling strategy for creating a heterogeneous partition is adopted
     from FedMA (https://github.com/IBM/FedMA).
-    
+
     Args:
         split_dir: Directory to save split indices
         num_sites: Number of client sites
         alpha: Dirichlet sampling parameter (lower = more heterogeneous)
         seed: Random seed
-        
+
     Returns:
         List of paths to .npy files containing training indices for each site
     """
@@ -228,19 +229,19 @@ def preprocess_dataset(dataset, is_training, batch_size=1):
 def load_site_data(site_name, train_idx_root="/tmp/cifar10_splits"):
     """
     Load CIFAR10 data for a specific site.
-    
+
     Args:
         site_name: Name of the site (e.g., "site-1")
         train_idx_root: Root directory containing the data split indices
-    
+
     Returns:
         train_images, train_labels, test_images, test_labels
     """
     (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
-    
+
     # Load site-specific training data if split file exists
     train_idx_path = os.path.join(train_idx_root, f"{site_name}.npy")
-    
+
     if os.path.exists(train_idx_path):
         print(f"Loading train indices from {train_idx_path}")
         train_idx = np.load(train_idx_path)
@@ -254,5 +255,5 @@ def load_site_data(site_name, train_idx_root="/tmp/cifar10_splits"):
         )
     else:
         print(f"Warning: Split file {train_idx_path} not found. Using full training dataset.")
-    
+
     return train_images, train_labels, test_images, test_labels

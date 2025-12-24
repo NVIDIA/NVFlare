@@ -38,7 +38,9 @@ def main():
     job_name = args.name if args.name else f"cifar10_tf_fedprox_alpha{args.alpha}"
     train_split_root = f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"
 
-    print(f"Running FedProx ({args.num_rounds} rounds) with alpha = {args.alpha} and {args.n_clients} clients and fedprox_mu = {args.fedprox_mu}")
+    print(
+        f"Running FedProx ({args.num_rounds} rounds) with alpha = {args.alpha} and {args.n_clients} clients and fedprox_mu = {args.fedprox_mu}"
+    )
 
     # Prepare data splits
     if args.alpha > 0.0:

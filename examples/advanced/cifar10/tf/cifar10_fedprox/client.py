@@ -59,11 +59,7 @@ def main():
     tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/rounds")
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), 
-        loss=loss, 
-        metrics=["accuracy"]
-    )
+    model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"])
     model.summary()
 
     while flare.is_running():
@@ -115,8 +111,7 @@ def main():
 
         # Send model back to server
         output_model = flare.FLModel(
-            params={layer.name: layer.get_weights() for layer in model.layers}, 
-            metrics={"accuracy": test_global_acc}
+            params={layer.name: layer.get_weights() for layer in model.layers}, metrics={"accuracy": test_global_acc}
         )
         flare.send(output_model)
 

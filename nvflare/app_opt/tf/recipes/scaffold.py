@@ -18,8 +18,8 @@ from pydantic import BaseModel
 
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scaffold import Scaffold
-from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -38,14 +38,15 @@ class _ScaffoldValidator(BaseModel):
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    params_transfer_type: TransferType = TransferType.FULL,
+    params_transfer_type: TransferType = (TransferType.FULL,)
+
 
 class ScaffoldRecipe(Recipe):
     """A recipe for implementing SCAFFOLD in NVFlare with TensorFlow.
 
     Implements the training algorithm proposed in
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
-    (https://arxiv.org/abs/1910.06378). The client script is assumed to be using functions 
+    (https://arxiv.org/abs/1910.06378). The client script is assumed to be using functions
     implemented in `TFScaffoldHelper` class.
 
     This recipe sets up a complete federated learning workflow with SCAFFOLD controller.
@@ -65,7 +66,7 @@ class ScaffoldRecipe(Recipe):
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script. Defaults to "".
         launch_external_process: Whether to launch the script in external process. Defaults to False.
-        command: If launch_external_process=True, command to run script (prepended to script). 
+        command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
@@ -77,9 +78,9 @@ class ScaffoldRecipe(Recipe):
         ```python
         from nvflare.app_opt.tf.recipes import ScaffoldRecipe
         from src.model import ModerateTFNet
-        
+
         model = ModerateTFNet(input_shape=(None, 32, 32, 3))
-        
+
         recipe = ScaffoldRecipe(
             name="my_scaffold_job",
             initial_model=model,
@@ -88,13 +89,13 @@ class ScaffoldRecipe(Recipe):
             train_script="cifar10_scaffold/client.py",
             train_args="--batch_size 64 --epochs 4"
         )
-        
+
         job = recipe.create_job()
         job.simulator_run("/tmp/nvflare/jobs/my_scaffold_job", gpu="0")
         ```
 
     Note:
-        The client script must use `TFScaffoldHelper` from `nvflare.app_opt.tf.scaffold` 
+        The client script must use `TFScaffoldHelper` from `nvflare.app_opt.tf.scaffold`
         to handle SCAFFOLD-specific operations including control variates.
     """
 

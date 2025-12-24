@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--workspace", type=str, default="/tmp")
     parser.add_argument("--name", type=str, default="", help="Optional job name")
-    
+
     # FedOpt server-side optimizer arguments
     parser.add_argument("--server_lr", type=float, default=1.0, help="Server-side learning rate")
     parser.add_argument("--server_momentum", type=float, default=0.6, help="Server-side momentum")
@@ -64,7 +64,7 @@ def main():
         },
         "config_type": "dict",
     }
-    
+
     # Configure FedOpt learning rate scheduler arguments
     lr_scheduler_args = {
         "path": "tensorflow.keras.optimizers.schedules.CosineDecay",
