@@ -1,4 +1,4 @@
-# Federated Learning with CIFAR-10 in PyTorch
+# Federated Learning with CIFAR-10 using PyTorch
 
 Please make sure you set up virtual environment and follows [example root readme](../../README.md)
 
