@@ -16,7 +16,7 @@ python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.3
 python cifar10_fedavg/job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 
 # FedProx
-python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.1
+python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 1e-5
 
 # FedOpt
 python cifar10_fedopt/job.py --n_clients 8 --num_rounds 50 --alpha 0.1

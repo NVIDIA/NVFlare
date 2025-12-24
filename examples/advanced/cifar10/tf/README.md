@@ -116,7 +116,7 @@ Next, let's try some different FL algorithms on a more heterogeneous split. Each
 [FedProx](https://arxiv.org/abs/1812.06127) adds a proximal regularization term to the loss function to prevent client models from drifting too far from the global model during local training:
 
 ```bash
-python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 0.1
+python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedprox_mu 1e-5
 ```
 
 #### 4.3.2 FedOpt

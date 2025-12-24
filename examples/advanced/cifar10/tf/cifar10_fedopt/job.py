@@ -18,8 +18,8 @@ import os
 from data.cifar10_data_utils import cifar10_split
 from model import ModerateTFNet
 
-from nvflare.app_opt.tf.recipes import FedOptRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+from nvflare.recipe import SimEnv
 
 
 def main():
@@ -31,6 +31,11 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--workspace", type=str, default="/tmp")
     parser.add_argument("--name", type=str, default="", help="Optional job name")
+    
+    # FedOpt server-side optimizer arguments
+    parser.add_argument("--server_lr", type=float, default=1.0, help="Server-side learning rate")
+    parser.add_argument("--server_momentum", type=float, default=0.6, help="Server-side momentum")
+    parser.add_argument("--server_lr_decay_alpha", type=float, default=0.9, help="Server-side LR decay alpha")
 
     args = parser.parse_args()
 
@@ -50,6 +55,27 @@ def main():
     # Create initial model
     initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
 
+    # Configure FedOpt optimizer arguments
+    optimizer_args = {
+        "path": "tensorflow.keras.optimizers.SGD",
+        "args": {
+            "learning_rate": args.server_lr,
+            "momentum": args.server_momentum,
+        },
+        "config_type": "dict",
+    }
+    
+    # Configure FedOpt learning rate scheduler arguments
+    lr_scheduler_args = {
+        "path": "tensorflow.keras.optimizers.schedules.CosineDecay",
+        "args": {
+            "initial_learning_rate": args.server_lr,
+            "decay_steps": args.num_rounds,
+            "alpha": args.server_lr_decay_alpha,
+        },
+        "config_type": "dict",
+    }
+
     # Create FedOpt recipe
     recipe = FedOptRecipe(
         name=job_name,
@@ -58,8 +84,9 @@ def main():
         num_rounds=args.num_rounds,
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_root {train_split_root}",
+        optimizer_args=optimizer_args,
+        lr_scheduler_args=lr_scheduler_args,
     )
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Run using SimEnv
     env = SimEnv(num_clients=args.n_clients)

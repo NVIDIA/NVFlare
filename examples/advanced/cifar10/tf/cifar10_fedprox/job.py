@@ -19,7 +19,7 @@ from data.cifar10_data_utils import cifar10_split
 from model import ModerateTFNet
 
 from nvflare.app_opt.tf.recipes import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--alpha", type=float, default=0.1)
-    parser.add_argument("--fedprox_mu", type=float, default=0.0)
+    parser.add_argument("--fedprox_mu", type=float, default=1e-5)
     parser.add_argument("--workspace", type=str, default="/tmp")
     parser.add_argument("--name", type=str, default="", help="Optional job name")
 
@@ -60,7 +60,6 @@ def main():
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--batch_size {args.batch_size} --epochs {args.epochs} --train_idx_root {train_split_root} --fedprox_mu {args.fedprox_mu}",
     )
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Run using SimEnv
     env = SimEnv(num_clients=args.n_clients)

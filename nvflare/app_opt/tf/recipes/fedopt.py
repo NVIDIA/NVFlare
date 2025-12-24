@@ -20,8 +20,8 @@ from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.tf.fedopt_ctl import FedOpt
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.fed_job_config import ExchangeFormat, FrameworkType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -38,6 +38,9 @@ class _FedOptValidator(BaseModel):
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
+    params_transfer_type: TransferType = TransferType.FULL
+    optimizer_args: dict = None
+    lr_scheduler_args: dict = None
 
 
 class FedOptRecipe(Recipe):
@@ -69,6 +72,13 @@ class FedOptRecipe(Recipe):
             Defaults to "python3 -u".
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
+        params_transfer_type: How to transfer the parameters between server and client.
+            FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
+            Defaults to TransferType.FULL.
+        optimizer_args: Dictionary of server-side optimizer arguments with keys 'path' and 'args'.
+            Defaults to SGD with learning_rate=1.0 and momentum=0.6.
+        lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys 
+            'path' and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
 
     Example:
         ```python
@@ -107,6 +117,9 @@ class FedOptRecipe(Recipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
+        optimizer_args: dict = None,
+        lr_scheduler_args: dict = None,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -119,6 +132,9 @@ class FedOptRecipe(Recipe):
             launch_external_process=launch_external_process,
             command=command,
             server_expected_format=server_expected_format,
+            params_transfer_type=params_transfer_type,
+            optimizer_args=optimizer_args,
+            lr_scheduler_args=lr_scheduler_args,
         )
 
         self.name = v.name
@@ -130,20 +146,24 @@ class FedOptRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
+        self.params_transfer_type: TransferType = v.params_transfer_type
+        self.optimizer_args = v.optimizer_args
+        self.lr_scheduler_args = v.lr_scheduler_args
 
-    def create_job(self) -> FedJob:
-        """Create a FedJob configured for FedOpt.
 
-        Returns:
-            FedJob: A configured federated learning job ready to run.
-        """
         job = FedJob(name=self.name)
 
         # Add FedOpt controller to server
-        controller = FedOpt(
-            num_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-        )
+        controller_kwargs = {
+            "num_clients": self.min_clients,
+            "num_rounds": self.num_rounds,
+        }
+        if self.optimizer_args is not None:
+            controller_kwargs["optimizer_args"] = self.optimizer_args
+        if self.lr_scheduler_args is not None:
+            controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
+            
+        controller = FedOpt(**controller_kwargs)
         job.to(controller, "server")
 
         # Add initial model to server if provided
@@ -153,15 +173,16 @@ class FedOptRecipe(Recipe):
         # Add model selector to track best model
         job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
-        # Add script executor to all clients
-        for i in range(self.min_clients):
-            executor = ScriptRunner(
-                script=self.train_script,
-                script_args=self.train_args,
-                framework=FrameworkType.TENSORFLOW,
-                launch_external_process=self.launch_external_process,
-                command=self.command,
-            )
-            job.to(executor, f"site-{i + 1}")
+        # Add clients
+        executor = ScriptRunner(
+            script=self.train_script,
+            script_args=self.train_args,
+            launch_external_process=self.launch_external_process,
+            command=self.command,
+            framework=FrameworkType.TENSORFLOW,
+            server_expected_format=self.server_expected_format,
+            params_transfer_type=self.params_transfer_type,
+        )
+        job.to_clients(executor)
 
-        return job
+        Recipe.__init__(self, job)
