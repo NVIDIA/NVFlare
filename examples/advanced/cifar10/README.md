@@ -26,3 +26,6 @@ and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms with NVFlare's
 and [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html).
 The example demonstrates federated learning with TensorFlow on the CIFAR-10 dataset, 
 including centralized training baseline and experiments with different data heterogeneity levels.
+
+> **Note:** For more detailed explanations of the different FL algorithms (FedAvg, FedProx, FedOpt, and SCAFFOLD), 
+> please refer to the [PyTorch examples](./pt/README.md) above, which provide in-depth algorithm descriptions and implementation details.
