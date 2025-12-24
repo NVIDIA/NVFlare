@@ -14,9 +14,11 @@
 
 """Run PSI user-email matching as an executable Python job.
 
-This script programmatically builds the same PSI job defined in
-`jobs/user_email_match/app/config/config_fed_{server,client}.conf`, but allows
-running it directly via NVFlare Job API + Recipe + SimEnv.
+This script defines and runs the PSI user-email match job directly via the
+NVFlare Recipe API and SimEnv.
+
+It can also export
+the generated job configuration for use with other NVFlare runtimes.
 """
 
 import argparse
