@@ -47,7 +47,7 @@ This script configures:
 
 Alternatively, you can set them manually:
 ```bash
-export PYTHONPATH=${PWD}/src
+export PYTHONPATH=${PYTHONPATH}:${PWD}/src
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 export TF_GPU_ALLOCATOR=cuda_malloc_asyncp
 export TF_CPP_MIN_LOG_LEVEL=2
