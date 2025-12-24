@@ -30,7 +30,6 @@ recipe = FedAvgRecipe(
     num_rounds=5,
     initial_model=SimpleNetwork(),
     train_script="client.py",
-    analytics_receiver=False,  # Disable server-side tracking
 )
 
 # Add MLflow receiver to each client
@@ -50,7 +49,7 @@ recipe.run()
 ```
 
 **Key points**:
-- `analytics_receiver=False` - Disables default server-side tracking
+- By default, no server-side tracking is enabled (analytics_receiver defaults to None)
 - `events=[ANALYTIC_EVENT_TYPE]` - Listen to local events (not `fed.` events)
 - Each site gets its own `tracking_uri`
 

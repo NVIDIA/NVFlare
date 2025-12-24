@@ -44,7 +44,6 @@ if __name__ == "__main__":
         num_rounds=5,
         initial_model=SimpleNetwork(),
         train_script="client.py",
-        analytics_receiver=False,  # Disable server-side tracking
     )
 
     # Add site-specific MLflow tracking for each client

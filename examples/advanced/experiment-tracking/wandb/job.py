@@ -54,7 +54,6 @@ def main():
         initial_model=Net(),
         train_script=args.script,
         launch_external_process=args.launch_external_process,
-        analytics_receiver=False,  # We'll add WandB manually
     )
 
     # Configure WandB settings

@@ -23,7 +23,6 @@ recipe = FedAvgRecipe(
     num_rounds=5,
     initial_model=Net(),
     train_script="client.py",
-    analytics_receiver=False,  # We'll add WandB manually
 )
 
 # Configure WandB settings
