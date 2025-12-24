@@ -21,6 +21,8 @@ from model import ModerateTFNet
 from nvflare.app_opt.tf.recipes import ScaffoldRecipe
 from nvflare.recipe import SimEnv
 
+SPLIT_DIR = "/tmp/cifar10_splits"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -29,13 +31,12 @@ def main():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--alpha", type=float, default=0.1)
-    parser.add_argument("--workspace", type=str, default="/tmp")
     parser.add_argument("--name", type=str, default="", help="Optional job name")
 
     args = parser.parse_args()
 
     job_name = args.name if args.name else f"cifar10_tf_scaffold_alpha{args.alpha}"
-    train_split_root = f"{args.workspace}/cifar10_splits/clients{args.n_clients}_alpha{args.alpha}"
+    train_split_root = f"{SPLIT_DIR}/clients{args.n_clients}_alpha{args.alpha}"
 
     print(f"Running SCAFFOLD ({args.num_rounds} rounds) with alpha = {args.alpha} and {args.n_clients} clients")
 

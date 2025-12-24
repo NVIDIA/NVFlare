@@ -20,6 +20,5 @@ python cifar10_fedprox/job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --fedpro
 - `--batch_size`: Batch size for training (default: 64)
 - `--epochs`: Number of local training epochs per round (default: 4)
 - `--alpha`: Dirichlet sampling parameter for data heterogeneity (default: 0.1)
-- `--fedprox_mu`: FedProx regularization parameter (default: 0.0)
-- `--workspace`: Workspace directory (default: /tmp)
-- `--gpu`: GPU index (default: "0")
+- `--fedprox_mu`: FedProx regularization parameter (default: 1e-5)
+- `--name`: Optional job name (default: "")

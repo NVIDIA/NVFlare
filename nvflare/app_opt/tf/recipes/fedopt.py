@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -156,16 +156,12 @@ class FedOptRecipe(Recipe):
         )
 
         # Add FedOpt controller to server
-        controller_kwargs = {
-            "num_clients": self.min_clients,
-            "num_rounds": self.num_rounds,
-        }
-        if self.optimizer_args is not None:
-            controller_kwargs["optimizer_args"] = self.optimizer_args
-        if self.lr_scheduler_args is not None:
-            controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
-
-        controller = FedOpt(**controller_kwargs)
+        controller = FedOpt(
+            num_clients=self.min_clients,
+            num_rounds=self.num_rounds,
+            optimizer_args=self.optimizer_args,
+            lr_scheduler_args=self.lr_scheduler_args,
+        )
 
         # Send the controller to the server
         job.to(controller, "server")
