@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scaffold import Scaffold
 from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
-from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
