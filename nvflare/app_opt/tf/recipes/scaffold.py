@@ -19,9 +19,9 @@ from pydantic import BaseModel
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scaffold import Scaffold
 from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.api import FedJob
-from nvflare.job_config.fed_job_config import ExchangeFormat, FrameworkType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -38,7 +38,7 @@ class _ScaffoldValidator(BaseModel):
     launch_external_process: bool = False
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-
+    params_transfer_type: TransferType = TransferType.FULL,
 
 class ScaffoldRecipe(Recipe):
     """A recipe for implementing SCAFFOLD in NVFlare with TensorFlow.
@@ -69,6 +69,9 @@ class ScaffoldRecipe(Recipe):
             Defaults to "python3 -u".
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
+        params_transfer_type: How to transfer the parameters between server and client.
+            FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
+            Defaults to TransferType.FULL.
 
     Example:
         ```python
@@ -107,6 +110,7 @@ class ScaffoldRecipe(Recipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
     ):
         # Validate inputs internally
         v = _ScaffoldValidator(
@@ -119,6 +123,7 @@ class ScaffoldRecipe(Recipe):
             launch_external_process=launch_external_process,
             command=command,
             server_expected_format=server_expected_format,
+            params_transfer_type=params_transfer_type,
         )
 
         self.name = v.name
@@ -130,38 +135,33 @@ class ScaffoldRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
+        self.params_transfer_type: TransferType = v.params_transfer_type
 
-    def create_job(self) -> FedJob:
-        """Create a FedJob configured for SCAFFOLD.
-
-        Returns:
-            FedJob: A configured federated learning job ready to run.
-        """
-        job = FedJob(name=self.name)
+        # Create BaseFedJob with initial model
+        job = BaseFedJob(
+            initial_model=self.initial_model,
+            name=self.name,
+            min_clients=self.min_clients,
+        )
 
         # Add SCAFFOLD controller to server
         controller = Scaffold(
             num_clients=self.min_clients,
             num_rounds=self.num_rounds,
         )
+        # Send the controller to the server
         job.to(controller, "server")
 
         # Add initial model to server if provided
-        if self.initial_model is not None:
-            job.to(TFModel(self.initial_model), "server")
+        executor = ScriptRunner(
+            script=self.train_script,
+            script_args=self.train_args,
+            launch_external_process=self.launch_external_process,
+            command=self.command,
+            framework=FrameworkType.TENSORFLOW,
+            server_expected_format=self.server_expected_format,
+            params_transfer_type=self.params_transfer_type,
+        )
+        job.to_clients(executor)
 
-        # Add model selector to track best model
-        job.to(IntimeModelSelector(key_metric="accuracy"), "server")
-
-        # Add script executor to all clients
-        for i in range(self.min_clients):
-            executor = ScriptRunner(
-                script=self.train_script,
-                script_args=self.train_args,
-                framework=FrameworkType.TENSORFLOW,
-                launch_external_process=self.launch_external_process,
-                command=self.command,
-            )
-            job.to(executor, f"site-{i + 1}")
-
-        return job
+        Recipe.__init__(self, job)

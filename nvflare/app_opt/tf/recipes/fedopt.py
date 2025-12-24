@@ -16,10 +16,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.tf.fedopt_ctl import FedOpt
-from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.api import FedJob
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -150,8 +148,12 @@ class FedOptRecipe(Recipe):
         self.optimizer_args = v.optimizer_args
         self.lr_scheduler_args = v.lr_scheduler_args
 
-
-        job = FedJob(name=self.name)
+        # Create BaseFedJob with initial model
+        job = BaseFedJob(
+            initial_model=self.initial_model,
+            name=self.name,
+            min_clients=self.min_clients,
+        )
 
         # Add FedOpt controller to server
         controller_kwargs = {
@@ -162,16 +164,11 @@ class FedOptRecipe(Recipe):
             controller_kwargs["optimizer_args"] = self.optimizer_args
         if self.lr_scheduler_args is not None:
             controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
-            
+        
         controller = FedOpt(**controller_kwargs)
+        
+        # Send the controller to the server
         job.to(controller, "server")
-
-        # Add initial model to server if provided
-        if self.initial_model is not None:
-            job.to(TFModel(self.initial_model), "server")
-
-        # Add model selector to track best model
-        job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
         # Add clients
         executor = ScriptRunner(
