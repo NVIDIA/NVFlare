@@ -105,7 +105,7 @@ def main():
             x=train_ds,
             epochs=end_epoch,
             validation_data=test_ds,
-            callbacks=[callbacks, ScaffoldCallback(scaffold_helper)],
+            callbacks=callbacks + [ScaffoldCallback(scaffold_helper)],
             initial_epoch=start_epoch,
             validation_freq=1,
         )
