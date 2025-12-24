@@ -21,7 +21,6 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
 
 
@@ -32,7 +31,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     For new code, consider using nvflare.job_config.base_fed_job.BaseFedJob directly with
     framework=FrameworkType.TENSORFLOW.
 
-    Configures ValidationJsonGenerator, model selector, TBAnalyticsReceiver, ConvertToFedEvent.
+    Configures ValidationJsonGenerator, model selector, AnalyticsReceiver, ConvertToFedEvent.
 
     User must add controllers and executors.
 
@@ -50,11 +49,12 @@ class BaseFedJob(UnifiedBaseFedJob):
             This event-driven component evaluates and tracks model performance across training rounds,
             handling workflow events such as BEFORE_AGGREGATION and BEFORE_CONTRIBUTION_ACCEPT.
             If not provided, an IntimeModelSelector will be configured based on key_metric.
-        convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
+        convert_to_fed_event: (ConvertToFedEvent, optional): A component to convert certain events to fed events.
             if not provided, a ConvertToFedEvent object will be created.
-        analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
-            If not provided, a TBAnalyticsReceiver will be configured.
-        model_persistor (optional, ModelPersistor): how to persistor the model.
+        analytics_receiver (AnalyticsReceiver | None, optional): Component for receiving analytics data.
+            If not provided, no analytics tracking will be enabled. For experiment tracking (e.g., TensorBoard),
+            explicitly pass a TBAnalyticsReceiver instance.
+        model_persistor (optional, ModelPersistor): how to persist the model.
     """
 
     def __init__(
@@ -70,10 +70,6 @@ class BaseFedJob(UnifiedBaseFedJob):
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
     ):
-        # Add default TBAnalyticsReceiver if not provided (TensorFlow-specific)
-        if analytics_receiver is None:
-            analytics_receiver = TBAnalyticsReceiver()
-
         # Call the unified BaseFedJob
         super().__init__(
             name=name,
