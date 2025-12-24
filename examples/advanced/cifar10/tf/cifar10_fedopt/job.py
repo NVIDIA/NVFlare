@@ -18,7 +18,7 @@ import os
 from data.cifar10_data_utils import cifar10_split
 from model import ModerateTFNet
 
-from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+from nvflare.app_opt.tf.recipes import FedOptRecipe
 from nvflare.recipe import SimEnv
 
 

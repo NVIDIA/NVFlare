@@ -13,5 +13,7 @@
 # limitations under the License.
 
 from .fedavg import FedAvgRecipe
+from .fedopt import FedOptRecipe
+from .scaffold import ScaffoldRecipe
 
-__all__ = ["FedAvgRecipe"]
+__all__ = ["FedAvgRecipe", "FedOptRecipe", "ScaffoldRecipe"]
