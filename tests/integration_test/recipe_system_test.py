@@ -12,7 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests for the refactored recipe system."""
+"""Integration tests for the refactored recipe system.
+
+NOTE: These tests are currently NOT triggered by any automated test suite.
+They test basic recipe workflow with SimEnv and PocEnv.
+
+To run manually:
+    cd tests/integration_test
+    pytest recipe_system_test.py -v
+
+TODO: Decide if these should be added to an existing test category or run in a separate suite.
+"""
 
 import os
 

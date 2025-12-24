@@ -14,8 +14,25 @@
 
 """Integration tests for experiment tracking with recipes.
 
-These are smoke tests to verify that add_experiment_tracking() works with recipes.
-They verify job completion, not detailed tracking output verification.
+These are smoke tests to verify that add_experiment_tracking() works with recipes without errors.
+Tests verify:
+- add_experiment_tracking() can be called successfully
+- The job completes and produces a workspace
+
+Tests do NOT verify:
+- Tracking files are actually created (TensorBoard events, MLflow runs, etc.)
+- Metrics are logged correctly
+- Tracking output content or format
+
+NOTE: These tests are currently NOT triggered by any automated test suite.
+They use CIFAR-10 dataset and run real training.
+
+To run manually:
+    cd tests/integration_test
+    pytest test_experiment_tracking_recipes.py -v
+
+TODO: Decide if these should be added to an existing test category (e.g., CIFAR integration tests)
+or run in a separate recipe test suite (takes ~1-2 minutes).
 """
 
 import os
@@ -26,7 +43,11 @@ from nvflare.recipe.utils import add_experiment_tracking
 
 
 class TestExperimentTrackingRecipes:
-    """Integration tests for experiment tracking with Recipe API."""
+    """Smoke tests for experiment tracking integration with Recipe API.
+
+    These tests verify that experiment tracking can be added to recipes without errors
+    and that jobs complete successfully. They do not verify tracking output.
+    """
 
     @property
     def client_script_path(self):
