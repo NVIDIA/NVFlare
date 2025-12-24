@@ -85,6 +85,7 @@ class Forest:
         """Constructor of Forest"""
         self.roots = []  # one or more names of the root nodes
         self.nodes = {}  # name => Node
+        self.leaves = []  # names of leaf nodes
 
 
 def build_forest(objs: List[Any], get_name_f, get_fqn_f, **kwargs) -> Forest:
@@ -139,6 +140,10 @@ def build_forest(objs: List[Any], get_name_f, get_fqn_f, **kwargs) -> Forest:
         else:
             # this node has no parent - it's a root
             forest.roots.append(name)
+
+    for name, node in forest.nodes.items():
+        if not node.children:
+            forest.leaves.append(name)
 
     return forest
 
