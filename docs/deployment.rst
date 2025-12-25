@@ -22,31 +22,24 @@ Provision
 Deployment
 ----------
 
-.. toctree::
-   :maxdepth: 3
 
 
 Configuration
 -------------
-.. toctree::
-   :maxdepth: 2
+
 
 
 Monitoring
 -----------
-.. toctree::
-   :maxdepth: 2
 
 
 Trouble Shooting
 ----------------
-.. toctree::
-   :maxdepth: 2
+
 
 
 Security
 --------
-.. toctree::
-   :maxdepth: 2
+
 
 
