@@ -1,87 +1,171 @@
-# Hello Numpy Cross-Site Validation
+# Hello Numpy Cross-Site Evaluation
 
-The cross-site model evaluation workflow uses the data from clients to run evaluation with the models of other clients. Data is not shared. Rather the collection of models is distributed to each client site to run local validation. The server collects the results of local validation to construct an all-to-all matrix of model performance vs. client dataset. It uses the [CrossSiteModelEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_model_eval.html) controller workflow.
+The cross-site model evaluation workflow uses data from clients to evaluate models from other clients. Data is not shared between sites. Instead, the collection of models is distributed to each client site for local evaluation. The server collects these results to construct an all-to-all matrix of model performance across client datasets.
 
+This example demonstrates cross-site evaluation with NumPy models using both the Recipe API and FedJob API.
 
 ## Installation
 
 Follow the [Installation](../../getting_started/README.md) instructions.
 
-# Run training and cross site validation right after training
+## What is Cross-Site Evaluation?
 
-This example uses a NumPy-based trainer to simulate the training steps.
+Cross-site evaluation creates an all-to-all matrix showing how each model performs on each client's dataset:
+- Each client evaluates models from other clients and the server
+- No data is shared between sites
+- Results show which models generalize best across different data distributions
 
-We first perform FedAvg training and then conduct cross-site validation.
+## Running Cross-Site Evaluation
 
-So you will see two workflows (ScatterAndGather and CrossSiteModelEval) are configured.
+The `job.py` script supports two modes:
 
-## 1. Prepare the job and run the experiment using simulator
+### Mode 1: Standalone CSE with Pre-trained Models (Recommended)
 
-We use Job API to generate the job and run the job using simulator:
+This approach evaluates pre-trained models without running training first.
 
-```bash
-python3 job_train_and_cse.py
-```
+#### Step 1: Generate Pre-trained Models
 
-## 2. Access the logs and results
-
-You can find the running logs and results inside the simulator's workspace:
-
-```bash
-$ ls /tmp/nvflare/jobs/workdir/
-server/  site-1/  site-2/  startup/
-```
-
-The cross-site validation results:
-
-```bash
-$ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
-```
-
-# Run cross site evaluation using the previous trained results
-
-We can also run cross-site evaluation without the training workflow, making use of the previous results or just want to evaluate on the pretrained models.
-
-You can provide / use your own pretrained models for the cross-site evaluation.
-
-## 1. Generate the pretrained model
-
-In reality, users would use any training workflows to obtain these pretrained models
-
-To mimic that, run the following command to generate the pre-trained models:
+First, create some pre-trained models to evaluate:
 
 ```bash
 python3 generate_pretrain_models.py
 ```
 
-## 2. Prepare the job and run the experiment using simulator
+This creates models in:
+- Server models: `/tmp/nvflare/server_pretrain_models/`
+- Client models: `/tmp/nvflare/client_pretrain_models/`
 
-Note that our pre-trained models are generated under:
+#### Step 2: Run Cross-Site Evaluation
+
+```bash
+python3 job.py --mode pretrained
+```
+
+This uses the `NumpyCrossSiteEvalRecipe` to:
+- Load pre-trained models from specified directories
+- Distribute models to all clients for evaluation
+- Collect results and generate an all-to-all evaluation matrix
+
+#### Step 3: View Results
+
+The cross-site evaluation results are saved as JSON:
+
+```bash
+cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
+```
+
+The JSON shows how each model performs on each client's data:
+```json
+{
+  "site-1": {
+    "server_model_1": {"accuracy": 0.95},
+    "server_model_2": {"accuracy": 0.93},
+    "site-2": {"accuracy": 0.91}
+  },
+  "site-2": {
+    "server_model_1": {"accuracy": 0.94},
+    "server_model_2": {"accuracy": 0.92},
+    "site-1": {"accuracy": 0.90}
+  }
+}
+```
+
+### Mode 2: Training + Cross-Site Evaluation
+
+Run FedAvg training followed by cross-site evaluation in a single workflow:
+
+```bash
+python3 job.py --mode training --num_rounds 2
+```
+
+This performs:
+1. **Training Phase**: FedAvg training for specified rounds (default: 1)
+2. **Evaluation Phase**: Cross-site evaluation of the trained models
+
+The results will be in `/tmp/nvflare/jobs/workdir/server/simulate_job/`.
+
+
+## Understanding the Implementation
+
+### Mode 1: Standalone CSE (Recipe API)
+
+Uses `NumpyCrossSiteEvalRecipe` for clean, high-level API:
 
 ```python
-SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
-CLIENT_MODEL_DIR = "/tmp/nvflare/client_pretrain_models"
+from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+recipe = NumpyCrossSiteEvalRecipe(
+    name="hello-numpy-cse",
+    min_clients=2,
+    model_locator_config={
+        "model_dir": "/tmp/nvflare/server_pretrain_models",
+        "model_name": {
+            "server_model_1": "server_1.npy",
+            "server_model_2": "server_2.npy"
+        }
+    },
+    client_model_dir="/tmp/nvflare/client_pretrain_models",
+)
 ```
 
-In our job_cse.py we also specify that.
+**Key Parameters:**
+- `name`: Job name
+- `min_clients`: Minimum clients required
+- `model_locator_config`: Configuration for finding server models
+  - `model_dir`: Directory containing server models
+  - `model_name`: Dict mapping model names to file names
+- `client_model_dir`: Directory where client models are stored
 
-Then we can use Job API to generate the job and run it using simulator:
+### Mode 2: Training + CSE (Recipe API)
+
+Uses `FedAvgWithCrossSiteEvalRecipe` to combine training and evaluation:
+
+```python
+from nvflare.app_common.np.recipes import FedAvgWithCrossSiteEvalRecipe
+
+recipe = FedAvgWithCrossSiteEvalRecipe(
+    name="hello-numpy-train-cse",
+    min_clients=2,
+    num_rounds=1,
+    train_script="client.py",
+)
+```
+
+This recipe runs two workflows sequentially:
+1. `ScatterAndGather` controller for FedAvg training
+2. `CrossSiteModelEval` controller for evaluation
+
+**Key Parameters:**
+- `name`: Job name
+- `min_clients`: Minimum clients required
+- `num_rounds`: Number of training rounds
+- `train_script`: Path to training script
+- `train_args`: Arguments to pass to training script (optional)
+- Other CSE parameters: `cross_val_dir`, `submit_model_timeout`, `validation_timeout`
+
+## Files Overview
+
+- `job.py`: Main script supporting both modes
+  - Mode 1: Uses `NumpyCrossSiteEvalRecipe`
+  - Mode 2: Uses `FedAvgWithCrossSiteEvalRecipe`
+- `client.py`: Training script for Mode 2 (training+CSE)
+- `generate_pretrain_models.py`: Utility to create pre-trained models for Mode 1
+- `README.md`: This file
+
+### Command-Line Options
 
 ```bash
-python3 job_cse.py
+python job.py --help
 ```
 
-## 3. Access the logs and results
+Options:
+- `--mode`: Choose `pretrained` (default) or `training`
+- `--n_clients`: Number of clients (default: 2)
+- `--num_rounds`: Training rounds for training mode (default: 1)
 
-You can find the running logs and results inside the simulator's workspace:
+## Next Steps
 
-```bash
-$ ls /tmp/nvflare/jobs/workdir/
-server/  site-1/  site-2/  startup/
-```
-
-The cross-site validation results:
-
-```bash
-$ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
-```
+- Try modifying the models in `generate_pretrain_models.py`
+- Experiment with different numbers of clients using `--n_clients`
+- Test different training configurations with `--num_rounds` in training mode
+- See [Cross-Site Model Evaluation documentation](https://nvflare.readthedocs.io/en/main/programming_guide/controllers/cross_site_model_evaluation.html) for more details

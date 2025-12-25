@@ -29,7 +29,7 @@ def _save_model(model_data, model_dir: str, model_file: str):
 
 if __name__ == "__main__":
     """
-    This is the tool to generate the pre-trained models for demonstrating the cross-validation without training.
+    This is the tool to generate the pre-trained models for demonstrating the cross-site evaluation without training.
     """
 
     model_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
