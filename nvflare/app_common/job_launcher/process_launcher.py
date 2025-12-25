@@ -16,6 +16,7 @@ import os
 import shlex
 import subprocess
 from abc import abstractmethod
+from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
@@ -23,42 +24,43 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path, extract_job_image
+from nvflare.utils.process_utils import ProcessAdapter, spawn_process
 
 JOB_RETURN_CODE_MAPPING = {0: JobReturnCode.SUCCESS, 1: JobReturnCode.EXECUTION_ERROR, 9: JobReturnCode.ABORTED}
 
 
 class ProcessHandle(JobHandleSpec):
-    def __init__(self, process):
+    def __init__(
+        self,
+        process: Optional[subprocess.Popen] = None,
+        pid: Optional[int] = None,
+        process_adapter: Optional[ProcessAdapter] = None,
+    ):
         super().__init__()
 
-        self.process = process
-        self.logger = logging.getLogger(self.__class__.__name__)
+        if process_adapter:
+            self.adapter = process_adapter
+        elif process or pid is not None:
+            self.adapter = ProcessAdapter(process=process, pid=pid)
+        else:
+            raise ValueError("ProcessHandle requires a process object, a pid, or a ProcessAdapter.")
 
     def terminate(self):
-        if self.process:
-            try:
-                os.killpg(os.getpgid(self.process.pid), 9)
-                self.logger.debug("kill signal sent")
-            except:
-                pass
-
-            self.process.terminate()
+        self.adapter.terminate()
 
     def poll(self):
-        if self.process:
-            return JOB_RETURN_CODE_MAPPING.get(self.process.poll(), JobReturnCode.EXECUTION_ERROR)
-        else:
+        code = self.adapter.poll()
+        if code is None:
             return JobReturnCode.UNKNOWN
+        return JOB_RETURN_CODE_MAPPING.get(code, JobReturnCode.EXECUTION_ERROR)
 
     def wait(self):
-        if self.process:
-            self.process.wait()
+        self.adapter.wait()
 
 
 class ProcessJobLauncher(JobLauncherSpec):
     def __init__(self):
         super().__init__()
-
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
@@ -71,12 +73,12 @@ class ProcessJobLauncher(JobLauncherSpec):
             add_custom_dir_to_path(app_custom_folder, new_env)
 
         command = self.get_command(job_meta, fl_ctx)
-        # use os.setsid to create new process group ID
-        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        argv = shlex.split(command, True)
 
-        self.logger.info("Launch the job in process ID: {}".format(process.pid))
+        # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
+        process_adapter = spawn_process(argv, new_env)
 
-        return ProcessHandle(process)
+        return ProcessHandle(process_adapter=process_adapter)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
