@@ -83,20 +83,13 @@ class ServerPackageChecker(PackageChecker):
         self.dry_run_timeout = 3
 
         # Determine the communication scheme
-        scheme = get_communication_scheme(package_path)
+        scheme = get_communication_scheme(package_path, NVFlareConfig.SERVER)
 
-        # Create check name based on actual scheme
-        if scheme in ["grpc", "agrpc"]:
-            fl_check_name = "Check grpc port binding"
-        elif scheme in ["tcp", "atcp", "stcp"]:
-            fl_check_name = "Check tcp port binding"
-        elif scheme in ["http", "https"]:
-            fl_check_name = "Check http port binding"
-        else:
-            fl_check_name = f"Check {scheme} port binding"
+        if scheme not in ["grpc", "agrpc", "http", "https"]:
+            raise RuntimeError(f"Communication scheme {scheme} is not supported.")
 
         self.rules = [
-            CheckAddressBinding(name=fl_check_name, get_host_and_port_from_package=_get_fl_host_and_port),
+            CheckAddressBinding(name="Check FL port binding", get_host_and_port_from_package=_get_fl_host_and_port),
             CheckAddressBinding(
                 name="Check admin port binding", get_host_and_port_from_package=_get_admin_host_and_port
             ),

@@ -17,6 +17,7 @@ import os
 import shlex
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
 from typing import Any, Dict, Optional
@@ -64,25 +65,6 @@ def try_bind_address(host: str, port: int):
     finally:
         sock.close()
     return None
-
-
-def _create_http_session(ca_path=None, cert_path=None, prv_key_path=None):
-    session = Session()
-    adapter = HTTPAdapter(max_retries=1)
-    session.mount("https://", adapter)
-    if ca_path:
-        session.verify = ca_path
-        session.cert = (cert_path, prv_key_path)
-    return session
-
-
-def _send_request(
-    session, api_point, headers: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None
-) -> Response:
-    req = Request("POST", api_point, json=payload, headers=headers)
-    prepared = session.prepare_request(req)
-    resp = session.send(prepared)
-    return resp
 
 
 def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list) -> dict:
@@ -193,6 +175,65 @@ def check_grpc_server_running(startup: str, host: str, port: int, token=None) ->
     return True
 
 
+def check_socket_server_running(startup: str, host: str, port: int, scheme: str = "https") -> bool:
+    """Check if socket-based server (HTTP/HTTPS/TCP/STCP) is running and accessible.
+
+    This function performs a socket connection test with optional SSL/TLS.
+    It's used for HTTP/WebSocket and TCP-based FL servers.
+
+    Args:
+        startup: Path to startup directory containing certificates
+        host: Server hostname or IP address
+        port: Server port number
+        scheme: URL scheme ("http", "https", "tcp", "stcp")
+
+    Returns:
+        True if server is accessible, False otherwise
+    """
+    conn_sec = _get_conn_sec(startup)
+    secure = True
+    if conn_sec == "clear":
+        secure = False
+
+    # Determine if we need SSL based on scheme
+    use_ssl = secure and scheme in ["https", "stcp"]
+
+    # Try a socket connection to check if port is reachable
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(10)
+
+    try:
+        if use_ssl:
+            # For secure connection, wrap socket with SSL and use client certificates
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            ca_path = os.path.join(startup, _get_ca_cert_file_name())
+            cert_path = os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT))
+            prv_key_path = os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT))
+
+            context.load_verify_locations(ca_path)
+            context.load_cert_chain(cert_path, prv_key_path)
+            # Check hostname may fail for localhost, so disable it for preflight check
+            context.check_hostname = False
+
+            ssl_sock = context.wrap_socket(sock, server_hostname=host)
+            ssl_sock.connect((host, port))
+            ssl_sock.close()
+        else:
+            # For insecure connection, just check if we can connect
+            sock.connect((host, port))
+            sock.close()
+
+        return True
+    except (socket.timeout, socket.error, ssl.SSLError, OSError, ConnectionRefusedError):
+        # Connection failed - server is not accessible
+        return False
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
 def run_command_in_subprocess(command):
     new_env = os.environ.copy()
     process = subprocess.Popen(
@@ -207,7 +248,7 @@ def run_command_in_subprocess(command):
     return process
 
 
-def get_communication_scheme(package_path: str, default_scheme: str = "tcp") -> str:
+def get_communication_scheme(package_path: str, config_name: str, default_scheme: str = "http") -> str:
     """Read the communication scheme from package configuration files.
 
     This function checks multiple sources to determine the communication scheme:
@@ -216,16 +257,18 @@ def get_communication_scheme(package_path: str, default_scheme: str = "tcp") -> 
 
     Args:
         package_path: Path to the package directory
+        config_name: Name of the configuration file (fed_server.json, fed_client.json, fed_admin.json)
+        default_scheme: Default scheme to return if no scheme is found
 
     Returns:
-        The communication scheme (e.g., 'tcp', 'grpc', 'http') or 'tcp' as default
+        The communication scheme (e.g., "grpc", "http")
     """
-    # First try to read from fed_server.json (for server packages)
+    # First try to read from fed_xxx.json
     startup = os.path.join(package_path, "startup")
-    fed_server_config = os.path.join(startup, NVFlareConfig.SERVER)
-    if os.path.exists(fed_server_config):
+    fed_config_file = os.path.join(startup, config_name)
+    if os.path.exists(fed_config_file):
         try:
-            with open(fed_server_config, "r") as f:
+            with open(fed_config_file, "r") as f:
                 fed_config = json.load(f)
                 server_conf = fed_config.get("servers", [{}])[0]
                 service_config = server_conf.get("service", {})
@@ -234,21 +277,5 @@ def get_communication_scheme(package_path: str, default_scheme: str = "tcp") -> 
                     return scheme.lower()
         except Exception:
             pass
-
-    # Try to read from comm_config.json (for all package types)
-    for subdir in ["local", "startup"]:
-        comm_config_path = os.path.join(package_path, subdir, "comm_config.json")
-        if os.path.exists(comm_config_path):
-            try:
-                with open(comm_config_path, "r") as f:
-                    comm_config = json.load(f)
-                    # Check internal scheme first, then external
-                    scheme = comm_config.get("internal", {}).get("scheme")
-                    if not scheme:
-                        scheme = comm_config.get("external", {}).get("scheme")
-                    if scheme:
-                        return scheme.lower()
-            except Exception:
-                pass
 
     return default_scheme

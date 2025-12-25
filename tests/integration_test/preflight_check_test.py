@@ -23,7 +23,6 @@ from io import BytesIO
 
 import pytest
 
-from nvflare.tool.package_checker.utils import get_communication_scheme
 from tests.integration_test.src import ProvisionSiteLauncher
 from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
 
@@ -32,77 +31,7 @@ TEST_CASES = [
 ]
 
 
-def _get_expected_server_checks(package_path: str) -> dict[str, str]:
-    """Get expected checks for server based on communication scheme.
-
-    Args:
-        package_path: Path to the server package directory
-
-    Returns:
-        Dictionary of expected check names to expected statuses
-    """
-    scheme = get_communication_scheme(package_path)
-
-    # Determine FL port check name based on scheme
-    if scheme and scheme.lower() in ["tcp", "stcp", "atcp"]:
-        fl_check_name = "Check tcp port binding"
-    elif scheme and scheme.lower() in ["http", "https"]:
-        fl_check_name = "Check http port binding"
-    else:
-        fl_check_name = "Check grpc port binding"
-
-    return {
-        fl_check_name: "PASSED",
-        "Check admin port binding": "PASSED",
-        "Check snapshot storage writable": "PASSED",
-        "Check job storage writable": "PASSED",
-        "Check dry run": "PASSED",
-    }
-
-
 SERVER_START_TIME = 15
-
-
-def _get_expected_client_checks(package_path: str) -> dict[str, str]:
-    """Get expected checks for client based on communication scheme.
-
-    Args:
-        package_path: Path to the client package directory
-
-    Returns:
-        Dictionary of expected check names to expected statuses
-    """
-    scheme = get_communication_scheme(package_path)
-
-    # The preflight check tool now adapts based on communication scheme:
-    # - GRPC schemes: Check GRPC connectivity + dry run
-    # - TCP schemes: Skip connectivity check, only dry run
-    if scheme and scheme.lower() in ["tcp", "stcp", "atcp"]:
-        # With TCP communication, only dry run check is performed
-        return {
-            "Check dry run": "PASSED",
-        }
-    else:
-        # With GRPC communication, both connectivity and dry run checks
-        return {
-            "Check GRPC server available": "PASSED",
-            "Check dry run": "PASSED",
-        }
-
-
-def _filter_output(output):
-    lines = []
-    for line in output.decode("utf-8").splitlines():
-        if "Checking Package" in line:
-            continue
-        elif "killing dry run process" in line:
-            continue
-        elif "killed dry run process" in line:
-            continue
-        elif not line:
-            continue
-        lines.append(line)
-    return lines
 
 
 def _parse_preflight_output(output: bytes) -> dict[str, str]:
@@ -243,12 +172,15 @@ class TestPreflightCheck:
                 actual_checks = _parse_preflight_output(output)
 
                 # Get expected checks based on communication scheme
-                scheme = get_communication_scheme(server_props.root_dir)
-                expected_checks = _get_expected_server_checks(server_props.root_dir)
+                expected_checks = {
+                    "Check FL port binding": "PASSED",
+                    "Check admin port binding": "PASSED",
+                    "Check snapshot storage writable": "PASSED",
+                    "Check job storage writable": "PASSED",
+                    "Check dry run": "PASSED",
+                }
 
-                print(
-                    f"Server '{server_name}' uses scheme '{scheme}', expecting checks: {list(expected_checks.keys())}"
-                )
+                print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
 
                 _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
         finally:
@@ -264,13 +196,16 @@ class TestPreflightCheck:
                 actual_checks = _parse_preflight_output(output)
 
                 # Get expected checks based on communication scheme
-                scheme = get_communication_scheme(server_props.root_dir)
-                expected_checks = _get_expected_server_checks(server_props.root_dir)
+                expected_checks = {
+                    "Check FL port binding": "PASSED",
+                    "Check admin port binding": "PASSED",
+                    "Check snapshot storage writable": "PASSED",
+                    "Check job storage writable": "PASSED",
+                    "Check dry run": "PASSED",
+                }
 
                 if is_dummy_overseer:
-                    print(
-                        f"Server '{server_name}' uses scheme '{scheme}', expecting checks: {list(expected_checks.keys())}"
-                    )
+                    print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
                     _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
                 else:
                     # At least one check should not be PASSED (likely the dry run)
@@ -299,12 +234,12 @@ class TestPreflightCheck:
                 actual_checks = _parse_preflight_output(output)
 
                 # Get expected checks based on communication scheme
-                scheme = get_communication_scheme(client_props.root_dir)
-                expected_checks = _get_expected_client_checks(client_props.root_dir)
+                expected_checks = {
+                    "Check server available": "PASSED",
+                    "Check dry run": "PASSED",
+                }
 
-                print(
-                    f"Client '{client_name}' uses scheme '{scheme}', expecting checks: {list(expected_checks.keys())}"
-                )
+                print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
 
                 # Verify checks match expectations based on communication scheme
                 _verify_checks(actual_checks, expected_checks, f"Client '{client_name}'")
@@ -326,13 +261,14 @@ class TestPreflightCheck:
             output = _run_preflight_check_command(package_path=admin_folder_root)
             actual_checks = _parse_preflight_output(output)
 
-            # Get expected checks based on communication scheme
-            scheme = get_communication_scheme(admin_folder_root)
-            expected_checks = _get_expected_client_checks(admin_folder_root)
+            expected_checks = {
+                "Check server available": "PASSED",
+                "Check dry run": "PASSED",
+            }
 
-            print(f"Admin console uses scheme '{scheme}', expecting checks: {list(expected_checks.keys())}")
+            print(f"Admin console, expecting checks: {list(expected_checks.keys())}")
 
-            # Verify checks match expectations based on communication scheme
+            # Verify checks match expectations
             _verify_checks(actual_checks, expected_checks, "Admin console")
         except Exception:
             raise
