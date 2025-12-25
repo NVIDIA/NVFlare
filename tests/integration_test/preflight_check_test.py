@@ -42,6 +42,9 @@ def _parse_preflight_output(output: bytes) -> dict[str, str]:
 
     Returns:
         Dictionary mapping check names to their status/problems
+
+    Raises:
+        AssertionError: If no valid checks are found in output
     """
     checks = {}
     lines = output.decode("utf-8").splitlines()
@@ -58,13 +61,21 @@ def _parse_preflight_output(output: bytes) -> dict[str, str]:
         match = row_pattern.match(line)
         if match:
             check_name = match.group(1).strip()
-            problems = match.group(2).strip()
+            status = match.group(2).strip()
 
-            # Skip header row
-            if check_name == "Checks" or check_name == "":
+            # Skip header row and invalid entries
+            if check_name in ["Checks", ""] or not check_name:
                 continue
 
-            checks[check_name] = problems
+            # Basic validation: status should be non-empty
+            if not status:
+                continue
+
+            checks[check_name] = status
+
+    # Ensure we found at least some checks
+    if not checks:
+        raise AssertionError(f"No valid checks found in preflight output. Output:\n{output.decode('utf-8')[:500]}")
 
     return checks
 
