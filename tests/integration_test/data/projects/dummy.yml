@@ -25,11 +25,6 @@ builders:
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
-      overseer_agent:
-        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-        overseer_exists: false
-        args:
-          sp_end_point: localhost0:8002:8003
 
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

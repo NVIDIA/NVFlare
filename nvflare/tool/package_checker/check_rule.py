@@ -20,7 +20,9 @@ from nvflare.tool.package_checker.utils import (
     NVFlareConfig,
     NVFlareRole,
     check_grpc_server_running,
+    check_socket_server_running,
     construct_dummy_overseer_response,
+    get_communication_scheme,
     try_bind_address,
     try_write_dir,
 )
@@ -97,14 +99,32 @@ def _get_primary_sp(sp_list):
     return None
 
 
-class CheckGRPCServerAvailable(CheckRule):
+class CheckServerAvailable(CheckRule):
     def __init__(self, name: str, role: str):
+        """Initialize server availability checker.
+
+        This rule automatically detects the communication scheme (GRPC, HTTP, etc.)
+        and uses the appropriate method to check server connectivity.
+
+        Args:
+            name: Name of the check rule
+            role: Role of the entity performing the check (server/client/admin)
+        """
         super().__init__(name)
         if role not in [NVFlareRole.SERVER, NVFlareRole.CLIENT, NVFlareRole.ADMIN]:
             raise RuntimeError(f"role {role} is not supported.")
         self.role = role
 
     def __call__(self, package_path, data):
+        """Check if server is available and accessible.
+
+        Args:
+            package_path: Path to the package directory
+            data: Additional data (unused)
+
+        Returns:
+            CheckResult indicating success or failure
+        """
         startup = os.path.join(package_path, "startup")
         if self.role == NVFlareRole.SERVER:
             nvf_config = NVFlareConfig.SERVER
@@ -117,27 +137,44 @@ class CheckGRPCServerAvailable(CheckRule):
         with open(fed_config_file, "r") as f:
             fed_config = json.load(f)
 
+        # Admin has a different config structure - handle separately
         if self.role == NVFlareRole.ADMIN:
             admin = fed_config["admin"]
             host = admin["host"]
             port = admin["port"]
-            overseer_agent_conf = {
-                "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-                "args": {"sp_end_point": f"{host}:{port}:{port}"},
-            }
+            scheme = admin.get("scheme", "grpc")
         else:
+            # For client/server, get info from overseer agent
             overseer_agent_conf = fed_config["overseer_agent"]
+            resp = construct_dummy_overseer_response(overseer_agent_conf=overseer_agent_conf, role=self.role)
+            resp = resp.json()
+            sp_list = resp.get("sp_list", [])
+            psp = _get_primary_sp(sp_list)
+            sp_end_point = psp["sp_end_point"]
+            host, port, admin_port = sp_end_point.split(":")
+            port = int(port)
 
-        resp = construct_dummy_overseer_response(overseer_agent_conf=overseer_agent_conf, role=self.role)
-        resp = resp.json()
-        sp_list = resp.get("sp_list", [])
-        psp = _get_primary_sp(sp_list)
-        sp_end_point = psp["sp_end_point"]
-        sp_name, grpc_port, admin_port = sp_end_point.split(":")
+            # Determine the communication scheme
+            scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
 
-        if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
+        # Check connectivity based on the communication scheme
+        if scheme in ["grpc", "agrpc"]:
+            if not check_grpc_server_running(startup=startup, host=host, port=int(port)):
+                return CheckResult(
+                    f"Can't connect to {scheme} server ({host}:{port})",
+                    "Please check if server is up.",
+                )
+        elif scheme in ["http", "https", "tcp", "stcp"]:
+            # HTTP/HTTPS use WebSocket, TCP/STCP use raw sockets - both checked via socket connection
+            if not check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme):
+                return CheckResult(
+                    f"Can't connect to {scheme} server ({host}:{port})",
+                    "Please check if server is up.",
+                )
+        else:
             return CheckResult(
-                f"Can't connect to grpc server ({sp_name}:{grpc_port})",
-                "Please check if server is up.",
+                f"Unsupported communication scheme: {scheme}",
+                f"Scheme '{scheme}' is not supported for connectivity check.",
             )
+
         return CheckResult(CHECK_PASSED, "N/A")
