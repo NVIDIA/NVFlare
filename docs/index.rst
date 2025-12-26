@@ -20,9 +20,7 @@ NVIDIA FLARE
    :hidden:
    :caption: How-to Guides
 
-   develop
-   simulation
-   deploy
+   how-to-guide/index
 
 .. toctree::
    :maxdepth: -1
