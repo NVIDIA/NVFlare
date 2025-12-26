@@ -15,11 +15,12 @@ Installation Guide
 
 Federated Application
 ---------------------
-
 - How to convert stand alone, centralized DL/ML to Federated learning
 
 .. toctree::
    :maxdepth: 2
 
-   programming_guide/execution_api_type/client_api
+   how-to-guide/develop/index
+
+
 
