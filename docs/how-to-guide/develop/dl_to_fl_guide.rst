@@ -102,4 +102,4 @@ See the complete example in :ref:`hello_pt`.
 
 If you want to know more about the Client API, see :ref:`client_api`.
 
-If you want to know more about the Job Recipe API, see :ref:`fed_job_api`.
+If you want to know more about the Job Recipe API, see :ref:`job_recipe`.
