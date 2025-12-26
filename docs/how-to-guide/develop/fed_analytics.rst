@@ -5,59 +5,60 @@ How to Calculate Federated Analytics
 ####################################
 
 NVIDIA FLARE enables collaborative data analysis across multiple sites without sharing raw data. Federated Analytics
-focuses on computing global statistics (e.g., counts, distributions, means) by aggregating local analytics results
+focuses on computing global statistics (such as counts, distributions, and means) by aggregating local analytics results
 computed at each participant.
 
-**When Should You Use Federated Analytics?**
+When to Use Federated Analytics
+-------------------------------
 
-- Use Federated Analytics when you want to:
+Use Federated Analytics when you want to:
+
 - Understand data distribution and quality across institutions
 - Perform cohort discovery or feasibility analysis
 - Validate dataset compatibility before federated training
 
-**Common outputs include:**
+Common outputs include:
 
 - Counts and histograms
-- Summary statistics (mean, min, max, std)
+- Summary statistics (mean, min, max, standard deviation)
 - Label or class distributions
 
-**Overview**
 
-NVIDIA FLARE provides built-in federated statistics operators that can generate global statistics based on local client-side statistics.
-At each client site, we can have one or more datasets (such as "train" and "test" datasets); each dataset may have many features.
-For each feature in the dataset, we will calculate the statistics and then combine them to produce global statistics
-for all the numeric features. The output will be complete statistics for all datasets in clients and global.
+Overview
+--------
 
-The statistics here are commonly used statistics: count, sum, mean, std_dev, quantiles and histogram for the numerical features.
-The max, min are not included as it might violate the client's data privacy. Quantiles require an additional dependency.
-If sum and count statistics are selected, the mean will be calculated with count and sum.
+NVIDIA FLARE provides built-in federated statistics operators that generate global statistics based on local client-side statistics.
+At each client site, you can have one or more datasets (such as "train" and "test" datasets), and each dataset may have many features.
+For each feature in the dataset, the system calculates local statistics and then combines them to produce global statistics
+for all numeric features. The output includes complete statistics for all datasets across all clients, as well as global aggregates.
 
-A client will only need to implement the selected methods of "Statistics" class from statistics_spec.
-The result will be statistics for all features of all datasets at all sites as well as global aggregates.
-The result should be visualized via the visualization utility in the notebook.
+The supported statistics include commonly used measures:
 
-**Assumptions** -- We only support numerical features, not categorical features, the non-numerical features will be removed.
+- **count** - Number of samples
+- **sum** - Sum of values
+- **mean** - Average value (calculated from count and sum if both are selected)
+- **stddev** - Standard deviation
+- **histogram** - Distribution of values across bins
+- **quantile** - Percentile values (requires additional dependency)
 
-**Statistics**
-Federated statistics includes numeric statistical measures for
+.. note::
 
-count
-mean
-sum
-std_dev
-histogram
-quantile
-We do not include min and max values to avoid data privacy concerns.
+   We do not include min and max values to avoid data privacy concerns.
+   Only numerical features are supported; non-numerical features will be removed automatically.
 
-**Steps**
-**Step 0** -- user needs to provide the target data source names (such as train, test) as well as the features names
-**Step 1** -- user provides configuration to specify target statistics metrics and output location
-**Step 2** -- user provide the local implementation statistics generator (statistics_spec)
-also, provide client side configuration to specify data input location
 
-The detailed example instructions can be found Data frame statistics
+Steps to Implement
+------------------
 
-here is one example
+**Step 0**: Provide the target data source names (such as "train", "test") and the feature names.
+
+**Step 1**: Configure the target statistics metrics and output location.
+
+**Step 2**: Implement the local statistics generator using the ``Statistics`` spec and configure the client-side data input location.
+
+For detailed instructions, see the :ref:`hello_tabular_stats` example.
+
+Here is an example configuration:
 
 .. code-block:: text
 
@@ -70,18 +71,20 @@ here is one example
         "quantile": {"*": [0.1, 0.5, 0.9]},
     }
 
-This configuration states, that we like to calculate count, mean, sum and stddev for all features. For histogram, all features will
-have 20 bins and data range will be calculated based on data, except for age feature where the bin is still 20, but range
-is fixed between 0 to 100. For qll features, we like to calculate the 10%, 50% (Median) and 90% quantile.
+This configuration specifies:
 
-Take example for Fed Statistics for tabular data, many of the functions needed for tabular statistics have already been
-implemented ```DFStatisticsCore```, as result, data scientists only need to specify the JobRecipe.
+- Calculate count, mean, sum, and stddev for all features
+- For histograms, all features will have 20 bins with data range calculated automatically, except for the "Age" feature where the range is fixed between 0 and 100
+- For all features, calculate the 10%, 50% (median), and 90% quantiles
+
+For tabular data statistics, many of the required functions have already been implemented in ``DFStatisticsCore``.
+As a result, data scientists only need to specify the Job Recipe.
 
 
 Client Code
 -----------
 
-Local statistics generator. The statistics generator `AdultStatistics` implements `Statistics` spec.
+The local statistics generator ``AdultStatistics`` implements the ``Statistics`` spec:
 
 .. literalinclude:: ../../examples/hello-world/hello-tabular-stats/client.py
     :language: python
@@ -89,40 +92,39 @@ Local statistics generator. The statistics generator `AdultStatistics` implement
     :caption: Client Code (client.py)
     :lines: 14-
 
+Many of the functions needed for tabular statistics have already been implemented in ``DFStatisticsCore``.
 
-Many of the functions needed for tabular statistics have already been implemented DFStatisticsCore
+In the ``AdultStatistics`` class, you need to provide:
 
-In the `AdultStatistics` class, we really need to have the followings
-
-- data_features -- here we hard-coded the feature name array.
-- implement `load_data() -> Dict[str, pd.DataFrame]` function, where
-  the method will return a dictionary of panda DataFrames with one for each data source ("train", "test")
-- `data_path = <data_root_dir>/<site-name>/<filename>`
-
+- **data_features** - Array of feature names (hardcoded in this example)
+- **load_data()** - Method that returns a dictionary of Pandas DataFrames, one for each data source ("train", "test")
+- **data_path** - Path in the format ``<data_root_dir>/<site-name>/<filename>``
 
 
 Job Recipe
 ----------
 
-Job is defined via recipe, we will run it in Simulation Execution Env.
+The job is defined via a recipe and runs in the Simulation Execution Environment:
 
 .. literalinclude:: ../../examples/hello-world/hello-tabular-stats/job.py
     :language: python
     :linenos:
-    :caption: job Recipe (job.py)
+    :caption: Job Recipe (job.py)
     :lines: 14-
 
-Run Job
--------
-from terminal try to run the code
 
-.. code-block:: text
+Run the Job
+-----------
+
+From the terminal, run the job script:
+
+.. code-block:: bash
 
     python job.py
 
 
-For complete example of `../../examples/hello-world/hello-tabular-stats` or find more about other examples in
-`../../examples/advanced/federated_statistics`
+Additional Resources
+--------------------
 
-
-
+- Complete example: :ref:`hello_tabular_stats`
+- More examples and detailed documentation: :ref:`federated_statistics`

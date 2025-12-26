@@ -1,3 +1,5 @@
+.. _hello_tabular_stats:
+
 Tabular Data Federated Statistics
 =================================
 
