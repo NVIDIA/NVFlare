@@ -9,7 +9,7 @@ How to install and turn existing stand-alone, centralized applications into fede
 Installation Guide
 ------------------
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    ../installation
 
@@ -17,7 +17,7 @@ Federated Application
 ---------------------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :glob:
 
    develop/*
