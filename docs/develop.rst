@@ -15,12 +15,18 @@ Installation Guide
 
 Federated Application
 ---------------------
-- How to convert stand alone, centralized DL/ML to Federated learning
 
 .. toctree::
    :maxdepth: 2
 
    how-to-guide/develop/index
 
+FLARE Deployment
+-----------------
+
+.. toctree::
+   :maxdepth: 2
+
+   how-to-guide/deployment/index
 
 
