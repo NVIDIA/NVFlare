@@ -11,7 +11,7 @@ Installation Guide
 .. toctree::
    :maxdepth: 2
 
-   installation
+   ../installation
 
 Federated Application
 ---------------------
@@ -20,15 +20,5 @@ Federated Application
    :maxdepth: 2
    :glob:
 
-   how-to-guide/develop/*
-
-FLARE Deployment
-----------------
-
-.. toctree::
-   :maxdepth: 2
-   :glob:
-
-   how-to-guide/deployment/*
-
+   develop/*
 
