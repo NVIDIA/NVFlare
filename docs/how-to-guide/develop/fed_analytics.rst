@@ -86,7 +86,7 @@ Client Code
 
 The local statistics generator ``AdultStatistics`` implements the ``Statistics`` spec:
 
-.. literalinclude:: ../../examples/hello-world/hello-tabular-stats/client.py
+.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/client.py
     :language: python
     :linenos:
     :caption: Client Code (client.py)
@@ -106,7 +106,7 @@ Job Recipe
 
 The job is defined via a recipe and runs in the Simulation Execution Environment:
 
-.. literalinclude:: ../../examples/hello-world/hello-tabular-stats/job.py
+.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/job.py
     :language: python
     :linenos:
     :caption: Job Recipe (job.py)
