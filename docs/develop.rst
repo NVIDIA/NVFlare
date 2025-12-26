@@ -4,7 +4,7 @@
 How To Develop Guide
 ####################
 
-How to install, turn existing stand-alone, centralized application to federated learning applications.
+How to install and turn existing stand-alone, centralized applications into federated learning applications.
 
 Installation Guide
 ------------------
@@ -18,15 +18,17 @@ Federated Application
 
 .. toctree::
    :maxdepth: 2
+   :glob:
 
-   how-to-guide/develop/index
+   how-to-guide/develop/*
 
 FLARE Deployment
------------------
+----------------
 
 .. toctree::
    :maxdepth: 2
+   :glob:
 
-   how-to-guide/deployment/index
+   how-to-guide/deployment/*
 
 
