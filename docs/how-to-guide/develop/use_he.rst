@@ -1,4 +1,4 @@
-.. _apply_he_guide:
+.. _ise_he_guide:
 
 ##################################################
 How to use homomorphic encryption
