@@ -27,23 +27,59 @@ You can read the overall evolution of FLARE APIs in :ref:`api_evolution`
 **Server-side APIs**
 
 .. image:: ../../resources/server_side_apis.jpg
-    :height: 600px
+    :height: 400
 
 
 **Client-side APIs**
 
 .. image:: ../../resources/client_side_apis.jpg
-    :height: 600px
+    :height: 400
 
 **Client-Server Wiring APIs**
 
 .. image:: ../../resources/client_server_wiring_apis.jpg
-    :height: 600px
+    :height: 400
 
 
 Which APIs to use ?
--------------------
+===================
+
+We recommend to use the following APIs depends on your roles
+
+**Applied Data Scientists**
+---------------------------
+
+- Client: Client API
+- Server: choose a builtin algorithm
+- Client-Server wiring: Job Recipe with builtin FL algorithms
 
 
+**FL Researchers**
+---------------------------
 
+- Client: Collab API, Client API
+- Server: Collab API
+- Client-Server wiring: Job Recipe
+
+**System Integrator**
+---------------------------
+- Client: Collab API, Executor API
+- Server: Collab API, Controller API
+- Client-Server wiring: Job Recipe
+
+
+Deprecated APIs
+================
+
+- LearnerExecutor and Learner
+- ModelController (once Collab API is released)
+- Job Template & CLI Job Template API
+
+
+API References
+================
+
+- Client API: :ref:`client_api`
+- Server API: :ref:`collab_api`
+- client-server wiring: :ref:`job_recipe`
 
