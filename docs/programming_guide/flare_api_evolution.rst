@@ -9,7 +9,7 @@ Evolution of FLARE Server Side API
 ==================================
 
 .. image:: ../resources/server_side_apis.jpg
-    :height: 600px
+    :height: 400
 
 
 Controller
@@ -50,7 +50,7 @@ Evolution of Client Side APIs
 =============================
 
 .. image:: ../resources/client_side_apis.jpg
-    :height: 600px
+    :height: 400
 
 
 Executor
@@ -116,7 +116,7 @@ To address this, FLARE has introduced several higher-level APIs and approaches d
 integration and reduce the setup effort for typical federated learning and analytics tasks.
 
 .. image:: ../resources/client_server_wiring_apis.jpg
-    :height: 600px
+    :height: 400
 
 
 Json Configurations
