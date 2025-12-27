@@ -18,6 +18,13 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: -1
    :hidden:
+   :caption: How-to Guides
+
+   how-to-guide/index
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
    :caption: Guides
 
    example_applications_algorithms
