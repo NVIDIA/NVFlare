@@ -22,22 +22,24 @@ and platform-level extensions, where fine-grained control over execution flow, p
 Evolution of FLARE APIs
 =======================
 
-You can read the overall evalutions of FLARE APIs in :ref:`api_evolution`
+You can read the overall evolution of FLARE APIs in :ref:`api_evolution`
 
-- Server
+**Server-side APIs**
 
-.. image:: ../../../resources/server_side_apis.jpg
+.. image:: ../../resources/server_side_apis.jpg
     :height: 600px
 
-- Client
 
-.. image:: ../../../resources/client_side_apis.jpg
+**Client-side APIs**
+
+.. image:: ../../resources/client_side_apis.jpg
     :height: 600px
 
-- Client Server wiring
+**Client-Server Wiring APIs**
 
-.. image:: ../../../resources/client_server_wiring_apis.jpg
+.. image:: ../../resources/client_server_wiring_apis.jpg
     :height: 600px
+
 
 Which APIs to use ?
 -------------------

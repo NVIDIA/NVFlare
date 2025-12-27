@@ -8,7 +8,7 @@ Evolution of FLARE APIs
 Evolution of FLARE Server Side API
 ==================================
 
-.. image:: ../../resources/server_side_apis.jpg
+.. image:: ../resources/server_side_apis.jpg
     :height: 600px
 
 
@@ -43,13 +43,13 @@ Collaborative API (Collab API)
 
 The Collaborative API achieves a complete separation between communication handling and federated learning algorithms
 This design gives users greater freedom from framework constraints, allowing them to implement algorithms and analytics logic without
-having to learn FLARE framework concepts. In collab API, user decide what kind the message or data structure to pass around.
+having to learn FLARE framework concepts. In the Collab API, users decide what kind of message or data structure to pass around.
 
 
 Evolution of Client Side APIs
 =============================
 
-.. image:: ../../resources/client_side_apis.jpg
+.. image:: ../resources/client_side_apis.jpg
     :height: 600px
 
 
@@ -87,7 +87,7 @@ and lightweight metadata, and does not expose any low-level communication or exe
 for data scientists to understand exactly what information is being passed between client and server.
 
 The Client API is designed to simplify the conversion of existing ML/DL code into federated workloads with minimal code changes.
-Unlike the Learner API,Users adapt their existing training or analytics code in place, without restructuring it.
+Unlike the Learner API, users adapt their existing training or analytics code in place, without restructuring it.
 
 As a result, users do not need to learn FLARE-specific framework concepts such as Executors, Controllers, Shareable, or FLContext.
 Aside from understanding the FLModel data structure itself, the Client API allows users to focus on ML logic while FLARE
@@ -103,7 +103,7 @@ eliminating the need to use the FLModel structure, which limits some FL algorith
 users greater freedom from framework constraints, allowing them to implement algorithms and analytics logic without
 having to learn many FLARE framework concepts.
 
-With Client API + Collab API, users are free to continue pass FLModel around, or choose any other data structure they choose.
+With Client API + Collab API, users are free to continue passing FLModel around or choose any other data structure.
 
 
 Evolution of Client Server Wiring APIs
@@ -115,7 +115,7 @@ component plugins and system integration developers. However, this approach can 
 To address this, FLARE has introduced several higher-level APIs and approaches designed to simplify client-server
 integration and reduce the setup effort for typical federated learning and analytics tasks.
 
-.. image:: ../../resources/client_server_wiring_apis.jpg
+.. image:: ../resources/client_server_wiring_apis.jpg
     :height: 600px
 
 
@@ -130,8 +130,8 @@ The FLARE Job is defined by three configuration files:
     config_fed_client.json
     meta.json
 
-There is no need to dive deep to the specific content of the json files.
-The json file format give the system a way to define dynamic plugin custom components.
+There is no need to dive deep into the specific content of the JSON files.
+The JSON file format gives the system a way to define dynamic plugin custom components.
 
 
 Alternative Configurations support: YAML (OmegaConf), pyhocon
