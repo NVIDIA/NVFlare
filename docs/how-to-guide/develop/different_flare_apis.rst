@@ -1,9 +1,8 @@
 .. _diff_api_guide:
 
-########################################
-How to choose which APIs to use in FLARE
-########################################
-
+#####################
+How to use FLARE API
+#####################
 
 When getting started with NVIDIA FLARE, one of the first decisions new users face is choosing which APIs to use.
 FLARE provides multiple API layers that have evolved over time to support different levels of abstraction—from high-level,
@@ -22,7 +21,8 @@ and platform-level extensions, where fine-grained control over execution flow, p
 Evolution of FLARE APIs
 =======================
 
-You can read the overall evolution of FLARE APIs in :ref:`api_evolution`
+Before, you see which API layer to use, you can have view what the API layers.
+You can read the overall evolution of FLARE APIs in :ref:`api_evolution` if you want to find more details.
 
 **Server-side APIs**
 
