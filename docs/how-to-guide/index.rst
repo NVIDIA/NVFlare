@@ -2,7 +2,7 @@
 .. _flare_how_to_guide:
 
 ###############################
-how to develop and deploy FLARE
+How to develop and deploy FLARE
 ###############################
 
 This document serves as a quick reference for commonly asked questions,
