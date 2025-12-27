@@ -21,8 +21,8 @@ and platform-level extensions, where fine-grained control over execution flow, p
 Evolution of FLARE APIs
 =======================
 
-Before, you see which API layer to use, you can have view what the API layers.
-You can read the overall evolution of FLARE APIs in :ref:`api_evolution` if you want to find more details.
+Before deciding which API layer to use, it helps to understand the available options.
+The diagrams below provide an overview, and you can read more about the evolution of FLARE APIs in :ref:`api_evolution`.
 
 **Server-side APIs**
 
@@ -41,35 +41,35 @@ You can read the overall evolution of FLARE APIs in :ref:`api_evolution` if you 
     :height: 400
 
 
-Which APIs to use ?
-===================
+Which APIs to Use?
+==================
 
-We recommend to use the following APIs depends on your roles
+We recommend using the following APIs depending on your role:
 
 **Applied Data Scientists**
 ---------------------------
 
 - Client: Client API
-- Server: choose a builtin algorithm
-- Client-Server wiring: Job Recipe with builtin FL algorithms
+- Server: Choose a built-in algorithm
+- Client-Server wiring: Job Recipe with built-in FL algorithms
 
 
 **FL Researchers**
----------------------------
+------------------
 
 - Client: Collab API, Client API
 - Server: Collab API
 - Client-Server wiring: Job Recipe
 
-**System Integrator**
----------------------------
+**System Integrators**
+----------------------
 - Client: Collab API, Executor API
 - Server: Collab API, Controller API
 - Client-Server wiring: Job Recipe
 
 
 Deprecated APIs
-================
+===============
 
 - LearnerExecutor and Learner
 - ModelController (once Collab API is released)
@@ -77,9 +77,9 @@ Deprecated APIs
 
 
 API References
-================
+==============
 
 - Client API: :ref:`client_api`
-- Server API: :ref:`collab_api`
-- client-server wiring: :ref:`job_recipe`
+- Collab API: Coming soon
+- Job Recipe: :ref:`job_recipe`
 
