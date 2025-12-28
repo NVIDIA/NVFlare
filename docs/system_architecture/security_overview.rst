@@ -1,8 +1,8 @@
 .. _flare_security_overview:
 
-###############################
-NVIDIA FLARE Security Overview
-###############################
+##################
+Security Overview
+##################
 
 Before diving into the security architecture, it will be helpful to understand FLARE's system architecture: :ref:`flare_system_architecture`
 

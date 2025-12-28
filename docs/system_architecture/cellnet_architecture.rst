@@ -1,10 +1,10 @@
 .. _cellnet_architecture:
 
-FLARE CellNet Architecture
---------------------------
+CellNet Architecture
+--------------------
 
-.. image:: resources/cellnet.png
-   :alt: FLARE CellNet Architecture
+.. image:: ../resources/cellnet.png
+   :alt: CellNet Architecture
 
 
 Purpose and Scope
