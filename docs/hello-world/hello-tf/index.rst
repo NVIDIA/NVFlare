@@ -1,3 +1,5 @@
+.. _hello_tf:
+
 Hello TensorFlow
 ================
 
