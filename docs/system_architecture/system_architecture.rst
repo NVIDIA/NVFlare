@@ -4,15 +4,10 @@
 FLARE Architecture
 ####################
 
-.. |flare_overview| image:: ../resources/flare_overview.png
+.. image:: ../resources/flare_overview.png
    :alt: Architecture Overview
-   :width: 45%
+   :height: 400
 
-.. |system_arch| image:: ../resources/system_architecture.png
-   :alt: Job Processing Architecture
-   :width: 45%
-
-|flare_overview| |system_arch|
 
 
 Purpose and Scope
@@ -135,6 +130,17 @@ Process Types
      - Client job process running ClientRunner and Executors
 
 
+.. |job_arc1| image:: ../resources/job_architecture.png
+   :alt: Job Architecture
+   :width: 45%
+
+.. |job_arch2| image:: ../resources/job_architecture2.png
+   :alt: Job Architecture
+   :width: 45%
+
+   |job_arch1| |job_arch2|
+
+
 Process Responsibilities
 ------------------------
 
@@ -185,6 +191,23 @@ Job processes are spawned dynamically when jobs are scheduled:
 5. **Client Job Spawn**: Each CP spawns CJ process for the job
 6. **Execution**: SJ and CJ processes execute workflow
 7. **Completion**: Processes terminate and report status to parents
+
+
+Control and Execution Planes Separation in K8s
+----------------------------------------------
+
+.. notes::
+   release soon
+
+Parent pod manage system lifecycle and spawn job pod ( server job pod, client job pod) for workload execution.
+The Server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
+high-throughput metadata traffic separately from high-volume data traffic.
+The following diagram illustrates the Server Parent (SP), Server Job (SJ), and related pods within the Kubernetes environment.
+
+
+.. image:: ../resources/k8s_control_execution_plans.png
+    :alt: Control & Execution Plan in K8s
+
 
 
 Communication Framework
