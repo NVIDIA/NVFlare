@@ -8,4 +8,4 @@ NVIDIA FLARE Architecture
    system_architecture
    security_overview
    cellnet_architecture
-   design_principals
+   design_principles
