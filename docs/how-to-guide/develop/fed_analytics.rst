@@ -20,7 +20,7 @@ Use Federated Analytics when you want to:
 Common outputs include:
 
 - Counts and histograms
-- Summary statistics (mean, min, max, standard deviation)
+- Summary statistics (mean, sum, standard deviation)
 - Label or class distributions
 
 

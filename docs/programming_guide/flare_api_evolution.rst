@@ -41,7 +41,7 @@ easier for users to focus on modeling and analytics without worrying about low-l
 Collaborative API (Collab API)
 ------------------------------
 
-The Collaborative API achieves a complete separation between communication handling and federated learning algorithms
+The Collaborative API achieves a complete separation between communication handling and federated learning algorithms.
 This design gives users greater freedom from framework constraints, allowing them to implement algorithms and analytics logic without
 having to learn FLARE framework concepts. In the Collab API, users decide what kind of message or data structure to pass around.
 
@@ -147,7 +147,7 @@ Job Template & Job CLI
 A FLARE Job Template is a predefined set of job configurations in NVIDIA FLARE. It defines the model, training strategy,
 and client/server settings, enabling new federated learning jobs to be copied and modified without rewriting them from scratch.
 To simplify working with these templates, we also provide the FLARE Job CLI, which allows users to list available templates,
-create jobs from templates, inspect template variables, and submit job.
+create jobs from templates, inspect template variables, and submit a job.
 This approach represents an early step toward automating job scripting.
 
 

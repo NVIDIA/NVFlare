@@ -53,7 +53,7 @@ Code Structure
 
 .. code-block:: text
 
-   hello-pt
+   hello-tf
    |
    |-- client.py         # client local training script
    |-- model.py          # model definition
