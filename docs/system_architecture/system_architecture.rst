@@ -1,14 +1,15 @@
 .. _flare_system_architecture:
 
-NVIDIA FLARE System Architecture
-=================================
+####################
+FLARE Architecture
+####################
 
-.. |flare_overview| image:: resources/flare_overview.png
-   :alt: FLARE Architecture Overview
+.. |flare_overview| image:: ../resources/flare_overview.png
+   :alt: Architecture Overview
    :width: 45%
 
-.. |system_arch| image:: resources/system_architecture.png
-   :alt: FLARE Job Processing Architecture
+.. |system_arch| image:: ../resources/system_architecture.png
+   :alt: Job Processing Architecture
    :width: 45%
 
 |flare_overview| |system_arch|
@@ -229,7 +230,7 @@ JobRunner Architecture
 JobRunner Component Structure
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. image:: resources/job_runner_architecture.png
+.. image:: ../resources/job_runner_architecture.png
    :alt: FLARE Job Runner Architecture
    :align: center
    :height: 300px
