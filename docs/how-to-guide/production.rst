@@ -1,36 +1,11 @@
 .. _how_to_deploy_guide:
 
-##########################
-How To Deploy FLARE Guide
-##########################
+#################################
+How To Deploy FLARE in Production
+#################################
 
-Provision
-----------
 .. toctree::
    :maxdepth: 2
+   :glob:
 
-
-Deployment
-----------
-
-
-
-Configuration
--------------
-
-
-
-Monitoring
------------
-
-
-Trouble Shooting
-----------------
-
-
-
-Security
---------
-
-
-
+   production/*
