@@ -4,7 +4,7 @@
 How to Run Simulation Code in FLARE
 ###################################
 
-NVIDIA FLARE provides several different types of simulations:
+NVIDIA FLARE provides two simulation modes for local development and testing:
 
 - **Simulator**: Simulates the FLARE system on a local host by running clients and server directly
   with multi-threading and processes, without worrying about actual deployment.
@@ -36,28 +36,26 @@ To run a simulation, we recommend using Job Recipe with the Simulation Environme
    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
    recipe.execute(env=env)
 
-Here, ``SimEnv()`` represents the Simulation Environment. The recipe will execute in that environment.
+The ``SimEnv`` class represents the simulation environment. The recipe executes in this environment,
+running all clients and the server in a single process with multi-threading.
 
 
 Using FLARE Simulator Directly
 ------------------------------
 
 If you prefer to use the command line, you can use the FLARE CLI to run the simulator.
-Use the ``recipe.export(job_dir)`` method to export the job configuration to a job directory.
-
-**FLARE CLI**
+First, use the ``recipe.export(job_dir)`` method to export the job configuration to a job directory,
+then run:
 
 .. code-block:: bash
 
    nvflare simulator -w workspace -n <number_of_clients> -t <threads> -gpu <number_of_GPUs> <job_dir>
 
-**Calling from Python**
-
-You can also call the simulator directly from Python code using the ``SimulatorRunner.run()`` class method.
+Alternatively, you can call the simulator directly from Python using the ``SimulatorRunner.run()`` method.
 
 .. note::
 
-   The simulator behavior might change with the Collaborative API release (coming soon).
+   The simulator behavior may be updated with the upcoming Collaborative API release.
 
 
 How to Run Jobs in PoC Mode
@@ -82,31 +80,28 @@ To run a simulation in PoC mode, we recommend using Job Recipe with the PoC Envi
    env = POCEnv(num_clients=2)
    recipe.execute(env=env)
 
-Here, ``POCEnv()`` represents the PoC Environment. The recipe will execute in that environment.
-If the PoC environment doesn't exist, it will create the PoC directory, start the clients and servers,
-and then run the job.
+The ``POCEnv`` class represents the PoC environment. If the environment doesn't exist, it will
+automatically create the PoC directory, start the clients and server, and then run the job.
 
 
 Using PoC CLI Directly
 ----------------------
 
-You can use the FLARE PoC CLI commands to prepare, start, and stop the PoC environment.
-
-**FLARE CLI**
+You can use the FLARE PoC CLI commands to prepare, start, and stop the PoC environment:
 
 .. code-block:: bash
 
-   nvflare poc prepare -n N
-   nvflare poc start
-   nvflare poc stop
-   nvflare job submit -j <job_dir>
+   nvflare poc prepare -n N    # Prepare PoC with N clients
+   nvflare poc start           # Start the PoC environment
+   nvflare job submit -j <job_dir>  # Submit a job
+   nvflare poc stop            # Stop the PoC environment
 
 
-Additional Resources
-====================
+References
+==========
 
-- Job Recipe API: :ref:`job_recipe`
-- FLARE Simulator: :ref:`fl_simulator`
-- Proof of Concept (PoC): :ref:`poc`
-- PoC CLI Commands: :ref:`poc_command`
-- FLARE CLI Reference: :ref:`nvflare_cli`
+- :ref:`job_recipe` - Job Recipe API documentation
+- :ref:`fl_simulator` - FLARE Simulator reference
+- :ref:`poc` - Proof of Concept (PoC) guide
+- :ref:`poc_command` - PoC CLI commands
+- :ref:`nvflare_cli` - FLARE CLI reference
