@@ -336,7 +336,15 @@ Ensure the storage directory exists and has correct permissions:
 References
 ==========
 
+**FLARE Documentation**
+
 - :ref:`helm_chart` - Detailed Helm Chart documentation
 - :ref:`preflight_check` - Preflight check tool documentation
 - :ref:`provisioning` - Provisioning and startup kit generation
 - :ref:`flare_security_overview` - Security architecture overview
+
+**Kubernetes Installation Guides**
+
+- `Kubernetes (k8s) <https://kubernetes.io/docs/setup/>`_ - Official Kubernetes installation guide
+- `MicroK8s <https://microk8s.io/docs/getting-started>`_ - Lightweight Kubernetes for development and edge
+- `K3s <https://docs.k3s.io/quick-start>`_ - Lightweight Kubernetes for resource-constrained environments
