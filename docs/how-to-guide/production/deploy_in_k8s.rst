@@ -6,6 +6,9 @@ How to Deploy NVFLARE in K8s
 
 This guide covers deploying NVIDIA FLARE on Kubernetes clusters using Helm Charts.
 
+.. note::
+  NVIDIA FLARE cloud-native support will release soon.
+
 Prerequisites
 =============
 
