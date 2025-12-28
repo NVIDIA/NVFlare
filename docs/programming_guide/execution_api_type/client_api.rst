@@ -66,7 +66,7 @@ federated learning, for example:
 With 5 lines of code changes, we convert the centralized training code to
 federated learning setting.
 
-After this, we can utilize the job Recipe and the :ref:`job_recipe`
+After this, we can utilize the Job Recipe to define and run the federated learning job. See :ref:`job_recipe` for details.
 
 Below is a table overview of key Client APIs.
 

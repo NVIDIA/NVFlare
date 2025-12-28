@@ -35,7 +35,6 @@ NVIDIA FLARE
    programming_guide
    best_practices
    edge_development/index
-   confidential_computing/index
 
 .. toctree::
    :maxdepth: -1
