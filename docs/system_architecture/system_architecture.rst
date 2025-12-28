@@ -420,13 +420,13 @@ Deployment Modes Comparison
      - Real-world distributed deployment
      - Full PKI/mTLS
      - Distributed across machines
-     - Hours (with provisioning)
+     - < 1 hr (with provisioning)
 
 
 Simulator Mode
 --------------
 
-Simulator mode runs the entire FL system in a single process using threads.
+Simulator mode runs the entire FL system in a localhost using threads and processes
 
 **Characteristics**:
 
@@ -462,7 +462,16 @@ POC mode launches separate processes for server and clients on localhost.
 - Job processes spawn using same mechanism as production
 - TLS optional (for testing purposes)
 
-**Usage**:
+**Usage with Job Recipe**:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(...)
+   env = POCEnv(num_clients=2)
+   recipe.execute(env=env)
+
+
+**Usage with CLI**:
 
 .. code-block:: bash
 
