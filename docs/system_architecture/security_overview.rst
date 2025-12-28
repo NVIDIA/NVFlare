@@ -4,7 +4,7 @@
 Security Overview
 ##################
 
-Before diving into the security architecture, it will be helpful to understand FLARE's system architecture: :ref:`flare_system_architecture`
+Before diving into the security architecture, it is helpful to understand FLARE's system architecture: :ref:`flare_system_architecture`.
 
 Security in Federated Computing Systems
 ========================================
@@ -155,7 +155,7 @@ NVFlare supports site-specific authentication and job-level authorization, enabl
 
 NVFlare's event-based, pluggable framework allows users to:
 
-- Integrate external authentication systems (e.g. KeyCloak, etc.)
+- Integrate external authentication systems (e.g., KeyCloak)
 - Use confidential CAs to verify site identity and confidential computing compliance
 - Define roles controlling job submission and dataset access
 
@@ -167,7 +167,7 @@ Custom security plugins gain access to sensitive data (e.g., IDENTITY_NAME, PUBL
 
 **Integration with External Systems**
 
-Federated environments often involve institutions with distinct in-house authentication systems. NVFlare allows per-site integration, supporting diverse mechanisms (e.g., OLAP, OAuth, KeyCloak). The event-based plugin framework provides a unified way to integrate any external authentication or authorization process.
+Federated environments often involve institutions with distinct in-house authentication systems. NVFlare allows per-site integration, supporting diverse mechanisms (e.g., LDAP, OAuth, KeyCloak). The event-based plugin framework provides a unified way to integrate any external authentication or authorization process.
 
 
 Communication Security
@@ -281,9 +281,9 @@ Confidential Computing enables trustworthy federated learning by verifying parti
 - **Secure Aggregation** - FL server operates in a TEE to aggregate client updates securely, preventing model inversion attacks
 - **Model Theft Prevention** - TEEs on all nodes protect model IP and training data, preventing unauthorized access or reverse engineering
 
-FLARE Confidential AI Solution offers end-to-end protection: we not only protect the IP (model and code) in use at runtime, but also protect against CVM tampering at deployment.
+The FLARE Confidential AI Solution offers end-to-end protection, safeguarding IP (model and code) at runtime and protecting against CVM tampering at deployment.
 
-The solution is able to perform:
+Key capabilities include:
 
 - Secure aggregation on the server-side to protect against privacy leaks via model
 - Model theft protection on the client-side to safeguard Model IP during collaboration
@@ -319,14 +319,14 @@ FLARE involves the following steps for local installations:
 
 1. **Provision** - A process to generate software packages and certificates for each participant (called startup kit)
 2. **Distribution** - Send the startup kit to each participant
-3. **Start** - Participants can pip install nvflare and start the startup kit
+3. **Start** - Participants can run ``pip install nvflare`` and start the startup kit
 
 FLARE offers two ways to provision:
 
 - **nvflare provision CLI command** - The package is generated locally, the project administrator will then distribute the package manually (sftp, email etc.). This requires the project administrator to know all site information including all the names of the sites
 - **FLARE Dashboard** - The web interface allows the project administrator to invite others to join the project and provide site-specific information themselves. The project admin approves the participating client for the sites, and then the startup kit can be downloaded for each participant
 
-For the details of installation instructions, please refer to:
+For detailed installation instructions, please refer to:
 
 - Installation documentation: https://nvflare.readthedocs.io/en/main/installation.html
 - Deployment guide: https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/index.html
@@ -334,7 +334,7 @@ For the details of installation instructions, please refer to:
 What's the infrastructure on each institution's side?
 ------------------------------------------------------
 
-FLARE doesn't mandate a specific type of infrastructure, unless you want to leverage confidential computing with IP protection. You can run on CPU or GPU. The minimal requirement is an 8GB CPU with a Linux distribution (such as Ubuntu). For deep learning models, you will need a GPU for faster training.
+FLARE doesn't mandate a specific type of infrastructure, unless you want to leverage confidential computing with IP protection. You can run on CPU or GPU. The minimal requirement is 8GB RAM with a Linux distribution (such as Ubuntu). For deep learning models, you will need a GPU for faster training.
 
 Do we need to run Docker on our end?
 -------------------------------------
@@ -364,7 +364,7 @@ The model trained can be owned by different participants depending on the collab
 
 - Shared by all, or
 - Owned by the initial (pre-trained) model owner, or
-- Be a shared global model, and personalized model owned by participating clients
+- A shared global model with personalized models owned by participating clients
 
 It all depends on the business model and contracts. NVIDIA FLARE is not involved in these business decisions.
 
@@ -373,7 +373,7 @@ Is there a data use agreement?
 
 Since the data never leaves the institution, usually there is no specific data use agreement.
 
-However, collaborators usually need to decide what data to use to jointly train a model. Some kind of agreement needs to be made.
+However, collaborators usually need to agree on what data to use when jointly training a model. Some form of agreement is typically required.
 
 Is the code proxy-aware?
 ------------------------

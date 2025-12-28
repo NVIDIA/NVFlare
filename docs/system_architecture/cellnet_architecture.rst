@@ -1,7 +1,8 @@
 .. _cellnet_architecture:
 
+####################
 CellNet Architecture
---------------------
+####################
 
 .. image:: ../resources/cellnet.png
    :alt: CellNet Architecture
@@ -19,14 +20,14 @@ the network transport layer (gRPC, TCP, HTTP drivers). All NVFLARE components co
 
 - **Server-to-client task distribution**
 - **Client-to-server result submission**
-- **peer-to-peer communication**
+- **Peer-to-peer communication**
 - **Admin command execution**
 - **Cross-site auxiliary communication**
 - **Job deployment and management**
 
 
-Key Design Goals:
-#################
+Key Design Goals
+################
 
 - **Unified API**: Single interface for both small messages and large data streams
 - **Transport Agnostic**: Supports multiple network protocols (gRPC, TCP, HTTP)
@@ -34,8 +35,8 @@ Key Design Goals:
 - **Secure Communication**: Built-in encryption and authentication
 - **Flow Control**: Automatic chunking and flow control for large transfers
 
-Three-Layer Architecture:
-#########################
+Three-Layer Architecture
+########################
 
 - **CoreCell**: Basic message routing, connection management, security
 - **StreamCell**: Large data streaming with chunking and flow control
@@ -51,16 +52,17 @@ Three-Layer Design
 The CellNet architecture consists of three layers, each extending the previous:
 
 **Layer 1: CoreCell** - Basic Message Infrastructure
-provides fundamental messaging infrastructure:
+
+CoreCell provides the fundamental messaging infrastructure:
 
 **Key Responsibilities**:
 
 - **Message Handling** - Routes messages to appropriate handlers based on channel/topic
 - **Connection Management** - Manages listeners (incoming) and connectors (outgoing)
-- **Callback Registry** - Stores message handlers in req_reg: Registry
-- **Agent Tracking** - Maintains agents: Dict[str, CellAgent] for remote cells
-- **Request Tracking** - Tracks pending requests in waiters: Dict[str, _Waiter]
-- **Security** - Delegates to credential_manager: CredentialManager for encryption
+- **Callback Registry** - Stores message handlers in ``req_reg: Registry``
+- **Agent Tracking** - Maintains ``agents: Dict[str, CellAgent]`` for remote cells
+- **Request Tracking** - Tracks pending requests in ``waiters: Dict[str, _Waiter]``
+- **Security** - Delegates to ``credential_manager: CredentialManager`` for encryption
 
 **Core Methods**:
 
@@ -95,46 +97,47 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 
 **Layer 3: Cell** - Intelligent Request/Reply
 
-The **Cell** class provides unified interface for streaming and non-streaming messages:
+The **Cell** class provides a unified interface for streaming and non-streaming messages:
 
 **Key Features**:
 
 1. **Dynamic Method Dispatch**:
 
-- Intercept method calls Checks if channel requires streaming via _is_stream_channel()
-- Routes to appropriate implementation:
-- Stream channels → _broadcast_request(), _send_request(), etc.
-- Non-stream channels → core_cell.broadcast_request(), etc.
+- Intercepts method calls and checks if the channel requires streaming via ``_is_stream_channel()``
+- Routes to the appropriate implementation:
+
+  - Stream channels → ``_broadcast_request()``, ``_send_request()``, etc.
+  - Non-stream channels → ``core_cell.broadcast_request()``, etc.
 
 2. **Channel Classification**:
 
-**Excluded Channels**:
+**Excluded Channels** (non-streaming):
 
-   - CellChannel.CLIENT_MAIN - Admin commands
-   - CellChannel.SERVER_MAIN** - Task distribution
-   - CellChannel.RETURN_ONLY** - Internal replies
-   - CellChannel.CLIENT_COMMAND** - Client commands
-   - Other internal channels
+- ``CellChannel.CLIENT_MAIN`` - Admin commands
+- ``CellChannel.SERVER_MAIN`` - Task distribution
+- ``CellChannel.RETURN_ONLY`` - Internal replies
+- ``CellChannel.CLIENT_COMMAND`` - Client commands
+- Other internal channels
 
 3. **Request Tracking**:
 
-- Maintains requests_dict: Dict[str, SimpleWaiter] for pending requests
-- SimpleWaiter tracks request state and receiving progress
-- Reply handling via _process_reply()
+- Maintains ``requests_dict: Dict[str, SimpleWaiter]`` for pending requests
+- ``SimpleWaiter`` tracks request state and receiving progress
+- Reply handling via ``_process_reply()``
 
 4. **Callback Adaptation**:
 
-- Adapter class wraps application callbacks for streaming
+- ``Adapter`` class wraps application callbacks for streaming
 - Handles encoding/decoding of stream payloads
-- Sends replies back via RETURN_ONLY channel
+- Sends replies back via ``RETURN_ONLY`` channel
 
 5. **FQCN: Fully Qualified Cell Name**:
 
 Every cell is identified by a Fully Qualified Cell Name (FQCN), which is a dot-separated hierarchical name:
 
-<site_name>[.<job_id>[.<rank>]]
+``<site_name>[.<job_id>[.<rank>]]``
 
-6. **End-to-end encryption**
+6. **End-to-end Encryption**: All messages can be encrypted for secure communication.
 
 Message Structure and Addressing
 ################################
@@ -178,7 +181,7 @@ Communication Patterns
 Streaming Components Overview
 #############################
 
-The streaming system is organized into sender components, receiver components,and stream abstractions:
+The streaming system is organized into sender components, receiver components, and stream abstractions:
 
 Key Streaming Classes:
 
@@ -202,8 +205,8 @@ Key Streaming Classes:
 
 Performance and Statistics
 ##########################
-Statistics Collection:
-CellNet includes comprehensive statistics collection for monitoring and debugging:
-Statistics are collected via StatsPoolManager with categories for different operation types and cell FQCNs.
+
+CellNet includes comprehensive statistics collection for monitoring and debugging.
+Statistics are collected via ``StatsPoolManager`` with categories for different operation types and cell FQCNs.
 
 
