@@ -174,9 +174,15 @@ NVIDIA FLARE has been deployed across diverse industries worldwide.
 
 **Scientific Computing**
 
-- National laboratory platforms for distributed scientific computing
-- Large language model training under strict data governance
+- National laboratory platforms for scientific computing
+- Federated Data mesh for weather prediction and climate research
 - Research collaborations across institutional boundaries
+
+**National Security**
+
+- National laboratory platforms for large language model training
+  under strict data governance and privacy compliance
+- Closed-loop systems linking scientific discovery and national security initiatives
 
 **Autonomous Systems**
 
