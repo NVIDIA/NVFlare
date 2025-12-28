@@ -193,12 +193,12 @@ Job processes are spawned dynamically when jobs are scheduled:
 7. **Completion**: Processes terminate and report status to parents
 
 
-Control and Execution Planes Separation in K8s
-----------------------------------------------
+K8s-native Architecture: Control and Execution Planes Separation
+-----------------------------------------------------------------
 
 .. note::
 
-   This feature is coming soon.
+   k8s-native feature is coming soon.
 
 Parent pods manage the system lifecycle and spawn job pods (server job pod, client job pod) for workload execution.
 The server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
@@ -208,6 +208,7 @@ The following diagram illustrates the Server Parent (SP), Server Job (SJ), and r
 
 .. image:: ../resources/k8s_control_execution_planes.png
     :alt: Control & Execution Planes in K8s
+    :hight: 300
 
 
 
@@ -257,14 +258,6 @@ Cell Communication Channels
      - All processes
 
 
-Pipe Abstraction
-----------------
-
-Client Job to training process communication uses the Pipe interface:
-
-- **FilePipe**: File system-based IPC for same-machine processes
-- **CellPipe**: Network-based IPC allowing training process on different machine
-
 Message Flow: Task Pull Pattern
 -------------------------------
 
@@ -276,6 +269,12 @@ FLARE uses a pull-based task distribution pattern:
 4. **Task Execution**: Executor processes task, produces result
 5. **Result Push**: ClientRunner sends result via ``CellChannel.SERVER_MAIN``
 6. **Result Processing**: Controller aggregates results
+
+
+
+Client API Job Process
+======================
+todo
 
 
 Job Management
