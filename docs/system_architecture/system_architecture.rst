@@ -198,7 +198,7 @@ K8s-native Architecture: Control and Execution Planes Separation
 
 .. note::
 
-   k8s-native feature is coming soon.
+   The K8s-native feature is coming soon.
 
 Parent pods manage the system lifecycle and spawn job pods (server job pod, client job pod) for workload execution.
 The server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
@@ -207,8 +207,8 @@ The following diagram illustrates the Server Parent (SP), Server Job (SJ), and r
 
 
 .. image:: ../resources/k8s_control_execution_planes.png
-    :alt: Control & Execution Planes in K8s
-    :hight: 300
+   :alt: Control & Execution Planes in K8s
+   :height: 300px
 
 
 
@@ -274,7 +274,66 @@ FLARE uses a pull-based task distribution pattern:
 
 Client API Job Process
 ======================
-todo
+
+The Client API provides a simplified interface for integrating user training scripts with the FLARE job process.
+It abstracts the complexity of task handling and communication, allowing data scientists to convert centralized
+training code to federated learning with minimal changes.
+
+.. image:: ../resources/client_api.png
+   :alt: Client API Architecture
+   :height: 300px
+
+Communication Patterns
+----------------------
+
+FLARE offers two execution patterns for Client API, each suited to different scenarios:
+
+**In-Process Execution**
+
+The training script and client executor operate within the same process. Communication occurs through an
+efficient in-memory databus. This pattern is recommended when:
+
+- Training uses a single GPU or no GPUs
+- No third-party training systems are integrated
+- Maximum performance is required
+
+**Sub-Process Execution**
+
+The ``LauncherExecutor`` spawns a separate process for the training script using ``SubprocessLauncher``.
+The ``launch_once`` option controls whether to launch the script once at ``START_RUN`` (persistent) or
+for each task. This pattern is recommended when:
+
+- Multi-GPU training is required
+- External training infrastructure is used
+- Process isolation is needed
+
+
+Essential Client API Methods
+----------------------------
+
+The Client API provides three core methods for federated learning integration:
+
+- ``flare.init()``: Initializes the NVFlare Client API environment
+- ``flare.receive()``: Receives the global model from the server
+- ``flare.send()``: Sends the updated local model back to the server
+
+**Example Usage**:
+
+.. code-block:: python
+
+   import nvflare.client as flare
+
+   flare.init()                        # Initialize Client API
+   input_model = flare.receive()       # Receive global model
+   params = input_model.params
+
+   # Local training code
+   new_params = local_train(params)
+
+   output_model = flare.FLModel(params=new_params)
+   flare.send(output_model)            # Send updated model
+
+For detailed Client API documentation, see :ref:`client_api`
 
 
 Job Management
@@ -350,7 +409,7 @@ Deployment Modes Comparison
    * - Simulator
      - Rapid prototyping, algorithm testing
      - None
-     - Single process with threads
+     - Single process with threads (may spawn multiple processes in some cases)
      - Seconds
    * - POC
      - Local multi-client testing, workflow validation
@@ -373,10 +432,18 @@ Simulator mode runs the entire FL system in a single process using threads.
 
 - Single process with ``SimulatorRunner``
 - Clients simulated as threads sharing memory
-- No network communication (in-memory message passing)
+- Uses network communication (in-memory message passing coming soon)
 - Fastest iteration for algorithm development
 
-**Usage**:
+**Usage with Job Recipe**:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(...)
+   env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+   recipe.execute(env=env)
+
+**Usage with CLI**:
 
 .. code-block:: bash
 
