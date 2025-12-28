@@ -14,7 +14,8 @@ NVIDIA FLARE
    Installation <installation>
    getting_started
    Quick Start <quickstart>
-   system_architecture/index.rst
+   system_architecture/index
+   user_guide/confidential_computing/index
 
 .. toctree::
    :maxdepth: -1
