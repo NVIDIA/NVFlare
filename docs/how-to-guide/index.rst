@@ -11,7 +11,7 @@ this how-to guide is intentionally focused and task-oriented, offering direct gu
 and more practical use.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :glob:
 
    *
