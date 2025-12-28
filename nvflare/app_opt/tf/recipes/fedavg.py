@@ -14,40 +14,17 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel
-
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
-from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.job_config.script_runner import FrameworkType
+from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
-# Internal — not part of the public API
-class _FedAvgValidator(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
-
-    name: str
-    initial_model: Any
-    min_clients: int
-    num_rounds: int
-    train_script: str
-    train_args: str
-    aggregator: Optional[Aggregator]
-    aggregator_data_kind: Optional[DataKind]
-    launch_external_process: bool = False
-    command: str = "python3 -u"
-    framework: FrameworkType = FrameworkType.TENSORFLOW
-    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
-    params_transfer_type: TransferType = TransferType.FULL
-
-
-class FedAvgRecipe(Recipe):
-    """A recipe for implementing Federated Averaging (FedAvg) in NVFlare.
+class FedAvgRecipe(UnifiedFedAvgRecipe):
+    """A recipe for implementing Federated Averaging (FedAvg) for TensorFlow.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
@@ -76,9 +53,17 @@ class FedAvgRecipe(Recipe):
         framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
+            If not provided, no experiment tracking will be enabled.
+            To enable experiment tracking, either:
+            - Pass an AnalyticsReceiver instance explicitly, OR
+            - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
 
     Example:
+        Basic usage without experiment tracking:
+
         ```python
         recipe = FedAvgRecipe(
             name="my_fedavg_job",
@@ -90,10 +75,39 @@ class FedAvgRecipe(Recipe):
         )
         ```
 
+        Enable TensorBoard experiment tracking (Option 1 - pass explicitly):
+
+        ```python
+        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            train_args="--epochs 5 --batch_size 32",
+            analytics_receiver=TBAnalyticsReceiver()
+        )
+        ```
+
+        Enable experiment tracking (Option 2 - add after creation):
+
+        ```python
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = FedAvgRecipe(...)  # Create recipe first
+        add_experiment_tracking(recipe, "tensorboard")  # Add tracking later
+        # Also supports: "mlflow", "wandb"
+        ```
+
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
         are aggregated using weighted averaging based on the number of training
         samples provided by each client.
+
+        Experiment tracking is opt-in. No tracking components are configured by default,
+        avoiding unnecessary dependencies.
 
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
@@ -115,9 +129,11 @@ class FedAvgRecipe(Recipe):
         framework: FrameworkType = FrameworkType.TENSORFLOW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        model_persistor: Optional[ModelPersistor] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
-        # Validate inputs internally
-        v = _FedAvgValidator(
+        # Call the unified FedAvgRecipe with TensorFlow-specific settings
+        super().__init__(
             name=name,
             initial_model=initial_model,
             min_clients=min_clients,
@@ -131,62 +147,16 @@ class FedAvgRecipe(Recipe):
             framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            model_persistor=model_persistor,
+            analytics_receiver=analytics_receiver,
         )
 
-        self.name = v.name
-        self.initial_model = v.initial_model
-        self.min_clients = v.min_clients
-        self.num_rounds = v.num_rounds
-        self.train_script = v.train_script
-        self.train_args = v.train_args
-        self.aggregator = v.aggregator
-        self.aggregator_data_kind = v.aggregator_data_kind
-        self.launch_external_process = v.launch_external_process
-        self.command = v.command
-        self.framework = v.framework
-        self.server_expected_format: ExchangeFormat = v.server_expected_format
-        self.params_transfer_type: TransferType = v.params_transfer_type
+    def _setup_model_and_persistor(self, job) -> str:
+        """Override to handle TensorFlow-specific model setup."""
+        if self.initial_model is not None:
+            from nvflare.app_opt.tf.job_config.model import TFModel
 
-        # Create BaseFedJob with initial model
-        job = BaseFedJob(
-            initial_model=self.initial_model,
-            name=self.name,
-            min_clients=self.min_clients,
-        )
-
-        # Define the controller and send to server
-        if self.aggregator is None:
-            self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=self.aggregator_data_kind)
-        else:
-            if not isinstance(self.aggregator, Aggregator):
-                raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
-
-        # Define the controller and send to server
-        shareable_generator = FullModelShareableGenerator()
-        shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
-        aggregator_id = job.to_server(self.aggregator, id="aggregator")
-
-        controller = ScatterAndGather(
-            min_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            wait_time_after_min_received=0,
-            aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
-            shareable_generator_id=shareable_generator_id,
-        )
-        # Send the controller to the server
-        job.to_server(controller)
-
-        # Add clients
-        executor = ScriptRunner(
-            script=self.train_script,
-            script_args=self.train_args,
-            launch_external_process=self.launch_external_process,
-            command=self.command,
-            framework=self.framework,
-            server_expected_format=self.server_expected_format,
-            params_transfer_type=self.params_transfer_type,
-        )
-        job.to_clients(executor)
-
-        Recipe.__init__(self, job)
+            tf_model = TFModel(model=self.initial_model, persistor=self.model_persistor)
+            job.comp_ids["persistor_id"] = job.to_server(tf_model)
+            return job.comp_ids.get("persistor_id", "")
+        return ""
