@@ -130,15 +130,15 @@ Process Types
      - Client job process running ClientRunner and Executors
 
 
-.. |job_arc1| image:: ../resources/job_architecture.png
+.. |job_arch1| image:: ../resources/job_architecture.png
    :alt: Job Architecture
    :width: 45%
 
-.. |job_arch2| image:: ../resources/job_architecture2.png
+.. |job_arch2| image:: ../resources/Job_architecture2.png
    :alt: Job Architecture
    :width: 45%
 
-   |job_arch1| |job_arch2|
+|job_arch1| |job_arch2|
 
 
 Process Responsibilities
@@ -196,17 +196,18 @@ Job processes are spawned dynamically when jobs are scheduled:
 Control and Execution Planes Separation in K8s
 ----------------------------------------------
 
-.. notes::
-   release soon
+.. note::
 
-Parent pod manage system lifecycle and spawn job pod ( server job pod, client job pod) for workload execution.
-The Server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
+   This feature is coming soon.
+
+Parent pods manage the system lifecycle and spawn job pods (server job pod, client job pod) for workload execution.
+The server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
 high-throughput metadata traffic separately from high-volume data traffic.
 The following diagram illustrates the Server Parent (SP), Server Job (SJ), and related pods within the Kubernetes environment.
 
 
-.. image:: ../resources/k8s_control_execution_plans.png
-    :alt: Control & Execution Plan in K8s
+.. image:: ../resources/k8s_control_execution_planes.png
+    :alt: Control & Execution Planes in K8s
 
 
 
