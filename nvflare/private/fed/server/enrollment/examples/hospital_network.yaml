@@ -1,0 +1,68 @@
+# FLARE Enrollment Policy: Hospital Network
+# Use Case: Healthcare federation with multiple hospital sites
+#
+# - Hospital sites from known networks auto-approve
+# - External researchers require manual approval
+# - Limits total number of enrolled sites
+#
+# Usage:
+#   nvflare token gen-token hospital_network.yaml --site-pattern="hospital-*"
+
+project: "healthcare-research-2025"
+description: "Hospital federation enrollment policy"
+
+token:
+  validity: 7d
+  max_uses: 10  # Allow up to 10 hospitals to use this token
+
+site:
+  name_pattern: "hospital-*"
+  max_sites: 50
+
+user:
+  allowed_roles:
+    - researcher
+    - org_admin
+    - site_admin
+  default_role: researcher
+
+approval:
+  method: policy
+  
+  rules:
+    # Auto-approve hospitals from known healthcare networks
+    - name: "hospital-auto-approve"
+      description: "Auto-approve hospital sites from healthcare network"
+      match:
+        site_name_pattern: "hospital-*"
+        source_ips:
+          - "10.100.0.0/16"   # Regional healthcare network A
+          - "10.200.0.0/16"   # Regional healthcare network B
+      action: approve
+      log: true
+
+    # Auto-approve research institutions
+    - name: "research-institution"
+      description: "Auto-approve research partner institutions"
+      match:
+        site_name_pattern: "site-*"
+        source_ips:
+          - "172.20.0.0/16"   # University research network
+      action: approve
+      log: true
+
+    # Queue external requests for review
+    - name: "external-pending"
+      description: "Queue external requests for manual review"
+      match:
+        site_name_pattern: "*"
+      action: pending
+      notify:
+        - federation-admin@healthcare.org
+      message: "External enrollment request - requires manual verification"
+
+    # Default deny
+    - name: "default-deny"
+      match: {}
+      action: reject
+
