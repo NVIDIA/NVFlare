@@ -348,7 +348,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def ls_target(self, target: str, options: str = None, path: str = None) -> str:
+    def ls_target(self, target: str, options: Optional[str] = None, path: Optional[str] = None) -> str:
         """Run the "ls" command on the specified target and return result
 
         Args:
@@ -362,7 +362,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def cat_target(self, target: str, options: str = None, file: str = None) -> str:
+    def cat_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "cat" command on the specified target and return result
 
         Args:
@@ -376,7 +376,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def tail_target(self, target: str, options: str = None, file: str = None) -> str:
+    def tail_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "tail" command on the specified target and return result
 
         Args:
@@ -390,7 +390,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def tail_target_log(self, target: str, options: str = None) -> str:
+    def tail_target_log(self, target: str, options: Optional[str] = None) -> str:
         """Run the "tail log.txt" command on the specified target and return result
 
         Args:
@@ -403,7 +403,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def head_target(self, target: str, options: str = None, file: str = None) -> str:
+    def head_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> str:
         """Run the "head" command on the specified target and return result
 
         Args:
@@ -417,7 +417,7 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def head_target_log(self, target: str, options: str = None) -> str:
+    def head_target_log(self, target: str, options: Optional[str] = None) -> str:
         """Run the "head log.txt" command on the specified target and return result
 
         Args:
@@ -430,7 +430,9 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
+    def grep_target(
+        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
+    ) -> str:
         """Run the "grep" command on the specified target and return result
 
         Args:
