@@ -1,0 +1,30 @@
+# FLARE Enrollment Policy: IP Whitelist
+# Use Case: Restrict enrollment to known network ranges
+#
+# Usage:
+#   nvflare token gen-token ip_whitelist.yaml
+
+project: "secure-federation"
+description: "Only allow enrollment from whitelisted IP ranges"
+
+token:
+  validity: 7d
+  max_uses: 1
+
+approval:
+  rules:
+    - name: "internal-network"
+      description: "Allow internal RFC1918 addresses"
+      match:
+        source_ips:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+      action: approve
+
+    - name: "reject-all-others"
+      description: "Reject external networks"
+      match: {}
+      action: reject
+      message: "Enrollment denied: IP address not in whitelist"
+
