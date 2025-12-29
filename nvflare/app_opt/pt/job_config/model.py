@@ -31,7 +31,7 @@ class PTModel:
 
         Args:
             model (any): model
-            persistor (optional, ModelPersistor): how to persistor the model.
+            persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
         """
         self.model = model
