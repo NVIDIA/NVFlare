@@ -14,6 +14,7 @@
 
 import json
 import uuid
+from typing import Optional
 
 
 class MsgHeader(object):
@@ -74,7 +75,7 @@ class Message(object):
         self.set_header(MsgHeader.REF_MSG_ID, msg_id)
 
 
-def error_reply(err: str, meta: dict = None) -> Message:
+def error_reply(err: str, meta: Optional[dict] = None) -> Message:
     msg = Message(topic="reply", body=err)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.ERROR)
     if meta:
@@ -82,7 +83,7 @@ def error_reply(err: str, meta: dict = None) -> Message:
     return msg
 
 
-def ok_reply(topic=None, body=None, meta: dict = None) -> Message:
+def ok_reply(topic=None, body=None, meta: Optional[dict] = None) -> Message:
     if body is None:
         body = "ok"
 
