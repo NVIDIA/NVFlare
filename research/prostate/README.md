@@ -1,15 +1,3 @@
-# Federated Learning for Prostate Segmentation from Multi-source Data
-
-Please make sure you set up virtual environment follows [example root readme](../../README.md)
-
-## Introduction to MONAI, Prostate and Multi-source Data
-
-### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
-It uses [MONAI](https://github.com/Project-MONAI/MONAI),
-which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
-
-### Prostate
 This example illustrates both 2D (from axial slices) and 3D (from 3D volumes) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
 Please see details for FL execution within each folder.
@@ -211,5 +199,3 @@ Mode: file
 In total 39 cases, 20 for training, 10 for validation, and 9 for testing
 ```
 
-## Federated Training for Prostate Tasks
-Please go to subfolders [./prostate_2D](./prostate_2D) and [./prostate_3D](./prostate_3D) for further instructions on federated training.
