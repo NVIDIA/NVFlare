@@ -82,6 +82,27 @@ def add_cross_site_evaluation(
 ):
     """Enable cross-site model evaluation.
 
+    **IMPORTANT:** This function only adds server-side components. For NumPy recipes,
+    you MUST manually add NPValidator to clients BEFORE calling this function, or
+    cross-site evaluation will fail at runtime.
+
+    Example for NumPy:
+        ```
+        from nvflare.app_common.np.np_validator import NPValidator
+        from nvflare.app_common.app_constant import AppConstants
+
+        recipe = NumpyFedAvgRecipe(...)
+
+        # REQUIRED: Add validator to clients for NumPy
+        validator = NPValidator(validate_task_name=AppConstants.TASK_VALIDATION)
+        recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
+
+        # Now add cross-site evaluation
+        add_cross_site_evaluation(recipe, model_locator_type="numpy")
+        ```
+
+    For PyTorch, validation logic should be implemented in the training script itself.
+
     Args:
         recipe: Recipe object to add cross-site evaluation to
         model_locator_type: The type of model locator to use ("pytorch" or "numpy")
@@ -89,11 +110,6 @@ def add_cross_site_evaluation(
         persistor_id: The persistor ID to use for model location. If None, uses the default persistor_id from job.comp_ids
         submit_model_timeout: Timeout for model submission in seconds
         validation_timeout: Timeout for validation in seconds
-
-    Note:
-        Client-side validators must be configured separately:
-        - For NumPy: Add NPValidator to handle validation tasks
-        - For PyTorch: Validation logic should be in the training script
     """
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -102,10 +118,6 @@ def add_cross_site_evaluation(
         raise ValueError(
             f"Invalid model locator type: {model_locator_type}. Available types: {list(MODEL_LOCATOR_REGISTRY.keys())}"
         )
-
-    # Use provided persistor_id or default from job.comp_ids
-    if persistor_id is None:
-        persistor_id = recipe.job.comp_ids["persistor_id"]
 
     # Get model locator configuration from registry
     locator_config = MODEL_LOCATOR_REGISTRY[model_locator_type]
@@ -118,6 +130,12 @@ def add_cross_site_evaluation(
     locator_kwargs = {}
     if locator_config["persistor_param"] is not None:
         # For PyTorch locator, use persistor_id
+        # If not provided, try to get it from comp_ids (only available in BaseFedJob)
+        if persistor_id is None:
+            if hasattr(recipe.job, "comp_ids"):
+                persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+            else:
+                persistor_id = ""
         locator_kwargs[locator_config["persistor_param"]] = persistor_id
 
     # Merge in custom config if provided

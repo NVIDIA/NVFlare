@@ -1,9 +1,9 @@
 
-# Hello Pytorch
-This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-pt/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
+# Hello PyTorch
+This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the `hello-pt directory <examples/hello-world/hello-pt/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
 
 ## NVIDIA FLARE Installation
-for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 ```
 pip install nvflare
 
@@ -14,12 +14,12 @@ Install the dependency
 pip install -r requirements.txt
 ```
 ## Code Structure
-first get the example code from github:
+First get the example code from github:
 
 ```
 git clone https://github.com/NVIDIA/NVFlare.git
 ```
-then navigate to the hello-pt directory:
+Then navigate to the hello-pt directory:
 
 ```
 git switch <release branch>
@@ -29,7 +29,6 @@ cd examples/hello-world/hello-pt
 hello-pt
 |
 |-- client.py             # client local training script
-|-- client_with_eval.py   # alternative client local training script with both traiing and evaluation
 |-- model.py              # model definition
 |-- job.py                # job recipe that defines client and server configurations
 |-- requirements.txt      # dependencies
@@ -41,21 +40,21 @@ This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) da
 In a real FL experiment, each client would have their own dataset used for their local training.
 You can download the CIFAR10 dataset from the Internet via torchvision’s datasets module,
 You can split the datasets for different clients, so that each client has its own dataset.
-Here for simplicity’s sake, the same dataset we will be using on each client.
+Here, for simplicity's sake, we will be using the same dataset on each client.
 
 ## Model
 In PyTorch, neural networks are implemented by defining a class (e.g., SimpleNetwork) that extends nn.Module.
-The network’s architecture is set up in the __init__ method,# while the forward method determines how input data flows
-through the layers. For faster computations, the model is transferred to a hardware accelerator (such as CUDA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
+The network’s architecture is set up in the __init__ method, while the forward method determines how input data flows
+through the layers. For faster computations, the model is transferred to a hardware accelerator (such as NVIDIA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
 
 ```python
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class Net(nn.Module):
+class SimpleNetwork(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(SimpleNetwork, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
@@ -75,7 +74,7 @@ class Net(nn.Module):
 
 
 ## Client Code
-The client code ```client.py``` is responsible for Notice the training code is almost identical to the pytorch standard training code.
+The client code ```client.py``` is responsible for model training. Notice that the training code is almost identical to the standard PyTorch training code.
 The only difference is that we added a few lines to receive and send data to the server.
 
 Now, we need to adapt this centralized training code to something that can run in a federated setting.
@@ -124,7 +123,7 @@ The FedAvg controller implements these main steps:
     - FL server aggregates all the `results` and produces a new global model using `self.update_model()`.
 
 In this example, we will directly use the default federated averaging algorithm provided by NVFlare implemented using the `ScatterAndGather` controller.
-There is no need to defined a customized server code for this example.
+There is no need to define a customized server code for this example.
 
 ## Job Recipe Code
 Job Recipe contains the client.py and built-in Fed average algorithm.
@@ -142,17 +141,11 @@ Job Recipe contains the client.py and built-in Fed average algorithm.
     recipe.execute(env=env)
 ```
 
-To include both training and evaluation using the `CrossSiteModelEval` controller, we use the recipe's training script
-
-```python
-
-train_script="client_with_eval.py",
-
-```
-and set `cross_site_eval=True` in [job.py](job.py) using below commandline arguments.
+To include both training and cross-site evaluation using the `CrossSiteModelEval` controller,
+set `cross_site_eval=True` in [job.py](job.py) using the commandline argument below.
 
 ## Run Job
-from terminal try to run the code
+From the terminal, run:
 
 ```
     python job.py
@@ -160,16 +153,14 @@ from terminal try to run the code
 
 To run with cross-site evaluation, execute
 ```
-    python job.py --train_script="client_with_eval.py" --cross_site_eval
+    python job.py --cross_site_eval
 ```
 The cross-site evaluation results can be shown via
 ```
 cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_val_results.json
 ```
 
-> Note:
->> depends on the number of clients, you might run into error due to several client try to download the data at the same time.
->> suggest to pre-download the data to avoid such errors.
+> **Note:** Depending on the number of clients, you might run into errors if several clients try to download the data at the same time. It is suggested to pre-download the data to avoid such errors.
 
 ## Output summary
 

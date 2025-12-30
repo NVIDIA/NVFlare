@@ -17,9 +17,9 @@ Cross-Site Evaluation Example with NumPy using the Recipe API.
 
 This example demonstrates two modes:
 1. Standalone CSE: Evaluate pre-trained models without training
+   - Manually configures CrossSiteModelEval with custom model locator for pre-trained models
 2. Training + CSE: Run FedAvg training followed by cross-site evaluation
-
-Both modes use the add_cross_site_evaluation() utility function for consistent behavior.
+   - Uses add_cross_site_evaluation() utility function with NumpyFedAvgRecipe
 """
 
 import argparse
@@ -29,6 +29,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.recipe import SimEnv
 from nvflare.recipe.spec import Recipe
@@ -73,6 +74,9 @@ def run_pretrained_cse(n_clients: int):
         )
     )
 
+    # Add validation JSON generator to save results
+    job.to_server(ValidationJsonGenerator())
+
     # Add cross-site evaluation controller
     eval_controller = CrossSiteModelEval(
         model_locator_id=model_locator_id,
@@ -87,9 +91,8 @@ def run_pretrained_cse(n_clients: int):
     )
     job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
 
-    # Note: ValidationJsonGenerator is added by the job automatically
-    # But we can't use add_cross_site_evaluation() here because we need
-    # custom model locator configuration for pre-trained models
+    # Note: We build the FedJob manually here instead of using add_cross_site_evaluation()
+    # because we need custom model locator configuration for pre-trained models
 
     # Create recipe and run
     recipe = Recipe(job)
@@ -125,8 +128,14 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
         train_args="",
     )
 
+    # Add validator to clients for cross-site evaluation
+    # Note: NumpyFedAvgRecipe only adds training components (ScriptRunner).
+    # We must manually add NPValidator for CSE validation tasks.
+    validator = NPValidator(validate_task_name=AppConstants.TASK_VALIDATION)
+    recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
+
     # Add cross-site evaluation using utility function
-    # This is the recommended approach from Branch A
+    # This is the recommended approach for adding cross-site evaluation
     add_cross_site_evaluation(recipe, model_locator_type="numpy")
 
     # Run in simulation environment
