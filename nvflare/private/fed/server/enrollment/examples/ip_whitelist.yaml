@@ -1,30 +1,86 @@
-# FLARE Enrollment Policy: IP Whitelist
-# Use Case: Restrict enrollment to known network ranges
+# IP Whitelist Policy
+# Policy with optional IP-based matching for environments with predictable IPs
 #
-# Usage:
-#   nvflare token gen-token ip_whitelist.yaml
+# Supported environments:
+#   - AWS EC2 (VPC private/public IPs)
+#   - Google Cloud Platform (GCP) VMs
+#   - Azure VMs
+#   - Oracle Cloud Infrastructure (OCI)
+#   - On-premise data centers
+#
+# Note: source_ips is optional - omit for dynamic IP environments (K8s, NAT)
 
-project: "secure-federation"
-description: "Only allow enrollment from whitelisted IP ranges"
+metadata:
+  project: "nvflare-network"
+  description: "Enrollment policy with optional IP-based matching"
+  version: "1.0"
 
 token:
   validity: 7d
   max_uses: 1
 
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - data_scientist
+  default_role: researcher
+
 approval:
+  method: policy
   rules:
+    # Auto-approve from internal network ranges
     - name: "internal-network"
-      description: "Allow internal RFC1918 addresses"
+      description: "Auto-approve from internal/private subnets"
       match:
+        site_name_pattern: "internal-*"
         source_ips:
-          - "10.0.0.0/8"
-          - "172.16.0.0/12"
-          - "192.168.0.0/16"
+          - "10.0.0.0/8"        # Private range (AWS VPC, Azure VNet, on-premise)
+          - "172.16.0.0/12"     # Private range
+          - "192.168.0.0/16"    # Private range
       action: approve
 
-    - name: "reject-all-others"
-      description: "Reject external networks"
+    # Auto-approve from specific datacenter
+    - name: "datacenter-sites"
+      description: "Auto-approve from known datacenter IPs"
+      match:
+        site_name_pattern: "dc-*"
+        source_ips:
+          - "203.0.113.0/24"    # Example: datacenter public range
+          - "198.51.100.0/24"   # Example: secondary datacenter
+      action: approve
+
+    # Sites without IP restriction (dynamic environments)
+    - name: "cloud-sites"
+      description: "Auto-approve cloud sites (no IP check)"
+      match:
+        site_name_pattern: "cloud-*"
+        # No source_ips - works with any IP or no IP
+      action: approve
+
+    # Queue others for review
+    - name: "unknown-pending"
+      match:
+        site_name_pattern: "*"
+      action: pending
+      notify:
+        - network-admin@company.com
+      message: "Site requires network admin approval"
+
+    # Default deny
+    - name: "default-deny"
       match: {}
       action: reject
-      message: "Enrollment denied: IP address not in whitelist"
+
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"
+    webhook:
+      enabled: false
+      url: "${WEBHOOK_URL}"
 

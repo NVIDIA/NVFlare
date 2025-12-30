@@ -12,5 +12,60 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""This is the NVFlare client package."""
+"""FLARE Client Enrollment Package.
 
+This package provides client-side enrollment functionality for FLARE federation.
+
+Uses CellNet for communication (supports grpc, https, tcp protocols).
+
+Supports:
+- Site enrollment: For FL clients (hospital-1, site-1, etc.)
+- User enrollment: For admin/researcher users with roles
+- Relay enrollment: For relay nodes
+
+Example:
+    from nvflare.private.fed.client.enrollment import (
+        CertRequestor,
+        EnrollmentIdentity,
+        EnrollmentOptions,
+    )
+    
+    # Create identity
+    identity = EnrollmentIdentity.for_site("hospital-1", org_name="Hospital A")
+    
+    # Create requestor with Cell
+    requestor = CertRequestor(
+        cell=cell,  # CellNet Cell object
+        enrollment_token="eyJ...",
+        identity=identity,
+    )
+    
+    # Enroll
+    result = requestor.enroll()
+"""
+
+from nvflare.private.fed.client.enrollment.cert_requestor import (
+    # Main class
+    CertRequestor,
+    # Configuration models
+    EnrollmentIdentity,
+    EnrollmentOptions,
+    # Request/Response models
+    EnrollmentRequest,
+    EnrollmentResult,
+    # Constants
+    UserRole,
+)
+
+__all__ = [
+    # Main class
+    "CertRequestor",
+    # Configuration models
+    "EnrollmentIdentity",
+    "EnrollmentOptions",
+    # Request/Response models
+    "EnrollmentRequest",
+    "EnrollmentResult",
+    # Constants
+    "UserRole",
+]
