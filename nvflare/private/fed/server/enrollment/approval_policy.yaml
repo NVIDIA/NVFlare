@@ -4,137 +4,108 @@
 # Usage:
 #   nvflare token gen-token approval_policy.yaml
 #
-# Policy Structure:
-#   - token: Token generation settings (validity, usage limits)
+# Policy Schema:
+#   - metadata: Policy identification (project, description, version)
+#   - token: Token settings (validity, single-use)
+#   - site: Site enrollment constraints (name_pattern)
+#   - user: User enrollment constraints (allowed_roles, default_role)
 #   - approval: Rules evaluated in order; first match wins
-#   - Each rule has: name, match conditions, action, and optional notifications
+#   - notifications: Alert channels for pending/rejected enrollments
+#
+# Match Conditions:
+#   - site_name_pattern: Wildcard pattern (required)
+#   - source_ips: Optional CIDR ranges (for AWS EC2, static IP environments)
 
 # ==============================================================================
 # EXAMPLE 1: Auto-Approve All (Development/Simulation)
 # ==============================================================================
-# Uncomment this section for local development or research experiments
-#
 # approval:
+#   method: policy
 #   rules:
 #     - name: "auto-approve-all"
 #       match: {}
 #       action: approve
 
 # ==============================================================================
-# EXAMPLE 2: IP Whitelist Only
+# EXAMPLE 2: With Optional IP Matching (AWS EC2)
 # ==============================================================================
-# Uncomment this section to only allow specific network ranges
-#
 # approval:
+#   method: policy
 #   rules:
-#     - name: "internal-network"
+#     - name: "aws-vpc-sites"
 #       match:
-#         source_ips: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+#         site_name_pattern: "aws-*"
+#         source_ips: ["10.0.0.0/8", "172.31.0.0/16"]  # AWS VPC ranges
 #       action: approve
-#     - name: "reject-external"
-#       match: {}
-#       action: reject
 
 # ==============================================================================
 # PRODUCTION POLICY (Active Configuration)
 # ==============================================================================
 
-# Project metadata
-project: "nvflare-federation"
-description: "Production enrollment policy for NVFLARE federation"
-version: "1.0"
+metadata:
+  project: "nvflare-federation"
+  description: "Production enrollment policy for NVFLARE federation"
+  version: "1.0"
 
-# Token settings (embedded in JWT)
 token:
-  validity: 7d              # Token expires after 7 days
-  max_uses: 1               # Single use token (set to -1 for unlimited)
-  renewable: false          # Whether token can be refreshed
+  validity: 7d
+  max_uses: 1
 
-# Site enrollment constraints
 site:
-  # Pattern for allowed site names (supports wildcards)
   name_pattern: "*"
-  # Maximum number of sites that can enroll with this policy
-  max_sites: 100
 
-# User enrollment constraints (for user tokens)
 user:
-  # Allowed roles that can be assigned
   allowed_roles:
     - researcher
     - org_admin
     - project_admin
-  # Default role if not specified
   default_role: researcher
 
-# Approval rules - evaluated in order, first match wins
 approval:
-  # Approval method: "policy" (rule-based) or "manual" (human approval required)
   method: policy
   
   rules:
-    # Rule 1: Auto-approve internal network sites
-    - name: "internal-auto-approve"
-      description: "Auto-approve enrollments from internal network"
+    # Rule 1: Auto-approve internal sites
+    - name: "internal-sites"
+      description: "Auto-approve internal site enrollments"
       match:
-        source_ips: 
-          - "10.0.0.0/8"
-          - "172.16.0.0/12"
         site_name_pattern: "internal-*"
       action: approve
-      log: true
 
-    # Rule 2: Auto-approve trusted partner sites with limits
-    - name: "partner-sites"
-      description: "Auto-approve partner sites from known networks"
-      match:
-        source_ips:
-          - "192.168.100.0/24"    # Partner A network
-          - "192.168.200.0/24"    # Partner B network
-        site_name_pattern: "partner-*"
-        current_site_count: "<50"  # Limit total partner sites
-      action: approve
-      log: true
-
-    # Rule 3: Auto-approve hospital sites during business hours
-    - name: "hospital-business-hours"
-      description: "Auto-approve hospital enrollments during business hours"
+    # Rule 2: Auto-approve hospital sites
+    - name: "hospital-sites"
+      description: "Auto-approve hospital enrollments"
       match:
         site_name_pattern: "hospital-*"
-        source_ips:
-          - "10.100.0.0/16"      # Hospital network range
-        time_window:
-          days: ["mon", "tue", "wed", "thu", "fri"]
-          hours: ["08:00-18:00"]
-          timezone: "America/Los_Angeles"
       action: approve
-      log: true
+
+    # Rule 3: Auto-approve partner sites
+    - name: "partner-sites"
+      description: "Auto-approve partner site enrollments"
+      match:
+        site_name_pattern: "partner-*"
+      action: approve
 
     # Rule 4: Queue unknown sites for manual approval
-    - name: "external-pending"
-      description: "Queue external enrollments for manual review"
+    - name: "unknown-pending"
+      description: "Queue unrecognized sites for manual review"
       match:
         site_name_pattern: "*"
       action: pending
       notify:
         - admin@organization.com
         - security@organization.com
-      log: true
-      message: "External enrollment request requires manual approval"
+      message: "Site enrollment requires manual approval"
 
     # Rule 5: Default deny (catch-all)
     - name: "default-deny"
       description: "Reject all unmatched enrollment requests"
       match: {}
       action: reject
-      log: true
       message: "Enrollment rejected: no matching approval rule"
 
-# Notification settings
 notifications:
-  # Enable/disable notifications
   enabled: true
-  # Notification channels
   channels:
     email:
       enabled: true
@@ -142,11 +113,3 @@ notifications:
     webhook:
       enabled: false
       url: "${WEBHOOK_URL}"
-
-# Audit logging
-audit:
-  enabled: true
-  log_approved: true
-  log_rejected: true
-  log_pending: true
-

@@ -1,68 +1,72 @@
-# FLARE Enrollment Policy: Hospital Network
-# Use Case: Healthcare federation with multiple hospital sites
+# Hospital Network Policy
+# Policy for healthcare federated learning networks
 #
-# - Hospital sites from known networks auto-approve
-# - External researchers require manual approval
-# - Limits total number of enrolled sites
-#
-# Usage:
-#   nvflare token gen-token hospital_network.yaml --site-pattern="hospital-*"
+# Approves hospital sites, requires approval for others
 
-project: "healthcare-research-2025"
-description: "Hospital federation enrollment policy"
+metadata:
+  project: "healthcare-fl"
+  description: "Hospital network enrollment policy"
+  version: "1.0"
 
 token:
-  validity: 7d
-  max_uses: 10  # Allow up to 10 hospitals to use this token
+  validity: 14d
+  max_uses: 1
 
 site:
-  name_pattern: "hospital-*"
-  max_sites: 50
+  name_pattern: "*"
 
 user:
   allowed_roles:
     - researcher
-    - org_admin
-    - site_admin
+    - clinician
+    - data_admin
   default_role: researcher
 
 approval:
   method: policy
-  
   rules:
-    # Auto-approve hospitals from known healthcare networks
-    - name: "hospital-auto-approve"
-      description: "Auto-approve hospital sites from healthcare network"
+    # Auto-approve hospital sites
+    - name: "hospital-sites"
+      description: "Auto-approve hospital enrollments"
       match:
         site_name_pattern: "hospital-*"
-        source_ips:
-          - "10.100.0.0/16"   # Regional healthcare network A
-          - "10.200.0.0/16"   # Regional healthcare network B
       action: approve
-      log: true
 
-    # Auto-approve research institutions
-    - name: "research-institution"
-      description: "Auto-approve research partner institutions"
+    # Auto-approve clinic sites
+    - name: "clinic-sites"
+      description: "Auto-approve clinic enrollments"
       match:
-        site_name_pattern: "site-*"
-        source_ips:
-          - "172.20.0.0/16"   # University research network
+        site_name_pattern: "clinic-*"
       action: approve
-      log: true
 
-    # Queue external requests for review
-    - name: "external-pending"
-      description: "Queue external requests for manual review"
+    # Auto-approve research sites
+    - name: "research-sites"
+      description: "Auto-approve research institution enrollments"
+      match:
+        site_name_pattern: "research-*"
+      action: approve
+
+    # Queue other sites for review
+    - name: "other-pending"
+      description: "Queue unrecognized sites for review"
       match:
         site_name_pattern: "*"
       action: pending
       notify:
-        - federation-admin@healthcare.org
-      message: "External enrollment request - requires manual verification"
+        - network-admin@healthcare.org
+      message: "Non-standard site requires approval"
 
     # Default deny
     - name: "default-deny"
       match: {}
       action: reject
 
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"
+    webhook:
+      enabled: true
+      url: "${SLACK_WEBHOOK_URL}"

@@ -1,27 +1,40 @@
-# FLARE Enrollment Policy: Manual Approval Required
-# Use Case: High-security environments requiring human review
+# Manual Approval Policy
+# All enrollments require human review and approval
 #
-# All enrollment requests are queued for manual approval by an administrator.
-#
-# Usage:
-#   nvflare token gen-token manual_approval.yaml
+# Use for high-security environments or initial onboarding
 
-project: "restricted-federation"
-description: "All enrollments require manual approval"
+metadata:
+  project: "nvflare-secure"
+  description: "All enrollments require manual approval"
+  version: "1.0"
 
 token:
-  validity: 14d
+  validity: 30d
   max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - org_admin
+  default_role: researcher
 
 approval:
   method: manual
-  
   rules:
-    - name: "queue-for-review"
-      description: "Queue all requests for manual approval"
+    - name: "require-approval"
+      description: "Queue all enrollments for manual review"
       match: {}
       action: pending
       notify:
         - admin@organization.com
-      message: "Enrollment request submitted for manual review"
+      message: "Enrollment pending admin approval"
 
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"

@@ -1,23 +1,34 @@
-# FLARE Enrollment Policy: Auto-Approve All
-# Use Case: Local simulation, development, research experiments
+# Auto-Approve Policy
+# Use for development, simulation, or trusted environments
 #
-# WARNING: This policy approves ALL enrollment requests without verification.
-#          Only use in trusted/isolated environments.
-#
-# Usage:
-#   nvflare token gen-token auto_approve.yaml
+# WARNING: This policy approves ALL enrollment requests.
+# Not recommended for production.
 
-project: "development"
-description: "Auto-approve all enrollments (development only)"
+metadata:
+  project: "nvflare-dev"
+  description: "Auto-approve all enrollments (development only)"
+  version: "1.0"
 
 token:
-  validity: 30d
-  max_uses: -1  # Unlimited
+  validity: 7d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+  default_role: researcher
 
 approval:
+  method: policy
   rules:
     - name: "auto-approve-all"
       description: "Approve all enrollment requests"
       match: {}
       action: approve
 
+notifications:
+  enabled: false
+  channels: {}
