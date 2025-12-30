@@ -76,7 +76,7 @@ class FlareAgent:
         metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
-        decomposer_module: str = None,
+        decomposer_module: Optional[str] = None,
     ):
         """Constructor of Flare Agent.
 
