@@ -1,10 +1,10 @@
-# Hello NumPy Cross-Site Evaluation
+# Hello NumPy Cross-Site Validation
 
-This example demonstrates cross-site evaluation with NumPy models using NVFlare's Recipe API.
+This example demonstrates cross-site model validation with NumPy models using NVFlare's Recipe API.
 
-## What is Cross-Site Evaluation?
+## What is Cross-Site Validation?
 
-Cross-site evaluation creates an all-to-all matrix showing how each model performs on each client's dataset:
+Cross-site validation creates an all-to-all matrix showing how each model performs on each client's dataset:
 - Each client evaluates models from other clients and the server
 - No data is shared between sites
 - Results show which models generalize best across different data distributions
@@ -25,7 +25,7 @@ Evaluate pre-trained models without running training first. This is useful when 
 
 ### Mode 2: Training + CSE
 
-Run FedAvg training followed by cross-site evaluation in a single workflow.
+Run FedAvg training followed by cross-site validation in a single workflow.
 
 ---
 
@@ -44,7 +44,7 @@ This creates models in:
 - Server models: `/tmp/nvflare/server_pretrain_models/`
 - Client models: `/tmp/nvflare/client_pretrain_models/`
 
-### Step 2: Run Cross-Site Evaluation
+### Step 2: Run Cross-Site Validation
 
 ```bash
 python3 job.py --mode pretrained --n_clients 2
@@ -53,12 +53,12 @@ python3 job.py --mode pretrained --n_clients 2
 **What happens:**
 1. Server loads pre-trained models from specified directories
 2. Models are distributed to all clients
-3. Each client evaluates all models on its local data
-4. Server collects results and generates evaluation matrix
+3. Each client validates all models on its local data
+4. Server collects results and generates validation matrix
 
 ### Step 3: View Results
 
-The cross-site evaluation results are saved as JSON:
+The cross-site validation results are saved as JSON:
 
 ```bash
 cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
@@ -85,9 +85,9 @@ This matrix shows how each model performs on each site's data, helping identify 
 
 ---
 
-## Mode 2: Training + Cross-Site Evaluation
+## Mode 2: Training + Cross-Site Validation
 
-Run FedAvg training followed by cross-site evaluation:
+Run FedAvg training followed by cross-site validation:
 
 ```bash
 cd examples/hello-world/hello-numpy-cross-val
@@ -96,8 +96,8 @@ python3 job.py --mode training --n_clients 2 --num_rounds 3
 
 **What happens:**
 1. FedAvg training runs for the specified number of rounds
-2. After training completes, trained models are automatically evaluated across all sites
-3. Results include both training metrics and cross-site evaluation matrix
+2. After training completes, trained models are automatically validated across all sites
+3. Results include both training metrics and cross-site validation matrix
 
 ### View Results
 
@@ -107,7 +107,7 @@ Training results:
 ls /tmp/nvflare/jobs/workdir/server/simulate_job/
 ```
 
-Cross-site evaluation results:
+Cross-site validation results:
 
 ```bash
 cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
@@ -117,7 +117,7 @@ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_resul
 
 ## How It Works: Recipe API Approach
 
-This example demonstrates the recommended pattern for adding cross-site evaluation to any recipe:
+This example demonstrates the recommended pattern for adding cross-site validation to any recipe:
 
 ### Training + CSE Mode
 
@@ -133,7 +133,7 @@ recipe = NumpyFedAvgRecipe(
     train_script="client.py",
 )
 
-# 2. Add cross-site evaluation with one line
+# 2. Add cross-site validation with one line
 add_cross_site_evaluation(recipe, model_locator_type="numpy")
 
 # 3. Execute
