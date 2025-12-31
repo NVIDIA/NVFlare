@@ -53,11 +53,18 @@ Command examples
 Run a single NVFlare app
 ========================
 
-This command will run the same ``hello-numpy`` app on the server and 8 clients using 1 process with the full log output mode. The client names will be site-1, site-2, ... , site-8.:
+The ``hello-numpy`` example uses Recipe API. For Recipe API examples, run the job.py script directly:
 
-.. code-block:: python
+.. code-block:: bash
 
-    nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -n 8 -t 1 -l full
+    cd NVFlare/examples/hello-world/hello-numpy
+    python job.py --n_clients 8
+
+For traditional job structures (with meta.json and app/config directories), use the nvflare simulator command:
+
+.. code-block:: bash
+
+    nvflare simulator path/to/traditional-job -w /tmp/nvflare/workspace_folder/ -n 8 -t 1 -l full
 
 .. raw:: html
 

@@ -370,17 +370,47 @@ First, link the desired job directory to the admin's transfer directory:
 
 FLARE Console
 --------------
-After starting the FLARE console with:
+You can start the FLARE console with:
 
 .. code-block:: none
 
     nvflare poc start -p admin@nvidia.com
 
-Login and submit the job:
+Submitting Jobs
+-----------------------
+
+**For Recipe API examples** (like hello-numpy):
+
+Recipe API jobs must be exported to traditional format before submission:
+
+.. code-block:: bash
+
+    # Export the Recipe API job
+    cd hello-world/hello-numpy
+    python job.py --export_config
+
+    # Then submit the exported job after logging in to the FLARE console
+    submit_job /tmp/nvflare/jobs/job_config/hello-numpy
+
+**Alternative: Modify job.py to use PocEnv** (recommended):
+
+.. code-block:: python
+
+    # Modify your job.py to use PocEnv instead of SimEnv
+    from nvflare.recipe import PocEnv
+
+    # ... your recipe creation code ...
+    # recipe = NumpyFedAvgRecipe(...)
+
+    # Use PocEnv instead of SimEnv
+    env = PocEnv(num_clients=2)
+    run = recipe.execute(env)
+
+**For traditional jobs** (with meta.json and app/config):
 
 .. code-block:: none
 
-    submit_job hello-world/hello-numpy
+    submit_job path/to/traditional/job
 
 Refer to :ref:`operating_nvflare` for more details.
 
@@ -397,7 +427,10 @@ To programmatically operate the system and submit a job, use the :ref:`flare_api
     poc_prepared = os.path.join(poc_workspace, "example_project/prod_00")
     admin_dir = os.path.join(poc_prepared, "admin@nvidia.com")
     sess = new_secure_session("admin@nvidia.com", startup_kit_location=admin_dir)
-    job_id = sess.submit_job("hello-world/hello-numpy")
+
+    # For Recipe API: export first, then submit
+    # (see export example above)
+    job_id = sess.submit_job("/tmp/nvflare/jobs/job_config/hello-numpy")
 
     print(f"Job is running with ID {job_id}")
 

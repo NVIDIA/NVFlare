@@ -1,7 +1,7 @@
 .. _hello_scatter_and_gather:
 
-Hello Scatter and Gather
-========================
+Hello Federated Learning with NumPy
+====================================
 
 Before You Start
 ----------------
@@ -16,33 +16,23 @@ Python virtual environment (the recommended environment) and how to install NVID
 Introduction
 -------------
 
-This tutorial is meant solely to demonstrate how the NVIDIA FLARE system works, without introducing any actual deep
-learning concepts.
+This tutorial demonstrates how NVIDIA FLARE's federated learning system works using a simple NumPy example,
+without introducing complex deep learning concepts.
 
-Through this exercise, you will learn how to use NVIDIA FLARE with numpy to perform basic
-computations across two clients with the included Scatter and Gather workflow, which broadcasts the training tasks then
-aggregates the results that come back.
+Through this exercise, you will learn the basic federated learning workflow:
 
-Due to the simplified weights, you will be able to clearly see and understand
-the results of the FL aggregation and the model persistor process.
+ #. A server coordinates training across multiple clients
+ #. Clients train on their local data
+ #. The server aggregates the results to produce an updated global model
+ #. This process repeats for multiple rounds
 
-The setup of this exercise consists of one **server** and two **clients**.
-The server-side model starts with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The current ``hello-numpy`` example uses NVIDIA FLARE's **Recipe API**, a modern Python-based approach
+to defining federated learning jobs. It demonstrates the core FL concepts with simple NumPy arrays as model weights.
 
-The following steps compose one cycle of weight updates, called a **round**:
+Getting Started
+---------------
 
- #. Clients are responsible for adding a delta to the weights to calculate new weights for the model.
- #. These updates are then sent to the server which will aggregate them to produce a model with new weights.
- #. Finally, the server sends this updated version of the model back to each client, so the clients can continue to calculate the next model weights in future rounds.
-
-For this exercise, we will be working with the ``hello-numpy`` application in the examples folder.
-Custom FL applications can contain the folders:
-
- #. **custom**: contains any custom components (custom Python code)
- #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log_config.json``)
-
-Let's get started. First clone the repo, if you haven't already:
+First, clone the repo if you haven't already:
 
 .. code-block:: shell
 
@@ -55,110 +45,48 @@ Ensure numpy is installed.
 
   (nvflare-env) $ python3 -m pip install numpy
 
-Now that you have all your dependencies installed, let's implement the federated learning system.
+Running the Hello NumPy Example
+--------------------------------
 
+The ``hello-numpy`` example uses NVIDIA FLARE's Recipe API, which provides a Python-based approach to defining FL jobs.
 
-NVIDIA FLARE Client
--------------------
+To run the example with 2 clients in simulation mode:
 
-You will first notice that the ``hello-numpy`` application does not contain a ``custom`` folder.
+.. code-block:: shell
 
-The code for the client and server components has been implemented in the
-:github_nvflare_link:`nvflare/app-common/np <nvflare/app_common/np>` folder of the NVFlare code tree.
+  (nvflare-env) $ cd examples/hello-world/hello-numpy
+  (nvflare-env) $ python job.py --n_clients 2
 
-These files, for example the trainer in :github_nvflare_link:`np_trainer.py <nvflare/app_common/np/np_trainer.py>`
-can be copied into a ``custom`` folder in the ``hello-numpy`` application as ``custom_trainer.py`` and modified to perform additional tasks.
+The job will run in a simulated environment (SimEnv) and you'll see the federated learning process in action,
+with the server coordinating rounds of training across the clients.
 
-The ``config_fed_client.json`` configuration discussed below would then be modified to point to this custom code by providing the custom path.
+Results are saved to ``/tmp/nvflare/simulation/hello-numpy/`` by default.
 
-For example, replacing ``nvflare.app_common.np.np_trainer.NPTrainer`` with ``custom_trainer.NPTrainer``.
+Understanding the Code
+-----------------------
 
-In the ``np_trainer.py`` trainer, we first import nvflare and numpy.
-We then implement the ``execute`` function to enable the clients to perform
-a simple addition of a diff to represent one calculation of training a round.
+The ``job.py`` file defines the federated learning job using the Recipe API. It specifies:
 
-The server sends either the initial weights or any stored weights to each of the clients
-through the ``Shareable`` object passed into ``execute()``.
-Each client adds the diff to the model data after retrieving it from the DXO (see :ref:`data_exchange_object`)
-obtained from the Shareable, and creates a new ``Shareable`` to include the new weights also contained
-within a DXO.
+ * The workflow controller (how rounds are coordinated)
+ * The client-side training logic
+ * The server-side aggregation strategy
+ * Model persistors and other FL components
 
-In a real federated learning training scenario, each client does its training independently on its own dataset.
-As such, the weights returned to the server will likely be different for each of the clients.
+For detailed code examples and explanations, refer to:
 
-The FL server can ``aggregate`` (in this case average) the clients' results to produce the aggregated model.
-
-You can learn more about ``Shareable`` and ``FLContext`` in the :ref:`programming guide <programming_guide>`.
-
-
-NVIDIA FLARE Server & Application
----------------------------------
-
-Model Persistor
-^^^^^^^^^^^^^^^^^
-
-.. literalinclude:: ../../nvflare/app_common/np/np_model_persistor.py
-   :language: python
-   :linenos:
-   :caption: np_model_persistor.py
-
-The model persistor is used to load and save models on the server.
-Here, the model refer to weights packaged into a ``ModelLearnable`` object.
-
-Internally, DXO is used to manage data after
-:class:`FullModelShareableGenerator<nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator>`
-converts Learnable to Shareable on the FL server.
-
-The DXO helps all of the FL components agree on the format.
-
-In this exercise, we can simply save the model as a binary ".npy" file.
-Depending on the frameworks and tools, the methods of saving the model may vary.
-
-Application Configuration
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
-For now, the default configurations are sufficient.
-
-
-.. note::
-   The hello-numpy example now uses the Recipe API approach. For configuration examples,
-   please refer to the hello-numpy example directory and the step-by-step CIFAR10 examples.
-
-
-Here, in ``executors``, the Trainer implementation ``NPTrainer`` is configured for the task "train".
-
-If you had implemented your own custom ``NPTrainer`` training routine,
-for example in ``hello-numpy/custom/custom_trainer.py``,
-this config_fed_client.json configuration would be modified to point to this custom code by providing the custom path.
-
-For example, replacing ``nvflare.app_common.np.np_trainer.NPTrainer`` with ``custom_trainer.NPTrainer``.
-
-
-Federated Numpy with Scatter and Gather Workflow!
--------------------------------------------------
-
-.. |ExampleApp| replace:: hello-numpy
-.. include:: run_fl_system.rst
-
-After starting the server and clients, you should begin to see some outputs in each terminal
-tracking the progress of the FL run.
-If everything went as planned, you should see that through 10 rounds, the FL system has
-aggregated new models on the server with the results produced by the clients.
-
-.. include:: access_result.rst
-
-.. include:: shutdown_fl_system.rst
+ * The ``job.py`` file in :github_nvflare_link:`examples/hello-world/hello-numpy <examples/hello-world/hello-numpy>`
+ * The :ref:`programming guide <programming_guide>` for core FL concepts
+ * The :ref:`hello_fedavg_numpy` example for a similar approach with FedAvg workflow
 
 Congratulations!
+----------------
 
-You've successfully built and run your first numpy federated learning system.
+You've successfully run your first NumPy federated learning system.
 
 You now have a decent grasp of the main FL concepts, and are ready to start exploring how NVIDIA FLARE can be applied to many other tasks.
 
 The full application for this exercise can be found in
-:github_nvflare_link:`examples/hello-world/hello-numpy <examples/hello-world/hello-numpy>`,
-with the client and server components implemented in the :github_nvflare_link:`nvflare/app-common/np <nvflare/app_common/np>` folder of the NVFlare code tree.
+:github_nvflare_link:`examples/hello-world/hello-numpy <examples/hello-world/hello-numpy>`.
 
 Previous Versions of Hello Scatter and Gather
 ---------------------------------------------
