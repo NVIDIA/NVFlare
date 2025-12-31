@@ -333,7 +333,11 @@ class FeatureElectionController(Controller):
         """
         if not client_selections:
             logger.warning("No client selections to aggregate")
-            return np.zeros(getattr(self, "n_features", 0), dtype=bool)
+            n = self.n_features
+            if n is None:
+                logger.error("Cannot create empty mask: self.n_features is None")
+                raise ValueError("Total number of features (n_features) must be known before aggregation")
+            return np.zeros(n, dtype=bool)
 
         masks = [s["selected_features"] for s in client_selections.values()]
         scores = [s["feature_scores"] for s in client_selections.values()]
