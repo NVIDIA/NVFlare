@@ -17,12 +17,12 @@ The POC command has been reorganized in version 2.4 to have the subcommands ``pr
 .. code-block:: none
 
   nvflare poc -h
-  
+
   usage: nvflare poc [-h]  {prepare,prepare-jobs-dir,start,stop,clean} ...
-  
+
   options:
     -h, --help            show this help message and exit
-  
+
   poc:
    {prepare,prepare-jobs-dir,start,stop,clean}
                         poc subcommand
@@ -39,7 +39,7 @@ The detailed options for ``nvflare poc prepare``:
 .. code-block:: none
 
   nvflare poc prepare -h
-  
+
   usage: nvflare poc prepare [-h] [-n [NUMBER_OF_CLIENTS]] [-c [CLIENTS ...]] [-he] [-i [PROJECT_INPUT]] [-d [DOCKER_IMAGE]] [-debug]
 
   options:
@@ -152,7 +152,7 @@ the home directory obtained from ``Path.home()`` is used to store the location o
     startup_kit {
         path = /tmp/nvflare/poc/example_project/prod_00
     }
-    
+
     poc_workspace {
         path = /tmp/nvflare/poc
     }
@@ -263,7 +263,7 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
     Trying to login, please wait ...
     Logged into server at localhost:8003 with SSID: ebc6125d-0a56-4688-9b08-355fe9e4d61a
     Type ? to list commands; type "? cmdName" to show usage of a command.
-    > 
+    >
 
 .. raw:: html
 
@@ -380,7 +380,7 @@ Login and submit the job:
 
 .. code-block:: none
 
-    submit_job hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+    submit_job hello-world/hello-numpy
 
 Refer to :ref:`operating_nvflare` for more details.
 
@@ -397,7 +397,7 @@ To programmatically operate the system and submit a job, use the :ref:`flare_api
     poc_prepared = os.path.join(poc_workspace, "example_project/prod_00")
     admin_dir = os.path.join(poc_prepared, "admin@nvidia.com")
     sess = new_secure_session("admin@nvidia.com", startup_kit_location=admin_dir)
-    job_id = sess.submit_job("hello-world/hello-numpy-sag/jobs/hello-numpy-sag")
+    job_id = sess.submit_job("hello-world/hello-numpy")
 
     print(f"Job is running with ID {job_id}")
 
@@ -408,7 +408,7 @@ The :ref:`job_cli` also provides a convenient command to submit a job:
 
 .. code-block:: none
 
-    nvflare job submit -j NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+    nvflare job submit -j NVFlare/examples/hello-world/hello-numpy
 
 
 Stop Package(s)
@@ -440,5 +440,5 @@ There is a command to clean up the POC workspace added in version 2.2 that will 
 Learn More
 ===========
 
-To learn more about the different options of the POC command in more detail, see the 
+To learn more about the different options of the POC command in more detail, see the
 :github_nvflare_link:`Setup NVFLARE in POC Mode Tutorial <examples/tutorials/setup_poc.ipynb>`.
