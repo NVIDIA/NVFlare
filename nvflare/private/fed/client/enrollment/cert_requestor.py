@@ -85,18 +85,13 @@ from pydantic import BaseModel, field_validator
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.lighter.constants import (
-    AdminRole,
-    DEFINED_PARTICIPANT_TYPES,
-    DEFINED_ROLES,
-    ParticipantType,
-)
+from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
 from nvflare.lighter.utils import generate_keys, serialize_pri_key
-
 
 # =============================================================================
 # Configuration Classes (Simple interface, Pydantic validation)
 # =============================================================================
+
 
 class EnrollmentIdentity(BaseModel):
     """Client identity information for certificate enrollment.
@@ -136,7 +131,7 @@ class EnrollmentIdentity(BaseModel):
     @classmethod
     def for_client(cls, name: str, org: str = None) -> "EnrollmentIdentity":
         """Create identity for client (site) enrollment.
-        
+
         Args:
             name: Site name (e.g., hospital-1, site-1)
             org: Organization name
@@ -155,7 +150,7 @@ class EnrollmentIdentity(BaseModel):
         org: str = None,
     ) -> "EnrollmentIdentity":
         """Create identity for admin (user) enrollment.
-        
+
         Args:
             email: User email address
             role: Admin role (project_admin, org_admin, lead, member)
@@ -171,7 +166,7 @@ class EnrollmentIdentity(BaseModel):
     @classmethod
     def for_relay(cls, name: str, org: str = None) -> "EnrollmentIdentity":
         """Create identity for relay node enrollment.
-        
+
         Args:
             name: Relay node name (e.g., relay-1)
             org: Organization name
@@ -217,6 +212,7 @@ class EnrollmentOptions(BaseModel):
 # CertRequestor
 # =============================================================================
 
+
 class CertRequestor:
     """Requests certificate enrollment via CSR workflow using CellNet.
 
@@ -251,13 +247,13 @@ class CertRequestor:
             identity: Client identity information (client, admin, or relay)
             target_fqcn: Server FQCN to connect to
             options: Optional configuration parameters
-            
+
         Raises:
             ValueError: If enrollment_token is empty
         """
         if not enrollment_token or not enrollment_token.strip():
             raise ValueError("enrollment_token cannot be empty")
-            
+
         self.cell = cell
         self.enrollment_token = enrollment_token.strip()
         self.identity = identity
@@ -277,7 +273,7 @@ class CertRequestor:
 
     def create_csr(self) -> bytes:
         """Create Certificate Signing Request.
-        
+
         Returns:
             PEM-encoded CSR bytes
         """
@@ -289,39 +285,31 @@ class CertRequestor:
             x509.NameAttribute(x509.NameOID.COMMON_NAME, self.identity.name),
         ]
         if self.identity.org:
-            name_attributes.append(
-                x509.NameAttribute(x509.NameOID.ORGANIZATION_NAME, self.identity.org)
-            )
+            name_attributes.append(x509.NameAttribute(x509.NameOID.ORGANIZATION_NAME, self.identity.org))
         # Include participant type and role in certificate
         if self.identity.participant_type:
             name_attributes.append(
                 x509.NameAttribute(x509.NameOID.ORGANIZATIONAL_UNIT_NAME, self.identity.participant_type)
             )
         if self.identity.role:
-            name_attributes.append(
-                x509.NameAttribute(x509.NameOID.UNSTRUCTURED_NAME, self.identity.role)
-            )
+            name_attributes.append(x509.NameAttribute(x509.NameOID.UNSTRUCTURED_NAME, self.identity.role))
 
-        builder = x509.CertificateSigningRequestBuilder().subject_name(
-            x509.Name(name_attributes)
-        )
+        builder = x509.CertificateSigningRequestBuilder().subject_name(x509.Name(name_attributes))
 
         csr = builder.sign(self.private_key, hashes.SHA256())
-        self.logger.debug(
-            f"Created CSR for {self.identity.participant_type}: {self.identity.name}"
-        )
-        
+        self.logger.debug(f"Created CSR for {self.identity.participant_type}: {self.identity.name}")
+
         return csr.public_bytes(serialization.Encoding.PEM)
 
     def submit_csr(self, csr_data: bytes) -> bytes:
         """Submit CSR to server for signing.
-        
+
         Args:
             csr_data: PEM-encoded CSR
-            
+
         Returns:
             Signed certificate bytes
-            
+
         Raises:
             RuntimeError: If CSR submission fails
         """
@@ -335,10 +323,8 @@ class CertRequestor:
 
         message = new_cell_message(headers, csr_data)
 
-        self.logger.info(
-            f"Submitting {self.identity.participant_type} CSR to: {self.target_fqcn}"
-        )
-        
+        self.logger.info(f"Submitting {self.identity.participant_type} CSR to: {self.target_fqcn}")
+
         result = self.cell.send_request(
             target=self.target_fqcn,
             channel=CellChannel.SERVER_MAIN,
@@ -360,7 +346,7 @@ class CertRequestor:
 
     def save_credentials(self, cert_data: bytes) -> None:
         """Save private key and certificate to files.
-        
+
         Args:
             cert_data: Signed certificate bytes
         """
@@ -381,16 +367,14 @@ class CertRequestor:
 
     def request_certificate(self) -> str:
         """Complete certificate enrollment workflow.
-        
+
         Returns:
             Path to the saved certificate file
-            
+
         Raises:
             RuntimeError: If enrollment fails
         """
-        self.logger.info(
-            f"Starting {self.identity.participant_type} enrollment for: {self.identity.name}"
-        )
+        self.logger.info(f"Starting {self.identity.participant_type} enrollment for: {self.identity.name}")
 
         # Generate CSR
         csr_data = self.create_csr()
@@ -403,5 +387,5 @@ class CertRequestor:
 
         cert_path = os.path.join(self.options.output_dir, self.CERT_FILENAME)
         self.logger.info(f"Enrollment complete: {cert_path}")
-        
+
         return cert_path

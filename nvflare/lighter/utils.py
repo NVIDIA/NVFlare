@@ -132,15 +132,15 @@ def generate_csr(
     additional_hosts: list = None,
 ):
     """Generate a Certificate Signing Request (CSR).
-    
+
     Args:
         subject: Identity object with name, org, and optional role
         pri_key: Private key to sign the CSR
         additional_hosts: Optional list of additional hostnames for SAN
-        
+
     Returns:
         x509.CertificateSigningRequest object
-        
+
     Example:
         pri_key, pub_key = generate_keys()
         csr = generate_csr(
@@ -151,22 +151,22 @@ def generate_csr(
     """
     # Build subject name
     x509_subject = x509_name(subject.name, subject.org, subject.role)
-    
+
     # Build CSR
     builder = x509.CertificateSigningRequestBuilder().subject_name(x509_subject)
-    
+
     # Add Subject Alternative Name extension
     sans = [x509.DNSName(subject.name)]
     if additional_hosts:
         for host in additional_hosts:
             if host != subject.name:
                 sans.append(x509.DNSName(host))
-    
+
     builder = builder.add_extension(
         x509.SubjectAlternativeName(sans),
         critical=False,
     )
-    
+
     # Sign and return CSR
     return builder.sign(pri_key, hashes.SHA256(), default_backend())
 
