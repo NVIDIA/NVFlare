@@ -53,19 +53,9 @@ Example:
     cell.stop()
 """
 
-from nvflare.private.fed.client.enrollment.cert_requestor import (
-    CertRequestor,
-    EnrollmentIdentity,
-    EnrollmentOptions,
-)
-
 # Re-export constants from lighter for convenience
-from nvflare.lighter.constants import (
-    AdminRole,
-    DEFINED_PARTICIPANT_TYPES,
-    DEFINED_ROLES,
-    ParticipantType,
-)
+from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
+from nvflare.private.fed.client.enrollment.cert_requestor import CertRequestor, EnrollmentIdentity, EnrollmentOptions
 
 # Environment variable for enrollment token
 ENROLLMENT_TOKEN_ENV = "NVFLARE_ENROLLMENT_TOKEN"

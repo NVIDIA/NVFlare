@@ -19,7 +19,6 @@ The TokenService requires PyJWT as an optional dependency.
 
 Usage:
     from nvflare.tool.enrollment import TokenService
-    
     service = TokenService("/path/to/ca")
     token = service.generate_token_from_file("policy.yaml", "site-1")
 
@@ -33,10 +32,7 @@ from typing import TYPE_CHECKING
 
 # Static imports for IDE type checking (not executed at runtime)
 if TYPE_CHECKING:
-    from nvflare.tool.enrollment.enrollment_cli import (
-        def_enrollment_parser,
-        handle_enrollment_cmd,
-    )
+    from nvflare.tool.enrollment.enrollment_cli import def_enrollment_parser, handle_enrollment_cmd
     from nvflare.tool.enrollment.token_service import TokenService
 
 __all__ = [
@@ -50,11 +46,14 @@ def __getattr__(name: str):
     """Lazy import to avoid requiring jwt dependency at import time."""
     if name == "TokenService":
         from nvflare.tool.enrollment.token_service import TokenService
+
         return TokenService
     if name == "def_enrollment_parser":
         from nvflare.tool.enrollment.enrollment_cli import def_enrollment_parser
+
         return def_enrollment_parser
     if name == "handle_enrollment_cmd":
         from nvflare.tool.enrollment.enrollment_cli import handle_enrollment_cmd
+
         return handle_enrollment_cmd
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
