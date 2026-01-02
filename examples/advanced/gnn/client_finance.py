@@ -95,7 +95,7 @@ def main():
     # client 2 uses data from classified_2 and unclassified data
     if args.client_id == 0:
         train_data_sub = train_data
-    if args.client_id == 1:
+    elif args.client_id == 1:
         train_data_sub = train_data.subgraph(torch.tensor(train_1_idx.append(unclassified_idx)))
         train_idx = np.arange(len(train_1_idx))
     elif args.client_id == 2:
