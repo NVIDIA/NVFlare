@@ -20,11 +20,9 @@ import socket
 import ssl
 import subprocess
 import tempfile
-from typing import Any, Dict, Optional
 
 import grpc
-from requests import Request, Response, Session
-from requests.adapters import HTTPAdapter
+from requests import Response
 
 
 class NVFlareConfig:
@@ -206,6 +204,7 @@ def check_socket_server_running(startup: str, host: str, port: int, scheme: str 
         if use_ssl:
             # For secure connection, wrap socket with SSL and use client certificates
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             ca_path = os.path.join(startup, _get_ca_cert_file_name())
             cert_path = os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT))
             prv_key_path = os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT))
