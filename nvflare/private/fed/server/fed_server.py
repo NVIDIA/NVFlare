@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -72,6 +73,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
 from .client_manager import ClientManager
+from .enrollment.cert_service import CertService
 from .run_manager import RunManager
 from .server_engine import ServerEngine
 from .server_state import (
@@ -342,6 +344,9 @@ class FederatedServer(BaseServer):
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
         self.cred_keeper = CredKeeper()
+        
+        # CSR enrollment service (initialized in deploy when secure_train=True)
+        self.cert_service = None
 
         # these are used when the server sends a message to itself.
         self.my_own_auth_client_name = "server"
@@ -383,6 +388,14 @@ class FederatedServer(BaseServer):
             topic="*",
             cb=self._listen_command,
         )
+        
+        # CSR enrollment handler (for dynamic certificate enrollment)
+        if self.cert_service:
+            self.cell.register_request_cb(
+                channel=CellChannel.SERVER_MAIN,
+                topic=CellChannelTopic.CSR_ENROLLMENT,
+                cb=self.cert_service.handle_csr_enrollment,
+            )
 
         self.max_reg_duration = ConfigService.get_float_var(
             name=ConfigVarName.MAX_REG_DURATION,
@@ -417,10 +430,24 @@ class FederatedServer(BaseServer):
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
+        
+        CSR enrollment requests are exempt from authentication since clients
+        don't have certificates yet. These requests authenticate via JWT token
+        in the message headers, validated by CertService.
+        
         Args:
             message: the message to validate
         Returns:
+            None if validation passed, or modified message if validation failed
         """
+        # Allow CSR enrollment without client certificate authentication
+        # CSR enrollment uses JWT token for authentication instead
+        topic = message.get_header(MessageHeaderKey.TOPIC)
+        channel = message.get_header(MessageHeaderKey.CHANNEL)
+        if topic == CellChannelTopic.CSR_ENROLLMENT and channel == CellChannel.SERVER_MAIN:
+            self.logger.debug("CSR enrollment request - bypassing client certificate auth")
+            return None
+        
         id_asserter = self._get_id_asserter()
         if not id_asserter:
             return None
@@ -459,6 +486,44 @@ class FederatedServer(BaseServer):
                 for c in expired_regs:
                     self.name_to_reg.pop(c, None)
             time.sleep(5.0)
+
+    def _init_cert_service(self, grpc_args: dict):
+        """Initialize CSR enrollment service using existing server certificates.
+        
+        For CSR signing, requires:
+        - Root CA certificate (ssl_root_cert)
+        - Root CA private key (rootCA.key in same directory as ssl_root_cert)
+        
+        Args:
+            grpc_args: Server configuration containing certificate paths
+        """
+        try:
+            root_ca_cert_path = grpc_args.get("ssl_root_cert")
+            if not root_ca_cert_path:
+                self.logger.info("CSR enrollment disabled: ssl_root_cert not configured")
+                return
+            
+            # Root CA key is expected in the same directory as the root CA cert
+            # Named rootCA.key (standard NVFlare provisioning layout)
+            root_ca_dir = os.path.dirname(root_ca_cert_path)
+            root_ca_key_path = os.path.join(root_ca_dir, "rootCA.key")
+            
+            if not os.path.exists(root_ca_key_path):
+                self.logger.info(
+                    f"CSR enrollment disabled: rootCA.key not found in {root_ca_dir}. "
+                    "Dynamic enrollment requires root CA private key on server."
+                )
+                return
+            
+            self.cert_service = CertService(
+                root_ca_cert_path=root_ca_cert_path,
+                root_ca_key_path=root_ca_key_path,
+            )
+            self.logger.info("CSR enrollment service initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"CSR enrollment service not available: {secure_format_exception(e)}")
+            self.cert_service = None
 
     def _listen_command(self, request: Message) -> Message:
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
@@ -959,6 +1024,10 @@ class FederatedServer(BaseServer):
                     cert_path=grpc_args["ssl_cert"],
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
+            
+            # Initialize CSR enrollment service for dynamic certificate enrollment
+            # Requires root CA certificate and private key (for signing CSRs)
+            self._init_cert_service(grpc_args)
 
         self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()

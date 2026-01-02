@@ -180,7 +180,10 @@ def root_ca_key(root_ca_dir):
 @pytest.fixture
 def cert_service(root_ca_dir):
     """Create a CertService instance for testing."""
-    return CertService(root_ca_path=root_ca_dir)
+    return CertService(
+        root_ca_cert_path=os.path.join(root_ca_dir, "rootCA.pem"),
+        root_ca_key_path=os.path.join(root_ca_dir, "rootCA.key"),
+    )
 
 
 class TestCertServiceInit:
@@ -188,7 +191,10 @@ class TestCertServiceInit:
     
     def test_init_success(self, root_ca_dir):
         """Test successful initialization with valid CA."""
-        service = CertService(root_ca_path=root_ca_dir)
+        service = CertService(
+            root_ca_cert_path=os.path.join(root_ca_dir, "rootCA.pem"),
+            root_ca_key_path=os.path.join(root_ca_dir, "rootCA.key"),
+        )
         assert service.issuer == "TestRootCA"
         assert service.root_cert is not None
         assert service.root_key is not None
@@ -197,7 +203,10 @@ class TestCertServiceInit:
     def test_init_missing_ca(self):
         """Test initialization fails with missing CA."""
         with pytest.raises(FileNotFoundError):
-            CertService(root_ca_path="/nonexistent/path")
+            CertService(
+                root_ca_cert_path="/nonexistent/rootCA.pem",
+                root_ca_key_path="/nonexistent/rootCA.key",
+            )
 
 
 class TestValidateToken:

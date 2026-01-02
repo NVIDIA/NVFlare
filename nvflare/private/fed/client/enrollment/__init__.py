@@ -67,11 +67,16 @@ from nvflare.lighter.constants import (
     ParticipantType,
 )
 
+# Environment variable for enrollment token
+ENROLLMENT_TOKEN_ENV = "NVFLARE_ENROLLMENT_TOKEN"
+
 __all__ = [
     # Main classes
     "CertRequestor",
     "EnrollmentIdentity",
     "EnrollmentOptions",
+    # Constants
+    "ENROLLMENT_TOKEN_ENV",
     # Constants (from nvflare.lighter.constants)
     "ParticipantType",
     "AdminRole",
