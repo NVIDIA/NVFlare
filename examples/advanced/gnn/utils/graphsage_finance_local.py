@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from process_elliptic import process_ellipitc
+from process_elliptic import process_elliptic
 
 sys.path.append(str(Path(__file__).parent.parent))
 from model import SAGE
@@ -72,7 +72,7 @@ def main():
     df_features = pd.read_csv(os.path.join(args.data_path, "txs_features.csv"))
 
     # Preprocess data
-    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_ellipitc(
+    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_elliptic(
         df_features, df_edges, df_classes
     )
 

@@ -24,7 +24,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
-from utils.process_elliptic import process_ellipitc
+from utils.process_elliptic import process_elliptic
 
 DEVICE = "cuda:0"
 
@@ -71,7 +71,7 @@ def main():
     df_features = pd.read_csv(os.path.join(args.data_path, "txs_features.csv"))
 
     # Preprocess data
-    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_ellipitc(
+    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_elliptic(
         df_features, df_edges, df_classes
     )
 

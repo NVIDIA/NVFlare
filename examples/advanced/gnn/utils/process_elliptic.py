@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 
-def process_ellipitc(df_features, df_edges, df_classes):
+def process_elliptic(df_features, df_edges, df_classes):
     # map "illicit" to label 1, "licit" to label 0, and "unknown" to label 2
     df_classes["class"] = df_classes["class"].map({1: 1, 2: 0, 3: 2})
 
