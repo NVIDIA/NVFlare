@@ -58,10 +58,10 @@ class SimEnv(ExecEnv):
         num_clients: int = 0,
         clients: Optional[list[str]] = None,
         num_threads: Optional[int] = None,
-        gpu_config: str = None,
-        log_config: str = None,
+        gpu_config: Optional[str] = None,
+        log_config: Optional[str] = None,
         workspace_root: str = WORKSPACE_ROOT,
-        extra: dict = None,
+        extra: Optional[dict] = None,
     ):
         """Initialize simulation execution environment.
 
