@@ -45,7 +45,7 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
     )
@@ -75,7 +75,7 @@ def main():
     # Split the training graph into subgraphs according to the number of clients
     node_idx = np.arange(train_data.num_nodes)
     np.random.shuffle(node_idx)
-    client_idx = np.split(node_idx, args.total_clients)
+    client_idx = np.split(node_idx, args.num_clients)
 
     # Get the subgraph for the client
     if args.client_id == 0:

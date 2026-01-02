@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import argparse
-from typing import Dict, List
+from typing import Dict
 
 from model import SAGE
 from torch_geometric.nn import GraphSAGE
@@ -24,7 +24,7 @@ from nvflare.recipe import ProdEnv, SimEnv
 
 
 def create_protein_job(
-    client_ids: List[str],
+    num_clients: int,
     num_rounds: int,
     epochs_per_round: int,
     data_path: str,
@@ -33,7 +33,7 @@ def create_protein_job(
     """Create a protein classification job using FedAvgRecipe.
 
     Args:
-        client_ids: List of client IDs
+        num_clients: Number of clients
         num_rounds: Number of federated learning rounds
         epochs_per_round: Number of local epochs per round for each client
         data_path: Path to the PPI dataset
@@ -50,15 +50,14 @@ def create_protein_job(
         out_channels=64,
     )
 
-    # Create per-client arguments
+    # Create per-client arguments (client_id derived from site name in client script)
     train_args: Dict[str, str] = {}
-    for client_id in client_ids:
-        site_name = f"site-{client_id}"
+    for i in range(1, num_clients + 1):
+        site_name = f"site-{i}"
         train_args[site_name] = (
             f"--data_path {data_path} "
             f"--epochs {epochs_per_round} "
-            f"--total_clients {len(client_ids)} "
-            f"--client_id {client_id} "
+            f"--num_clients {num_clients} "
             f"--output_path {output_path}"
         )
 
@@ -66,7 +65,7 @@ def create_protein_job(
     recipe = FedAvgRecipe(
         name="gnn_protein",
         initial_model=model,
-        min_clients=len(client_ids),
+        min_clients=num_clients,
         num_rounds=num_rounds,
         train_script="client_protein.py",
         train_args=train_args,
@@ -79,7 +78,7 @@ def create_protein_job(
 
 
 def create_finance_job(
-    client_ids: List[str],
+    num_clients: int,
     num_rounds: int,
     epochs_per_round: int,
     data_path: str,
@@ -88,7 +87,7 @@ def create_finance_job(
     """Create a financial transaction classification job using FedAvgRecipe.
 
     Args:
-        client_ids: List of client IDs
+        num_clients: Number of clients
         num_rounds: Number of federated learning rounds
         epochs_per_round: Number of local epochs per round for each client
         data_path: Path to the Elliptic++ dataset
@@ -105,15 +104,14 @@ def create_finance_job(
         num_classes=2,
     )
 
-    # Create per-client arguments
+    # Create per-client arguments (client_id derived from site name in client script)
     train_args: Dict[str, str] = {}
-    for client_id in client_ids:
-        site_name = f"site-{client_id}"
+    for i in range(1, num_clients + 1):
+        site_name = f"site-{i}"
         train_args[site_name] = (
             f"--data_path {data_path} "
             f"--epochs {epochs_per_round} "
-            f"--total_clients {len(client_ids)} "
-            f"--client_id {client_id} "
+            f"--num_clients {num_clients} "
             f"--output_path {output_path}"
         )
 
@@ -121,7 +119,7 @@ def create_finance_job(
     recipe = FedAvgRecipe(
         name="gnn_finance",
         initial_model=model,
-        min_clients=len(client_ids),
+        min_clients=num_clients,
         num_rounds=num_rounds,
         train_script="client_finance.py",
         train_args=train_args,
@@ -129,8 +127,8 @@ def create_finance_job(
 
     # Deploy model.py file needed for finance task
     recipe.job.to("model.py", "server")
-    for client_id in client_ids:
-        site_name = f"site-{client_id}"
+    for i in range(1, num_clients + 1):
+        site_name = f"site-{i}"
         recipe.job.to("model.py", site_name)
         recipe.job.to("utils/process_elliptic.py", site_name)
 
@@ -150,11 +148,10 @@ def main():
         help="Type of task: 'protein' for PPI classification or 'finance' for transaction classification",
     )
     parser.add_argument(
-        "--client_ids",
-        nargs="+",
-        type=str,
-        required=True,
-        help="Client IDs (e.g., '1 2' for two clients)",
+        "--num_clients",
+        type=int,
+        default=2,
+        help="Number of clients (default: 2)",
     )
     parser.add_argument(
         "--num_rounds",
@@ -227,10 +224,10 @@ def main():
     if args.job_dir is None:
         args.job_dir = f"/tmp/nvflare/jobs/gnn_{args.task_type}"
 
-    num_threads = args.threads if args.threads else len(args.client_ids)
+    num_threads = args.threads if args.threads else args.num_clients
 
     print(f"Task: {args.task_type}")
-    print(f"Clients: {args.client_ids}")
+    print(f"Number of clients: {args.num_clients}")
     print(f"Rounds: {args.num_rounds}")
     print(f"Epochs per round: {args.epochs_per_round}")
     print(f"Data path: {args.data_path}")
@@ -238,7 +235,7 @@ def main():
     # Create recipe based on task type
     if args.task_type == "protein":
         recipe = create_protein_job(
-            client_ids=args.client_ids,
+            num_clients=args.num_clients,
             num_rounds=args.num_rounds,
             epochs_per_round=args.epochs_per_round,
             data_path=args.data_path,
@@ -246,7 +243,7 @@ def main():
         )
     else:  # finance
         recipe = create_finance_job(
-            client_ids=args.client_ids,
+            num_clients=args.num_clients,
             num_rounds=args.num_rounds,
             epochs_per_round=args.epochs_per_round,
             data_path=args.data_path,
@@ -258,7 +255,7 @@ def main():
     recipe.job.export_job(args.job_dir)
 
     # Run recipe
-    client_names = [f"site-{cid}" for cid in args.client_ids]
+    client_names = [f"site-{i}" for i in range(1, args.num_clients + 1)]
 
     if args.startup_kit_location:
         print("Running job in production mode...")

@@ -46,7 +46,7 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
     )
@@ -85,23 +85,23 @@ def main():
     _, _, y_train, _, train_idx, valid_idx = train_test_split(
         node_features[classified_idx], y_train, classified_idx, test_size=0.1, random_state=77, stratify=y_train
     )
-    # Futher split train data into two clients
-    _, _, _, _, train_1_idx, train_2_idx = train_test_split(
-        node_features[train_idx], y_train, train_idx, test_size=0.5, random_state=77, stratify=y_train
-    )
+
+    # Split train data among clients
+    np.random.seed(77)
+    shuffled_train_idx = train_idx.copy()
+    np.random.shuffle(shuffled_train_idx)
+    client_train_splits = np.array_split(shuffled_train_idx, args.num_clients)
 
     # Get the subgraph index for the client
-    # note that client 0 uses all data
-    # client 1 uses data from classified_1 and unclassified data
-    # client 2 uses data from classified_2 and unclassified data
+    # client 0 uses all data, client 1-N use their respective subsets
     if args.client_id == 0:
         train_data_sub = train_data
-    elif args.client_id == 1:
-        train_data_sub = train_data.subgraph(torch.tensor(train_1_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_1_idx))
-    elif args.client_id == 2:
-        train_data_sub = train_data.subgraph(torch.tensor(train_2_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_2_idx))
+    else:
+        # Each client uses their subset of classified data plus all unclassified data
+        client_subset_idx = client_train_splits[args.client_id - 1]
+        combined_idx = np.concatenate([client_subset_idx, unclassified_idx])
+        train_data_sub = train_data.subgraph(torch.tensor(combined_idx))
+        train_idx = np.arange(len(client_subset_idx))
     train_data = train_data.to(DEVICE)
     train_data_sub = train_data_sub.to(DEVICE)
 

@@ -49,15 +49,9 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
-    )
-    parser.add_argument(
-        "--client_id",
-        type=int,
-        default=0,
-        help="0: use all data, 1-N: use data from client N",
     )
     parser.add_argument(
         "--output_path",
@@ -66,8 +60,16 @@ def main():
     )
     args = parser.parse_args()
 
+    # Initialize NVFlare client API first to get site name
+    flare.init()
+
+    # Derive client_id from site name (e.g., "site-1" -> 1)
+    site_name = flare.get_site_name()
+    client_id = int(site_name.split("-")[-1])
+    print(f"Site: {site_name}, Client ID: {client_id}")
+
     # Set up tensorboard
-    writer = SummaryWriter(os.path.join(args.output_path, str(args.client_id)))
+    writer = SummaryWriter(os.path.join(args.output_path, str(client_id)))
 
     # Create PPI dataset for training.
     # Use file lock to ensure only one process downloads/processes at a time
@@ -83,14 +85,11 @@ def main():
     # Split the training graph into subgraphs according to the number of clients
     node_idx = np.arange(train_data.num_nodes)
     np.random.shuffle(node_idx)
-    client_idx = np.split(node_idx, args.total_clients)
+    client_idx = np.split(node_idx, args.num_clients)
 
-    # Get the subgraph for the client
-    if args.client_id == 0:
-        train_data_sub = train_data
-    else:
-        subset_idx = torch.tensor(client_idx[args.client_id - 1])
-        train_data_sub = train_data.subgraph(subset_idx)
+    # Get the subgraph for the client (client_id is 1-indexed)
+    subset_idx = torch.tensor(client_idx[client_id - 1])
+    train_data_sub = train_data.subgraph(subset_idx)
 
     # Define the dataloader for graphsage training
     loader = LinkNeighborLoader(
@@ -115,9 +114,6 @@ def main():
         num_layers=2,
         out_channels=64,
     )
-
-    # (2) initializes NVFlare client API
-    flare.init()
 
     while flare.is_running():
         # (3) receives FLModel from NVFlare

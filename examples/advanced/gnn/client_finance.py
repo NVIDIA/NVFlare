@@ -45,15 +45,9 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
-    )
-    parser.add_argument(
-        "--client_id",
-        type=int,
-        default=0,
-        help="0: use all data, 1-N: use data from client N",
     )
     parser.add_argument(
         "--output_path",
@@ -62,8 +56,16 @@ def main():
     )
     args = parser.parse_args()
 
+    # Initialize NVFlare client API first to get site name
+    flare.init()
+
+    # Derive client_id from site name (e.g., "site-1" -> 1)
+    site_name = flare.get_site_name()
+    client_id = int(site_name.split("-")[-1])
+    print(f"Site: {site_name}, Client ID: {client_id}")
+
     # Set up tensorboard
-    writer = SummaryWriter(os.path.join(args.output_path, str(args.client_id)))
+    writer = SummaryWriter(os.path.join(args.output_path, str(client_id)))
 
     # Create elliptic dataset for training.
     df_classes = pd.read_csv(os.path.join(args.data_path, "txs_classes.csv"))
@@ -84,32 +86,25 @@ def main():
     _, _, y_train, _, train_idx, valid_idx = train_test_split(
         node_features[classified_idx], y_train, classified_idx, test_size=0.1, random_state=77, stratify=y_train
     )
-    # Futher split train data into two clients
-    _, _, _, _, train_1_idx, train_2_idx = train_test_split(
-        node_features[train_idx], y_train, train_idx, test_size=0.5, random_state=77, stratify=y_train
-    )
 
-    # Get the subgraph index for the client
-    # note that client 0 uses all data
-    # client 1 uses data from classified_1 and unclassified data
-    # client 2 uses data from classified_2 and unclassified data
-    if args.client_id == 0:
-        train_data_sub = train_data
-    elif args.client_id == 1:
-        train_data_sub = train_data.subgraph(torch.tensor(train_1_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_1_idx))
-    elif args.client_id == 2:
-        train_data_sub = train_data.subgraph(torch.tensor(train_2_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_2_idx))
+    # Split train data among clients
+    np.random.seed(77)
+    shuffled_train_idx = train_idx.copy()
+    np.random.shuffle(shuffled_train_idx)
+    client_train_splits = np.array_split(shuffled_train_idx, args.num_clients)
+
+    # Get the subgraph index for the client (client_id is 1-indexed)
+    # Each client uses their subset of classified data plus all unclassified data
+    client_subset_idx = client_train_splits[client_id - 1]
+    combined_idx = np.concatenate([client_subset_idx, unclassified_idx])
+    train_data_sub = train_data.subgraph(torch.tensor(combined_idx))
+    train_idx = np.arange(len(client_subset_idx))
     train_data = train_data.to(DEVICE)
     train_data_sub = train_data_sub.to(DEVICE)
 
     # Train model
     model = SAGE(train_data_sub.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
     model.double()
-
-    # (2) initializes NVFlare client API
-    flare.init()
 
     while flare.is_running():
         # (3) receives FLModel from NVFlare

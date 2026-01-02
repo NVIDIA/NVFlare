@@ -75,7 +75,7 @@ Then, run federated training using the recipe:
 ```bash
 python3 job.py \
   --task_type protein \
-  --client_ids 1 2 \
+  --num_clients 2 \
   --num_rounds 7 \
   --epochs_per_round 10 \
   --data_path /tmp/nvflare/datasets/ppi \
@@ -101,7 +101,7 @@ Then, run federated training using the recipe:
 ```bash
 python3 job.py \
   --task_type finance \
-  --client_ids 1 2 \
+  --num_clients 2 \
   --num_rounds 7 \
   --epochs_per_round 10 \
   --data_path /tmp/nvflare/datasets/elliptic_pp \
