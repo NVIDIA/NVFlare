@@ -118,6 +118,26 @@ def main():
 
         # (optional) use GPU to speed things up
         model.to(DEVICE)
+
+        # (5) wraps evaluation logic into a method to re-use for
+        #       evaluation on both trained and received model
+        def evaluate(input_weights, step):
+            model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
+            model_eval.double()
+            model_eval.load_state_dict(input_weights)
+            # (optional) use GPU to speed things up
+            model_eval.to(DEVICE)
+
+            with torch.no_grad():
+                model_eval.eval()
+                out = model_eval(train_data)
+                y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
+                y_true = train_data.y.detach().cpu().numpy()
+                val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
+                print(f"Validation AUC: {val_auc:.4f} ")
+                writer.add_scalar("val_auc", val_auc, step)
+            return val_auc
+
         # (optional) calculate total steps
         steps = args.epochs * len(train_idx)
         for epoch in range(1, args.epochs + 1):
@@ -131,27 +151,9 @@ def main():
             print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
             writer.add_scalar("train_loss", loss.item(), input_model.current_round * args.epochs + epoch)
 
-            # (5) wraps evaluation logic into a method to re-use for
-            #       evaluation on both trained and received model
-            def evaluate(input_weights):
-                model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
-                model_eval.double()
-                model_eval.load_state_dict(input_weights)
-                # (optional) use GPU to speed things up
-                model_eval.to(DEVICE)
-
-                with torch.no_grad():
-                    model_eval.eval()
-                    out = model_eval(train_data)
-                    y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
-                    y_true = train_data.y.detach().cpu().numpy()
-                    val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
-                    print(f"Validation AUC: {val_auc:.4f} ")
-                    writer.add_scalar("val_auc", val_auc, input_model.current_round * args.epochs + epoch)
-                return val_auc
-
         # (6) evaluate on received model for model selection
-        global_auc = evaluate(input_model.params)
+        final_step = input_model.current_round * args.epochs + args.epochs
+        global_auc = evaluate(input_model.params, final_step)
         # (7) construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
