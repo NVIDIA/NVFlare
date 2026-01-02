@@ -100,18 +100,13 @@ from nvflare.lighter.utils import generate_keys, serialize_pri_key
 
 class EnrollmentIdentity(BaseModel):
     """Client identity information for certificate enrollment.
-    
-    Supports participant types from nvflare.lighter.constants.ParticipantType:
-    - client: FL client nodes (hospital-1, site-1, etc.)
-    - admin: Admin/researcher users with roles
-    - relay: Relay nodes for network topology
-    
+
     Use factory methods for convenience:
         EnrollmentIdentity.for_client("hospital-1")
         EnrollmentIdentity.for_admin("admin@example.com", role="org_admin")
         EnrollmentIdentity.for_relay("relay-1")
     """
-    
+
     name: str
     participant_type: str = ParticipantType.CLIENT
     org: Optional[str] = None
@@ -190,7 +185,7 @@ class EnrollmentIdentity(BaseModel):
 
 class EnrollmentOptions(BaseModel):
     """Configuration options for certificate enrollment."""
-    
+
     timeout: float = 30.0
     retry_count: int = 3
     cert_valid_days: int = 360
