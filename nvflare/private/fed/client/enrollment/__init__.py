@@ -14,58 +14,67 @@
 
 """FLARE Client Enrollment Package.
 
-This package provides client-side enrollment functionality for FLARE federation.
+This package provides client-side certificate enrollment via CSR workflow.
 
-Uses CellNet for communication (supports grpc, https, tcp protocols).
+Supports enrollment types (from nvflare.lighter.constants):
+- client: FL client nodes (hospital-1, site-1, etc.)
+- admin: Admin/researcher users with roles
+- relay: Relay nodes for network topology
 
-Supports:
-- Site enrollment: For FL clients (hospital-1, site-1, etc.)
-- User enrollment: For admin/researcher users with roles
-- Relay enrollment: For relay nodes
+Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
 
 Example:
+    from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.private.fed.client.enrollment import (
         CertRequestor,
         EnrollmentIdentity,
         EnrollmentOptions,
     )
-    
-    # Create identity
-    identity = EnrollmentIdentity.for_site("hospital-1", org_name="Hospital A")
-    
-    # Create requestor with Cell
+
+    cell = Cell(fqcn="client_1", root_url="grpc://server:8002", secure=True, credentials={})
+    cell.start()
+
+    # Client (site) enrollment
+    identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
+
+    # Admin (user) enrollment
+    # identity = EnrollmentIdentity.for_admin("admin@example.com", role="org_admin")
+
+    # Relay enrollment
+    # identity = EnrollmentIdentity.for_relay("relay-1")
+
     requestor = CertRequestor(
-        cell=cell,  # CellNet Cell object
+        cell=cell,
         enrollment_token="eyJ...",
         identity=identity,
     )
-    
-    # Enroll
-    result = requestor.enroll()
+
+    cert_path = requestor.request_certificate()
+    cell.stop()
 """
 
 from nvflare.private.fed.client.enrollment.cert_requestor import (
-    # Main class
     CertRequestor,
-    # Configuration models
     EnrollmentIdentity,
     EnrollmentOptions,
-    # Request/Response models
-    EnrollmentRequest,
-    EnrollmentResult,
-    # Constants
-    UserRole,
+)
+
+# Re-export constants from lighter for convenience
+from nvflare.lighter.constants import (
+    AdminRole,
+    DEFINED_PARTICIPANT_TYPES,
+    DEFINED_ROLES,
+    ParticipantType,
 )
 
 __all__ = [
-    # Main class
+    # Main classes
     "CertRequestor",
-    # Configuration models
     "EnrollmentIdentity",
     "EnrollmentOptions",
-    # Request/Response models
-    "EnrollmentRequest",
-    "EnrollmentResult",
-    # Constants
-    "UserRole",
+    # Constants (from nvflare.lighter.constants)
+    "ParticipantType",
+    "AdminRole",
+    "DEFINED_PARTICIPANT_TYPES",
+    "DEFINED_ROLES",
 ]

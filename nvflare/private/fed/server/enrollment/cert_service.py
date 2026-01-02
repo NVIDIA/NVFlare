@@ -18,6 +18,7 @@ This module handles:
 - JWT enrollment token validation
 - Policy-based approval evaluation
 - CSR signing and certificate issuance
+- CellNet message handling for CSR_ENROLLMENT topic
 
 Token generation is handled separately by TokenService.
 """
@@ -36,6 +37,14 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import NameOID
 
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.message import Message
+from nvflare.lighter.constants import (
+    DEFINED_PARTICIPANT_TYPES,
+    DEFINED_ROLES,
+    ParticipantType,
+)
 from nvflare.lighter.utils import (
     Identity,
     generate_cert,
@@ -67,19 +76,19 @@ class TokenPayload:
     Maps to JWT claims:
     - token_id: jti (unique identifier)
     - subject: sub (site name, user ID, or pattern like "hospital-*")
-    - subject_type: "site", "user", or "site_pattern"
+    - subject_type: "client", "admin", "relay", or "pattern"
     - policy: embedded approval policy (tamper-proof)
     - issued_at/expires_at: iat/exp
     - issuer: iss (from root CA CN)
     """
     token_id: str                         # JWT jti
     subject: str                          # JWT sub (site/user/pattern)
-    subject_type: str                     # "site", "user", or "site_pattern"
+    subject_type: str                     # "client", "admin", "relay", or "pattern"
     policy: Dict[str, Any]                # Embedded policy (signed)
     issued_at: datetime                   # JWT iat
     expires_at: datetime                  # JWT exp
     issuer: str                           # JWT iss
-    roles: Optional[List[str]] = None     # For user tokens
+    roles: Optional[List[str]] = None     # For admin tokens
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -100,12 +109,18 @@ class EnrollmentContext:
     Represents the incoming enrollment request that will be
     matched against policy rules.
     
-    source_ip: Required if policy has source_ips rules.
-               For static instances (EC2, on-premise), client provides IP.
-               For K8s/dynamic, omit source_ips from policy to skip IP check.
+    Attributes:
+        name: Site name, user email, or relay name
+        participant_type: client, admin, or relay (from nvflare.lighter.constants)
+        role: Admin role (for admin enrollments, from nvflare.lighter.constants)
+        source_ip: Required if policy has source_ips rules.
+                   For static instances (EC2, on-premise), client provides IP.
+                   For K8s/dynamic, omit source_ips from policy to skip IP check.
     """
-    site_name: str                                # Site requesting enrollment
-    source_ip: Optional[str] = None               # Required if policy has source_ips
+    name: str                                       # Site/user/relay name
+    participant_type: str = ParticipantType.CLIENT  # client, admin, or relay
+    role: Optional[str] = None                      # Admin role (if applicable)
+    source_ip: Optional[str] = None                 # Required if policy has source_ips
 
 
 class CertService:
@@ -115,6 +130,7 @@ class CertService:
     - Validating JWT enrollment tokens (signature, expiration, revocation)
     - Evaluating embedded policies against enrollment context
     - Signing CSRs and issuing certificates for approved enrollments
+    - Handling CellNet messages for CSR_ENROLLMENT topic
     
     Token generation is handled by TokenService (separation of concerns).
     """
@@ -164,6 +180,101 @@ class CertService:
             return serialization.load_pem_public_key(f.read(), backend=default_backend())
 
     # =========================================================================
+    # CellNet Message Handler
+    # =========================================================================
+
+    def handle_csr_enrollment(self, request: Message) -> Message:
+        """Handle CSR enrollment request from CellNet.
+        
+        This method should be registered with CellNet for CSR_ENROLLMENT topic.
+        
+        Args:
+            request: CellNet message with enrollment token in header and CSR in payload
+            
+        Returns:
+            CellNet message with signed certificate or error
+        """
+        try:
+            # Extract headers
+            enrollment_token = request.get_header("enrollment_token")
+            identity_name = request.get_header("identity")
+            participant_type = request.get_header("participant_type", ParticipantType.CLIENT)
+            role = request.get_header("role")
+            source_ip = request.get_header("source_ip")
+            
+            if not enrollment_token:
+                return self._error_response("Missing enrollment token", ReturnCode.UNAUTHENTICATED)
+            
+            if not identity_name:
+                return self._error_response("Missing identity", ReturnCode.INVALID_REQUEST)
+            
+            # Validate participant type
+            if participant_type not in DEFINED_PARTICIPANT_TYPES:
+                return self._error_response(
+                    f"Invalid participant_type: {participant_type}", 
+                    ReturnCode.INVALID_REQUEST
+                )
+            
+            # Validate role if provided
+            if role and role not in DEFINED_ROLES:
+                return self._error_response(
+                    f"Invalid role: {role}",
+                    ReturnCode.INVALID_REQUEST
+                )
+            
+            # Get CSR data from payload
+            csr_data = request.payload
+            if not csr_data:
+                return self._error_response("Missing CSR data", ReturnCode.INVALID_REQUEST)
+            
+            # Ensure CSR is bytes
+            if isinstance(csr_data, str):
+                csr_data = csr_data.encode("utf-8")
+            
+            # Build enrollment context
+            context = EnrollmentContext(
+                name=identity_name,
+                participant_type=participant_type,
+                role=role,
+                source_ip=source_ip,
+            )
+            
+            # Sign CSR (validates token and evaluates policy)
+            signed_cert = self.sign_csr(
+                csr_data=csr_data,
+                token=enrollment_token,
+                context=context,
+            )
+            
+            # Return success with signed certificate
+            return new_cell_message(
+                headers={
+                    MessageHeaderKey.RETURN_CODE: ReturnCode.OK,
+                },
+                payload={
+                    "certificate": signed_cert.decode("utf-8"),
+                    "root_ca": serialize_cert(self.root_cert).decode("utf-8"),
+                }
+            )
+            
+        except ValueError as e:
+            self.logger.warning(f"Enrollment rejected: {e}")
+            return self._error_response(str(e), ReturnCode.INVALID_REQUEST)
+        except Exception as e:
+            self.logger.error(f"Enrollment error: {e}")
+            return self._error_response(f"Internal error: {e}", ReturnCode.ERROR)
+
+    def _error_response(self, error_msg: str, return_code: str) -> Message:
+        """Create error response message."""
+        return new_cell_message(
+            headers={
+                MessageHeaderKey.RETURN_CODE: return_code,
+                MessageHeaderKey.ERROR: error_msg,
+            },
+            payload=None
+        )
+
+    # =========================================================================
     # Token Validation
     # =========================================================================
 
@@ -203,7 +314,7 @@ class CertService:
         token_payload = TokenPayload(
             token_id=token_id,
             subject=payload["sub"],
-            subject_type=payload.get("subject_type", "site"),
+            subject_type=payload.get("subject_type", ParticipantType.CLIENT),
             policy=payload["policy"],
             issued_at=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
             expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
@@ -222,22 +333,21 @@ class CertService:
     def _validate_token_for_context(self, token: TokenPayload, context: EnrollmentContext):
         """Validate token is applicable to the enrollment context.
         
-        Checks site name matches token subject (exact or pattern).
+        Checks name matches token subject (exact or pattern).
         """
-        # Check site name matches token subject
-        if token.subject_type == "site_pattern":
+        # Check name matches token subject
+        if token.subject_type == "pattern":
             # Pattern matching (e.g., "hospital-*")
-            if not fnmatch.fnmatch(context.site_name, token.subject):
+            if not fnmatch.fnmatch(context.name, token.subject):
                 raise ValueError(
-                    f"Site name '{context.site_name}' does not match token pattern '{token.subject}'"
+                    f"Name '{context.name}' does not match token pattern '{token.subject}'"
                 )
-        elif token.subject_type == "site":
+        elif token.subject_type in DEFINED_PARTICIPANT_TYPES:
             # Exact match required
-            if token.subject != context.site_name:
+            if token.subject != context.name:
                 raise ValueError(
-                    f"Site name '{context.site_name}' does not match token subject '{token.subject}'"
+                    f"Name '{context.name}' does not match token subject '{token.subject}'"
                 )
-        # For user tokens, site validation is not required
 
     # =========================================================================
     # Policy Evaluation
@@ -256,6 +366,17 @@ class CertService:
         policy = token.policy
         approval_config = policy.get("approval", {})
         rules = approval_config.get("rules", [])
+
+        # Check admin role constraints if applicable
+        if context.participant_type == ParticipantType.ADMIN and context.role:
+            user_policy = policy.get("user", {})
+            allowed_roles = user_policy.get("allowed_roles", [])
+            if allowed_roles and context.role not in allowed_roles:
+                return ApprovalResult(
+                    action=ApprovalAction.REJECT,
+                    rule_name="role-constraint",
+                    message=f"Role '{context.role}' not in allowed roles: {allowed_roles}"
+                )
 
         # If no rules, default to approve
         if not rules:
@@ -290,7 +411,7 @@ class CertService:
                 ip_info = f", ip={context.source_ip}" if context.source_ip else ""
                 self.logger.info(
                     f"Policy rule matched: {rule_name} -> {action.value} "
-                    f"(site={context.site_name}{ip_info})"
+                    f"(name={context.name}, type={context.participant_type}{ip_info})"
                 )
                 
                 return result
@@ -317,7 +438,7 @@ class CertService:
         # Check site name pattern
         if "site_name_pattern" in conditions:
             pattern = conditions["site_name_pattern"]
-            if not fnmatch.fnmatch(context.site_name, pattern):
+            if not fnmatch.fnmatch(context.name, pattern):
                 return False
 
         # Check source IPs - if policy specifies IPs, client must provide IP
@@ -325,7 +446,7 @@ class CertService:
             if not context.source_ip:
                 # Policy requires IP but client didn't provide one - reject
                 self.logger.warning(
-                    f"Policy requires source_ip but client '{context.site_name}' did not provide one"
+                    f"Policy requires source_ip but client '{context.name}' did not provide one"
                 )
                 return False
             if not self._ip_in_ranges(context.source_ip, conditions["source_ips"]):
@@ -365,7 +486,7 @@ class CertService:
         Args:
             csr_data: PEM-encoded CSR data
             token: JWT enrollment token
-            context: Enrollment context (site name, source IP, etc.)
+            context: Enrollment context (name, participant type, role, source IP)
             valid_days: Certificate validity in days
             
         Returns:
@@ -390,10 +511,10 @@ class CertService:
             )
 
         # Approved - sign the certificate
-        cert = self._sign_certificate(csr_data, context.site_name, valid_days)
+        cert = self._sign_certificate(csr_data, context.name, valid_days)
         
         self.logger.info(
-            f"Certificate issued for '{context.site_name}' "
+            f"Certificate issued for '{context.name}' ({context.participant_type}) "
             f"(token: {token_payload.token_id}, rule: {result.rule_name})"
         )
         
@@ -433,4 +554,3 @@ class CertService:
         )
         
         return cert
-

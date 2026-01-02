@@ -20,208 +20,202 @@ This module handles the client-side enrollment workflow:
 3. Receive and save the signed certificate
 
 Supports enrollment types:
-- Site enrollment: For FL clients (e.g., hospital-1, site-1)
-- User enrollment: For admin/researcher users (e.g., researcher@example.com)
+- Client (site) enrollment: For FL clients (e.g., hospital-1, site-1)
+- Admin (user) enrollment: For admin/researcher users
 - Relay enrollment: For relay nodes
 
-Uses CellNet for communication (supports grpc, https, tcp protocols).
-Uses Pydantic models for input validation.
+Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
 
 Example usage:
 
-    # Create identity and requestor
-    identity = EnrollmentIdentity.for_site(
-        site_name="hospital-1",
-        org_name="Hospital A",
+    from nvflare.fuel.f3.cellnet.cell import Cell
+    from nvflare.private.fed.client.enrollment import (
+        CertRequestor,
+        EnrollmentIdentity,
+        EnrollmentOptions,
     )
-    
-    # With existing Cell connection
+
+    # Initialize CellNet
+    cell = Cell(
+        fqcn="client_1",
+        root_url="grpc://server:8002",
+        secure=True,
+        credentials={},
+    )
+    cell.start()
+
+    # Client (site) enrollment
+    identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
+
+    # Or admin (user) enrollment
+    # identity = EnrollmentIdentity.for_admin("researcher@example.com", role="member")
+
+    # Or relay enrollment
+    # identity = EnrollmentIdentity.for_relay("relay-1", org="nvidia")
+
+    options = EnrollmentOptions(
+        timeout=30.0,
+        output_dir="/workspace/certs",
+    )
+
     requestor = CertRequestor(
-        cell=cell,  # CellNet Cell object
-        enrollment_token="eyJ...",
+        cell=cell,
+        enrollment_token="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
         identity=identity,
+        options=options,
     )
-    result = requestor.enroll()
-    
-    # Check result
-    if result.success:
-        print(f"Certificate saved to: {result.cert_path}")
-    elif result.pending_approval:
-        print(f"Awaiting approval: {result.approval_message}")
-    else:
-        print(f"Failed: {result.error_message}")
+
+    try:
+        cert_path = requestor.request_certificate()
+        print(f"Certificate saved to: {cert_path}")
+    except Exception as e:
+        print(f"Enrollment failed: {e}")
+    finally:
+        cell.stop()
 """
 
 import logging
 import os
-from typing import Any, Dict, List, Literal, Optional
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from pydantic import BaseModel, field_validator
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import (
-    CellChannel,
-    CellChannelTopic,
-    MessageHeaderKey,
-    ReturnCode,
-)
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from nvflare.fuel.f3.message import Message
-from nvflare.lighter.constants import ParticipantType
-from nvflare.lighter.utils import Identity, generate_csr, generate_keys, serialize_csr, serialize_pri_key
+from nvflare.lighter.constants import (
+    AdminRole,
+    DEFINED_PARTICIPANT_TYPES,
+    DEFINED_ROLES,
+    ParticipantType,
+)
+from nvflare.lighter.utils import generate_keys, serialize_pri_key
 
 
 # =============================================================================
-# Constants
-# =============================================================================
-
-# Valid participant types for enrollment
-VALID_PARTICIPANT_TYPES = [ParticipantType.CLIENT, ParticipantType.ADMIN, ParticipantType.RELAY]
-
-# Type alias for participant types
-ParticipantTypeEnum = Literal["client", "admin", "relay"]
-
-
-class UserRole:
-    """User roles for enrollment."""
-    PROJECT_ADMIN = "project_admin"
-    ORG_ADMIN = "org_admin"
-    LEAD = "lead"
-    MEMBER = "member"
-    RESEARCHER = "researcher"
-
-
-# Valid user roles
-VALID_ROLES = [
-    UserRole.PROJECT_ADMIN,
-    UserRole.ORG_ADMIN,
-    UserRole.LEAD,
-    UserRole.MEMBER,
-    UserRole.RESEARCHER,
-]
-
-# Type alias for roles
-UserRoleEnum = Literal["project_admin", "org_admin", "lead", "member", "researcher"]
-
-
-# =============================================================================
-# Configuration Models (Pydantic)
+# Configuration Classes (Simple interface, Pydantic validation)
 # =============================================================================
 
 class EnrollmentIdentity(BaseModel):
-    """Identity information for enrollment.
+    """Client identity information for certificate enrollment.
     
-    Encapsulates who is enrolling - either a site or a user.
+    Supports participant types from nvflare.lighter.constants.ParticipantType:
+    - client: FL client nodes (hospital-1, site-1, etc.)
+    - admin: Admin/researcher users with roles
+    - relay: Relay nodes for network topology
+    
+    Use factory methods for convenience:
+        EnrollmentIdentity.for_client("hospital-1")
+        EnrollmentIdentity.for_admin("admin@example.com", role="org_admin")
+        EnrollmentIdentity.for_relay("relay-1")
     """
-    model_config = ConfigDict(validate_assignment=True)
     
-    subject_name: str = Field(..., min_length=1, description="Site name or user email")
-    participant_type: ParticipantTypeEnum = Field(
-        default="client",
-        description="Type of participant: client, admin, or relay"
-    )
-    org_name: Optional[str] = Field(default=None, description="Organization name")
-    role: Optional[UserRoleEnum] = Field(default=None, description="Role for user enrollment")
-    host_names: List[str] = Field(default_factory=list, description="Additional hostnames for cert")
+    name: str
+    participant_type: str = ParticipantType.CLIENT
+    org: Optional[str] = None
+    role: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("name cannot be empty")
+        return v.strip()
+
+    @field_validator("participant_type")
+    @classmethod
+    def validate_participant_type(cls, v: str) -> str:
+        if v not in DEFINED_PARTICIPANT_TYPES:
+            raise ValueError(f"participant_type must be one of: {DEFINED_PARTICIPANT_TYPES}")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in DEFINED_ROLES:
+            raise ValueError(f"role must be one of: {DEFINED_ROLES}")
+        return v
 
     @classmethod
-    def for_site(
-        cls,
-        site_name: str,
-        org_name: Optional[str] = None,
-        host_names: Optional[List[str]] = None,
-    ) -> "EnrollmentIdentity":
-        """Create identity for site enrollment."""
+    def for_client(cls, name: str, org: str = None) -> "EnrollmentIdentity":
+        """Create identity for client (site) enrollment.
+        
+        Args:
+            name: Site name (e.g., hospital-1, site-1)
+            org: Organization name
+        """
         return cls(
-            subject_name=site_name,
-            participant_type="client",
-            org_name=org_name,
-            host_names=host_names or [],
+            name=name,
+            participant_type=ParticipantType.CLIENT,
+            org=org,
         )
 
     @classmethod
-    def for_user(
+    def for_admin(
         cls,
-        user_email: str,
-        role: UserRoleEnum = "researcher",
-        org_name: Optional[str] = None,
+        email: str,
+        role: str = AdminRole.MEMBER,
+        org: str = None,
     ) -> "EnrollmentIdentity":
-        """Create identity for user enrollment."""
+        """Create identity for admin (user) enrollment.
+        
+        Args:
+            email: User email address
+            role: Admin role (project_admin, org_admin, lead, member)
+            org: Organization name
+        """
         return cls(
-            subject_name=user_email,
-            participant_type="admin",
+            name=email,
+            participant_type=ParticipantType.ADMIN,
+            org=org,
             role=role,
-            org_name=org_name,
         )
 
     @classmethod
-    def for_relay(
-        cls,
-        relay_name: str,
-        org_name: Optional[str] = None,
-        host_names: Optional[List[str]] = None,
-    ) -> "EnrollmentIdentity":
-        """Create identity for relay enrollment."""
+    def for_relay(cls, name: str, org: str = None) -> "EnrollmentIdentity":
+        """Create identity for relay node enrollment.
+        
+        Args:
+            name: Relay node name (e.g., relay-1)
+            org: Organization name
+        """
         return cls(
-            subject_name=relay_name,
-            participant_type="relay",
-            org_name=org_name,
-            host_names=host_names or [],
+            name=name,
+            participant_type=ParticipantType.RELAY,
+            org=org,
         )
 
 
 class EnrollmentOptions(BaseModel):
-    """Optional enrollment settings."""
-    model_config = ConfigDict(validate_assignment=True)
+    """Configuration options for certificate enrollment."""
     
-    output_dir: Optional[str] = Field(default=None, description="Directory for certificates")
-    source_ip: Optional[str] = Field(
-        default=None,
-        description="Client IP for policy verification (optional, for static instances only)"
-    )
-    timeout: float = Field(default=30.0, description="Request timeout in seconds")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Custom metadata")
+    timeout: float = 30.0
+    retry_count: int = 3
+    cert_valid_days: int = 360
+    output_dir: str = "."
 
-    def get_output_dir(self) -> str:
-        """Get output directory, defaulting to ./certs."""
-        return self.output_dir or os.path.join(os.getcwd(), "certs")
+    @field_validator("timeout")
+    @classmethod
+    def validate_timeout(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("timeout must be positive")
+        return v
 
+    @field_validator("retry_count")
+    @classmethod
+    def validate_retry_count(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("retry_count must be non-negative")
+        return v
 
-# =============================================================================
-# Request/Response Models (Pydantic)
-# =============================================================================
-
-class EnrollmentResult(BaseModel):
-    """Result of enrollment request."""
-    model_config = ConfigDict(validate_assignment=True)
-    
-    success: bool
-    subject_name: str
-    participant_type: ParticipantTypeEnum
-    cert_path: Optional[str] = None
-    key_path: Optional[str] = None
-    root_ca_path: Optional[str] = None
-    error_message: Optional[str] = None
-    pending_approval: bool = False
-    approval_message: Optional[str] = None
-
-
-class EnrollmentRequest(BaseModel):
-    """Enrollment request payload sent to server."""
-    model_config = ConfigDict(validate_assignment=True)
-    
-    subject_name: str = Field(..., min_length=1)
-    participant_type: ParticipantTypeEnum
-    csr: str = Field(..., min_length=1, description="PEM-encoded CSR")
-    org_name: Optional[str] = None
-    role: Optional[UserRoleEnum] = None
-    source_ip: Optional[str] = None
-    host_names: Optional[List[str]] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization (excludes None values)."""
-        return {k: v for k, v in self.model_dump().items() if v is not None}
+    @field_validator("cert_valid_days")
+    @classmethod
+    def validate_cert_valid_days(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("cert_valid_days must be positive")
+        return v
 
 
 # =============================================================================
@@ -230,13 +224,14 @@ class EnrollmentRequest(BaseModel):
 
 class CertRequestor:
     """Requests certificate enrollment via CSR workflow using CellNet.
-    
+
     This client-side component:
     1. Generates a new RSA key pair
     2. Creates a CSR following FLARE's certificate structure
     3. Submits the CSR via CellNet to the server
     4. Receives and saves the signed certificate
-    
+
+    Supports client, admin, and relay enrollment.
     Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
     """
 
@@ -254,245 +249,164 @@ class CertRequestor:
         options: Optional[EnrollmentOptions] = None,
     ):
         """Initialize the certificate requestor.
-        
+
         Args:
-            cell: CellNet Cell for communication (handles grpc/https/tcp)
-            enrollment_token: JWT enrollment token from admin
-            identity: Identity configuration (who is enrolling)
-            target_fqcn: FQCN of the server to send request to
-            options: Enrollment options (timeout, output dir, etc.)
+            cell: CellNet instance for communication
+            enrollment_token: JWT token with embedded policy
+            identity: Client identity information (client, admin, or relay)
+            target_fqcn: Server FQCN to connect to
+            options: Optional configuration parameters
             
         Raises:
             ValueError: If enrollment_token is empty
         """
-        if not enrollment_token:
-            raise ValueError("enrollment_token is required")
+        if not enrollment_token or not enrollment_token.strip():
+            raise ValueError("enrollment_token cannot be empty")
             
         self.cell = cell
-        self.enrollment_token = enrollment_token
+        self.enrollment_token = enrollment_token.strip()
         self.identity = identity
         self.target_fqcn = target_fqcn
         self.options = options or EnrollmentOptions()
-        
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # Private key and CSR (generated during enrollment)
-        self._private_key = None
-        self._csr = None
 
-    def enroll(self) -> EnrollmentResult:
-        """Perform the full enrollment workflow.
-        
-        1. Generate key pair and CSR
-        2. Submit enrollment request to server via CellNet
-        3. Save certificates and keys to output directory
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Generated key pair
+        self.private_key = None
+        self.public_key = None
+
+    def generate_key_pair(self) -> None:
+        """Generate RSA key pair for CSR."""
+        self.private_key, self.public_key = generate_keys()
+        self.logger.debug(f"Generated key pair for: {self.identity.name}")
+
+    def create_csr(self) -> bytes:
+        """Create Certificate Signing Request.
         
         Returns:
-            EnrollmentResult with paths to saved files or error message
+            PEM-encoded CSR bytes
         """
-        try:
-            # Step 1: Generate key pair and CSR
-            self.logger.info(
-                f"Generating key pair and CSR for {self.identity.participant_type}: "
-                f"{self.identity.subject_name}"
+        if not self.private_key:
+            self.generate_key_pair()
+
+        # Build CSR with identity attributes
+        name_attributes = [
+            x509.NameAttribute(x509.NameOID.COMMON_NAME, self.identity.name),
+        ]
+        if self.identity.org:
+            name_attributes.append(
+                x509.NameAttribute(x509.NameOID.ORGANIZATION_NAME, self.identity.org)
             )
-            self._generate_key_and_csr()
-            
-            # Step 2: Submit enrollment request via CellNet
-            self.logger.info(f"Submitting enrollment request to: {self.target_fqcn}")
-            response = self._submit_enrollment()
-            
-            # Step 3: Process response and save files
-            self.logger.info("Processing enrollment response")
-            result = self._process_response(response)
-            
-            if result.success:
-                self.logger.info(
-                    f"Enrollment successful! Certificate saved to: {result.cert_path}"
-                )
-            elif result.pending_approval:
-                self.logger.info(
-                    f"Enrollment pending approval: {result.approval_message}"
-                )
-            else:
-                self.logger.error(f"Enrollment failed: {result.error_message}")
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Enrollment failed with exception: {e}")
-            return EnrollmentResult(
-                success=False,
-                subject_name=self.identity.subject_name,
-                participant_type=self.identity.participant_type,
-                error_message=str(e),
+        # Include participant type and role in certificate
+        if self.identity.participant_type:
+            name_attributes.append(
+                x509.NameAttribute(x509.NameOID.ORGANIZATIONAL_UNIT_NAME, self.identity.participant_type)
+            )
+        if self.identity.role:
+            name_attributes.append(
+                x509.NameAttribute(x509.NameOID.UNSTRUCTURED_NAME, self.identity.role)
             )
 
-    def _generate_key_and_csr(self):
-        """Generate RSA key pair and Certificate Signing Request.
-        
-        Uses nvflare.lighter.utils functions for consistency with FLARE's
-        certificate structure.
-        """
-        # Generate RSA key pair using lighter utils
-        self._private_key, pub_key = generate_keys()
-        
-        # Build Identity for CSR
-        subject = Identity(
-            name=self.identity.subject_name,
-            org=self.identity.org_name,
-            role=self.identity.role,
+        builder = x509.CertificateSigningRequestBuilder().subject_name(
+            x509.Name(name_attributes)
         )
-        
-        # Generate CSR using lighter utils
-        self._csr = generate_csr(
-            subject=subject,
-            pri_key=self._private_key,
-            additional_hosts=list(self.identity.host_names) if self.identity.host_names else None,
-        )
-        
+
+        csr = builder.sign(self.private_key, hashes.SHA256())
         self.logger.debug(
-            f"Generated CSR for {self.identity.participant_type}: {self.identity.subject_name}"
-            f" (org={self.identity.org_name}, role={self.identity.role})"
+            f"Created CSR for {self.identity.participant_type}: {self.identity.name}"
         )
-
-    def _get_csr_pem(self) -> bytes:
-        """Get CSR in PEM format using lighter utils."""
-        return serialize_csr(self._csr)
-
-    def _build_enrollment_request(self) -> EnrollmentRequest:
-        """Build enrollment request with all policy-relevant information."""
-        return EnrollmentRequest(
-            subject_name=self.identity.subject_name,
-            participant_type=self.identity.participant_type,
-            csr=self._get_csr_pem().decode("utf-8"),
-            org_name=self.identity.org_name,
-            role=self.identity.role,
-            source_ip=self.options.source_ip,
-            host_names=self.identity.host_names if self.identity.host_names else None,
-            metadata=self.options.metadata,
-        )
-
-    def _submit_enrollment(self) -> dict:
-        """Submit enrollment request to server via CellNet.
         
-        Uses CellNet's send_request with CSR_ENROLLMENT topic.
-        Connection uses basic TLS (one-way) or clear text for initial CSR submission.
+        return csr.public_bytes(serialization.Encoding.PEM)
+
+    def submit_csr(self, csr_data: bytes) -> bytes:
+        """Submit CSR to server for signing.
+        
+        Args:
+            csr_data: PEM-encoded CSR
+            
+        Returns:
+            Signed certificate bytes
+            
+        Raises:
+            RuntimeError: If CSR submission fails
         """
-        request_data = self._build_enrollment_request()
-        
-        # Build CellNet message
-        message = new_cell_message(
-            headers={
-                "enrollment_token": self.enrollment_token,
-            },
-            payload=request_data.to_dict(),
+        headers = {
+            "enrollment_token": self.enrollment_token,
+            "identity": self.identity.name,
+            "participant_type": self.identity.participant_type,
+        }
+        if self.identity.role:
+            headers["role"] = self.identity.role
+
+        message = new_cell_message(headers, csr_data)
+
+        self.logger.info(
+            f"Submitting {self.identity.participant_type} CSR to: {self.target_fqcn}"
         )
         
-        # Send via CellNet - handles grpc/https/tcp transparently
-        reply: Message = self.cell.send_request(
+        result = self.cell.send_request(
+            target=self.target_fqcn,
             channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.CSR_ENROLLMENT,
-            target=self.target_fqcn,
             request=message,
             timeout=self.options.timeout,
-            secure=False,  # One-way TLS or clear for initial enrollment
         )
-        
-        if reply is None:
-            raise ConnectionError("No response from server")
-        
-        # Check return code
-        return_code = reply.get_header(MessageHeaderKey.RETURN_CODE)
-        
-        if return_code == ReturnCode.OK:
-            return reply.payload
-        elif return_code == ReturnCode.UNAUTHENTICATED:
-            raise ValueError("Invalid or expired enrollment token")
-        elif return_code == ReturnCode.INVALID_REQUEST:
-            error = reply.get_header(MessageHeaderKey.ERROR, "Policy rejected enrollment")
-            raise ValueError(f"Enrollment rejected: {error}")
-        else:
-            error = reply.get_header(MessageHeaderKey.ERROR, f"Unknown error: {return_code}")
-            raise ValueError(f"Enrollment failed: {error}")
 
-    def _process_response(self, response: dict) -> EnrollmentResult:
-        """Process enrollment response and save files if approved."""
-        if response.get("pending"):
-            return EnrollmentResult(
-                success=False,
-                subject_name=self.identity.subject_name,
-                participant_type=self.identity.participant_type,
-                pending_approval=True,
-                approval_message=response.get("message"),
-            )
-        
-        signed_cert = response.get("certificate")
-        root_ca = response.get("root_ca")
-        
-        if not signed_cert:
-            return EnrollmentResult(
-                success=False,
-                subject_name=self.identity.subject_name,
-                participant_type=self.identity.participant_type,
-                error_message="Server response missing certificate",
-            )
-        
-        output_dir = self.options.get_output_dir()
-        os.makedirs(output_dir, exist_ok=True)
-        
-        cert_path = os.path.join(output_dir, self.CERT_FILENAME)
-        key_path = os.path.join(output_dir, self.KEY_FILENAME)
-        root_ca_path = os.path.join(output_dir, self.ROOT_CA_FILENAME) if root_ca else None
-        
-        try:
-            with open(cert_path, "wb") as f:
-                if isinstance(signed_cert, str):
-                    f.write(signed_cert.encode("utf-8"))
-                else:
-                    f.write(signed_cert)
-            
-            with open(key_path, "wb") as f:
-                f.write(serialize_pri_key(self._private_key))
-            os.chmod(key_path, 0o600)
-            
-            if root_ca:
-                with open(root_ca_path, "wb") as f:
-                    if isinstance(root_ca, str):
-                        f.write(root_ca.encode("utf-8"))
-                    else:
-                        f.write(root_ca)
-            
-            self.logger.info(f"Saved certificate to: {cert_path}")
-            self.logger.info(f"Saved private key to: {key_path}")
-            if root_ca_path:
-                self.logger.info(f"Saved root CA to: {root_ca_path}")
-            
-            return EnrollmentResult(
-                success=True,
-                subject_name=self.identity.subject_name,
-                participant_type=self.identity.participant_type,
-                cert_path=cert_path,
-                key_path=key_path,
-                root_ca_path=root_ca_path,
-            )
-            
-        except IOError as e:
-            return EnrollmentResult(
-                success=False,
-                subject_name=self.identity.subject_name,
-                participant_type=self.identity.participant_type,
-                error_message=f"Failed to save certificates: {e}",
-            )
+        if result is None:
+            raise RuntimeError("No response from server")
 
-    def get_csr_pem(self) -> Optional[bytes]:
-        """Get the generated CSR in PEM format."""
-        if self._csr is None:
-            return None
-        return self._get_csr_pem()
+        return_code = result.get_header("return_code")
+        if return_code != "OK":
+            error = result.get_header("error", "Unknown error")
+            raise RuntimeError(f"CSR submission failed: {error}")
 
-    def get_private_key_pem(self, passphrase: Optional[bytes] = None) -> Optional[bytes]:
-        """Get the generated private key in PEM format."""
-        if self._private_key is None:
-            return None
-        return serialize_pri_key(self._private_key, passphrase)
+        self.logger.info(f"{self.identity.participant_type} CSR signed successfully")
+        return result.payload
+
+    def save_credentials(self, cert_data: bytes) -> None:
+        """Save private key and certificate to files.
+        
+        Args:
+            cert_data: Signed certificate bytes
+        """
+        os.makedirs(self.options.output_dir, exist_ok=True)
+
+        # Save private key (with restricted permissions)
+        key_path = os.path.join(self.options.output_dir, self.KEY_FILENAME)
+        with open(key_path, "wb") as f:
+            f.write(serialize_pri_key(self.private_key))
+        os.chmod(key_path, 0o600)
+        self.logger.info(f"Saved private key to: {key_path}")
+
+        # Save certificate
+        cert_path = os.path.join(self.options.output_dir, self.CERT_FILENAME)
+        with open(cert_path, "wb") as f:
+            f.write(cert_data)
+        self.logger.info(f"Saved certificate to: {cert_path}")
+
+    def request_certificate(self) -> str:
+        """Complete certificate enrollment workflow.
+        
+        Returns:
+            Path to the saved certificate file
+            
+        Raises:
+            RuntimeError: If enrollment fails
+        """
+        self.logger.info(
+            f"Starting {self.identity.participant_type} enrollment for: {self.identity.name}"
+        )
+
+        # Generate CSR
+        csr_data = self.create_csr()
+
+        # Submit to server
+        cert_data = self.submit_csr(csr_data)
+
+        # Save credentials
+        self.save_credentials(cert_data)
+
+        cert_path = os.path.join(self.options.output_dir, self.CERT_FILENAME)
+        self.logger.info(f"Enrollment complete: {cert_path}")
+        
+        return cert_path
