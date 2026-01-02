@@ -1,5 +1,5 @@
 # Federated GNN on Graph Dataset using Inductive Learning
-In this example, we will demonstrate how to train a classification model using Graph Neural Network (GNN) using a modern **recipe-based approach**. 
+In this example, we will demonstrate how to train a classification model using Graph Neural Network (GNN) using a **recipe-based approach**. 
 
 ### Background of Graph Neural Network
 Graph Neural Networks (GNNs) show a promising future in research and industry, with potential applications in various domains, including social networks, e-commerce, recommendation systems, and more.
@@ -36,11 +36,7 @@ python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_sp
 
 #### Recipe-based Approach
 
-This example uses **NVFlare's FedAvgRecipe** to create federated GNN training jobs. The approach offers several advantages:
-- **Built-in functionality**: Leverages NVFlare's standard FedAvg recipe
-- **Cleaner API**: Python-native configuration without complex CLI arguments
-- **Better IDE support**: Type hints and autocomplete for all parameters
-- **Programmatic control**: Integrate into larger Python workflows easily
+This example uses **NVFlare's FedAvgRecipe** to create federated GNN training jobs, leveraging NVFlare's standard FedAvg recipe.
 
 We provide two task-specific job creation functions:
 - `create_protein_job()`: For PPI protein classification

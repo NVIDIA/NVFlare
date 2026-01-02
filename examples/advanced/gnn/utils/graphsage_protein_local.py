@@ -29,7 +29,7 @@ from torch_geometric.loader import DataLoader, LinkNeighborLoader
 from torch_geometric.nn import GraphSAGE
 
 np.random.seed(77)
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def main():

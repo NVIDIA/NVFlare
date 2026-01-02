@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,19 +13,14 @@
 # limitations under the License.
 
 import argparse
-import sys
-from pathlib import Path
 from typing import Dict, List
 
+from model import SAGE
 from torch_geometric.nn import GraphSAGE
 
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import ProdEnv, SimEnv
-
-# Add current directory to path to import model.py
-sys.path.insert(0, str(Path(__file__).parent))
-from model import SAGE
 
 
 def create_protein_job(

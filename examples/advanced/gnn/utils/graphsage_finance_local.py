@@ -30,7 +30,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
 
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def main():

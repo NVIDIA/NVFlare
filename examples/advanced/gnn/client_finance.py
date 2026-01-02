@@ -26,7 +26,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
 from utils.process_elliptic import process_elliptic
 
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 # (1) import nvflare client API
 import nvflare.client as flare
