@@ -45,6 +45,7 @@ CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
 CMD_CONFIG = "config"
 CMD_PRE_INSTALL = "pre-install"
+CMD_ENROLLMENT = "enrollment"
 
 
 def def_provision_parser(sub_cmd):
@@ -138,6 +139,23 @@ def def_pre_install_parser(sub_cmd):
         sys.exit(1)
 
 
+def def_enrollment_parser(sub_cmd):
+    """Define enrollment subcommand parser (optional dependency on PyJWT)."""
+    cmd = CMD_ENROLLMENT
+    try:
+        from nvflare.tool.enrollment.enrollment_cli import def_enrollment_parser as define_parser
+
+        return define_parser(sub_cmd)
+    except ImportError:
+        # PyJWT not installed - create a stub parser that shows helpful message
+        parser = sub_cmd.add_parser(
+            cmd,
+            help="Enrollment token and certificate management (requires PyJWT)",
+            description="Enrollment commands require PyJWT. Install with: pip install PyJWT",
+        )
+        return {cmd: parser}
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -152,6 +170,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
+    sub_cmd_parsers.update(def_enrollment_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -171,6 +190,19 @@ def handle_pre_install_cmd(args):
     handle_cmd(args)
 
 
+def handle_enrollment_cmd(args):
+    """Handle enrollment command (lazy import to avoid jwt dependency)."""
+    try:
+        from nvflare.tool.enrollment.enrollment_cli import handle_enrollment_cmd as handle_cmd
+
+        handle_cmd(args)
+    except ImportError:
+        print("\nError: Enrollment commands require PyJWT.")
+        print("Install with: pip install PyJWT")
+        print("Or install nvflare with enrollment support: pip install nvflare[enrollment]")
+        sys.exit(1)
+
+
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
@@ -181,6 +213,7 @@ handlers = {
     CMD_JOB: handle_job_cli_cmd,
     CMD_CONFIG: handle_config_cmd,
     CMD_PRE_INSTALL: handle_pre_install_cmd,
+    CMD_ENROLLMENT: handle_enrollment_cmd,
 }
 
 

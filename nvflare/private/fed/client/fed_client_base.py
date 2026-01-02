@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 import time
 from typing import List, Optional
@@ -174,6 +175,116 @@ class FederatedClientBase:
                 thread = threading.Thread(target=self._switch_ssid)
                 thread.start()
 
+    def _auto_enroll_if_needed(self, location: str, scheme: str) -> bool:
+        """Perform automatic CSR enrollment if certificates don't exist but token is available.
+        
+        This enables dynamic client enrollment without pre-provisioned certificates.
+        The client only needs:
+        - rootCA.pem (to trust server)
+        - Enrollment token (via NVFLARE_ENROLLMENT_TOKEN env var or token file)
+        
+        Args:
+            location: Server location (host:port)
+            scheme: Communication scheme (grpc, https, tcp, etc.)
+            
+        Returns:
+            True if enrollment was performed, False otherwise
+        """
+        if not self.secure_train:
+            return False
+        
+        # Check if certificate already exists
+        ssl_cert_path = self.client_args.get(SecureTrainConst.SSL_CERT)
+        if ssl_cert_path and os.path.exists(ssl_cert_path):
+            return False  # Certificate exists, no enrollment needed
+        
+        # Check for enrollment token
+        from nvflare.private.fed.client.enrollment import ENROLLMENT_TOKEN_ENV
+        
+        token = os.environ.get(ENROLLMENT_TOKEN_ENV)
+        if not token:
+            # Check for token file in startup directory
+            root_cert_path = self.client_args.get(SecureTrainConst.SSL_ROOT_CERT)
+            if root_cert_path:
+                startup_dir = os.path.dirname(root_cert_path)
+                token_file = os.path.join(startup_dir, "enrollment_token")
+                if os.path.exists(token_file):
+                    with open(token_file, "r") as f:
+                        token = f.read().strip()
+        
+        if not token:
+            self.logger.debug("No enrollment token found, skipping auto-enrollment")
+            return False
+        
+        self.logger.info(f"Certificate not found, attempting auto-enrollment for '{self.client_name}'")
+        
+        try:
+            self._perform_enrollment(location, scheme, token)
+            return True
+        except Exception as e:
+            self.logger.error(f"Auto-enrollment failed: {secure_format_exception(e)}")
+            raise RuntimeError(f"Auto-enrollment failed: {e}") from e
+    
+    def _perform_enrollment(self, location: str, scheme: str, token: str):
+        """Perform CSR enrollment with the server.
+        
+        Creates a temporary cell without client certificate to submit CSR,
+        receives signed certificate, and saves it to the startup directory.
+        
+        Args:
+            location: Server location (host:port)
+            scheme: Communication scheme
+            token: JWT enrollment token
+        """
+        from nvflare.fuel.f3.cellnet.fqcn import FQCN as CellFQCN
+        from nvflare.private.fed.client.enrollment import CertRequestor, EnrollmentIdentity, EnrollmentOptions
+        
+        root_url = f"{scheme}://{location}"
+        root_cert_path = self.client_args.get(SecureTrainConst.SSL_ROOT_CERT)
+        startup_dir = os.path.dirname(root_cert_path) if root_cert_path else "."
+        
+        # Create temporary cell for enrollment (server-auth only, no client cert)
+        # Use root CA to verify server identity
+        credentials = {}
+        if root_cert_path:
+            from nvflare.fuel.f3.drivers.driver_params import DriverParams as TempDriverParams
+            credentials[TempDriverParams.CA_CERT.value] = root_cert_path
+        
+        enrollment_fqcn = CellFQCN.join(["enrolling", self.client_name])
+        
+        enrollment_cell = Cell(
+            fqcn=enrollment_fqcn,
+            root_url=root_url,
+            secure=True,  # Use TLS to verify server
+            credentials=credentials,
+        )
+        enrollment_cell.start()
+        
+        try:
+            # Create identity from client config
+            org = self.client_args.get("organization", self.client_args.get("org"))
+            identity = EnrollmentIdentity.for_client(name=self.client_name, org=org)
+            
+            options = EnrollmentOptions(output_dir=startup_dir)
+            
+            requestor = CertRequestor(
+                cell=enrollment_cell,
+                enrollment_token=token,
+                identity=identity,
+                options=options,
+            )
+            
+            cert_path = requestor.request_certificate()
+            self.logger.info(f"Enrollment successful. Certificate saved to: {cert_path}")
+            
+            # Update client_args with new certificate paths
+            key_path = os.path.join(startup_dir, f"{self.client_name}.key")
+            self.client_args[SecureTrainConst.SSL_CERT] = cert_path
+            self.client_args[SecureTrainConst.PRIVATE_KEY] = key_path
+            
+        finally:
+            enrollment_cell.stop()
+
     def _create_cell(self, location, scheme):
         """Create my cell.
 
@@ -187,6 +298,8 @@ class FederatedClientBase:
         The client's FQCN is different, depending on how the connection is made.
 
         """
+        # Auto-enroll if certificate doesn't exist but token is available
+        self._auto_enroll_if_needed(location, scheme)
         # Determine the CP's fqcn
         root_url = scheme + "://" + location
         root_conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)

@@ -19,3 +19,4 @@ Detailed explanations for each can be found in their respective sections, linked
    preflight_check
    dashboard_command
    pre_installer
+   enrollment_command

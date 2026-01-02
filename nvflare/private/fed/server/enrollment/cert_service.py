@@ -26,7 +26,6 @@ Token generation is handled separately by TokenService.
 import fnmatch
 import ipaddress
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -71,56 +70,38 @@ class ApprovalAction(str, Enum):
 
 @dataclass
 class TokenPayload:
-    """Decoded enrollment token payload.
-    
-    Maps to JWT claims:
-    - token_id: jti (unique identifier)
-    - subject: sub (site name, user ID, or pattern like "hospital-*")
-    - subject_type: "client", "admin", "relay", or "pattern"
-    - policy: embedded approval policy (tamper-proof)
-    - issued_at/expires_at: iat/exp
-    - issuer: iss (from root CA CN)
-    """
-    token_id: str                         # JWT jti
-    subject: str                          # JWT sub (site/user/pattern)
-    subject_type: str                     # "client", "admin", "relay", or "pattern"
-    policy: Dict[str, Any]                # Embedded policy (signed)
-    issued_at: datetime                   # JWT iat
-    expires_at: datetime                  # JWT exp
-    issuer: str                           # JWT iss
-    roles: Optional[List[str]] = None     # For admin tokens
+    """Decoded enrollment token payload."""
+
+    token_id: str
+    subject: str
+    subject_type: str
+    policy: Dict[str, Any]
+    issued_at: datetime
+    expires_at: datetime
+    issuer: str
+    roles: Optional[List[str]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ApprovalResult:
     """Result of policy evaluation."""
+
     action: ApprovalAction
     rule_name: str
-    description: Optional[str] = None     # Rule description
-    message: Optional[str] = None         # Custom message
-    notify: Optional[List[str]] = None    # Notification recipients
+    description: Optional[str] = None
+    message: Optional[str] = None
+    notify: Optional[List[str]] = None
 
 
 @dataclass
 class EnrollmentContext:
-    """Context for enrollment request evaluation.
-    
-    Represents the incoming enrollment request that will be
-    matched against policy rules.
-    
-    Attributes:
-        name: Site name, user email, or relay name
-        participant_type: client, admin, or relay (from nvflare.lighter.constants)
-        role: Admin role (for admin enrollments, from nvflare.lighter.constants)
-        source_ip: Required if policy has source_ips rules.
-                   For static instances (EC2, on-premise), client provides IP.
-                   For K8s/dynamic, omit source_ips from policy to skip IP check.
-    """
-    name: str                                       # Site/user/relay name
-    participant_type: str = ParticipantType.CLIENT  # client, admin, or relay
-    role: Optional[str] = None                      # Admin role (if applicable)
-    source_ip: Optional[str] = None                 # Required if policy has source_ips
+    """Context for enrollment request evaluation."""
+
+    name: str
+    participant_type: str = ParticipantType.CLIENT
+    role: Optional[str] = None
+    source_ip: Optional[str] = None
 
 
 class CertService:
@@ -140,27 +121,29 @@ class CertService:
     
     def __init__(
         self,
-        root_ca_path: str,
+        root_ca_cert_path: str,
+        root_ca_key_path: str,
         verification_key_path: Optional[str] = None,
     ):
         """Initialize the certificate service.
         
         Args:
-            root_ca_path: Path to directory containing rootCA.pem and rootCA.key
+            root_ca_cert_path: Path to root CA certificate file (rootCA.pem)
+            root_ca_key_path: Path to root CA private key file (rootCA.key)
             verification_key_path: Path to public key for JWT verification 
                                    (if different from root CA)
             
         Example:
-            service = CertService(root_ca_path="/path/to/ca")
+            service = CertService(
+                root_ca_cert_path="/path/to/rootCA.pem",
+                root_ca_key_path="/path/to/rootCA.key",
+            )
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Load root CA certificate and private key using lighter utils
-        cert_file = os.path.join(root_ca_path, "rootCA.pem")
-        key_file = os.path.join(root_ca_path, "rootCA.key")
-        
-        self.root_cert = load_crt(cert_file)
-        self.root_key = load_private_key_file(key_file)
+        self.root_cert = load_crt(root_ca_cert_path)
+        self.root_key = load_private_key_file(root_ca_key_path)
         
         # JWT verification key
         if verification_key_path:
@@ -262,7 +245,7 @@ class CertService:
             return self._error_response(str(e), ReturnCode.INVALID_REQUEST)
         except Exception as e:
             self.logger.error(f"Enrollment error: {e}")
-            return self._error_response(f"Internal error: {e}", ReturnCode.ERROR)
+            return self._error_response(f"Internal error: {e}", ReturnCode.PROCESS_EXCEPTION)
 
     def _error_response(self, error_msg: str, return_code: str) -> Message:
         """Create error response message."""
