@@ -278,12 +278,11 @@ Sample output:
 
     {
       "token_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "subject": "site-1",
+      "subject": "hospital-1",
       "subject_type": "client",
       "issuer": "nvflare-enrollment",
       "issued_at": "2025-01-02T10:00:00+00:00",
       "expires_at": "2025-01-09T10:00:00+00:00",
-      "max_uses": 1,
       "policy_project": "nvflare-default",
       "policy_version": "1.0"
     }
