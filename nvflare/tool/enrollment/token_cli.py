@@ -553,7 +553,6 @@ def _handle_info_cmd(args):
             "issuer": payload.get("iss"),
             "issued_at": payload.get("iat"),
             "expires_at": payload.get("exp"),
-            "max_uses": payload.get("max_uses", 1),
             "roles": payload.get("roles"),
             "source_ips": payload.get("source_ips"),
             "policy_project": payload.get("policy", {}).get("metadata", {}).get("project"),

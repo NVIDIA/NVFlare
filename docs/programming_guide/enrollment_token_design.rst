@@ -134,13 +134,12 @@ Token Payload Structure
 
     {
         "jti": "unique-token-id",
-        "sub": "site-1",
+        "sub": "hospital-1",
         "subject_type": "client",
         "iss": "nvflare-enrollment",
         "iat": 1704200000,
         "exp": 1704804800,
-        "max_uses": 1,
-        "roles": ["researcher"],
+        "roles": ["lead"],
         "source_ips": ["10.0.0.0/8"],
         "policy": {
             "metadata": {...},
@@ -148,6 +147,10 @@ Token Payload Structure
             "approval": {...}
         }
     }
+
+.. note::
+
+    All tokens are single-use. Once a token is used for enrollment, it cannot be reused.
 
 CertRequestor Design
 ====================
@@ -256,8 +259,7 @@ Class Structure
         """Decoded enrollment token payload."""
         token_id: str
         subject: str
-        subject_type: str
-        max_uses: int
+        subject_type: str  # "client", "admin", "relay", or "pattern"
         policy: Dict[str, Any]
         expires_at: datetime
         roles: Optional[List[str]] = None
@@ -578,8 +580,8 @@ Token Security
 
 - **Signed with RSA**: Tokens are signed with the root CA's private key (RS256)
 - **Tamper-proof**: Modifying the token invalidates the signature
-- **Single-use**: Each token can only be used once (``max_uses: 1``)
-- **Time-limited**: Tokens expire after a configurable duration
+- **Single-use**: Each token can only be used once for enrollment
+- **Time-limited**: Tokens expire after a configurable duration (default: 7 days)
 
 Source IP Enforcement
 =====================
