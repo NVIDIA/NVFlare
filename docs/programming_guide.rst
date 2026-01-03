@@ -60,6 +60,7 @@ Please refer to :ref:`application` for more details.
    programming_guide/decomposer_for_large_object
    programming_guide/dashboard_api
    programming_guide/enrollment_token_design
+   programming_guide/enrollment_design_v2
 
 .. rubric:: Code Structure
 
