@@ -45,7 +45,8 @@ The token CLI supports environment variables to simplify repeated usage:
    * - Variable
      - Description
    * - ``NVFLARE_CA_PATH``
-     - Path to directory containing ``rootCA.pem`` and ``rootCA.key``
+     - Path to the provisioned root CA directory containing ``rootCA.pem`` and ``rootCA.key``
+       (created by ``nvflare provision``)
    * - ``NVFLARE_ENROLLMENT_POLICY``
      - Path to enrollment policy YAML file (optional, uses built-in default if not set)
 
@@ -454,8 +455,9 @@ Using the root CA from provisioning, generate tokens for clients.
 
 .. code-block:: shell
 
-    # Point to the workspace containing rootCA.pem and rootCA.key
-    export NVFLARE_CA_PATH=/path/to/workspace
+    # Point to the provisioned workspace containing rootCA.pem and rootCA.key
+    # This is the same directory created by 'nvflare provision'
+    export NVFLARE_CA_PATH=/path/to/provisioned/workspace
 
     # Optional: use custom policy
     export NVFLARE_ENROLLMENT_POLICY=/path/to/enrollment_policy.yaml
@@ -592,15 +594,18 @@ Token Generation Fails
 .. code-block:: shell
 
     Error: CA path is required.
-    Provide via -c/--ca_path or set NVFLARE_CA_PATH environment variable.
+    The CA path should point to the provisioned root CA directory
+    (created by 'nvflare provision') containing rootCA.pem and rootCA.key.
 
-Solution: Either set the environment variable or provide the ``-c`` option:
+Solution: Point to the provisioned workspace directory:
 
 .. code-block:: shell
 
-    export NVFLARE_CA_PATH=/path/to/ca
-    # or
-    nvflare token generate -s site-1 -c /path/to/ca
+    # Set to the directory created by 'nvflare provision'
+    export NVFLARE_CA_PATH=/path/to/provisioned/workspace
+    
+    # Or provide directly
+    nvflare token generate -s hospital-1 -c /path/to/provisioned/workspace
 
 Token Inspection Shows Expired
 ==============================
