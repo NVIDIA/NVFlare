@@ -1,0 +1,538 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""CLI commands for FLARE enrollment token management.
+
+This module provides the `nvflare token` command for generating and
+inspecting enrollment tokens.
+
+Environment Variables:
+    NVFLARE_CA_PATH: Path to directory containing rootCA.pem and rootCA.key
+    NVFLARE_ENROLLMENT_POLICY: Path to policy YAML file (optional, uses default if not set)
+
+Usage:
+    # Generate single token
+    nvflare token generate -s site-1
+
+    # Batch generate
+    nvflare token batch -n 10 --prefix hospital -o tokens.csv
+
+    # Inspect token
+    nvflare token info -t <jwt_token>
+"""
+
+import os
+import sys
+import tempfile
+
+
+CMD_TOKEN = "token"
+
+# Subcommands
+SUBCMD_GENERATE = "generate"
+SUBCMD_BATCH = "batch"
+SUBCMD_INFO = "info"
+
+# Environment variable names
+ENV_CA_PATH = "NVFLARE_CA_PATH"
+ENV_ENROLLMENT_POLICY = "NVFLARE_ENROLLMENT_POLICY"
+
+# Built-in default policy (simple auto-approve for quick start)
+DEFAULT_POLICY = """
+metadata:
+  project: "nvflare-default"
+  description: "Built-in default policy for quick start"
+  version: "1.0"
+
+token:
+  validity: 7d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - org_admin
+    - project_admin
+  default_role: researcher
+
+approval:
+  method: policy
+  rules:
+    - name: "auto-approve-all"
+      description: "Auto-approve all enrollment requests"
+      match: {}
+      action: approve
+
+notifications:
+  enabled: false
+"""
+
+
+def _check_jwt_dependency():
+    """Check if PyJWT is installed."""
+    try:
+        import jwt  # noqa: F401
+
+        return True
+    except ImportError:
+        print("\nError: PyJWT is required for token operations.")
+        print("PyJWT should be installed as part of nvflare dependencies.")
+        sys.exit(1)
+
+
+def _get_ca_path(args):
+    """Resolve CA path from args or environment variable."""
+    ca_path = getattr(args, "ca_path", None)
+    if ca_path:
+        return ca_path
+
+    ca_path = os.environ.get(ENV_CA_PATH)
+    if ca_path:
+        return ca_path
+
+    print("\nError: CA path is required.")
+    print(f"Provide via -c/--ca_path or set {ENV_CA_PATH} environment variable.")
+    sys.exit(1)
+
+
+def _get_policy_path(args):
+    """Resolve policy path from args, environment variable, or use built-in default."""
+    policy_path = getattr(args, "policy", None)
+    if policy_path:
+        return policy_path, False
+
+    policy_path = os.environ.get(ENV_ENROLLMENT_POLICY)
+    if policy_path:
+        return policy_path, False
+
+    # Use built-in default policy - write to temp file
+    fd, temp_path = tempfile.mkstemp(suffix=".yaml", prefix="nvflare_default_policy_")
+    try:
+        os.write(fd, DEFAULT_POLICY.encode("utf-8"))
+    finally:
+        os.close(fd)
+
+    return temp_path, True
+
+
+# =============================================================================
+# Subcommand Parsers
+# =============================================================================
+
+
+def _define_generate_parser(sub_parser):
+    """Define parser for 'nvflare token generate' command."""
+    parser = sub_parser.add_parser(
+        SUBCMD_GENERATE,
+        help="Generate a single enrollment token",
+        description=(
+            "Generate a policy-based enrollment token (JWT) for a single subject.\n\n"
+            f"Environment variables:\n"
+            f"  {ENV_CA_PATH}: Path to CA directory (alternative to -c)\n"
+            f"  {ENV_ENROLLMENT_POLICY}: Path to policy file (alternative to -p)"
+        ),
+        formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog, max_help_position=40),
+    )
+
+    # Required arguments
+    parser.add_argument(
+        "-s",
+        "--subject",
+        type=str,
+        required=True,
+        help="Subject identifier (site name, user email, or pattern like 'hospital-*')",
+    )
+
+    # Optional arguments (can be set via env vars)
+    parser.add_argument(
+        "-c",
+        "--ca_path",
+        type=str,
+        default=None,
+        help=f"Path to CA directory (or set {ENV_CA_PATH})",
+    )
+    parser.add_argument(
+        "-p",
+        "--policy",
+        type=str,
+        default=None,
+        help=f"Path to policy YAML file (or set {ENV_ENROLLMENT_POLICY}, uses default if not set)",
+    )
+
+    # Optional arguments with defaults
+    parser.add_argument(
+        "-t",
+        "--type",
+        type=str,
+        default="client",
+        choices=["client", "admin", "relay", "pattern"],
+        help="Subject type (default: client)",
+    )
+    parser.add_argument(
+        "-v",
+        "--validity",
+        type=str,
+        default=None,
+        help="Token validity duration (e.g., '7d', '24h', '30m'). Defaults to policy setting.",
+    )
+    parser.add_argument(
+        "-r",
+        "--roles",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Roles for admin tokens (e.g., 'org_admin researcher')",
+    )
+    parser.add_argument(
+        "--source_ips",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Source IP restrictions in CIDR format (e.g., '10.0.0.0/8')",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default=None,
+        help="Output file to save token (prints to stdout if not specified)",
+    )
+
+
+def _define_batch_parser(sub_parser):
+    """Define parser for 'nvflare token batch' command."""
+    parser = sub_parser.add_parser(
+        SUBCMD_BATCH,
+        help="Generate multiple enrollment tokens",
+        description=(
+            "Generate multiple policy-based enrollment tokens in batch.\n\n"
+            f"Environment variables:\n"
+            f"  {ENV_CA_PATH}: Path to CA directory (alternative to -c)\n"
+            f"  {ENV_ENROLLMENT_POLICY}: Path to policy file (alternative to -p)"
+        ),
+        formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog, max_help_position=40),
+    )
+
+    # Batch options (one of these required)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "-n",
+        "--count",
+        type=int,
+        help="Number of tokens to generate (used with --prefix)",
+    )
+    group.add_argument(
+        "--names",
+        type=str,
+        nargs="+",
+        help="Explicit list of subject names",
+    )
+
+    # Required output
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        required=True,
+        help="Output file to save tokens (.csv or .txt)",
+    )
+
+    # Optional arguments (can be set via env vars)
+    parser.add_argument(
+        "-c",
+        "--ca_path",
+        type=str,
+        default=None,
+        help=f"Path to CA directory (or set {ENV_CA_PATH})",
+    )
+    parser.add_argument(
+        "-p",
+        "--policy",
+        type=str,
+        default=None,
+        help=f"Path to policy YAML file (or set {ENV_ENROLLMENT_POLICY}, uses default if not set)",
+    )
+
+    # Optional arguments with defaults
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default="client",
+        help="Prefix for auto-generated names when using --count (default: 'client')",
+    )
+    parser.add_argument(
+        "-t",
+        "--type",
+        type=str,
+        default="client",
+        choices=["client", "admin", "relay"],
+        help="Subject type for all tokens (default: client)",
+    )
+    parser.add_argument(
+        "-v",
+        "--validity",
+        type=str,
+        default=None,
+        help="Token validity duration (e.g., '7d', '24h')",
+    )
+
+
+def _define_info_parser(sub_parser):
+    """Define parser for 'nvflare token info' command."""
+    parser = sub_parser.add_parser(
+        SUBCMD_INFO,
+        help="Display token information",
+        description="Decode and display enrollment token information (without verification).",
+    )
+
+    parser.add_argument(
+        "-t",
+        "--token",
+        type=str,
+        required=True,
+        help="JWT token string or path to file containing token",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format",
+    )
+
+
+# =============================================================================
+# Main Parser
+# =============================================================================
+
+
+def def_token_parser(sub_cmd):
+    """Define the token command parser.
+
+    Args:
+        sub_cmd: Parent subparser to add token command to
+
+    Returns:
+        Dict mapping command name to parser
+    """
+    cmd = CMD_TOKEN
+    parser = sub_cmd.add_parser(
+        cmd,
+        help="Generate and manage enrollment tokens",
+        description=(
+            "Commands for generating and inspecting enrollment tokens (JWT).\n\n"
+            f"Environment variables:\n"
+            f"  {ENV_CA_PATH}: Default CA directory path\n"
+            f"  {ENV_ENROLLMENT_POLICY}: Default policy file path"
+        ),
+        formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog, max_help_position=40),
+    )
+
+    token_sub = parser.add_subparsers(
+        title="token commands",
+        dest="token_sub_cmd",
+        help="Token subcommand",
+    )
+
+    _define_generate_parser(token_sub)
+    _define_batch_parser(token_sub)
+    _define_info_parser(token_sub)
+
+    return {cmd: parser}
+
+
+# =============================================================================
+# Command Handlers
+# =============================================================================
+
+
+def _handle_generate_cmd(args):
+    """Handle 'nvflare token generate' command."""
+    _check_jwt_dependency()
+
+    from nvflare.lighter.constants import ParticipantType
+    from nvflare.tool.enrollment.token_service import TokenService
+
+    type_map = {
+        "client": ParticipantType.CLIENT,
+        "admin": ParticipantType.ADMIN,
+        "relay": ParticipantType.RELAY,
+        "pattern": TokenService.SUBJECT_TYPE_PATTERN,
+    }
+
+    ca_path = _get_ca_path(args)
+    policy_path, is_temp_policy = _get_policy_path(args)
+
+    try:
+        service = TokenService(ca_path)
+
+        claims = {}
+        if args.roles:
+            claims["roles"] = args.roles
+        if args.source_ips:
+            claims["source_ips"] = args.source_ips
+
+        token = service.generate_token_from_file(
+            policy_file=policy_path,
+            subject=args.subject,
+            subject_type=type_map[args.type],
+            validity=args.validity,
+            **claims,
+        )
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(token)
+            print(f"Token saved to: {args.output}")
+        else:
+            print("\nGenerated Enrollment Token:")
+            print("-" * 60)
+            print(token)
+            print("-" * 60)
+
+            info = service.get_token_info(token)
+            print("\nToken Info:")
+            print(f"  Subject: {info['subject']}")
+            print(f"  Type: {info['subject_type']}")
+            print(f"  Expires: {info['expires_at']}")
+            if is_temp_policy:
+                print("  Policy: (using built-in default)")
+
+    except FileNotFoundError as e:
+        print(f"\nError: File not found - {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nError generating token: {e}")
+        sys.exit(1)
+    finally:
+        if is_temp_policy and os.path.exists(policy_path):
+            os.remove(policy_path)
+
+
+def _handle_batch_cmd(args):
+    """Handle 'nvflare token batch' command."""
+    _check_jwt_dependency()
+
+    from nvflare.lighter.constants import ParticipantType
+    from nvflare.tool.enrollment.token_service import TokenService
+
+    type_map = {
+        "client": ParticipantType.CLIENT,
+        "admin": ParticipantType.ADMIN,
+        "relay": ParticipantType.RELAY,
+    }
+
+    ca_path = _get_ca_path(args)
+    policy_path, is_temp_policy = _get_policy_path(args)
+
+    try:
+        service = TokenService(ca_path)
+
+        results = service.batch_generate_tokens(
+            policy_file=policy_path,
+            count=args.count or 0,
+            name_prefix=args.prefix,
+            names=args.names,
+            subject_type=type_map[args.type],
+            validity=args.validity,
+            output_file=args.output,
+        )
+
+        print(f"\nGenerated {len(results)} tokens")
+        print(f"Saved to: {args.output}")
+        if is_temp_policy:
+            print("Policy: (using built-in default)")
+
+        print("\nPreview (first 3):")
+        for item in results[:3]:
+            print(f"  {item['name']}: {item['token'][:50]}...")
+
+    except Exception as e:
+        print(f"\nError generating tokens: {e}")
+        sys.exit(1)
+    finally:
+        if is_temp_policy and os.path.exists(policy_path):
+            os.remove(policy_path)
+
+
+def _handle_info_cmd(args):
+    """Handle 'nvflare token info' command."""
+    _check_jwt_dependency()
+
+    import json
+
+    token = args.token
+    if os.path.isfile(token):
+        with open(token, "r") as f:
+            token = f.read().strip()
+
+    try:
+        import jwt
+
+        payload = jwt.decode(token, options={"verify_signature": False})
+
+        info = {
+            "token_id": payload.get("jti"),
+            "subject": payload.get("sub"),
+            "subject_type": payload.get("subject_type"),
+            "issuer": payload.get("iss"),
+            "issued_at": payload.get("iat"),
+            "expires_at": payload.get("exp"),
+            "max_uses": payload.get("max_uses", 1),
+            "roles": payload.get("roles"),
+            "source_ips": payload.get("source_ips"),
+            "policy_project": payload.get("policy", {}).get("metadata", {}).get("project"),
+            "policy_version": payload.get("policy", {}).get("metadata", {}).get("version"),
+        }
+
+        from datetime import datetime, timezone
+
+        if info["issued_at"]:
+            info["issued_at"] = datetime.fromtimestamp(info["issued_at"], tz=timezone.utc).isoformat()
+        if info["expires_at"]:
+            info["expires_at"] = datetime.fromtimestamp(info["expires_at"], tz=timezone.utc).isoformat()
+
+        if args.json:
+            print(json.dumps(info, indent=2))
+        else:
+            print("\nToken Information:")
+            print("-" * 40)
+            for key, value in info.items():
+                if value is not None:
+                    print(f"  {key}: {value}")
+            print("-" * 40)
+
+    except Exception as e:
+        print(f"\nError decoding token: {e}")
+        sys.exit(1)
+
+
+def handle_token_cmd(args):
+    """Handle 'nvflare token' command and its subcommands."""
+    token_sub = getattr(args, "token_sub_cmd", None)
+
+    if token_sub == SUBCMD_GENERATE:
+        _handle_generate_cmd(args)
+    elif token_sub == SUBCMD_BATCH:
+        _handle_batch_cmd(args)
+    elif token_sub == SUBCMD_INFO:
+        _handle_info_cmd(args)
+    else:
+        from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
+
+        raise CLIUnknownCmdException(
+            "\nPlease specify a subcommand: generate, batch, or info\n" "Use 'nvflare token -h' for help."
+        )
+
