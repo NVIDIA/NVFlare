@@ -23,22 +23,22 @@ Usage:
     token = service.generate_token_from_file("policy.yaml", "site-1")
 
 CLI Usage:
-    nvflare enrollment token generate -s site-1 -c /path/to/ca
-    nvflare enrollment token batch -n 10 --prefix hospital -o tokens.csv
-    nvflare enrollment token info -t <jwt_token>
+    nvflare token generate -s site-1 -c /path/to/ca
+    nvflare token batch -n 10 --prefix hospital -o tokens.csv
+    nvflare token info -t <jwt_token>
 """
 
 from typing import TYPE_CHECKING
 
 # Static imports for IDE type checking (not executed at runtime)
 if TYPE_CHECKING:
-    from nvflare.tool.enrollment.enrollment_cli import def_enrollment_parser, handle_enrollment_cmd
+    from nvflare.tool.enrollment.token_cli import def_token_parser, handle_token_cmd
     from nvflare.tool.enrollment.token_service import TokenService
 
 __all__ = [
     "TokenService",
-    "def_enrollment_parser",
-    "handle_enrollment_cmd",
+    "def_token_parser",
+    "handle_token_cmd",
 ]
 
 
@@ -48,12 +48,12 @@ def __getattr__(name: str):
         from nvflare.tool.enrollment.token_service import TokenService
 
         return TokenService
-    if name == "def_enrollment_parser":
-        from nvflare.tool.enrollment.enrollment_cli import def_enrollment_parser
+    if name == "def_token_parser":
+        from nvflare.tool.enrollment.token_cli import def_token_parser
 
-        return def_enrollment_parser
-    if name == "handle_enrollment_cmd":
-        from nvflare.tool.enrollment.enrollment_cli import handle_enrollment_cmd
+        return def_token_parser
+    if name == "handle_token_cmd":
+        from nvflare.tool.enrollment.token_cli import handle_token_cmd
 
-        return handle_enrollment_cmd
+        return handle_token_cmd
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

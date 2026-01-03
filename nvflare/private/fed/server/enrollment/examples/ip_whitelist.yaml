@@ -2,11 +2,9 @@
 # Policy with optional IP-based matching for environments with predictable IPs
 #
 # Supported environments:
-#   - AWS EC2 (VPC private/public IPs)
-#   - Google Cloud Platform (GCP) VMs
-#   - Azure VMs
-#   - Oracle Cloud Infrastructure (OCI)
+#   - Cloud VMs with static IPs
 #   - On-premise data centers
+#   - Any environment with known, stable client IP addresses
 #
 # Note: source_ips is optional - omit for dynamic IP environments (K8s, NAT)
 
@@ -37,9 +35,9 @@ approval:
       match:
         site_name_pattern: "internal-*"
         source_ips:
-          - "10.0.0.0/8"        # Private range (AWS VPC, Azure VNet, on-premise)
-          - "172.16.0.0/12"     # Private range
-          - "192.168.0.0/16"    # Private range
+          - "10.0.0.0/8"        # Private range (RFC 1918)
+          - "172.16.0.0/12"     # Private range (RFC 1918)
+          - "192.168.0.0/16"    # Private range (RFC 1918)
       action: approve
 
     # Auto-approve from specific datacenter

@@ -470,10 +470,10 @@ With token-based enrollment, clients receive a generic startup kit containing:
 The startup kit does **not** contain client-specific certificates. Instead,
 the client obtains its certificate dynamically using the enrollment token.
 
-Enrollment CLI
-==============
+Token CLI
+=========
 
-Location: ``nvflare/tool/enrollment/enrollment_cli.py``
+Location: ``nvflare/tool/enrollment/token_cli.py``
 
 The CLI provides a user-friendly interface for token management.
 
@@ -482,11 +482,10 @@ Command Structure
 
 .. code-block:: text
 
-    nvflare enrollment
-    └── token
-        ├── generate    # Generate single token
-        ├── batch       # Generate multiple tokens
-        └── info        # Display token information
+    nvflare token
+    ├── generate    # Generate single token
+    ├── batch       # Generate multiple tokens
+    └── info        # Display token information
 
 Environment Variables
 ---------------------
@@ -547,7 +546,8 @@ When ``source_ips`` is specified in the policy:
 - If client doesn't provide IP and policy requires it, enrollment is **rejected**
 
 This provides protection against token theft in predictable network environments
-(AWS EC2, Azure, on-premise).
+where client IP addresses are known and stable (e.g., on-premise data centers,
+cloud VMs with static IPs).
 
 Certificate Trust
 =================
