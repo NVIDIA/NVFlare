@@ -263,6 +263,38 @@ class TestValidateToken:
         with pytest.raises(ValueError, match="does not match token pattern"):
             cert_service.validate_token(token, context)
 
+    def test_validate_token_participant_type_mismatch(self, cert_service, root_ca_key):
+        """Test that token subject_type must match context participant_type."""
+        policy = create_sample_policy()
+        # Token for client
+        token = create_jwt_token(root_ca_key, subject="site-01", subject_type=ParticipantType.CLIENT, policy=policy)
+
+        # Context says admin - should fail
+        context = EnrollmentContext(name="site-01", participant_type=ParticipantType.ADMIN)
+
+        with pytest.raises(ValueError, match="does not match enrollment type"):
+            cert_service.validate_token(token, context)
+
+    def test_validate_admin_token_with_relay_context(self, cert_service, root_ca_key):
+        """Test that admin token cannot be used for relay enrollment."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, subject="user@example.com", subject_type=ParticipantType.ADMIN, policy=policy)
+
+        context = EnrollmentContext(name="user@example.com", participant_type=ParticipantType.RELAY)
+
+        with pytest.raises(ValueError, match="does not match enrollment type"):
+            cert_service.validate_token(token, context)
+
+    def test_validate_relay_token_with_client_context(self, cert_service, root_ca_key):
+        """Test that relay token cannot be used for client enrollment."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, subject="relay-01", subject_type=ParticipantType.RELAY, policy=policy)
+
+        context = EnrollmentContext(name="relay-01", participant_type=ParticipantType.CLIENT)
+
+        with pytest.raises(ValueError, match="does not match enrollment type"):
+            cert_service.validate_token(token, context)
+
 
 class TestEvaluatePolicy:
     """Tests for policy evaluation."""
@@ -435,6 +467,60 @@ class TestSignCSR:
         # Verify cert can be loaded
         cert = x509.load_pem_x509_certificate(signed_cert, default_backend())
         assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "hospital-01"
+
+    def test_sign_csr_with_org(self, cert_service, root_ca_key):
+        """Test signing CSR includes organization in certificate."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, subject="hospital-01", subject_type=ParticipantType.CLIENT, policy=policy)
+
+        csr_data = create_csr("hospital-01")
+        context = EnrollmentContext(
+            name="hospital-01", participant_type=ParticipantType.CLIENT, org="Acme Hospital"
+        )
+
+        signed_cert = cert_service.sign_csr(csr_data=csr_data, token=token, context=context)
+
+        # Verify org is in certificate
+        cert = x509.load_pem_x509_certificate(signed_cert, default_backend())
+        org_attrs = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+        assert len(org_attrs) == 1
+        assert org_attrs[0].value == "Acme Hospital"
+
+    def test_sign_csr_admin_with_role(self, cert_service, root_ca_key):
+        """Test signing CSR for admin includes role in certificate."""
+        policy = create_sample_policy()
+        token = create_jwt_token(
+            root_ca_key, subject="user@example.com", subject_type=ParticipantType.ADMIN, policy=policy
+        )
+
+        csr_data = create_csr("user@example.com")
+        context = EnrollmentContext(
+            name="user@example.com",
+            participant_type=ParticipantType.ADMIN,
+            org="Research Org",
+            role=AdminRole.LEAD,
+        )
+
+        signed_cert = cert_service.sign_csr(csr_data=csr_data, token=token, context=context)
+
+        # Verify role is embedded (in unstructured name)
+        cert = x509.load_pem_x509_certificate(signed_cert, default_backend())
+        cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        assert cn == "user@example.com"
+
+    def test_sign_csr_relay_with_role(self, cert_service, root_ca_key):
+        """Test signing CSR for relay includes 'relay' role in certificate."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, subject="relay-01", subject_type=ParticipantType.RELAY, policy=policy)
+
+        csr_data = create_csr("relay-01")
+        context = EnrollmentContext(name="relay-01", participant_type=ParticipantType.RELAY)
+
+        signed_cert = cert_service.sign_csr(csr_data=csr_data, token=token, context=context)
+
+        # Verify cert can be loaded
+        cert = x509.load_pem_x509_certificate(signed_cert, default_backend())
+        assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "relay-01"
 
     def test_sign_csr_rejected(self, cert_service, root_ca_key):
         """Test signing CSR for rejected enrollment raises error."""
@@ -850,3 +936,108 @@ class TestPolicyApprovalScenarios:
         # Unknown - rejected
         ctx4 = EnrollmentContext(name="unknown-site", participant_type=ParticipantType.CLIENT)
         assert cert_service.evaluate_policy(token_payload, ctx4).action == ApprovalAction.REJECT
+
+
+class TestParticipantTypeValidation:
+    """Tests for participant type validation between token and enrollment context."""
+
+    def test_client_token_for_client_enrollment(self, cert_service, root_ca_key):
+        """Test client token works for client enrollment."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "site-01", ParticipantType.CLIENT, policy)
+
+        context = EnrollmentContext(name="site-01", participant_type=ParticipantType.CLIENT)
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "site-01"
+
+    def test_admin_token_for_admin_enrollment(self, cert_service, root_ca_key):
+        """Test admin token works for admin enrollment."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "user@example.com", ParticipantType.ADMIN, policy)
+
+        context = EnrollmentContext(
+            name="user@example.com", participant_type=ParticipantType.ADMIN, role=AdminRole.LEAD
+        )
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "user@example.com"
+
+    def test_relay_token_for_relay_enrollment(self, cert_service, root_ca_key):
+        """Test relay token works for relay enrollment."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "relay-01", ParticipantType.RELAY, policy)
+
+        context = EnrollmentContext(name="relay-01", participant_type=ParticipantType.RELAY)
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "relay-01"
+
+    def test_pattern_token_allows_any_participant_type(self, cert_service, root_ca_key):
+        """Test pattern token can be used for any participant type."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "*-01", "pattern", policy)
+
+        # Pattern token allows client
+        ctx1 = EnrollmentContext(name="site-01", participant_type=ParticipantType.CLIENT)
+        payload1 = cert_service.validate_token(token, ctx1)
+        assert payload1.subject == "*-01"
+
+        # Pattern token allows relay
+        ctx2 = EnrollmentContext(name="relay-01", participant_type=ParticipantType.RELAY)
+        payload2 = cert_service.validate_token(token, ctx2)
+        assert payload2.subject == "*-01"
+
+    def test_cross_type_enrollment_fails(self, cert_service, root_ca_key):
+        """Test that using wrong token type for enrollment fails."""
+        policy = create_sample_policy()
+
+        # Client token
+        client_token = create_jwt_token(root_ca_key, "site-01", ParticipantType.CLIENT, policy)
+
+        # Cannot use for admin
+        with pytest.raises(ValueError, match="does not match enrollment type"):
+            cert_service.validate_token(
+                client_token, EnrollmentContext(name="site-01", participant_type=ParticipantType.ADMIN)
+            )
+
+        # Cannot use for relay
+        with pytest.raises(ValueError, match="does not match enrollment type"):
+            cert_service.validate_token(
+                client_token, EnrollmentContext(name="site-01", participant_type=ParticipantType.RELAY)
+            )
+
+
+class TestEnrollmentContextOrg:
+    """Tests for organization handling in enrollment context."""
+
+    def test_context_with_org(self, cert_service, root_ca_key):
+        """Test enrollment context with organization."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "site-01", ParticipantType.CLIENT, policy)
+
+        context = EnrollmentContext(
+            name="site-01", participant_type=ParticipantType.CLIENT, org="Acme Corp"
+        )
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "site-01"
+
+    def test_context_without_org(self, cert_service, root_ca_key):
+        """Test enrollment context without organization."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "site-01", ParticipantType.CLIENT, policy)
+
+        context = EnrollmentContext(name="site-01", participant_type=ParticipantType.CLIENT)
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "site-01"
+
+    def test_admin_context_with_org_and_role(self, cert_service, root_ca_key):
+        """Test admin enrollment context with org and role."""
+        policy = create_sample_policy()
+        token = create_jwt_token(root_ca_key, "user@example.com", ParticipantType.ADMIN, policy)
+
+        context = EnrollmentContext(
+            name="user@example.com",
+            participant_type=ParticipantType.ADMIN,
+            org="Research Institute",
+            role=AdminRole.LEAD,
+        )
+        payload = cert_service.validate_token(token, context)
+        assert payload.subject == "user@example.com"
