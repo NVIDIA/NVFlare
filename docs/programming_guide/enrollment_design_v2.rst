@@ -22,7 +22,6 @@ distinct workflows based on deployment scale:
 2. **Auto-Scale Workflow**: For large deployments (>10 sites) or dynamic
    environments, a dedicated Certificate Service handles token-based enrollment.
 
-Key design principle: **FL Server never holds the root CA private key**.
 
 ***********************
 Goals
@@ -39,59 +38,138 @@ Non-Goals
 ***********************
 
 1. Replacing the existing provisioning system (remains for full-control scenarios)
-2. Certificate revocation (out of scope for v1)
-3. HSM integration (future enhancement)
+2. Certificate revocation (out of scope)
 
 ***********************
 Architecture Overview
 ***********************
 
-.. code-block:: text
+Key Design Principles
+=====================
 
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │                           PROJECT ADMIN                                  │
-    │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────────┐  │
-    │  │ nvflare cert    │    │ nvflare token   │    │ Certificate Service │  │
-    │  │ init            │    │ generate        │    │ (HTTP/REST)         │  │
-    │  │ server          │    │ batch           │    │                     │  │
-    │  │ client          │    │ info            │    │ Holds rootCA.key    │  │
-    │  └────────┬────────┘    └────────┬────────┘    └──────────┬──────────┘  │
-    │           │                      │                        │             │
-    └───────────┼──────────────────────┼────────────────────────┼─────────────┘
-                │                      │                        │
-    ════════════╪══════════════════════╪════════════════════════╪═════════════
-                │                      │                        │
-                ▼                      ▼                        ▼
-    ┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
-    │   Manual Flow     │    │  Auto-Scale Flow  │    │  Auto-Scale Flow  │
-    │                   │    │                   │    │                   │
-    │ Email/deliver:    │    │ Distribute:       │    │ HTTP Enrollment:  │
-    │ - server.crt      │    │ - token only      │    │ - Validate token  │
-    │ - server.key      │    │ - rootCA.pem      │    │ - Approve policy  │
-    │ - rootCA.pem      │    │                   │    │ - Sign CSR        │
-    │                   │    │                   │    │ - Return cert     │
-    └─────────┬─────────┘    └─────────┬─────────┘    └─────────┬─────────┘
-              │                        │                        │
-              ▼                        ▼                        ▼
-    ┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
-    │   Site Operator   │    │   Site Operator   │    │   FL Server       │
-    │                   │    │                   │    │                   │
-    │ nvflare package   │    │ nvflare package   │    │ NO rootCA.key     │
-    │ Copy certs        │    │ Startup → CSR     │    │ Just FL workloads │
-    │ Start             │    │ → Cert Service    │    │                   │
-    └───────────────────┘    └───────────────────┘    └───────────────────┘
+1. **Root CA private key (rootCA.key) never leaves Project Admin infrastructure**
+2. **Certificate Service is the single trust anchor** for auto-scale workflow
+3. **Eliminate startup kit provision and distribution** to simplify the workflow
+
+Workflow Comparison
+===================
+
+.. list-table::
+   :widths: 18 27 27 28
+   :header-rows: 1
+
+   * - Aspect
+     - Current (Provision)
+     - Manual (CLI)
+     - Auto-Scale
+   * - Target
+     - Any size
+     - 5+ sites
+     - 10+ sites or dynamic
+   * - Infrastructure
+     - None
+     - None
+     - Certificate Service
+   * - Project Admin tools
+     - ``nvflare provision``
+     - ``nvflare cert``, ``nvflare package``
+     - Certificate Service
+   * - What's distributed
+     - Complete startup kits
+     - Signed certs only
+     - Token + Cert Service URL
+   * - Startup kit generation
+     - By Project Admin
+     - By each site locally
+     - By each site locally
+   * - Private keys generated
+     - At Project Admin site
+     - At Project Admin site
+     - At each site locally ✓
+   * - Private keys in transit
+     - Yes (in startup kit)
+     - Yes (via email/USB)
+     - **Never** ✓
+   * - rootCA.pem
+     - In startup kit
+     - Distributed with certs
+     - Downloaded from Cert Service
+   * - rootCA.key
+     - At Project Admin
+     - At Project Admin
+     - At Cert Service
+   * - Adding new sites
+     - Provision + distribute startup kit
+     - Create cert + deliver manually
+     - Generate token only ✓
+   * - Setup complexity
+     - Low
+     - Low
+     - Medium (Cert Service) 
+
+What Gets Distributed
+=====================
+
+.. list-table::
+   :widths: 15 30 30 25
+   :header-rows: 1
+
+   * - Workflow
+     - What Project Admin Distributes
+     - Private Keys Transit
+     - rootCA.key Location
+   * - **Current (Provision)**
+     - Complete startup kits (certs + configs)
+     - Yes (in kit)
+     - Project Admin
+   * - **Manual (CLI)**
+     - Signed certs + rootCA.pem only
+     - Yes (email/USB)
+     - Project Admin
+   * - **Auto-Scale**
+     - Token + Cert Service URL only
+     - **Never** ✓
+     - Cert Service
+
+**Key points**:
+
+- **rootCA.pem** (public certificate): Distributed to all sites for verification
+- **rootCA.key** (private key): NEVER leaves Project Admin / Cert Service
+- **Auto-Scale advantage**: Private keys generated locally, never transmitted
+
+Distribution per site:
+
+.. list-table::
+   :widths: 12 30 30 28
+   :header-rows: 1
+
+   * - Site Type
+     - Current (Provision)
+     - Manual (CLI)
+     - Auto-Scale
+   * - **Server**
+     - Full startup kit
+     - server.crt, server.key, rootCA.pem
+     - Same as Manual (or via Cert Service)
+   * - **Client**
+     - Full startup kit
+     - client.crt, client.key, rootCA.pem
+     - Token → enrolls → client.crt, client.key, rootCA.pem
 
 ***********************
 Workflow 1: Manual
 ***********************
 
+**CLI Only - No Certificate Service Required**
+
 Target Audience
 ===============
 
-- Small teams (5-10 sites)
+- Teams with 5+ sites
 - Proof-of-concept deployments
 - Air-gapped environments
 - Maximum control over certificate distribution
+- **No additional infrastructure** - just CLI tools
 
 Process Overview
 ================
@@ -163,20 +241,22 @@ Security Properties (Manual)
 
    * - Property
      - Status
-   * - Root CA key exposure
-     - Project Admin only ✓
-   * - Private keys in transit
+   * - rootCA.key (private)
+     - Project Admin only - NEVER distributed ✓
+   * - rootCA.pem (public)
+     - Distributed to all sites ✓
+   * - Site private keys in transit
      - Yes (via secure channel)
    * - Who can issue certs
      - Project Admin only ✓
-   * - FL Server has root key
-     - No ✓
-   * - Blast radius if compromised
+   * - Blast radius if site compromised
      - Individual site only ✓
 
 ***********************
 Workflow 2: Auto-Scale
 ***********************
+
+**Requires Certificate Service Infrastructure**
 
 Target Audience
 ===============
@@ -185,6 +265,7 @@ Target Audience
 - Dynamic environments (K8s, cloud auto-scaling)
 - Sites that join/leave frequently
 - Enterprise deployments requiring audit trails
+- Organizations willing to deploy Certificate Service
 
 Architecture
 ============
@@ -192,63 +273,76 @@ Architecture
 .. code-block:: text
 
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │                        INFRASTRUCTURE                                    │
+    │                  PROJECT ADMIN INFRASTRUCTURE                            │
     │                                                                          │
-    │   ┌─────────────────────────┐         ┌─────────────────────────┐       │
-    │   │   Certificate Service   │         │      FL Server          │       │
-    │   │   (Separate Process)    │         │   (No rootCA.key)       │       │
-    │   │                         │         │                         │       │
-    │   │ ┌─────────────────────┐ │         │ ┌─────────────────────┐ │       │
-    │   │ │ Token Validator     │ │         │ │ FL Training Jobs    │ │       │
-    │   │ ├─────────────────────┤ │         │ ├─────────────────────┤ │       │
-    │   │ │ Policy Engine       │ │         │ │ Client Management   │ │       │
-    │   │ ├─────────────────────┤ │         │ ├─────────────────────┤ │       │
-    │   │ │ CSR Signer          │ │         │ │ Admin Commands      │ │       │
-    │   │ │ (holds rootCA.key)  │ │         │ └─────────────────────┘ │       │
-    │   │ └─────────────────────┘ │         │                         │       │
-    │   │                         │         │ server.crt, server.key  │       │
-    │   │ HTTP/REST API           │         │ rootCA.pem (verify)     │       │
-    │   │ Port: 8443              │         │                         │       │
-    │   └────────────┬────────────┘         └─────────────────────────┘       │
-    │                │                                   ▲                     │
-    └────────────────┼───────────────────────────────────┼─────────────────────┘
-                     │                                   │
-         ┌───────────┴───────────┐           ┌───────────┴───────────┐
-         │   HTTPS Enrollment    │           │   gRPC/CellNet FL     │
-         │   (Certificate)       │           │   (Training)          │
-         └───────────┬───────────┘           └───────────┬───────────┘
-                     │                                   │
-    ┌────────────────┴───────────────────────────────────┴────────────────────┐
-    │                              CLIENT SITE                                 │
+    │   ┌─────────────────────────────────────────────────────────────────┐   │
+    │   │                    Certificate Service                           │   │
+    │   │                                                                  │   │
+    │   │  TLS: Public CA cert (Let's Encrypt) ← Sites verify via std PKI │   │
+    │   │  Signing: FLARE rootCA.key ← Never leaves this service          │   │
+    │   │                                                                  │   │
+    │   │  ┌─────────────────────────────────────────────────────────┐    │   │
+    │   │  │ GET  /api/v1/ca-cert   → Returns rootCA.pem             │    │   │
+    │   │  │ POST /api/v1/enroll    → Validates token, signs CSR     │    │   │
+    │   │  └─────────────────────────────────────────────────────────┘    │   │
+    │   │                                                                  │   │
+    │   └─────────────────────────────────────────────────────────────────┘   │
     │                                                                          │
-    │   1. Start with token                  2. After enrollment               │
-    │   ┌─────────────────────────┐          ┌─────────────────────────┐      │
-    │   │ No client.crt/key yet   │    ──►   │ Has client.crt/key      │      │
-    │   │ Has: token, rootCA.pem  │          │ Connects to FL Server   │      │
-    │   │                         │          │                         │      │
-    │   │ → Generate key pair     │          │ → Participates in FL    │      │
-    │   │ → Send CSR to Cert Svc  │          │                         │      │
-    │   │ → Receive signed cert   │          │                         │      │
-    │   └─────────────────────────┘          └─────────────────────────┘      │
-    │                                                                          │
-    └──────────────────────────────────────────────────────────────────────────┘
+    └─────────────────────────────────────────────────────────────────────────┘
+                                       │
+                     HTTPS (verified by public CA - no rootCA.pem needed!)
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         │                             │                             │
+         ▼                             ▼                             ▼
+    ┌─────────────┐           ┌─────────────────┐           ┌─────────────┐
+    │  FL Server  │           │  Client Site    │           │  Client Site│
+    │             │           │                 │           │             │
+    │ Gets from   │           │ 1. Connect to   │           │ Same flow   │
+    │ Cert Svc:   │           │    Cert Service │           │             │
+    │ • rootCA.pem│◄─ mTLS ──►│ 2. Download     │           │             │
+    │ • server.crt│           │    rootCA.pem   │           │             │
+    │             │           │ 3. Send CSR     │           │             │
+    │ NO root key!│           │ 4. Get cert     │           │             │
+    └─────────────┘           └─────────────────┘           └─────────────┘
+
+**Key insight**: Sites verify Certificate Service using standard public PKI
+(Let's Encrypt, etc.), then download FLARE's rootCA.pem from the service.
+No manual rootCA.pem distribution needed!
 
 Certificate Service
 ===================
 
 A standalone HTTP service that handles enrollment. **Separate from FL Server**.
 
+**Two Certificates:**
+
+1. **Public TLS cert** (Let's Encrypt, DigiCert, etc.)
+   - Used for HTTPS
+   - Sites can verify without any prior trust setup
+   - Solves the bootstrap problem
+
+2. **FLARE Root CA** (rootCA.pem + rootCA.key)
+   - Used for signing FL participant certificates
+   - Private key never leaves Certificate Service
+   - Public cert served via API endpoint
+
 **Key Responsibilities:**
 
-1. Token validation (JWT verification)
-2. Policy evaluation (site name patterns, approval rules)
-3. CSR signing (holds rootCA.key)
-4. Audit logging
+1. Serve rootCA.pem (GET /api/v1/ca-cert)
+2. Token validation (JWT verification)
+3. Policy evaluation (site name patterns, approval rules)
+4. CSR signing (holds rootCA.key)
+5. Audit logging
 
 **API Endpoints:**
 
 .. code-block:: text
 
+    GET /api/v1/ca-cert
+    └── Response:
+        └── 200: PEM-encoded rootCA.pem
+    
     POST /api/v1/enroll
     ├── Request:
     │   ├── token: JWT enrollment token
@@ -256,7 +350,7 @@ A standalone HTTP service that handles enrollment. **Separate from FL Server**.
     │   └── metadata: { site_name, org, ... }
     │
     └── Response:
-        ├── 200: { certificate: PEM-encoded signed cert }
+        ├── 200: { certificate: PEM-encoded signed cert, ca_cert: rootCA.pem }
         ├── 401: Invalid/expired token
         ├── 403: Policy rejection
         └── 500: Server error
@@ -278,17 +372,16 @@ Process Overview (Auto-Scale)
     1. Initialize root CA
        nvflare cert init -n "Project" -o ./ca
     
-    2. Generate server certificate
-       nvflare cert server -n server1 -c ./ca -o ./server_certs
-    
-    3. Deploy Certificate Service
+    2. Deploy Certificate Service (with public TLS cert)
+       - Obtain TLS cert from public CA (Let's Encrypt, etc.)
        - Configure with rootCA.pem + rootCA.key
        - Configure approval policy
-       - Start on https://cert-service:8443
+       - Start on https://cert-service.mycompany.com
     
-    4. Deploy FL Server
-       - Configure with server.crt, server.key, rootCA.pem
-       - NO rootCA.key on FL Server
+    3. Enroll FL Server via Certificate Service
+       - Server runs: nvflare package -n server1 -e grpc://localhost:8002 -t server
+       - Server gets server.crt via enrollment (or manual cert generation)
+       - Server downloads rootCA.pem from Certificate Service
     
     Phase 2: Generate Tokens (Project Admin)
     ────────────────────────────────────────
@@ -297,31 +390,48 @@ Process Overview (Auto-Scale)
     nvflare token generate -s hospital-2 -c ./ca -o hospital2.token
     ...
     
-    Distribute to sites:
-    - rootCA.pem (for TLS verification)
-    - token file (for enrollment)
-    - Certificate Service URL
+    Distribute to sites (minimal!):
+    ┌────────────────────────────────────────────────────────┐
+    │  ONLY TWO THINGS:                                      │
+    │  1. Token (unique per site)                            │
+    │  2. Certificate Service URL                            │
+    │                                                        │
+    │  NO rootCA.pem distribution - downloaded automatically │
+    └────────────────────────────────────────────────────────┘
     
     Phase 3: Site Enrollment (Site Operator)
     ────────────────────────────────────────
     
     1. Generate startup kit
-       nvflare package -n hospital-1 -e grpc://fl-server:8002
+       nvflare package -n hospital-1 \
+           -e grpc://fl-server.mycompany.com:8002 \
+           --cert-service https://cert-service.mycompany.com
     
-    2. Copy rootCA.pem
-       cp rootCA.pem hospital-1/startup/
+    2. Configure enrollment token
+       export NVFLARE_ENROLLMENT_TOKEN="<token_from_admin>"
     
-    3. Configure enrollment
-       export NVFLARE_ENROLLMENT_TOKEN="<token>"
-       export NVFLARE_CERT_SERVICE_URL="https://cert-service:8443"
-    
-    4. Start client (auto-enrollment)
+    3. Start client (auto-enrollment happens automatically)
        cd hospital-1 && ./startup/start.sh
        
-       → Generates key pair locally
-       → Sends CSR to Certificate Service
-       → Receives signed certificate
-       → Connects to FL Server
+       Startup flow:
+       ┌─────────────────────────────────────────────────────┐
+       │ 1. Connect to Certificate Service                   │
+       │    (verified by public CA - Let's Encrypt, etc.)    │
+       │                                                     │
+       │ 2. Download rootCA.pem                              │
+       │    GET https://cert-service/api/v1/ca-cert          │
+       │                                                     │
+       │ 3. Generate key pair locally                        │
+       │    (private key never leaves this machine)          │
+       │                                                     │
+       │ 4. Send CSR + token to Certificate Service          │
+       │    POST https://cert-service/api/v1/enroll          │
+       │                                                     │
+       │ 5. Receive signed certificate                       │
+       │                                                     │
+       │ 6. Connect to FL Server (verified by rootCA.pem)    │
+       │    Ready for federated learning!                    │
+       └─────────────────────────────────────────────────────┘
 
 Security Properties (Auto-Scale)
 ================================
@@ -332,14 +442,16 @@ Security Properties (Auto-Scale)
 
    * - Property
      - Status
-   * - Root CA key exposure
-     - Certificate Service only ✓
-   * - Private keys in transit
+   * - rootCA.key (private)
+     - Certificate Service only - NEVER distributed ✓
+   * - rootCA.pem (public)
+     - Downloaded from Cert Service during enrollment ✓
+   * - Site private keys in transit
      - Never - generated locally ✓
-   * - FL Server has root key
-     - No ✓
    * - Who can issue certs
      - Certificate Service only ✓
+   * - Bootstrap trust
+     - Public CA (Let's Encrypt) for Cert Service TLS ✓
    * - Separation of concerns
      - FL workloads vs CA operations ✓
    * - Audit trail
@@ -547,58 +659,47 @@ Choosing the Right Workflow
 ===========================
 
 .. list-table::
-   :widths: 20 40 40
+   :widths: 18 27 27 28
    :header-rows: 1
 
    * - Criteria
-     - Use Manual Workflow
-     - Use Auto-Scale Workflow
+     - Current (Provision)
+     - Manual (CLI)
+     - Auto-Scale
    * - Number of sites
-     - 5-10
-     - 10+
+     - Any
+     - 5+ (static)
+     - 10+ or dynamic
    * - Site dynamics
-     - Static, known upfront
-     - Dynamic, sites join/leave
+     - Static (need to distribute startup kit)
+     - Static (need to deliver certs manually)
+     - Dynamic (self-service enrollment) ✓
    * - Infrastructure
-     - Minimal
-     - Certificate Service required
-   * - Automation need
+     - None
+     - None
+     - Certificate Service
+   * - Startup kit creation
+     - Centralized
+     - Distributed
+     - Distributed
+   * - Private key security
+     - Keys in transit
+     - Keys in transit
+     - **Keys never transit** ✓
+   * - Automation
      - Low
-     - High
-   * - Audit requirements
-     - Basic
-     - Comprehensive
+     - Low
+     - High ✓
+   * - Audit trail
+     - Manual
+     - Manual
+     - Automated ✓
 
-***********************
-Implementation Phases
-***********************
+**When to use each:**
 
-Phase 1: Manual Workflow (Current Sprint)
-=========================================
-
-- [x] ``nvflare cert init`` - Initialize root CA
-- [x] ``nvflare cert server`` - Generate server certificate
-- [ ] ``nvflare cert client`` - Generate client certificate (NEW)
-- [x] ``nvflare package`` - Generate startup kit (with server support)
-- [ ] Update documentation
-
-Phase 2: Auto-Scale Workflow (Future)
-=====================================
-
-- [ ] Certificate Service design and implementation
-- [ ] HTTP enrollment endpoint
-- [ ] Policy engine integration
-- [ ] Client auto-enrollment at startup
-- [ ] Dashboard integration (optional)
-- [ ] Audit logging
-
-Phase 3: Enhancements (Future)
-==============================
-
-- [ ] Certificate rotation
-- [ ] Revocation support
-- [ ] HSM integration
-- [ ] Multi-CA support (intermediate CAs)
+- **Current (Provision)**: Full control, all participants known upfront, comfortable with existing workflow
+- **Manual (CLI)**: Want to eliminate startup kit distribution, sites generate own packages
+- **Auto-Scale**: Large deployments, dynamic enrollment, need audit trails, want maximum security (keys never transit)
 
 ***********************
 Security Considerations
