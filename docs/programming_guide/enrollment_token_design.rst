@@ -484,13 +484,139 @@ Generic Startup Kit
 
 With token-based enrollment, clients receive a generic startup kit containing:
 
-- ``rootCA.pem`` - Root CA certificate (for server verification)
 - ``fed_client.json`` - Client configuration
 - ``resources.json`` - Resource configuration
 - ``privacy.json`` - Privacy settings
+- ``start.sh``, ``stop_fl.sh`` - Startup scripts
 
-The startup kit does **not** contain client-specific certificates. Instead,
-the client obtains its certificate dynamically using the enrollment token.
+The startup kit does **not** contain client-specific certificates (``client.crt``,
+``client.key``) or signatures. Instead, the client obtains its certificate
+dynamically using the enrollment token.
+
+.. note::
+
+   You must also copy ``rootCA.pem`` from the provisioned workspace to the
+   startup kit for TLS server verification.
+
+Cert CLI (``nvflare cert``)
+---------------------------
+
+Location: ``nvflare/tool/enrollment/cert_cli.py``
+
+The ``nvflare cert`` command generates root CA and server certificates for
+token-based enrollment workflows.
+
+**Subcommands:**
+
+- ``init``: Initialize a root CA for the project
+- ``server``: Generate a server certificate signed by the root CA
+
+**Command Structure:**
+
+.. code-block:: text
+
+    nvflare cert
+    ├── init            # Initialize root CA
+    │   ├── -n/--name       Project/CA name
+    │   ├── -o/--output     Output directory
+    │   └── --valid_days    Certificate validity
+    └── server          # Generate server certificate
+        ├── -n/--name       Server name (required)
+        ├── -c/--ca_path    Path to CA directory (required)
+        ├── -o/--output     Output directory
+        ├── --org           Organization name
+        ├── --host          Default host name
+        ├── --additional_hosts  Additional SANs
+        └── --valid_days    Certificate validity
+
+**Key Features:**
+
+- **Standalone CA generation**: Create root CA without full provisioning
+- **Server certificate generation**: Sign server certs with root CA
+- **SAN support**: Add multiple host names/IPs to server certificate
+- **Compatible with TokenService**: Output format works with ``nvflare token``
+
+**Output Structure (init):**
+
+.. code-block:: text
+
+    output_dir/
+    ├── rootCA.pem       # Root CA certificate
+    ├── rootCA.key       # Root CA private key
+    └── state/
+        └── cert.json    # State file for token generation
+
+**Output Structure (server):**
+
+.. code-block:: text
+
+    output_dir/
+    ├── server.crt       # Server certificate
+    ├── server.key       # Server private key
+    └── rootCA.pem       # Root CA certificate (copy)
+
+Package CLI (``nvflare package``)
+---------------------------------
+
+Location: ``nvflare/lighter/startup_kit.py``
+
+The ``nvflare package`` command generates generic startup kits for token-based
+enrollment. It reuses the existing provisioning infrastructure but filters out
+``CertBuilder`` and ``SignatureBuilder``.
+
+**Two Modes of Operation:**
+
+1. **Project File Mode** (``-p``): Package ALL participants from a project.yml
+2. **Single Participant Mode**: Create one package using CLI arguments
+
+**Command Structure:**
+
+.. code-block:: text
+
+    nvflare package
+    ├── -p/--project_file   Project YAML file (packages ALL participants)
+    ├── -w/--workspace      Output workspace directory
+    │
+    │   # Single participant mode (when no -p):
+    ├── -n/--name           Participant name (required if no -p)
+    ├── -e/--endpoint       Connection URI (required if no -p)
+    ├── -t/--type           Package type: server, client (default), relay, admin
+    ├── --org               Organization name
+    ├── --role              Role for admin type
+    ├── --listening_host    Listening host for relay
+    └── --listening_port    Listening port for relay
+
+**Key Features:**
+
+- **Reuses provisioner**: Uses the same ``Provisioner`` class as ``nvflare provision``
+- **Filters builders**: Automatically removes ``CertBuilder`` and ``SignatureBuilder``
+- **Preserves custom builders**: Keeps any custom builders from project.yml
+- **Supports all participant types**: Client, relay, and admin packages
+- **Two modes**: Batch generation from project.yml or single package creation
+
+**Implementation:**
+
+.. code-block:: python
+
+    def package_from_project(project_file, workspace):
+        """Package all participants from a project.yml without certificates."""
+        project_dict = load_yaml(project_file)
+        
+        # Filter out CertBuilder and SignatureBuilder
+        project_dict["builders"] = filter_builders(project_dict.get("builders", []))
+        
+        # Use existing provisioner logic
+        project = prepare_project(project_dict)
+        builders = prepare_builders(project_dict)
+        provisioner = Provisioner(workspace, builders)
+        ctx = provisioner.provision(project)
+        return ctx.get_result_location()
+
+    def generate_single_package(name, participant_type, endpoint_info, ...):
+        """Generate a single participant package without certificates."""
+        # Build minimal project_dict from CLI args
+        # Filter builders, run provisioner
+        ...
 
 Token CLI
 =========

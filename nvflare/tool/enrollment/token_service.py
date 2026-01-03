@@ -74,7 +74,11 @@ class TokenService:
         """Initialize the token service.
 
         Args:
-            root_ca_path: Path to directory containing rootCA.pem and rootCA.key
+            root_ca_path: Path to the provisioned workspace directory.
+                          This should be the directory created by 'nvflare provision'.
+                          The service will look for the root CA in:
+                          1. state/cert.json (provisioning state file)
+                          2. rootCA.pem and rootCA.key files (fallback)
 
         Note:
             Uses the same root CA as CertService for consistent key pair.
@@ -82,12 +86,47 @@ class TokenService:
         """
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # Load root CA certificate and private key using lighter utils
-        cert_file = os.path.join(root_ca_path, "rootCA.pem")
-        key_file = os.path.join(root_ca_path, "rootCA.key")
+        # Try to load from state/cert.json first (created by provisioning)
+        state_file = os.path.join(root_ca_path, "state", "cert.json")
+        if os.path.exists(state_file):
+            self._load_from_state_file(state_file)
+        else:
+            # Fallback: look for rootCA.pem and rootCA.key directly
+            cert_file = os.path.join(root_ca_path, "rootCA.pem")
+            key_file = os.path.join(root_ca_path, "rootCA.key")
 
-        self.root_cert = load_crt(cert_file)
-        self.signing_key = load_private_key_file(key_file)
+            if not os.path.exists(cert_file):
+                raise FileNotFoundError(
+                    f"Root CA not found. Expected either:\n"
+                    f"  - {state_file} (from 'nvflare provision')\n"
+                    f"  - {cert_file} and {key_file}"
+                )
+
+            self.root_cert = load_crt(cert_file)
+            self.signing_key = load_private_key_file(key_file)
+            self.issuer = _get_cert_cn(self.root_cert)
+
+    def _load_from_state_file(self, state_file: str):
+        """Load root CA certificate and key from provisioning state file."""
+        import json
+
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.x509 import load_pem_x509_certificate
+
+        with open(state_file, "r") as f:
+            state = json.load(f)
+
+        root_cert_pem = state.get("root_cert")
+        root_key_pem = state.get("root_pri_key")
+
+        if not root_cert_pem or not root_key_pem:
+            raise ValueError(f"Invalid state file: missing root_cert or root_pri_key in {state_file}")
+
+        self.root_cert = load_pem_x509_certificate(root_cert_pem.encode(), default_backend())
+        self.signing_key = serialization.load_pem_private_key(
+            root_key_pem.encode(), password=None, backend=default_backend()
+        )
         self.issuer = _get_cert_cn(self.root_cert)
 
     def generate_token(
