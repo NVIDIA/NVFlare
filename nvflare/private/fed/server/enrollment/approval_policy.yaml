@@ -14,7 +14,7 @@
 #
 # Match Conditions:
 #   - site_name_pattern: Wildcard pattern (required)
-#   - source_ips: Optional CIDR ranges (for AWS EC2, static IP environments)
+#   - source_ips: Optional CIDR ranges (for static IP environments)
 
 # ==============================================================================
 # EXAMPLE 1: Auto-Approve All (Development/Simulation)
@@ -27,15 +27,15 @@
 #       action: approve
 
 # ==============================================================================
-# EXAMPLE 2: With Optional IP Matching (AWS EC2)
+# EXAMPLE 2: With Optional IP Matching (Static IP Environments)
 # ==============================================================================
 # approval:
 #   method: policy
 #   rules:
-#     - name: "aws-vpc-sites"
+#     - name: "datacenter-sites"
 #       match:
-#         site_name_pattern: "aws-*"
-#         source_ips: ["10.0.0.0/8", "172.31.0.0/16"]  # AWS VPC ranges
+#         site_name_pattern: "dc-*"
+#         source_ips: ["10.0.0.0/8", "172.16.0.0/12"]  # Private ranges
 #       action: approve
 
 # ==============================================================================
