@@ -71,11 +71,8 @@ Usage
 
 .. code-block::
 
-    usage: nvflare token generate [-h] -s SUBJECT [-c CA_PATH] [-p POLICY]
-                                  [-t {client,admin,relay,pattern}]
-                                  [-v VALIDITY] [-r ROLES [ROLES ...]]
-                                  [--source_ips SOURCE_IPS [SOURCE_IPS ...]]
-                                  [-o OUTPUT]
+    usage: nvflare token generate [-h] -s SUBJECT [--user | --relay]
+                                  [-c CA_PATH] [-p POLICY] [-r ROLE] [-o OUTPUT]
 
 Options
 =======
@@ -87,21 +84,35 @@ Options
    * - Option
      - Description
    * - ``-s, --subject`` (required)
-     - Subject identifier: site name, user email, or pattern (e.g., ``hospital-*``)
+     - Subject identifier: site name or user email
+   * - ``--user``
+     - Generate a user/admin token (for FLARE Console users). Default role: ``lead``
+   * - ``--relay``
+     - Generate a relay node token (for hierarchical FL)
    * - ``-c, --ca_path``
      - Path to CA directory (or set ``NVFLARE_CA_PATH``)
    * - ``-p, --policy``
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``, uses default if not set)
-   * - ``-t, --type``
-     - Subject type: ``client`` (default), ``admin``, ``relay``, or ``pattern``
-   * - ``-v, --validity``
-     - Token validity duration (e.g., ``7d``, ``24h``, ``30m``). Defaults to policy setting.
-   * - ``-r, --roles``
-     - Roles for admin tokens (e.g., ``org_admin researcher``)
-   * - ``--source_ips``
-     - Source IP restrictions in CIDR format (e.g., ``10.0.0.0/8``)
+   * - ``-r, --role``
+     - Role for user tokens: ``lead`` (default), ``member``, or ``org_admin``
    * - ``-o, --output``
      - Output file to save token (prints to stdout if not specified)
+
+Token Types
+===========
+
+.. list-table::
+   :widths: 20 80
+   :header-rows: 1
+
+   * - Type
+     - Description
+   * - **Client** (default)
+     - FL client site (leaf node). Used for hospital sites, research centers, etc.
+   * - **User** (``--user``)
+     - FLARE Console user (Admin Client). Role embedded in certificate for authorization.
+   * - **Relay** (``--relay``)
+     - Relay node for hierarchical FL deployments.
 
 Examples
 ========
@@ -110,38 +121,36 @@ Examples
 
 .. code-block:: shell
 
-    nvflare token generate -s site-1 -c /path/to/ca
+    nvflare token generate -s hospital-1 -c /path/to/ca
 
 **With Environment Variables:**
 
 .. code-block:: shell
 
     export NVFLARE_CA_PATH=/path/to/ca
-    nvflare token generate -s site-1
+    nvflare token generate -s hospital-1
 
-**Generate an admin token with roles:**
-
-.. code-block:: shell
-
-    nvflare token generate -s admin@example.com -t admin -r org_admin researcher
-
-**Generate a pattern token (matches multiple sites):**
+**Generate a user token (for FLARE Console):**
 
 .. code-block:: shell
 
-    nvflare token generate -s "hospital-*" -t pattern
+    # Default role is "lead"
+    nvflare token generate -s admin@example.com --user
 
-**Generate token with IP restrictions:**
+    # Specify a different role
+    nvflare token generate -s researcher@example.com --user -r member
+
+**Generate a relay token (for hierarchical FL):**
 
 .. code-block:: shell
 
-    nvflare token generate -s site-1 --source_ips 10.0.0.0/8 192.168.0.0/16
+    nvflare token generate -s relay-1 --relay
 
 **Save token to file:**
 
 .. code-block:: shell
 
-    nvflare token generate -s site-1 -o enrollment_token.txt
+    nvflare token generate -s hospital-1 -o enrollment_token.txt
 
 ***********************
 Batch Generate Tokens
@@ -156,8 +165,7 @@ Usage
 
     usage: nvflare token batch [-h] (-n COUNT | --names NAMES [NAMES ...])
                                -o OUTPUT [-c CA_PATH] [-p POLICY]
-                               [--prefix PREFIX] [-t {client,admin,relay}]
-                               [-v VALIDITY]
+                               [--prefix PREFIX] [--user | --relay] [-r ROLE]
 
 Options
 =======
@@ -180,15 +188,17 @@ Options
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``)
    * - ``--prefix``
      - Prefix for auto-generated names when using ``--count`` (default: ``client``)
-   * - ``-t, --type``
-     - Subject type for all tokens (default: ``client``)
-   * - ``-v, --validity``
-     - Token validity duration (e.g., ``7d``, ``24h``)
+   * - ``--user``
+     - Generate user/admin tokens for all subjects
+   * - ``--relay``
+     - Generate relay tokens for all subjects
+   * - ``-r, --role``
+     - Role for user tokens (default: ``lead``)
 
 Examples
 ========
 
-**Generate 10 tokens with auto-numbered names:**
+**Generate 10 client tokens with auto-numbered names:**
 
 .. code-block:: shell
 
@@ -202,11 +212,17 @@ This creates tokens for: ``hospital-1``, ``hospital-2``, ..., ``hospital-10``
 
     nvflare token batch --names site-a site-b site-c -o tokens.csv
 
-**Generate admin tokens in batch:**
+**Generate user tokens in batch:**
 
 .. code-block:: shell
 
-    nvflare token batch --names admin1@org.com admin2@org.com -t admin -o admin_tokens.csv
+    nvflare token batch --names user1@org.com user2@org.com --user -o user_tokens.csv
+
+**Generate relay tokens in batch:**
+
+.. code-block:: shell
+
+    nvflare token batch -n 3 --prefix relay --relay -o relay_tokens.csv
 
 ***********************
 Inspect Token
@@ -301,10 +317,10 @@ default policy is used:
 
     user:
       allowed_roles:
-        - researcher
+        - lead
+        - member
         - org_admin
-        - project_admin
-      default_role: researcher
+      default_role: lead
 
     approval:
       method: policy
@@ -338,9 +354,10 @@ For production deployments, create a custom policy file:
 
     user:
       allowed_roles:
-        - researcher
+        - lead
+        - member
         - org_admin
-      default_role: researcher
+      default_role: lead
 
     approval:
       method: policy
@@ -448,11 +465,14 @@ Using the root CA from provisioning, generate tokens for clients.
 
 .. code-block:: shell
 
-    # Generate a single token
+    # Generate a single client token
     nvflare token generate -s hospital-1
 
-    # Or generate batch tokens for multiple clients
+    # Generate batch tokens for multiple clients
     nvflare token batch -n 10 --prefix hospital -o hospital_tokens.csv
+
+    # Generate user tokens for admin console users
+    nvflare token generate -s admin@hospital.org --user -r lead
 
 **Step 3: Securely distribute tokens**
 
@@ -586,11 +606,9 @@ Solution: Either set the environment variable or provide the ``-c`` option:
 Token Inspection Shows Expired
 ==============================
 
-If a token shows as expired when inspecting, generate a new token with a longer validity:
-
-.. code-block:: shell
-
-    nvflare token generate -s site-1 -v 30d
+If a token shows as expired when inspecting, generate a new token. Token validity is controlled
+by the policy file (default: 7 days). To use a longer validity, create a custom policy with
+a longer ``token.validity`` setting.
 
 Client Enrollment Fails
 =======================

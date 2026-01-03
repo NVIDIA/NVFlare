@@ -39,7 +39,7 @@ from cryptography.x509.oid import NameOID
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ParticipantType
+from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
 from nvflare.lighter.utils import Identity, generate_cert, load_crt, load_private_key_file, serialize_cert
 
 
@@ -91,6 +91,7 @@ class EnrollmentContext:
 
     name: str
     participant_type: str = ParticipantType.CLIENT
+    org: Optional[str] = None
     role: Optional[str] = None
     source_ip: Optional[str] = None
 
@@ -173,6 +174,7 @@ class CertService:
             enrollment_token = request.get_header("enrollment_token")
             identity_name = request.get_header("identity")
             participant_type = request.get_header("participant_type", ParticipantType.CLIENT)
+            org = request.get_header("org")
             role = request.get_header("role")
             source_ip = request.get_header("source_ip")
 
@@ -186,9 +188,19 @@ class CertService:
             if participant_type not in DEFINED_PARTICIPANT_TYPES:
                 return self._error_response(f"Invalid participant_type: {participant_type}", ReturnCode.INVALID_REQUEST)
 
-            # Validate role if provided
-            if role and role not in DEFINED_ROLES:
-                return self._error_response(f"Invalid role: {role}", ReturnCode.INVALID_REQUEST)
+            # Validate and default role for admin/user tokens
+            if participant_type == ParticipantType.ADMIN:
+                # Admin tokens require a role - default to "lead" if not provided
+                if not role:
+                    role = AdminRole.LEAD
+                elif role not in DEFINED_ROLES:
+                    return self._error_response(f"Invalid role: {role}", ReturnCode.INVALID_REQUEST)
+            elif role:
+                # Role is only valid for admin tokens
+                return self._error_response(
+                    f"Role is only valid for user tokens, not {participant_type}",
+                    ReturnCode.INVALID_REQUEST
+                )
 
             # Get CSR data from payload
             csr_data = request.payload
@@ -203,6 +215,7 @@ class CertService:
             context = EnrollmentContext(
                 name=identity_name,
                 participant_type=participant_type,
+                org=org,
                 role=role,
                 source_ip=source_ip,
             )
@@ -301,15 +314,25 @@ class CertService:
     def _validate_token_for_context(self, token: TokenPayload, context: EnrollmentContext):
         """Validate token is applicable to the enrollment context.
 
-        Checks name matches token subject (exact or pattern).
+        Validates:
+        1. Token subject_type matches enrollment participant_type
+        2. Name matches token subject (exact or pattern)
         """
+        # Validate participant type matches token type
+        if token.subject_type != "pattern":
+            if token.subject_type != context.participant_type:
+                raise ValueError(
+                    f"Token type '{token.subject_type}' does not match "
+                    f"enrollment type '{context.participant_type}'"
+                )
+
         # Check name matches token subject
         if token.subject_type == "pattern":
             # Pattern matching (e.g., "hospital-*")
             if not fnmatch.fnmatch(context.name, token.subject):
                 raise ValueError(f"Name '{context.name}' does not match token pattern '{token.subject}'")
-        elif token.subject_type in DEFINED_PARTICIPANT_TYPES:
-            # Exact match required
+        else:
+            # Exact match required for non-pattern tokens
             if token.subject != context.name:
                 raise ValueError(f"Name '{context.name}' does not match token subject '{token.subject}'")
 
@@ -466,10 +489,11 @@ class CertService:
             )
 
         # Approved - sign the certificate
-        cert = self._sign_certificate(csr_data, context.name, valid_days)
+        cert = self._sign_certificate(csr_data, context, valid_days)
 
+        role_info = f", role={context.role}" if context.role else ""
         self.logger.info(
-            f"Certificate issued for '{context.name}' ({context.participant_type}) "
+            f"Certificate issued for '{context.name}' ({context.participant_type}{role_info}) "
             f"(token: {token_payload.token_id}, rule: {result.rule_name})"
         )
 
@@ -478,10 +502,16 @@ class CertService:
     def _sign_certificate(
         self,
         csr_data: bytes,
-        subject_name: str,
+        context: EnrollmentContext,
         valid_days: int = 365,
     ) -> x509.Certificate:
-        """Sign a CSR and return the certificate."""
+        """Sign a CSR and return the certificate.
+
+        Certificate includes:
+        - CN (Common Name): context.name
+        - O (Organization): context.org (if provided)
+        - UNSTRUCTURED_NAME: context.role (for user tokens)
+        """
         # Parse CSR
         csr = x509.load_pem_x509_csr(csr_data, default_backend())
 
@@ -489,19 +519,23 @@ class CertService:
         if not csr.is_signature_valid:
             raise ValueError("CSR signature is invalid")
 
-        # Extract subject from CSR or use provided name
-        subject_cn = None
-        for attr in csr.subject:
-            if attr.oid == NameOID.COMMON_NAME:
-                subject_cn = attr.value
-                break
-
-        if not subject_cn:
-            subject_cn = subject_name
+        # Determine role to embed in certificate
+        # - For admin (user) tokens: embed role (lead, member, org_admin) for authorization
+        # - For relay tokens: embed "relay" to distinguish from client
+        # - For client tokens: no role needed
+        cert_role = None
+        if context.participant_type == ParticipantType.ADMIN:
+            # Admin/User token - embed role for downstream authorization
+            # (e.g., "lead" can submit jobs, "member" can only view)
+            cert_role = context.role
+        elif context.participant_type == ParticipantType.RELAY:
+            # Relay node - embed "relay" to identify node type
+            cert_role = ParticipantType.RELAY
+        # Client tokens: cert_role remains None (no special role needed)
 
         # Build certificate using existing utility
         cert = generate_cert(
-            subject=Identity(subject_cn),
+            subject=Identity(context.name, org=context.org, role=cert_role),
             issuer=Identity(self.issuer),
             signing_pri_key=self.root_key,
             subject_pub_key=csr.public_key(),

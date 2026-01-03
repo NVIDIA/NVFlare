@@ -79,7 +79,7 @@ Key Features
 
 - **JWT-based tokens**: Uses RS256 signing algorithm for tamper-proof tokens
 - **Embedded policy**: The approval policy is included in the token payload
-- **Flexible subject types**: Supports client, admin, relay, and pattern subjects
+- **Flexible subject types**: Supports client (FL sites), admin (FLARE Console users), relay (hierarchical FL nodes), and pattern subjects
 - **Batch generation**: Can generate multiple tokens at once for scalability
 
 Class Structure
@@ -268,8 +268,9 @@ Class Structure
     class EnrollmentContext:
         """Context for enrollment request."""
         name: str
-        participant_type: str
-        role: Optional[str] = None
+        participant_type: str  # "client", "admin", or "relay"
+        org: Optional[str] = None  # Organization name for certificate
+        role: Optional[str] = None  # Role for admin tokens (e.g., "lead", "member")
         source_ip: Optional[str] = None
 
 
@@ -324,12 +325,31 @@ Policy Evaluation Flow
 .. code-block:: text
 
     1. Validate token signature and expiration
-    2. Verify token subject matches enrollment identity
-    3. Evaluate policy rules in order (first-match-wins):
+    2. Verify token subject matches enrollment identity:
+       a. Exact match for specific tokens (client, admin, relay)
+       b. Pattern match for pattern tokens (e.g., "hospital-*")
+    3. Verify token type matches enrollment type:
+       - Client token → client enrollment only
+       - Admin token → admin enrollment only
+       - Relay token → relay enrollment only
+       - Pattern token → any enrollment type
+    4. Evaluate policy rules in order (first-match-wins):
        a. Check site_name_pattern if specified
        b. Check source_ips if specified (strict: required if in policy)
        c. Check admin roles if applicable
-    4. Return approval decision (approve/reject/pending)
+    5. Return approval decision (approve/reject/pending)
+
+Certificate Generation
+----------------------
+
+When a CSR is approved, the signed certificate includes:
+
+- **Common Name (CN)**: Client/user name from enrollment identity
+- **Organization (O)**: Organization name (if provided)
+- **Role (via Subject fields)**: 
+  - Admin tokens: Embedded role (lead, member, org_admin) for downstream authorization
+  - Relay tokens: "relay" identifier
+  - Client tokens: No special role
 
 Policy Match Conditions
 -----------------------
@@ -484,8 +504,33 @@ Command Structure
 
     nvflare token
     ├── generate    # Generate single token
+    │   ├── -s/--subject    (required) Subject name
+    │   ├── --user          Generate admin/user token (default role: lead)
+    │   ├── --relay         Generate relay node token
+    │   ├── -r/--role       Role for user tokens
+    │   └── -o/--output     Output file
     ├── batch       # Generate multiple tokens
     └── info        # Display token information
+
+Participant Types
+-----------------
+
+.. list-table::
+   :widths: 15 20 65
+   :header-rows: 1
+
+   * - Type
+     - CLI Flag
+     - Description
+   * - ``client``
+     - (default)
+     - FL client site (leaf node in federation)
+   * - ``admin``
+     - ``--user``
+     - FLARE Console user (Admin Client) with role embedded in certificate
+   * - ``relay``
+     - ``--relay``
+     - Relay node for hierarchical FL deployments
 
 Environment Variables
 ---------------------
