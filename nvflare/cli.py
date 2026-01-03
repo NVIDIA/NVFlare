@@ -21,6 +21,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
+from nvflare.lighter.startup_kit import define_package_parser, handle_package
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
@@ -46,6 +47,8 @@ CMD_JOB = "job"
 CMD_CONFIG = "config"
 CMD_PRE_INSTALL = "pre-install"
 CMD_TOKEN = "token"
+CMD_PACKAGE = "package"
+CMD_CERT = "cert"
 
 
 def def_provision_parser(sub_cmd):
@@ -53,6 +56,17 @@ def def_provision_parser(sub_cmd):
     provision_parser = sub_cmd.add_parser(cmd)
     define_provision_parser(provision_parser)
     return {cmd: provision_parser}
+
+
+def def_package_parser(sub_cmd):
+    cmd = CMD_PACKAGE
+    package_parser = sub_cmd.add_parser(
+        cmd,
+        help="Generate generic startup kit for token-based enrollment",
+        description="Generate a startup kit package without certificates for dynamic enrollment.",
+    )
+    define_package_parser(package_parser)
+    return {cmd: package_parser}
 
 
 def def_dashboard_parser(sub_cmd):
@@ -139,6 +153,20 @@ def def_pre_install_parser(sub_cmd):
         sys.exit(1)
 
 
+def def_cert_parser(sub_cmd):
+    """Define cert subcommand parser."""
+    cmd = CMD_CERT
+    from nvflare.tool.enrollment.cert_cli import define_cert_parser
+
+    cert_parser = sub_cmd.add_parser(
+        cmd,
+        help="Generate certificates for token-based enrollment",
+        description="Generate root CA and server certificates.",
+    )
+    define_cert_parser(cert_parser)
+    return {cmd: cert_parser}
+
+
 def def_token_parser(sub_cmd):
     """Define token subcommand parser (optional dependency on PyJWT)."""
     cmd = CMD_TOKEN
@@ -164,6 +192,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))
     sub_cmd_parsers.update(def_provision_parser(sub_cmd))
+    sub_cmd_parsers.update(def_package_parser(sub_cmd))
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
@@ -171,6 +200,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
     sub_cmd_parsers.update(def_token_parser(sub_cmd))
+    sub_cmd_parsers.update(def_cert_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -190,6 +220,13 @@ def handle_pre_install_cmd(args):
     handle_cmd(args)
 
 
+def handle_cert_cmd(args):
+    """Handle cert command."""
+    from nvflare.tool.enrollment.cert_cli import handle_cert
+
+    sys.exit(handle_cert(args))
+
+
 def handle_token_cmd(args):
     """Handle token command (lazy import to avoid jwt dependency)."""
     try:
@@ -205,6 +242,7 @@ def handle_token_cmd(args):
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
+    CMD_PACKAGE: handle_package,
     CMD_PREFLIGHT_CHECK: check_packages,
     CMD_SIMULATOR: handle_simulator_cmd,
     CMD_DASHBOARD: handle_dashboard,
@@ -213,6 +251,7 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_PRE_INSTALL: handle_pre_install_cmd,
     CMD_TOKEN: handle_token_cmd,
+    CMD_CERT: handle_cert_cmd,
 }
 
 

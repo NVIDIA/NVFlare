@@ -45,21 +45,27 @@ The token CLI supports environment variables to simplify repeated usage:
    * - Variable
      - Description
    * - ``NVFLARE_CA_PATH``
-     - Path to the provisioned root CA directory containing ``rootCA.pem`` and ``rootCA.key``
-       (created by ``nvflare provision``)
+     - Path to the provisioned workspace directory (created by ``nvflare provision``).
+       For example: ``/path/to/workspace/example_project``
    * - ``NVFLARE_ENROLLMENT_POLICY``
      - Path to enrollment policy YAML file (optional, uses built-in default if not set)
+
+.. note::
+
+   The ``NVFLARE_CA_PATH`` should point to the **project workspace** created by provisioning,
+   not the server's startup kit. The token service reads the root CA from
+   ``state/cert.json`` in the provisioning workspace.
 
 Setting these variables allows you to omit the ``-c`` and ``-p`` options from commands:
 
 .. code-block:: shell
 
     # Set once in your environment
-    export NVFLARE_CA_PATH=/path/to/startup/ca
+    export NVFLARE_CA_PATH=/path/to/workspace/my_project
     export NVFLARE_ENROLLMENT_POLICY=/path/to/my_policy.yaml
 
     # Then use simplified commands
-    nvflare token generate -s site-1
+    nvflare token generate -s hospital-1
 
 ***********************
 Generate Single Token
@@ -91,7 +97,7 @@ Options
    * - ``--relay``
      - Generate a relay node token (for hierarchical FL)
    * - ``-c, --ca_path``
-     - Path to CA directory (or set ``NVFLARE_CA_PATH``)
+     - Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
    * - ``-p, --policy``
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``, uses default if not set)
    * - ``-r, --role``
@@ -122,13 +128,13 @@ Examples
 
 .. code-block:: shell
 
-    nvflare token generate -s hospital-1 -c /path/to/ca
+    nvflare token generate -s hospital-1 -c /path/to/workspace/my_project
 
 **With Environment Variables:**
 
 .. code-block:: shell
 
-    export NVFLARE_CA_PATH=/path/to/ca
+    export NVFLARE_CA_PATH=/path/to/workspace/my_project
     nvflare token generate -s hospital-1
 
 **Generate a user token (for FLARE Console):**
@@ -184,7 +190,7 @@ Options
    * - ``-o, --output`` (required)
      - Output file to save tokens (``.csv`` or ``.txt``)
    * - ``-c, --ca_path``
-     - Path to CA directory (or set ``NVFLARE_CA_PATH``)
+     - Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
    * - ``-p, --policy``
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``)
    * - ``--prefix``
@@ -388,7 +394,24 @@ End-to-End Workflow
 ***********************
 
 This section describes the complete workflow for deploying NVIDIA FLARE with
-token-based client enrollment, starting from server provisioning.
+token-based client enrollment.
+
+Workflow Overview
+=================
+
+.. list-table::
+   :widths: 15 35 50
+   :header-rows: 1
+
+   * - Role
+     - Responsibility
+     - Deliverables
+   * - **Project Admin**
+     - Provision server, generate tokens, create generic packages
+     - Server startup kit, generic client packages (via ``nvflare package``), enrollment tokens
+   * - **Client Operator**
+     - Deploy client with token
+     - Running FL client with enrolled certificate
 
 Phase 1: Provision and Deploy Server
 ====================================
@@ -430,9 +453,9 @@ you only need to define the server (clients will enroll dynamically):
 
 This generates:
 
-- ``server.example.com/`` - Server startup kit with certificates
-- ``admin@example.com/`` - Admin console startup kit
-- Root CA files (``rootCA.pem``, ``rootCA.key``) in the workspace
+- ``my_fl_project/prod_00/server.example.com/`` - Server startup kit with certificates
+- ``my_fl_project/prod_00/admin@example.com/`` - Admin console startup kit
+- ``my_fl_project/state/cert.json`` - Root CA certificate and private key (used for token signing)
 
 **Step 3: Deploy and Start Server**
 
@@ -446,6 +469,23 @@ Copy the server startup kit to your server machine and start it:
 
 The server is now running and ready to accept client enrollments.
 
+The workspace structure after provisioning:
+
+.. code-block:: text
+
+    /path/to/workspace/
+    └── my_fl_project/              <-- NVFLARE_CA_PATH points here
+        ├── state/
+        │   └── cert.json           <-- Contains root CA (used for token signing)
+        └── prod_00/
+            ├── server.example.com/
+            │   └── startup/
+            │       ├── rootCA.pem
+            │       ├── server.crt
+            │       └── server.key
+            └── admin@example.com/
+                └── startup/
+
 Phase 2: Generate Enrollment Tokens
 ===================================
 
@@ -455,9 +495,9 @@ Using the root CA from provisioning, generate tokens for clients.
 
 .. code-block:: shell
 
-    # Point to the provisioned workspace containing rootCA.pem and rootCA.key
-    # This is the same directory created by 'nvflare provision'
-    export NVFLARE_CA_PATH=/path/to/provisioned/workspace
+    # Point to the provisioned workspace directory
+    # Example: /path/to/workspace/example_project (contains state/cert.json)
+    export NVFLARE_CA_PATH=/path/to/workspace/my_project
 
     # Optional: use custom policy
     export NVFLARE_ENROLLMENT_POLICY=/path/to/enrollment_policy.yaml
@@ -480,65 +520,155 @@ Using the root CA from provisioning, generate tokens for clients.
 Distribute tokens to each client site operator through a secure channel
 (encrypted email, secure file transfer, etc.).
 
-Phase 3: Client Enrollment and Startup
+Phase 3: Create Generic Client Package
 ======================================
 
-Each client site receives a generic startup kit (without client-specific certificates)
-and an enrollment token.
+The Project Admin creates a **generic client package** that can be distributed to all sites.
+This is essentially a provisioned startup kit but **without** certificates and signatures.
 
-**Step 1: Prepare generic client startup kit**
+**Option A: Use ``nvflare package`` command (recommended)**
 
-Create a generic client startup directory containing:
+The simplest way to create a generic package is using the ``nvflare package`` command:
 
-- ``rootCA.pem`` - Copy from server provisioning (for server verification)
-- ``fed_client.json`` - Client configuration pointing to server
-- ``resources.json`` - Resource configuration (optional)
+.. code-block:: shell
 
-Example ``fed_client.json``:
+    # Generate client package
+    nvflare package -n site-1 -e grpc://server.example.com:8002
 
-.. code-block:: json
+    # Generate admin console package
+    nvflare package -n admin@example.com -e grpc://server:8002:8003 -t admin
 
-    {
-      "servers": [
-        {
-          "name": "server.example.com",
-          "service": {
-            "target": "server.example.com:8002",
-            "options": [
-              ["grpc.max_send_message_length", 1073741824],
-              ["grpc.max_receive_message_length", 1073741824]
-            ]
-          }
-        }
-      ],
-      "client": {
-        "retry_timeout": 30,
-        "ssl_root_cert": "rootCA.pem"
-      }
-    }
+    # Generate relay package (for hierarchical FL)
+    nvflare package -n relay-east -e grpc://server:8002 -t relay --listening_port 8010
 
-**Step 2: Configure enrollment token**
+This command:
+
+- Reuses the existing provisioning infrastructure
+- Automatically filters out ``CertBuilder`` and ``SignatureBuilder``
+- Preserves all other custom builders from your project.yml
+
+**Package command options:**
+
+.. list-table::
+   :widths: 25 75
+   :header-rows: 1
+
+   * - Option
+     - Description
+   * - ``-n, --name`` (required)
+     - Participant name (site name, relay name, or user email)
+   * - ``-e, --endpoint`` (required)
+     - Connection URI: ``scheme://host:port`` or ``scheme://host:fl_port:admin_port``
+   * - ``-t, --type``
+     - Package type: ``client`` (default), ``relay``, ``admin``
+   * - ``-o, --output``
+     - Output directory (default: ``./<name>``)
+   * - ``-p, --project_file``
+     - Custom project.yml (uses default if not specified)
+   * - ``--org``
+     - Organization name (default: ``org``)
+   * - ``--role``
+     - Role for admin type: ``lead`` (default), ``member``, ``org_admin``
+   * - ``--listening_host``
+     - Listening host for relay (default: ``localhost``)
+   * - ``--listening_port``
+     - Listening port for relay (default: ``8002``)
+
+**Option B: Use custom project.yml**
+
+For advanced customization, create a project.yml that excludes certificate builders:
+
+.. code-block:: yaml
+
+    api_version: 3
+    name: generic_client
+    description: Generic client package for token-based enrollment
+
+    participants:
+      - name: site
+        type: client
+        org: TBD
+
+    # Only include builders that don't generate certificates
+    builders:
+      - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+      - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+        args:
+          config_folder: config
+      # Note: CertBuilder and SignatureBuilder are NOT included
+
+Then use the package command with your custom project:
+
+.. code-block:: shell
+
+    nvflare package -n site-1 -e grpc://server:8002 -p custom_project.yml
+
+**Generated package structure:**
+
+.. code-block:: text
+
+    site-1/
+    ├── local/
+    │   ├── authorization.json.default
+    │   ├── log_config.json.default
+    │   ├── privacy.json.sample
+    │   └── resources.json.default
+    ├── startup/
+    │   ├── fed_client.json       <-- Connection configuration
+    │   ├── start.sh
+    │   ├── stop_fl.sh
+    │   └── sub_start.sh
+    ├── transfer/
+    └── readme.txt
+
+.. note::
+
+   The generic package does NOT include client-specific certificates (``client.crt``,
+   ``client.key``), ``rootCA.pem``, or ``signature.json``. You must copy the ``rootCA.pem``
+   from your provisioned workspace to enable TLS server verification.
+
+Phase 4: Distribute to Client Sites
+===================================
+
+The Project Admin distributes to each client site:
+
+1. **Generic client package** (same for all sites)
+2. **Site-specific enrollment token** (unique per site)
+
+**Delivery methods:**
+
+- Secure file transfer (SFTP, SCP)
+- Encrypted email
+- Secure download portal
+- Container registry (for Docker deployments)
+
+Phase 5: Client Enrollment and Startup
+======================================
+
+Each client site receives the generic package and their enrollment token.
+
+**Step 1: Configure enrollment token**
 
 On the client machine, set the enrollment token:
 
 .. code-block:: shell
 
     # Option A: Environment variable
-    export NVFLARE_ENROLLMENT_TOKEN="<token_from_distribution>"
+    export NVFLARE_ENROLLMENT_TOKEN="<token_from_project_admin>"
 
     # Option B: Token file in startup directory
-    echo "<token>" > /path/to/startup/enrollment_token
+    echo "<token>" > /path/to/site-1/startup/enrollment_token
 
-**Step 3: Start the client**
+**Step 2: Start the client**
 
 .. code-block:: shell
 
-    cd /path/to/client/startup
+    cd /path/to/site-1/startup
     ./start.sh
 
-The client will:
+The client will automatically:
 
-1. Detect missing client certificate
+1. Detect missing client certificate (``client.crt``)
 2. Find the enrollment token (from env var or file)
 3. Generate a key pair and CSR
 4. Submit CSR with token to the server
@@ -552,7 +682,7 @@ Upon successful enrollment, you'll see in the client log:
     Enrollment successful. Certificate saved to: /path/to/startup/client.crt
     Successfully registered client:hospital-1
 
-Phase 4: Verify Deployment
+Phase 6: Verify Deployment
 ==========================
 
 **Check server for connected clients:**
@@ -594,18 +724,21 @@ Token Generation Fails
 .. code-block:: shell
 
     Error: CA path is required.
-    The CA path should point to the provisioned root CA directory
-    (created by 'nvflare provision') containing rootCA.pem and rootCA.key.
 
 Solution: Point to the provisioned workspace directory:
 
 .. code-block:: shell
 
-    # Set to the directory created by 'nvflare provision'
-    export NVFLARE_CA_PATH=/path/to/provisioned/workspace
+    # Set to the project workspace (e.g., workspace/my_project)
+    export NVFLARE_CA_PATH=/path/to/workspace/my_project
     
     # Or provide directly
-    nvflare token generate -s hospital-1 -c /path/to/provisioned/workspace
+    nvflare token generate -s hospital-1 -c /path/to/workspace/my_project
+
+**Error: Root CA not found**
+
+If you see an error about missing root CA, ensure you're pointing to the correct
+provisioned workspace that contains ``state/cert.json``.
 
 Token Inspection Shows Expired
 ==============================
