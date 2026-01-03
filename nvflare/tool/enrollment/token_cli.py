@@ -168,7 +168,9 @@ def _get_ca_path(args):
         return ca_path
 
     print("\nError: CA path is required.")
-    print(f"Provide via -c/--ca_path or set {ENV_CA_PATH} environment variable.")
+    print("The CA path should point to the provisioned root CA directory")
+    print("(created by 'nvflare provision') containing rootCA.pem and rootCA.key.")
+    print(f"\nProvide via -c/--ca_path or set {ENV_CA_PATH} environment variable.")
     sys.exit(1)
 
 

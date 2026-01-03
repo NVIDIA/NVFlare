@@ -544,7 +544,7 @@ Environment Variables
    * - Variable
      - Description
    * - ``NVFLARE_CA_PATH``
-     - Path to CA directory (replaces ``-c`` option)
+     - Path to provisioned root CA directory (from ``nvflare provision``)
    * - ``NVFLARE_ENROLLMENT_POLICY``
      - Path to policy file (replaces ``-p`` option)
 
