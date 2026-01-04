@@ -623,4 +623,3 @@ class TestCheckJwtDependency:
                 mock.side_effect = SystemExit(1)
                 with pytest.raises(SystemExit):
                     mock()
-

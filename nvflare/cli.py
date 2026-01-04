@@ -21,8 +21,8 @@ from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
-from nvflare.lighter.startup_kit import define_package_parser, handle_package
 from nvflare.lighter.provision import define_provision_parser, handle_provision
+from nvflare.lighter.startup_kit import define_package_parser, handle_package
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd

@@ -1,66 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -99,7 +36,6 @@ import os
 import sys
 import tempfile
 from typing import Optional
-
 
 CMD_TOKEN = "token"
 
@@ -217,7 +153,7 @@ def _generate_token_remote(cert_service_url: str, admin_token: Optional[str], re
         sys.exit(1)
 
     if not admin_token:
-        print(f"\nError: Admin token required for remote token generation.")
+        print("\nError: Admin token required for remote token generation.")
         print(f"Provide via --admin-token or set {ENV_ADMIN_TOKEN} environment variable.")
         sys.exit(1)
 
@@ -573,6 +509,7 @@ def _handle_generate_cmd(args):
 
             # Decode token info locally
             import jwt
+
             payload = jwt.decode(token, options={"verify_signature": False})
             print("\nToken Info:")
             print(f"  Subject: {payload.get('sub')}")
@@ -781,4 +718,3 @@ def handle_token_cmd(args):
         raise CLIUnknownCmdException(
             "\nPlease specify a subcommand: generate, batch, or info\n" "Use 'nvflare token -h' for help."
         )
-
