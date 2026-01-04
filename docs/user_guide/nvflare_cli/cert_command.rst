@@ -26,12 +26,13 @@ Command Usage
 
 .. code-block::
 
-    nvflare cert {init|server} [options]
+    nvflare cert {init|server|api-key} [options]
 
 Subcommands:
 
 - ``init``: Initialize a root CA for the project
 - ``server``: Generate a server certificate signed by the root CA
+- ``api-key``: Generate a secure API key for Certificate Service
 
 ***********************
 init Subcommand
@@ -145,6 +146,67 @@ Example
     nvflare cert server -n server1 -c ./my_project_ca -o ./server_certs \
         --host server.example.com \
         --additional_hosts server1.example.com localhost 10.0.0.1
+
+***********************
+api-key Subcommand
+***********************
+
+Generate a secure API key for Certificate Service authentication.
+
+Syntax
+======
+
+.. code-block:: shell
+
+    nvflare cert api-key [-l LENGTH] [-o OUTPUT] [--format FORMAT]
+
+Options
+=======
+
+.. list-table::
+   :widths: 25 75
+   :header-rows: 1
+
+   * - Option
+     - Description
+   * - ``-l, --length``
+     - Key length in bytes (default: 32 = 256 bits)
+   * - ``-o, --output``
+     - Output file path (default: print to stdout)
+   * - ``--format``
+     - Output format: ``hex`` (default), ``base64``, or ``urlsafe``
+
+Example
+=======
+
+.. code-block:: shell
+
+    # Generate API key and print to stdout
+    nvflare cert api-key
+
+    # Generate 64-byte key and save to file
+    nvflare cert api-key -l 64 -o api_key.txt
+
+    # Generate in base64 format
+    nvflare cert api-key --format base64
+
+Usage
+=====
+
+After generating the API key, use it to authenticate with the Certificate Service:
+
+.. code-block:: shell
+
+    # Option 1: Set as environment variable
+    export NVFLARE_API_KEY='<generated-key>'
+
+    # Option 2: Pass directly to CLI commands
+    nvflare token generate -n site-1 --cert-service https://... --api-key '<generated-key>'
+    nvflare enrollment list --cert-service https://... --api-key '<generated-key>'
+
+    # Option 3: Add to Certificate Service config file
+    # In cert_service_config.yaml:
+    #   api_key: "<generated-key>"
 
 ***********************
 Complete Workflow
