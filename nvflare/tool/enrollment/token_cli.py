@@ -48,7 +48,7 @@ SUBCMD_INFO = "info"
 ENV_CA_PATH = "NVFLARE_CA_PATH"
 ENV_ENROLLMENT_POLICY = "NVFLARE_ENROLLMENT_POLICY"
 ENV_CERT_SERVICE_URL = "NVFLARE_CERT_SERVICE_URL"
-ENV_ADMIN_TOKEN = "NVFLARE_ADMIN_TOKEN"
+ENV_API_KEY = "NVFLARE_API_KEY"
 
 # Built-in default policy (simple auto-approve for quick start)
 DEFAULT_POLICY = """
@@ -130,20 +130,20 @@ def _get_cert_service_url(args):
     return None
 
 
-def _get_admin_token(args):
-    """Resolve admin token from args or environment variable."""
-    token = getattr(args, "admin_token", None)
+def _get_api_key(args):
+    """Resolve API key from args or environment variable."""
+    token = getattr(args, "api_key", None)
     if token:
         return token
 
-    token = os.environ.get(ENV_ADMIN_TOKEN)
+    token = os.environ.get(ENV_API_KEY)
     if token:
         return token
 
     return None
 
 
-def _generate_token_remote(cert_service_url: str, admin_token: Optional[str], request_data: dict) -> str:
+def _generate_token_remote(cert_service_url: str, api_key: Optional[str], request_data: dict) -> str:
     """Generate token via Certificate Service API."""
     try:
         import requests
@@ -152,19 +152,19 @@ def _generate_token_remote(cert_service_url: str, admin_token: Optional[str], re
         print("Install with: pip install requests")
         sys.exit(1)
 
-    if not admin_token:
-        print("\nError: Admin token required for remote token generation.")
-        print(f"Provide via --admin-token or set {ENV_ADMIN_TOKEN} environment variable.")
+    if not api_key:
+        print("\nError: API key required for remote token generation.")
+        print(f"Provide via --api-key or set {ENV_API_KEY} environment variable.")
         sys.exit(1)
 
     url = f"{cert_service_url}/api/v1/token"
-    headers = {"Authorization": f"Bearer {admin_token}"}
+    headers = {"Authorization": f"Bearer {api_key}"}
 
     try:
         response = requests.post(url, json=request_data, headers=headers, timeout=30)
 
         if response.status_code == 401:
-            print("\nError: Authentication failed. Check your admin token.")
+            print("\nError: Authentication failed. Check your API key.")
             sys.exit(1)
         elif response.status_code == 403:
             print("\nError: Access denied. Admin privileges required.")
@@ -294,11 +294,11 @@ def _define_generate_parser(sub_parser):
         help=f"Certificate Service URL for remote token generation (or set {ENV_CERT_SERVICE_URL})",
     )
     parser.add_argument(
-        "--admin-token",
+        "--api-key",
         type=str,
         default=None,
-        metavar="TOKEN",
-        help=f"Admin token for Certificate Service authentication (or set {ENV_ADMIN_TOKEN})",
+        metavar="KEY",
+        help=f"Certificate Service API key (or set {ENV_API_KEY})",
     )
 
 
@@ -388,11 +388,11 @@ def _define_batch_parser(sub_parser):
         help=f"Certificate Service URL for remote token generation (or set {ENV_CERT_SERVICE_URL})",
     )
     parser.add_argument(
-        "--admin-token",
+        "--api-key",
         type=str,
         default=None,
-        metavar="TOKEN",
-        help=f"Admin token for Certificate Service authentication (or set {ENV_ADMIN_TOKEN})",
+        metavar="KEY",
+        help=f"Certificate Service API key (or set {ENV_API_KEY})",
     )
 
 
@@ -442,7 +442,7 @@ def def_token_parser(sub_cmd):
             f"  {ENV_CA_PATH}: CA directory path (local generation)\n"
             f"  {ENV_ENROLLMENT_POLICY}: Policy file path (local generation)\n"
             f"  {ENV_CERT_SERVICE_URL}: Certificate Service URL (remote generation)\n"
-            f"  {ENV_ADMIN_TOKEN}: Admin token (remote generation)"
+            f"  {ENV_API_KEY}: API key (remote generation)"
         ),
         formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog, max_help_position=40),
     )
@@ -483,7 +483,7 @@ def _handle_generate_cmd(args):
     cert_service_url = _get_cert_service_url(args)
     if cert_service_url:
         # Remote token generation via Certificate Service API
-        admin_token = _get_admin_token(args)
+        api_key = _get_api_key(args)
 
         request_data = {
             "subject": args.subject,
@@ -495,7 +495,7 @@ def _handle_generate_cmd(args):
         if args.source_ips:
             request_data["source_ips"] = args.source_ips
 
-        token = _generate_token_remote(cert_service_url, admin_token, request_data)
+        token = _generate_token_remote(cert_service_url, api_key, request_data)
 
         if args.output:
             with open(args.output, "w") as f:
@@ -591,7 +591,7 @@ def _handle_batch_cmd(args):
     cert_service_url = _get_cert_service_url(args)
     if cert_service_url:
         # Remote batch generation via Certificate Service API
-        admin_token = _get_admin_token(args)
+        api_key = _get_api_key(args)
         results = []
 
         for name in names:
@@ -600,7 +600,7 @@ def _handle_batch_cmd(args):
                 "subject_type": type_map[args.type],
                 "validity": args.validity,
             }
-            token = _generate_token_remote(cert_service_url, admin_token, request_data)
+            token = _generate_token_remote(cert_service_url, api_key, request_data)
             results.append({"name": name, "token": token})
 
         # Save to output file
