@@ -29,6 +29,7 @@ Command Usage
                            [--org ORG] [--role {lead,member,org_admin}]
                            [--listening_host LISTENING_HOST]
                            [--listening_port LISTENING_PORT]
+                           [--cert-service URL] [--token TOKEN]
 
     Generate startup kit packages without certificates for dynamic enrollment.
 
@@ -63,6 +64,10 @@ Options
      - Listening host for relay type (default: ``localhost``)
    * - ``--listening_port``
      - Listening port for relay type (default: ``8002``)
+   * - ``--cert-service``
+     - Certificate Service URL to embed in the package (for Auto-Scale workflow)
+   * - ``--token``
+     - Enrollment token to embed in the package (for Auto-Scale workflow)
 
 ***********************
 Supported Schemes
@@ -168,6 +173,32 @@ Generate Client Package
     # Client with two-port configuration
     nvflare package -n hospital-1 -e grpc://server:8002:8003
 
+Generate Client Package with Embedded Enrollment (Auto-Scale Workflow)
+----------------------------------------------------------------------
+
+For the Auto-Scale workflow, embed the Certificate Service URL and enrollment token
+directly in the package:
+
+.. code-block:: shell
+
+    # Embed Certificate Service URL and token
+    nvflare package -n hospital-1 -e grpc://server:8002 \
+        --cert-service https://cert-service:8443 \
+        --token "$TOKEN"
+
+    # Just embed URL (token provided at runtime via env var)
+    nvflare package -n hospital-1 -e grpc://server:8002 \
+        --cert-service https://cert-service:8443
+
+This creates additional files in the ``startup/`` directory:
+
+- ``enrollment.json`` - Contains the Certificate Service URL
+- ``enrollment_token`` - Contains the enrollment token (if ``--token`` provided)
+
+At runtime, the client reads these files to perform auto-enrollment. Environment
+variables (``NVFLARE_CERT_SERVICE_URL``, ``NVFLARE_ENROLLMENT_TOKEN``) take precedence
+over the embedded files.
+
 Generate Admin Package
 ----------------------
 
@@ -262,6 +293,19 @@ Client Package
     ├── transfer/
     └── readme.txt
 
+**With ``--cert-service`` and ``--token`` options:**
+
+.. code-block:: text
+
+    site-1/
+    ├── ...
+    ├── startup/
+    │   ├── fed_client.json
+    │   ├── enrollment.json       <-- Contains cert_service_url
+    │   ├── enrollment_token      <-- Contains token (if --token provided)
+    │   ├── start.sh
+    │   └── ...
+
 Admin Package
 =============
 
@@ -335,18 +379,33 @@ Comparing Modes
 Next Steps
 ***********************
 
-After generating packages:
+**Manual Workflow (without --cert-service):**
 
 1. **Copy rootCA.pem** from your provisioned server workspace to each ``startup/`` folder
    (for TLS server verification)
-2. **Distribute packages** along with enrollment tokens to each site
-3. **Set the enrollment token** on each client machine:
+2. **Distribute packages** along with signed certificates to each site
+3. **Start the clients** - they will connect using the pre-signed certificates
+
+**Auto-Scale Workflow (with --cert-service and --token):**
+
+1. **Distribute packages** - enrollment information is already embedded
+2. **Start the clients** - they will automatically enroll and obtain certificates:
+
+   .. code-block:: shell
+
+       cd hospital-1 && ./startup/start.sh
+
+**Auto-Scale Workflow (with --cert-service only):**
+
+1. **Distribute packages** along with enrollment tokens to each site
+2. **Set the enrollment token** on each client machine:
 
    .. code-block:: shell
 
        export NVFLARE_ENROLLMENT_TOKEN="<token>"
+       # Or place token in: startup/enrollment_token
 
-4. **Start the clients** - they will automatically enroll and obtain certificates
+3. **Start the clients** - they will automatically enroll and obtain certificates
 
 ***********************
 See Also
