@@ -20,19 +20,16 @@ Supports enrollment types (from nvflare.lighter.constants):
 - client: FL client nodes (hospital-1, site-1, etc.)
 - admin: Admin/researcher users with roles
 - relay: Relay nodes for network topology
+- server: FL server nodes
 
-Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
+Uses HTTP to communicate with the Certificate Service.
 
 Example:
-    from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.private.fed.client.enrollment import (
         CertRequestor,
         EnrollmentIdentity,
         EnrollmentOptions,
     )
-
-    cell = Cell(fqcn="client_1", root_url="grpc://server:8002", secure=True, credentials={})
-    cell.start()
 
     # Client (site) enrollment
     identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
@@ -44,29 +41,40 @@ Example:
     # identity = EnrollmentIdentity.for_relay("relay-1")
 
     requestor = CertRequestor(
-        cell=cell,
+        cert_service_url="https://cert-service.example.com",
         enrollment_token="eyJ...",
         identity=identity,
     )
 
-    cert_path = requestor.request_certificate()
-    cell.stop()
+    result = requestor.request_certificate()
+    print(f"Certificate: {result.cert_path}")
+    print(f"Root CA: {result.ca_path}")
 """
 
 # Re-export constants from lighter for convenience
 from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
-from nvflare.private.fed.client.enrollment.cert_requestor import CertRequestor, EnrollmentIdentity, EnrollmentOptions
+from nvflare.private.fed.client.enrollment.cert_requestor import (
+    CertRequestor,
+    EnrollmentIdentity,
+    EnrollmentOptions,
+    EnrollmentResult,
+)
 
 # Environment variable for enrollment token
 ENROLLMENT_TOKEN_ENV = "NVFLARE_ENROLLMENT_TOKEN"
+
+# Environment variable for Certificate Service URL
+CERT_SERVICE_URL_ENV = "NVFLARE_CERT_SERVICE_URL"
 
 __all__ = [
     # Main classes
     "CertRequestor",
     "EnrollmentIdentity",
     "EnrollmentOptions",
+    "EnrollmentResult",
     # Constants
     "ENROLLMENT_TOKEN_ENV",
+    "CERT_SERVICE_URL_ENV",
     # Constants (from nvflare.lighter.constants)
     "ParticipantType",
     "AdminRole",

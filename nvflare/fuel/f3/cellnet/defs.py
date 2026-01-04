@@ -178,9 +178,6 @@ class CellChannelTopic:
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
-    # Enrollment - CSR submission without requiring client certificate
-    CSR_ENROLLMENT = "csr_enrollment"
-
 
 class IdentityChallengeKey:
 
