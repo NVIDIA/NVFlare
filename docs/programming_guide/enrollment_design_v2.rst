@@ -65,7 +65,7 @@ This design was created with the following goals in mind:
    * - Goal
      - How Addressed
    * - **5-minute setup**
-     - Single command for site operators: ``nvflare package --cert-service --token``
+     - Single command for org admins: ``nvflare package --cert-service --token``
    * - **Easier than provisioning**
      - No ``project.yml`` needed; no distribution of startup kits
    * - **Add clients mid-project**
@@ -104,6 +104,46 @@ This design was created with the following goals in mind:
      - Generate certs on demand
      - **Generate tokens only**
 
+Quick Start
+===========
+
+**Auto-Scale Workflow (Recommended for 10+ sites)**
+
+.. code-block:: bash
+
+    # Project Admin: Deploy Certificate Service, then generate tokens
+    nvflare token generate -n hospital-1 \
+        --cert-service https://cert-service.example.com:8443 \
+        --api-key $API_KEY
+
+    # Send token + cert-service URL to org admin
+
+    # Org Admin: Package with embedded enrollment info
+    nvflare package -n hospital-1 -e grpc://server:8002 -t client \
+        --cert-service https://cert-service.example.com:8443 \
+        --token "eyJhbGciOiJSUzI1NiIs..."
+
+    cd hospital-1 && ./startup/start.sh  # Auto-enrolls!
+
+**Alternative: Environment Variables (for K8s/Docker)**
+
+.. code-block:: bash
+
+    # Org Admin: Generate package without enrollment info
+    nvflare package -n hospital-1 -e grpc://server:8002 -t client
+
+    # Set environment variables at runtime
+    export NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443
+    export NVFLARE_ENROLLMENT_TOKEN="eyJhbGciOiJSUzI1NiIs..."
+
+    cd hospital-1 && ./startup/start.sh  # Auto-enrolls!
+
+.. note::
+
+    Environment variables take priority over embedded files.
+    This allows the same package to work across dev/staging/prod
+    with different tokens and Certificate Service URLs.
+
 ***********************
 Background
 ***********************
@@ -115,7 +155,7 @@ Today, NVIDIA FLARE uses ``nvflare provision`` to create startup kits:
 
 .. code-block:: text
 
-    Project Admin                    Distribution              Site Operator
+    Project Admin                    Distribution              Org Admin
     ─────────────                    ────────────              ─────────────
     
     1. Create project.yml
@@ -210,7 +250,7 @@ The following table shows how each limitation is addressed by the new workflows:
      - Manual Workflow
      - Auto-Scale Workflow
    * - **Adding client mid-project**
-     - Generate cert with ``nvflare cert client``. rootCA.pem, site.crt and site.key are sent to the client.
+     - Generate cert with ``nvflare cert site -t client``. rootCA.pem, client.crt and client.key are sent to the client.
      - Generate token with ``nvflare token generate``, send to site. Site auto-enrolls.
    * - **Private keys in transit**
      - Keys still distributed, but only certs (not full startup kits)
@@ -244,10 +284,10 @@ The following table shows how each limitation is addressed by the new workflows:
 .. code-block:: shell
 
     # Project Admin (30 seconds)
-    nvflare cert client -n new-hospital -c ./ca -o ./certs
-    # Send new-hospital.crt, new-hospital.key, rootCA.pem to site
+    nvflare cert site -n new-hospital -t client -c ./ca -o ./certs
+    # Send client.crt, client.key, rootCA.pem to site
     
-    # Site Operator (2 minutes)
+    # Org Admin (2 minutes)
     nvflare package -n new-hospital -e grpc://server:8002 -t client
     cp received_certs/* new-hospital/startup/
     cd new-hospital && ./startup/start.sh
@@ -262,7 +302,7 @@ The following table shows how each limitation is addressed by the new workflows:
         --api-key $API_KEY
     # Send token + Certificate Service URL to site
     
-    # Site Operator (1 command!)
+    # Org Admin (1 command!)
     nvflare package \
         -n new-hospital \
         -e grpc://server:8002 \
@@ -355,7 +395,7 @@ Each pod derives its site name from its ordinal and reads the corresponding toke
                   nvflare package -n $SITE_NAME \
                       -e grpc://flare-server.flare.svc:8002 \
                       -t client \
-                      -o /workspace
+                      -w /workspace
                   
                   # Save site name for main container
                   echo $SITE_NAME > /workspace/site_name.txt
@@ -524,8 +564,11 @@ Key Components
      - ``nvflare/cert_service/app.py``
      - HTTP wrapper exposing CertService via REST API
    * - **CertRequestor**
-     - ``nvflare/private/fed/client/enrollment/cert_requestor.py``
-     - Client-side: generate keys, create CSR, submit for signing
+     - ``nvflare/security/enrollment/cert_requestor.py``
+     - Client-side: generate keys, create CSR, submit for signing via HTTP
+   * - **EnrollmentStore**
+     - ``nvflare/cert_service/store.py``
+     - Persistence layer for enrolled entities and pending requests (SQLite default)
 
 ***********************
 Enrollment Token
@@ -653,6 +696,89 @@ Token Security
    * - Brute force
      - Guess valid tokens
      - UUID-based JTI + rate limiting
+
+Token Signing Key
+=================
+
+By default, the **root CA private key** serves two purposes:
+
+1. **Sign participant certificates** (CSRs from clients, servers, relays)
+2. **Sign JWT enrollment tokens**
+
+This simplifies key management - one key pair for all cryptographic operations.
+
+.. code-block:: text
+
+    Root CA Key Pair
+    ────────────────
+    rootCA.key (private)
+        │
+        ├──► Sign certificates (CSRs)
+        │
+        └──► Sign JWT tokens
+    
+    rootCA.pem (public)
+        │
+        ├──► Verify certificates
+        │
+        └──► Verify JWT tokens
+
+**Optional: Separate JWT Signing Key**
+
+For advanced deployments, you can use a **separate key pair** for JWT signing:
+
+.. list-table::
+   :widths: 30 35 35
+   :header-rows: 1
+
+   * - Scenario
+     - Configuration
+     - Use Case
+   * - Default (recommended)
+     - Single root CA key
+     - Simple, sufficient for most deployments
+   * - Separate JWT key
+     - Both services must use same key pair
+     - Key rotation, security isolation, compliance
+
+**Important: Key Consistency**
+
+If using separate JWT keys, both services MUST use the same key pair:
+
+.. code-block:: text
+
+    TokenService                        CertService
+    ────────────                        ───────────
+    jwt_key.key (private)    ─────►    jwt_key.pub (public)
+         │                                   │
+         ▼                                   ▼
+    Sign tokens                         Verify tokens
+
+Configuration for separate keys:
+
+.. code-block:: python
+
+    # TokenService - signs with JWT private key
+    token_service = TokenService(
+        root_ca_path="/path/to/ca",
+        jwt_signing_key_path="/path/to/jwt_key.key"  # Optional
+    )
+
+    # CertService - verifies with JWT public key
+    cert_service = CertService(
+        root_ca_cert=cert,
+        root_ca_key=key,
+        verification_key_path="/path/to/jwt_key.pub"  # Must match!
+    )
+
+When to use separate keys:
+
+- **Key rotation**: Rotate JWT signing key without changing root CA
+- **Security isolation**: Limit blast radius if JWT key is compromised
+- **Compliance**: Some security policies require key separation
+- **Distributed systems**: Different services hold different keys
+
+For most deployments, the **default single-key approach is recommended**.
 
 ***********************
 Approval Policy
@@ -1087,7 +1213,7 @@ List all pending enrollment requests. Requires admin authentication.
 
 **POST /api/v1/pending/{name}/approve** (Admin Only)
 
-Approve a pending enrollment request.
+Approve a single pending enrollment request.
 
 *Query Parameters:*
 
@@ -1104,9 +1230,31 @@ Approve a pending enrollment request.
         "certificate_issued": true
     }
 
+**POST /api/v1/pending/approve_batch** (Admin Only)
+
+Approve multiple pending requests by pattern.
+
+*Request:*
+
+.. code-block:: json
+
+    {
+        "pattern": "hospital-*",
+        "type": "client"
+    }
+
+*Response (200):*
+
+.. code-block:: json
+
+    {
+        "approved": ["hospital-1", "hospital-2", "hospital-3"],
+        "count": 3
+    }
+
 **POST /api/v1/pending/{name}/reject** (Admin Only)
 
-Reject a pending enrollment request.
+Reject a single pending enrollment request.
 
 *Query Parameters:*
 
@@ -1128,6 +1276,29 @@ Reject a pending enrollment request.
         "status": "rejected",
         "name": "hospital-1",
         "entity_type": "client"
+    }
+
+**POST /api/v1/pending/reject_batch** (Admin Only)
+
+Reject multiple pending requests by pattern.
+
+*Request:*
+
+.. code-block:: json
+
+    {
+        "pattern": "temp-*",
+        "type": "client",
+        "reason": "Batch cleanup"
+    }
+
+*Response (200):*
+
+.. code-block:: json
+
+    {
+        "rejected": ["temp-1", "temp-2"],
+        "count": 2
     }
 
 **GET /api/v1/enrolled** (Admin Only)
@@ -1248,8 +1419,11 @@ API Authentication
 
 - ``POST /api/v1/token`` - Token generation
 - ``GET /api/v1/pending`` - List pending requests
-- ``POST /api/v1/pending/{name}/approve`` - Approve request
-- ``POST /api/v1/pending/{name}/reject`` - Reject request
+- ``GET /api/v1/pending/{name}`` - Get pending request details
+- ``POST /api/v1/pending/{name}/approve`` - Approve single request
+- ``POST /api/v1/pending/{name}/reject`` - Reject single request
+- ``POST /api/v1/pending/approve_batch`` - Bulk approve by pattern
+- ``POST /api/v1/pending/reject_batch`` - Bulk reject by pattern
 - ``GET /api/v1/enrolled`` - List enrolled entities
 
 **No API Key Required** for:
@@ -1571,13 +1745,15 @@ This ensures the root CA private key is generated locally and never transmitted.
     │   API Key Required (Admin):                                         │
     │   POST /api/v1/token           ─► Generate enrollment tokens       │
     │   GET  /api/v1/pending         ─► List pending requests            │
-    │   POST /api/v1/pending/{n}/approve ─► Approve request              │
+    │   POST /api/v1/pending/{n}/approve ─► Approve single request       │
+    │   POST /api/v1/pending/approve_batch ─► Bulk approve               │
+    │   POST /api/v1/pending/reject_batch  ─► Bulk reject                │
     │   GET  /api/v1/enrolled        ─► List enrolled entities           │
     └─────────────────────────────────────────────────────────────────────┘
 
-**Two TLS Certificates Explained:**
+**Two Different Certificates Explained:**
 
-The configuration has two different TLS certificates:
+The Certificate Service uses two completely separate certificates:
 
 .. list-table::
    :header-rows: 1
@@ -1588,16 +1764,72 @@ The configuration has two different TLS certificates:
      - Example
    * - ``server.tls.cert``
      - HTTPS endpoint TLS (public trust)
-     - Let's Encrypt, DigiCert, etc.
+     - Let's Encrypt, DigiCert, or handled by reverse proxy
    * - ``ca.cert``
-     - FLARE root CA (signs FL certs)
-     - Self-signed, project-specific
+     - FLARE root CA (signs FL participant certs)
+     - Auto-generated on first start, project-specific
 
-The ``server.tls`` certificate enables browsers and clients to trust the
-Certificate Service endpoint (like any HTTPS website).
+**Service TLS (server.tls) - Deployment Options:**
 
-The ``ca`` certificate is the FLARE project's root CA that signs FL participant
-certificates. These are separate trust domains.
+.. list-table::
+   :header-rows: 1
+   :widths: 25 35 40
+
+   * - Scenario
+     - ``tls_cert`` / ``tls_key``
+     - Notes
+   * - Local development
+     - ``None`` / ``None``
+     - HTTP only, no TLS needed
+   * - Behind reverse proxy (nginx, traefik)
+     - ``None`` / ``None``
+     - HTTP internally, proxy handles TLS
+   * - Kubernetes with Ingress
+     - ``None`` / ``None``
+     - HTTP internally, Ingress handles TLS
+   * - Cloud (GCP, AWS, Azure)
+     - ``None`` / ``None``
+     - HTTP internally, Load Balancer handles TLS
+   * - Direct HTTPS (Let's Encrypt)
+     - Paths to Let's Encrypt certs
+     - For simple deployments without proxy
+   * - Direct HTTPS (self-signed)
+     - Paths to self-signed certs
+     - Dev/testing only, clients must trust cert
+
+**Recommended approach:** For most production deployments, leave ``tls_cert``
+and ``tls_key`` as ``None``. Run the service with HTTP internally and let
+infrastructure (reverse proxy, Ingress controller, or cloud load balancer)
+handle TLS termination. This is standard practice for web services.
+
+.. code-block:: python
+
+    # Development (HTTP)
+    app.run(host="127.0.0.1", port=8080)
+    # Access: http://localhost:8080
+
+    # Production behind nginx/traefik (HTTP internally)
+    app.run(host="127.0.0.1", port=8080)
+    # Proxy handles: https://cert-service.example.com → http://127.0.0.1:8080
+
+    # Simple production with Let's Encrypt (direct HTTPS)
+    app.run(
+        host="0.0.0.0",
+        port=443,
+        ssl_context=(
+            "/etc/letsencrypt/live/example.com/fullchain.pem",
+            "/etc/letsencrypt/live/example.com/privkey.pem",
+        ),
+    )
+
+**FLARE Root CA (ca.cert/ca.key):**
+
+This is completely separate from service TLS. The FLARE root CA:
+
+- Is auto-generated on first start (if not exists)
+- Signs FL participant certificates (clients, users, relays)
+- Private key **only exists on the Certificate Service**
+- Is NOT used for HTTPS - only for FL PKI
 
 Enrollment Store
 ================
@@ -2088,12 +2320,15 @@ CertRequestor
 
 The ``CertRequestor`` handles client-side enrollment:
 
+**Location:** ``nvflare/security/enrollment/cert_requestor.py``
+
 .. code-block:: python
 
-    from nvflare.private.fed.client.enrollment import (
+    from nvflare.security.enrollment import (
         CertRequestor,
         EnrollmentIdentity,
         EnrollmentOptions,
+        EnrollmentResult,
     )
     
     # Create identity
@@ -2565,7 +2800,7 @@ Enrollment Flow
 **Pending (Manual Approval) Flow**
 
 When policy action is ``pending``, the request is queued for admin approval.
-The client returns immediately - **no polling loop**. The site operator must
+The client returns immediately - **no polling loop**. The org admin must
 restart the enrollment process later (after admin approval).
 
 .. code-block:: text
@@ -2626,7 +2861,7 @@ restart the enrollment process later (after admin approval).
 - ``status: pending`` → Raise ``EnrollmentPending(request_id, message)``
 - ``status: rejected`` → Raise ``EnrollmentError(reason)``
 
-**Site Operator Workflow (Pending):**
+**Org Admin Workflow (Pending):**
 
 .. code-block:: bash
 
@@ -2746,7 +2981,7 @@ Using ``nvflare package`` with enrollment options:
         -t server \
         --cert-service https://cert-service.example.com:8443 \
         --token eyJhbGciOiJSUzI1NiIs... \
-        -o ./packages
+        -w ./packages
 
 This generates:
 
@@ -2798,7 +3033,7 @@ Workflow Comparison
     
     Project Admin:
         nvflare cert init -n "Project" -o ./ca
-        nvflare cert server -n server1 -c ./ca --host server.example.com
+        nvflare cert site -n server1 -t server -c ./ca --host server.example.com
         # Send server.crt, server.key, rootCA.pem to server operator
     
     Server Operator:
@@ -3000,47 +3235,86 @@ Create a new root Certificate Authority.
     └── state/
         └── cert.json     # Certificate state for TokenService
 
-**nvflare cert server**
+**nvflare cert site**
 
-Generate a server certificate signed by the root CA.
+Generate a certificate for any site type (server, client, relay, admin) signed by the root CA.
 
 .. code-block:: shell
 
-    nvflare cert server \
-        -n server1 \                    # Server name (required)
+    # Generate server certificate
+    nvflare cert site \
+        -n server1 \                    # Site name (required)
+        -t server \                     # Type: server|client|relay|admin
         -c ./ca \                       # CA directory (required)
-        --host server.example.com \     # Server hostname (required)
-        --port 8002 \                   # FL port (default: 8002)
-        --admin-port 8003 \             # Admin port (default: 8003)
+        --host server.example.com \     # Server hostname for SAN (optional)
+        --additional_hosts localhost \  # Additional hosts for SAN (optional)
         -o ./certs                      # Output directory (optional)
 
-*Output:*
-
-.. code-block:: text
-
-    ./certs/
-    ├── server1.crt       # Server certificate
-    └── server1.key       # Server private key
-
-**nvflare cert client**
-
-Generate a client certificate signed by the root CA.
-
-.. code-block:: shell
-
-    nvflare cert client \
-        -n hospital-1 \                 # Client/site name (required)
+    # Generate client certificate
+    nvflare cert site \
+        -n hospital-1 \                 # Site name (required)
+        -t client \                     # Type: client
         -c ./ca \                       # CA directory (required)
         --org "Hospital A" \            # Organization (optional)
         -o ./certs                      # Output directory (optional)
 
-*Output:*
+    # Generate admin certificate
+    nvflare cert site \
+        -n admin@org.com \              # Admin email (required)
+        -t admin \                      # Type: admin
+        -c ./ca \                       # CA directory (required)
+        --role lead \                   # Role: lead|member|org_admin (optional)
+        -o ./certs                      # Output directory (optional)
+
+    # Generate relay certificate
+    nvflare cert site \
+        -n relay-1 \                    # Relay name (required)
+        -t relay \                      # Type: relay
+        -c ./ca \                       # CA directory (required)
+        -o ./certs                      # Output directory (optional)
+
+*Options:*
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Option
+     - Description
+   * - ``-n, --name``
+     - Site name (used as certificate CN)
+   * - ``-t, --type``
+     - Site type: ``server``, ``client``, ``relay``, or ``admin`` (default: client)
+   * - ``-c, --ca_path``
+     - Path to CA directory containing rootCA.pem/rootCA.key or state/cert.json
+   * - ``-o, --output``
+     - Output directory (default: current directory)
+   * - ``--org``
+     - Organization name (default: org)
+   * - ``--valid_days``
+     - Certificate validity in days (default: 365)
+   * - ``--host``
+     - Default hostname for server SAN extension
+   * - ``--additional_hosts``
+     - Additional hostnames for server SAN extension
+   * - ``--role``
+     - Role for admin type: ``lead``, ``member``, ``org_admin``, ``project_admin``
+
+*Output (depends on type):*
 
 .. code-block:: text
 
+    # For server (-t server):
     ./certs/
-    ├── hospital-1.crt    # Client certificate
-    └── hospital-1.key    # Client private key
+    ├── server.crt        # Server certificate
+    ├── server.key        # Server private key
+    └── rootCA.pem        # Root CA (for distribution)
+
+    # For client/relay/admin (-t client|relay|admin):
+    ./certs/
+    ├── client.crt        # Client certificate
+    ├── client.key        # Client private key
+    └── rootCA.pem        # Root CA (for distribution)
 
 **nvflare cert api-key**
 
@@ -3094,7 +3368,7 @@ Generate enrollment tokens for the **Auto-Scale Workflow only**.
 .. note::
 
     **Manual Workflow does NOT use tokens.** In the Manual Workflow, Project Admin
-    signs certificates directly using ``nvflare cert client`` and distributes them.
+    signs certificates directly using ``nvflare cert site`` and distributes them.
     
     Tokens are only needed in the Auto-Scale Workflow where sites enroll
     dynamically via the Certificate Service.
@@ -3234,20 +3508,66 @@ Generate startup kit without certificates (for token-based enrollment).
     nvflare package \
         -n hospital-1 \                 # Participant name (required)
         -e grpc://server:8002 \         # Server endpoint URI (required)
-        -t client \                     # Type: client|relay|server|user (required)
-        -o ./packages \                 # Output directory (optional)
+        -t client \                     # Type: client|relay|server|admin (default: client)
+        -w ./packages \                 # Output workspace directory (optional)
         --org "Hospital A" \            # Organization (optional)
         --cert-service URL \            # Certificate Service URL (optional)
         --token TOKEN                   # Enrollment token (optional)
 
 **Enrollment Options (for Auto-Scale workflow):**
 
-When ``--cert-service`` and ``--token`` are provided, the package includes:
+The Certificate Service URL and enrollment token can be configured in two ways:
+
+.. list-table:: Configuration Options
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Option
+     - When to Use
+     - How
+   * - **At Package Time**
+     - When URL and token are known upfront
+     - ``nvflare package --cert-service URL --token TOKEN``
+   * - **At Startup Time**
+     - For K8s/Docker or when token generated later
+     - Environment variables or files
+
+**Option 1: Embed at Package Time (Recommended for simplicity)**
+
+When ``--cert-service`` and/or ``--token`` are provided, the package includes:
 
 - ``startup/enrollment.json`` with the Certificate Service URL
-- ``startup/enrollment.token`` with the enrollment token
+- ``startup/enrollment_token`` with the enrollment token
 
 This consolidates the package generation and enrollment setup into one command.
+The org admin just runs: ``cd hospital-1 && ./startup/start.sh``
+
+**Option 2: Provide at Startup Time (Recommended for K8s/containers)**
+
+Generate package without enrollment options, then set at runtime:
+
+.. code-block:: bash
+
+    # Generate package (URL and token not known yet)
+    nvflare package -n hospital-1 -e grpc://server:8002 -t client
+
+    # At deployment time, set via environment variables
+    export NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443
+    export NVFLARE_ENROLLMENT_TOKEN=eyJhbGciOiJSUzI1NiIs...
+    cd hospital-1 && ./startup/start.sh
+
+Or place files in the startup directory:
+
+- ``startup/enrollment.json``: ``{"cert_service_url": "https://..."}``
+- ``startup/enrollment_token``: The JWT token string
+
+**Priority Order** (highest to lowest):
+
+1. Environment variables (``NVFLARE_CERT_SERVICE_URL``, ``NVFLARE_ENROLLMENT_TOKEN``)
+2. Files in startup directory (``enrollment.json``, ``enrollment_token``)
+
+Environment variables always override embedded files, allowing flexibility for
+multi-environment deployments (dev, staging, prod).
 
 *Endpoint URI Formats:*
 
@@ -3275,14 +3595,14 @@ This consolidates the package generation and enrollment setup into one command.
         -n hospital-1 \
         -e grpc://server.example.com:8002 \
         -t client \
-        -o ./packages
+        -w ./packages
     
     # Server package (two-port format)
     nvflare package \
         -n server1 \
         -e grpc://0.0.0.0:8002:8003 \
         -t server \
-        -o ./packages
+        -w ./packages
     
     # Relay package
     nvflare package \
@@ -3291,14 +3611,15 @@ This consolidates the package generation and enrollment setup into one command.
         -t relay \
         --listening-host 0.0.0.0 \
         --listening-port 8102 \
-        -o ./packages
+        -w ./packages
     
-    # User/Admin package
+    # Admin package
     nvflare package \
         -n admin@org.com \
         -e grpc://server:8003 \
-        -t user \
-        -o ./packages
+        -t admin \
+        --role lead \
+        -w ./packages
     
     # Client package with enrollment (Auto-Scale workflow)
     nvflare package \
@@ -3307,7 +3628,7 @@ This consolidates the package generation and enrollment setup into one command.
         -t client \
         --cert-service https://cert-service.example.com:8443 \
         --token eyJhbGciOiJSUzI1NiIs... \
-        -o ./packages
+        -w ./packages
 
 *Output (without enrollment options):*
 
@@ -3348,7 +3669,7 @@ Generate packages for all participants defined in a project.yml:
 
 .. code-block:: shell
 
-    nvflare package -p project.yml -o ./packages
+    nvflare package -p project.yml -w ./packages
 
 This filters out ``CertBuilder`` and ``SignatureBuilder`` from the project,
 generating packages without certificates (ready for token-based enrollment).
@@ -3503,7 +3824,7 @@ For 5-10 participants. No Certificate Service needed.
 
 .. code-block:: text
 
-    Step 1: Project Admin            Step 2: Distribute       Step 3: Site Operator
+    Step 1: Project Admin            Step 2: Distribute       Step 3: Org Admin
     ────────────────────            ────────────────         ─────────────────────
     
     nvflare cert init               Email/USB/               pip install nvflare
@@ -3512,18 +3833,18 @@ For 5-10 participants. No Certificate Service needed.
     rootCA.pem + rootCA.key              │                      -n hospital-1 \
         │                                │                      -e grpc://server:8002 \
         ▼                                │                      -t client
-    nvflare cert server                  │                          │
+    nvflare cert site -t server          │                          │
         │                                │                          ▼
         ▼                                │                   hospital-1/startup/
     server.crt ─────────────────────────►│                      ├── fed_client.json
     server.key                           │                      └── (no certs yet)
         │                                │                          │
         ▼                                │                   Copy received certs:
-    nvflare cert client                  │                      ├── client.crt
+    nvflare cert site -t client          │                      ├── client.crt
         │                                │                      ├── client.key
         ▼                                │                      └── rootCA.pem
-    hospital-1.crt ─────────────────────►│                          │
-    hospital-1.key                       ▼                          ▼
+    client.crt ────────────────────────►│                          │
+    client.key                           ▼                          ▼
                                                               cd hospital-1 && \
                                                                 ./startup/start.sh
 
@@ -3563,7 +3884,7 @@ For 10+ participants or dynamic environments.
        - Token string
        - Certificate Service URL
     
-    Phase 3: Site Enrollment (Site Operator)
+    Phase 3: Site Enrollment (Org Admin)
     ────────────────────────────────────────
     
     Option A: Consolidated command (recommended)
@@ -3618,17 +3939,23 @@ Component Overview
      - ``store.py``
      - Tracks enrolled entities and pending requests (SQLite/PostgreSQL)
    * - **Client Enrollment**
-     - ``nvflare/private/fed/client/enrollment/``
+     - ``nvflare/security/enrollment/``
      - Client-side enrollment components
    * - CertRequestor
      - ``cert_requestor.py``
-     - Submits CSR to Certificate Service via HTTP
+     - Generates keys, creates CSR, submits to Certificate Service via HTTP
    * - EnrollmentIdentity
      - ``cert_requestor.py``
-     - Client/server/relay/user identity for enrollment
+     - Pydantic model for client/server/relay/admin identity with validation
    * - EnrollmentOptions
      - ``cert_requestor.py``
-     - Configuration options (timeout, output_dir)
+     - Pydantic model for configuration options (timeout, retry_count, output_dir)
+   * - EnrollmentResult
+     - ``cert_requestor.py``
+     - Return value containing cert paths and in-memory objects
+   * - Helper functions
+     - ``__init__.py``
+     - ``get_enrollment_token()``, ``get_cert_service_url()``, ``enroll()``
    * - **CLI Tools**
      - ``nvflare/tool/enrollment/``
      - Command-line interfaces
@@ -3684,47 +4011,95 @@ See `CLI Commands`_ section for:
 FLARE Integration
 =================
 
-**Client Auto-Enrollment (Auto-Scale Workflow)**
+**Auto-Enrollment Integration Points**
 
-When a client or server starts without certificates, it performs auto-enrollment:
+Auto-enrollment is integrated into three FLARE components:
+
+1. **FederatedClientBase** (``nvflare/private/fed/client/fed_client_base.py``)
+2. **FederatedServer** (``nvflare/private/fed/server/fed_server.py``)
+3. **AdminAPI** (``nvflare/fuel/hci/client/api.py``)
+
+Each component calls ``_auto_enroll_if_needed()`` at startup.
+
+**Client/Server Auto-Enrollment Flow:**
 
 .. code-block:: python
 
-    # In FederatedClientBase or server startup
+    # In FederatedClientBase._auto_enroll_if_needed() and FederatedServer._auto_enroll_if_needed()
     
-    def _perform_auto_enrollment(self, client_args: dict, startup_dir: str):
-        """Perform automatic enrollment if certificates are missing."""
+    from nvflare.security.enrollment import (
+        get_enrollment_token, get_cert_service_url, enroll, EnrollmentIdentity
+    )
+    
+    def _auto_enroll_if_needed(self) -> bool:
+        """Perform automatic enrollment if certificates don't exist but token is available."""
         
         # 1. Check for existing certificates
-        cert_path = os.path.join(startup_dir, "client.crt")
-        if os.path.exists(cert_path):
-            return  # Already enrolled
+        cert_path = self.client_args.get(SecureTrainConst.SSL_CERT)
+        if cert_path and os.path.exists(cert_path):
+            return False  # Already enrolled
         
-        # 2. Get Certificate Service URL and token
-        cert_service_url = os.getenv("NVFLARE_CERT_SERVICE_URL")
-        token = os.getenv("NVFLARE_ENROLLMENT_TOKEN")
+        # 2. Get token (from env var or file)
+        token = get_enrollment_token(startup_dir)
+        if not token:
+            self.logger.debug("No enrollment token found, skipping auto-enrollment")
+            return False
         
-        if not cert_service_url or not token:
-            # Check files
-            ...
+        # 3. Get Certificate Service URL (from env var or enrollment.json)
+        cert_service_url = get_cert_service_url(startup_dir)
+        if not cert_service_url:
+            raise RuntimeError("Certificate Service URL required for enrollment")
         
-        # 3. Perform enrollment
-        identity = EnrollmentIdentity.for_client(
-            name=client_args.get("client_name"),
-            org=client_args.get("org"),
-        )
+        # 4. Perform enrollment
+        identity = EnrollmentIdentity.for_client(name=self.client_name, org=self.org)
+        result = enroll(cert_service_url, token, identity, startup_dir)
         
+        # 5. Update runtime args with new certificate paths
+        self.client_args[SecureTrainConst.SSL_CERT] = result.cert_path
+        self.client_args[SecureTrainConst.PRIVATE_KEY] = result.key_path
+        self.client_args[SecureTrainConst.SSL_ROOT_CERT] = result.ca_path
+        return True
+
+**Helper Functions (``nvflare/security/enrollment/__init__.py``):**
+
+.. code-block:: python
+
+    def get_enrollment_token(startup_dir: str = None) -> str:
+        """Get token from NVFLARE_ENROLLMENT_TOKEN env var or enrollment_token file."""
+        token = os.environ.get("NVFLARE_ENROLLMENT_TOKEN")
+        if token:
+            return token.strip()
+        if startup_dir:
+            token_file = os.path.join(startup_dir, "enrollment_token")
+            if os.path.exists(token_file):
+                with open(token_file, "r") as f:
+                    return f.read().strip()
+        return None
+
+    def get_cert_service_url(startup_dir: str = None) -> str:
+        """Get URL from NVFLARE_CERT_SERVICE_URL env var or enrollment.json file."""
+        url = os.environ.get("NVFLARE_CERT_SERVICE_URL")
+        if url:
+            return url.strip()
+        if startup_dir:
+            config_file = os.path.join(startup_dir, "enrollment.json")
+            if os.path.exists(config_file):
+                with open(config_file, "r") as f:
+                    config = json.load(f)
+                    return config.get("cert_service_url")
+        return None
+
+    def enroll(cert_service_url: str, token: str, identity: EnrollmentIdentity,
+               output_dir: str = ".") -> EnrollmentResult:
+        """Convenience function to perform enrollment."""
+        options = EnrollmentOptions(output_dir=output_dir)
         requestor = CertRequestor(
             cert_service_url=cert_service_url,
             enrollment_token=token,
             identity=identity,
-            options=EnrollmentOptions.from_client_args(client_args, startup_dir),
+            options=options,
         )
-        
-        result = requestor.request_certificate()
-        
-        # 4. Use in-memory certificates for this session
-        # Files are saved for restart persistence
+        return requestor.request_certificate()
 
 **No Changes to Existing FLARE Code**
 

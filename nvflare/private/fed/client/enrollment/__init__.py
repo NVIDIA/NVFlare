@@ -12,59 +12,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FLARE Client Enrollment Package.
+"""FLARE Client Enrollment Package (Deprecated Location).
 
-This package provides client-side certificate enrollment via CSR workflow.
+This package has been moved to nvflare.security.enrollment.
+This module provides backward compatibility imports.
 
-Supports enrollment types (from nvflare.lighter.constants):
-- client: FL client nodes (hospital-1, site-1, etc.)
-- admin: Admin/researcher users with roles
-- relay: Relay nodes for network topology
-- server: FL server nodes
-
-Uses HTTP to communicate with the Certificate Service.
-
-Example:
-    from nvflare.private.fed.client.enrollment import (
+New imports should use:
+    from nvflare.security.enrollment import (
         CertRequestor,
         EnrollmentIdentity,
         EnrollmentOptions,
+        EnrollmentResult,
     )
-
-    # Client (site) enrollment
-    identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
-
-    # Admin (user) enrollment
-    # identity = EnrollmentIdentity.for_admin("admin@example.com", role="org_admin")
-
-    # Relay enrollment
-    # identity = EnrollmentIdentity.for_relay("relay-1")
-
-    requestor = CertRequestor(
-        cert_service_url="https://cert-service.example.com",
-        enrollment_token="eyJ...",
-        identity=identity,
-    )
-
-    result = requestor.request_certificate()
-    print(f"Certificate: {result.cert_path}")
-    print(f"Root CA: {result.ca_path}")
 """
 
-# Re-export constants from lighter for convenience
-from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
-from nvflare.private.fed.client.enrollment.cert_requestor import (
+import warnings
+
+# Issue deprecation warning
+warnings.warn(
+    "nvflare.private.fed.client.enrollment is deprecated. " "Use nvflare.security.enrollment instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+# Re-export from new location for backward compatibility
+from nvflare.security.enrollment import (
+    CERT_SERVICE_URL_ENV,
+    DEFINED_PARTICIPANT_TYPES,
+    DEFINED_ROLES,
+    ENROLLMENT_TOKEN_ENV,
+    AdminRole,
     CertRequestor,
     EnrollmentIdentity,
     EnrollmentOptions,
     EnrollmentResult,
+    ParticipantType,
 )
-
-# Environment variable for enrollment token
-ENROLLMENT_TOKEN_ENV = "NVFLARE_ENROLLMENT_TOKEN"
-
-# Environment variable for Certificate Service URL
-CERT_SERVICE_URL_ENV = "NVFLARE_CERT_SERVICE_URL"
 
 __all__ = [
     # Main classes

@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FLARE Enrollment Token Tools.
+"""FLARE Enrollment CLI Tools.
 
-This package provides tools for generating and managing enrollment tokens.
+This package provides CLI tools for enrollment token generation and management.
 The TokenService requires PyJWT as an optional dependency.
 
-Usage:
-    from nvflare.tool.enrollment import TokenService
-    service = TokenService("/path/to/ca")
-    token = service.generate_token_from_file("policy.yaml", "site-1")
+For certificate enrollment (client-side), see nvflare.security.enrollment.
 
 CLI Usage:
-    nvflare token generate -s site-1 -c /path/to/ca
+    nvflare token generate -s site-1 --cert-service https://...
     nvflare token batch -n 10 --prefix hospital -o tokens.csv
     nvflare token info -t <jwt_token>
 """

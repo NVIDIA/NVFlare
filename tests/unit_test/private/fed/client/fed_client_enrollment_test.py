@@ -12,91 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for FederatedClientBase enrollment integration."""
+"""Unit tests for FederatedClientBase enrollment integration (HTTP-based)."""
 
+import json
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import pytest
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import SecureTrainConst
 
 
-def generate_test_cert(tmp_dir: str, name: str = "client"):
-    """Generate a test certificate and key."""
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+@dataclass
+class MockEnrollmentResult:
+    """Mock enrollment result."""
 
-    subject = issuer = x509.Name(
-        [
-            x509.NameAttribute(NameOID.COMMON_NAME, name),
-        ]
-    )
-
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(private_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
-        .sign(private_key, hashes.SHA256(), default_backend())
-    )
-
-    cert_path = os.path.join(tmp_dir, f"{name}.crt")
-    key_path = os.path.join(tmp_dir, f"{name}.key")
-
-    with open(cert_path, "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
-
-    with open(key_path, "wb") as f:
-        f.write(
-            private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-
-    return cert_path, key_path
+    cert_path: str
+    key_path: str
+    ca_path: str
+    private_key: object = None
+    certificate_pem: str = "cert-pem"
+    ca_cert_pem: str = "ca-pem"
 
 
 @pytest.fixture
 def temp_startup_dir():
-    """Create a temporary startup directory."""
+    """Create a temporary startup directory with rootCA.pem."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        # Create rootCA.pem (needed for enrollment)
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
-        subject = issuer = x509.Name(
-            [
-                x509.NameAttribute(NameOID.COMMON_NAME, "TestRootCA"),
-            ]
-        )
-        cert = (
-            x509.CertificateBuilder()
-            .subject_name(subject)
-            .issuer_name(issuer)
-            .public_key(private_key.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.now(timezone.utc))
-            .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
-            .add_extension(
-                x509.BasicConstraints(ca=True, path_length=None),
-                critical=True,
-            )
-            .sign(private_key, hashes.SHA256(), default_backend())
-        )
         root_ca_path = os.path.join(tmp_dir, "rootCA.pem")
-        with open(root_ca_path, "wb") as f:
-            f.write(cert.public_bytes(serialization.Encoding.PEM))
-
+        with open(root_ca_path, "w") as f:
+            f.write("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n")
         yield tmp_dir, root_ca_path
 
 
@@ -111,7 +58,7 @@ class TestAutoEnrollIfNeeded:
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+        result = FederatedClientBase._auto_enroll_if_needed(mock_client)
 
         assert result is False
 
@@ -120,7 +67,9 @@ class TestAutoEnrollIfNeeded:
         tmp_dir, root_ca_path = temp_startup_dir
 
         # Create existing certificate
-        cert_path, key_path = generate_test_cert(tmp_dir, "client")
+        cert_path = os.path.join(tmp_dir, "client.crt")
+        with open(cert_path, "w") as f:
+            f.write("existing-cert")
 
         mock_client = MagicMock()
         mock_client.secure_train = True
@@ -132,7 +81,7 @@ class TestAutoEnrollIfNeeded:
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+        result = FederatedClientBase._auto_enroll_if_needed(mock_client)
 
         assert result is False
 
@@ -152,7 +101,7 @@ class TestAutoEnrollIfNeeded:
 
         # Ensure no env var is set
         with patch.dict(os.environ, {}, clear=True):
-            result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+            result = FederatedClientBase._auto_enroll_if_needed(mock_client)
 
         assert result is False
         mock_client.logger.debug.assert_called()
@@ -173,11 +122,17 @@ class TestAutoEnrollIfNeeded:
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        with patch.dict(os.environ, {"NVFLARE_ENROLLMENT_TOKEN": "test-token"}):
-            result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+        with patch.dict(
+            os.environ,
+            {
+                "NVFLARE_ENROLLMENT_TOKEN": "test-token",
+                "NVFLARE_CERT_SERVICE_URL": "https://cert-svc:8443",
+            },
+        ):
+            result = FederatedClientBase._auto_enroll_if_needed(mock_client)
 
         assert result is True
-        mock_client._perform_enrollment.assert_called_once_with("localhost:8002", "grpc", "test-token")
+        mock_client._perform_enrollment.assert_called_once_with("https://cert-svc:8443", "test-token", tmp_dir)
 
     def test_reads_token_from_file(self, temp_startup_dir):
         """Test that token is read from enrollment_token file."""
@@ -187,6 +142,11 @@ class TestAutoEnrollIfNeeded:
         token_file = os.path.join(tmp_dir, "enrollment_token")
         with open(token_file, "w") as f:
             f.write("file-based-token\n")
+
+        # Create enrollment.json with cert service URL
+        config_file = os.path.join(tmp_dir, "enrollment.json")
+        with open(config_file, "w") as f:
+            json.dump({"cert_service_url": "https://cert-svc:8443"}, f)
 
         mock_client = MagicMock()
         mock_client.secure_train = True
@@ -202,19 +162,14 @@ class TestAutoEnrollIfNeeded:
 
         # Ensure env var is not set
         with patch.dict(os.environ, {}, clear=True):
-            result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+            result = FederatedClientBase._auto_enroll_if_needed(mock_client)
 
         assert result is True
-        mock_client._perform_enrollment.assert_called_once_with("localhost:8002", "grpc", "file-based-token")
+        mock_client._perform_enrollment.assert_called_once_with("https://cert-svc:8443", "file-based-token", tmp_dir)
 
-    def test_env_var_takes_precedence_over_file(self, temp_startup_dir):
-        """Test that env var token takes precedence over file token."""
+    def test_raises_when_cert_service_url_missing(self, temp_startup_dir):
+        """Test that error is raised when token exists but cert service URL is missing."""
         tmp_dir, root_ca_path = temp_startup_dir
-
-        # Create token file
-        token_file = os.path.join(tmp_dir, "enrollment_token")
-        with open(token_file, "w") as f:
-            f.write("file-token")
 
         mock_client = MagicMock()
         mock_client.secure_train = True
@@ -224,15 +179,13 @@ class TestAutoEnrollIfNeeded:
             SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
         }
         mock_client.logger = MagicMock()
-        mock_client._perform_enrollment = MagicMock()
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        with patch.dict(os.environ, {"NVFLARE_ENROLLMENT_TOKEN": "env-token"}):
-            result = FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
-
-        # Should use env token, not file token
-        mock_client._perform_enrollment.assert_called_once_with("localhost:8002", "grpc", "env-token")
+        # Token from env but no URL
+        with patch.dict(os.environ, {"NVFLARE_ENROLLMENT_TOKEN": "test-token"}, clear=True):
+            with pytest.raises(RuntimeError, match="Certificate Service URL required"):
+                FederatedClientBase._auto_enroll_if_needed(mock_client)
 
     def test_raises_on_enrollment_failure(self, temp_startup_dir):
         """Test that enrollment failure raises RuntimeError."""
@@ -250,202 +203,86 @@ class TestAutoEnrollIfNeeded:
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        with patch.dict(os.environ, {"NVFLARE_ENROLLMENT_TOKEN": "test-token"}):
+        with patch.dict(
+            os.environ,
+            {
+                "NVFLARE_ENROLLMENT_TOKEN": "test-token",
+                "NVFLARE_CERT_SERVICE_URL": "https://cert-svc:8443",
+            },
+        ):
             with pytest.raises(RuntimeError, match="Auto-enrollment failed"):
-                FederatedClientBase._auto_enroll_if_needed(mock_client, "localhost:8002", "grpc")
+                FederatedClientBase._auto_enroll_if_needed(mock_client)
 
 
 class TestPerformEnrollment:
     """Tests for FederatedClientBase._perform_enrollment()."""
 
-    def test_creates_enrollment_cell(self, temp_startup_dir):
-        """Test that a temporary cell is created for enrollment."""
-        tmp_dir, root_ca_path = temp_startup_dir
-
-        mock_client = MagicMock()
-        mock_client.client_name = "test-client"
-        mock_client.client_args = {
-            SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
-        }
-        mock_client.logger = MagicMock()
-
-        from nvflare.private.fed.client.fed_client_base import FederatedClientBase
-
-        with patch("nvflare.private.fed.client.fed_client_base.Cell") as mock_cell_class:
-            mock_cell = MagicMock()
-            mock_cell_class.return_value = mock_cell
-
-            # Patch at the source module where they're imported from
-            with patch("nvflare.private.fed.client.enrollment.cert_requestor.CertRequestor") as mock_requestor_class:
-                mock_requestor = MagicMock()
-                mock_requestor.request_certificate.return_value = os.path.join(tmp_dir, "test-client.crt")
-                mock_requestor_class.return_value = mock_requestor
-
-                # Also need to patch where it's imported in the method
-                with patch.dict(
-                    "sys.modules",
-                    {
-                        "nvflare.private.fed.client.enrollment": MagicMock(
-                            CertRequestor=mock_requestor_class,
-                            EnrollmentIdentity=MagicMock(for_client=MagicMock(return_value=MagicMock())),
-                            EnrollmentOptions=MagicMock(return_value=MagicMock()),
-                        )
-                    },
-                ):
-                    FederatedClientBase._perform_enrollment(mock_client, "localhost:8002", "grpc", "test-token")
-
-                    # Verify Cell was created with correct params
-                    mock_cell_class.assert_called_once()
-                    call_kwargs = mock_cell_class.call_args.kwargs
-                    assert call_kwargs["root_url"] == "grpc://localhost:8002"
-                    assert call_kwargs["secure"] is True
-
-                    # Verify Cell was started and stopped
-                    mock_cell.start.assert_called_once()
-                    mock_cell.stop.assert_called_once()
-
-    def test_calls_cert_requestor(self, temp_startup_dir):
-        """Test that CertRequestor is called correctly."""
+    def test_calls_enroll_function(self, temp_startup_dir):
+        """Test that enroll function is called with correct parameters."""
         tmp_dir, root_ca_path = temp_startup_dir
 
         mock_client = MagicMock()
         mock_client.client_name = "hospital-1"
         mock_client.client_args = {
-            SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
             "organization": "Test Hospital",
         }
         mock_client.logger = MagicMock()
 
-        from nvflare.private.fed.client.fed_client_base import FederatedClientBase
-
-        mock_requestor = MagicMock()
-        mock_requestor.request_certificate.return_value = os.path.join(tmp_dir, "hospital-1.crt")
-
-        mock_identity = MagicMock()
-        mock_identity_class = MagicMock(for_client=MagicMock(return_value=mock_identity))
-
-        mock_enrollment_module = MagicMock(
-            CertRequestor=MagicMock(return_value=mock_requestor),
-            EnrollmentIdentity=mock_identity_class,
-            EnrollmentOptions=MagicMock(return_value=MagicMock()),
+        mock_result = MockEnrollmentResult(
+            cert_path=os.path.join(tmp_dir, "client.crt"),
+            key_path=os.path.join(tmp_dir, "client.key"),
+            ca_path=os.path.join(tmp_dir, "rootCA.pem"),
         )
 
-        with patch("nvflare.private.fed.client.fed_client_base.Cell") as mock_cell_class:
-            mock_cell = MagicMock()
-            mock_cell_class.return_value = mock_cell
+        from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-            with patch.dict("sys.modules", {"nvflare.private.fed.client.enrollment": mock_enrollment_module}):
-                FederatedClientBase._perform_enrollment(mock_client, "localhost:8002", "grpc", "test-token")
+        with patch("nvflare.security.enrollment.enroll", return_value=mock_result) as mock_enroll:
+            with patch("nvflare.security.enrollment.EnrollmentIdentity") as mock_identity_class:
+                mock_identity = MagicMock()
+                mock_identity_class.for_client.return_value = mock_identity
 
-                # Verify identity was created
+                FederatedClientBase._perform_enrollment(mock_client, "https://cert-svc:8443", "test-token", tmp_dir)
+
+                # Verify identity was created correctly
                 mock_identity_class.for_client.assert_called_once_with(name="hospital-1", org="Test Hospital")
 
-                # Verify requestor was called
-                mock_requestor.request_certificate.assert_called_once()
+                # Verify enroll was called
+                mock_enroll.assert_called_once_with("https://cert-svc:8443", "test-token", mock_identity, tmp_dir)
 
     def test_updates_client_args_after_enrollment(self, temp_startup_dir):
         """Test that client_args is updated with new certificate paths."""
         tmp_dir, root_ca_path = temp_startup_dir
 
-        # Use a real dict to track updates
-        client_args = {
-            SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
-        }
+        client_args = {}
 
         mock_client = MagicMock()
         mock_client.client_name = "test-client"
         mock_client.client_args = client_args
         mock_client.logger = MagicMock()
 
-        cert_path = os.path.join(tmp_dir, "test-client.crt")
-        key_path = os.path.join(tmp_dir, "test-client.key")
+        mock_result = MockEnrollmentResult(
+            cert_path=os.path.join(tmp_dir, "client.crt"),
+            key_path=os.path.join(tmp_dir, "client.key"),
+            ca_path=os.path.join(tmp_dir, "rootCA.pem"),
+        )
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
 
-        mock_requestor = MagicMock()
-        mock_requestor.request_certificate.return_value = cert_path
-
-        mock_enrollment_module = MagicMock(
-            CertRequestor=MagicMock(return_value=mock_requestor),
-            EnrollmentIdentity=MagicMock(for_client=MagicMock(return_value=MagicMock())),
-            EnrollmentOptions=MagicMock(return_value=MagicMock()),
-        )
-
-        with patch("nvflare.private.fed.client.fed_client_base.Cell") as mock_cell_class:
-            mock_cell = MagicMock()
-            mock_cell_class.return_value = mock_cell
-
-            with patch.dict("sys.modules", {"nvflare.private.fed.client.enrollment": mock_enrollment_module}):
-                FederatedClientBase._perform_enrollment(mock_client, "localhost:8002", "grpc", "test-token")
+        with patch("nvflare.security.enrollment.enroll", return_value=mock_result):
+            with patch("nvflare.security.enrollment.EnrollmentIdentity"):
+                FederatedClientBase._perform_enrollment(mock_client, "https://cert-svc:8443", "test-token", tmp_dir)
 
                 # Verify client_args was updated
-                assert client_args[SecureTrainConst.SSL_CERT] == cert_path
-                assert client_args[SecureTrainConst.PRIVATE_KEY] == key_path
-
-    def test_cell_stopped_on_exception(self, temp_startup_dir):
-        """Test that enrollment cell is stopped even if enrollment fails."""
-        tmp_dir, root_ca_path = temp_startup_dir
-
-        mock_client = MagicMock()
-        mock_client.client_name = "test-client"
-        mock_client.client_args = {
-            SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
-        }
-        mock_client.logger = MagicMock()
-
-        from nvflare.private.fed.client.fed_client_base import FederatedClientBase
-
-        mock_requestor = MagicMock()
-        mock_requestor.request_certificate.side_effect = Exception("Network error")
-
-        mock_enrollment_module = MagicMock(
-            CertRequestor=MagicMock(return_value=mock_requestor),
-            EnrollmentIdentity=MagicMock(for_client=MagicMock(return_value=MagicMock())),
-            EnrollmentOptions=MagicMock(return_value=MagicMock()),
-        )
-
-        with patch("nvflare.private.fed.client.fed_client_base.Cell") as mock_cell_class:
-            mock_cell = MagicMock()
-            mock_cell_class.return_value = mock_cell
-
-            with patch.dict("sys.modules", {"nvflare.private.fed.client.enrollment": mock_enrollment_module}):
-                with pytest.raises(Exception, match="Network error"):
-                    FederatedClientBase._perform_enrollment(mock_client, "localhost:8002", "grpc", "test-token")
-
-                # Verify Cell was stopped despite exception
-                mock_cell.stop.assert_called_once()
+                assert client_args[SecureTrainConst.SSL_CERT] == mock_result.cert_path
+                assert client_args[SecureTrainConst.PRIVATE_KEY] == mock_result.key_path
+                assert client_args[SecureTrainConst.SSL_ROOT_CERT] == mock_result.ca_path
 
 
 class TestCreateCellIntegration:
     """Tests for _create_cell integration with auto-enrollment."""
 
-    def test_auto_enroll_called_before_cell_creation(self, temp_startup_dir):
-        """Test that _auto_enroll_if_needed is called at start of _create_cell."""
-        tmp_dir, root_ca_path = temp_startup_dir
-
-        # Create a minimal mock that tracks call order
-        call_order = []
-
-        mock_client = MagicMock()
-        mock_client.client_name = "test-client"
-        mock_client.secure_train = True
-        mock_client.client_args = {
-            SecureTrainConst.SSL_ROOT_CERT: root_ca_path,
-            SecureTrainConst.SSL_CERT: os.path.join(tmp_dir, "client.crt"),
-            SecureTrainConst.PRIVATE_KEY: os.path.join(tmp_dir, "client.key"),
-        }
-        mock_client.args = MagicMock()
-        mock_client.args.job_id = None
-        mock_client.logger = MagicMock()
-
-        def track_auto_enroll(*args, **kwargs):
-            call_order.append("auto_enroll")
-            return False
-
-        mock_client._auto_enroll_if_needed = track_auto_enroll
-
-        # We can't easily test the full _create_cell since it has many dependencies
-        # But we can verify the method structure by checking the source
+    def test_auto_enroll_called_in_create_cell(self):
+        """Test that _auto_enroll_if_needed is called in _create_cell."""
         import inspect
 
         from nvflare.private.fed.client.fed_client_base import FederatedClientBase
@@ -454,3 +291,91 @@ class TestCreateCellIntegration:
 
         # Verify _auto_enroll_if_needed is called in _create_cell
         assert "_auto_enroll_if_needed" in source
+
+
+class TestHelperFunctions:
+    """Tests for helper functions in nvflare.security.enrollment."""
+
+    def test_get_enrollment_token_from_env(self):
+        """Test getting token from environment variable."""
+        from nvflare.security.enrollment import get_enrollment_token
+
+        with patch.dict(os.environ, {"NVFLARE_ENROLLMENT_TOKEN": "  env-token  "}):
+            token = get_enrollment_token()
+            assert token == "env-token"
+
+    def test_get_enrollment_token_from_file(self, temp_startup_dir):
+        """Test getting token from file."""
+        tmp_dir, _ = temp_startup_dir
+
+        token_file = os.path.join(tmp_dir, "enrollment_token")
+        with open(token_file, "w") as f:
+            f.write("file-token\n")
+
+        from nvflare.security.enrollment import get_enrollment_token
+
+        with patch.dict(os.environ, {}, clear=True):
+            token = get_enrollment_token(tmp_dir)
+            assert token == "file-token"
+
+    def test_get_enrollment_token_returns_none(self):
+        """Test that None is returned when no token is available."""
+        from nvflare.security.enrollment import get_enrollment_token
+
+        with patch.dict(os.environ, {}, clear=True):
+            token = get_enrollment_token()
+            assert token is None
+
+    def test_get_cert_service_url_from_env(self):
+        """Test getting URL from environment variable."""
+        from nvflare.security.enrollment import get_cert_service_url
+
+        with patch.dict(os.environ, {"NVFLARE_CERT_SERVICE_URL": "  https://cert-svc:8443  "}):
+            url = get_cert_service_url()
+            assert url == "https://cert-svc:8443"
+
+    def test_get_cert_service_url_from_file(self, temp_startup_dir):
+        """Test getting URL from enrollment.json file."""
+        tmp_dir, _ = temp_startup_dir
+
+        config_file = os.path.join(tmp_dir, "enrollment.json")
+        with open(config_file, "w") as f:
+            json.dump({"cert_service_url": "https://cert-svc:8443"}, f)
+
+        from nvflare.security.enrollment import get_cert_service_url
+
+        with patch.dict(os.environ, {}, clear=True):
+            url = get_cert_service_url(tmp_dir)
+            assert url == "https://cert-svc:8443"
+
+    def test_get_cert_service_url_returns_none(self):
+        """Test that None is returned when no URL is available."""
+        from nvflare.security.enrollment import get_cert_service_url
+
+        with patch.dict(os.environ, {}, clear=True):
+            url = get_cert_service_url()
+            assert url is None
+
+    def test_enroll_function(self, temp_startup_dir):
+        """Test the enroll convenience function."""
+        tmp_dir, _ = temp_startup_dir
+
+        mock_result = MockEnrollmentResult(
+            cert_path=os.path.join(tmp_dir, "client.crt"),
+            key_path=os.path.join(tmp_dir, "client.key"),
+            ca_path=os.path.join(tmp_dir, "rootCA.pem"),
+        )
+
+        from nvflare.security.enrollment import EnrollmentIdentity, enroll
+
+        with patch("nvflare.security.enrollment.CertRequestor") as mock_requestor_class:
+            mock_requestor = MagicMock()
+            mock_requestor.request_certificate.return_value = mock_result
+            mock_requestor_class.return_value = mock_requestor
+
+            identity = EnrollmentIdentity.for_client("site-1")
+            result = enroll("https://cert-svc:8443", "token", identity, tmp_dir)
+
+            assert result == mock_result
+            mock_requestor_class.assert_called_once()
+            mock_requestor.request_certificate.assert_called_once()

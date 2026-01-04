@@ -151,12 +151,91 @@ class BaseServer(ABC):
         self.logger.info("server off")
         return 0
 
+    def _auto_enroll_if_needed(self, grpc_args: dict, startup_dir: str) -> bool:
+        """Perform automatic CSR enrollment if certificates don't exist but token is available.
+
+        This enables dynamic server enrollment without pre-provisioned certificates.
+        The server needs:
+        - Enrollment token (via NVFLARE_ENROLLMENT_TOKEN env var or token file)
+        - Certificate Service URL (via NVFLARE_CERT_SERVICE_URL env var or config)
+
+        Args:
+            grpc_args: Server configuration dict containing certificate paths
+            startup_dir: Server startup directory
+
+        Returns:
+            True if enrollment was performed, False otherwise
+        """
+        import os
+
+        # Check if certificate already exists
+        ssl_cert_path = grpc_args.get(SecureTrainConst.SSL_CERT)
+        if ssl_cert_path and os.path.exists(ssl_cert_path):
+            return False  # Certificate exists, no enrollment needed
+
+        # Check for enrollment token and Certificate Service URL
+        from nvflare.security.enrollment import CERT_SERVICE_URL_ENV, get_cert_service_url, get_enrollment_token
+
+        token = get_enrollment_token(startup_dir)
+        if not token:
+            self.logger.debug("No enrollment token found, skipping auto-enrollment")
+            return False
+
+        cert_service_url = get_cert_service_url(startup_dir)
+        if not cert_service_url:
+            self.logger.error(
+                f"Certificate Service URL not found. "
+                f"Set {CERT_SERVICE_URL_ENV} env var or add enrollment.json to startup directory."
+            )
+            raise RuntimeError("Certificate Service URL required for enrollment")
+
+        # Get server name from config
+        server_name = grpc_args.get("name", "server")
+        org = grpc_args.get("organization", grpc_args.get("org"))
+
+        self.logger.info(f"Certificate not found, attempting auto-enrollment for server '{server_name}'")
+
+        try:
+            self._perform_enrollment(cert_service_url, token, startup_dir, server_name, org, grpc_args)
+            return True
+        except Exception as e:
+            self.logger.error(f"Auto-enrollment failed: {e}")
+            raise RuntimeError(f"Auto-enrollment failed: {e}") from e
+
+    def _perform_enrollment(
+        self, cert_service_url: str, token: str, startup_dir: str, server_name: str, org: str, grpc_args: dict
+    ):
+        """Perform CSR enrollment via Certificate Service HTTP API.
+
+        Args:
+            cert_service_url: URL of the Certificate Service
+            token: JWT enrollment token
+            startup_dir: Directory to save certificates
+            server_name: Server name for certificate
+            org: Organization name
+            grpc_args: Server config to update with new cert paths
+        """
+        from nvflare.security.enrollment import EnrollmentIdentity, enroll
+
+        identity = EnrollmentIdentity.for_server(name=server_name, org=org)
+        result = enroll(cert_service_url, token, identity, startup_dir)
+        self.logger.info(f"Enrollment successful. Certificate saved to: {result.cert_path}")
+
+        # Update grpc_args with new certificate paths
+        grpc_args[SecureTrainConst.SSL_CERT] = result.cert_path
+        grpc_args[SecureTrainConst.PRIVATE_KEY] = result.key_path
+        grpc_args[SecureTrainConst.SSL_ROOT_CERT] = result.ca_path
+
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         scheme = grpc_args["service"].get("scheme", "grpc")
 
         if secure_train:
+            # Auto-enroll if certificates don't exist but token is available
+            startup_dir = args.get("startup_dir", ".")
+            self._auto_enroll_if_needed(grpc_args, startup_dir)
+
             root_cert = grpc_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = grpc_args[SecureTrainConst.SSL_CERT]
             private_key = grpc_args[SecureTrainConst.PRIVATE_KEY]
@@ -418,9 +497,8 @@ class FederatedServer(BaseServer):
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
 
-        CSR enrollment requests are exempt from authentication since clients
-        don't have certificates yet. These requests authenticate via JWT token
-        in the message headers, validated by CertService.
+        Note: CSR enrollment uses a separate Certificate Service (HTTP API),
+        so no special handling is needed here.
 
         Args:
             message: the message to validate

@@ -1,0 +1,115 @@
+# FLARE Enrollment Token - Approval Policy Configuration
+# This policy is embedded in signed JWT tokens and controls enrollment approval.
+#
+# Usage:
+#   nvflare token gen-token approval_policy.yaml
+#
+# Policy Schema:
+#   - metadata: Policy identification (project, description, version)
+#   - token: Token settings (validity, single-use)
+#   - site: Site enrollment constraints (name_pattern)
+#   - user: User enrollment constraints (allowed_roles, default_role)
+#   - approval: Rules evaluated in order; first match wins
+#   - notifications: Alert channels for pending/rejected enrollments
+#
+# Match Conditions:
+#   - site_name_pattern: Wildcard pattern (required)
+#   - source_ips: Optional CIDR ranges (for static IP environments)
+
+# ==============================================================================
+# EXAMPLE 1: Auto-Approve All (Development/Simulation)
+# ==============================================================================
+# approval:
+#   method: policy
+#   rules:
+#     - name: "auto-approve-all"
+#       match: {}
+#       action: approve
+
+# ==============================================================================
+# EXAMPLE 2: With Optional IP Matching (Static IP Environments)
+# ==============================================================================
+# approval:
+#   method: policy
+#   rules:
+#     - name: "datacenter-sites"
+#       match:
+#         site_name_pattern: "dc-*"
+#         source_ips: ["10.0.0.0/8", "172.16.0.0/12"]  # Private ranges
+#       action: approve
+
+# ==============================================================================
+# PRODUCTION POLICY (Active Configuration)
+# ==============================================================================
+
+metadata:
+  project: "nvflare-federation"
+  description: "Production enrollment policy for NVFLARE federation"
+  version: "1.0"
+
+token:
+  validity: 7d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - org_admin
+    - project_admin
+  default_role: researcher
+
+approval:
+  method: policy
+  
+  rules:
+    # Rule 1: Auto-approve internal sites
+    - name: "internal-sites"
+      description: "Auto-approve internal site enrollments"
+      match:
+        site_name_pattern: "internal-*"
+      action: approve
+
+    # Rule 2: Auto-approve hospital sites
+    - name: "hospital-sites"
+      description: "Auto-approve hospital enrollments"
+      match:
+        site_name_pattern: "hospital-*"
+      action: approve
+
+    # Rule 3: Auto-approve partner sites
+    - name: "partner-sites"
+      description: "Auto-approve partner site enrollments"
+      match:
+        site_name_pattern: "partner-*"
+      action: approve
+
+    # Rule 4: Queue unknown sites for manual approval
+    - name: "unknown-pending"
+      description: "Queue unrecognized sites for manual review"
+      match:
+        site_name_pattern: "*"
+      action: pending
+      notify:
+        - admin@organization.com
+        - security@organization.com
+      message: "Site enrollment requires manual approval"
+
+    # Rule 5: Default deny (catch-all)
+    - name: "default-deny"
+      description: "Reject all unmatched enrollment requests"
+      match: {}
+      action: reject
+      message: "Enrollment rejected: no matching approval rule"
+
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"
+    webhook:
+      enabled: false
+      url: "${WEBHOOK_URL}"

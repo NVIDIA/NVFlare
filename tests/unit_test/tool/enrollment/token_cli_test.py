@@ -294,6 +294,59 @@ class TestGetPolicyPath:
             os.remove(path)
 
 
+class TestParseValidityToDays:
+    """Test validity string to days conversion."""
+
+    def test_parse_days(self):
+        """Test parsing days format."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("7d") == 7
+        assert _parse_validity_to_days("1d") == 1
+        assert _parse_validity_to_days("30d") == 30
+
+    def test_parse_weeks(self):
+        """Test parsing weeks format."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("1w") == 7
+        assert _parse_validity_to_days("2w") == 14
+
+    def test_parse_hours(self):
+        """Test parsing hours format (rounds up to days)."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("24h") == 1
+        assert _parse_validity_to_days("48h") == 2
+        assert _parse_validity_to_days("1h") == 1  # Rounds up
+
+    def test_parse_minutes(self):
+        """Test parsing minutes format (rounds up to days)."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("1440m") == 1  # Exactly 1 day
+        assert _parse_validity_to_days("60m") == 1  # Rounds up
+
+    def test_parse_no_unit(self):
+        """Test parsing without unit assumes days."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("7") == 7
+        assert _parse_validity_to_days("1") == 1
+
+    def test_parse_none(self):
+        """Test None input returns None."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days(None) is None
+
+    def test_parse_empty_string(self):
+        """Test empty string returns None."""
+        from nvflare.tool.enrollment.token_cli import _parse_validity_to_days
+
+        assert _parse_validity_to_days("") is None
+
+
 class TestParserDefinitions:
     """Test argument parser definitions."""
 

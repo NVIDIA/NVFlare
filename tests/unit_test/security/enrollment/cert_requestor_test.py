@@ -24,7 +24,7 @@ from cryptography.hazmat.backends import default_backend
 from pydantic import ValidationError
 
 from nvflare.lighter.constants import AdminRole, ParticipantType
-from nvflare.private.fed.client.enrollment.cert_requestor import CertRequestor, EnrollmentIdentity, EnrollmentOptions
+from nvflare.security.enrollment import CertRequestor, EnrollmentIdentity, EnrollmentOptions
 
 
 class TestEnrollmentIdentity:
