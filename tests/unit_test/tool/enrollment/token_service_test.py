@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import ParticipantType
+from nvflare.lighter.constants import AdminRole, ParticipantType
 from nvflare.tool.enrollment.token_service import TokenService
 
 
@@ -255,6 +255,15 @@ class TestConvenienceMethods:
         assert payload["subject_type"] == ParticipantType.ADMIN
         assert payload["roles"] == ["lead"]
 
+    def test_generate_admin_token_default_role(self, token_service, policy_file):
+        """Test generate_admin_token uses default LEAD role when no roles specified."""
+        token = token_service.generate_admin_token(policy_file=policy_file, user_id="user@example.com")
+
+        payload = jwt.decode(token, options={"verify_signature": False})
+        assert payload["sub"] == "user@example.com"
+        assert payload["subject_type"] == ParticipantType.ADMIN
+        assert payload["roles"] == [AdminRole.LEAD]
+
     def test_generate_relay_token_method(self, token_service, policy_file):
         """Test generate_relay_token convenience method."""
         token = token_service.generate_relay_token(policy_file=policy_file, relay_name="relay-01")
@@ -262,6 +271,14 @@ class TestConvenienceMethods:
         payload = jwt.decode(token, options={"verify_signature": False})
         assert payload["sub"] == "relay-01"
         assert payload["subject_type"] == ParticipantType.RELAY
+
+    def test_generate_site_token_method(self, token_service, policy_file):
+        """Test generate_site_token convenience method (alias for client token)."""
+        token = token_service.generate_site_token(policy_file=policy_file, site_name="hospital-01")
+
+        payload = jwt.decode(token, options={"verify_signature": False})
+        assert payload["sub"] == "hospital-01"
+        assert payload["subject_type"] == ParticipantType.CLIENT
 
 
 class TestBatchGeneration:
