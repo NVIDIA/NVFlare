@@ -49,7 +49,7 @@ Two new workflows that eliminate centralized startup kit generation:
 **Key Benefits**
 
 - **Private keys generated locally**: Never transmitted over network
-- **Simplified distribution**: Certificates or tokens instead of full startup kits
+- **Simplified distribution**: Certificates (Manual) or tokens (Auto-Scale) instead of full startup kits
 - **Sites generate own packages**: No centralized startup kit creation
 - **Flexible scaling**: Manual for small, auto-scale for large deployments
 - **Clear separation**: FL workloads vs certificate management
@@ -171,6 +171,12 @@ of clients via simple token authentication, NVFLARE's provisioning feels
 archaic to researchers used to cloud-native flexibility. This architecture
 impedes rapid prototyping and requires substantial DevOps expertise.
 
+**FLARE Dashboard**
+
+Flare Dashboard simplifies the startup kit distribution. But still requires
+users to sign up the site, get approval (manual) and download the startup kit.
+The process is still pretty rigid.
+
 **Summary of Limitations**
 
 .. list-table::
@@ -204,8 +210,8 @@ The following table shows how each limitation is addressed by the new workflows:
      - Manual Workflow
      - Auto-Scale Workflow
    * - **Adding client mid-project**
-     - Generate cert with ``nvflare cert client``, send to site. No impact on existing participants.
-     - Generate token with ``nvflare token generate``, send to site. Site auto-enrolls. **Zero touch for existing participants.**
+     - Generate cert with ``nvflare cert client``. rootCA.pem, site.crt and site.key are sent to the client.
+     - Generate token with ``nvflare token generate``, send to site. Site auto-enrolls.
    * - **Private keys in transit**
      - Keys still distributed, but only certs (not full startup kits)
      - **Keys generated locally, never transmitted**
@@ -213,7 +219,7 @@ The following table shows how each limitation is addressed by the new workflows:
      - Distribute certs only (smaller, simpler)
      - **Distribute tokens only** (short strings, can be sent via any channel)
    * - **Static pre-shared trust**
-     - New participants added without touching existing ones
+     - New participants statically
      - **Dynamic enrollment** - sites join on-demand with tokens
    * - **Scalability**
      - Better for 5-10 participants
@@ -253,7 +259,7 @@ The following table shows how each limitation is addressed by the new workflows:
     # Project Admin (30 seconds)
     nvflare token generate -n new-hospital \
         --cert-service https://cert-service:8443 \
-        --admin-token $ADMIN_TOKEN
+        --api-key $API_KEY
     # Send token + Certificate Service URL to site
     
     # Site Operator (1 command!)
@@ -282,7 +288,7 @@ a federated learning deployment to 100 clients in Kubernetes.
     nvflare token batch \
         --pattern "site-{001..100}" \
         --cert-service https://cert-service.example.com:8443 \
-        --admin-token $NVFLARE_ADMIN_TOKEN \
+        --api-key $NVFLARE_API_KEY \
         -o ./tokens/
     
     # Result: tokens/site-001.token, tokens/site-002.token, ..., tokens/site-100.token
@@ -449,26 +455,37 @@ The token-based enrollment system consists of:
 
 .. code-block:: text
 
+                                    PROJECT ADMIN
+                                    ─────────────
+                                          │
+                              nvflare token generate
+                              nvflare token batch
+                              nvflare token info
+                                          │
+                                    HTTPS API
+                                          │
+                                          ▼
     ┌─────────────────────────────────────────────────────────────────────────┐
-    │                     PROJECT ADMIN INFRASTRUCTURE                         │
+    │                       CERTIFICATE SERVICE                                │
     │                                                                          │
-    │   ┌──────────────────┐         ┌──────────────────────────────────────┐ │
-    │   │   TokenService   │         │       Certificate Service            │ │
-    │   │                  │         │                                      │ │
-    │   │ nvflare token    │         │  ┌──────────────────────────────┐   │ │
-    │   │   generate       │         │  │  CertServiceApp (HTTP)       │   │ │
-    │   │                  │         │  │  POST /api/v1/enroll         │   │ │
-    │   │ Generates JWT    │         │  └──────────────┬───────────────┘   │ │
-    │   │ tokens with      │         │                 │                    │ │
-    │   │ embedded policy  │         │  ┌──────────────▼───────────────┐   │ │
-    │   │                  │         │  │  CertService (Core Logic)    │   │ │
-    │   │ Uses rootCA.key  │         │  │  - Token validation          │   │ │
-    │   │ for signing      │         │  │  - Policy evaluation         │   │ │
-    │   └──────────────────┘         │  │  - CSR signing               │   │ │
-    │                                │  │                              │   │ │
-    │                                │  │  Holds rootCA.key            │   │ │
-    │                                │  └──────────────────────────────┘   │ │
-    │                                └──────────────────────────────────────┘ │
+    │  ┌────────────────────────────────────────────────────────────────────┐ │
+    │  │                    CertServiceApp (HTTP)                           │ │
+    │  │                                                                    │ │
+    │  │  POST /api/v1/token   ─► Token generation (for nvflare token CLI) │ │
+    │  │  GET  /api/v1/token   ─► Token info                               │ │
+    │  │  POST /api/v1/enroll  ─► CSR signing (for CertRequestor)          │ │
+    │  │  GET  /api/v1/pending ─► List pending requests                    │ │
+    │  │                                                                    │ │
+    │  └────────────────────────────┬───────────────────────────────────────┘ │
+    │                               │                                          │
+    │  ┌────────────────────────────▼───────────────────────────────────────┐ │
+    │  │                    CertService (Core Logic)                        │ │
+    │  │                                                                    │ │
+    │  │  TokenService  ─► JWT generation with embedded policy             │ │
+    │  │  Token validation, Policy evaluation, CSR signing                 │ │
+    │  │                                                                    │ │
+    │  │  Holds rootCA.key (never leaves this service)                     │ │
+    │  └────────────────────────────────────────────────────────────────────┘ │
     └─────────────────────────────────────────────────────────────────────────┘
                                             │
                             HTTPS (TLS - Let's Encrypt)
@@ -1277,7 +1294,7 @@ Administrators manage pending requests via CLI:
     
     # Configuration (environment variables)
     # NVFLARE_CERT_SERVICE_URL - Certificate Service URL
-    # NVFLARE_ADMIN_TOKEN - Admin authentication token
+    # NVFLARE_API_KEY - Admin authentication token
 
 Configuration
 =============
@@ -2670,7 +2687,7 @@ Project Admin generates a server token via Certificate Service:
     nvflare token generate \
         -n server1 \
         --cert-service https://cert-service:8443 \
-        --admin-token $ADMIN_TOKEN \
+        --api-key $API_KEY \
         -o server1.token
 
 Workflow Comparison
@@ -2701,7 +2718,7 @@ Workflow Comparison
         # Deploy Certificate Service with rootCA
         nvflare token generate -n server1 \
             --cert-service https://cert-service:8443 \
-            --admin-token $ADMIN_TOKEN
+            --api-key $API_KEY
         # Send token + Cert Service URL to server operator
     
     Server Operator:
@@ -2970,7 +2987,7 @@ Generate a single enrollment token via the Certificate Service API.
     nvflare token generate \
         -n hospital-1 \                 # Site/user name (required)
         --cert-service https://cert-service:8443 \  # Certificate Service URL
-        --admin-token "admin-jwt..." \  # Admin authentication token
+        --api-key "admin-jwt..." \  # Admin authentication token
         -o hospital-1.token             # Output file (optional)
 
 *Examples:*
@@ -2980,21 +2997,21 @@ Generate a single enrollment token via the Certificate Service API.
     # Client token
     nvflare token generate -n hospital-1 \
         --cert-service https://cert-service:8443 \
-        --admin-token "$NVFLARE_ADMIN_TOKEN"
+        --api-key "$NVFLARE_API_KEY"
     
     # Relay token
     nvflare token generate -n relay-east --relay \
         --cert-service https://cert-service:8443 \
-        --admin-token "$NVFLARE_ADMIN_TOKEN"
+        --api-key "$NVFLARE_API_KEY"
     
     # User token (default role: lead)
     nvflare token generate -n admin@org.com --user \
         --cert-service https://cert-service:8443 \
-        --admin-token "$NVFLARE_ADMIN_TOKEN"
+        --api-key "$NVFLARE_API_KEY"
     
     # Using environment variables
     export NVFLARE_CERT_SERVICE_URL=https://cert-service:8443
-    export NVFLARE_ADMIN_TOKEN=eyJhbGciOiJSUzI1NiIs...
+    export NVFLARE_API_KEY=eyJhbGciOiJSUzI1NiIs...
     nvflare token generate -n hospital-1
 
 **nvflare token batch**
@@ -3007,14 +3024,14 @@ Generate multiple tokens at once via the Certificate Service API.
     nvflare token batch \
         --pattern "site-{001..100}" \
         --cert-service https://cert-service:8443 \
-        --admin-token $NVFLARE_ADMIN_TOKEN \
+        --api-key $NVFLARE_API_KEY \
         -o ./tokens/
     
     # Using names file
     nvflare token batch \
         --names-file sites.txt \
         --cert-service https://cert-service:8443 \
-        --admin-token $NVFLARE_ADMIN_TOKEN \
+        --api-key $NVFLARE_API_KEY \
         -o ./tokens/
     
     # Using prefix and count
@@ -3023,7 +3040,7 @@ Generate multiple tokens at once via the Certificate Service API.
         --count 100 \
         --pad 3 \
         --cert-service https://cert-service:8443 \
-        --admin-token $NVFLARE_ADMIN_TOKEN \
+        --api-key $NVFLARE_API_KEY \
         -o ./tokens/
 
 *Output:*
@@ -3223,7 +3240,7 @@ Manage pending enrollment requests (Admin CLI for Certificate Service).
 **Environment Variables:**
 
 - ``NVFLARE_CERT_SERVICE_URL``: Certificate Service URL
-- ``NVFLARE_ADMIN_TOKEN``: Admin authentication token
+- ``NVFLARE_API_KEY``: Admin authentication token
 
 **nvflare enrollment list**
 
@@ -3392,13 +3409,13 @@ For 10+ participants or dynamic environments.
     
     nvflare token generate -n hospital-1 \
         --cert-service https://cert-service.example.com \
-        --admin-token $ADMIN_TOKEN
+        --api-key $API_KEY
     
     # Or batch generate:
     nvflare token batch \
         --pattern "hospital-{001..100}" \
         --cert-service https://cert-service.example.com \
-        --admin-token $ADMIN_TOKEN
+        --api-key $API_KEY
     
     Distribute to each site:
        - Token string

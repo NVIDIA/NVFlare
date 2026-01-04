@@ -35,7 +35,7 @@ class TestTokenCLIImports:
         """Test that CLI constants are defined."""
         from nvflare.tool.enrollment.token_cli import (
             CMD_TOKEN,
-            ENV_ADMIN_TOKEN,
+            ENV_API_KEY,
             ENV_CA_PATH,
             ENV_CERT_SERVICE_URL,
             ENV_ENROLLMENT_POLICY,
@@ -51,7 +51,7 @@ class TestTokenCLIImports:
         assert ENV_CA_PATH == "NVFLARE_CA_PATH"
         assert ENV_ENROLLMENT_POLICY == "NVFLARE_ENROLLMENT_POLICY"
         assert ENV_CERT_SERVICE_URL == "NVFLARE_CERT_SERVICE_URL"
-        assert ENV_ADMIN_TOKEN == "NVFLARE_ADMIN_TOKEN"
+        assert ENV_API_KEY == "NVFLARE_API_KEY"
 
     def test_default_policy_defined(self):
         """Test that built-in default policy is defined."""
@@ -158,29 +158,29 @@ class TestGetAdminToken:
 
     def test_token_from_args(self):
         """Test token from CLI argument takes priority."""
-        from nvflare.tool.enrollment.token_cli import _get_admin_token
+        from nvflare.tool.enrollment.token_cli import _get_api_key
 
-        args = argparse.Namespace(admin_token="my-admin-token")
-        result = _get_admin_token(args)
-        assert result == "my-admin-token"
+        args = argparse.Namespace(api_key="my-api-key")
+        result = _get_api_key(args)
+        assert result == "my-api-key"
 
     def test_token_from_env_var(self):
         """Test token from environment variable."""
-        from nvflare.tool.enrollment.token_cli import ENV_ADMIN_TOKEN, _get_admin_token
+        from nvflare.tool.enrollment.token_cli import ENV_API_KEY, _get_api_key
 
-        args = argparse.Namespace(admin_token=None)
-        with patch.dict(os.environ, {ENV_ADMIN_TOKEN: "env-token"}):
-            result = _get_admin_token(args)
+        args = argparse.Namespace(api_key=None)
+        with patch.dict(os.environ, {ENV_API_KEY: "env-token"}):
+            result = _get_api_key(args)
             assert result == "env-token"
 
     def test_token_returns_none_when_not_set(self):
         """Test token returns None when not set."""
-        from nvflare.tool.enrollment.token_cli import _get_admin_token
+        from nvflare.tool.enrollment.token_cli import _get_api_key
 
-        args = argparse.Namespace(admin_token=None)
+        args = argparse.Namespace(api_key=None)
         with patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("NVFLARE_ADMIN_TOKEN", None)
-            result = _get_admin_token(args)
+            os.environ.pop("NVFLARE_API_KEY", None)
+            result = _get_api_key(args)
             assert result is None
 
 
@@ -199,7 +199,7 @@ class TestRemoteTokenGeneration:
 
         token = _generate_token_remote(
             "https://cert-svc:8443",
-            "admin-token",
+            "api-key",
             {"subject": "site-1", "subject_type": "client"},
         )
 
@@ -209,7 +209,7 @@ class TestRemoteTokenGeneration:
         # Verify URL and headers
         call_args = mock_post.call_args
         assert call_args[0][0] == "https://cert-svc:8443/api/v1/token"
-        assert call_args[1]["headers"]["Authorization"] == "Bearer admin-token"
+        assert call_args[1]["headers"]["Authorization"] == "Bearer api-key"
 
     @patch("requests.post")
     def test_generate_token_remote_auth_failure(self, mock_post):
@@ -227,7 +227,7 @@ class TestRemoteTokenGeneration:
                 {"subject": "site-1", "subject_type": "client"},
             )
 
-    def test_generate_token_remote_missing_admin_token(self):
+    def test_generate_token_remote_missing_api_key(self):
         """Test remote token generation without admin token."""
         from nvflare.tool.enrollment.token_cli import _generate_token_remote
 
