@@ -44,42 +44,42 @@ def define_package_parser(parser):
     """Define CLI arguments for the package command."""
     # Project file mode - packages all participants
     parser.add_argument(
-        "-p", "--project_file", type=str, default=None,
-        help="Project YAML file. If provided, packages ALL participants (no other args needed)"
+        "-p",
+        "--project_file",
+        type=str,
+        default=None,
+        help="Project YAML file. If provided, packages ALL participants (no other args needed)",
     )
     parser.add_argument(
-        "-w", "--workspace", type=str, default="workspace",
-        help="Output workspace directory (default: workspace)"
+        "-w", "--workspace", type=str, default="workspace", help="Output workspace directory (default: workspace)"
     )
 
     # Single participant mode - when no project file
+    parser.add_argument("-n", "--name", type=str, default=None, help="Participant name (required if no -p)")
     parser.add_argument(
-        "-n", "--name", type=str, default=None,
-        help="Participant name (required if no -p)"
+        "-e", "--endpoint", type=str, default=None, help="Connection URI, e.g., grpc://server:8002 (required if no -p)"
     )
     parser.add_argument(
-        "-e", "--endpoint", type=str, default=None,
-        help="Connection URI, e.g., grpc://server:8002 (required if no -p)"
+        "-t",
+        "--type",
+        type=str,
+        choices=["server", "client", "relay", "admin"],
+        default="client",
+        help="Package type (default: client)",
+    )
+    parser.add_argument("--org", type=str, default="org", help="Organization name (default: org)")
+    parser.add_argument(
+        "--role",
+        type=str,
+        choices=["lead", "member", "org_admin"],
+        default="lead",
+        help="Role for admin type (default: lead)",
     )
     parser.add_argument(
-        "-t", "--type", type=str, choices=["server", "client", "relay", "admin"], default="client",
-        help="Package type (default: client)"
+        "--listening_host", type=str, default="localhost", help="Listening host for relay type (default: localhost)"
     )
     parser.add_argument(
-        "--org", type=str, default="org",
-        help="Organization name (default: org)"
-    )
-    parser.add_argument(
-        "--role", type=str, choices=["lead", "member", "org_admin"], default="lead",
-        help="Role for admin type (default: lead)"
-    )
-    parser.add_argument(
-        "--listening_host", type=str, default="localhost",
-        help="Listening host for relay type (default: localhost)"
-    )
-    parser.add_argument(
-        "--listening_port", type=int, default=8002,
-        help="Listening port for relay type (default: 8002)"
+        "--listening_port", type=int, default=8002, help="Listening port for relay type (default: 8002)"
     )
 
 

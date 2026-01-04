@@ -25,13 +25,7 @@ for token-based enrollment workflows.
 import json
 import os
 
-from nvflare.lighter.utils import (
-    Identity,
-    generate_cert,
-    generate_keys,
-    serialize_cert,
-    serialize_pri_key,
-)
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
 def define_cert_parser(parser):
@@ -40,48 +34,36 @@ def define_cert_parser(parser):
 
     # nvflare cert init
     init_parser = subparsers.add_parser("init", help="Initialize root CA")
+    init_parser.add_argument("-n", "--name", type=str, default="NVFlare", help="Project/CA name (default: NVFlare)")
     init_parser.add_argument(
-        "-n", "--name", type=str, default="NVFlare",
-        help="Project/CA name (default: NVFlare)"
+        "-o", "--output", type=str, default=".", help="Output directory (default: current directory)"
     )
     init_parser.add_argument(
-        "-o", "--output", type=str, default=".",
-        help="Output directory (default: current directory)"
-    )
-    init_parser.add_argument(
-        "--valid_days", type=int, default=3650,
-        help="Certificate validity in days (default: 3650 = 10 years)"
+        "--valid_days", type=int, default=3650, help="Certificate validity in days (default: 3650 = 10 years)"
     )
 
     # nvflare cert server
     server_parser = subparsers.add_parser("server", help="Generate server certificate")
+    server_parser.add_argument("-n", "--name", type=str, required=True, help="Server name (used as CN and identity)")
     server_parser.add_argument(
-        "-n", "--name", type=str, required=True,
-        help="Server name (used as CN and identity)"
+        "-c",
+        "--ca_path",
+        type=str,
+        required=True,
+        help="Path to CA directory (containing rootCA.pem, rootCA.key, or state/cert.json)",
     )
     server_parser.add_argument(
-        "-c", "--ca_path", type=str, required=True,
-        help="Path to CA directory (containing rootCA.pem, rootCA.key, or state/cert.json)"
+        "-o", "--output", type=str, default=".", help="Output directory (default: current directory)"
+    )
+    server_parser.add_argument("--org", type=str, default="org", help="Organization name (default: org)")
+    server_parser.add_argument(
+        "--host", type=str, default=None, help="Default host name (default: same as server name)"
     )
     server_parser.add_argument(
-        "-o", "--output", type=str, default=".",
-        help="Output directory (default: current directory)"
+        "--additional_hosts", type=str, nargs="*", default=None, help="Additional host names for SAN extension"
     )
     server_parser.add_argument(
-        "--org", type=str, default="org",
-        help="Organization name (default: org)"
-    )
-    server_parser.add_argument(
-        "--host", type=str, default=None,
-        help="Default host name (default: same as server name)"
-    )
-    server_parser.add_argument(
-        "--additional_hosts", type=str, nargs="*", default=None,
-        help="Additional host names for SAN extension"
-    )
-    server_parser.add_argument(
-        "--valid_days", type=int, default=365,
-        help="Certificate validity in days (default: 365)"
+        "--valid_days", type=int, default=365, help="Certificate validity in days (default: 365)"
     )
 
 
@@ -147,11 +129,11 @@ def _handle_init(args):
         os.chmod(cert_json_path, 0o600)
 
         print(f"Root CA initialized successfully in: {output_dir}")
-        print(f"  - rootCA.pem: Public certificate (distribute to all sites)")
-        print(f"  - rootCA.key: Private key (keep secure!)")
-        print(f"  - state/cert.json: State file for nvflare token command")
+        print("  - rootCA.pem: Public certificate (distribute to all sites)")
+        print("  - rootCA.key: Private key (keep secure!)")
+        print("  - state/cert.json: State file for nvflare token command")
         print(f"\nValidity: {args.valid_days} days")
-        print(f"\nNext steps:")
+        print("\nNext steps:")
         print(f"  1. Generate server certificate: nvflare cert server -n <server_name> -c {output_dir}")
         print(f"  2. Generate tokens: nvflare token generate -s <site_name> -c {output_dir}")
         return 0
@@ -180,8 +162,8 @@ def _handle_server(args):
         # Load root CA
         root_cert_pem, root_key_pem, issuer = _load_root_ca(ca_path)
 
-        from cryptography.hazmat.primitives.serialization import load_pem_private_key
         from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
         root_pri_key = load_pem_private_key(root_key_pem, password=None, backend=default_backend())
 
@@ -219,18 +201,20 @@ def _handle_server(args):
         os.chmod(server_key_path, 0o600)
 
         print(f"Server certificate generated successfully in: {output_dir}")
-        print(f"  - server.crt: Server certificate")
-        print(f"  - server.key: Server private key (keep secure!)")
-        print(f"  - rootCA.pem: Root CA certificate (for TLS verification)")
+        print("  - server.crt: Server certificate")
+        print("  - server.key: Server private key (keep secure!)")
+        print("  - rootCA.pem: Root CA certificate (for TLS verification)")
         print(f"\nServer name: {server_name}")
         print(f"Organization: {args.org}")
         print(f"Default host: {default_host}")
         if args.additional_hosts:
             print(f"Additional hosts: {', '.join(args.additional_hosts)}")
         print(f"Validity: {args.valid_days} days")
-        print(f"\nNext steps:")
-        print(f"  1. Copy these 3 files to your server's startup/ directory")
-        print(f"  2. Generate server startup kit: nvflare package -n {args.name} -e grpc://{default_host}:8002 -t server")
+        print("\nNext steps:")
+        print("  1. Copy these 3 files to your server's startup/ directory")
+        print(
+            f"  2. Generate server startup kit: nvflare package -n {args.name} -e grpc://{default_host}:8002 -t server"
+        )
         return 0
 
     except FileNotFoundError as e:
@@ -290,4 +274,3 @@ def _load_root_ca(ca_path: str) -> tuple:
     issuer = "NVFlare"
 
     return root_cert_pem, root_key_pem, issuer
-

@@ -22,12 +22,7 @@ from argparse import Namespace
 
 import pytest
 
-from nvflare.tool.enrollment.cert_cli import (
-    _handle_init,
-    _handle_server,
-    _load_root_ca,
-    handle_cert,
-)
+from nvflare.tool.enrollment.cert_cli import _handle_init, _handle_server, _load_root_ca, handle_cert
 
 
 class TestHandleInit:
@@ -240,4 +235,3 @@ class TestHandleCert:
         args = Namespace(cert_cmd="unknown")
         result = handle_cert(args)
         assert result == 1
-
