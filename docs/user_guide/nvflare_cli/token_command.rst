@@ -33,10 +33,21 @@ Command Usage
         info                Display token information
 
 ***********************
+Two Modes of Operation
+***********************
+
+The token CLI supports two modes:
+
+1. **Local Mode** (Manual Workflow): Generate tokens using local root CA from provisioning
+2. **Remote Mode** (Auto-Scale Workflow): Generate tokens via Certificate Service API
+
+***********************
 Environment Variables
 ***********************
 
 The token CLI supports environment variables to simplify repeated usage:
+
+**Local Mode (Manual Workflow):**
 
 .. list-table::
    :widths: 30 70
@@ -50,21 +61,39 @@ The token CLI supports environment variables to simplify repeated usage:
    * - ``NVFLARE_ENROLLMENT_POLICY``
      - Path to enrollment policy YAML file (optional, uses built-in default if not set)
 
+**Remote Mode (Auto-Scale Workflow):**
+
+.. list-table::
+   :widths: 30 70
+   :header-rows: 1
+
+   * - Variable
+     - Description
+   * - ``NVFLARE_CERT_SERVICE_URL``
+     - URL of the Certificate Service (e.g., ``https://cert-service:8443``)
+   * - ``NVFLARE_API_KEY``
+     - API key for authenticating with the Certificate Service
+
 .. note::
 
-   The ``NVFLARE_CA_PATH`` should point to the **project workspace** created by provisioning,
-   not the server's startup kit. The token service reads the root CA from
+   **Local Mode:** The ``NVFLARE_CA_PATH`` should point to the **project workspace** created
+   by provisioning, not the server's startup kit. The token service reads the root CA from
    ``state/cert.json`` in the provisioning workspace.
 
-Setting these variables allows you to omit the ``-c`` and ``-p`` options from commands:
+   **Remote Mode:** When using ``--cert-service``, the Certificate Service generates and signs
+   tokens using its own root CA. The local ``-c`` option is not needed.
+
+Setting these variables allows you to omit options from commands:
 
 .. code-block:: shell
 
-    # Set once in your environment
+    # Local Mode (Manual Workflow)
     export NVFLARE_CA_PATH=/path/to/workspace/my_project
-    export NVFLARE_ENROLLMENT_POLICY=/path/to/my_policy.yaml
+    nvflare token generate -s hospital-1
 
-    # Then use simplified commands
+    # Remote Mode (Auto-Scale Workflow)
+    export NVFLARE_CERT_SERVICE_URL=https://cert-service:8443
+    export NVFLARE_API_KEY=your-api-key
     nvflare token generate -s hospital-1
 
 ***********************
@@ -80,6 +109,7 @@ Usage
 
     usage: nvflare token generate [-h] -s SUBJECT [--user | --relay]
                                   [-c CA_PATH] [-p POLICY] [-r ROLE] [-o OUTPUT]
+                                  [--cert-service URL] [--api-key KEY]
 
 Options
 =======
@@ -97,13 +127,17 @@ Options
    * - ``--relay``
      - Generate a relay node token (for hierarchical FL)
    * - ``-c, --ca_path``
-     - Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
+     - **Local Mode:** Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
    * - ``-p, --policy``
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``, uses default if not set)
    * - ``-r, --role``
      - Role for user tokens: ``lead`` (default), ``member``, or ``org_admin``
    * - ``-o, --output``
      - Output file to save token (prints to stdout if not specified)
+   * - ``--cert-service``
+     - **Remote Mode:** URL of Certificate Service (or set ``NVFLARE_CERT_SERVICE_URL``)
+   * - ``--api-key``
+     - **Remote Mode:** API key for Certificate Service (or set ``NVFLARE_API_KEY``)
 
 Token Types
 ===========
@@ -124,17 +158,33 @@ Token Types
 Examples
 ========
 
-**Basic Usage - Generate a client token:**
+**Local Mode (Manual Workflow)**
+
+Generate tokens using local root CA from provisioning:
 
 .. code-block:: shell
 
+    # Basic client token
     nvflare token generate -s hospital-1 -c /path/to/workspace/my_project
 
-**With Environment Variables:**
+    # With environment variable
+    export NVFLARE_CA_PATH=/path/to/workspace/my_project
+    nvflare token generate -s hospital-1
+
+**Remote Mode (Auto-Scale Workflow)**
+
+Generate tokens via Certificate Service API:
 
 .. code-block:: shell
 
-    export NVFLARE_CA_PATH=/path/to/workspace/my_project
+    # Generate token via Certificate Service
+    nvflare token generate -s hospital-1 \
+        --cert-service https://cert-service:8443 \
+        --api-key $API_KEY
+
+    # With environment variables
+    export NVFLARE_CERT_SERVICE_URL=https://cert-service:8443
+    export NVFLARE_API_KEY=your-api-key
     nvflare token generate -s hospital-1
 
 **Generate a user token (for FLARE Console):**
@@ -173,6 +223,7 @@ Usage
     usage: nvflare token batch [-h] (-n COUNT | --names NAMES [NAMES ...])
                                -o OUTPUT [-c CA_PATH] [-p POLICY]
                                [--prefix PREFIX] [--user | --relay] [-r ROLE]
+                               [--cert-service URL] [--api-key KEY]
 
 Options
 =======
@@ -190,7 +241,7 @@ Options
    * - ``-o, --output`` (required)
      - Output file to save tokens (``.csv`` or ``.txt``)
    * - ``-c, --ca_path``
-     - Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
+     - **Local Mode:** Path to provisioned workspace (or set ``NVFLARE_CA_PATH``)
    * - ``-p, --policy``
      - Path to policy YAML file (or set ``NVFLARE_ENROLLMENT_POLICY``)
    * - ``--prefix``
@@ -201,17 +252,32 @@ Options
      - Generate relay tokens for all subjects
    * - ``-r, --role``
      - Role for user tokens (default: ``lead``)
+   * - ``--cert-service``
+     - **Remote Mode:** URL of Certificate Service (or set ``NVFLARE_CERT_SERVICE_URL``)
+   * - ``--api-key``
+     - **Remote Mode:** API key for Certificate Service (or set ``NVFLARE_API_KEY``)
 
 Examples
 ========
 
-**Generate 10 client tokens with auto-numbered names:**
+**Local Mode (Manual Workflow):**
 
 .. code-block:: shell
 
+    # Generate 10 client tokens with auto-numbered names
     nvflare token batch -n 10 --prefix hospital -o tokens.csv
 
-This creates tokens for: ``hospital-1``, ``hospital-2``, ..., ``hospital-10``
+    # Creates tokens for: hospital-1, hospital-2, ..., hospital-10
+
+**Remote Mode (Auto-Scale Workflow):**
+
+.. code-block:: shell
+
+    # Generate 100 tokens via Certificate Service
+    nvflare token batch -n 100 --prefix site \
+        --cert-service https://cert-service:8443 \
+        --api-key $API_KEY \
+        -o tokens.csv
 
 **Generate tokens for specific sites:**
 
