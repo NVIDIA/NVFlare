@@ -278,7 +278,7 @@ def _define_generate_parser(sub_parser):
         help="Generate a single enrollment token",
         description=(
             "Generate a policy-based enrollment token (JWT) for a single subject.\n\n"
-            f"Environment variables:\n"
+            "Environment variables:\n"
             f"  {ENV_CA_PATH}: Path to CA directory (alternative to -c)\n"
             f"  {ENV_ENROLLMENT_POLICY}: Path to policy file (alternative to -p)"
         ),
@@ -373,7 +373,7 @@ def _define_batch_parser(sub_parser):
         help="Generate multiple enrollment tokens",
         description=(
             "Generate multiple policy-based enrollment tokens in batch.\n\n"
-            f"Environment variables:\n"
+            "Environment variables:\n"
             f"  {ENV_CA_PATH}: Path to CA directory (alternative to -c)\n"
             f"  {ENV_ENROLLMENT_POLICY}: Path to policy file (alternative to -p)"
         ),
@@ -502,7 +502,7 @@ def def_token_parser(sub_cmd):
         help="Generate and manage enrollment tokens",
         description=(
             "Commands for generating and inspecting enrollment tokens (JWT).\n\n"
-            f"Environment variables:\n"
+            "Environment variables:\n"
             f"  {ENV_CA_PATH}: CA directory path (local generation)\n"
             f"  {ENV_ENROLLMENT_POLICY}: Policy file path (local generation)\n"
             f"  {ENV_CERT_SERVICE_URL}: Certificate Service URL (remote generation)\n"

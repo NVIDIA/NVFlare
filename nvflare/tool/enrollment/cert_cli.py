@@ -270,14 +270,14 @@ def _load_root_ca(ca_path: str) -> tuple:
     if not os.path.exists(root_cert_path):
         raise FileNotFoundError(
             f"Root CA not found at: {ca_path}\n"
-            f"Expected: state/cert.json or rootCA.pem + rootCA.key\n"
-            f"Run 'nvflare cert init' first to create a root CA."
+            "Expected: state/cert.json or rootCA.pem + rootCA.key\n"
+            "Run 'nvflare cert init' first to create a root CA."
         )
 
     if not os.path.exists(root_key_path):
         raise FileNotFoundError(
             f"Root CA private key not found: {root_key_path}\n"
-            f"The private key is required to sign server certificates."
+            "The private key is required to sign server certificates."
         )
 
     with open(root_cert_path, "rb") as f:
