@@ -337,7 +337,7 @@ def _handle_api_key(args):
     print("\n1. Set as environment variable:")
     print(f"   export NVFLARE_API_KEY='{api_key}'")
     print("\n2. Or add to Certificate Service config (cert_service_config.yaml):")
-    print(f"   api_key: \"{api_key}\"")
+    print(f'   api_key: "{api_key}"')
     print("\n3. Use with CLI commands:")
     print(f"   nvflare token generate -n site-1 --cert-service https://... --api-key '{api_key}'")
     print(f"   nvflare enrollment list --cert-service https://... --api-key '{api_key}'")
