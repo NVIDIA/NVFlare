@@ -35,7 +35,9 @@ class TestTokenCLIImports:
         """Test that CLI constants are defined."""
         from nvflare.tool.enrollment.token_cli import (
             CMD_TOKEN,
+            ENV_ADMIN_TOKEN,
             ENV_CA_PATH,
+            ENV_CERT_SERVICE_URL,
             ENV_ENROLLMENT_POLICY,
             SUBCMD_BATCH,
             SUBCMD_GENERATE,
@@ -48,6 +50,8 @@ class TestTokenCLIImports:
         assert SUBCMD_INFO == "info"
         assert ENV_CA_PATH == "NVFLARE_CA_PATH"
         assert ENV_ENROLLMENT_POLICY == "NVFLARE_ENROLLMENT_POLICY"
+        assert ENV_CERT_SERVICE_URL == "NVFLARE_CERT_SERVICE_URL"
+        assert ENV_ADMIN_TOKEN == "NVFLARE_ADMIN_TOKEN"
 
     def test_default_policy_defined(self):
         """Test that built-in default policy is defined."""
@@ -88,17 +92,151 @@ class TestGetCaPath:
             result = _get_ca_path(args)
             assert result == "/path/from/args"
 
-    def test_ca_path_missing_exits(self):
-        """Test that missing CA path causes exit."""
+    def test_ca_path_missing_exits_when_required(self):
+        """Test that missing CA path causes exit when required."""
         from nvflare.tool.enrollment.token_cli import _get_ca_path
 
         args = argparse.Namespace(ca_path=None)
         with patch.dict(os.environ, {}, clear=True):
-            # Remove NVFLARE_CA_PATH if it exists
             os.environ.pop("NVFLARE_CA_PATH", None)
             with pytest.raises(SystemExit) as exc_info:
-                _get_ca_path(args)
+                _get_ca_path(args, required=True)
             assert exc_info.value.code == 1
+
+    def test_ca_path_returns_none_when_not_required(self):
+        """Test that missing CA path returns None when not required."""
+        from nvflare.tool.enrollment.token_cli import _get_ca_path
+
+        args = argparse.Namespace(ca_path=None)
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("NVFLARE_CA_PATH", None)
+            result = _get_ca_path(args, required=False)
+            assert result is None
+
+
+class TestGetCertServiceUrl:
+    """Test Certificate Service URL resolution."""
+
+    def test_url_from_args(self):
+        """Test URL from CLI argument takes priority."""
+        from nvflare.tool.enrollment.token_cli import _get_cert_service_url
+
+        args = argparse.Namespace(cert_service="https://cert-svc:8443")
+        result = _get_cert_service_url(args)
+        assert result == "https://cert-svc:8443"
+
+    def test_url_from_env_var(self):
+        """Test URL from environment variable."""
+        from nvflare.tool.enrollment.token_cli import ENV_CERT_SERVICE_URL, _get_cert_service_url
+
+        args = argparse.Namespace(cert_service=None)
+        with patch.dict(os.environ, {ENV_CERT_SERVICE_URL: "https://from-env:8443"}):
+            result = _get_cert_service_url(args)
+            assert result == "https://from-env:8443"
+
+    def test_url_trailing_slash_stripped(self):
+        """Test trailing slash is stripped from URL."""
+        from nvflare.tool.enrollment.token_cli import _get_cert_service_url
+
+        args = argparse.Namespace(cert_service="https://cert-svc:8443/")
+        result = _get_cert_service_url(args)
+        assert result == "https://cert-svc:8443"
+
+    def test_url_returns_none_when_not_set(self):
+        """Test URL returns None when not set."""
+        from nvflare.tool.enrollment.token_cli import _get_cert_service_url
+
+        args = argparse.Namespace(cert_service=None)
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("NVFLARE_CERT_SERVICE_URL", None)
+            result = _get_cert_service_url(args)
+            assert result is None
+
+
+class TestGetAdminToken:
+    """Test admin token resolution."""
+
+    def test_token_from_args(self):
+        """Test token from CLI argument takes priority."""
+        from nvflare.tool.enrollment.token_cli import _get_admin_token
+
+        args = argparse.Namespace(admin_token="my-admin-token")
+        result = _get_admin_token(args)
+        assert result == "my-admin-token"
+
+    def test_token_from_env_var(self):
+        """Test token from environment variable."""
+        from nvflare.tool.enrollment.token_cli import ENV_ADMIN_TOKEN, _get_admin_token
+
+        args = argparse.Namespace(admin_token=None)
+        with patch.dict(os.environ, {ENV_ADMIN_TOKEN: "env-token"}):
+            result = _get_admin_token(args)
+            assert result == "env-token"
+
+    def test_token_returns_none_when_not_set(self):
+        """Test token returns None when not set."""
+        from nvflare.tool.enrollment.token_cli import _get_admin_token
+
+        args = argparse.Namespace(admin_token=None)
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("NVFLARE_ADMIN_TOKEN", None)
+            result = _get_admin_token(args)
+            assert result is None
+
+
+class TestRemoteTokenGeneration:
+    """Test remote token generation via Certificate Service API."""
+
+    @patch("requests.post")
+    def test_generate_token_remote_success(self, mock_post):
+        """Test successful remote token generation."""
+        from nvflare.tool.enrollment.token_cli import _generate_token_remote
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"token": "eyJhbGciOiJSUzI1NiIs..."}
+        mock_post.return_value = mock_response
+
+        token = _generate_token_remote(
+            "https://cert-svc:8443",
+            "admin-token",
+            {"subject": "site-1", "subject_type": "client"},
+        )
+
+        assert token == "eyJhbGciOiJSUzI1NiIs..."
+        mock_post.assert_called_once()
+
+        # Verify URL and headers
+        call_args = mock_post.call_args
+        assert call_args[0][0] == "https://cert-svc:8443/api/v1/token"
+        assert call_args[1]["headers"]["Authorization"] == "Bearer admin-token"
+
+    @patch("requests.post")
+    def test_generate_token_remote_auth_failure(self, mock_post):
+        """Test remote token generation with auth failure."""
+        from nvflare.tool.enrollment.token_cli import _generate_token_remote
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_post.return_value = mock_response
+
+        with pytest.raises(SystemExit):
+            _generate_token_remote(
+                "https://cert-svc:8443",
+                "bad-token",
+                {"subject": "site-1", "subject_type": "client"},
+            )
+
+    def test_generate_token_remote_missing_admin_token(self):
+        """Test remote token generation without admin token."""
+        from nvflare.tool.enrollment.token_cli import _generate_token_remote
+
+        with pytest.raises(SystemExit):
+            _generate_token_remote(
+                "https://cert-svc:8443",
+                None,  # No admin token
+                {"subject": "site-1", "subject_type": "client"},
+            )
 
 
 class TestGetPolicyPath:

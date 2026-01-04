@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for CertRequestor."""
+"""Unit tests for CertRequestor (HTTP-based enrollment)."""
 
 import os
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from cryptography import x509
@@ -69,6 +69,14 @@ class TestEnrollmentIdentity:
         identity = EnrollmentIdentity.for_relay("relay-01", org="nvidia")
         assert identity.name == "relay-01"
         assert identity.participant_type == ParticipantType.RELAY
+        assert identity.org == "nvidia"
+        assert identity.role is None
+
+    def test_for_server(self):
+        """Test factory method for server."""
+        identity = EnrollmentIdentity.for_server("server1", org="nvidia")
+        assert identity.name == "server1"
+        assert identity.participant_type == ParticipantType.SERVER
         assert identity.org == "nvidia"
         assert identity.role is None
 
@@ -153,52 +161,90 @@ class TestCertRequestorInit:
 
     def test_init_success(self):
         """Test successful initialization."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="valid-token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="valid-token",
+            identity=identity,
+        )
 
-        assert requestor.cell == mock_cell
+        assert requestor.cert_service_url == "https://cert-service:8443"
         assert requestor.enrollment_token == "valid-token"
         assert requestor.identity == identity
-        assert requestor.target_fqcn == "server"
         assert requestor.options is not None
 
     def test_init_with_options(self):
         """Test initialization with custom options."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
         options = EnrollmentOptions(timeout=60.0, output_dir="/custom/path")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="valid-token", identity=identity, options=options)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="valid-token",
+            identity=identity,
+            options=options,
+        )
 
         assert requestor.options.timeout == 60.0
         assert requestor.options.output_dir == "/custom/path"
 
+    def test_init_empty_url_raises_error(self):
+        """Test that empty URL raises error."""
+        identity = EnrollmentIdentity.for_client("site-01")
+
+        with pytest.raises(ValueError, match="cert_service_url cannot be empty"):
+            CertRequestor(
+                cert_service_url="",
+                enrollment_token="token",
+                identity=identity,
+            )
+
     def test_init_empty_token_raises_error(self):
         """Test that empty token raises error."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
         with pytest.raises(ValueError, match="enrollment_token cannot be empty"):
-            CertRequestor(cell=mock_cell, enrollment_token="", identity=identity)
+            CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="",
+                identity=identity,
+            )
 
     def test_init_whitespace_token_raises_error(self):
         """Test that whitespace-only token raises error."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
         with pytest.raises(ValueError, match="enrollment_token cannot be empty"):
-            CertRequestor(cell=mock_cell, enrollment_token="   ", identity=identity)
+            CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="   ",
+                identity=identity,
+            )
 
     def test_token_is_stripped(self):
         """Test that token whitespace is stripped."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="  token  ", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="  token  ",
+            identity=identity,
+        )
 
         assert requestor.enrollment_token == "token"
+
+    def test_url_trailing_slash_stripped(self):
+        """Test that URL trailing slash is stripped."""
+        identity = EnrollmentIdentity.for_client("site-01")
+
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443/",
+            enrollment_token="token",
+            identity=identity,
+        )
+
+        assert requestor.cert_service_url == "https://cert-service:8443"
 
 
 class TestGenerateKeyPair:
@@ -206,10 +252,13 @@ class TestGenerateKeyPair:
 
     def test_generate_key_pair(self):
         """Test generating RSA key pair."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
         assert requestor.private_key is None
         assert requestor.public_key is None
@@ -225,10 +274,13 @@ class TestCreateCSR:
 
     def test_create_csr_basic(self):
         """Test creating basic CSR."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("hospital-01")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
         csr_pem = requestor.create_csr()
 
@@ -246,10 +298,13 @@ class TestCreateCSR:
 
     def test_create_csr_with_org(self):
         """Test creating CSR with organization."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("hospital-01", org="Hospital A")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
         csr_pem = requestor.create_csr()
         csr = x509.load_pem_x509_csr(csr_pem, default_backend())
@@ -260,10 +315,13 @@ class TestCreateCSR:
 
     def test_create_csr_with_participant_type(self):
         """Test creating CSR includes participant type."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_admin("user@example.com", role=AdminRole.LEAD)
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
         csr_pem = requestor.create_csr()
         csr = x509.load_pem_x509_csr(csr_pem, default_backend())
@@ -280,10 +338,13 @@ class TestCreateCSR:
 
     def test_create_csr_generates_key_if_needed(self):
         """Test that create_csr generates key pair if not exists."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
         assert requestor.private_key is None
 
@@ -295,162 +356,264 @@ class TestCreateCSR:
 class TestSaveCredentials:
     """Tests for saving credentials."""
 
-    def test_save_credentials(self):
-        """Test saving certificate and key to files."""
-        mock_cell = MagicMock()
+    def test_save_credentials_client(self):
+        """Test saving client certificate and key to files."""
         identity = EnrollmentIdentity.for_client("site-01")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             options = EnrollmentOptions(output_dir=tmp_dir)
-            requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity, options=options)
+            requestor = CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="token",
+                identity=identity,
+                options=options,
+            )
 
             # Generate key pair first
             requestor.generate_key_pair()
 
             # Mock certificate data
-            cert_data = b"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
+            cert_pem = "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
+            ca_pem = "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----\n"
 
-            requestor.save_credentials(cert_data)
+            cert_path, key_path, ca_path = requestor.save_credentials(cert_pem, ca_pem)
 
             # Verify files exist
-            cert_path = os.path.join(tmp_dir, CertRequestor.CERT_FILENAME)
-            key_path = os.path.join(tmp_dir, CertRequestor.KEY_FILENAME)
-
             assert os.path.exists(cert_path)
             assert os.path.exists(key_path)
+            assert os.path.exists(ca_path)
+
+            # Verify filenames for client
+            assert cert_path.endswith("client.crt")
+            assert key_path.endswith("client.key")
+            assert ca_path.endswith("rootCA.pem")
 
             # Verify key file permissions (owner read/write only)
             key_mode = os.stat(key_path).st_mode & 0o777
             assert key_mode == 0o600
 
-            # Verify certificate content
-            with open(cert_path, "rb") as f:
-                assert f.read() == cert_data
+    def test_save_credentials_server(self):
+        """Test saving server certificate uses server filenames."""
+        identity = EnrollmentIdentity.for_server("server1")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            options = EnrollmentOptions(output_dir=tmp_dir)
+            requestor = CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="token",
+                identity=identity,
+                options=options,
+            )
+
+            requestor.generate_key_pair()
+
+            cert_pem = "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
+            ca_pem = "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----\n"
+
+            cert_path, key_path, ca_path = requestor.save_credentials(cert_pem, ca_pem)
+
+            # Verify filenames for server
+            assert cert_path.endswith("server.crt")
+            assert key_path.endswith("server.key")
 
     def test_save_credentials_creates_directory(self):
         """Test that save_credentials creates output directory."""
-        mock_cell = MagicMock()
         identity = EnrollmentIdentity.for_client("site-01")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             nested_dir = os.path.join(tmp_dir, "nested", "certs")
             options = EnrollmentOptions(output_dir=nested_dir)
-            requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity, options=options)
+            requestor = CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="token",
+                identity=identity,
+                options=options,
+            )
 
             requestor.generate_key_pair()
-            cert_data = b"cert-data"
+            cert_pem = "cert-data"
+            ca_pem = "ca-data"
 
-            requestor.save_credentials(cert_data)
+            requestor.save_credentials(cert_pem, ca_pem)
 
             assert os.path.exists(nested_dir)
 
 
 class TestSubmitCSR:
-    """Tests for CSR submission."""
+    """Tests for CSR submission via HTTP."""
 
-    def test_submit_csr_success(self):
+    @patch("requests.post")
+    def test_submit_csr_success(self, mock_post):
         """Test successful CSR submission."""
-        mock_cell = MagicMock()
         mock_response = MagicMock()
-        mock_response.get_header.side_effect = lambda key, default=None: {"return_code": "OK"}.get(key, default)
-        mock_response.payload = b"signed-cert-data"
-        mock_cell.send_request.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "certificate": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",
+            "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----",
+        }
+        mock_post.return_value = mock_response
 
         identity = EnrollmentIdentity.for_client("site-01")
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
-        csr_data = b"csr-data"
-        result = requestor.submit_csr(csr_data)
+        result = requestor.submit_csr(b"csr-data")
 
-        assert result == b"signed-cert-data"
-        mock_cell.send_request.assert_called_once()
+        assert "certificate" in result
+        assert "ca_cert" in result
+        mock_post.assert_called_once()
 
-    def test_submit_csr_no_response(self):
-        """Test CSR submission with no response raises error."""
-        mock_cell = MagicMock()
-        mock_cell.send_request.return_value = None
+        # Verify URL
+        call_args = mock_post.call_args
+        assert call_args[0][0] == "https://cert-service:8443/api/v1/enroll"
+
+    @patch("requests.post")
+    def test_submit_csr_auth_failure(self, mock_post):
+        """Test CSR submission with authentication failure."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.json.return_value = {"error": "Invalid or expired token"}
+        mock_post.return_value = mock_response
 
         identity = EnrollmentIdentity.for_client("site-01")
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="bad-token",
+            identity=identity,
+        )
 
-        with pytest.raises(RuntimeError, match="No response from server"):
+        with pytest.raises(RuntimeError, match="Authentication failed"):
             requestor.submit_csr(b"csr-data")
 
-    def test_submit_csr_error_response(self):
-        """Test CSR submission with error response raises error."""
-        mock_cell = MagicMock()
+    @patch("requests.post")
+    def test_submit_csr_policy_rejection(self, mock_post):
+        """Test CSR submission with policy rejection."""
         mock_response = MagicMock()
-        mock_response.get_header.side_effect = lambda key, default=None: {
-            "return_code": "ERROR",
-            "error": "Token expired",
-        }.get(key, default)
-        mock_cell.send_request.return_value = mock_response
+        mock_response.status_code = 403
+        mock_response.json.return_value = {"error": "Site name does not match pattern"}
+        mock_post.return_value = mock_response
 
-        identity = EnrollmentIdentity.for_client("site-01")
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity)
+        identity = EnrollmentIdentity.for_client("invalid-site")
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
 
-        with pytest.raises(RuntimeError, match="Token expired"):
+        with pytest.raises(RuntimeError, match="Enrollment rejected"):
             requestor.submit_csr(b"csr-data")
 
-    def test_submit_csr_includes_headers(self):
-        """Test CSR submission includes correct headers."""
-        mock_cell = MagicMock()
-        mock_response = MagicMock()
-        mock_response.get_header.return_value = "OK"
-        mock_response.payload = b"cert"
-        mock_cell.send_request.return_value = mock_response
+    @patch("requests.post")
+    def test_submit_csr_connection_error(self, mock_post):
+        """Test CSR submission with connection error."""
+        import requests
 
-        identity = EnrollmentIdentity.for_admin("user@example.com", role=AdminRole.LEAD)
-        requestor = CertRequestor(cell=mock_cell, enrollment_token="my-token", identity=identity)
+        mock_post.side_effect = requests.RequestException("Connection refused")
+
+        identity = EnrollmentIdentity.for_client("site-01")
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="token",
+            identity=identity,
+        )
+
+        with pytest.raises(RuntimeError, match="Failed to connect"):
+            requestor.submit_csr(b"csr-data")
+
+    @patch("requests.post")
+    def test_submit_csr_includes_metadata(self, mock_post):
+        """Test CSR submission includes correct metadata."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"certificate": "cert", "ca_cert": "ca"}
+        mock_post.return_value = mock_response
+
+        identity = EnrollmentIdentity.for_admin("user@example.com", role=AdminRole.LEAD, org="TestOrg")
+        requestor = CertRequestor(
+            cert_service_url="https://cert-service:8443",
+            enrollment_token="my-token",
+            identity=identity,
+        )
 
         requestor.submit_csr(b"csr-data")
 
-        # Verify message was created with correct headers
-        call_args = mock_cell.send_request.call_args
-        message = call_args.kwargs.get("request") or call_args[1].get("request")
+        # Verify payload
+        call_args = mock_post.call_args
+        payload = call_args[1]["json"]
 
-        # The message headers should include enrollment_token, identity, participant_type, role
-        assert message is not None
+        assert payload["token"] == "my-token"
+        assert payload["csr"] == "csr-data"
+        assert payload["metadata"]["name"] == "user@example.com"
+        assert payload["metadata"]["type"] == ParticipantType.ADMIN
+        assert payload["metadata"]["org"] == "TestOrg"
+        assert payload["metadata"]["role"] == AdminRole.LEAD
 
 
 class TestRequestCertificate:
     """Tests for full enrollment workflow."""
 
-    def test_request_certificate_success(self):
+    @patch("requests.post")
+    def test_request_certificate_success(self, mock_post):
         """Test successful certificate request."""
-        mock_cell = MagicMock()
         mock_response = MagicMock()
-        mock_response.get_header.side_effect = lambda key, default=None: {"return_code": "OK"}.get(key, default)
-        mock_response.payload = b"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n"
-        mock_cell.send_request.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "certificate": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",
+            "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----",
+        }
+        mock_post.return_value = mock_response
 
         identity = EnrollmentIdentity.for_client("site-01")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             options = EnrollmentOptions(output_dir=tmp_dir)
-            requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity, options=options)
+            requestor = CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="token",
+                identity=identity,
+                options=options,
+            )
 
-            cert_path = requestor.request_certificate()
+            result = requestor.request_certificate()
 
-            assert cert_path == os.path.join(tmp_dir, CertRequestor.CERT_FILENAME)
-            assert os.path.exists(cert_path)
-            assert os.path.exists(os.path.join(tmp_dir, CertRequestor.KEY_FILENAME))
+            assert result.cert_path == os.path.join(tmp_dir, "client.crt")
+            assert result.key_path == os.path.join(tmp_dir, "client.key")
+            assert result.ca_path == os.path.join(tmp_dir, "rootCA.pem")
+            assert os.path.exists(result.cert_path)
+            assert os.path.exists(result.key_path)
+            assert os.path.exists(result.ca_path)
 
-    def test_request_certificate_generates_csr(self):
-        """Test that request_certificate generates CSR and submits it."""
-        mock_cell = MagicMock()
+            # Verify in-memory data
+            assert result.private_key is not None
+            assert "CERTIFICATE" in result.certificate_pem
+            assert "CERTIFICATE" in result.ca_cert_pem
+
+    @patch("requests.post")
+    def test_request_certificate_server(self, mock_post):
+        """Test server certificate request uses correct filenames."""
         mock_response = MagicMock()
-        mock_response.get_header.return_value = "OK"
-        mock_response.payload = b"cert"
-        mock_cell.send_request.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "certificate": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",
+            "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----",
+        }
+        mock_post.return_value = mock_response
 
-        identity = EnrollmentIdentity.for_client("site-01")
+        identity = EnrollmentIdentity.for_server("server1")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             options = EnrollmentOptions(output_dir=tmp_dir)
-            requestor = CertRequestor(cell=mock_cell, enrollment_token="token", identity=identity, options=options)
+            requestor = CertRequestor(
+                cert_service_url="https://cert-service:8443",
+                enrollment_token="token",
+                identity=identity,
+                options=options,
+            )
 
-            requestor.request_certificate()
+            result = requestor.request_certificate()
 
-            # Verify send_request was called (CSR was submitted)
-            mock_cell.send_request.assert_called_once()
+            assert result.cert_path == os.path.join(tmp_dir, "server.crt")
+            assert result.key_path == os.path.join(tmp_dir, "server.key")

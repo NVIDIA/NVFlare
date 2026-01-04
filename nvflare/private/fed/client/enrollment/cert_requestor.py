@@ -16,33 +16,25 @@
 
 This module handles the client-side enrollment workflow:
 1. Generate private key and CSR (Certificate Signing Request)
-2. Submit CSR with enrollment token to the server via CellNet
-3. Receive and save the signed certificate
+2. Submit CSR with enrollment token to Certificate Service via HTTP
+3. Receive signed certificate and rootCA.pem
+4. Save credentials to disk
 
 Supports enrollment types:
 - Client (site) enrollment: For FL clients (e.g., hospital-1, site-1)
 - Admin (user) enrollment: For admin/researcher users
 - Relay enrollment: For relay nodes
+- Server enrollment: For FL servers
 
-Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
+Uses HTTP to communicate with the Certificate Service.
 
 Example usage:
 
-    from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.private.fed.client.enrollment import (
         CertRequestor,
         EnrollmentIdentity,
         EnrollmentOptions,
     )
-
-    # Initialize CellNet
-    cell = Cell(
-        fqcn="client_1",
-        root_url="grpc://server:8002",
-        secure=True,
-        credentials={},
-    )
-    cell.start()
 
     # Client (site) enrollment
     identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
@@ -55,36 +47,33 @@ Example usage:
 
     options = EnrollmentOptions(
         timeout=30.0,
-        output_dir="/workspace/certs",
+        output_dir="/workspace/startup",
     )
 
     requestor = CertRequestor(
-        cell=cell,
+        cert_service_url="https://cert-service.example.com",
         enrollment_token="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
         identity=identity,
         options=options,
     )
 
     try:
-        cert_path = requestor.request_certificate()
-        print(f"Certificate saved to: {cert_path}")
+        result = requestor.request_certificate()
+        print(f"Certificate saved to: {result.cert_path}")
+        print(f"Root CA saved to: {result.ca_path}")
     except Exception as e:
         print(f"Enrollment failed: {e}")
-    finally:
-        cell.stop()
 """
 
 import logging
 import os
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from pydantic import BaseModel, field_validator
 
-from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic
-from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, AdminRole, ParticipantType
 from nvflare.lighter.utils import generate_keys, serialize_pri_key
 
@@ -100,6 +89,7 @@ class EnrollmentIdentity(BaseModel):
         EnrollmentIdentity.for_client("hospital-1")
         EnrollmentIdentity.for_admin("admin@example.com", role="org_admin")
         EnrollmentIdentity.for_relay("relay-1")
+        EnrollmentIdentity.for_server("server1")
     """
 
     name: str
@@ -177,6 +167,20 @@ class EnrollmentIdentity(BaseModel):
             org=org,
         )
 
+    @classmethod
+    def for_server(cls, name: str, org: str = None) -> "EnrollmentIdentity":
+        """Create identity for server enrollment.
+
+        Args:
+            name: Server name (e.g., server1)
+            org: Organization name
+        """
+        return cls(
+            name=name,
+            participant_type=ParticipantType.SERVER,
+            org=org,
+        )
+
 
 class EnrollmentOptions(BaseModel):
     """Configuration options for certificate enrollment."""
@@ -208,56 +212,70 @@ class EnrollmentOptions(BaseModel):
         return v
 
 
+@dataclass
+class EnrollmentResult:
+    """Result of enrollment - contains both in-memory certs and file paths."""
+
+    # In-memory data
+    private_key: Any  # RSA private key object
+    certificate_pem: str  # PEM-encoded signed certificate
+    ca_cert_pem: str  # PEM-encoded root CA certificate
+
+    # File paths (files saved for restart persistence)
+    cert_path: str
+    key_path: str
+    ca_path: str
+
+
 # =============================================================================
 # CertRequestor
 # =============================================================================
 
 
 class CertRequestor:
-    """Requests certificate enrollment via CSR workflow using CellNet.
+    """Requests certificate enrollment via CSR workflow using HTTP.
 
     This client-side component:
     1. Generates a new RSA key pair
     2. Creates a CSR following FLARE's certificate structure
-    3. Submits the CSR via CellNet to the server
-    4. Receives and saves the signed certificate
+    3. Submits the CSR via HTTP to the Certificate Service
+    4. Receives signed certificate and rootCA.pem
+    5. Saves credentials to disk
 
-    Supports client, admin, and relay enrollment.
-    Uses CellNet for protocol-agnostic communication (grpc, https, tcp).
+    Supports client, admin, relay, and server enrollment.
+    Uses HTTP to communicate with the standalone Certificate Service.
+
+    Security:
+    - Private key is generated locally and never transmitted
+    - rootCA.pem is only returned after token is validated
     """
-
-    # Default certificate filenames
-    CERT_FILENAME = "client.crt"
-    KEY_FILENAME = "client.key"
-    ROOT_CA_FILENAME = "rootCA.pem"
 
     def __init__(
         self,
-        cell: Cell,
+        cert_service_url: str,
         enrollment_token: str,
         identity: EnrollmentIdentity,
-        target_fqcn: str = "server",
         options: Optional[EnrollmentOptions] = None,
     ):
         """Initialize the certificate requestor.
 
         Args:
-            cell: CellNet instance for communication
+            cert_service_url: URL of the Certificate Service (e.g., https://cert-svc:8443)
             enrollment_token: JWT token with embedded policy
-            identity: Client identity information (client, admin, or relay)
-            target_fqcn: Server FQCN to connect to
+            identity: Client identity information (client, admin, relay, or server)
             options: Optional configuration parameters
 
         Raises:
-            ValueError: If enrollment_token is empty
+            ValueError: If cert_service_url or enrollment_token is empty
         """
+        if not cert_service_url or not cert_service_url.strip():
+            raise ValueError("cert_service_url cannot be empty")
         if not enrollment_token or not enrollment_token.strip():
             raise ValueError("enrollment_token cannot be empty")
 
-        self.cell = cell
+        self.cert_service_url = cert_service_url.rstrip("/")
         self.enrollment_token = enrollment_token.strip()
         self.identity = identity
-        self.target_fqcn = target_fqcn
         self.options = options or EnrollmentOptions()
 
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -301,75 +319,110 @@ class CertRequestor:
 
         return csr.public_bytes(serialization.Encoding.PEM)
 
-    def submit_csr(self, csr_data: bytes) -> bytes:
-        """Submit CSR to server for signing.
+    def submit_csr(self, csr_data: bytes) -> dict:
+        """Submit CSR to Certificate Service for signing.
 
         Args:
             csr_data: PEM-encoded CSR
 
         Returns:
-            Signed certificate bytes
+            Dict with 'certificate' and 'ca_cert' keys
 
         Raises:
             RuntimeError: If CSR submission fails
         """
-        headers = {
-            "enrollment_token": self.enrollment_token,
-            "identity": self.identity.name,
-            "participant_type": self.identity.participant_type,
+        try:
+            import requests
+        except ImportError:
+            raise ImportError("requests library is required. Install with: pip install requests")
+
+        url = f"{self.cert_service_url}/api/v1/enroll"
+
+        payload = {
+            "token": self.enrollment_token,
+            "csr": csr_data.decode("utf-8"),
+            "metadata": {
+                "name": self.identity.name,
+                "type": self.identity.participant_type,
+                "org": self.identity.org,
+                "role": self.identity.role,
+            },
         }
-        if self.identity.role:
-            headers["role"] = self.identity.role
 
-        message = new_cell_message(headers, csr_data)
+        self.logger.info(f"Submitting {self.identity.participant_type} CSR to: {url}")
 
-        self.logger.info(f"Submitting {self.identity.participant_type} CSR to: {self.target_fqcn}")
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=self.options.timeout,
+                # Certificate Service uses public CA (Let's Encrypt)
+                # so no custom CA verification needed
+            )
 
-        result = self.cell.send_request(
-            target=self.target_fqcn,
-            channel=CellChannel.SERVER_MAIN,
-            topic=CellChannelTopic.CSR_ENROLLMENT,
-            request=message,
-            timeout=self.options.timeout,
-        )
+            if response.status_code == 401:
+                error = response.json().get("error", "Invalid or expired token")
+                raise RuntimeError(f"Authentication failed: {error}")
+            elif response.status_code == 403:
+                error = response.json().get("error", "Policy rejection")
+                raise RuntimeError(f"Enrollment rejected: {error}")
+            elif response.status_code != 200:
+                error = response.json().get("error", response.text)
+                raise RuntimeError(f"CSR submission failed: {error}")
 
-        if result is None:
-            raise RuntimeError("No response from server")
+            result = response.json()
+            self.logger.info(f"{self.identity.participant_type} CSR signed successfully")
+            return result
 
-        return_code = result.get_header("return_code")
-        if return_code != "OK":
-            error = result.get_header("error", "Unknown error")
-            raise RuntimeError(f"CSR submission failed: {error}")
+        except requests.RequestException as e:
+            raise RuntimeError(f"Failed to connect to Certificate Service: {e}")
 
-        self.logger.info(f"{self.identity.participant_type} CSR signed successfully")
-        return result.payload
-
-    def save_credentials(self, cert_data: bytes) -> None:
-        """Save private key and certificate to files.
+    def save_credentials(self, cert_pem: str, ca_cert_pem: str) -> tuple:
+        """Save private key, certificate, and root CA to files.
 
         Args:
-            cert_data: Signed certificate bytes
+            cert_pem: PEM-encoded signed certificate
+            ca_cert_pem: PEM-encoded root CA certificate
+
+        Returns:
+            Tuple of (cert_path, key_path, ca_path)
         """
         os.makedirs(self.options.output_dir, exist_ok=True)
 
+        # Determine filenames based on participant type
+        if self.identity.participant_type == ParticipantType.SERVER:
+            cert_filename = "server.crt"
+            key_filename = "server.key"
+        else:
+            cert_filename = "client.crt"
+            key_filename = "client.key"
+
         # Save private key (with restricted permissions)
-        key_path = os.path.join(self.options.output_dir, self.KEY_FILENAME)
+        key_path = os.path.join(self.options.output_dir, key_filename)
         with open(key_path, "wb") as f:
             f.write(serialize_pri_key(self.private_key))
         os.chmod(key_path, 0o600)
         self.logger.info(f"Saved private key to: {key_path}")
 
         # Save certificate
-        cert_path = os.path.join(self.options.output_dir, self.CERT_FILENAME)
-        with open(cert_path, "wb") as f:
-            f.write(cert_data)
+        cert_path = os.path.join(self.options.output_dir, cert_filename)
+        with open(cert_path, "w") as f:
+            f.write(cert_pem)
         self.logger.info(f"Saved certificate to: {cert_path}")
 
-    def request_certificate(self) -> str:
+        # Save root CA
+        ca_path = os.path.join(self.options.output_dir, "rootCA.pem")
+        with open(ca_path, "w") as f:
+            f.write(ca_cert_pem)
+        self.logger.info(f"Saved root CA to: {ca_path}")
+
+        return cert_path, key_path, ca_path
+
+    def request_certificate(self) -> EnrollmentResult:
         """Complete certificate enrollment workflow.
 
         Returns:
-            Path to the saved certificate file
+            EnrollmentResult with in-memory certs and file paths
 
         Raises:
             RuntimeError: If enrollment fails
@@ -379,13 +432,21 @@ class CertRequestor:
         # Generate CSR
         csr_data = self.create_csr()
 
-        # Submit to server
-        cert_data = self.submit_csr(csr_data)
+        # Submit to Certificate Service
+        result = self.submit_csr(csr_data)
+        cert_pem = result["certificate"]
+        ca_cert_pem = result["ca_cert"]
 
         # Save credentials
-        self.save_credentials(cert_data)
+        cert_path, key_path, ca_path = self.save_credentials(cert_pem, ca_cert_pem)
 
-        cert_path = os.path.join(self.options.output_dir, self.CERT_FILENAME)
         self.logger.info(f"Enrollment complete: {cert_path}")
 
-        return cert_path
+        return EnrollmentResult(
+            private_key=self.private_key,
+            certificate_pem=cert_pem,
+            ca_cert_pem=ca_cert_pem,
+            cert_path=cert_path,
+            key_path=key_path,
+            ca_path=ca_path,
+        )

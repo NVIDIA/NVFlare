@@ -98,6 +98,7 @@ Usage:
 import os
 import sys
 import tempfile
+from typing import Optional
 
 
 CMD_TOKEN = "token"
@@ -110,6 +111,8 @@ SUBCMD_INFO = "info"
 # Environment variable names
 ENV_CA_PATH = "NVFLARE_CA_PATH"
 ENV_ENROLLMENT_POLICY = "NVFLARE_ENROLLMENT_POLICY"
+ENV_CERT_SERVICE_URL = "NVFLARE_CERT_SERVICE_URL"
+ENV_ADMIN_TOKEN = "NVFLARE_ADMIN_TOKEN"
 
 # Built-in default policy (simple auto-approve for quick start)
 DEFAULT_POLICY = """
@@ -157,7 +160,7 @@ def _check_jwt_dependency():
         sys.exit(1)
 
 
-def _get_ca_path(args):
+def _get_ca_path(args, required: bool = True):
     """Resolve CA path from args or environment variable."""
     ca_path = getattr(args, "ca_path", None)
     if ca_path:
@@ -167,11 +170,80 @@ def _get_ca_path(args):
     if ca_path:
         return ca_path
 
-    print("\nError: CA path is required.")
-    print("The CA path should point to the provisioned workspace directory")
-    print("(e.g., /path/to/workspace/my_project) created by 'nvflare provision'.")
-    print(f"\nProvide via -c/--ca_path or set {ENV_CA_PATH} environment variable.")
-    sys.exit(1)
+    if required:
+        print("\nError: CA path is required for local token generation.")
+        print("The CA path should point to the provisioned workspace directory")
+        print("(e.g., /path/to/workspace/my_project) created by 'nvflare provision'.")
+        print(f"\nProvide via -c/--ca_path or set {ENV_CA_PATH} environment variable.")
+        print("\nAlternatively, use --cert-service for remote token generation via Certificate Service.")
+        sys.exit(1)
+
+    return None
+
+
+def _get_cert_service_url(args):
+    """Resolve Certificate Service URL from args or environment variable."""
+    url = getattr(args, "cert_service", None)
+    if url:
+        return url.rstrip("/")
+
+    url = os.environ.get(ENV_CERT_SERVICE_URL)
+    if url:
+        return url.rstrip("/")
+
+    return None
+
+
+def _get_admin_token(args):
+    """Resolve admin token from args or environment variable."""
+    token = getattr(args, "admin_token", None)
+    if token:
+        return token
+
+    token = os.environ.get(ENV_ADMIN_TOKEN)
+    if token:
+        return token
+
+    return None
+
+
+def _generate_token_remote(cert_service_url: str, admin_token: Optional[str], request_data: dict) -> str:
+    """Generate token via Certificate Service API."""
+    try:
+        import requests
+    except ImportError:
+        print("\nError: requests library required for remote token generation.")
+        print("Install with: pip install requests")
+        sys.exit(1)
+
+    if not admin_token:
+        print(f"\nError: Admin token required for remote token generation.")
+        print(f"Provide via --admin-token or set {ENV_ADMIN_TOKEN} environment variable.")
+        sys.exit(1)
+
+    url = f"{cert_service_url}/api/v1/token"
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    try:
+        response = requests.post(url, json=request_data, headers=headers, timeout=30)
+
+        if response.status_code == 401:
+            print("\nError: Authentication failed. Check your admin token.")
+            sys.exit(1)
+        elif response.status_code == 403:
+            print("\nError: Access denied. Admin privileges required.")
+            sys.exit(1)
+        elif response.status_code != 200:
+            error = response.json().get("error", response.text)
+            print(f"\nError from Certificate Service: {error}")
+            sys.exit(1)
+
+        result = response.json()
+        return result.get("token")
+
+    except requests.RequestException as e:
+        print(f"\nError connecting to Certificate Service: {e}")
+        sys.exit(1)
 
 
 def _get_policy_path(args):
@@ -277,6 +349,22 @@ def _define_generate_parser(sub_parser):
         help="Output file to save token (prints to stdout if not specified)",
     )
 
+    # Remote token generation (Certificate Service API)
+    parser.add_argument(
+        "--cert-service",
+        type=str,
+        default=None,
+        metavar="URL",
+        help=f"Certificate Service URL for remote token generation (or set {ENV_CERT_SERVICE_URL})",
+    )
+    parser.add_argument(
+        "--admin-token",
+        type=str,
+        default=None,
+        metavar="TOKEN",
+        help=f"Admin token for Certificate Service authentication (or set {ENV_ADMIN_TOKEN})",
+    )
+
 
 def _define_batch_parser(sub_parser):
     """Define parser for 'nvflare token batch' command."""
@@ -355,6 +443,22 @@ def _define_batch_parser(sub_parser):
         help="Token validity duration (e.g., '7d', '24h')",
     )
 
+    # Remote token generation (Certificate Service API)
+    parser.add_argument(
+        "--cert-service",
+        type=str,
+        default=None,
+        metavar="URL",
+        help=f"Certificate Service URL for remote token generation (or set {ENV_CERT_SERVICE_URL})",
+    )
+    parser.add_argument(
+        "--admin-token",
+        type=str,
+        default=None,
+        metavar="TOKEN",
+        help=f"Admin token for Certificate Service authentication (or set {ENV_ADMIN_TOKEN})",
+    )
+
 
 def _define_info_parser(sub_parser):
     """Define parser for 'nvflare token info' command."""
@@ -399,8 +503,10 @@ def def_token_parser(sub_cmd):
         description=(
             "Commands for generating and inspecting enrollment tokens (JWT).\n\n"
             f"Environment variables:\n"
-            f"  {ENV_CA_PATH}: Default CA directory path\n"
-            f"  {ENV_ENROLLMENT_POLICY}: Default policy file path"
+            f"  {ENV_CA_PATH}: CA directory path (local generation)\n"
+            f"  {ENV_ENROLLMENT_POLICY}: Policy file path (local generation)\n"
+            f"  {ENV_CERT_SERVICE_URL}: Certificate Service URL (remote generation)\n"
+            f"  {ENV_ADMIN_TOKEN}: Admin token (remote generation)"
         ),
         formatter_class=lambda prog: __import__("argparse").RawDescriptionHelpFormatter(prog, max_help_position=40),
     )
@@ -437,7 +543,46 @@ def _handle_generate_cmd(args):
         "pattern": TokenService.SUBJECT_TYPE_PATTERN,
     }
 
-    ca_path = _get_ca_path(args)
+    # Check for remote generation first
+    cert_service_url = _get_cert_service_url(args)
+    if cert_service_url:
+        # Remote token generation via Certificate Service API
+        admin_token = _get_admin_token(args)
+
+        request_data = {
+            "subject": args.subject,
+            "subject_type": type_map[args.type],
+            "validity": args.validity,
+        }
+        if args.roles:
+            request_data["roles"] = args.roles
+        if args.source_ips:
+            request_data["source_ips"] = args.source_ips
+
+        token = _generate_token_remote(cert_service_url, admin_token, request_data)
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(token)
+            print(f"Token saved to: {args.output}")
+        else:
+            print("\nGenerated Enrollment Token (via Certificate Service):")
+            print("-" * 60)
+            print(token)
+            print("-" * 60)
+
+            # Decode token info locally
+            import jwt
+            payload = jwt.decode(token, options={"verify_signature": False})
+            print("\nToken Info:")
+            print(f"  Subject: {payload.get('sub')}")
+            print(f"  Type: {payload.get('subject_type')}")
+            print(f"  Expires: {payload.get('exp')}")
+
+        return
+
+    # Local token generation (requires CA path)
+    ca_path = _get_ca_path(args, required=True)
     policy_path, is_temp_policy = _get_policy_path(args)
 
     try:
@@ -499,7 +644,44 @@ def _handle_batch_cmd(args):
         "relay": ParticipantType.RELAY,
     }
 
-    ca_path = _get_ca_path(args)
+    # Generate name list
+    if args.names:
+        names = args.names
+    else:
+        names = [f"{args.prefix}-{i:03d}" for i in range(1, args.count + 1)]
+
+    # Check for remote generation first
+    cert_service_url = _get_cert_service_url(args)
+    if cert_service_url:
+        # Remote batch generation via Certificate Service API
+        admin_token = _get_admin_token(args)
+        results = []
+
+        for name in names:
+            request_data = {
+                "subject": name,
+                "subject_type": type_map[args.type],
+                "validity": args.validity,
+            }
+            token = _generate_token_remote(cert_service_url, admin_token, request_data)
+            results.append({"name": name, "token": token})
+
+        # Save to output file
+        with open(args.output, "w") as f:
+            for item in results:
+                f.write(f"{item['name']},{item['token']}\n")
+
+        print(f"\nGenerated {len(results)} tokens (via Certificate Service)")
+        print(f"Saved to: {args.output}")
+
+        print("\nPreview (first 3):")
+        for item in results[:3]:
+            print(f"  {item['name']}: {item['token'][:50]}...")
+
+        return
+
+    # Local batch generation (requires CA path)
+    ca_path = _get_ca_path(args, required=True)
     policy_path, is_temp_policy = _get_policy_path(args)
 
     try:

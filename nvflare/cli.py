@@ -49,6 +49,7 @@ CMD_PRE_INSTALL = "pre-install"
 CMD_TOKEN = "token"
 CMD_PACKAGE = "package"
 CMD_CERT = "cert"
+CMD_ENROLLMENT = "enrollment"
 
 
 def def_provision_parser(sub_cmd):
@@ -184,6 +185,23 @@ def def_token_parser(sub_cmd):
         return {cmd: parser}
 
 
+def def_enrollment_parser(sub_cmd):
+    """Define enrollment subcommand parser for managing pending requests."""
+    cmd = CMD_ENROLLMENT
+    try:
+        from nvflare.tool.enrollment.enrollment_cli import define_enrollment_parser
+
+        return define_enrollment_parser(sub_cmd)
+    except ImportError:
+        # requests not installed - create a stub parser
+        parser = sub_cmd.add_parser(
+            cmd,
+            help="Manage pending enrollment requests (requires requests)",
+            description="Enrollment commands require requests library.",
+        )
+        return {cmd: parser}
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -201,6 +219,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
     sub_cmd_parsers.update(def_token_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_parser(sub_cmd))
+    sub_cmd_parsers.update(def_enrollment_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -239,6 +258,17 @@ def handle_token_cmd(args):
         sys.exit(1)
 
 
+def handle_enrollment_cmd(args):
+    """Handle enrollment command for managing pending requests."""
+    try:
+        from nvflare.tool.enrollment.enrollment_cli import handle_enrollment_cmd as handle_cmd
+
+        handle_cmd(args)
+    except ImportError:
+        print("\nError: Enrollment commands require requests library.")
+        sys.exit(1)
+
+
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
@@ -252,6 +282,7 @@ handlers = {
     CMD_PRE_INSTALL: handle_pre_install_cmd,
     CMD_TOKEN: handle_token_cmd,
     CMD_CERT: handle_cert_cmd,
+    CMD_ENROLLMENT: handle_enrollment_cmd,
 }
 
 

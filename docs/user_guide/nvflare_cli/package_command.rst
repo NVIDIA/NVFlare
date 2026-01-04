@@ -354,4 +354,4 @@ See Also
 
 - :ref:`token_command` - Generate enrollment tokens
 - :ref:`provisioning` - Standard provisioning with certificates
-- :ref:`enrollment_token_design` - Design documentation for token-based enrollment
+- :ref:`enrollment_design_v2` - Design documentation for token-based enrollment
