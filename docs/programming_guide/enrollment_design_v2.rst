@@ -1207,6 +1207,30 @@ rootCA private key is on the Certificate Service.
         ]
     }
 
+**GET /api/v1/ca-cert**
+
+Download public root CA certificate. No authentication required.
+
+*Response:*
+
+PEM-encoded root CA certificate (``application/x-pem-file``).
+
+**GET /api/v1/ca-info**
+
+Get root CA information. No authentication required.
+
+*Response:*
+
+.. code-block:: json
+
+    {
+        "subject": "CN=NVFlare",
+        "issuer": "CN=NVFlare",
+        "not_valid_before": "2025-01-01T00:00:00Z",
+        "not_valid_after": "2035-01-01T00:00:00Z",
+        "serial_number": "1234567890"
+    }
+
 **GET /health**
 
 Health check endpoint.
@@ -1216,6 +1240,55 @@ Health check endpoint.
 .. code-block:: json
 
     {"status": "healthy"}
+
+API Authentication
+==================
+
+**Admin Operations** require an API key:
+
+- ``POST /api/v1/token`` - Token generation
+- ``GET /api/v1/pending`` - List pending requests
+- ``POST /api/v1/pending/{name}/approve`` - Approve request
+- ``POST /api/v1/pending/{name}/reject`` - Reject request
+- ``GET /api/v1/enrolled`` - List enrolled entities
+
+**No API Key Required** for:
+
+- ``POST /api/v1/enroll`` - Enrollment (token is authentication)
+- ``GET /api/v1/ca-cert`` - Public CA certificate
+- ``GET /api/v1/ca-info`` - CA information
+- ``GET /health`` - Health check
+
+**API Key Setup:**
+
+1. Generate key with CLI:
+
+   .. code-block:: bash
+
+       nvflare cert api-key > api_key.txt
+
+2. Configure Certificate Service:
+
+   .. code-block:: bash
+
+       # Option 1: Environment variable
+       export NVFLARE_API_KEY="<the-key>"
+
+       # Option 2: Config file
+       # api_key: "<the-key>"
+
+3. Use with admin CLI commands:
+
+   .. code-block:: bash
+
+       export NVFLARE_API_KEY="<the-key>"
+       nvflare token generate -n site-1 --cert-service https://...
+
+**HTTP Header Format:**
+
+.. code-block:: text
+
+    Authorization: Bearer <api-key>
 
 Pending Request Storage
 =======================
@@ -1315,9 +1388,22 @@ loaded at startup and controls all aspects of the service.
         cert: /path/to/service.crt   # Public TLS cert (Let's Encrypt)
         key: /path/to/service.key
     
+    # API key for admin authentication (token gen, approvals)
+    # Generate with: nvflare cert api-key
+    api_key: "your-api-key-here"
+    # Or set via environment: NVFLARE_API_KEY
+    
+    # Data directory for auto-initialization
+    # On first start, root CA is generated here if not exists
+    data_dir: /var/lib/cert_service
+    
+    # Project name (used as CA CN)
+    project_name: "NVFlare"
+    
     ca:
-      cert: /path/to/rootCA.pem      # FLARE root CA (public)
-      key: /path/to/rootCA.key       # FLARE root CA (private)
+      # If not specified, derived from data_dir
+      cert: /var/lib/cert_service/rootCA.pem   # FLARE root CA (public)
+      key: /var/lib/cert_service/rootCA.key    # FLARE root CA (private - auto-generated)
     
     policy:
       file: /path/to/approval_policy.yaml  # Enrollment policy
@@ -1346,10 +1432,16 @@ loaded at startup and controls all aspects of the service.
 
    * - Section
      - Purpose
+   * - ``api_key``
+     - API key for admin authentication (token gen, approvals). Generate with ``nvflare cert api-key``
+   * - ``data_dir``
+     - Data directory for auto-initialization. Root CA generated here on first start if not exists
+   * - ``project_name``
+     - Project name used as CA Common Name (CN)
    * - ``server``
      - HTTP server binding and TLS configuration for the service endpoint
    * - ``ca``
-     - FLARE root CA used to sign enrollment certificates
+     - FLARE root CA paths. If not specified, derived from ``data_dir``
    * - ``policy``
      - Approval policy for enrollment requests
    * - ``storage``
@@ -1365,81 +1457,79 @@ loaded at startup and controls all aspects of the service.
 
     # nvflare/cert_service/app.py
     
-    import yaml
-    from flask import Flask
-    from nvflare.cert_service.cert_service import CertService
-    from nvflare.cert_service.store import create_enrollment_store
+    from nvflare.cert_service.app import CertServiceApp
     
+    # Option 1: From config file
+    app = CertServiceApp("/path/to/config.yaml")
     
-    class CertServiceApp:
-        """HTTP wrapper for CertService."""
-        
-        def __init__(self, config_path: str):
-            with open(config_path) as f:
-                self.config = yaml.safe_load(f)
-            
-            # Initialize enrollment store (SQLite or PostgreSQL)
-            self.store = create_enrollment_store(self.config["storage"])
-            
-            # Initialize CertService with CA and policy
-            self.cert_service = CertService(
-                root_ca_cert=self.config["ca"]["cert"],
-                root_ca_key=self.config["ca"]["key"],
-                policy_file=self.config.get("policy", {}).get("file"),
-                enrollment_store=self.store,
-                pending_timeout=self.config["pending"]["timeout"],
-            )
-            
-            # Create Flask app
-            self.app = Flask(__name__)
-            self._register_routes()
-            
-            # Start cleanup scheduler
-            self._start_cleanup_scheduler(
-                interval=self.config["pending"]["cleanup_interval"]
-            )
-        
-        def _register_routes(self):
-            @self.app.route("/api/v1/enroll", methods=["POST"])
-            def enroll():
-                # Handle enrollment request
-                ...
-            
-            @self.app.route("/api/v1/pending", methods=["GET"])
-            def list_pending():
-                # List pending requests (admin only)
-                ...
-            
-            # ... other routes ...
-        
-        def run(self):
-            """Start the HTTPS server."""
-            self.app.run(
-                host=self.config["server"]["host"],
-                port=self.config["server"]["port"],
-                ssl_context=(
-                    self.config["server"]["tls"]["cert"],
-                    self.config["server"]["tls"]["key"],
-                ),
-            )
+    # Option 2: With arguments (auto-initializes root CA on first start)
+    app = CertServiceApp(
+        data_dir="/var/lib/cert_service",   # Root CA generated here if not exists
+        project_name="MyProject",           # CA Common Name
+        api_key="your-api-key",             # For admin operations
+    )
+    
+    # Start the server
+    app.run(
+        host="0.0.0.0",
+        port=8443,
+        ssl_context=("tls.crt", "tls.key"),  # Service TLS (e.g., Let's Encrypt)
+    )
+
+**Key Behaviors:**
+
+1. **Auto-initialization**: On first start, if ``rootCA.pem`` and ``rootCA.key``
+   don't exist in ``data_dir``, they are automatically generated. The private
+   key only exists on the service.
+
+2. **API Key**: Required for admin operations (token generation, approvals).
+   Generate with ``nvflare cert api-key``. Configure via ``NVFLARE_API_KEY``
+   env var or config file.
+
+3. **Token-based enrollment**: The ``POST /api/v1/enroll`` endpoint uses the
+   enrollment token for authentication - no API key needed for sites/users.
+
+**Auto-Initialization on First Start:**
+
+On first start, if the root CA does not exist, the Certificate Service will:
+
+1. Generate root CA certificate and private key
+2. Log the generated files location
+3. The root CA private key **only exists on the service** - never distributed
+
+This ensures the root CA private key is generated locally and never transmitted.
 
 **Starting the Certificate Service:**
 
 .. code-block:: shell
 
-    # Option 1: Direct Python
-    python -m nvflare.cert_service.app --config /path/to/cert_service_config.yaml
+    # Option 1: Direct Python (with config file)
+    python -c "
+    from nvflare.cert_service.app import CertServiceApp
+    app = CertServiceApp('/path/to/config.yaml')
+    app.run()
+    "
     
-    # Option 2: Using CLI (if implemented)
-    nvflare cert-service start --config /path/to/cert_service_config.yaml
+    # Option 2: Direct Python (with arguments)
+    python -c "
+    from nvflare.cert_service.app import CertServiceApp
+    app = CertServiceApp(
+        data_dir='/var/lib/cert_service',
+        project_name='MyProject',
+        api_key='your-api-key',
+    )
+    app.run(host='0.0.0.0', port=8443, ssl_context=('tls.crt', 'tls.key'))
+    "
     
     # Option 3: Docker
     docker run -d \
-        -v /path/to/config:/config \
-        -v /path/to/ca:/ca:ro \
+        -v /var/lib/cert_service:/data \
+        -e NVFLARE_API_KEY="your-api-key" \
         -p 8443:8443 \
-        nvflare/cert-service:latest \
-        --config /config/cert_service_config.yaml
+        nvflare/cert-service:latest
+    
+    # Option 4: Production with gunicorn
+    gunicorn "nvflare.cert_service.app:create_app('/path/to/config.yaml')"
 
 **Configuration Flow:**
 
@@ -1447,34 +1537,42 @@ loaded at startup and controls all aspects of the service.
 
     ┌─────────────────────────────────────────────────────────────────────┐
     │                    cert_service_config.yaml                         │
+    │                      (or constructor args)                          │
     └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
     ┌─────────────────────────────────────────────────────────────────────┐
     │                      CertServiceApp.__init__()                      │
     │                                                                     │
-    │   server: ──────► Flask app binding (host, port, TLS)              │
+    │   1. Auto-init: If rootCA not exists, generate it (first start)    │
     │                                                                     │
-    │   ca: ──────────► CertService (root CA for signing)                │
+    │   api_key: ────► Admin authentication for protected endpoints      │
     │                                                                     │
-    │   policy: ──────► CertService (approval rules)                     │
+    │   data_dir: ───► Root CA files, database location                  │
     │                                                                     │
-    │   storage: ─────► EnrollmentStore (SQLite or PostgreSQL)           │
+    │   server: ─────► Flask app binding (host, port, TLS)               │
     │                                                                     │
-    │   pending: ─────► Cleanup scheduler (timeout, interval)            │
+    │   ca: ─────────► CertService (root CA for signing)                 │
     │                                                                     │
-    │   audit: ───────► Audit logger (file, enabled)                     │
+    │   policy: ─────► CertService (approval rules)                      │
+    │                                                                     │
+    │   storage: ────► EnrollmentStore (SQLite or PostgreSQL)            │
     └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
     ┌─────────────────────────────────────────────────────────────────────┐
     │                        HTTPS Server Running                         │
     │                                                                     │
+    │   No API Key Required:                                              │
     │   POST /api/v1/enroll          ─► Token validation + CSR signing   │
-    │   GET  /api/v1/enroll/{id}     ─► Check pending status             │
-    │   GET  /api/v1/pending         ─► List pending (admin)             │
-    │   POST /api/v1/pending/{n}/approve ─► Approve request (admin)      │
+    │   GET  /api/v1/ca-cert         ─► Download public rootCA.pem       │
     │   GET  /health                 ─► Health check                     │
+    │                                                                     │
+    │   API Key Required (Admin):                                         │
+    │   POST /api/v1/token           ─► Generate enrollment tokens       │
+    │   GET  /api/v1/pending         ─► List pending requests            │
+    │   POST /api/v1/pending/{n}/approve ─► Approve request              │
+    │   GET  /api/v1/enrolled        ─► List enrolled entities           │
     └─────────────────────────────────────────────────────────────────────┘
 
 **Two TLS Certificates Explained:**
@@ -2877,6 +2975,8 @@ Generate and manage certificates for the manual workflow.
      - Generate server certificate signed by root CA
    * - ``client``
      - Generate client certificate signed by root CA
+   * - ``api-key``
+     - Generate a secure API key for Certificate Service authentication
 
 **nvflare cert init**
 
@@ -2941,6 +3041,48 @@ Generate a client certificate signed by the root CA.
     ./certs/
     ├── hospital-1.crt    # Client certificate
     └── hospital-1.key    # Client private key
+
+**nvflare cert api-key**
+
+Generate a secure API key for Certificate Service authentication.
+
+.. code-block:: shell
+
+    # Generate and print to stdout (default: 32 bytes / 256 bits, hex format)
+    nvflare cert api-key
+
+    # Generate with custom length and save to file
+    nvflare cert api-key -l 64 -o api_key.txt
+
+    # Generate in base64 format
+    nvflare cert api-key --format base64
+
+*Options:*
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Option
+     - Description
+   * - ``-l, --length``
+     - Key length in bytes (default: 32 = 256 bits)
+   * - ``-o, --output``
+     - Output file path (default: print to stdout)
+   * - ``--format``
+     - Output format: ``hex`` (default), ``base64``, or ``urlsafe``
+
+*Usage:*
+
+After generating, use the API key with the Certificate Service:
+
+.. code-block:: shell
+
+    # Set as environment variable
+    export NVFLARE_API_KEY='<generated-key>'
+
+    # Or use with CLI commands
+    nvflare token generate -n site-1 --cert-service https://... --api-key '<generated-key>'
 
 nvflare token
 =============
