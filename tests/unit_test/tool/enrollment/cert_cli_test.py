@@ -22,7 +22,8 @@ from argparse import Namespace
 
 import pytest
 
-from nvflare.tool.enrollment.cert_cli import _handle_init, _handle_server, _load_root_ca, handle_cert
+from nvflare.lighter.constants import AdminRole, ParticipantType
+from nvflare.tool.enrollment.cert_cli import _handle_init, _handle_site, _load_root_ca, handle_cert
 
 
 class TestHandleInit:
@@ -83,8 +84,8 @@ class TestHandleInit:
         assert mode == 0o600
 
 
-class TestHandleServer:
-    """Tests for the server subcommand."""
+class TestHandleSite:
+    """Tests for the site subcommand."""
 
     @pytest.fixture
     def ca_dir(self):
@@ -107,73 +108,142 @@ class TestHandleServer:
         yield temp_dir
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_server_creates_certificates(self, ca_dir, output_dir):
-        """Test that server creates server certificate files."""
+    def test_site_server_creates_certificates(self, ca_dir, output_dir):
+        """Test that site -t server creates server certificate files."""
         args = Namespace(
             name="server1",
+            type=ParticipantType.SERVER,
             ca_path=ca_dir,
             output=output_dir,
             org="org",
             host=None,
             additional_hosts=None,
+            role=AdminRole.MEMBER,
             valid_days=365,
         )
 
-        result = _handle_server(args)
+        result = _handle_site(args)
 
         assert result == 0
         assert os.path.exists(os.path.join(output_dir, "server.crt"))
         assert os.path.exists(os.path.join(output_dir, "server.key"))
         assert os.path.exists(os.path.join(output_dir, "rootCA.pem"))
 
-    def test_server_with_custom_host(self, ca_dir, output_dir):
+    def test_site_client_creates_certificates(self, ca_dir, output_dir):
+        """Test that site -t client creates client certificate files."""
+        args = Namespace(
+            name="hospital-1",
+            type=ParticipantType.CLIENT,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="hospital",
+            host=None,
+            additional_hosts=None,
+            role=AdminRole.MEMBER,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "client.crt"))
+        assert os.path.exists(os.path.join(output_dir, "client.key"))
+        assert os.path.exists(os.path.join(output_dir, "rootCA.pem"))
+
+    def test_site_admin_creates_certificates(self, ca_dir, output_dir):
+        """Test that site -t admin creates admin certificate files."""
+        args = Namespace(
+            name="admin@nvidia.com",
+            type=ParticipantType.ADMIN,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="nvidia",
+            host=None,
+            additional_hosts=None,
+            role=AdminRole.LEAD,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "client.crt"))
+        assert os.path.exists(os.path.join(output_dir, "client.key"))
+
+    def test_site_relay_creates_certificates(self, ca_dir, output_dir):
+        """Test that site -t relay creates relay certificate files."""
+        args = Namespace(
+            name="relay-1",
+            type=ParticipantType.RELAY,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="org",
+            host=None,
+            additional_hosts=None,
+            role=AdminRole.MEMBER,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "client.crt"))
+        assert os.path.exists(os.path.join(output_dir, "client.key"))
+
+    def test_site_server_with_custom_host(self, ca_dir, output_dir):
         """Test server certificate with custom host name."""
         args = Namespace(
             name="server1",
+            type=ParticipantType.SERVER,
             ca_path=ca_dir,
             output=output_dir,
             org="org",
             host="server.example.com",
             additional_hosts=["server1.example.com", "localhost"],
+            role=AdminRole.MEMBER,
             valid_days=365,
         )
 
-        result = _handle_server(args)
+        result = _handle_site(args)
 
         assert result == 0
         assert os.path.exists(os.path.join(output_dir, "server.crt"))
 
-    def test_server_private_key_has_restrictive_permissions(self, ca_dir, output_dir):
-        """Test that server private key has restrictive permissions."""
+    def test_site_private_key_has_restrictive_permissions(self, ca_dir, output_dir):
+        """Test that site private key has restrictive permissions."""
         args = Namespace(
             name="server1",
+            type=ParticipantType.SERVER,
             ca_path=ca_dir,
             output=output_dir,
             org="org",
             host=None,
             additional_hosts=None,
+            role=AdminRole.MEMBER,
             valid_days=365,
         )
 
-        _handle_server(args)
+        _handle_site(args)
 
         key_path = os.path.join(output_dir, "server.key")
         mode = os.stat(key_path).st_mode & 0o777
         assert mode == 0o600
 
-    def test_server_fails_without_ca(self, output_dir):
-        """Test that server fails when CA path doesn't exist."""
+    def test_site_fails_without_ca(self, output_dir):
+        """Test that site fails when CA path doesn't exist."""
         args = Namespace(
             name="server1",
+            type=ParticipantType.SERVER,
             ca_path="/nonexistent/path",
             output=output_dir,
             org="org",
             host=None,
             additional_hosts=None,
+            role=AdminRole.MEMBER,
             valid_days=365,
         )
 
-        result = _handle_server(args)
+        result = _handle_site(args)
 
         assert result == 1
 
@@ -235,3 +305,34 @@ class TestHandleCert:
         args = Namespace(cert_cmd="unknown")
         result = handle_cert(args)
         assert result == 1
+
+    def test_site_subcommand_dispatches(self):
+        """Test that 'site' subcommand dispatches correctly."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Initialize CA first
+            args = Namespace(cert_cmd="init", name="TestProject", output=temp_dir, valid_days=365)
+            handle_cert(args)
+
+            # Now test site
+            out_dir = tempfile.mkdtemp()
+            try:
+                args = Namespace(
+                    cert_cmd="site",
+                    name="client1",
+                    type=ParticipantType.CLIENT,
+                    ca_path=temp_dir,
+                    output=out_dir,
+                    org="org",
+                    host=None,
+                    additional_hosts=None,
+                    role=AdminRole.MEMBER,
+                    valid_days=365,
+                )
+                result = handle_cert(args)
+                assert result == 0
+                assert os.path.exists(os.path.join(out_dir, "client.crt"))
+            finally:
+                shutil.rmtree(out_dir, ignore_errors=True)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)

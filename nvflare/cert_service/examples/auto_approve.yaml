@@ -1,0 +1,34 @@
+# Auto-Approve Policy
+# Use for development, simulation, or trusted environments
+#
+# WARNING: This policy approves ALL enrollment requests.
+# Not recommended for production.
+
+metadata:
+  project: "nvflare-dev"
+  description: "Auto-approve all enrollments (development only)"
+  version: "1.0"
+
+token:
+  validity: 7d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+  default_role: researcher
+
+approval:
+  method: policy
+  rules:
+    - name: "auto-approve-all"
+      description: "Approve all enrollment requests"
+      match: {}
+      action: approve
+
+notifications:
+  enabled: false
+  channels: {}

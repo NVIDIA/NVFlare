@@ -16,17 +16,25 @@
 
 This module provides the `nvflare cert` command for generating:
 - Root CA certificates (init)
-- Server certificates (server)
+- Site certificates for any participant type (site)
 - API keys for Certificate Service (api-key)
 
 These are used in conjunction with `nvflare package` and `nvflare token`
 for token-based enrollment workflows.
+
+Manual Workflow:
+  1. nvflare cert init -o ./ca                    # Create root CA
+  2. nvflare cert site -n server1 -t server -c ./ca -o ./certs
+  3. nvflare cert site -n client1 -t client -c ./ca -o ./certs
+  4. nvflare cert site -n admin@org.com -t admin -c ./ca -o ./certs
+  5. nvflare package -n client1 -e grpc://server1:8002 -t client
 """
 
 import json
 import os
 import secrets
 
+from nvflare.lighter.constants import AdminRole, ParticipantType
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
@@ -44,28 +52,43 @@ def define_cert_parser(parser):
         "--valid_days", type=int, default=3650, help="Certificate validity in days (default: 3650 = 10 years)"
     )
 
-    # nvflare cert server
-    server_parser = subparsers.add_parser("server", help="Generate server certificate")
-    server_parser.add_argument("-n", "--name", type=str, required=True, help="Server name (used as CN and identity)")
-    server_parser.add_argument(
+    # nvflare cert site - generic certificate generation for any participant type
+    site_parser = subparsers.add_parser("site", help="Generate certificate for any site (server/client/relay/admin)")
+    site_parser.add_argument("-n", "--name", type=str, required=True, help="Site name (used as CN)")
+    site_parser.add_argument(
+        "-t",
+        "--type",
+        type=str,
+        choices=[ParticipantType.SERVER, ParticipantType.CLIENT, ParticipantType.RELAY, ParticipantType.ADMIN],
+        default=ParticipantType.CLIENT,
+        help="Participant type (default: client)",
+    )
+    site_parser.add_argument(
         "-c",
         "--ca_path",
         type=str,
         required=True,
         help="Path to CA directory (containing rootCA.pem, rootCA.key, or state/cert.json)",
     )
-    server_parser.add_argument(
+    site_parser.add_argument(
         "-o", "--output", type=str, default=".", help="Output directory (default: current directory)"
     )
-    server_parser.add_argument("--org", type=str, default="org", help="Organization name (default: org)")
-    server_parser.add_argument(
-        "--host", type=str, default=None, help="Default host name (default: same as server name)"
+    site_parser.add_argument("--org", type=str, default="org", help="Organization name (default: org)")
+    site_parser.add_argument("--valid_days", type=int, default=365, help="Certificate validity in days (default: 365)")
+    # Server-specific options
+    site_parser.add_argument(
+        "--host", type=str, default=None, help="Default host name for server SAN (default: same as name)"
     )
-    server_parser.add_argument(
-        "--additional_hosts", type=str, nargs="*", default=None, help="Additional host names for SAN extension"
+    site_parser.add_argument(
+        "--additional_hosts", type=str, nargs="*", default=None, help="Additional host names for server SAN extension"
     )
-    server_parser.add_argument(
-        "--valid_days", type=int, default=365, help="Certificate validity in days (default: 365)"
+    # Admin-specific options
+    site_parser.add_argument(
+        "--role",
+        type=str,
+        choices=[AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER],
+        default=AdminRole.MEMBER,
+        help="Role for admin type (default: member)",
     )
 
     # nvflare cert api-key
@@ -88,14 +111,18 @@ def define_cert_parser(parser):
 def handle_cert(args):
     """Handle the cert command."""
     if not hasattr(args, "cert_cmd") or args.cert_cmd is None:
-        print("Error: Please specify a subcommand: init, server, or api-key")
-        print("Usage: nvflare cert {init|server|api-key} [options]")
+        print("Error: Please specify a subcommand: init, site, or api-key")
+        print("Usage: nvflare cert {init|site|api-key} [options]")
         return 1
 
     if args.cert_cmd == "init":
         return _handle_init(args)
+    elif args.cert_cmd == "site":
+        return _handle_site(args)
     elif args.cert_cmd == "server":
-        return _handle_server(args)
+        # Backward compatibility - redirect to site with type=server
+        args.type = ParticipantType.SERVER
+        return _handle_site(args)
     elif args.cert_cmd == "api-key":
         return _handle_api_key(args)
     else:
@@ -154,8 +181,9 @@ def _handle_init(args):
         print("  - state/cert.json: State file for nvflare token command")
         print(f"\nValidity: {args.valid_days} days")
         print("\nNext steps:")
-        print(f"  1. Generate server certificate: nvflare cert server -n <server_name> -c {output_dir}")
-        print(f"  2. Generate tokens: nvflare token generate -s <site_name> -c {output_dir}")
+        print(f"  1. Generate server certificate: nvflare cert site -n <server> -t server -c {output_dir}")
+        print(f"  2. Generate client certificate: nvflare cert site -n <client> -t client -c {output_dir}")
+        print(f"  3. Generate tokens (if using auto-scale): nvflare token generate -s <site> -c {output_dir}")
         return 0
 
     except Exception as e:
@@ -163,20 +191,19 @@ def _handle_init(args):
         return 1
 
 
-def _handle_server(args):
-    """Handle the 'server' subcommand - generate server certificate."""
+def _handle_site(args):
+    """Handle the 'site' subcommand - generate certificate for any participant type."""
     ca_path = os.path.abspath(args.ca_path)
     output_dir = os.path.abspath(args.output)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Truncate server name if > 63 chars (CN limit)
-    server_name = args.name
-    if len(server_name) > 63:
-        server_name = server_name[:63]
-        print(f"Warning: Server name truncated to 63 chars: {server_name}")
+    site_name = args.name
+    site_type = args.type
 
-    # Default host is server name if not specified
-    default_host = args.host or args.name
+    # Truncate name if > 63 chars (CN limit)
+    if len(site_name) > 63:
+        site_name = site_name[:63]
+        print(f"Warning: Site name truncated to 63 chars: {site_name}")
 
     try:
         # Load root CA
@@ -187,30 +214,53 @@ def _handle_server(args):
 
         root_pri_key = load_pem_private_key(root_key_pem, password=None, backend=default_backend())
 
-        # Generate server key pair
-        server_pri_key, server_pub_key = generate_keys()
+        # Generate site key pair
+        site_pri_key, site_pub_key = generate_keys()
 
-        # Generate server certificate with SAN
-        server_cert = generate_cert(
-            subject=Identity(server_name, args.org),
-            issuer=Identity(issuer),
-            signing_pri_key=root_pri_key,
-            subject_pub_key=server_pub_key,
-            valid_days=args.valid_days,
-            ca=False,
-            server_default_host=default_host,
-            server_additional_hosts=args.additional_hosts,
-        )
+        # Determine certificate filename prefix based on type
+        if site_type == ParticipantType.SERVER:
+            cert_prefix = "server"
+        else:
+            cert_prefix = "client"  # client, relay, admin all use client.crt/client.key
 
-        # Write server.crt
-        server_cert_path = os.path.join(output_dir, "server.crt")
-        with open(server_cert_path, "wb") as f:
-            f.write(serialize_cert(server_cert))
+        # Build identity - include role for admin types
+        if site_type == ParticipantType.ADMIN and hasattr(args, "role"):
+            identity = Identity(site_name, args.org, args.role)
+        else:
+            identity = Identity(site_name, args.org)
 
-        # Write server.key
-        server_key_path = os.path.join(output_dir, "server.key")
-        with open(server_key_path, "wb") as f:
-            f.write(serialize_pri_key(server_pri_key))
+        # Generate certificate - server gets SAN extensions
+        if site_type == ParticipantType.SERVER:
+            default_host = args.host or args.name
+            site_cert = generate_cert(
+                subject=identity,
+                issuer=Identity(issuer),
+                signing_pri_key=root_pri_key,
+                subject_pub_key=site_pub_key,
+                valid_days=args.valid_days,
+                ca=False,
+                server_default_host=default_host,
+                server_additional_hosts=args.additional_hosts,
+            )
+        else:
+            site_cert = generate_cert(
+                subject=identity,
+                issuer=Identity(issuer),
+                signing_pri_key=root_pri_key,
+                subject_pub_key=site_pub_key,
+                valid_days=args.valid_days,
+                ca=False,
+            )
+
+        # Write certificate
+        cert_path = os.path.join(output_dir, f"{cert_prefix}.crt")
+        with open(cert_path, "wb") as f:
+            f.write(serialize_cert(site_cert))
+
+        # Write private key
+        key_path = os.path.join(output_dir, f"{cert_prefix}.key")
+        with open(key_path, "wb") as f:
+            f.write(serialize_pri_key(site_pri_key))
 
         # Copy rootCA.pem to output
         root_ca_output = os.path.join(output_dir, "rootCA.pem")
@@ -218,30 +268,32 @@ def _handle_server(args):
             f.write(root_cert_pem)
 
         # Set restrictive permissions on private key
-        os.chmod(server_key_path, 0o600)
+        os.chmod(key_path, 0o600)
 
-        print(f"Server certificate generated successfully in: {output_dir}")
-        print("  - server.crt: Server certificate")
-        print("  - server.key: Server private key (keep secure!)")
+        print(f"Certificate generated successfully in: {output_dir}")
+        print(f"  - {cert_prefix}.crt: Site certificate")
+        print(f"  - {cert_prefix}.key: Site private key (keep secure!)")
         print("  - rootCA.pem: Root CA certificate (for TLS verification)")
-        print(f"\nServer name: {server_name}")
+        print(f"\nSite name: {site_name}")
+        print(f"Site type: {site_type}")
         print(f"Organization: {args.org}")
-        print(f"Default host: {default_host}")
-        if args.additional_hosts:
-            print(f"Additional hosts: {', '.join(args.additional_hosts)}")
+        if site_type == ParticipantType.SERVER and args.host:
+            print(f"Default host: {args.host}")
+            if args.additional_hosts:
+                print(f"Additional hosts: {', '.join(args.additional_hosts)}")
+        if site_type == ParticipantType.ADMIN:
+            print(f"Role: {args.role}")
         print(f"Validity: {args.valid_days} days")
         print("\nNext steps:")
-        print("  1. Copy these 3 files to your server's startup/ directory")
-        print(
-            f"  2. Generate server startup kit: nvflare package -n {args.name} -e grpc://{default_host}:8002 -t server"
-        )
+        print(f"  1. Generate startup kit: nvflare package -n {args.name} -e grpc://<server>:8002 -t {site_type}")
+        print("  2. Copy these certificate files to the startup kit's startup/ directory")
         return 0
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
         return 1
     except Exception as e:
-        print(f"Error generating server certificate: {e}")
+        print(f"Error generating certificate: {e}")
         return 1
 
 
@@ -280,8 +332,7 @@ def _load_root_ca(ca_path: str) -> tuple:
 
     if not os.path.exists(root_key_path):
         raise FileNotFoundError(
-            f"Root CA private key not found: {root_key_path}\n"
-            "The private key is required to sign server certificates."
+            f"Root CA private key not found: {root_key_path}\n" "The private key is required to sign certificates."
         )
 
     with open(root_cert_path, "rb") as f:

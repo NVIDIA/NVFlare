@@ -34,7 +34,7 @@ import yaml
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, ParticipantType
+from nvflare.lighter.constants import DEFINED_PARTICIPANT_TYPES, AdminRole, ParticipantType
 from nvflare.lighter.utils import load_crt, load_private_key_file
 
 
@@ -70,8 +70,17 @@ class TokenService:
     # Subject type for pattern matching (not a participant type)
     SUBJECT_TYPE_PATTERN = "pattern"
 
-    def __init__(self, root_ca_path: str):
+    def __init__(
+        self,
+        root_ca_path: Optional[str] = None,
+        root_ca_cert: Optional[Any] = None,
+        signing_key: Optional[Any] = None,
+        jwt_signing_key_path: Optional[str] = None,
+    ):
         """Initialize the token service.
+
+        Can be initialized with either file paths OR pre-loaded objects.
+        If both are provided, pre-loaded objects take precedence (avoids re-loading).
 
         Args:
             root_ca_path: Path to the provisioned workspace directory.
@@ -79,32 +88,59 @@ class TokenService:
                           The service will look for the root CA in:
                           1. state/cert.json (provisioning state file)
                           2. rootCA.pem and rootCA.key files (fallback)
+            root_ca_cert: Pre-loaded root CA certificate object
+            signing_key: Pre-loaded signing key object (root CA private key or separate JWT key)
+            jwt_signing_key_path: Optional path to a separate private key for JWT signing.
+                                  If not provided, uses the root CA private key (default).
+                                  If provided, CertService must use the matching public key
+                                  for verification (via verification_key_path).
 
         Note:
-            Uses the same root CA as CertService for consistent key pair.
+            By default, uses the same root CA as CertService for consistent key pair.
             TokenService signs with private key, CertService verifies with public key.
+            For separate JWT keys, ensure both services use the same key pair.
+
+        Example (from paths):
+            service = TokenService(root_ca_path="/path/to/ca")
+
+        Example (from objects - avoids disk I/O):
+            service = TokenService(root_ca_cert=cert, signing_key=key)
         """
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # Try to load from state/cert.json first (created by provisioning)
-        state_file = os.path.join(root_ca_path, "state", "cert.json")
-        if os.path.exists(state_file):
-            self._load_from_state_file(state_file)
-        else:
-            # Fallback: look for rootCA.pem and rootCA.key directly
-            cert_file = os.path.join(root_ca_path, "rootCA.pem")
-            key_file = os.path.join(root_ca_path, "rootCA.key")
-
-            if not os.path.exists(cert_file):
-                raise FileNotFoundError(
-                    f"Root CA not found. Expected either:\n"
-                    f"  - {state_file} (from 'nvflare provision')\n"
-                    f"  - {cert_file} and {key_file}"
-                )
-
-            self.root_cert = load_crt(cert_file)
-            self.signing_key = load_private_key_file(key_file)
+        # Use pre-loaded objects if provided
+        if root_ca_cert is not None and signing_key is not None:
+            self.root_cert = root_ca_cert
+            self.signing_key = signing_key
             self.issuer = _get_cert_cn(self.root_cert)
+        elif root_ca_path:
+            # Load from paths
+            # Try to load from state/cert.json first (created by provisioning)
+            state_file = os.path.join(root_ca_path, "state", "cert.json")
+            if os.path.exists(state_file):
+                self._load_from_state_file(state_file)
+            else:
+                # Fallback: look for rootCA.pem and rootCA.key directly
+                cert_file = os.path.join(root_ca_path, "rootCA.pem")
+                key_file = os.path.join(root_ca_path, "rootCA.key")
+
+                if not os.path.exists(cert_file):
+                    raise FileNotFoundError(
+                        f"Root CA not found. Expected either:\n"
+                        f"  - {state_file} (from 'nvflare provision')\n"
+                        f"  - {cert_file} and {key_file}"
+                    )
+
+                self.root_cert = load_crt(cert_file)
+                self.signing_key = load_private_key_file(key_file)
+                self.issuer = _get_cert_cn(self.root_cert)
+        else:
+            raise ValueError("Must provide either root_ca_path or (root_ca_cert, signing_key)")
+
+        # Optional: use separate JWT signing key (overrides signing_key)
+        if jwt_signing_key_path:
+            self.logger.info(f"Using separate JWT signing key: {jwt_signing_key_path}")
+            self.signing_key = load_private_key_file(jwt_signing_key_path)
 
     def _load_from_state_file(self, state_file: str):
         """Load root CA certificate and key from provisioning state file."""
@@ -128,6 +164,24 @@ class TokenService:
             root_key_pem.encode(), password=None, backend=default_backend()
         )
         self.issuer = _get_cert_cn(self.root_cert)
+
+    def _load_policy(self, policy_file: str) -> Dict[str, Any]:
+        """Load policy from a YAML file.
+
+        Args:
+            policy_file: Path to policy YAML file
+
+        Returns:
+            Policy dictionary
+
+        Raises:
+            FileNotFoundError: If policy file doesn't exist
+        """
+        if not os.path.exists(policy_file):
+            raise FileNotFoundError(f"Policy file not found: {policy_file}")
+
+        with open(policy_file, "r") as f:
+            return yaml.safe_load(f) or {}
 
     def generate_token(
         self,
@@ -261,14 +315,98 @@ class TokenService:
             **claims,
         )
 
+    def generate_site_token(
+        self,
+        site_name: str,
+        valid_days: int = 7,
+        policy_file: Optional[str] = None,
+        **claims,
+    ) -> str:
+        """Convenience method for generating site enrollment tokens.
+
+        Sites can be clients or servers. This is an alias for generate_client_token
+        with simpler parameters.
+
+        Args:
+            site_name: Site identifier
+            valid_days: Token validity in days (default: 7)
+            policy_file: Path to policy YAML file (optional)
+            **claims: Additional claims
+
+        Returns:
+            Signed JWT token string
+        """
+        return self.generate_token(
+            subject=site_name,
+            subject_type=ParticipantType.CLIENT,
+            valid_days=valid_days,
+            policy=self._load_policy(policy_file) if policy_file else {},
+            **claims,
+        )
+
     def generate_admin_token(
+        self,
+        user_id: str,
+        valid_days: int = 7,
+        policy_file: Optional[str] = None,
+        roles: Optional[list] = None,
+        **claims,
+    ) -> str:
+        """Convenience method for generating admin (user) enrollment tokens.
+
+        Args:
+            user_id: User identifier (email)
+            valid_days: Token validity in days (default: 7)
+            policy_file: Path to policy YAML file (optional)
+            roles: List of roles for the admin (default: [AdminRole.LEAD])
+            **claims: Additional claims
+
+        Returns:
+            Signed JWT token string
+        """
+        return self.generate_token(
+            subject=user_id,
+            subject_type=ParticipantType.ADMIN,
+            valid_days=valid_days,
+            policy=self._load_policy(policy_file) if policy_file else {},
+            roles=roles or [AdminRole.LEAD],
+            **claims,
+        )
+
+    def generate_relay_token(
+        self,
+        relay_name: str,
+        valid_days: int = 7,
+        policy_file: Optional[str] = None,
+        **claims,
+    ) -> str:
+        """Convenience method for generating relay enrollment tokens.
+
+        Args:
+            relay_name: Relay node identifier
+            valid_days: Token validity in days (default: 7)
+            policy_file: Path to policy YAML file (optional)
+            **claims: Additional claims
+
+        Returns:
+            Signed JWT token string
+        """
+        return self.generate_token(
+            subject=relay_name,
+            subject_type=ParticipantType.RELAY,
+            valid_days=valid_days,
+            policy=self._load_policy(policy_file) if policy_file else {},
+            **claims,
+        )
+
+    def generate_admin_token_from_file(
         self,
         policy_file: str,
         user_id: str,
         validity: Optional[str] = None,
         **claims,
     ) -> str:
-        """Convenience method for generating admin (user) enrollment tokens.
+        """Generate admin token from policy file.
 
         Args:
             policy_file: Path to policy YAML file
@@ -287,14 +425,14 @@ class TokenService:
             **claims,
         )
 
-    def generate_relay_token(
+    def generate_relay_token_from_file(
         self,
         policy_file: str,
         relay_name: str,
         validity: Optional[str] = None,
         **claims,
     ) -> str:
-        """Convenience method for generating relay enrollment tokens.
+        """Generate relay token from policy file.
 
         Args:
             policy_file: Path to policy YAML file

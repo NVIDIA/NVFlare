@@ -1,0 +1,72 @@
+# Hospital Network Policy
+# Policy for healthcare federated learning networks
+#
+# Approves hospital sites, requires approval for others
+
+metadata:
+  project: "healthcare-fl"
+  description: "Hospital network enrollment policy"
+  version: "1.0"
+
+token:
+  validity: 14d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - clinician
+    - data_admin
+  default_role: researcher
+
+approval:
+  method: policy
+  rules:
+    # Auto-approve hospital sites
+    - name: "hospital-sites"
+      description: "Auto-approve hospital enrollments"
+      match:
+        site_name_pattern: "hospital-*"
+      action: approve
+
+    # Auto-approve clinic sites
+    - name: "clinic-sites"
+      description: "Auto-approve clinic enrollments"
+      match:
+        site_name_pattern: "clinic-*"
+      action: approve
+
+    # Auto-approve research sites
+    - name: "research-sites"
+      description: "Auto-approve research institution enrollments"
+      match:
+        site_name_pattern: "research-*"
+      action: approve
+
+    # Queue other sites for review
+    - name: "other-pending"
+      description: "Queue unrecognized sites for review"
+      match:
+        site_name_pattern: "*"
+      action: pending
+      notify:
+        - network-admin@healthcare.org
+      message: "Non-standard site requires approval"
+
+    # Default deny
+    - name: "default-deny"
+      match: {}
+      action: reject
+
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"
+    webhook:
+      enabled: true
+      url: "${SLACK_WEBHOOK_URL}"

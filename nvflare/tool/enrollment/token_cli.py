@@ -182,6 +182,34 @@ def _generate_token_remote(cert_service_url: str, api_key: Optional[str], reques
         sys.exit(1)
 
 
+def _parse_validity_to_days(validity_str: Optional[str]) -> Optional[int]:
+    """Parse validity string (e.g., '7d', '24h') to days.
+
+    Args:
+        validity_str: Duration string (e.g., '7d', '24h', '1w')
+
+    Returns:
+        Number of days (rounded up for sub-day durations)
+    """
+    if not validity_str:
+        return None
+
+    validity_str = validity_str.strip().lower()
+    if validity_str.endswith("d"):
+        return int(validity_str[:-1])
+    elif validity_str.endswith("w"):
+        return int(validity_str[:-1]) * 7
+    elif validity_str.endswith("h"):
+        hours = int(validity_str[:-1])
+        return max(1, (hours + 23) // 24)  # Round up to at least 1 day
+    elif validity_str.endswith("m"):
+        minutes = int(validity_str[:-1])
+        return max(1, (minutes + 1439) // 1440)  # Round up to at least 1 day
+    else:
+        # Assume days if no unit
+        return int(validity_str)
+
+
 def _get_policy_path(args):
     """Resolve policy path from args, environment variable, or use built-in default."""
     policy_path = getattr(args, "policy", None)
@@ -486,12 +514,17 @@ def _handle_generate_cmd(args):
         api_key = _get_api_key(args)
 
         request_data = {
-            "subject": args.subject,
-            "subject_type": type_map[args.type],
-            "validity": args.validity,
+            "name": args.subject,
+            "entity_type": type_map[args.type],
         }
+        # Parse validity string to days for API (e.g., "7d" -> 7)
+        if args.validity:
+            validity_days = _parse_validity_to_days(args.validity)
+            if validity_days:
+                request_data["valid_days"] = validity_days
+
         if args.roles:
-            request_data["roles"] = args.roles
+            request_data["role"] = args.roles[0] if len(args.roles) == 1 else args.roles
         if args.source_ips:
             request_data["source_ips"] = args.source_ips
 
@@ -592,16 +625,46 @@ def _handle_batch_cmd(args):
     if cert_service_url:
         # Remote batch generation via Certificate Service API
         api_key = _get_api_key(args)
-        results = []
 
-        for name in names:
-            request_data = {
-                "subject": name,
-                "subject_type": type_map[args.type],
-                "validity": args.validity,
-            }
-            token = _generate_token_remote(cert_service_url, api_key, request_data)
-            results.append({"name": name, "token": token})
+        # Parse validity string to days for API
+        valid_days = _parse_validity_to_days(args.validity) if args.validity else 7
+
+        # Use batch endpoint if available
+        request_data = {
+            "names": names,
+            "entity_type": type_map[args.type],
+            "valid_days": valid_days,
+        }
+
+        try:
+            import requests
+        except ImportError:
+            print("\nError: requests library required for remote token generation.")
+            print("Install with: pip install requests")
+            sys.exit(1)
+
+        try:
+            url = f"{cert_service_url}/api/v1/token"
+            headers = {"Authorization": f"Bearer {api_key}"}
+
+            response = requests.post(url, json=request_data, headers=headers, timeout=60)
+
+            if response.status_code == 401:
+                print("\nError: Authentication failed. Check your API key.")
+                sys.exit(1)
+            elif response.status_code == 403:
+                print("\nError: Access denied. Admin privileges required.")
+                sys.exit(1)
+            elif response.status_code != 200:
+                error = response.json().get("error", response.text)
+                print(f"\nError from Certificate Service: {error}")
+                sys.exit(1)
+
+            results = response.json().get("tokens", [])
+
+        except requests.RequestException as e:
+            print(f"\nError connecting to Certificate Service: {e}")
+            sys.exit(1)
 
         # Save to output file
         with open(args.output, "w") as f:

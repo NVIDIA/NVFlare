@@ -1,0 +1,23 @@
+# Minimal Certificate Service Configuration
+# ==========================================
+# Quick start configuration - uses defaults for most settings.
+#
+# Usage:
+#   1. Generate API key: nvflare cert api-key > api_key.txt
+#   2. Replace "your-api-key" below with the generated key
+#   3. Start service: python -c "from nvflare.cert_service.app import CertServiceApp; CertServiceApp('config.yaml').run()"
+
+# API key for admin operations (token generation, approvals)
+api_key: "your-api-key-here"
+
+# Data directory - root CA auto-generated here on first start
+data_dir: /var/lib/cert_service
+
+# Project name (used as CA Common Name)
+project_name: "NVFlare"
+
+# Server binding
+server:
+  host: 0.0.0.0
+  port: 8443
+

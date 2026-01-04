@@ -82,6 +82,20 @@ def define_package_parser(parser):
         "--listening_port", type=int, default=8002, help="Listening port for relay type (default: 8002)"
     )
 
+    # Auto-Scale workflow options
+    parser.add_argument(
+        "--cert-service",
+        type=str,
+        default=None,
+        help="Certificate Service URL for auto-enrollment (e.g., https://cert-service:8443)",
+    )
+    parser.add_argument(
+        "--token",
+        type=str,
+        default=None,
+        help="Enrollment token (will be saved to startup/enrollment_token)",
+    )
+
 
 def parse_endpoint_uri(uri: str) -> dict:
     """Parse endpoint URI into components.
@@ -197,6 +211,10 @@ def handle_single_participant_mode(args, workspace: str) -> int:
         print(f"Error: {e}")
         return 1
 
+    # Get optional enrollment options
+    cert_service_url = getattr(args, "cert_service", None)
+    enrollment_token = getattr(args, "token", None)
+
     try:
         result_dir = generate_single_package(
             name=args.name,
@@ -207,20 +225,45 @@ def handle_single_participant_mode(args, workspace: str) -> int:
             role=args.role,
             listening_host=args.listening_host,
             listening_port=args.listening_port,
+            cert_service_url=cert_service_url,
+            enrollment_token=enrollment_token,
         )
         print(f"Package generated successfully: {result_dir}")
+
+        # Show what was included
+        if cert_service_url:
+            print(f"\nCertificate Service URL embedded: {cert_service_url}")
+        if enrollment_token:
+            print("Enrollment token embedded: startup/enrollment_token")
+
         print("\nNext steps:")
         if args.type == "server":
-            print("1. Copy server certificates from project admin to startup/ folder:")
-            print("   - rootCA.pem (root CA certificate)")
-            print("   - server.crt (server certificate)")
-            print("   - server.key (server private key)")
-            print("2. Start the server: ./startup/start.sh")
+            if cert_service_url and enrollment_token:
+                # Auto-Scale workflow for server
+                print("1. Start the server: cd {result_dir} && ./startup/start.sh")
+                print("   (Server will auto-enroll with Certificate Service)")
+            else:
+                # Manual workflow for server
+                print("1. Copy server certificates from project admin to startup/ folder:")
+                print("   - rootCA.pem (root CA certificate)")
+                print("   - server.crt (server certificate)")
+                print("   - server.key (server private key)")
+                print(f"2. Start the server: cd {result_dir} && ./startup/start.sh")
         else:
-            print("1. Copy rootCA.pem from project admin to the startup/ folder")
-            print("2. Obtain an enrollment token from your project administrator")
-            print("3. Set the token: export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
-            print("4. Start the client/admin to automatically enroll")
+            if cert_service_url and enrollment_token:
+                # Auto-Scale workflow - everything is embedded
+                print(f"1. Start: cd {result_dir} && ./startup/start.sh")
+                print("   (Client will auto-enroll with Certificate Service)")
+            elif cert_service_url:
+                # URL embedded, token needs to be provided
+                print("1. Set enrollment token: export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
+                print(f"2. Start: cd {result_dir} && ./startup/start.sh")
+            else:
+                # Manual workflow
+                print("1. Copy rootCA.pem from project admin to the startup/ folder")
+                print("2. Obtain an enrollment token from your project administrator")
+                print("3. Set the token: export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
+                print(f"4. Start: cd {result_dir} && ./startup/start.sh")
         return 0
     except Exception as e:
         print(f"Error generating package: {e}")
@@ -266,6 +309,8 @@ def generate_single_package(
     role: str = "lead",
     listening_host: str = "localhost",
     listening_port: int = 8002,
+    cert_service_url: str = None,
+    enrollment_token: str = None,
 ) -> str:
     """Generate a single participant package without certificates.
 
@@ -278,6 +323,8 @@ def generate_single_package(
         role: Role for admin participants
         listening_host: Listening host for relay
         listening_port: Listening port for relay
+        cert_service_url: Certificate Service URL for auto-enrollment (optional)
+        enrollment_token: Enrollment token for auto-enrollment (optional)
 
     Returns:
         Path to the generated package directory
@@ -367,10 +414,43 @@ def generate_single_package(
             shutil.rmtree(output_dir)
         shutil.move(participant_dir, output_dir)
 
+        # Create enrollment files if cert_service_url or token provided
+        _create_enrollment_files(output_dir, cert_service_url, enrollment_token)
+
         return output_dir
     finally:
         if os.path.exists(temp_workspace):
             shutil.rmtree(temp_workspace)
+
+
+def _create_enrollment_files(output_dir: str, cert_service_url: str = None, enrollment_token: str = None):
+    """Create enrollment configuration files in the startup directory.
+
+    Args:
+        output_dir: Package output directory
+        cert_service_url: Certificate Service URL (optional)
+        enrollment_token: Enrollment token (optional)
+    """
+    import json
+
+    startup_dir = os.path.join(output_dir, "startup")
+    if not os.path.exists(startup_dir):
+        os.makedirs(startup_dir)
+
+    # Create enrollment.json with cert service URL
+    if cert_service_url:
+        enrollment_config = {"cert_service_url": cert_service_url}
+        enrollment_json_path = os.path.join(startup_dir, "enrollment.json")
+        with open(enrollment_json_path, "w") as f:
+            json.dump(enrollment_config, f, indent=2)
+
+    # Create enrollment_token file
+    if enrollment_token:
+        token_path = os.path.join(startup_dir, "enrollment_token")
+        with open(token_path, "w") as f:
+            f.write(enrollment_token)
+        # Set restrictive permissions on token file
+        os.chmod(token_path, 0o600)
 
 
 # Keep for backward compatibility with existing tests

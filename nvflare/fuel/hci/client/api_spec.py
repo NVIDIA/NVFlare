@@ -233,6 +233,7 @@ class AdminConfigKey:
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
     AUTHENTICATE_MSG_TIMEOUT = "authenticate_msg_timeout"
+    STARTUP_DIR = "startup_dir"  # startup directory for enrollment token lookup
 
 
 class UidSource:

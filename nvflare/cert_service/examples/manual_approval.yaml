@@ -1,0 +1,40 @@
+# Manual Approval Policy
+# All enrollments require human review and approval
+#
+# Use for high-security environments or initial onboarding
+
+metadata:
+  project: "nvflare-secure"
+  description: "All enrollments require manual approval"
+  version: "1.0"
+
+token:
+  validity: 30d
+  max_uses: 1
+
+site:
+  name_pattern: "*"
+
+user:
+  allowed_roles:
+    - researcher
+    - org_admin
+  default_role: researcher
+
+approval:
+  method: manual
+  rules:
+    - name: "require-approval"
+      description: "Queue all enrollments for manual review"
+      match: {}
+      action: pending
+      notify:
+        - admin@organization.com
+      message: "Enrollment pending admin approval"
+
+notifications:
+  enabled: true
+  channels:
+    email:
+      enabled: true
+      smtp_config: "${SMTP_CONFIG_PATH}"

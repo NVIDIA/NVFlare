@@ -1,0 +1,135 @@
+# NVIDIA FLARE Certificate Service Configuration
+# ================================================
+#
+# This file configures the Certificate Service for the Auto-Scale enrollment workflow.
+# Copy and modify this file for your deployment.
+#
+# Generate API key with: nvflare cert api-key
+
+# =============================================================================
+# API Key (Required for admin operations)
+# =============================================================================
+# Used for: token generation, pending request approval/rejection
+# NOT required for: site/user enrollment (uses token auth)
+#
+# Generate with: nvflare cert api-key
+# Or set via environment variable: NVFLARE_API_KEY
+api_key: "your-api-key-here"
+
+# =============================================================================
+# Data Directory (Primary Configuration)
+# =============================================================================
+# This is the main directory for all Certificate Service data.
+# All other paths are derived from this if not explicitly specified:
+#   - Root CA:  {data_dir}/rootCA.pem, {data_dir}/rootCA.key
+#   - Database: {data_dir}/enrollment.db
+#   - Audit:    {data_dir}/audit.log
+#
+# On first start, if rootCA.pem/rootCA.key don't exist, they are auto-generated.
+# The root CA private key ONLY exists on this service - never distributed.
+data_dir: /var/lib/cert_service
+
+# Project name used as the root CA Common Name (CN)
+project_name: "My FL Project"
+
+# =============================================================================
+# Server Configuration
+# =============================================================================
+server:
+  host: 0.0.0.0
+  port: 8443
+  
+  # TLS Configuration (optional)
+  # For most deployments, leave this commented and use a reverse proxy
+  # (nginx, traefik, Kubernetes Ingress) for TLS termination.
+  #
+  # tls:
+  #   cert: /etc/letsencrypt/live/example.com/fullchain.pem
+  #   key: /etc/letsencrypt/live/example.com/privkey.pem
+
+# =============================================================================
+# Root CA Configuration (optional - derived from data_dir)
+# =============================================================================
+# Usually NOT needed - paths are automatically derived from data_dir:
+#   ca.cert = {data_dir}/rootCA.pem
+#   ca.key  = {data_dir}/rootCA.key
+#
+# Only specify if you need DIFFERENT paths than the defaults:
+# ca:
+#   cert: /custom/path/rootCA.pem
+#   key: /custom/path/rootCA.key
+#   valid_days: 3650  # 10 years for root CA (only used on first-start generation)
+
+# =============================================================================
+# Approval Policy
+# =============================================================================
+# Controls how enrollment requests are approved.
+# If not specified, uses built-in default (auto-approve all).
+#
+# policy:
+#   file: /etc/cert_service/approval_policy.yaml
+
+# =============================================================================
+# Storage Configuration (optional for sqlite - path derived from data_dir)
+# =============================================================================
+# Tracks enrolled entities and pending requests.
+# For sqlite: path defaults to {data_dir}/enrollment.db
+storage:
+  type: sqlite  # sqlite (default) or postgresql
+  # path: /var/lib/cert_service/enrollment.db  # Usually not needed - derived from data_dir
+  
+  # For PostgreSQL (production):
+  # type: postgresql
+  # connection: postgresql://user:password@localhost:5432/cert_service
+
+# =============================================================================
+# Pending Request Settings
+# =============================================================================
+pending:
+  timeout: 604800        # 7 days in seconds - pending requests expire after this
+  cleanup_interval: 3600  # Clean up expired requests every hour
+
+# =============================================================================
+# Audit Logging
+# =============================================================================
+audit:
+  enabled: true
+  log_file: /var/log/cert_service/audit.log
+
+
+# =============================================================================
+# EXAMPLE CONFIGURATIONS
+# =============================================================================
+
+# --- Development (Local) ---
+# api_key: "dev-key-12345"
+# data_dir: ./cert_service_data
+# server:
+#   host: 127.0.0.1
+#   port: 8080
+# storage:
+#   type: sqlite
+#   path: ./cert_service_data/enrollment.db
+
+# --- Production (Behind Nginx) ---
+# api_key: "production-key-xxxxx"  # From: nvflare cert api-key
+# data_dir: /var/lib/cert_service
+# project_name: "Hospital FL Network"
+# server:
+#   host: 127.0.0.1  # Internal only, nginx handles external
+#   port: 8080
+# storage:
+#   type: postgresql
+#   connection: postgresql://certuser:password@db.internal:5432/certdb
+
+# --- Kubernetes ---
+# api_key: ${NVFLARE_API_KEY}  # From Kubernetes Secret
+# data_dir: /data
+# project_name: "K8s FL Cluster"
+# server:
+#   host: 0.0.0.0
+#   port: 8080  # Ingress handles TLS
+# storage:
+#   type: sqlite
+#   path: /data/enrollment.db
+

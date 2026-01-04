@@ -293,6 +293,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.user_name = user_name
         self.event_handlers = event_handlers
 
+        # Auto-enroll if certificates don't exist but enrollment token is available
+        self._auto_enroll_if_needed(admin_config)
+
         if not self.ca_cert:
             raise ConfigError("missing CA Cert file name")
         if not self.client_cert:
@@ -355,6 +358,77 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def new_context(self):
         return self.fl_ctx_mgr.new_context()
+
+    def _auto_enroll_if_needed(self, admin_config: dict):
+        """Perform automatic CSR enrollment if certificates don't exist but token is available.
+
+        This enables dynamic admin enrollment without pre-provisioned certificates.
+        The admin needs:
+        - Enrollment token (via NVFLARE_ENROLLMENT_TOKEN env var or token file)
+        - Certificate Service URL (via NVFLARE_CERT_SERVICE_URL env var or config)
+
+        Args:
+            admin_config: Admin configuration dict
+        """
+        import os
+
+        # Check if certificate already exists
+        client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
+        if client_cert and os.path.exists(client_cert):
+            return  # Certificate exists, no enrollment needed
+
+        startup_dir = admin_config.get(AdminConfigKey.STARTUP_DIR, ".")
+
+        # Check for enrollment token and Certificate Service URL
+        from nvflare.security.enrollment import CERT_SERVICE_URL_ENV, get_cert_service_url, get_enrollment_token
+
+        token = get_enrollment_token(startup_dir)
+        if not token:
+            self.logger.debug("No enrollment token found, skipping auto-enrollment")
+            return
+
+        cert_service_url = get_cert_service_url(startup_dir)
+        if not cert_service_url:
+            self.logger.error(
+                f"Certificate Service URL not found. "
+                f"Set {CERT_SERVICE_URL_ENV} env var or add enrollment.json to startup directory."
+            )
+            raise ConfigError("Certificate Service URL required for enrollment")
+
+        self.logger.info(f"Certificate not found, attempting auto-enrollment for admin '{self.user_name}'")
+
+        try:
+            self._perform_enrollment(cert_service_url, token, startup_dir, admin_config)
+        except Exception as e:
+            self.logger.error(f"Auto-enrollment failed: {e}")
+            raise ConfigError(f"Auto-enrollment failed: {e}") from e
+
+    def _perform_enrollment(self, cert_service_url: str, token: str, startup_dir: str, admin_config: dict):
+        """Perform CSR enrollment via Certificate Service HTTP API.
+
+        Args:
+            cert_service_url: URL of the Certificate Service
+            token: JWT enrollment token
+            startup_dir: Directory to save certificates
+            admin_config: Admin config dict to update with new cert paths
+        """
+        from nvflare.security.enrollment import EnrollmentIdentity, enroll
+
+        # Get role from config or default to member
+        role = admin_config.get("role", "member")
+
+        identity = EnrollmentIdentity.for_admin(email=self.user_name, role=role)
+        result = enroll(cert_service_url, token, identity, startup_dir)
+        self.logger.info(f"Enrollment successful. Certificate saved to: {result.cert_path}")
+
+        # Update admin_config and self with new certificate paths
+        admin_config[AdminConfigKey.CA_CERT] = result.ca_path
+        admin_config[AdminConfigKey.CLIENT_CERT] = result.cert_path
+        admin_config[AdminConfigKey.CLIENT_KEY] = result.key_path
+
+        self.ca_cert = result.ca_path
+        self.client_cert = result.cert_path
+        self.client_key = result.key_path
 
     def connect(self, timeout=None):
         if timeout is not None:
