@@ -35,7 +35,7 @@ class StaticFileBuilder(Builder):
     def __init__(
         self,
         config_folder="",
-        scheme="grpc",
+        scheme="http",
         app_validator="",
         download_job_url="",
         docker_image="",
@@ -75,6 +75,7 @@ class StaticFileBuilder(Builder):
         self.aio_schemes = {
             "tcp": "atcp",
             "grpc": "agrpc",
+            "http": "http",
         }
 
     @staticmethod
@@ -368,7 +369,7 @@ class StaticFileBuilder(Builder):
 
             scheme = lh.scheme
             if not scheme:
-                scheme = "grpc"
+                scheme = "http"
 
             conn_sec = ct.conn_sec
             if not conn_sec:
