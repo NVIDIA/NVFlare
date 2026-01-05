@@ -89,6 +89,26 @@ For the federated analysis with HE, we need to ensure proper HE aggregation usin
 
 After these rounds, the federated work is completed. Then at each client, the aggregated histograms will be decrypted and converted back to an event list, and Kaplan-Meier analysis can be performed on the global information.
 
+### HE Context and Data Management
+
+- **Simulation Mode**: 
+  - Uses **CKKS scheme** (approximate arithmetic, compatible with production)
+  - HE context files are manually created via `prepare_he_context.py`:
+    - Client context: `/tmp/nvflare/he_context/he_context_client.txt`
+    - Server context: `/tmp/nvflare/he_context/he_context_server.txt`
+  - Data prepared at `/tmp/nvflare/dataset/km_data`
+  - Paths can be customized via `--he_context_path` (for client context) and `--data_root`
+- **Production Mode**: 
+  - Uses **CKKS scheme**
+  - HE context is automatically provisioned into startup kits via `nvflare provision`
+  - Context files are resolved by NVFlare's SecurityContentService:
+    - Clients automatically use: `client_context.tenseal` (from their startup kit)
+    - Server automatically uses: `server_context.tenseal` (from its startup kit)
+  - The `--he_context_path` parameter is ignored in production mode
+  - **Reuses the same data** from simulation mode at `/tmp/nvflare/dataset/km_data` by default
+
+**Note:** CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption. Both simulation and production modes use the same CKKS scheme for consistency and compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
+
 ## Run the job
 
 This example supports both **Simulation Mode** (for local testing) and **Production Mode** (for real-world deployment).
@@ -134,18 +154,20 @@ python job.py
 python job.py --encryption
 ```
 
+The script will execute the job in simulation mode and display the job status. Results (KM curves and analysis details) will be saved to each simulated client's workspace directory under `/tmp/nvflare/workspaces/`.
+
 ### Production Mode
 
 For production deployments, the HE context is automatically provisioned through secure startup kits.
 
 **Quick Start for Local Testing:**
-If you want to quickly test production mode on a single machine, use the convenience scripts:
+If you want to quickly test production mode on a single machine:
 1. Run provisioning: `nvflare provision -p project.yml -w /tmp/nvflare/prod_workspaces`
 2. Start all parties: `./start_all.sh`
-3. Start admin console and use username `admin@nvidia.com`
+3. Start admin console: `cd /tmp/nvflare/prod_workspaces/km_he_project/prod_00/admin@nvidia.com && ./startup/fl_admin.sh` (use username `admin@nvidia.com`)
 4. Submit job: `python job.py --encryption --startup_kit_location /tmp/nvflare/prod_workspaces/km_he_project/prod_00/admin@nvidia.com`
-5. Monitor job via admin console (use `list_jobs`, `check_status client`)
-6. Stop all parties with admin console
+5. Monitor job via admin console: `list_jobs`, `check_status client`, `download_job <job_id>`
+6. Shutdown: `shutdown all` in admin console
 
 For detailed steps and distributed deployment, continue below:
 
@@ -245,79 +267,37 @@ With all parties running, submit the job using the Recipe API. The job will auto
 python job.py --encryption --startup_kit_location /tmp/nvflare/prod_workspaces/km_he_project/prod_00/admin@nvidia.com
 ```
 
-The job will be submitted to the FL system and executed across all connected clients.
+The script will output the job status. Note the job ID from the output.
 
 **Monitoring Job Progress:**
 
-The job runs asynchronously. To monitor progress, use the admin console:
-```
-> list_jobs
-> check_status server
-> check_status client
+The job runs asynchronously on the FL system. Use the admin console to monitor progress:
+
+```commandline
+# In the admin console
+> list_jobs                    # View all jobs
+> check_status server          # Check server status
+> check_status client          # Check all clients status
+> download_job <job_id>        # Download results after completion
 ```
 
-To download job results after completion:
-```
-> download_job <job_id>
-```
+Results will be saved to each client's workspace directory after the job completes:
+- `/tmp/nvflare/prod_workspaces/km_he_project/prod_00/site-1/{JOB_ID}/`
+- Look for `km_curve_fl_he.png` and `km_global.json` in each client's job directory
 
-Results will be saved to each client's workspace directory:
-- `/tmp/nvflare/prod_workspaces/km_he_project/prod_00/site-1/`
-- Check for `km_curve_fl_he.png` and `km_global.json` in each client's directory
+**Note:** In production mode with HE, the HE context paths are automatically configured to use the provisioned context files from each participant's startup kit:
+- Clients use: `client_context.tenseal` 
+- Server uses: `server_context.tenseal`
 
-**Note:** In production mode with HE, the `--he_context_path` parameter is automatically set to use the provisioned `client_context.tenseal` or `server_context.tenseal` from each participant's startup kit. No manual HE context distribution is needed.
+The `--he_context_path` parameter is only used for simulation mode and is ignored in production mode. No manual HE context distribution is needed in production.
 
 **Step 6: Shutdown All Parties**
 
-After the job completes, shut down all parties gracefully Via Admin Console
+After the job completes, shut down all parties gracefully via admin console:
 
 ```
 > shutdown all
 ```
-
-### Customization Options
-
-**Simulation Mode:**
-```commandline
-# Customize number of clients and threads
-python job.py --num_clients 3 --num_threads 2
-
-# Customize data paths (simulation only)
-python job.py --data_root /custom/data/path --he_context_path /custom/he/path
-
-# Customize output directories
-python job.py --workspace_dir /custom/workspace --job_dir /custom/jobdir
-
-# Combine options
-python job.py --encryption --num_clients 10 --num_threads 5
-```
-
-**Production Mode:**
-```commandline
-# Make sure server and all clients are started first (see Step 4)
-# The he_context_path is automatically managed by startup kits
-# By default, uses the same data from simulation mode at /tmp/nvflare/dataset/km_data
-# Only customize data_root if you've moved the data elsewhere
-python job.py --encryption --startup_kit_location /tmp/nvflare/prod_workspaces/km_he_project/prod_00/admin@nvidia.com --data_root /custom/data/path
-```
-
-By default, this will generate a KM curve image `km_curve_fl.png` (or `km_curve_fl_he.png` with encryption) under each client's directory.
-
-### HE Context and Data Management
-
-- **Simulation Mode**: 
-  - Uses **CKKS scheme** (approximate arithmetic, compatible with production)
-  - HE context files are manually created via `prepare_he_context.py`
-  - Data prepared at `/tmp/nvflare/dataset/km_data`
-  - Paths specified via `--he_context_path` and `--data_root`
-- **Production Mode**: 
-  - Uses **CKKS scheme** (same as simulation for consistency)
-  - HE context is automatically provisioned into startup kits via `nvflare provision`
-  - Clients use: `<startup_kit>/client_context.tenseal`
-  - Server uses: `<startup_kit>/server_context.tenseal`
-  - **Reuses the same data** from simulation mode at `/tmp/nvflare/dataset/km_data` by default
-
-**Note:** CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption. Both simulation and production modes use the same CKKS scheme for consistency and compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
 
 ## Display Result
 

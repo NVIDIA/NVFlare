@@ -36,19 +36,21 @@ class KMRecipe(Recipe):
         num_clients: int,
         encryption: bool = False,
         data_root: str = "/tmp/nvflare/dataset/km_data",
-        he_context_path: str = "/tmp/nvflare/he_context/he_context_client.txt",
+        he_context_path_client: str = "/tmp/nvflare/he_context/he_context_client.txt",
+        he_context_path_server: str = "/tmp/nvflare/he_context/he_context_server.txt",
     ):
         self.num_clients = num_clients
         self.encryption = encryption
         self.data_root = data_root
-        self.he_context_path = he_context_path
+        self.he_context_path_client = he_context_path_client
+        self.he_context_path_server = he_context_path_server
 
         # Set job name and script based on encryption mode
         if self.encryption:
             job_name = "KM_HE"
             train_script = "client_he.py"
-            script_args = f"--data_root {data_root} --he_context_path {he_context_path}"
-            controller = KM_HE(min_clients=num_clients, he_context_path=he_context_path)
+            script_args = f"--data_root {data_root} --he_context_path {he_context_path_client}"
+            controller = KM_HE(min_clients=num_clients, he_context_path=he_context_path_server)
         else:
             job_name = "KM"
             train_script = "client.py"
@@ -113,7 +115,7 @@ def define_parser():
         "--he_context_path",
         type=str,
         default="/tmp/nvflare/he_context/he_context_client.txt",
-        help="Path to HE context file, default to '/tmp/nvflare/he_context/he_context_client.txt'",
+        help="Path to HE context file for simulation mode (client context), default to '/tmp/nvflare/he_context/he_context_client.txt'. In production mode, context files are auto-provisioned.",
     )
     parser.add_argument(
         "--startup_kit_location",
@@ -131,58 +133,52 @@ def define_parser():
 
 
 def main():
-    print("Starting Kaplan-Meier job...")
     args = define_parser()
-    print("args:", args)
 
     num_clients = args.num_clients
     num_threads = args.num_threads if args.num_threads else num_clients
 
-    # Determine job name for workspace directory
-    job_name = "KM_HE" if args.encryption else "KM"
-    workspace_dir = f"{args.workspace_dir}/{job_name}"
+    # Use workspace directory directly (SimEnv will create job-specific subdirectories)
+    workspace_dir = args.workspace_dir
+
+    # Adjust HE context paths based on environment
+    if args.startup_kit_location and args.encryption:
+        # In production mode, use just the filename - NVFlare's SecurityContentService
+        # will resolve the path relative to each participant's workspace
+        he_context_path_client = "client_context.tenseal"
+        he_context_path_server = "server_context.tenseal"
+    elif args.encryption:
+        # In simulation mode, use the manually prepared context files
+        he_context_path_client = args.he_context_path
+        # Derive server path from client path
+        he_context_path_server = he_context_path_client.replace("he_context_client.txt", "he_context_server.txt")
+    else:
+        # No encryption - values won't be used
+        he_context_path_client = None
+        he_context_path_server = None
 
     # Create the recipe
     recipe = KMRecipe(
         num_clients=num_clients,
         encryption=args.encryption,
         data_root=args.data_root,
-        he_context_path=args.he_context_path,
+        he_context_path_client=he_context_path_client,
+        he_context_path_server=he_context_path_server,
     )
 
     # Export job
-    print("Exporting job to", args.job_dir)
     recipe.job.export_job(args.job_dir)
 
     # Run recipe
     if args.startup_kit_location:
-        print("Running job in production mode...")
-        print("startup_kit_location=", args.startup_kit_location)
-        print("username=", args.username)
+        print("\n=== Production Mode ===")
         env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
     else:
-        print("Running job in simulation mode...")
-        print("workspace_dir=", workspace_dir)
-        print("num_clients=", num_clients)
-        print("num_threads=", num_threads)
+        print("\n=== Simulation Mode ===")
         env = SimEnv(num_clients=num_clients, num_threads=num_threads, workspace_root=workspace_dir)
 
     run = recipe.execute(env)
-    print("Job Status is:", run.get_status())
-
-    # In production mode, job runs asynchronously on the FL system
-    # Check status via admin console instead of waiting for result here
-    if args.startup_kit_location:
-        print("\nJob submitted successfully to the FL system!")
-        print("To monitor job status, use the admin console:")
-        print(f"  cd {args.startup_kit_location}")
-        print("  ./startup/fl_admin.sh")
-        print("  > check_status server")
-        print("  > list_jobs")
-        print(f"  > download_job {run.job_id}")
-    else:
-        # In simulation mode, we can get the result synchronously
-        print("Job Result is:", run.get_result())
+    print(f"Job Status: {run.get_status()}")
 
 
 if __name__ == "__main__":

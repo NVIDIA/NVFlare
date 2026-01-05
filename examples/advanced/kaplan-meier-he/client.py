@@ -28,7 +28,7 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
 
 # Client code
-def details_save(kmf):
+def details_save(kmf, site_name):
     # Get the survival function at all observed time points
     survival_function_at_all_times = kmf.survival_function_
     # Get the timeline (time points)
@@ -46,13 +46,21 @@ def details_save(kmf):
         "event_count": event_count.tolist(),
         "survival_rate": survival_rate.tolist(),
     }
-    file_path = os.path.join(os.getcwd(), "km_global.json")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_DIR}/app_site-X/custom/client.py (sim) or site-X/{JOB_ID}/app_site-X/custom/client.py (prod)
+    # We need to navigate up to the {JOB_DIR} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_DIR}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_global.json")
     print(f"save the details of KM analysis result to {file_path} \n")
     with open(file_path, "w") as json_file:
         json.dump(results, json_file, indent=4)
 
 
-def plot_and_save(kmf):
+def plot_and_save(kmf, site_name):
     # Plot and save the Kaplan-Meier survival curve
     plt.figure()
     plt.title("Federated")
@@ -62,7 +70,15 @@ def plot_and_save(kmf):
     plt.xlabel("time")
     plt.legend("", frameon=False)
     plt.tight_layout()
-    file_path = os.path.join(os.getcwd(), "km_curve_fl.png")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_DIR}/app_site-X/custom/client.py (sim) or site-X/{JOB_ID}/app_site-X/custom/client.py (prod)
+    # We need to navigate up to the {JOB_DIR} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_DIR}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_curve_fl.png")
     print(f"save the curve plot to {file_path} \n")
     plt.savefig(file_path)
 
@@ -136,10 +152,10 @@ def main():
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
             # Plot and save the KM curve
-            plot_and_save(kmf)
+            plot_and_save(kmf, site_name)
 
             # Save details of the KM result to a json file
-            details_save(kmf)
+            details_save(kmf, site_name)
 
             # Send a simple response to server
             response = FLModel(params={}, params_type=ParamsType.FULL)

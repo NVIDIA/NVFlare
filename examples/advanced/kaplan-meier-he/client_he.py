@@ -31,12 +31,33 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 
 # Client code
 def read_data(file_name: str):
+    # Handle both absolute and relative paths
+    # In production mode, HE context files are in the startup directory
+    if not os.path.isabs(file_name) and not os.path.exists(file_name):
+        # Try CWD/startup/ (production deployment location)
+        cwd = os.getcwd()
+        startup_path = os.path.join(cwd, "startup", file_name)
+        if os.path.exists(startup_path):
+            file_name = startup_path
+            print(f"Using HE context file from startup directory: {file_name}")
+
     with open(file_name, "rb") as f:
         data = f.read()
-    return base64.b64decode(data)
+
+    # Handle both base64-encoded (simulation mode) and raw binary (production mode) formats
+    # Production mode (HEBuilder): files are raw binary (.tenseal)
+    # Simulation mode (prepare_he_context.py): files are base64-encoded (.txt)
+    if file_name.endswith(".tenseal"):
+        # Production mode: raw binary format
+        print("Using raw binary HE context (production mode)")
+        return data
+    else:
+        # Simulation mode: base64-encoded format (.txt files)
+        print("Using base64-encoded HE context (simulation mode)")
+        return base64.b64decode(data)
 
 
-def details_save(kmf):
+def details_save(kmf, site_name):
     # Get the survival function at all observed time points
     survival_function_at_all_times = kmf.survival_function_
     # Get the timeline (time points)
@@ -54,13 +75,21 @@ def details_save(kmf):
         "event_count": event_count.tolist(),
         "survival_rate": survival_rate.tolist(),
     }
-    file_path = os.path.join(os.getcwd(), "km_global.json")
-    print(f"save the details of KM analysis result to {file_path} \n")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_ID}/app_site-X/custom/client_he.py
+    # We need to navigate up to the {JOB_ID} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_ID}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_global.json")
+    print(f"save the details of KM analysis result (cleartext) to {file_path} \n")
     with open(file_path, "w") as json_file:
         json.dump(results, json_file, indent=4)
 
 
-def plot_and_save(kmf):
+def plot_and_save(kmf, site_name):
     # Plot and save the Kaplan-Meier survival curve
     plt.figure()
     plt.title("Federated HE")
@@ -70,7 +99,15 @@ def plot_and_save(kmf):
     plt.xlabel("time")
     plt.legend("", frameon=False)
     plt.tight_layout()
-    file_path = os.path.join(os.getcwd(), "km_curve_fl_he.png")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_ID}/app_site-X/custom/client_he.py
+    # We need to navigate up to the {JOB_ID} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_ID}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_curve_fl_he.png")
     print(f"save the curve plot to {file_path} \n")
     plt.savefig(file_path)
 
@@ -113,7 +150,7 @@ def main():
             max_hist_idx = max(hist_idx)
 
             # Send max to server
-            print(f"send max hist index for site = {flare.get_site_name()}")
+            print(f"send max hist index (cleartext) for site = {flare.get_site_name()}")
             model = FLModel(params={"max_idx": max_hist_idx}, params_type=ParamsType.FULL)
             flare.send(model)
 
@@ -121,8 +158,7 @@ def main():
             # Second round, get global max index
             # Organize local histogram and encrypt
             max_idx_global = global_msg.params["max_idx_global"]
-            print("Global Max Idx")
-            print(max_idx_global)
+            print(f"Received global max idx (cleartext): {max_idx_global}")
             # Convert local table to uniform histogram
             hist_obs = {}
             hist_cen = {}
@@ -143,6 +179,7 @@ def main():
             hist_obs_he_serial = hist_obs_he.serialize()
             hist_cen_he_serial = hist_cen_he.serialize()
             # Send encrypted histograms to server
+            print("Send encrypted histograms (ciphertext) to server")
             response = FLModel(
                 params={"hist_obs": hist_obs_he_serial, "hist_cen": hist_cen_he_serial}, params_type=ParamsType.FULL
             )
@@ -152,10 +189,12 @@ def main():
             # Get global histograms
             hist_obs_global_serial = global_msg.params["hist_obs_global"]
             hist_cen_global_serial = global_msg.params["hist_cen_global"]
+            print("Received global accumulated histograms (ciphertext)")
             # Deserialize
             hist_obs_global = ts.ckks_vector_from(he_context, hist_obs_global_serial)
             hist_cen_global = ts.ckks_vector_from(he_context, hist_cen_global_serial)
             # Decrypt
+            print("Decrypting histograms to cleartext")
             hist_obs_global = [int(round(x)) for x in hist_obs_global.decrypt()]
             hist_cen_global = [int(round(x)) for x in hist_cen_global.decrypt()]
             # Unfold histogram to event list
@@ -180,16 +219,16 @@ def main():
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
             # Plot and save the KM curve
-            plot_and_save(kmf)
+            plot_and_save(kmf, site_name)
 
             # Save details of the KM result to a json file
-            details_save(kmf)
+            details_save(kmf, site_name)
 
             # Send a simple response to server
             response = FLModel(params={}, params_type=ParamsType.FULL)
             flare.send(response)
 
-    print(f"finish send for {site_name}, complete")
+    print(f"Finish send for {site_name}, complete")
 
 
 if __name__ == "__main__":
