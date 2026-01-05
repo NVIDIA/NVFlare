@@ -287,7 +287,8 @@ class RoutesMixin:
                 # Handle Flask's BadRequest for malformed JSON
                 if "400" in error_msg or "Bad Request" in error_msg:
                     return jsonify({"error": "Invalid request body"}), 400
-                self.logger.error(f"Enrollment error: {e}")
+                # Log error type only to avoid leaking sensitive data
+                self.logger.error(f"Enrollment error: {type(e).__name__}")
                 return jsonify({"error": "Internal server error"}), 500
 
     def _register_token_routes(self):
@@ -407,8 +408,9 @@ class RoutesMixin:
                 )
 
             except Exception as e:
-                self.logger.error(f"Token generation error: {e}")
-                return jsonify({"error": str(e)}), 500
+                # Log error type only to avoid leaking sensitive data in logs
+                self.logger.error(f"Token generation error: {type(e).__name__}")
+                return jsonify({"error": "Token generation failed"}), 500
 
     def _generate_single_token(
         self,
@@ -578,8 +580,9 @@ class RoutesMixin:
                 )
 
             except Exception as e:
-                self.logger.error(f"Error approving request: {e}")
-                return jsonify({"error": str(e)}), 500
+                # Log error type only to avoid leaking sensitive data in logs
+                self.logger.error(f"Error approving request: {type(e).__name__}")
+                return jsonify({"error": "Failed to approve request"}), 500
 
         @self.flask_app.route("/api/v1/pending/<name>/reject", methods=["POST"])
         @self._require_api_key
@@ -825,5 +828,6 @@ class RoutesMixin:
                 )
             except FileNotFoundError:
                 return jsonify({"error": "Root CA not initialized"}), 500
-            except Exception as e:
-                return jsonify({"error": f"Failed to read CA info: {e}"}), 500
+            except Exception:
+                # Don't include exception details to avoid leaking sensitive info
+                return jsonify({"error": "Failed to read CA info"}), 500

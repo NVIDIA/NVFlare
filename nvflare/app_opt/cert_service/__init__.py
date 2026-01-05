@@ -17,4 +17,3 @@
 This package contains optional extensions for the Certificate Service:
 - PostgreSQLEnrollmentStore: PostgreSQL backend for multi-instance deployments
 """
-

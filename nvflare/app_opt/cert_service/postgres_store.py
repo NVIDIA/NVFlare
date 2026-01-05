@@ -40,10 +40,7 @@ try:
     import psycopg2
     from psycopg2 import pool
 except ImportError:
-    raise ImportError(
-        "PostgreSQL support requires psycopg2. "
-        "Install with: pip install psycopg2-binary"
-    )
+    raise ImportError("PostgreSQL support requires psycopg2. " "Install with: pip install psycopg2-binary")
 
 from nvflare.cert_service.store import EnrolledEntity, EnrollmentStore, PendingRequest
 
@@ -347,4 +344,3 @@ class PostgreSQLEnrollmentStore(EnrollmentStore):
         """Close all connections in the pool."""
         if self._pool:
             self._pool.closeall()
-

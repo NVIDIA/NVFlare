@@ -380,24 +380,29 @@ def _handle_api_key(args):
     # Output
     if args.output:
         output_path = os.path.abspath(args.output)
+        # Note: API key is intentionally stored in clear text, similar to SSH keys
+        # or cloud credential files. Security is provided by file permissions.
         with open(output_path, "w") as f:
-            f.write(api_key)
-        # Set restrictive permissions
+            f.write(api_key)  # nosec B105 - intentional clear-text storage with restricted permissions
+        # Set restrictive permissions (owner read/write only)
         os.chmod(output_path, 0o600)
         print(f"API key saved to: {output_path}")
         print(f"Key length: {length} bytes ({length * 8} bits)")
         print(f"Format: {args.format}")
     else:
-        print(api_key)
+        # Intentional: command's purpose is to output the generated key
+        print(api_key)  # noqa: T201  # nosec B105
 
-    # Show usage instructions
-    print("\n--- Usage Instructions ---")
-    print("\n1. Set as environment variable:")
-    print(f"   export NVFLARE_API_KEY='{api_key}'")
-    print("\n2. Or add to Certificate Service config (cert_service_config.yaml):")
-    print(f'   api_key: "{api_key}"')
-    print("\n3. Use with CLI commands:")
-    print(f"   nvflare token generate -n site-1 --cert-service https://... --api-key '{api_key}'")
+    # Show usage instructions (intentionally includes key for copy-paste convenience)
+    print("\n--- Usage Instructions ---")  # noqa: T201
+    print("\n1. Set as environment variable:")  # noqa: T201
+    print(f"   export NVFLARE_API_KEY='{api_key}'")  # noqa: T201  # nosec B105
+    print("\n2. Or add to Certificate Service config (cert_service_config.yaml):")  # noqa: T201
+    print(f'   api_key: "{api_key}"')  # noqa: T201  # nosec B105
+    print("\n3. Use with CLI commands:")  # noqa: T201
+    print(
+        f"   nvflare token generate -n site-1 --cert-service https://... --api-key '{api_key}'"
+    )  # noqa: T201  # nosec B105
     print(f"   nvflare enrollment list --cert-service https://... --api-key '{api_key}'")
 
     return 0

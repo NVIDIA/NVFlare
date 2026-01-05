@@ -86,9 +86,8 @@ class TestWSGIModule:
 
         # Verify the data dir was used (root CA should be created there)
         # The CA files are created in a 'ca' subdirectory or directly in data_dir
-        ca_exists = (
-            os.path.exists(os.path.join(temp_data_dir, "rootCA.pem"))
-            or os.path.exists(os.path.join(temp_data_dir, "ca", "rootCA.pem"))
+        ca_exists = os.path.exists(os.path.join(temp_data_dir, "rootCA.pem")) or os.path.exists(
+            os.path.join(temp_data_dir, "ca", "rootCA.pem")
         )
         assert ca_exists or wsgi.app is not None  # At minimum, app should be created
 
@@ -197,4 +196,3 @@ class TestWSGIHealthEndpoint:
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "healthy"
-
