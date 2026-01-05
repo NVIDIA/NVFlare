@@ -1,0 +1,78 @@
+# Docker Compose for NVIDIA FLARE Certificate Service
+#
+# Usage:
+#   # Generate API key first
+#   export NVFLARE_API_KEY=$(nvflare cert api-key)
+#
+#   # Build the image (from project root)
+#   docker build -f docker/cert-service/Dockerfile -t nvflare/cert-service:latest .
+#
+#   # Start the service
+#   cd docker/cert-service
+#   docker-compose up -d
+#
+#   # View logs
+#   docker-compose logs -f
+#
+#   # Stop
+#   docker-compose down
+
+version: '3.8'
+
+services:
+  cert-service:
+    image: nvflare/cert-service:latest
+    container_name: flare-cert-service
+    ports:
+      - "8443:8443"
+    environment:
+      # Required: API key for admin operations (token generation, enrollment management)
+      - NVFLARE_API_KEY=${NVFLARE_API_KEY}
+      
+      # Optional: Custom config file path
+      # - NVFLARE_CERT_SERVICE_CONFIG=/etc/cert_service/config.yaml
+      
+      # Optional: Custom port (default: 8443)
+      # - NVFLARE_CERT_SERVICE_PORT=8443
+    volumes:
+      # Persistent storage for root CA and database
+      - cert-service-data:/var/lib/cert_service
+      
+      # Optional: Custom configuration
+      # - ./config.yaml:/etc/cert_service/config.yaml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8443/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cert-service-data:
+    driver: local
+
+# For production with HTTPS (behind reverse proxy):
+#
+# services:
+#   cert-service:
+#     ...
+#     # Don't expose port directly
+#     expose:
+#       - "8443"
+#     networks:
+#       - internal
+#
+#   nginx:
+#     image: nginx:alpine
+#     ports:
+#       - "443:443"
+#     volumes:
+#       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+#       - ./certs:/etc/nginx/certs:ro
+#     networks:
+#       - internal
+#
+# networks:
+#   internal:
+

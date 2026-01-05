@@ -11,3 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Optional Certificate Service plugins.
+
+This package contains optional extensions for the Certificate Service:
+- PostgreSQLEnrollmentStore: PostgreSQL backend for multi-instance deployments
+"""
+

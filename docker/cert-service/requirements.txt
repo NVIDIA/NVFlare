@@ -1,0 +1,22 @@
+# Minimal requirements for NVIDIA FLARE Certificate Service
+#
+# This is a subset of the full nvflare requirements, containing only
+# what's needed for the Certificate Service.
+
+# Web framework
+Flask>=3.0.0
+gunicorn>=22.0.0
+
+# Security / Cryptography
+cryptography>=36.0.0
+PyJWT>=2.0.0
+
+# Data validation
+pydantic>=2.0
+
+# Configuration
+PyYAML>=6.0
+
+# Database (SQLite is built-in, this is for PostgreSQL support)
+# psycopg2-binary  # Uncomment for PostgreSQL support
+

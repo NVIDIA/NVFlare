@@ -1702,8 +1702,218 @@ This ensures the root CA private key is generated locally and never transmitted.
         -p 8443:8443 \
         nvflare/cert-service:latest
     
-    # Option 4: Production with gunicorn
-    gunicorn "nvflare.cert_service.app:create_app('/path/to/config.yaml')"
+    # Option 4: Production with gunicorn (WSGI)
+    gunicorn -w 4 -b 0.0.0.0:8443 nvflare.cert_service.wsgi:app
+
+**Understanding WSGI:**
+
+WSGI (Web Server Gateway Interface) is a standard interface between Python web
+applications and production web servers. Flask's built-in server is for development
+only - it's single-threaded and not secure.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 35 40
+
+   * - Aspect
+     - Flask Dev Server
+     - WSGI Server (Gunicorn)
+   * - Workers
+     - 1 (single thread)
+     - Multiple (e.g., 4 workers)
+   * - Concurrency
+     - Sequential requests
+     - Parallel requests
+   * - Performance
+     - Development only
+     - Production-grade
+   * - Command
+     - ``python wsgi.py``
+     - ``gunicorn wsgi:app``
+
+The ``wsgi.py`` file provides the entry point:
+
+.. code-block:: python
+
+    # nvflare/cert_service/wsgi.py
+    from nvflare.cert_service.app import CertServiceApp
+    
+    cert_service_app = CertServiceApp(...)
+    app = cert_service_app.flask_app  # WSGI-compatible Flask app
+
+**Docker Deployment:**
+
+The Certificate Service is published as a separate Docker image (similar to
+FLARE Dashboard):
+
+.. code-block:: text
+
+    Docker Images:
+    ├── nvflare/nvflare:latest           # Full FLARE (server/client)
+    ├── nvflare/nvflare-dashboard:latest # Dashboard UI
+    └── nvflare/cert-service:latest      # Certificate Service (minimal)
+
+Build the image:
+
+.. code-block:: shell
+
+    docker build -f docker/cert-service/Dockerfile -t nvflare/cert-service:latest .
+
+Run with Docker:
+
+.. code-block:: shell
+
+    # Generate API key
+    export NVFLARE_API_KEY=$(nvflare cert api-key)
+    
+    # Run Certificate Service
+    docker run -d \
+        --name flare-cert-service \
+        -p 8443:8443 \
+        -v cert-service-data:/var/lib/cert_service \
+        -e NVFLARE_API_KEY=$NVFLARE_API_KEY \
+        nvflare/cert-service:latest
+
+Run with Docker Compose:
+
+.. code-block:: yaml
+
+    # docker-compose.yml
+    version: '3.8'
+    services:
+      cert-service:
+        image: nvflare/cert-service:latest
+        ports:
+          - "8443:8443"
+        environment:
+          - NVFLARE_API_KEY=${NVFLARE_API_KEY}
+        volumes:
+          - cert-service-data:/var/lib/cert_service
+        restart: unless-stopped
+    
+    volumes:
+      cert-service-data:
+
+.. code-block:: shell
+
+    # Start
+    export NVFLARE_API_KEY=$(nvflare cert api-key)
+    docker-compose up -d
+
+**Docker Image Comparison:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 20 25 25
+
+   * - Image
+     - Base
+     - Size (approx)
+     - Purpose
+   * - ``nvflare/nvflare``
+     - python:3.10
+     - ~2GB
+     - Full FL (server/client)
+   * - ``nvflare/nvflare-dashboard``
+     - python:3.10
+     - ~1GB
+     - Dashboard UI
+   * - ``nvflare/cert-service``
+     - python:3.10-slim
+     - ~150MB
+     - Certificate Service only
+
+Scaling for High Concurrency
+============================
+
+For deployments with 100+ simultaneous enrollments, consider these scaling strategies:
+
+**1. Increase Gunicorn Workers**
+
+.. code-block:: bash
+
+    # More workers for CPU-bound crypto operations
+    gunicorn -w 8 -b 0.0.0.0:8443 nvflare.cert_service.wsgi:app
+
+**2. PostgreSQL for Multi-Instance (Optional)**
+
+SQLite is limited to ~50 writes/sec due to single-writer lock. For high-availability
+deployments, use PostgreSQL (optional plugin):
+
+.. code-block:: bash
+
+    # Install PostgreSQL support
+    pip install nvflare[POSTGRES]
+    # or: pip install psycopg2-binary
+
+Configure in ``cert_service_config.yaml``:
+
+.. code-block:: yaml
+
+    storage:
+      type: postgresql
+      connection: "postgresql://user:pass@db-host:5432/certservice"
+      pool_size: 10
+
+**3. Horizontal Scaling with Load Balancer**
+
+.. code-block:: text
+
+                    ┌─────────────────┐
+                    │  Load Balancer  │
+                    │  (nginx/HAProxy)│
+                    └────────┬────────┘
+                             │
+          ┌──────────────────┼──────────────────┐
+          │                  │                  │
+          ▼                  ▼                  ▼
+   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+   │ Cert Service│   │ Cert Service│   │ Cert Service│
+   │  Instance 1 │   │  Instance 2 │   │  Instance 3 │
+   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   PostgreSQL    │
+                    │ (Shared State)  │
+                    └─────────────────┘
+
+**4. Staggered Enrollment for Kubernetes**
+
+For 100 pods starting simultaneously, add random delays:
+
+.. code-block:: yaml
+
+    initContainers:
+      - name: stagger-start
+        image: busybox
+        command: ["sh", "-c", "sleep $((RANDOM % 60))"]  # Random 0-60s delay
+
+**Performance Estimates:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 40
+
+   * - Configuration
+     - Requests/sec
+     - Notes
+   * - 1 worker + SQLite
+     - ~20
+     - Development only
+   * - 4 workers + SQLite
+     - ~50
+     - SQLite write lock limit
+   * - 4 workers + PostgreSQL
+     - ~200
+     - Per instance
+   * - 3 instances + PostgreSQL + LB
+     - ~500
+     - Load balanced
+   * - K8s HPA (2-10 pods)
+     - ~1000+
+     - Auto-scaling
 
 **Configuration Flow:**
 
