@@ -1,3 +1,5 @@
+.. _hello_tf:
+
 Hello TensorFlow
 ================
 
@@ -51,7 +53,7 @@ Code Structure
 
 .. code-block:: text
 
-   hello-pt
+   hello-tf
    |
    |-- client.py         # client local training script
    |-- model.py          # model definition

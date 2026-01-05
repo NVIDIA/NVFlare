@@ -1,3 +1,5 @@
+.. _hello_tabular_stats:
+
 Tabular Data Federated Statistics
 =================================
 
@@ -91,7 +93,7 @@ Code Structure
 Data
 ----
 
-In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
+In this example, we are using the UCI (University of California, Irvine) `adult dataset <https://archive.ics.uci.edu/dataset/2/adult>`_.
 
 The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
 so we assigned the training data and test data into two clients.
@@ -199,9 +201,11 @@ The results are stored in workspace "/tmp/nvflare"
     /tmp/nvflare/simulation/stats_df/server/simulate_job/statistics/adults_stats.json
 
 
-## Visualization
-   with json format, the data can be easily visualized via pandas dataframe and plots.
-   download and copy the output adults_stats.json file to demo directory, then you can run jupyter notebook visualization.ipynb
+Visualization
+-------------
+
+With JSON format, the data can be easily visualized via Pandas DataFrame and plots.
+Download and copy the output ``adults_stats.json`` file to the demo directory, then run the Jupyter notebook ``visualization.ipynb``.
 
 
 

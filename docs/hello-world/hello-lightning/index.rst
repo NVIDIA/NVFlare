@@ -1,5 +1,6 @@
+.. _hello_lightning:
 
-Hello Pytorch Lightning
+Hello PyTorch Lightning
 =======================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
