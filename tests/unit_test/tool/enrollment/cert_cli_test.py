@@ -209,6 +209,100 @@ class TestHandleSite:
         assert result == 0
         assert os.path.exists(os.path.join(output_dir, "server.crt"))
 
+    def test_site_server_with_ip_address(self, ca_dir, output_dir):
+        """Test server certificate with IP address as host."""
+        args = Namespace(
+            name="server1",
+            type=ParticipantType.SERVER,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="org",
+            host="192.168.1.10",
+            additional_hosts=None,
+            role=AdminRole.MEMBER,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "server.crt"))
+
+        # Verify the certificate contains an IP address in the SAN
+        from cryptography import x509 as crypto_x509
+
+        with open(os.path.join(output_dir, "server.crt"), "rb") as f:
+            cert = crypto_x509.load_pem_x509_certificate(f.read())
+        san_ext = cert.extensions.get_extension_for_oid(crypto_x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_value: crypto_x509.SubjectAlternativeName = san_ext.value  # type: ignore[assignment]
+        ip_addresses = [n for n in san_value if isinstance(n, crypto_x509.IPAddress)]
+        assert len(ip_addresses) >= 1
+        assert str(ip_addresses[0].value) == "192.168.1.10"
+
+    def test_site_server_with_mixed_hosts(self, ca_dir, output_dir):
+        """Test server certificate with mix of DNS names and IP addresses."""
+        args = Namespace(
+            name="server1",
+            type=ParticipantType.SERVER,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="org",
+            host="server.example.com",
+            additional_hosts=["10.0.0.1", "localhost", "192.168.1.1"],
+            role=AdminRole.MEMBER,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "server.crt"))
+
+        # Verify the certificate contains both DNS names and IP addresses
+        from cryptography import x509 as crypto_x509
+
+        with open(os.path.join(output_dir, "server.crt"), "rb") as f:
+            cert = crypto_x509.load_pem_x509_certificate(f.read())
+        san_ext = cert.extensions.get_extension_for_oid(crypto_x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_value: crypto_x509.SubjectAlternativeName = san_ext.value  # type: ignore[assignment]
+
+        dns_names = [n for n in san_value if isinstance(n, crypto_x509.DNSName)]
+        ip_addresses = [n for n in san_value if isinstance(n, crypto_x509.IPAddress)]
+
+        # Should have at least 2 DNS names (server.example.com, localhost)
+        assert len(dns_names) >= 2
+        # Should have 2 IP addresses (10.0.0.1, 192.168.1.1)
+        assert len(ip_addresses) >= 2
+
+    def test_site_server_with_ipv6(self, ca_dir, output_dir):
+        """Test server certificate with IPv6 address."""
+        args = Namespace(
+            name="server1",
+            type=ParticipantType.SERVER,
+            ca_path=ca_dir,
+            output=output_dir,
+            org="org",
+            host="::1",
+            additional_hosts=None,
+            role=AdminRole.MEMBER,
+            valid_days=365,
+        )
+
+        result = _handle_site(args)
+
+        assert result == 0
+        assert os.path.exists(os.path.join(output_dir, "server.crt"))
+
+        # Verify the certificate contains an IPv6 address
+        from cryptography import x509 as crypto_x509
+
+        with open(os.path.join(output_dir, "server.crt"), "rb") as f:
+            cert = crypto_x509.load_pem_x509_certificate(f.read())
+        san_ext = cert.extensions.get_extension_for_oid(crypto_x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_value: crypto_x509.SubjectAlternativeName = san_ext.value  # type: ignore[assignment]
+        ip_addresses = [n for n in san_value if isinstance(n, crypto_x509.IPAddress)]
+        assert len(ip_addresses) >= 1
+
     def test_site_private_key_has_restrictive_permissions(self, ca_dir, output_dir):
         """Test that site private key has restrictive permissions."""
         args = Namespace(

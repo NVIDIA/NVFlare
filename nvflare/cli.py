@@ -157,15 +157,24 @@ def def_pre_install_parser(sub_cmd):
 def def_cert_parser(sub_cmd):
     """Define cert subcommand parser."""
     cmd = CMD_CERT
-    from nvflare.tool.enrollment.cert_cli import define_cert_parser
+    try:
+        from nvflare.tool.enrollment.cert_cli import define_cert_parser
 
-    cert_parser = sub_cmd.add_parser(
-        cmd,
-        help="Generate certificates for token-based enrollment",
-        description="Generate root CA and server certificates.",
-    )
-    define_cert_parser(cert_parser)
-    return {cmd: cert_parser}
+        cert_parser = sub_cmd.add_parser(
+            cmd,
+            help="Generate certificates for token-based enrollment",
+            description="Generate root CA and server certificates.",
+        )
+        define_cert_parser(cert_parser)
+        return {cmd: cert_parser}
+    except ImportError as e:
+        # Dependencies not available - create a stub parser
+        parser = sub_cmd.add_parser(
+            cmd,
+            help="Generate certificates for token-based enrollment (dependencies required)",
+            description=f"Cert commands require cryptography library. Error: {e}",
+        )
+        return {cmd: parser}
 
 
 def def_token_parser(sub_cmd):
