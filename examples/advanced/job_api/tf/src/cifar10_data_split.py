@@ -42,6 +42,7 @@ import json
 import os
 
 import numpy as np
+from filelock import FileLock, Timeout
 from tensorflow.keras import datasets
 
 
@@ -123,3 +124,41 @@ def _partition_data(num_sites, alpha):
     class_sum = _get_site_class_summary(train_labels, site_idx)
 
     return site_idx, class_sum
+
+
+def load_cifar10_with_retry(max_retries=3, retry_delay=5):
+    """
+    Load CIFAR10 dataset with retry mechanism and proper error handling.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        retry_delay: Delay between retries in seconds
+
+    Returns:
+        Tuple of (train_images, train_labels), (test_images, test_labels)
+    """
+    lock_path = os.path.join("/tmp", "cifar10_download.lock")
+    lock = FileLock(lock_path)
+
+    for attempt in range(max_retries):
+        try:
+            with lock:
+                # Clear any existing corrupted downloads
+                if attempt > 0:
+                    cache_dir = os.path.expanduser("~/.keras/datasets")
+                    cifar10_path = os.path.join(cache_dir, "cifar-10-batches-py")
+                    if os.path.exists(cifar10_path):
+                        import shutil
+
+                        shutil.rmtree(cifar10_path)
+
+                # Load the dataset
+                return datasets.cifar10.load_data()
+
+        except (Timeout, _pickle.UnpicklingError) as e:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Failed to load CIFAR10 dataset after {max_retries} attempts: {str(e)}")
+            print(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+
+    raise RuntimeError("Failed to load CIFAR10 dataset")
