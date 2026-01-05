@@ -28,6 +28,8 @@ from nvflare.tool.package_checker.utils import (
 )
 
 CHECK_PASSED = "PASSED"
+# please refer to nvflare/lighter/impl/static_file.py
+DEFAULT_SCHEME = "http"
 
 
 class CheckResult:
@@ -141,8 +143,8 @@ class CheckServerAvailable(CheckRule):
         if self.role == NVFlareRole.ADMIN:
             admin = fed_config["admin"]
             host = admin["host"]
-            port = admin["port"]
-            scheme = admin.get("scheme", "grpc")
+            port = int(admin["port"])
+            scheme = admin.get("scheme", DEFAULT_SCHEME)
         else:
             # For client/server, get info from overseer agent
             overseer_agent_conf = fed_config["overseer_agent"]
@@ -155,18 +157,18 @@ class CheckServerAvailable(CheckRule):
             port = int(port)
 
             # Determine the communication scheme
-            scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
+            scheme = get_communication_scheme(package_path, nvf_config, default_scheme=DEFAULT_SCHEME)
 
         # Check connectivity based on the communication scheme
         if scheme in ["grpc", "agrpc"]:
-            if not check_grpc_server_running(startup=startup, host=host, port=int(port)):
+            if not check_grpc_server_running(startup=startup, host=host, port=port):
                 return CheckResult(
                     f"Can't connect to {scheme} server ({host}:{port})",
                     "Please check if server is up.",
                 )
         elif scheme in ["http", "https", "tcp", "stcp"]:
             # HTTP/HTTPS use WebSocket, TCP/STCP use raw sockets - both checked via socket connection
-            if not check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme):
+            if not check_socket_server_running(startup=startup, host=host, port=port, scheme=scheme):
                 return CheckResult(
                     f"Can't connect to {scheme} server ({host}:{port})",
                     "Please check if server is up.",

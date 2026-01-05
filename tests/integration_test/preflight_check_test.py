@@ -64,7 +64,7 @@ def _parse_preflight_output(output: bytes) -> dict[str, str]:
             status = match.group(2).strip()
 
             # Skip header row and invalid entries
-            if check_name in ["Checks", ""] or not check_name:
+            if check_name == "Checks" or not check_name:
                 continue
 
             # Basic validation: status should be non-empty
