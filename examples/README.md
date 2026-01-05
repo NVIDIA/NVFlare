@@ -76,7 +76,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                      | Framework    | Summary                                                                                                                                                         |
 |------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [Notebook for Hello Examples](./hello-world/hello_world.ipynb)               | -            | Notebook for examples below.                                                                                                                                    |
-| [Hello FedAvg NumPy](./hello-world/hello-fedavg-numpy/README.md)             | Numpy        | Example using [FedAvg](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.fedavg.html) controller workflow.      |
+| [Hello NumPy](./hello-world/hello-numpy/README.md)             | Numpy        | Example using [FedAvg](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.fedavg.html) with Recipe API.      |
 | [Hello Cross-Site Validation](./hello-world/hello-numpy-cross-val/README.md) | Numpy        | Example using [CrossSiteEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_eval.html) controller workflow, and example using previous results without training workflow. |
 | [Hello Cyclic Weight Transfer](./hello-world/hello-cyclic/README.md)         | PyTorch      | Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/). |
 | [Hello PyTorch](./hello-world/hello-pt/README.md)                            | PyTorch      | Example using an image classifier using [FedAvg](https://arxiv.org/abs/1602.05629) and [PyTorch](https://pytorch.org/) as the deep learning training framework. |
@@ -119,7 +119,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Distributed Optimization](./advanced/distributed_optimization/README.md)                      | In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few examples showing how to directly use the `nvflare.app_opt.p2p` API to run distributed optimization algorithms, on the other hand we provide a walkthrough of the actual implementation of the APIs in `nvflare.app_opt.p2p` to show how to exploit lower-level NVFlare APIs for advanced use-cases. |
 | [swarm learning](./advanced/swarm_learning/README.md)                                          | This example shows how to use swarm learning using PyTorch with the CIFAR-10 dataset. |
 | [split learning](./advanced/vertical_federated_learning/cifar10-splitnn/README.md)        | This example includes instructions on how to run split learning (SL) using the CIFAR-10 dataset and the FL simulator. |
- 
+
 ## 5. Traditional ML examples
 | Example                                                                                    | Framework         | Notebooks or Readme                                                                                                   | Summary                                                                                                                                                                                                                                                                                                   |
 |--------------------------------------------------------------------------------------------|-------------------|-----------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -151,7 +151,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 8. Federated Policies & Security
 | Example                                                                                                                                | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management. | 
+| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management. |
 | [Custom Authentication](./advanced/custom_authentication/README.rst)                                                                   | Demonstrate the custom authentication policy and secure mode. |
 | [Job-Level Authorization](./advanced/job-level-authorization/README.md)                                                                         | Demonstrate the job-level authorization policy and secure mode. |
 | [KeyCloak Site Authentication Integration](./advanced/keycloak-site-authentication/README.md)                                                     | Demonstrate KeyCloak integration for supporting site-specific authentication. |
@@ -202,11 +202,10 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 |-------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Flare Edge](./advanced/edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
 
-## 15. System Monitoring & Misc. 
+## 15. System Monitoring & Misc.
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Code-Pre-install](./advanced/code-pre-install/README.md)   | NA        | This example demonstrates how to use NVFLARE's code pre-installer in a real-world scenario. |
 | [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs. |
- 

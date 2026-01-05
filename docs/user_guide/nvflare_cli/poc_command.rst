@@ -379,32 +379,47 @@ You can start the FLARE console with:
 Submitting Jobs
 -----------------------
 
-**For Recipe API examples** (like hello-numpy):
+**For Recipe API jobs** (like hello-numpy):
 
-Recipe API jobs must be exported to traditional format before submission:
+Recipe API jobs can be run in POC environment in two ways:
+
+**Option 1: Use PocEnv directly** (recommended):
+
+Modify your ``job.py`` to use ``PocEnv`` instead of ``SimEnv``:
+
+.. code-block:: python
+
+    # In your job.py:
+    from nvflare.recipe import PocEnv
+    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+
+    # Create your recipe
+    recipe = NumpyFedAvgRecipe(
+        name="hello-numpy",
+        min_clients=2,
+        num_rounds=3,
+        train_script="client.py",
+        # ... other config
+    )
+
+    # Execute with PocEnv (runs on POC deployment)
+    env = PocEnv(num_clients=2)
+    run = recipe.execute(env)
+
+Then run: ``python job.py``
+
+**Option 2: Export and submit via FLARE Console**:
+
+If you need to use the FLARE Console's ``submit_job`` command:
 
 .. code-block:: bash
 
-    # Export the Recipe API job
+    # Export the Recipe API job to traditional format
     cd hello-world/hello-numpy
     python job.py --export_config
 
     # Then submit the exported job after logging in to the FLARE console
     submit_job /tmp/nvflare/jobs/job_config/hello-numpy
-
-**Alternative: Modify job.py to use PocEnv** (recommended):
-
-.. code-block:: python
-
-    # Modify your job.py to use PocEnv instead of SimEnv
-    from nvflare.recipe import PocEnv
-
-    # ... your recipe creation code ...
-    # recipe = NumpyFedAvgRecipe(...)
-
-    # Use PocEnv instead of SimEnv
-    env = PocEnv(num_clients=2)
-    run = recipe.execute(env)
 
 **For traditional jobs** (with meta.json and app/config):
 
@@ -416,7 +431,11 @@ Refer to :ref:`operating_nvflare` for more details.
 
 FLARE API
 ---------
-To programmatically operate the system and submit a job, use the :ref:`flare_api`:
+To programmatically operate the system and submit a job, use the :ref:`flare_api`.
+
+**For Recipe API jobs**, using ``PocEnv`` directly is recommended (see Option 1 above).
+
+**For traditional jobs or exported Recipe jobs**, use ``submit_job()``:
 
 .. code-block:: python
 
@@ -428,9 +447,8 @@ To programmatically operate the system and submit a job, use the :ref:`flare_api
     admin_dir = os.path.join(poc_prepared, "admin@nvidia.com")
     sess = new_secure_session("admin@nvidia.com", startup_kit_location=admin_dir)
 
-    # For Recipe API: export first, then submit
-    # (see export example above)
-    job_id = sess.submit_job("/tmp/nvflare/jobs/job_config/hello-numpy")
+    # For exported Recipe API job or traditional job
+    job_id = sess.submit_job("path/to/job")
 
     print(f"Job is running with ID {job_id}")
 
