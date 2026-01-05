@@ -14,6 +14,7 @@
 
 import os
 import pty
+import re
 import shlex
 import subprocess
 import sys
@@ -29,48 +30,94 @@ TEST_CASES = [
     {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
 ]
 
-SERVER_OUTPUT_PASSED = [
-    "-----------------------------------------------------------------------------------------------------------------------------------",
-    "| Checks                          | Problems                                                                         | How to fix |",
-    "|---------------------------------------------------------------------------------------------------------------------------------|",
-    "| Check grpc port binding         | PASSED                                                                           | N/A        |",
-    "|---------------------------------------------------------------------------------------------------------------------------------|",
-    "| Check admin port binding        | PASSED                                                                           | N/A        |",
-    "|---------------------------------------------------------------------------------------------------------------------------------|",
-    "| Check snapshot storage writable | PASSED                                                                           | N/A        |",
-    "|---------------------------------------------------------------------------------------------------------------------------------|",
-    "| Check job storage writable      | PASSED                                                                           | N/A        |",
-    "|---------------------------------------------------------------------------------------------------------------------------------|",
-    "| Check dry run                   | PASSED                                                                           | N/A        |",
-    "-----------------------------------------------------------------------------------------------------------------------------------",
-]
-
-CLIENT_OUTPUT_PASSED = [
-    "-------------------------------------------------------------------------------------------------------------------------------",
-    "| Checks                      | Problems                                                                         | How to fix |",
-    "|-----------------------------------------------------------------------------------------------------------------------------|",
-    "| Check GRPC server available | PASSED                                                                           | N/A        |",
-    "|-----------------------------------------------------------------------------------------------------------------------------|",
-    "| Check dry run               | PASSED                                                                           | N/A        |",
-    "-------------------------------------------------------------------------------------------------------------------------------",
-]
 
 SERVER_START_TIME = 15
 
 
-def _filter_output(output):
-    lines = []
-    for line in output.decode("utf-8").splitlines():
-        if "Checking Package" in line:
+def _parse_preflight_output(output: bytes) -> dict[str, str]:
+    """Parse the preflight check table output into a structured dictionary.
+
+    Args:
+        output: Raw bytes output from the preflight check command
+
+    Returns:
+        Dictionary mapping check names to their status/problems
+
+    Raises:
+        AssertionError: If no valid checks are found in output
+    """
+    checks = {}
+    lines = output.decode("utf-8").splitlines()
+
+    # Pattern to match table rows with check data
+    # Format: | Check name | Status/Problem | How to fix |
+    row_pattern = re.compile(r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$")
+
+    for line in lines:
+        # Skip separator lines and header
+        if line.startswith("|---") or line.startswith("---"):
             continue
-        elif "killing dry run process" in line:
-            continue
-        elif "killed dry run process" in line:
-            continue
-        elif not line:
-            continue
-        lines.append(line)
-    return lines
+
+        match = row_pattern.match(line)
+        if match:
+            check_name = match.group(1).strip()
+            status = match.group(2).strip()
+
+            # Skip header row and invalid entries
+            if check_name in ["Checks", ""] or not check_name:
+                continue
+
+            # Basic validation: status should be non-empty
+            if not status:
+                continue
+
+            checks[check_name] = status
+
+    # Ensure we found at least some checks
+    if not checks:
+        raise AssertionError(f"No valid checks found in preflight output. Output:\n{output.decode('utf-8')[:500]}")
+
+    return checks
+
+
+def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str], check_type: str):
+    """Verify that actual checks match expected checks with detailed error messages.
+
+    Args:
+        actual_checks: Dictionary of actual check results
+        expected_checks: Dictionary of expected check results
+        check_type: Type of check being verified (e.g., "server", "client")
+    """
+    # Check if all expected checks are present
+    missing_checks = set(expected_checks.keys()) - set(actual_checks.keys())
+    if missing_checks:
+        raise AssertionError(
+            f"{check_type} preflight check missing expected checks: {missing_checks}\n"
+            f"Expected checks: {list(expected_checks.keys())}\n"
+            f"Actual checks: {list(actual_checks.keys())}"
+        )
+
+    # Check if there are unexpected checks
+    extra_checks = set(actual_checks.keys()) - set(expected_checks.keys())
+    if extra_checks:
+        raise AssertionError(
+            f"{check_type} preflight check has unexpected checks: {extra_checks}\n"
+            f"Expected checks: {list(expected_checks.keys())}\n"
+            f"Actual checks: {list(actual_checks.keys())}"
+        )
+
+    # Verify each check's status
+    failed_checks = []
+    for check_name, expected_status in expected_checks.items():
+        actual_status = actual_checks.get(check_name, "MISSING")
+        if actual_status != expected_status:
+            failed_checks.append({"check": check_name, "expected": expected_status, "actual": actual_status})
+
+    if failed_checks:
+        error_msg = f"{check_type} preflight checks failed:\n"
+        for failed in failed_checks:
+            error_msg += f"  - {failed['check']}: expected '{failed['expected']}', got '{failed['actual']}'\n"
+        raise AssertionError(error_msg)
 
 
 def _run_preflight_check_command_in_subprocess(package_path: str):
@@ -133,8 +180,20 @@ class TestPreflightCheck:
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
-                filtered_output = _filter_output(output)
-                assert filtered_output == SERVER_OUTPUT_PASSED
+                actual_checks = _parse_preflight_output(output)
+
+                # Get expected checks based on communication scheme
+                expected_checks = {
+                    "Check FL port binding": "PASSED",
+                    "Check admin port binding": "PASSED",
+                    "Check snapshot storage writable": "PASSED",
+                    "Check job storage writable": "PASSED",
+                    "Check dry run": "PASSED",
+                }
+
+                print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
+
+                _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -145,18 +204,35 @@ class TestPreflightCheck:
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
-                filtered_output = _filter_output(output)
+                actual_checks = _parse_preflight_output(output)
+
+                # Get expected checks based on communication scheme
+                expected_checks = {
+                    "Check FL port binding": "PASSED",
+                    "Check admin port binding": "PASSED",
+                    "Check snapshot storage writable": "PASSED",
+                    "Check job storage writable": "PASSED",
+                    "Check dry run": "PASSED",
+                }
+
                 if is_dummy_overseer:
-                    assert filtered_output == SERVER_OUTPUT_PASSED
+                    print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
+                    _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
                 else:
-                    assert filtered_output != SERVER_OUTPUT_PASSED
+                    # At least one check should not be PASSED (likely the dry run)
+                    passed_count = sum(1 for status in actual_checks.values() if status == "PASSED")
+                    total_count = len(expected_checks)
+                    assert passed_count < total_count, (
+                        f"Server '{server_name}' preflight check expected some failures before overseer start, "
+                        f"but all {passed_count}/{total_count} checks passed. "
+                        f"Actual checks: {actual_checks}"
+                    )
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
     def test_run_check_on_client(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
-        filtered_output = None
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
@@ -166,8 +242,18 @@ class TestPreflightCheck:
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
-                filtered_output = _filter_output(output)
-                assert filtered_output == CLIENT_OUTPUT_PASSED
+                actual_checks = _parse_preflight_output(output)
+
+                # Get expected checks based on communication scheme
+                expected_checks = {
+                    "Check server available": "PASSED",
+                    "Check dry run": "PASSED",
+                }
+
+                print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
+
+                # Verify checks match expectations based on communication scheme
+                _verify_checks(actual_checks, expected_checks, f"Client '{client_name}'")
         except Exception:
             raise
         finally:
@@ -176,7 +262,6 @@ class TestPreflightCheck:
 
     def test_run_check_on_admin_console(self, setup_system):
         site_launcher, is_dummy_overseer, admin_folder_root = setup_system
-        filtered_output = None
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
@@ -185,8 +270,17 @@ class TestPreflightCheck:
 
             # preflight-check on admin console
             output = _run_preflight_check_command(package_path=admin_folder_root)
-            filtered_output = _filter_output(output)
-            assert filtered_output == CLIENT_OUTPUT_PASSED
+            actual_checks = _parse_preflight_output(output)
+
+            expected_checks = {
+                "Check server available": "PASSED",
+                "Check dry run": "PASSED",
+            }
+
+            print(f"Admin console, expecting checks: {list(expected_checks.keys())}")
+
+            # Verify checks match expectations
+            _verify_checks(actual_checks, expected_checks, "Admin console")
         except Exception:
             raise
         finally:
