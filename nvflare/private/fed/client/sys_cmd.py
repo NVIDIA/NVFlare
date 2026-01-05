@@ -13,12 +13,17 @@
 # limitations under the License.
 
 import json
+import warnings
 from typing import List
 
 import psutil
 
 try:
-    import pynvml
+    # Suppress FutureWarning from deprecated pynvml package
+    # Users should install nvidia-ml-py instead (provides same pynvml module)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        import pynvml
 except ImportError:
     pynvml = None
 
