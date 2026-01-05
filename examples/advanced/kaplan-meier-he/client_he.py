@@ -57,7 +57,7 @@ def read_data(file_name: str):
         return base64.b64decode(data)
 
 
-def details_save(kmf, site_name):
+def details_save(kmf):
     # Get the survival function at all observed time points
     survival_function_at_all_times = kmf.survival_function_
     # Get the timeline (time points)
@@ -89,7 +89,7 @@ def details_save(kmf, site_name):
         json.dump(results, json_file, indent=4)
 
 
-def plot_and_save(kmf, site_name):
+def plot_and_save(kmf):
     # Plot and save the Kaplan-Meier survival curve
     plt.figure()
     plt.title("Federated HE")
@@ -145,12 +145,11 @@ def main():
             # Empty payload from server, send max index back
             # Condense local data to histogram
             event_table = survival_table_from_events(time_local, event_local)
-            hist_idx = event_table.index.values.astype(int)
             # Get the max index to be synced globally
-            max_hist_idx = max(hist_idx)
+            max_hist_idx = max(event_table.index.values.astype(int))
 
             # Send max to server
-            print(f"send max hist index (cleartext) for site = {flare.get_site_name()}")
+            print(f"send max hist index (cleartext) for site = {site_name}")
             model = FLModel(params={"max_idx": max_hist_idx}, params_type=ParamsType.FULL)
             flare.send(model)
 
@@ -219,10 +218,10 @@ def main():
             kmf.fit(durations=time_unfold, event_observed=event_unfold)
 
             # Plot and save the KM curve
-            plot_and_save(kmf, site_name)
+            plot_and_save(kmf)
 
             # Save details of the KM result to a json file
-            details_save(kmf, site_name)
+            details_save(kmf)
 
             # Send a simple response to server
             response = FLModel(params={}, params_type=ParamsType.FULL)

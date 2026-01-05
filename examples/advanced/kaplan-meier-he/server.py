@@ -47,8 +47,9 @@ class KM(ModelController):
         hist_idx_max = 0
         for fl_model in sag_result:
             hist = fl_model.params["hist_obs"]
-            if hist_idx_max < max(hist.keys()):
-                hist_idx_max = max(hist.keys())
+            max_idx = max(hist.keys())
+            if hist_idx_max < max_idx:
+                hist_idx_max = max_idx
         hist_idx_max += 1
 
         hist_obs_global = {}
