@@ -16,7 +16,7 @@ import os
 import re
 import sys
 
-from .check_rule import CheckGRPCServerAvailable
+from .check_rule import CheckServerAvailable
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
 
@@ -35,8 +35,13 @@ class ClientPackageChecker(PackageChecker):
         return False
 
     def init_rules(self, package_path):
+        """Initialize preflight check rules.
+
+        The CheckServerAvailable rule automatically detects the communication scheme
+        (GRPC, HTTP, etc.) and uses the appropriate connectivity check method.
+        """
         self.rules = [
-            CheckGRPCServerAvailable(name="Check GRPC server available", role=self.NVF_ROLE),
+            CheckServerAvailable(name="Check server available", role=self.NVF_ROLE),
         ]
 
     def get_uid_from_startup_script(self) -> str:
