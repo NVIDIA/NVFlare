@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import ipaddress
 import os
 import shutil
 import tempfile
@@ -23,8 +24,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-import ipaddress
 
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.utils import _make_san_entry, load_yaml, sign_folders, verify_folder_signature

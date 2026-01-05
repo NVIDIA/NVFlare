@@ -259,11 +259,21 @@ def handle_single_participant_mode(args, workspace: str) -> int:
                 print("1. Set enrollment token: export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
                 print(f"2. Start: cd {result_dir} && ./startup/start.sh")
             else:
-                # Manual workflow
-                print("1. Copy rootCA.pem from project admin to the startup/ folder")
-                print("2. Obtain an enrollment token from your project administrator")
-                print("3. Set the token: export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
-                print(f"4. Start: cd {result_dir} && ./startup/start.sh")
+                # No cert-service URL embedded - show both workflow options
+                print("\nChoose one of the following workflows:\n")
+                print("Option A: Manual Workflow (small scale, no Certificate Service)")
+                print("  1. Obtain certificates from Project Admin:")
+                print("     - rootCA.pem, client.crt, client.key")
+                print("  2. Copy certificates to the startup/ folder")
+                print(f"  3. Start: cd {result_dir} && ./startup/start.sh")
+                print("")
+                print("Option B: Auto-Scale Workflow (with Certificate Service)")
+                print("  1. Set Certificate Service URL:")
+                print("     export NVFLARE_CERT_SERVICE_URL=https://<cert-service>:8443")
+                print("  2. Set enrollment token from Project Admin:")
+                print("     export NVFLARE_ENROLLMENT_TOKEN=<your_token>")
+                print(f"  3. Start: cd {result_dir} && ./startup/start.sh")
+                print("     (Client will auto-enroll and obtain certificates)")
         return 0
     except Exception as e:
         print(f"Error generating package: {e}")
