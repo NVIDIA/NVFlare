@@ -28,7 +28,7 @@ from utils.process_elliptic import process_elliptic
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-# (1) import nvflare client API
+# Import nvflare client API
 import nvflare.client as flare
 
 
@@ -106,37 +106,38 @@ def main():
     model = SAGE(train_data_sub.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
     model.double()
 
+    # Define evaluation logic outside the training loop for efficiency
+    # This function is reused for evaluation on both trained and received model
+    def evaluate(input_weights, step):
+        model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
+        model_eval.double()
+        model_eval.load_state_dict(input_weights)
+        # (optional) use GPU to speed things up
+        model_eval.to(DEVICE)
+
+        with torch.no_grad():
+            model_eval.eval()
+            out = model_eval(train_data)
+            # Use probability scores for AUC calculation, not binary predictions
+            y_prob = F.softmax(out, dim=1)[:, 1].detach().cpu().numpy()
+            y_true = train_data.y.detach().cpu().numpy()
+            val_auc = roc_auc_score(y_true[valid_idx], y_prob[valid_idx])
+            print(f"Validation AUC: {val_auc:.4f} ")
+            writer.add_scalar("val_auc", val_auc, step)
+        return val_auc
+
     while flare.is_running():
-        # (3) receives FLModel from NVFlare
+        # Receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
-        # (3) loads model from NVFlare
+        # Loads model from NVFlare
         model.load_state_dict(input_model.params)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         # (optional) use GPU to speed things up
         model.to(DEVICE)
-
-        # (5) wraps evaluation logic into a method to re-use for
-        #       evaluation on both trained and received model
-        def evaluate(input_weights, step):
-            model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
-            model_eval.double()
-            model_eval.load_state_dict(input_weights)
-            # (optional) use GPU to speed things up
-            model_eval.to(DEVICE)
-
-            with torch.no_grad():
-                model_eval.eval()
-                out = model_eval(train_data)
-                y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
-                y_true = train_data.y.detach().cpu().numpy()
-                val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
-                print(f"Validation AUC: {val_auc:.4f} ")
-                writer.add_scalar("val_auc", val_auc, step)
-            return val_auc
 
         # (optional) calculate total steps
         steps = args.epochs * len(train_idx)
@@ -151,16 +152,16 @@ def main():
             print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
             writer.add_scalar("train_loss", loss.item(), input_model.current_round * args.epochs + epoch)
 
-        # (6) evaluate on received model for model selection
+        # Evaluate on received model for model selection
         final_step = input_model.current_round * args.epochs + args.epochs
         global_auc = evaluate(input_model.params, final_step)
-        # (7) construct trained FL model
+        # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
             metrics={"validation_auc": global_auc},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
-        # (8) send model back to NVFlare
+        # Send model back to NVFlare
         flare.send(output_model)
 
 

@@ -126,9 +126,10 @@ def main():
             with torch.no_grad():
                 model.eval()
                 out = model(train_data)
-                y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
+                # Use probability scores for AUC calculation, not binary predictions
+                y_prob = F.softmax(out, dim=1)[:, 1].detach().cpu().numpy()
                 y_true = train_data.y.detach().cpu().numpy()
-                val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
+                val_auc = roc_auc_score(y_true[valid_idx], y_prob[valid_idx])
                 print(f"Validation AUC: {val_auc:.4f} ")
                 writer.add_scalar("val_auc", val_auc, epoch)
 

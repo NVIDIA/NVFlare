@@ -32,7 +32,7 @@ from torch_geometric.nn import GraphSAGE
 np.random.seed(77)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-# (1) import nvflare client API
+# Import nvflare client API
 import nvflare.client as flare
 
 
@@ -115,12 +115,48 @@ def main():
         out_channels=64,
     )
 
+    # Define evaluation logic outside the training loop for efficiency
+    # This function is reused for evaluation on both trained and received model
+    def evaluate(input_weights, current_round, epochs):
+        model_eval = GraphSAGE(
+            in_channels=train_dataset.num_features,
+            hidden_channels=64,
+            num_layers=2,
+            out_channels=64,
+        )
+        model_eval.load_state_dict(input_weights)
+        # (optional) use GPU to speed things up
+        model_eval.to(DEVICE)
+
+        def encode(data_loader):
+            model_eval.eval()
+            xs, ys = [], []
+            for data in data_loader:
+                data = data.to(DEVICE)
+                xs.append(model_eval(data.x, data.edge_index).cpu())
+                ys.append(data.y.cpu())
+            return torch.cat(xs, dim=0), torch.cat(ys, dim=0)
+
+        # Train classifier on training set:
+        with torch.no_grad():
+            # Train classifier on training set:
+            x, y = encode(train_loader)
+            clf = MultiOutputClassifier(SGDClassifier(loss="log_loss", penalty="l2"))
+            clf.fit(x, y)
+            # Evaluate on validation set:
+            x, y = encode(val_loader)
+            val_f1 = f1_score(y, clf.predict(x), average="micro")
+            print(f"Validation F1: {val_f1:.4f}")
+            # (optional) add validation value to tensorboard
+            writer.add_scalar("validation_f1", val_f1, current_round * epochs + epochs)
+        return val_f1
+
     while flare.is_running():
-        # (3) receives FLModel from NVFlare
+        # Receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
-        # (3) loads model from NVFlare
+        # Loads model from NVFlare
         model.load_state_dict(input_model.params)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
@@ -157,51 +193,15 @@ def main():
 
         print("Finished Training")
 
-        # (5) wraps evaluation logic into a method to re-use for
-        #       evaluation on both trained and received model
-        def evaluate(input_weights):
-            model_eval = GraphSAGE(
-                in_channels=train_dataset.num_features,
-                hidden_channels=64,
-                num_layers=2,
-                out_channels=64,
-            )
-            model_eval.load_state_dict(input_weights)
-            # (optional) use GPU to speed things up
-            model_eval.to(DEVICE)
-
-            def encode(data_loader):
-                model_eval.eval()
-                xs, ys = [], []
-                for data in data_loader:
-                    data = data.to(DEVICE)
-                    xs.append(model_eval(data.x, data.edge_index).cpu())
-                    ys.append(data.y.cpu())
-                return torch.cat(xs, dim=0), torch.cat(ys, dim=0)
-
-            # Train classifier on training set:
-            with torch.no_grad():
-                # Train classifier on training set:
-                x, y = encode(train_loader)
-                clf = MultiOutputClassifier(SGDClassifier(loss="log_loss", penalty="l2"))
-                clf.fit(x, y)
-                # Evaluate on validation set:
-                x, y = encode(val_loader)
-                val_f1 = f1_score(y, clf.predict(x), average="micro")
-                print(f"Validation F1: {val_f1:.4f}")
-                # (optional) add validation value to tensorboard
-                writer.add_scalar("validation_f1", val_f1, input_model.current_round * args.epochs + epoch)
-            return val_f1
-
-        # (6) evaluate on received model for model selection
-        global_f1 = evaluate(input_model.params)
-        # (7) construct trained FL model
+        # Evaluate on received model for model selection
+        global_f1 = evaluate(input_model.params, input_model.current_round, args.epochs)
+        # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
             metrics={"validation_f1": global_f1},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
-        # (8) send model back to NVFlare
+        # Send model back to NVFlare
         flare.send(output_model)
 
 
