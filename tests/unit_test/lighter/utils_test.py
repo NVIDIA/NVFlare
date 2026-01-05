@@ -24,10 +24,72 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+import ipaddress
+
 from nvflare.lighter.impl.cert import serialize_cert
-from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import _make_san_entry, load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
+
+
+class TestMakeSanEntry:
+    """Tests for _make_san_entry helper function."""
+
+    def test_dns_name(self):
+        """Test that a DNS name creates a DNSName entry."""
+        result = _make_san_entry("server.example.com")
+        assert isinstance(result, x509.DNSName)
+        assert result.value == "server.example.com"
+
+    def test_simple_hostname(self):
+        """Test that a simple hostname creates a DNSName entry."""
+        result = _make_san_entry("localhost")
+        assert isinstance(result, x509.DNSName)
+        assert result.value == "localhost"
+
+    def test_ipv4_address(self):
+        """Test that an IPv4 address creates an IPAddress entry."""
+        result = _make_san_entry("192.168.1.10")
+        assert isinstance(result, x509.IPAddress)
+        assert result.value == ipaddress.ip_address("192.168.1.10")
+
+    def test_ipv4_loopback(self):
+        """Test IPv4 loopback address."""
+        result = _make_san_entry("127.0.0.1")
+        assert isinstance(result, x509.IPAddress)
+        assert result.value == ipaddress.ip_address("127.0.0.1")
+
+    def test_ipv6_address(self):
+        """Test that an IPv6 address creates an IPAddress entry."""
+        result = _make_san_entry("::1")
+        assert isinstance(result, x509.IPAddress)
+        assert result.value == ipaddress.ip_address("::1")
+
+    def test_ipv6_full_address(self):
+        """Test full IPv6 address."""
+        result = _make_san_entry("2001:db8::1")
+        assert isinstance(result, x509.IPAddress)
+        assert result.value == ipaddress.ip_address("2001:db8::1")
+
+    def test_private_network_ip(self):
+        """Test private network IP addresses."""
+        result = _make_san_entry("10.0.0.1")
+        assert isinstance(result, x509.IPAddress)
+        assert result.value == ipaddress.ip_address("10.0.0.1")
+
+    def test_hostname_with_numbers(self):
+        """Test hostname with numbers is treated as DNS name, not IP."""
+        result = _make_san_entry("server1")
+        assert isinstance(result, x509.DNSName)
+        assert result.value == "server1"
+
+    def test_hostname_resembling_ip(self):
+        """Test hostname that resembles IP but isn't valid."""
+        result = _make_san_entry("192.168.1.256")  # Invalid IP, treated as DNS
+        assert isinstance(result, x509.DNSName)
+        assert result.value == "192.168.1.256"
+
+
 files = ["file1", "file2"]
 
 

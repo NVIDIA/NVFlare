@@ -37,6 +37,26 @@ class Identity:
         self.role = role
 
 
+def _make_san_entry(host: str):
+    """Create a SAN entry for the given host (IP address or DNS name).
+
+    Args:
+        host: Hostname or IP address string
+
+    Returns:
+        x509.IPAddress or x509.DNSName depending on the host format
+    """
+    import ipaddress
+
+    try:
+        # Try to parse as IP address
+        ip = ipaddress.ip_address(host)
+        return x509.IPAddress(ip)
+    except ValueError:
+        # Not an IP address, treat as DNS name
+        return x509.DNSName(host)
+
+
 def generate_cert(
     subject: Identity,
     issuer: Identity,
@@ -89,15 +109,15 @@ def generate_cert(
 
     if server_default_host:
         # This is to generate a server cert.
-        # Use SubjectAlternativeName for all host names
-        sans = [x509.DNSName(server_default_host)]
+        # Use SubjectAlternativeName for all host names/IPs
+        sans = [_make_san_entry(server_default_host)]
         if server_additional_hosts:
             for h in server_additional_hosts:
                 if h != server_default_host:
-                    sans.append(x509.DNSName(h))
+                    sans.append(_make_san_entry(h))
         builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
     else:
-        builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)
+        builder = builder.add_extension(x509.SubjectAlternativeName([_make_san_entry(subject.name)]), critical=False)
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 
@@ -398,6 +418,8 @@ def load_yaml_include(root, yaml_data):
                 includes = [v]
             elif isinstance(v, list):
                 includes = v
+            else:
+                includes = []
             for item in includes:
                 new_data.update(load_yaml(os.path.join(root, item)))
         elif isinstance(v, list):

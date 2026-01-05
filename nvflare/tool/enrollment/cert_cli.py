@@ -77,10 +77,17 @@ def define_cert_parser(parser):
     site_parser.add_argument("--valid_days", type=int, default=365, help="Certificate validity in days (default: 365)")
     # Server-specific options
     site_parser.add_argument(
-        "--host", type=str, default=None, help="Default host name for server SAN (default: same as name)"
+        "--host",
+        type=str,
+        default=None,
+        help="Primary host for server SAN extension. Can be DNS name (server.example.com) or IP address (192.168.1.10). Default: same as --name",
     )
     site_parser.add_argument(
-        "--additional_hosts", type=str, nargs="*", default=None, help="Additional host names for server SAN extension"
+        "--additional_hosts",
+        type=str,
+        nargs="*",
+        default=None,
+        help="Additional hosts for server SAN. Can be DNS names or IP addresses (e.g., --additional_hosts 10.0.0.1 server.local)",
     )
     # Admin-specific options
     site_parser.add_argument(
