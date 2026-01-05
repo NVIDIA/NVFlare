@@ -364,6 +364,7 @@ class TokenService:
         Returns:
             Signed JWT token string
         """
+        # Default to LEAD role (has job submission permissions)
         return self.generate_token(
             subject=user_id,
             subject_type=ParticipantType.ADMIN,

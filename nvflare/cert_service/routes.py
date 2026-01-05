@@ -161,6 +161,7 @@ class RoutesMixin:
                     return jsonify({"error": f"Invalid participant type: {participant_type}"}), 400
 
                 # Validate and default role for admin tokens
+                # Default to LEAD (has job submission permissions)
                 role = metadata.get("role")
                 if participant_type == ParticipantType.ADMIN:
                     if not role:

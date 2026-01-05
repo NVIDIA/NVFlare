@@ -94,8 +94,8 @@ def define_cert_parser(parser):
         "--role",
         type=str,
         choices=[AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER],
-        default=AdminRole.MEMBER,
-        help="Role for admin type (default: member)",
+        default=AdminRole.LEAD,
+        help="Role for admin type (default: lead, has job submission permissions)",
     )
 
     # nvflare cert api-key

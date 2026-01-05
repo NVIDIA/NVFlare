@@ -256,7 +256,7 @@ class TestConvenienceMethods:
         assert payload["roles"] == ["lead"]
 
     def test_generate_admin_token_default_role(self, token_service, policy_file):
-        """Test generate_admin_token uses default LEAD role when no roles specified."""
+        """Test generate_admin_token uses default LEAD role when no roles specified (has job submission permissions)."""
         token = token_service.generate_admin_token(policy_file=policy_file, user_id="user@example.com")
 
         payload = jwt.decode(token, options={"verify_signature": False})

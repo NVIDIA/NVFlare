@@ -136,7 +136,7 @@ class EnrollmentIdentity(BaseModel):
     def for_admin(
         cls,
         email: str,
-        role: str = AdminRole.MEMBER,
+        role: str = AdminRole.LEAD,
         org: str = None,
     ) -> "EnrollmentIdentity":
         """Create identity for admin (user) enrollment.
