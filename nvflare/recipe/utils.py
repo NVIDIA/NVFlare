@@ -76,8 +76,8 @@ def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config:
 def add_cross_site_evaluation(
     recipe: Recipe,
     model_locator_type: str = "pytorch",
-    model_locator_config: dict = None,
-    persistor_id: str = None,
+    model_locator_config: Optional[dict] = None,
+    persistor_id: Optional[str] = None,
     submit_model_timeout: int = 600,
     validation_timeout: int = 6000,
 ):

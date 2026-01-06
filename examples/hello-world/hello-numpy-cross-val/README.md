@@ -124,6 +124,7 @@ This example demonstrates the recommended pattern for adding cross-site validati
 ```python
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.recipe.utils import add_cross_site_evaluation
+from nvflare.recipe import SimEnv
 
 # 1. Create a standard FedAvg recipe
 recipe = NumpyFedAvgRecipe(
