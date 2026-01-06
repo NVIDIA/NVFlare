@@ -53,7 +53,7 @@ def define_parser():
     return parser.parse_args()
 
 
-def run_pretrained_cse(n_clients: int):
+def run_cse_only(n_clients: int):
     """Run standalone cross-site evaluation with pre-trained models.
 
     This mode demonstrates CSE without any training. It loads pre-trained models
@@ -160,7 +160,7 @@ def main():
     args = define_parser()
 
     if args.mode == "pretrained":
-        run_pretrained_cse(args.n_clients)
+        run_cse_only(args.n_clients)
     elif args.mode == "training":
         run_training_and_cse(args.n_clients, args.num_rounds)
     else:
