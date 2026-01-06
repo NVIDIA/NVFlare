@@ -51,11 +51,14 @@ MODEL_LOCATOR_REGISTRY = {
 
 
 def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: Optional[dict] = None):
-    """Enable experiment tracking.
+    """Add experiment tracking to a recipe.
+
+    Adds a tracking receiver to the server to collect and log metrics from clients during training.
 
     Args:
-        tracking_type: the type of tracking to enable
-        tracking_config: the configuration for the tracking
+        recipe: Recipe instance to augment with experiment tracking.
+        tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
+        tracking_config: Optional configuration dict for the tracking receiver.
     """
     tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
@@ -81,18 +84,25 @@ def add_cross_site_evaluation(
     submit_model_timeout: int = 600,
     validation_timeout: int = 6000,
 ):
-    """Enable cross-site model evaluation.
+    """Add cross-site evaluation to an existing recipe.
 
-    **IMPORTANT:** This function only adds server-side components. For NumPy recipes,
-    you MUST manually add NPValidator to clients BEFORE calling this function, or
-    cross-site evaluation will fail at runtime.
+    This utility adds server-side CSE components (model locator, CrossSiteModelEval controller,
+    and ValidationJsonGenerator) to a recipe that already includes training.
 
-    Example for NumPy:
-        ```
+    **For standalone CSE without training**, use `NumpyCrossSiteEvalRecipe` instead of this utility.
+
+    **IMPORTANT for NumPy recipes:** This function only adds server-side components. You MUST
+    manually add NPValidator to clients BEFORE calling this function:
+
+        ```python
+        from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
         from nvflare.app_common.np.np_validator import NPValidator
         from nvflare.app_common.app_constant import AppConstants
+        from nvflare.recipe.utils import add_cross_site_evaluation
 
-        recipe = NumpyFedAvgRecipe(...)
+        recipe = NumpyFedAvgRecipe(
+            name="my-job", min_clients=2, num_rounds=3, train_script="client.py"
+        )
 
         # REQUIRED: Add validator to clients for NumPy
         validator = NPValidator(validate_task_name=AppConstants.TASK_VALIDATION)
@@ -102,15 +112,17 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe, model_locator_type="numpy")
         ```
 
-    For PyTorch, validation logic should be implemented in the training script itself.
+    For PyTorch recipes, client-side validators are typically included in the recipe already.
 
     Args:
-        recipe: Recipe object to add cross-site evaluation to
-        model_locator_type: The type of model locator to use ("pytorch" or "numpy")
-        model_locator_config: Optional config dict to pass to model locator (e.g., model_dir, model_name)
-        persistor_id: The persistor ID to use for model location. If None, uses the default persistor_id from job.comp_ids
-        submit_model_timeout: Timeout for model submission in seconds
-        validation_timeout: Timeout for validation in seconds
+        recipe: Recipe instance to augment with cross-site evaluation.
+        model_locator_type: Type of model locator ("pytorch" or "numpy"). Defaults to "pytorch".
+        model_locator_config: Optional configuration dict for the model locator
+            (e.g., {"model_dir": "/path", "model_name": {...}}).
+        persistor_id: Persistor ID for PyTorch model location. If None, auto-detected from
+            recipe.job.comp_ids (PyTorch only; NumPy doesn't use persistor_id).
+        submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
+        validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
     """
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval

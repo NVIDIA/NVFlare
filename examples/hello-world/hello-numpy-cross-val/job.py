@@ -17,22 +17,17 @@ Cross-Site Evaluation Example with NumPy using the Recipe API.
 
 This example demonstrates two modes:
 1. Standalone CSE: Evaluate pre-trained models without training
-   - Manually configures CrossSiteModelEval with custom model locator for pre-trained models
+   - Uses NumpyCrossSiteEvalRecipe for a complete CSE-only workflow
 2. Training + CSE: Run FedAvg training followed by cross-site evaluation
-   - Uses add_cross_site_evaluation() utility function with NumpyFedAvgRecipe
+   - Uses NumpyFedAvgRecipe with add_cross_site_evaluation() utility function
 """
 
 import argparse
 
-from nvflare import FedJob
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
-from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import SimEnv
-from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
@@ -57,45 +52,22 @@ def run_cse_only(n_clients: int):
     """Run standalone cross-site evaluation with pre-trained models.
 
     This mode demonstrates CSE without any training. It loads pre-trained models
-    from specified directories and evaluates them across all client sites.
+    from specified directories and evaluates them across all client sites using
+    the NumpyCrossSiteEvalRecipe.
     """
     print("\n=== Running Cross-Site Evaluation with Pre-trained Models ===\n")
     print(f"Server models: {SERVER_MODEL_DIR}")
     print(f"Client models: {CLIENT_MODEL_DIR}\n")
 
-    # Create a minimal FedJob for CSE-only workflow
-    job = FedJob(name="hello-numpy-cse", min_clients=n_clients)
-
-    # Configure model locator with pre-trained model locations
-    model_locator_id = job.to_server(
-        NPModelLocator(
-            model_dir=SERVER_MODEL_DIR,
-            model_name={"server_model_1": "server_1.npy", "server_model_2": "server_2.npy"},
-        )
+    # Create cross-site evaluation recipe with pre-trained models
+    recipe = NumpyCrossSiteEvalRecipe(
+        name="hello-numpy-cse",
+        min_clients=n_clients,
+        model_dir=SERVER_MODEL_DIR,
+        model_name={"server_model_1": "server_1.npy", "server_model_2": "server_2.npy"},
     )
 
-    # Add validation JSON generator to save results
-    job.to_server(ValidationJsonGenerator())
-
-    # Add cross-site evaluation controller
-    eval_controller = CrossSiteModelEval(
-        model_locator_id=model_locator_id,
-        submit_model_timeout=600,
-        validation_timeout=6000,
-    )
-    job.to_server(eval_controller)
-
-    # Add validators to clients
-    validator = NPValidator(
-        validate_task_name=AppConstants.TASK_VALIDATION,
-    )
-    job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
-
-    # Note: We build the FedJob manually here instead of using add_cross_site_evaluation()
-    # because we need custom model locator configuration for pre-trained models
-
-    # Create recipe and run
-    recipe = Recipe(job)
+    # Execute in simulation environment
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
 
