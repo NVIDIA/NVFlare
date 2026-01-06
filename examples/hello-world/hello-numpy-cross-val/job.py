@@ -31,7 +31,6 @@ from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
-CLIENT_MODEL_DIR = "/tmp/nvflare/client_pretrain_models"
 
 
 def define_parser():
@@ -56,8 +55,7 @@ def run_cse_only(n_clients: int):
     the NumpyCrossSiteEvalRecipe.
     """
     print("\n=== Running Cross-Site Evaluation with Pre-trained Models ===\n")
-    print(f"Server models: {SERVER_MODEL_DIR}")
-    print(f"Client models: {CLIENT_MODEL_DIR}\n")
+    print(f"Server models: {SERVER_MODEL_DIR}\n")
 
     # Create cross-site evaluation recipe with pre-trained models
     recipe = NumpyCrossSiteEvalRecipe(

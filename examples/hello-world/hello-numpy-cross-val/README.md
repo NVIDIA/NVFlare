@@ -4,8 +4,9 @@ This example demonstrates cross-site model validation with NumPy models using NV
 
 ## What is Cross-Site Validation?
 
-Cross-site validation creates an all-to-all matrix showing how each model performs on each client's dataset:
-- Each client evaluates models from other clients and the server
+Cross-site validation creates a matrix showing how each model performs on each client's dataset:
+- Server provides models to all clients for evaluation
+- Each client evaluates the models on its local data
 - No data is shared between sites
 - Results show which models generalize best across different data distributions
 
@@ -40,9 +41,7 @@ cd examples/hello-world/hello-numpy-cross-val
 python3 generate_pretrain_models.py
 ```
 
-This creates models in:
-- Server models: `/tmp/nvflare/server_pretrain_models/`
-- Client models: `/tmp/nvflare/client_pretrain_models/`
+This creates server-side models in `/tmp/nvflare/server_pretrain_models/`
 
 ### Step 2: Run Cross-Site Validation
 
@@ -170,12 +169,13 @@ See `job.py` for the complete implementation.
 
 ### Using Different Model Locations
 
-For standalone CSE, modify the model directories in `job.py`:
+For standalone CSE, modify the server model directory in `job.py`:
 
 ```python
 SERVER_MODEL_DIR = "/path/to/your/server/models"
-CLIENT_MODEL_DIR = "/path/to/your/client/models"
 ```
+
+The server will distribute these models to all clients for evaluation.
 
 ### Adding Custom Validation Metrics
 
