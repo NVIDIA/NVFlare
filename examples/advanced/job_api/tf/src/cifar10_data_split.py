@@ -40,9 +40,9 @@
 
 import json
 import os
+import pickle
 import time
 
-import _pickle
 import numpy as np
 from filelock import FileLock, Timeout
 from tensorflow.keras import datasets
@@ -95,7 +95,7 @@ def _get_site_class_summary(train_label, site_idx):
 
 def _partition_data(num_sites, alpha):
     # only training label is needed for doing split
-    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+    (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
 
     min_size = 0
     K = 10
@@ -157,7 +157,7 @@ def load_cifar10_with_retry(max_retries=3, retry_delay=5):
                 # Load the dataset
                 return datasets.cifar10.load_data()
 
-        except (Timeout, _pickle.UnpicklingError) as e:
+        except (Timeout, pickle.UnpicklingError) as e:
             if attempt == max_retries - 1:
                 raise RuntimeError(f"Failed to load CIFAR10 dataset after {max_retries} attempts: {str(e)}")
             print(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {retry_delay} seconds...")
