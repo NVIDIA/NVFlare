@@ -88,7 +88,7 @@ This model is used in federated learning with NVIDIA FLARE, trained across clien
 Client Code
 -----------
 
-The client code ``client.py`` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
+The client code ``client.py`` is responsible for training. The training code closely resembles standard Tensorflow training code, with additional lines to handle data exchange with the server.
 
 .. literalinclude:: ../../../examples/hello-world/hello-tf/client.py
     :language: python
