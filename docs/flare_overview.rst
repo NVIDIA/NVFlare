@@ -135,7 +135,7 @@ Convert existing ML code to federated learning with minimal changes.
 
 - **Client API**: Add a few lines to existing training scripts—no FL expertise required
 - **Job Recipe API**: Define complete FL jobs programmatically in Python
-- **Collab API**: Simplified collaborative learning for common FL patterns
+- **Collab API**: Simplified collaborative learning for common and advanced FL patterns
 
 Flower-FLARE Integration
 ------------------------
@@ -226,7 +226,7 @@ FLARE provides extensive built-in implementations and examples to accelerate dev
 
 - Step-by-step ML-to-FL conversion guides
 - Simulator, POC mode, and production deployment
-- Job Recipe API and Client API walkthroughs
+- Job Recipe API and Client API walkthrough
 
 See :ref:`getting_started` and :ref:`tutorials` for comprehensive guides.
 
