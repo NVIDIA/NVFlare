@@ -35,7 +35,7 @@ Initializing the FLAdminAPIRunner, which initializes FLAdminAPI with the values 
 
 .. code-block:: python
 
-    runner = FLAdminAPIRunner(  
+    runner = FLAdminAPIRunner(
         username="super@nvidia.com",
         admin_dir="/workspace/example_project/prod_00/super@nvidia.com"
     )
@@ -184,12 +184,12 @@ or you can access the server_info, client_info, and job_info variables to access
 
     SystemInfo
     server_info: status: stopped, start_time: Thu Jan 26 15:12:01 2023
-    client_info: 
+    client_info:
     site_a(last_connect_time: Thu Jan 26 15:12:42 2023)
     site_b(last_connect_time: Thu Jan 26 15:12:42 2023)
     job_info:
     job_id: 44d32a5f-9766-44b6-aef5-7ed9fd168335
-    app_name: hello-numpy-sag
+    app_name: hello-numpy
 
 
 Submit Job
@@ -199,7 +199,7 @@ path to the job to submit as a string. For ``submit_job()`` with FLAdminAPI:
 
 .. code-block:: python
 
-    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy-sag"
+    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy"
     runner.api.submit_job(path_to_example_job)
 
 .. code-block:: bash
@@ -222,7 +222,7 @@ value to use later.
 
 .. code-block:: python
 
-    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy-sag"
+    path_to_example_job = "/workspace/NVFlare/examples/hello-world/hello-numpy"
     job_id = sess.submit_job(path_to_example_job)
     print(job_id + " was submitted")
 
@@ -246,7 +246,7 @@ set as boolean values. For ``list_jobs()`` with FLAdminAPI:
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': [['JOB ID', 'NAME', 'STATUS', 'SUBMIT TIME', 'RUN DURATION'],
     ['5d0eaa30-6936-4044-918e-cd9c3f5edf9b',
-    'hello-numpy-sag',
+    'hello-numpy',
     'FINISHED:COMPLETED',
     '2023-01-26T15:30:35.262048-05:00',
     '0:00:48.170128']],
@@ -254,13 +254,13 @@ set as boolean values. For ``list_jobs()`` with FLAdminAPI:
     'data': [{'type': 'table',
         'rows': [['JOB ID', 'NAME', 'STATUS', 'SUBMIT TIME', 'RUN DURATION'],
         ['5d0eaa30-6936-4044-918e-cd9c3f5edf9b',
-        'hello-numpy-sag',
+        'hello-numpy',
         'FINISHED:COMPLETED',
         '2023-01-26T15:30:35.262048-05:00',
         '0:00:48.170128']]},
     {'type': 'success', 'data': ''}],
     'meta': {'jobs': [{'job_id': '5d0eaa30-6936-4044-918e-cd9c3f5edf9b',
-        'job_name': 'hello-numpy-sag',
+        'job_name': 'hello-numpy',
         'status': 'FINISHED:COMPLETED',
         'submit_time': '2023-01-26T15:30:35.262048-05:00',
         'duration': '0:00:48.170128'}],
@@ -280,7 +280,7 @@ With the FLARE API, ``list_job()``:
 
 .. code-block:: bash
 
-    [{'job_id': '9382ff9e-eb7e-4e0d-9a8e-78c82747b5ac', 'job_name': 'hello-numpy-sag', 'status': 'RUNNING', 'submit_time': '2023-01-26T15:56:30.188836-05:00', 'duration': '0:00:32.686275'}]
+    [{'job_id': '9382ff9e-eb7e-4e0d-9a8e-78c82747b5ac', 'job_name': 'hello-numpy', 'status': 'RUNNING', 'submit_time': '2023-01-26T15:56:30.188836-05:00', 'duration': '0:00:32.686275'}]
 
 
 Monitor Job from Wait Until
