@@ -240,7 +240,6 @@ For more detailed information, see:
 - :ref:`flare_security_overview` - Security architecture and features
 - :ref:`client_api` - Client-side API for FL development
 - :ref:`job_recipe` - Programmatic job definition
-- :ref:`simulation_guide` - Simulator for local development and testing
 - :ref:`provisioning` - Secure deployment and provisioning
 - :ref:`federated_statistics` - Federated analytics implementation
 - :ref:`hello_pt` - Getting started with PyTorch examples

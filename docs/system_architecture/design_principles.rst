@@ -12,7 +12,7 @@ All components and APIs are defined by explicit specifications, allowing alterna
 
 **Build for real-world use**
 
-The system is designed to operate reliably under real-world conditions, including unexpected failures and misbehaving components. Default reference implementations prioritize robustness and graceful degradation to ensure predictable behavior in production environments.
+The system is designed to operate reliably under real-world conditions, including unexpected failures and misbehaving components. Default reference implementations to ensure predictable behavior in production environments.
 
 **Keep the system general-purpose**
 
