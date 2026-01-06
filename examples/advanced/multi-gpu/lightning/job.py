@@ -13,46 +13,19 @@
 # limitations under the License.
 
 """
-Job configuration for PyTorch federated learning.
-
-Supports 4 training modes:
-- pt:           Standard PyTorch (single GPU)
-- pt_ddp:       PyTorch DDP (multi-GPU)
-- lightning:    PyTorch Lightning (single GPU)
-- lightning_ddp: PyTorch Lightning DDP (multi-GPU)
+Job configuration for PyTorch Lightning DDP federated learning.
 """
 
 import argparse
 
-from lit_model import LitNet
-from model import Net
+from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
-CLIENT_SCRIPTS = {
-    "pt": "client.py",
-    "pt_ddp": "client_ddp.py",
-    "lightning": "client_lightning.py",
-    "lightning_ddp": "client_lightning_ddp.py",
-}
-
-MODELS = {
-    "pt": Net,
-    "pt_ddp": Net,
-    "lightning": LitNet,
-    "lightning_ddp": LitNet,
-}
-
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--mode",
-        choices=["pt", "pt_ddp", "lightning", "lightning_ddp"],
-        default="pt",
-        help="Training mode: pt, pt_ddp, lightning, lightning_ddp",
-    )
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
@@ -63,26 +36,21 @@ def define_parser():
 def main():
     args = define_parser()
 
-    # Select client script and model based on mode
-    train_script = CLIENT_SCRIPTS[args.mode]
-    initial_model = MODELS[args.mode]()
+    train_script = "client.py"
+    initial_model = LitNet()
 
     # Build train_args based on mode
     train_args = ""
-    if args.mode == "pt" and args.use_tracking:
+    if args.use_tracking:
         train_args = "--use_tracking"
 
     # DDP modes require external process launch
-    launch_external = args.mode in ["pt_ddp", "lightning_ddp"]
+    launch_external = True
 
-    # Command for DDP
-    if args.mode == "pt_ddp":
-        command = "python3 -u -m torch.distributed.run --rdzv-backend=c10d --rdzv-endpoint=localhost:0 --nnodes=1 --nproc_per_node=2 "
-    else:
-        command = "python3 -u"
+    command = "python3 -u"
 
     recipe = FedAvgRecipe(
-        name=f"pt_{args.mode}",
+        name="lightning_ddp",
         initial_model=initial_model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,

@@ -20,7 +20,7 @@ import argparse
 
 from model import Net
 
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgPerSiteConfig, FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -56,6 +56,14 @@ def main():
         train_args=train_args,
         launch_external_process=True,  # DDP modes require external process launch
         command=command,
+        per_site_config={
+            "site-1": FedAvgPerSiteConfig(
+                command="python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777",
+            ),
+            "site-2": FedAvgPerSiteConfig(
+                command="python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=8888",
+            ),
+        },
     )
 
     if args.use_tracking:

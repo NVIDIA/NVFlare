@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-TensorFlow client for federated learning (single GPU).
+TensorFlow client for federated learning (multi-GPU with MirroredStrategy).
 """
 
 import tensorflow as tf
@@ -32,12 +32,17 @@ def main():
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
 
-    model = TFNet()
-    model.build(input_shape=(None, 32, 32, 3))
-    model.compile(
-        optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
-    )
-    model.summary()
+    # Create a MirroredStrategy for multi-GPU
+    strategy = tf.distribute.MirroredStrategy()
+    print(f"Number of devices: {strategy.num_replicas_in_sync}")
+
+    with strategy.scope():
+        model = TFNet()
+        model.build(input_shape=(None, 32, 32, 3))
+        model.compile(
+            optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+        )
+        model.summary()
 
     # (2) initializes NVFlare client API
     flare.init()

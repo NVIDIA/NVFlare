@@ -29,6 +29,22 @@ from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
+class FedAvgPerSiteConfig(BaseModel):
+    # ScriptRunner-related (optional overrides)
+    train_script: str | None = None
+    train_args: str | None = None
+    launch_external_process: bool | None = None
+    command: str | None = None
+    framework: FrameworkType | None = None
+    server_expected_format: ExchangeFormat | None = None
+    params_transfer_type: TransferType | None = None
+
+    # FedAvg-specific knobs
+    local_epochs: int | None = None
+    local_batch_size: int | None = None
+    site_weight: float | None = None
+
+
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
@@ -98,6 +114,8 @@ class FedAvgRecipe(Recipe):
             If None, framework-specific defaults will be used (PT/TF only).
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
             If not provided, no experiment tracking will be enabled. Pass explicitly to enable tracking.
+        per_site_config: Per-site configuration for the federated learning job. If not provided,
+            the same configuration will be used for all clients.
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -126,6 +144,7 @@ class FedAvgRecipe(Recipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        per_site_config: dict[str, FedAvgPerSiteConfig] | None = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -144,6 +163,7 @@ class FedAvgRecipe(Recipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
+            per_site_config=per_site_config,
         )
 
         self.name = v.name
@@ -161,7 +181,7 @@ class FedAvgRecipe(Recipe):
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
         self.analytics_receiver = v.analytics_receiver
-
+        self.per_site_config = v.per_site_config
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
             if self.initial_model is None and self.model_persistor is None:
@@ -204,22 +224,32 @@ class FedAvgRecipe(Recipe):
         )
         job.to_server(controller)
 
-        # Add client executors
-        if isinstance(self.train_args, dict):
-            # Per-client configuration
-            for site_name, site_args in self.train_args.items():
+        if self.per_site_config is not None:
+            for site_name, site_config in self.per_site_config.items():
+                # Use site-specific config or fall back to defaults
+                script = site_config.train_script or self.train_script
+                script_args = site_config.train_args or self.train_args
+                launch_external = (
+                    site_config.launch_external_process
+                    if site_config.launch_external_process is not None
+                    else self.launch_external_process
+                )
+                command = site_config.command or self.command
+                framework = site_config.framework or self.framework
+                expected_format = site_config.server_expected_format or self.server_expected_format
+                transfer_type = site_config.params_transfer_type or self.params_transfer_type
+
                 executor = ScriptRunner(
-                    script=self.train_script,
-                    script_args=site_args,
-                    launch_external_process=self.launch_external_process,
-                    command=self.command,
-                    framework=self.framework,
-                    server_expected_format=self.server_expected_format,
-                    params_transfer_type=self.params_transfer_type,
+                    script=script,
+                    script_args=script_args,
+                    launch_external_process=launch_external,
+                    command=command,
+                    framework=framework,
+                    server_expected_format=expected_format,
+                    params_transfer_type=transfer_type,
                 )
                 job.to(executor, site_name)
         else:
-            # Unified configuration
             executor = ScriptRunner(
                 script=self.train_script,
                 script_args=self.train_args,

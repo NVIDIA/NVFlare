@@ -14,10 +14,6 @@
 
 """
 Job configuration for TensorFlow federated learning.
-
-Supports 2 training modes:
-- tf:         Standard TensorFlow (single GPU)
-- tf_multi:   TensorFlow with MirroredStrategy (multi-GPU)
 """
 
 import argparse
@@ -27,21 +23,12 @@ from model import TFNet
 from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
-CLIENT_SCRIPTS = {
-    "tf": "client.py",
-    "tf_multi": "client_multi_gpu.py",
-}
-
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--mode", choices=["tf", "tf_multi"], default="tf", help="Training mode: tf (single GPU), tf_multi (multi-GPU)"
-    )
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
-    parser.add_argument("--launch_process", action="store_true", help="Launch in external process")
     parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
@@ -49,19 +36,16 @@ def define_parser():
 def main():
     args = define_parser()
 
-    # Select client script based on mode
-    train_script = CLIENT_SCRIPTS[args.mode]
-
     # Create model
     initial_model = TFNet(input_shape=(None, 32, 32, 3))
 
     recipe = FedAvgRecipe(
-        name=f"tf_{args.mode}",
+        name="tf_ddp",
         initial_model=initial_model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        train_script=train_script,
-        launch_external_process=args.launch_process,
+        train_script="client.py",
+        launch_external_process=True,
         command="python3 -u",
     )
 
