@@ -38,75 +38,77 @@ python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_sp
 
 This example uses **NVFlare's FedAvgRecipe** to create federated GNN training jobs, leveraging NVFlare's standard FedAvg recipe.
 
-We provide two task-specific job creation functions:
-- `create_protein_job()`: For PPI protein classification
-- `create_finance_job()`: For Elliptic++ financial transaction classification
-
-Both functions return a configured `FedAvgRecipe` instance that can be executed in simulation or production mode.
-
-The recipe can be used in two ways:
-1. **Command-line**: Run `job.py` directly with command-line arguments
-2. **Programmatic**: Import and use `create_protein_job()` or `create_finance_job()` from `job.py` in your own Python code
+We provide two separate task directories, each containing:
+- `job.py`: Job creation and execution script
+- `client.py`: Federated learning client script
+- `local_train.py`: Standalone local training script for baselines
+- Task-specific files (model definitions, data processing utilities, etc.)
 
 #### Folder Structure
 ```
 gnn/
-├── job.py                          # Job creation functions using FedAvgRecipe
-├── model.py                        # Custom SAGE model for finance task
-├── client_protein.py               # FL client for protein classification
-├── client_finance.py               # FL client for financial transaction classification
-└── utils/                          # Utilities and local training scripts
-    ├── graphsage_protein_local.py  # Local training for protein task
-    ├── graphsage_finance_local.py  # Local training for finance task
-    └── process_elliptic.py         # Elliptic++ data preprocessing
+├── protein/                        # Protein classification task
+│   ├── job.py                      # Job creation and execution
+│   ├── client.py                   # FL client script
+│   └── local_train.py              # Local training baseline
+└── finance/                        # Financial transaction classification task
+    ├── job.py                      # Job creation and execution
+    ├── client.py                   # FL client script
+    ├── local_train.py              # Local training baseline
+    ├── model.py                    # Custom SAGE model
+    └── process_elliptic.py         # Data preprocessing
 ```
 
 #### Protein Classification
-The PPI dataset is directly available via torch_geometric library. We randomly split the dataset to 2 subsets, one for each client.
+
+Navigate to the protein directory:
+```bash
+cd protein
+```
 
 First, run local training to establish baselines:
 ```bash
-python3 utils/graphsage_protein_local.py --client_id 0
-python3 utils/graphsage_protein_local.py --client_id 1
-python3 utils/graphsage_protein_local.py --client_id 2
+python local_train.py --client_id 0
+python local_train.py --client_id 1
+python local_train.py --client_id 2
 ```
 
-Then, run federated training using the recipe:
+Then, run federated training:
 ```bash
-python3 job.py \
-  --task_type protein \
+python job.py \
   --num_clients 2 \
   --num_rounds 7 \
   --epochs_per_round 10 \
   --data_path /tmp/nvflare/datasets/ppi \
-  --workspace_dir /tmp/nvflare/gnn/protein_fl_workspace \
-  --job_dir /tmp/nvflare/jobs/gnn_protein \
   --threads 2
 ```
 
 #### Financial Transaction Classification
-First, download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. In this example, we will use the following three files:
+
+Navigate to the finance directory:
+```bash
+cd finance
+```
+
+First, download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. You will need:
 - `txs_classes.csv`: transaction id and its class (licit or illicit)
 - `txs_edgelist.csv`: connections for transaction ids 
 - `txs_features.csv`: transaction id and its features
 
 Run local training to establish baselines:
 ```bash
-python3 utils/graphsage_finance_local.py --client_id 0
-python3 utils/graphsage_finance_local.py --client_id 1
-python3 utils/graphsage_finance_local.py --client_id 2
+python local_train.py --client_id 0
+python local_train.py --client_id 1
+python local_train.py --client_id 2
 ```
 
-Then, run federated training using the recipe:
+Then, run federated training:
 ```bash
-python3 job.py \
-  --task_type finance \
+python job.py \
   --num_clients 2 \
   --num_rounds 7 \
   --epochs_per_round 10 \
   --data_path /tmp/nvflare/datasets/elliptic_pp \
-  --workspace_dir /tmp/nvflare/gnn/finance_fl_workspace \
-  --job_dir /tmp/nvflare/jobs/gnn_finance \
   --threads 2
 ```
 
