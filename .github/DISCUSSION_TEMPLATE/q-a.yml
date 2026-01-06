@@ -35,9 +35,9 @@ body:
     attributes:
       label: Have you successfully run any of the following examples?
       options:
-        - label: hello-numpy-sag with simulator
+        - label: hello-numpy with simulator
         - label: hello-pt with simulator
-        - label: hello-numpy-sag with POC
+        - label: hello-numpy with POC
         - label: hello-pt with POC
   - type: textarea
     id: questions
