@@ -218,44 +218,18 @@ Communication Framework
 The Communication Framework, also known as F3 (FLARE Foundation Framework) and CellNet, provides the foundational
 messaging infrastructure for all communication in NVIDIA FLARE.
 
-Cell Network
-------------
+Key capabilities include:
 
-All parent and job processes communicate via F3 Cell objects that provide:
+- **FQCN Addressing**: Hierarchical cell names (e.g., ``server.job_123``, ``client.site-1.job_123``)
+- **Channel-Based Routing**: Predefined channels for task distribution, commands, and auxiliary messages
+- **Secure Messaging**: End-to-end encryption with certificate-based authentication
+- **Large Data Streaming**: Automatic chunking with flow control for model weights and datasets
 
-- **FQCN Addressing**: Fully Qualified Cell Names (e.g., ``server.job_123``, ``client.site-1.job_123``)
-- **Channel-Based Routing**: Messages routed through predefined channels
-- **Secure Messaging**: Encrypted communication with authentication
-- **Streaming Support**: Large data transfer capabilities
+CellNet uses a three-layer architecture (CoreCell → StreamCell → Cell) that abstracts transport details
+and supports multiple protocols (gRPC, TCP, HTTP).
 
-Cell Communication Channels
----------------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 35 35 30
-
-   * - Channel
-     - Purpose
-     - Used By
-   * - ``CellChannel.SERVER_MAIN``
-     - Client-to-server FL messages
-     - CP → SP
-   * - ``CellChannel.CLIENT_MAIN``
-     - Server-to-client FL messages
-     - SP → CP
-   * - ``CellChannel.SERVER_COMMAND``
-     - Commands to server job
-     - SP → SJ
-   * - ``CellChannel.CLIENT_COMMAND``
-     - Commands to client job
-     - CP → CJ
-   * - ``CellChannel.SERVER_PARENT_LISTENER``
-     - Parent commands from SJ
-     - SJ → SP
-   * - ``CellChannel.AUX_COMMUNICATION``
-     - Auxiliary messages
-     - All processes
+For detailed information on CellNet internals, channels, streaming components, and communication patterns,
+see :ref:`cellnet_architecture`.
 
 
 Message Flow: Task Pull Pattern
@@ -276,64 +250,20 @@ Client API Job Process
 ======================
 
 The Client API provides a simplified interface for integrating user training scripts with the FLARE job process.
-It abstracts the complexity of task handling and communication, allowing data scientists to convert centralized
-training code to federated learning with minimal changes.
+With just a few lines of code changes, data scientists can convert centralized training code to federated learning.
 
 .. image:: ../resources/client_api.png
    :alt: Client API Architecture
    :height: 300px
 
-Communication Patterns
-----------------------
+Key characteristics:
 
-FLARE offers two execution patterns for Client API, each suited to different scenarios:
+- **Minimal Code Changes**: Three core methods (``init()``, ``receive()``, ``send()``) handle all FL communication
+- **Two Execution Modes**: In-process (single GPU, maximum performance) or sub-process (multi-GPU, process isolation)
+- **Framework Support**: Works with PyTorch, PyTorch Lightning, HuggingFace, and other frameworks
 
-**In-Process Execution**
-
-The training script and client executor operate within the same process. Communication occurs through an
-efficient in-memory databus. This pattern is recommended when:
-
-- Training uses a single GPU or no GPUs
-- No third-party training systems are integrated
-- Maximum performance is required
-
-**Sub-Process Execution**
-
-The ``LauncherExecutor`` spawns a separate process for the training script using ``SubprocessLauncher``.
-The ``launch_once`` option controls whether to launch the script once at ``START_RUN`` (persistent) or
-for each task. This pattern is recommended when:
-
-- Multi-GPU training is required
-- External training infrastructure is used
-- Process isolation is needed
-
-
-Essential Client API Methods
-----------------------------
-
-The Client API provides three core methods for federated learning integration:
-
-- ``flare.init()``: Initializes the NVFlare Client API environment
-- ``flare.receive()``: Receives the global model from the server
-- ``flare.send()``: Sends the updated local model back to the server
-
-**Example Usage**:
-
-.. code-block:: python
-
-   import nvflare.client as flare
-
-   flare.init()                        # Initialize Client API
-   input_model = flare.receive()       # Receive global model
-   params = input_model.params
-
-   # Local training code
-   new_params = local_train(params)
-
-   output_model = flare.FLModel(params=new_params)
-   flare.send(output_model)            # Send updated model
-
-For detailed Client API documentation, see :ref:`client_api`
+For detailed Client API documentation, communication patterns, configuration options, and examples,
+see :ref:`client_api`
 
 
 Job Management
