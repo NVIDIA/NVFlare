@@ -221,20 +221,33 @@ from nvflare.recipe import PocEnv
 recipe = NumpyFedAvgRecipe(...)
 add_cross_site_evaluation(recipe, model_locator_type="numpy")
 
-env = PocEnv(workspace="/tmp/nvflare/poc")
+env = PocEnv(num_clients=2)
 run = recipe.execute(env)
 ```
 
 ### Production Environment
 
+**Option 1: Execute directly (programmatic submission)**
 ```python
 from nvflare.recipe import ProdEnv
 
 recipe = NumpyFedAvgRecipe(...)
 add_cross_site_evaluation(recipe, model_locator_type="numpy")
 
-env = ProdEnv()
-recipe.export(env, output_path="/tmp/nvflare/prod/job_config")
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+run = recipe.execute(env)  # Submits and runs the job
+```
+
+**Option 2: Export for manual submission**
+```python
+from nvflare.recipe import ProdEnv
+
+recipe = NumpyFedAvgRecipe(...)
+add_cross_site_evaluation(recipe, model_locator_type="numpy")
+
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+recipe.export(job_dir="/tmp/nvflare/prod/job_config", env=env)  # Creates job files only
+# Then use 'nvflare job submit' command to submit manually
 ```
 
 ---
