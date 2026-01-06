@@ -83,8 +83,8 @@ Code Structure
     |
     ├── client.py         # client local training script
     ├── job.py            # job recipe that defines client and server configurations
-    ├── prepare_data.py   # utilies to download data
-    ├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
+    ├── prepare_data.py   # utilities to download data
+    ├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to install quantile dependency
     └── requirements.txt  # dependencies
     ├── demo
     │   └── visualization.ipynb # Visualization Notebook
