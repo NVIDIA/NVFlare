@@ -87,7 +87,7 @@ Assumptions
 Architecture Design
 -------------------
 
-.. image:: ../../resources/flare_on_prem_cvm_ip_protection.png
+.. image:: ../../../resources/flare_on_prem_cvm_ip_protection.png
    :height: 300px
 
 Key Challenges in Securing Application-Level Integrity
@@ -145,7 +145,7 @@ For our most common deployment scenarios, we will build a CVM image on one trust
 CVM Boot-Up Process Design
 ---------------------------
 
-.. image:: ../../resources/cvm_bootup_process.png
+.. image:: ../../../resources/cvm_bootup_process.png
    :height: 300px
 
 Here, we are leveraging the initApp in a TEE context to enable application-level attestation, using the kernel as an indirect attesting environment.
@@ -336,7 +336,7 @@ Interactions Between NVFlare and Trustee Key Broker Service (KBS)
 
 The following block diagram shows the interaction among the NVFlare CVM, Attestation Agent (AA), Key Broker Service (KBS), Trustee, and Attestation Service (AS).
 
-.. image:: ../../resources/cvm_trustee_interaction.png
+.. image:: ../../../resources/cvm_trustee_interaction.png
     :height: 500px
 
 Trustee Policies
@@ -398,7 +398,7 @@ CVM Implementation Details
 Disk Layout and Security
 ------------------------
 
-.. image:: ../../resources/cvm_disk_layout.png
+.. image:: ../../../resources/cvm_disk_layout.png
     :height: 300px
 
 Disk Partitions
@@ -521,7 +521,7 @@ The NFS export will be mounted to ``/user_data/mnt`` using:
       /training_data *(rw,sync,no_subtree_check,insecure)
 
 
-.. image:: ../../resources/user_data_mount.png
+.. image:: ../../../resources/user_data_mount.png
    :height: 300px
 
 
