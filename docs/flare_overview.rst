@@ -5,147 +5,241 @@ NVIDIA FLARE Overview
 #####################
 
 **NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
-extensible Python SDK that allows researchers, data scientists and data engineers to adapt existing ML/DL and compute workflows to a federated paradigm.
-With the FLARE platform, developers can create a secure and privacy-preserving solution for decentralized data computing, facilitating distributed multi-party collaboration.
+extensible Python SDK that allows researchers, data scientists, and data engineers to adapt existing ML/DL and
+compute workflows to a federated paradigm. With the FLARE platform, developers can create secure and privacy-preserving
+solutions for decentralized data computing, facilitating distributed multi-party collaboration.
+
+FLARE supports **end-to-end federated learning**—from local simulation to large-scale production deployment—for both
+**cross-silo** (institutional) and **cross-device** (edge/mobile) scenarios.
+
 
 Key Features
+============
+
+Open & Developer-Friendly
+-------------------------
+
+- Apache 2.0 licensed with rich APIs and tooling
+- Data scientist-friendly APIs requiring minimal code changes
+- Comprehensive documentation and examples
+
+Enterprise-Scale & Production-Ready
+-----------------------------------
+
+- Mature, secure, and scalable architecture
+- Battle-tested in healthcare, financial services, and autonomous vehicles
+- Deployed in both cloud and on-premises environments
+
+Flexible Deployment
+-------------------
+
+- Supports on-premises, cloud, and hybrid environments
+- Multiple deployment options: sub-processes, Docker, Kubernetes, or HPC
+- Cloud deployment CLI for AWS and Azure
+
+Robust Networking & Communication
+---------------------------------
+
+- Multi-protocol support (gRPC, TCP, HTTP)
+- TLS/mTLS security with single-port operation
+- LLM streaming and large data transfer capabilities
+- Bring Your Own Connectivity (BYOConn) support
+
+Framework & Model Agnostic
+--------------------------
+
+- Supports any ML framework: PyTorch, TensorFlow, scikit-learn, XGBoost, and more
+- Works with any model type: LLMs, deep learning, traditional ML
+- System-agnostic integration with various data processing frameworks
+
+Strong Enterprise Security
+--------------------------
+
+- PKI-based authentication and authorization
+- Role-based access control with local policy enforcement
+- Secure provisioning with TLS certificates
+- Comprehensive audit logging
+
+Privacy & Compliance
+--------------------
+
+- Built-in differential privacy and homomorphic encryption
+- Confidential computing with TEE support
+- Multi-party Private Set Intersection (PSI)
+- GDPR and HIPAA compliance support
+
+Extensible Architecture
+-----------------------
+
+- Modular, event-based, and pluggable design
+- Customizable components at every layer
+- Easy integration with third-party systems via FLARE Agent
+
+End-to-End Lifecycle
+--------------------
+
+- Complete workflow from research to production
+- Consistent APIs across simulation, POC, and production modes
+- Built-in support for LLM fine-tuning and distributed inference
+
+Capabilities
 ============
 
 Federated Computing
 -------------------
 
-At its core, FLARE serves as a federated computing framework, with applications such as Federated Learning and Federated Analytics built upon this foundation.
-Notably, it is agnostic to datasets, workloads, and domains. In contrast to centralized data lake solutions that necessitate copying data to a central location, FLARE brings computing capabilities directly to distributed datasets.
-This approach ensures that data remains within the compute node, with only pre-approved, selected results being shared among collaborators.
-Moreover, FLARE is system-agnostic, offering easy integration with various data processing frameworks through the implementation of the FLARE client.
-This client facilitates deployment in sub-processes, Docker containers, Kubernetes pods, HPC, or specialized systems.
+At its core, FLARE is a federated computing framework upon which Federated Learning, Analytics, and
+Evaluation are built. It is agnostic to datasets, workloads, and domains.
 
-Built for productivity
-----------------------
+Unlike centralized data lake solutions that require copying data to a central location, FLARE brings
+computing directly to distributed datasets. Data remains at each site, with only pre-approved results
+shared among collaborators—ensuring data governance and privacy compliance.
 
-FLARE is designed for maximum productivity, providing a range of tools to enhance user experience and research efficiency at different stages of the development process:
+Federated Training
+------------------
 
-- **FLARE Client API:** Enables users to transition seamlessly from ML/DL to FL with just a few lines of code changes.
-- **Simulator CLI:** Allows users to simulate federated learning or computing jobs in multi-process settings within a single computer, offering quick response and debugging. The same job can be deployed directly to production.
-- **POC CLI:** Facilitates the simulation of federated learning or computing jobs in multi-process settings within one computer. Different processes represent server, clients, and an admin console, providing users with a realistic sense of the federated network. It also allows users to simulate project deployment on a single host.
-- **Job CLI:** Permits users to create and submit jobs directly in POC or production environments.
-- **FLARE API:** Enables users to run jobs directly from Python code or notebooks.
-- **FLARE Dashboard:** Allows users to set up, approve, and distribute deployment artifacts among collaborators.
-- **Preflight Check Tool:** Enables users to verify if the federated system is correctly set up before running any jobs.
-- **Cloud Deployment CLI:** Allows users to start and deploy FLARE on cloud service providers (AWS or Azure) with a single CLI command.
-- **ML Experiment Tracking Support:** Enables users to log to TensorBoard, MLFlow, and Weights & Biases for comprehensive experiment tracking.
+Train models collaboratively across distributed data without centralizing sensitive information.
 
-Built for security & privacy
-----------------------------
+- **Models**: LLMs, deep learning, XGBoost, scikit-learn, PyTorch, TensorFlow, PyTorch Lightning
+- **Workflows**: Federated averaging (FedAvg), swarm learning, cyclic training
+- **Algorithms**: Horizontal FL, vertical FL, split learning
+- **MLOps**: Real-time metrics streaming with TensorBoard, MLflow, and Weights & Biases
 
-FLARE prioritizes robust security and privacy preservation:
+Federated Analytics
+-------------------
 
-- **Secure Provisioning:** Utilizes TLS certificates to ensure a secure environment.
-- **Event-based Security Plugin Mechanism:** Enables local, user-defined authentication and authorization for enhanced security.
-- **Authorization Policy Control:** Empowers local entities to control authorization policies within the federated framework.
-- **Data and Result Filter Mechanism:** Enhances data protection through a filter mechanism.
-- **Audit Logs:** Provides audit logs for increased transparency and accountability.
-- **Federated Learning Algorithms:** Incorporates advanced algorithms for privacy preservation, including Differential Privacy, Homomorphic Encryption, and Multi-party Private Set Intersection (PSI).
+Compute federated statistics across distributed datasets without direct data access.
 
-Built for concurrency & scalability
------------------------------------
+- **Statistics**: Histograms, counts, means, min/max across distributed data
+- **Data Exploration**: Privacy-preserving cohort discovery and feature analysis
+- **Validation**: Cross-site data quality checks and schema validation
 
-FLARE is designed for optimal concurrency, supporting resource-based multi-job execution when the necessary resources are available. This concurrent run capability enhances the efficiency of job execution within the framework.
-Additionally, for setups involving devices across multiple regions, FLARE offers FL HUB (Hierarchical Unified Bridge) features. These features enable the establishment of a tiered federated learning system, enhancing flexibility and scalability in multi-region configurations.
-
-Built for customization
------------------------
-
-FLARE is structured in layers, with each layer composed of customizable components. This modular design ensures that every layer is easily pluggable, allowing for seamless customization.
-
-Rich examples repository
-------------------------
-
-FLARE provides a wealth of built-in implementations for various federated learning workflows, along with numerous examples, showcasing diverse algorithms. Examples include:
-
-- **Federated training workflows**
-  
-  - Server-side controlled flow: scatter-and-gather, cyclic-weight transfer, federated evaluation, cross-site-model evaluation
-  - Client-side controlled flow: cyclic-weight transfer, swarm-learning, cross-site-model evaluation
-  - Split Learning
-
-- **Learning algorithms** (FedAvg, FedOpt, FedProx, Scaffold, Ditto, FedSM, Fed AutoRL etc.)
-- **Privacy preserving algorithms** (homomorphic encryption, differential privacy)
-- **Federated Learning Examples**
-
-  - Large Language Model
-  - Medical Image Analysis
-  - Federated Statistics
-  - Traditional Machine Learning (scikit-learn, linear model, SVM, Kmeans, Random Forest)
-  - Federated XGBoost (horizontal and vertical)
-  - NLP
-  - GNN
-  - Federated Multi-Party PSI
-
-- **Feature Tutorials**
-
-  - Simulator, FLARE API, POC mode, Job CLI
-  - ML-to-FL FLARE Client API
-  - Step-by-step progressive series
-
-Built for integration
----------------------
-
-FLARE offers multiple integration options with third-party systems, with the Flare Agent providing a seamless and straightforward approach.
-This allows FLARE to collaborate effortlessly with third-party systems, irrespective of the programming languages and technologies they are built upon.
-
-Built for production
+Federated Evaluation
 --------------------
 
-The FLARE SDK is designed for robust, production-scale deployment in real-world federated learning and computing scenarios.
-It has found applications in various industries, including healthcare, financial services, and self-driving cars.
-FLARE has been successfully deployed in both cloud and on-premise environments.
- 
-High-level System Architecture
-==============================
+Assess model performance across distributed data without centralizing test datasets.
 
-As detailed above, FLARE incorporates components that empower researchers and developers to construct and deploy end-to-end federated learning applications.
-The high-level architecture, depicted in the diagram below, encompasses the foundational layer of the FLARE communication, messaging streaming layers, and tools dedicated to privacy preservation and secure platform management. 
-Atop this foundation are the building blocks for federated learning applications, featuring a suite of federation workflows and learning algorithms. 
-Adjacent to this central stack are tools facilitating experimentation and simulation with the FL Simulator and POC CLI, complemented by a set of tools designed for the deployment and management of production workflows.
-
-.. image:: resources/flare_overview.png
-    :height: 500px
-
-For detailed information on the architecture, please refer to the :ref:`flare_system_architecture` section.
-For detailed information on the security overview, please refer to the :ref:`flare_security_overview` section.
+- **Model Evaluation**: Evaluate a global model across all participating clients
+- **Cross-Site Evaluation**: Benchmark each client's model against data from other participants
 
 
+Easy to Use
+===========
 
-Design Principles
-=================
+FLARE provides intuitive APIs and tools that minimize the learning curve for data scientists and engineers.
 
-- Less is more
-- Design to specification
-- Build for real-world scenarios
-- Keep the system general-purpose
-- Client system friendly
+FLARE Native APIs
+-----------------
 
-**Less is more**
-We strive to solve unique challenges by doing less while enabling others to do more. 
-We can't solve whole world's problems, but by building an open platform, we can enable others to solve them.
-This design principle means we intentionally limit the scope of the implementation, only building the necessary components. 
-For a given implementation, we follow specifications in a way that allows others to easily customize and extend.
+Convert existing ML code to federated learning with minimal changes.
 
-**Design to Specification**
-Every component and API is specification-based, so that alternative implementations can be constructed by following the spec.
-This allows pretty much every component to be customized.
-We strive to be open-minded in reference implementations, encouraging developers and end-users to extend and customize to meet the needs of their specific workflows.
+- **Client API**: Add a few lines to existing training scripts—no FL expertise required
+- **Job Recipe API**: Define complete FL jobs programmatically in Python
+- **Collab API**: Simplified collaborative learning for common and advanced FL patterns
 
-**Built for real-world scenarios**
-We build to handle real-world use cases where unexpected events or misbehaving code can be handled in a way that allows components or the system as a whole to fail gracefully.
-The reference implementations of the default components are designed to solve real-world problems in a straightforward way.
+Flower-FLARE Integration
+------------------------
 
-**Keep the system general-purpose**
-We design the system to be general purpose, to enable different “federated” computing use cases.
-We carefully package the components into different layers with minimal dependencies between layers.
-In this way, implementations for specific use cases should not demand modifications to the underlying system core.
+Leverage the Flower ecosystem with FLARE's enterprise capabilities.
 
-**Client system friendly**
-We design the system so that it can run anywhere with minimal environmental dependencies.
-We also strive to build the system in a way that does not interfere with the deployment environment, allowing FLARE to be easily integrated into your own applications or platforms.
+- **Native Execution**: Run existing Flower workflows in FLARE without code changes
+- **Enhanced Features**: Add FLARE's metrics streaming, security, and scalability to Flower apps
+
+Simulation & Deployment
+-----------------------
+
+Seamlessly transition from development to production with consistent APIs.
+
+- **Simulator**: Rapid prototyping and debugging on a single machine
+- **POC Mode**: Test federated workflows with realistic multi-process separation
+- **Production**: Deploy to on-premises, cloud, or hybrid environments with full security
+
+
+Industry Use Cases
+==================
+
+NVIDIA FLARE has been deployed across diverse industries worldwide.
+
+**Healthcare & Life Sciences**
+
+- Cancer research consortiums training tumor detection models across major medical centers
+- Drug discovery collaborations among pharmaceutical companies using proprietary data
+- Clinical trial recruitment, population genomics, and rare disease studies
+
+**Financial Services**
+
+- Fraud detection models trained across banking institutions
+- Anti-money laundering (AML) with federated suspicious account detection
+- Credit risk modeling with privacy-preserving data collaboration
+
+**Scientific Computing**
+
+- National laboratory platforms for scientific computing
+- Federated Data mesh for weather prediction and climate research
+- Research collaborations across institutional boundaries
+
+**National Security**
+
+- National laboratory platforms for large language model training
+  under strict data governance and privacy compliance
+- Closed-loop systems linking scientific discovery and national security initiatives
+
+**Autonomous Systems**
+
+- Cross-country autonomous vehicle model training
+- EV battery range prediction and optimization
+- Fleet-wide learning for transportation and logistics
+
+
+Examples & Tutorials
+====================
+
+FLARE provides extensive built-in implementations and examples to accelerate development.
+
+**Federated Training Workflows**
+
+- Server-controlled: scatter-and-gather, cyclic weight transfer, federated evaluation
+- Client-controlled: swarm learning, cross-site model evaluation
+- Split learning: vertical partitioning for feature-distributed data
+
+**Learning Algorithms**
+
+- Aggregation: FedAvg, FedOpt, FedProx, SCAFFOLD
+- Personalization: Ditto, FedSM, Fed AutoRL
+- Advanced: Hierarchical FL, asynchronous FL (FedBuff)
+
+**Privacy-Preserving Techniques**
+
+- Homomorphic encryption for secure aggregation
+- Differential privacy for gradient protection
+- Multi-party Private Set Intersection (PSI)
+
+**Domain Applications**
+
+- LLM fine-tuning and distributed inference
+- Medical imaging and healthcare AI
+- Financial services (fraud detection, AML)
+- Traditional ML (XGBoost, Random Forest, SVM, K-means)
+- Graph neural networks and NLP
+
+**Getting Started Tutorials**
+
+- Step-by-step ML-to-FL conversion guides
+- Simulator, POC mode, and production deployment
+- Job Recipe API and Client API walkthrough
+
+See :ref:`getting_started` and :ref:`tutorials` for comprehensive guides.
+
+
+References
+==========
+
+For more detailed information, see:
+
+- :ref:`flare_system_architecture` - Core system design and components
+- :ref:`flare_security_overview` - Security architecture and features
+- :ref:`client_api` - Client-side API for FL development
+- :ref:`job_recipe` - Programmatic job definition
+- :ref:`provisioning` - Secure deployment and provisioning
+- :ref:`federated_statistics` - Federated analytics implementation
+- :ref:`hello_pt` - Getting started with PyTorch examples
