@@ -28,7 +28,7 @@ Quick Reference
      - ``nvflare cert``, ``nvflare package``
      - ``nvflare token``, ``nvflare package``, ``nvflare enrollment``
    * - **Best For**
-     - Research, POC
+     - Research, POC, security-restricted environments
      - Production, Kubernetes
 
 **Command Overview:**
@@ -66,7 +66,8 @@ Quick Reference
 Workflow 1: Manual
 *************************
 
-Best for small deployments with 5-10 participants.
+Best for small deployments with 5-10 participants. Also suitable for
+security-restricted environments where external Certificate Services are not permitted.
 
 Step 1: Initialize Root CA (Project Admin)
 ==========================================
