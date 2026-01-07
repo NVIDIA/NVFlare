@@ -1,0 +1,52 @@
+# Sample project.yml for Kaplan-Meier production deployment with HE (CKKS)
+# This file is used for provisioning secure startup kits with HE context
+# Note: Both simulation and production modes use CKKS scheme for consistency
+
+api_version: 3
+name: km_he_project
+description: Kaplan-Meier Survival Analysis with Homomorphic Encryption
+
+participants:
+  - name: localhost
+    type: server
+    org: example
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: example
+  - name: site-2
+    type: client
+    org: example
+  - name: site-3
+    type: client
+    org: example
+  - name: site-4
+    type: client
+    org: example
+  - name: site-5
+    type: client
+    org: example
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  # HEBuilder provisions HE context for CKKS scheme
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS  # Using CKKS scheme for production deployment
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+

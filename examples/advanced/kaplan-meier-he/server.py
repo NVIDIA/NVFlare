@@ -21,7 +21,7 @@ from nvflare.app_common.workflows.model_controller import ModelController
 # Controller Workflow
 class KM(ModelController):
     def __init__(self, min_clients: int):
-        super(KM, self).__init__()
+        super(KM, self).__init__(persistor_id="")
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
         self.num_rounds = 2
@@ -47,8 +47,9 @@ class KM(ModelController):
         hist_idx_max = 0
         for fl_model in sag_result:
             hist = fl_model.params["hist_obs"]
-            if hist_idx_max < max(hist.keys()):
-                hist_idx_max = max(hist.keys())
+            max_idx = max(hist.keys())
+            if hist_idx_max < max_idx:
+                hist_idx_max = max_idx
         hist_idx_max += 1
 
         hist_obs_global = {}

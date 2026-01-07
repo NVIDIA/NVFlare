@@ -66,9 +66,7 @@ federated learning, for example:
 With 5 lines of code changes, we convert the centralized training code to
 federated learning setting.
 
-After this, we can utilize the job templates and the :ref:`job_cli`
-to generate a job so it can be run using :ref:`fl_simulator`
-or submit to a deployed NVFlare system.
+After this, we can utilize the Job Recipe to define and run the federated learning job. See :ref:`job_recipe` for details.
 
 Below is a table overview of key Client APIs.
 
@@ -189,77 +187,18 @@ In contrast, FilePipe offers file-based communication between the Executor and t
 utilizing a job-specific file directory for exchanging models and metadata via files. While FilePipe is easier to set up
 than CellPipe, it's not suitable for high-frequency metrics exchange.
 
-
-Configuration
-=============
-Different configurations are available for each type of executor.
-
-.. note::
-
-    The configuration can be generated automatically via the FLARE Job API, so manual editing is not required.
-    For data scientists, the FLARE Job Recipe provides an even simpler approach, leveraging the Job API to generate the configuration without needing to know the details of the job setup.
-    As such, this section is considered advanced and is intended for those who are curious about the underlying mechanisms.
-
-In-process executor configuration
----------------------------------
-This configuration specifically caters to PyTorch applications, providing serialization and deserialization
-(aka Decomposers) for commonly used PyTorch objects. For non-PyTorch applications, the generic
-:class:`InProcessClientAPIExecutor<nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor>` can be employed.
-
-.. literalinclude:: ../../../job_templates/sag_pt_in_proc/config_fed_client.conf
-
-
-Subprocess launcher executor configuration
-------------------------------------------
-In the config_fed_client in the FLARE app, in order to launch the training script we use the
-:class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
-The defined ``script`` is invoked, and ``launch_once`` can be set to either
-launch once for the whole job (launch_once = True), or launch a process for each task received from the server (launch_once = False)
-
-``launch_once`` dictates how many times the training scripts are invoked during the overall training process.
-When set to False, the executor essentially invokes ``python <training scripts>.py`` every round of training.
-Typically, launch_once is set to True.
-
-A corresponding :class:`ClientAPILauncherExecutor<nvflare.app_common.executors.client_api_launcher_executor.ClientAPILauncherExecutor>`
-is used as the executor to handle the tasks and perform the data exchange using the pipe.
-For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>`
-and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
-
-.. literalinclude:: ../../../job_templates/sag_pt/config_fed_client.conf
-
-For example configurations, take a look at the :github_nvflare_link:`job_templates <job_templates>`
-directory for templates using the launcher and Client API.
-
-.. note::
-   In that case that the user does not need to launch the process and instead
-   has their own existing external training system, this would involve using
-   the :ref:`3rd_party_integration`, which is based on the same underlying mechanisms.
-
 Examples
 ========
 
-For examples of using Client API with different frameworks,
-please refer to :github_nvflare_link:`examples/hello-world/ml-to-fl <examples/hello-world/ml-to-fl>`.
+For examples of using Client API with different frameworks, please refer to:
+
+- PyTorch: :ref:`hello_pt`
+- PyTorch Lightning: :ref:`hello_lightning`
+- TensorFlow: :ref:`hello_tf`
+- HuggingFace: :github_nvflare_link:`llm_hf <examples/llm_hf>`
 
 For additional examples, also take a look at the
-:github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`
-that use Client API to write the
-:github_nvflare_link:`train script <examples/hello-world/step-by-step/cifar10/code/fl/train.py>`.
-
-
-Selection of Job Templates (deprecated)
-=======================================
-To help users quickly set up job configurations, we have created numerous job templates. You can select a job template that closely matches
-your use case and adapt it to your needs by modifying the necessary variables.
-
-Using the command ``nvflare job list_templates``, you can find all the job templates provided by NVFlare.
-
-.. image:: ../../resources/list_templates_results.png
-    :height: 300px
-
-looking at the ``Execution API Type``, you will find ``client_api``. This indicates that the specified job template will use the Client API
-configuration.  You can further nail down the selection by choice of machine learning framework: pytorch or sklearn or xgboost,
-in-process or not, type of models ( GNN, NeMo LLM), workflow patterns ( Swarm learning or standard fedavg with scatter and gather (sag)) etc.
+:github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`.
 
 
 Custom Data Class Serialization/Deserialization
