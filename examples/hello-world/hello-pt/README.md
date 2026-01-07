@@ -122,7 +122,7 @@ With the Recipe API, **there is no need to write custom server code**. The feder
 
 ## Job Recipe Code
 
-The `FedAvgRecipe` combines the client training script `client.py` with the built-in federated averaging algorithm:
+The `FedAvgRecipe` combines the client training script [`client.py`](client.py) with the built-in federated averaging algorithm:
 ```
     recipe = FedAvgRecipe(
         name="hello-pt",
@@ -156,6 +156,10 @@ cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_va
 ```
 
 > **Note:** Depending on the number of clients, you might run into errors if several clients try to download the data at the same time. It is suggested to pre-download the data to avoid such errors.
+
+## Notebook
+
+For an interactive version of this example, see this [notebook](./hello-pt.ipynb), which can be executed in Google Colab.
 
 ## Output summary
 
