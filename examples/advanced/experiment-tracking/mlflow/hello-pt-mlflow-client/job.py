@@ -17,7 +17,7 @@ import argparse
 from model import SimpleNetwork
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
