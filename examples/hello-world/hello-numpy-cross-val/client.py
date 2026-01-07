@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Simple NumPy training script for cross-site evaluation example.
 
 This script performs mock training for demonstrating the training+CSE workflow.
