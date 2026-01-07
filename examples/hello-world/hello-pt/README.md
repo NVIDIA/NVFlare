@@ -43,9 +43,9 @@ You can split the datasets for different clients, so that each client has its ow
 Here, for simplicity's sake, we will be using the same dataset on each client.
 
 ## Model
-In PyTorch, neural networks are implemented by defining a class (e.g., SimpleNetwork) that extends nn.Module.
+In PyTorch, neural networks are implemented by defining a class (e.g., SimpleNetwork) that extends `nn.Module`.
 The network’s architecture is set up in the __init__ method, while the forward method determines how input data flows
-through the layers. For faster computations, the model is transferred to a hardware accelerator (such as NVIDIA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
+through the layers. For faster computations, the model is transferred to a hardware accelerator (such as NVIDIA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in [model.py](model.py).
 
 ```python
 import torch
@@ -107,26 +107,22 @@ output_model = flare.FLModel(params=new_params) # 4. Put the results in a new `F
 flare.send(output_model) # 5. Sends the model to the FL server.
 ```
 
-## Server Code
-In federated averaging, the server code is responsible for aggregating model updates from clients, the workflow pattern is similar to scatter-gather.
+## Server-Side Workflow
 
-First, we provide a simple implementation of the [FedAvg](https://proceedings.mlr.press/v54/mcmahan17a?ref=https://githubhelp.com) algorithm with NVFlare.
-The `run()` routine implements the main algorithmic logic.
-Subroutines, like `sample_clients()` and `scatter_and_gather_model()` utilize the communicator object, native to each Controller to get the list of available clients,
-distribute the current global model to the clients, and collect their results.
+This example uses the [`FedAvgRecipe`](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.recipes.fedavg.html), which implements the [FedAvg](https://proceedings.mlr.press/v54/mcmahan17a?ref=https://githubhelp.com) algorithm. The Recipe API handles all server-side logic automatically:
 
-The FedAvg controller implements these main steps:
-1. FL server initializes an initial model using `self.load_model()`.
-2. For each round (global iteration):
-    - FL server samples available clients using `self.sample_clients()`.
-    - FL server sends the global model to clients and waits for their updates using `self.send_model_and_wait()`.
-    - FL server aggregates all the `results` and produces a new global model using `self.update_model()`.
+1. Initialize the global model
+2. For each training round:
+   - Sample available clients
+   - Send the global model to selected clients
+   - Wait for client updates
+   - Aggregate client models into a new global model
 
-In this example, we will directly use the default federated averaging algorithm provided by NVFlare implemented using the `ScatterAndGather` controller.
-There is no need to define a customized server code for this example.
+With the Recipe API, **there is no need to write custom server code**. The federated averaging workflow is provided by NVFlare using the `ScatterAndGather` controller.
 
 ## Job Recipe Code
-Job Recipe contains the client.py and built-in Fed average algorithm.
+
+The `FedAvgRecipe` combines the client training script `client.py` with the built-in federated averaging algorithm:
 ```
     recipe = FedAvgRecipe(
         name="hello-pt",
@@ -141,8 +137,7 @@ Job Recipe contains the client.py and built-in Fed average algorithm.
     recipe.execute(env=env)
 ```
 
-To include both training and cross-site evaluation using the `CrossSiteModelEval` controller,
-set `cross_site_eval=True` in [job.py](job.py) using the commandline argument below.
+To include cross-site evaluation after training, use the `--cross_site_eval` flag (see command below). This adds the `CrossSiteModelEval` controller to evaluate trained models across all client sites.
 
 ## Run Job
 From the terminal, run:
@@ -151,11 +146,11 @@ From the terminal, run:
     python job.py
 ```
 
-To run with cross-site evaluation, execute
+To run with cross-site evaluation, use:
 ```
     python job.py --cross_site_eval
 ```
-The cross-site evaluation results can be shown via
+The cross-site evaluation results can be viewed with:
 ```
 cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_val_results.json
 ```

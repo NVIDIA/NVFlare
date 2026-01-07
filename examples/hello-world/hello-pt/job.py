@@ -59,8 +59,8 @@ def main():
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
     print()
-    print("Result can be found in :", run.get_result())
     print("Job Status is:", run.get_status())
+    print("Result can be found in :", run.get_result())
     print()
 
 
