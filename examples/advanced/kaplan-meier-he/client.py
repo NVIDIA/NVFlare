@@ -46,7 +46,15 @@ def details_save(kmf):
         "event_count": event_count.tolist(),
         "survival_rate": survival_rate.tolist(),
     }
-    file_path = os.path.join(os.getcwd(), "km_global.json")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_DIR}/app_site-X/custom/client.py (sim) or site-X/{JOB_ID}/app_site-X/custom/client.py (prod)
+    # We need to navigate up to the {JOB_DIR} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_DIR}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_global.json")
     print(f"save the details of KM analysis result to {file_path} \n")
     with open(file_path, "w") as json_file:
         json.dump(results, json_file, indent=4)
@@ -62,7 +70,15 @@ def plot_and_save(kmf):
     plt.xlabel("time")
     plt.legend("", frameon=False)
     plt.tight_layout()
-    file_path = os.path.join(os.getcwd(), "km_curve_fl.png")
+
+    # Save to job-specific directory
+    # The script is located at: site-X/{JOB_DIR}/app_site-X/custom/client.py (sim) or site-X/{JOB_ID}/app_site-X/custom/client.py (prod)
+    # We need to navigate up to the {JOB_DIR} directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up 2 levels: custom -> app_site-X -> {JOB_DIR}
+    job_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+
+    file_path = os.path.join(job_dir, "km_curve_fl.png")
     print(f"save the curve plot to {file_path} \n")
     plt.savefig(file_path)
 
@@ -94,10 +110,10 @@ def main():
             # Empty payload from server, send local histogram
             # Convert local data to histogram
             event_table = survival_table_from_events(time_local, event_local)
-            hist_idx = event_table.index.values.astype(int)
             hist_obs = {}
             hist_cen = {}
-            for idx in range(max(hist_idx)):
+            max_hist_idx = max(event_table.index.values.astype(int))
+            for idx in range(max_hist_idx):
                 hist_obs[idx] = 0
                 hist_cen[idx] = 0
             # Assign values
