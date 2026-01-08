@@ -39,11 +39,6 @@ class FedAvgPerSiteConfig(BaseModel):
     server_expected_format: ExchangeFormat | None = None
     params_transfer_type: TransferType | None = None
 
-    # FedAvg-specific knobs
-    local_epochs: int | None = None
-    local_batch_size: int | None = None
-    site_weight: float | None = None
-
 
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):

@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 PyTorch DDP (DistributedDataParallel) client for multi-GPU federated learning.
 
 Launch with:
-    python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777 client_ddp.py
+    python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777 client.py
 """
 
 import torch
@@ -89,12 +89,8 @@ def main():
     print(f"flare init DDP rank {rank} initialized on {device}")
     # (3) gets FLModel from NVFlare
     while flare.is_running():
-        print(f"before flare receive DDP rank {rank} initialized on {device}")
         input_model = flare.receive()
-        print(f"after flare receive DDP rank {rank} initialized on {device}")
         if rank == 0:
-            print(f"WTFTFTFTFTF DDP rank {rank} initialized on {device}")
-            print(f"WTFTFTFTFTF DDP {rank=} {input_model} initialized on {device}")
             print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
             # (4) loads model from NVFlare
             net.load_state_dict(input_model.params)
@@ -107,12 +103,9 @@ def main():
         if rank == 0:
             torch.save(ddp_model.state_dict(), CHECKPOINT_PATH)
 
-        print(f"before dist barrier DDP rank {rank} initialized on {device}")
         dist.barrier()
-        print(f"after dist barrier DDP rank {rank} initialized on {device}")
         ddp_model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
 
-        print(f"before training DDP rank {rank} initialized on {device}")
         # Training loop
         steps = epochs * len(trainloader)
         for epoch in range(epochs):

@@ -78,7 +78,8 @@ pip install -r requirements.txt
 We recommend using [NVIDIA TensorFlow Docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) for GPU support:
 
 ```bash
-docker run --gpus=all -it --rm -v $(pwd):/workspace nvcr.io/nvidia/tensorflow:24.01-tf2-py3
+# choose a recent tag from NGC, e.g., 24.09-tf2-py3
+docker run --gpus=all -it --rm -v $(pwd):/workspace nvcr.io/nvidia/tensorflow:<xx.xx>-tf2-py3
 cd /workspace
 pip install nvflare
 ```

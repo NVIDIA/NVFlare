@@ -37,7 +37,7 @@ def main():
 
     train_script = "client.py"
     initial_model = Net()
-    num_clients = 1
+    num_clients = 2
 
     # Build train_args based on mode
     train_args = ""
