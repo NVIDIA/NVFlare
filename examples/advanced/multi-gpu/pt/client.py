@@ -81,7 +81,6 @@ def main():
     # Model setup
     net = Net()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
     # (2) initializes NVFlare client API
     flare.init(rank=f"{rank}")
@@ -94,6 +93,7 @@ def main():
             print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
             # (4) loads model from NVFlare
             net.load_state_dict(input_model.params)
+        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
         # Wrap model with DDP
         net.to(device)
