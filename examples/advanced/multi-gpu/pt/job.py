@@ -44,9 +44,6 @@ def main():
     if args.use_tracking:
         train_args = "--use_tracking"
 
-    # Command for DDP
-    command = "python3 -u -m torch.distributed.run --rdzv-backend=c10d --nnodes=1 --nproc_per_node=2 "
-
     recipe = FedAvgRecipe(
         name="pt_ddp",
         initial_model=initial_model,
@@ -55,7 +52,6 @@ def main():
         train_script=train_script,
         train_args=train_args,
         launch_external_process=True,  # DDP modes require external process launch
-        command=command,
         per_site_config={
             "site-1": FedAvgPerSiteConfig(
                 command="python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777",
