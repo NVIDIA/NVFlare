@@ -97,7 +97,7 @@ def main():
 
         # Wrap model with DDP
         net.to(device)
-        ddp_model = DDP(net, device_ids=[device])
+        ddp_model = DDP(net, device_ids=[rank])
 
         # Sync model across ranks
         if rank == 0:

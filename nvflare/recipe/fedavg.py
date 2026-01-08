@@ -59,6 +59,7 @@ class _FedAvgValidator(BaseModel):
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor]
     analytics_receiver: Any
+    per_site_config: Optional[Dict[str, FedAvgPerSiteConfig]] = None
 
 
 class FedAvgRecipe(Recipe):
