@@ -102,9 +102,6 @@ Check GPU utilization during training:
 ```bash
 # Watch GPU usage in real-time
 watch -n 1 nvidia-smi
-
-# Or use nvtop for better visualization
-nvtop
 ```
 
 ## Troubleshooting

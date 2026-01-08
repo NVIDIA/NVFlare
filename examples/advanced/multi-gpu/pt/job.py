@@ -73,7 +73,7 @@ def main():
         recipe.export("/tmp/nvflare/jobs/job_config")
         print("Job config exported to /tmp/nvflare/jobs/job_config")
     else:
-        env = SimEnv(num_clients=num_clients, log_config="full")
+        env = SimEnv(clients=["site-1", "site-2"], num_threads=2, log_config="full")
         run = recipe.execute(env)
         print()
         print("Result:", run.get_result())

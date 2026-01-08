@@ -80,6 +80,8 @@ def main():
 
     # Model setup
     net = Net()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
     # (2) initializes NVFlare client API
     flare.init(rank=f"{rank}")
@@ -96,8 +98,6 @@ def main():
         # Wrap model with DDP
         net.to(device)
         ddp_model = DDP(net, device_ids=[rank])
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(ddp_model.parameters(), lr=0.001, momentum=0.9)
 
         # Sync model across ranks
         if rank == 0:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -49,7 +49,7 @@ class _FedAvgValidator(BaseModel):
     min_clients: int
     num_rounds: int
     train_script: str
-    train_args: Union[str, Dict[str, str]]
+    train_args: str
     aggregator: Optional[Aggregator]
     aggregator_data_kind: Optional[DataKind]
     launch_external_process: bool
@@ -59,7 +59,7 @@ class _FedAvgValidator(BaseModel):
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor]
     analytics_receiver: Any
-    per_site_config: Optional[Dict[str, FedAvgPerSiteConfig]] = None
+    per_site_config: Optional[dict[str, FedAvgPerSiteConfig]] = None
 
 
 class FedAvgRecipe(Recipe):
@@ -87,9 +87,7 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script. Can be:
-            - str: Same arguments for all clients (uses job.to_clients)
-            - dict[str, str]: Per-client arguments mapping site names to args (uses job.to per site)
+        train_args: Command line arguments to pass to the training script.
         aggregator: Aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
@@ -130,7 +128,7 @@ class FedAvgRecipe(Recipe):
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
-        train_args: Union[str, Dict[str, str]] = "",
+        train_args: str = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
