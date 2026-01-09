@@ -14,9 +14,9 @@
 
 import json
 import os
+import pickle
 import time
 
-import _pickle
 import numpy as np
 import tensorflow as tf
 from filelock import FileLock, Timeout
@@ -52,7 +52,7 @@ def load_cifar10_with_retry(max_retries=3, retry_delay=5):
                 # Load the dataset
                 return datasets.cifar10.load_data()
 
-        except (Timeout, _pickle.UnpicklingError) as e:
+        except (Timeout, pickle.UnpicklingError) as e:
             if attempt == max_retries - 1:
                 raise RuntimeError(f"Failed to load CIFAR10 dataset after {max_retries} attempts: {str(e)}")
             print(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {retry_delay} seconds...")
