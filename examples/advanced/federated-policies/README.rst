@@ -98,7 +98,7 @@ _____
 
 Jobs
 ____
-All the jobs run the same app (numpy-sag) but have different scopes defined in :code:`meta.json`.
+All the jobs run the same app (hello-numpy) but have different scopes defined in :code:`meta.json`.
 
 * job1: Scope is :code:`public`. No filters.
 * job2: Scope is :code:`test`. Test filters are applied to data and result.

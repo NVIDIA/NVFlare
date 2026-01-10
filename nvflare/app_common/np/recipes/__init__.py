@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .cross_site_eval import NumpyCrossSiteEvalRecipe
 from .fedavg import NumpyFedAvgRecipe
 
-__all__ = ["NumpyFedAvgRecipe"]
+__all__ = ["NumpyFedAvgRecipe", "NumpyCrossSiteEvalRecipe"]
