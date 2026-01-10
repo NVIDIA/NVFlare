@@ -94,6 +94,14 @@ def main():
         # (6) evaluate on received model for model selection
         accuracy = evaluate(model, test_loader, device)
 
+        # (optional) Task branch for cross-site evaluation
+        if flare.is_evaluate():
+            print(f"site = {client_name}, running cross-site evaluation")
+            # For CSE, just return the evaluation metrics without training
+            output_model = flare.FLModel(metrics={"accuracy": accuracy})
+            flare.send(output_model)
+            continue
+
         steps = epochs * len(train_loader)
         for epoch in range(epochs):
             running_loss = 0.0
