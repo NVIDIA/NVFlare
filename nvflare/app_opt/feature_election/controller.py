@@ -200,14 +200,13 @@ class FeatureElectionController(Controller):
         # 1. Run Tuning Loop (if enabled)
         if self.auto_tune and self.tuning_rounds > 0:
             logger.info(f"Starting Auto-tuning ({self.tuning_rounds} rounds)...")
-            self.tuning_history.append((self.freedom_degree, 0.0))
-            self.freedom_degree = self._calculate_next_fd(first_step=True)
 
-            for i in range(1, self.tuning_rounds + 1):
+            for i in range(self.tuning_rounds):
                 if abort_signal.triggered:
                     logger.warning("Abort signal received during tuning")
                     break
 
+                # Evaluate current freedom_degree
                 mask = self._aggregate_selections(self.cached_client_selections)
 
                 task_data = Shareable()
@@ -223,16 +222,22 @@ class FeatureElectionController(Controller):
                         scores.append(v["tuning_score"])
                 score = sum(scores) / len(scores) if scores else 0.0
 
-                logger.info(f"Tuning Round {i}: FD={self.freedom_degree:.4f} -> Score={score:.4f}")
+                logger.info(
+                    f"Tuning Round {i + 1}/{self.tuning_rounds}: FD={self.freedom_degree:.4f} -> Score={score:.4f}"
+                )
                 self.tuning_history.append((self.freedom_degree, score))
 
-                if i < self.tuning_rounds:
-                    self.freedom_degree = self._calculate_next_fd(first_step=False)
+                # Calculate next FD for next iteration (if not last round)
+                if i < self.tuning_rounds - 1:
+                    self.freedom_degree = self._calculate_next_fd(first_step=(i == 0))
 
-            # Select best FD
-            best_fd, best_score = max(self.tuning_history, key=lambda x: x[1])
-            self.freedom_degree = best_fd
-            logger.info(f"Tuning Complete. Optimal Freedom Degree: {best_fd:.4f}")
+            # Select best FD from evaluated options
+            if self.tuning_history:
+                best_fd, best_score = max(self.tuning_history, key=lambda x: x[1])
+                self.freedom_degree = best_fd
+                logger.info(f"Tuning Complete. Optimal Freedom Degree: {best_fd:.4f} (Score: {best_score:.4f})")
+            else:
+                logger.warning("No tuning results, keeping initial freedom_degree")
 
         # 2. Generate Final Mask
         final_mask = self._aggregate_selections(self.cached_client_selections)

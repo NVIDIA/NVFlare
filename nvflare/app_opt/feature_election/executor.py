@@ -20,7 +20,7 @@ import numpy as np
 # Correct imports
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
+from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression, SGDClassifier
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import StandardScaler
 
@@ -60,9 +60,9 @@ class FeatureElectionExecutor(Executor):
         self.X_val = None
         self.y_val = None
 
-        # State
+        # Essentially logistic regression
         self.global_feature_mask = None
-        self.model = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+        self.model = SGDClassifier(loss="log_loss", max_iter=1000, warm_start=True, random_state=42)
 
         self._set_default_params()
 
@@ -178,17 +178,23 @@ class FeatureElectionExecutor(Executor):
 
     def _handle_train(self, shareable: Shareable) -> Shareable:
         try:
-            if "params" in shareable:
-                p = shareable["params"]
-                if "weight_0" in p:
-                    self.model.coef_ = p["weight_0"]
-                if "weight_1" in p:
-                    self.model.intercept_ = p["weight_1"]
-
             scaler = StandardScaler()
             X_tr = scaler.fit_transform(self.X_train)
 
-            self.model.fit(X_tr, self.y_train)
+            # Initialize model if not yet fitted (first round)
+            if not hasattr(self.model, "coef_"):
+                self.model.partial_fit(X_tr[:1], self.y_train[:1], classes=np.unique(self.y_train))
+
+            # Load global parameters if available
+            if "params" in shareable:
+                p = shareable["params"]
+                if "weight_0" in p:
+                    self.model.coef_ = np.array(p["weight_0"])
+                if "weight_1" in p:
+                    self.model.intercept_ = np.array(p["weight_1"])
+
+            # partial_fit continues from current weights
+            self.model.partial_fit(X_tr, self.y_train)
 
             resp = make_reply(ReturnCode.OK)
             resp["params"] = {"weight_0": self.model.coef_, "weight_1": self.model.intercept_}
