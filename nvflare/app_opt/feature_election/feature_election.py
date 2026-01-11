@@ -190,9 +190,15 @@ class FeatureElection:
             remaining_X, remaining_y, remaining_indices = X, y, indices
             for i in range(num_clients - 1):
                 size = split_ratios[i] / sum(split_ratios[i:])
-                c_idx, r_idx = train_test_split(
-                    remaining_indices, test_size=1 - size, stratify=remaining_y, random_state=random_state + i
-                )
+                try:
+                    c_idx, r_idx = train_test_split(
+                        remaining_indices, test_size=1 - size, stratify=remaining_y, random_state=random_state + i
+                    )
+                except ValueError as e:
+                    # Stratification failed due to class with <2 samples
+                    c_idx, r_idx = train_test_split(
+                        remaining_indices, test_size=1 - size, random_state=random_state + i
+                    )
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
                 remaining_indices = r_idx
                 remaining_y = y.iloc[remaining_indices]
