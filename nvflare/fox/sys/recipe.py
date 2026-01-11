@@ -17,7 +17,7 @@ from nvflare.fox.api.app import App, ClientApp, ServerApp
 from nvflare.fox.api.filter import FilterChain
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
 
 from .controller import FoxController
 from .executor import FoxExecutor
@@ -44,6 +44,10 @@ class FoxRecipe(Recipe):
         check_positive_int("min_clients", min_clients)
 
         self.job_name = job_name
+        self.server = server
+        self.client = client
+        self.server_objects = server_objects
+        self.client_objects = client_objects
         self.server_app = ServerApp(server)
         self.client_app = ClientApp(client)
 
@@ -62,6 +66,26 @@ class FoxRecipe(Recipe):
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
+
+    def process_env(self, env: ExecEnv):
+        """Pass server/client objects to the execution environment.
+
+        This allows SimEnv to receive the server/client objects from the recipe
+        without requiring them to be passed twice.
+        """
+        # Import here to avoid circular dependency
+        from nvflare.fox.sim.sim_env import SimEnv
+
+        if isinstance(env, SimEnv):
+            # Pass server/client objects to SimEnv if not already set
+            if env.server is None:
+                env.server = self.server
+            if env.client is None:
+                env.client = self.client
+            if env.server_objects is None:
+                env.server_objects = self.server_objects
+            if env.client_objects is None:
+                env.client_objects = self.client_objects
 
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)

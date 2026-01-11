@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
+
 # 1. Define Model, Data, and Training Function
 class SimpleModel(nn.Module):
     def __init__(self):
@@ -12,7 +13,8 @@ class SimpleModel(nn.Module):
     def forward(self, x):
         return self.fc(x)
 
-def train_loop():
+
+def train():
     # Setup data
     inputs = torch.randn(100, 10)
     labels = torch.randn(100, 1)
@@ -36,6 +38,7 @@ def train_loop():
             optimizer.step()
         print(f"Epoch {epoch+1}, Loss: {loss.item()}")
 
+
 # 2. Execute the training
 if __name__ == "__main__":
-    train_loop()
+    train()
