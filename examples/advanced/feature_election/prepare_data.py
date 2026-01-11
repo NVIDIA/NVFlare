@@ -184,9 +184,10 @@ def _split_non_iid(
         idx_k = np.where(y == k)[0]
         np.random.shuffle(idx_k)
 
-        # Split indices according to Dirichlet proportions
         proportions = (label_distribution[k] * len(idx_k)).astype(int)
-        proportions[-1] = len(idx_k) - proportions[:-1].sum()  # Ensure all assigned
+        # Ensure proportions sum correctly and no negative values
+        total_assigned = proportions[:-1].sum()
+        proportions[-1] = max(0, len(idx_k) - total_assigned)
 
         start = 0
         for i, prop in enumerate(proportions):
