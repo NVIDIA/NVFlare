@@ -1,11 +1,12 @@
+# Import ray data if using Ray Data, otherwise keep torch utils
+import ray.data
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from ray.train.torch import TorchTrainer, prepare_model, prepare_data_loader
 from ray import train
+from ray.train.torch import TorchTrainer, prepare_data_loader, prepare_model
 from torch.utils.data import DataLoader, TensorDataset
-# Import ray data if using Ray Data, otherwise keep torch utils
-import ray.data
+
 
 # 1. Define Model (same as above)
 class SimpleModel(nn.Module):
@@ -15,6 +16,7 @@ class SimpleModel(nn.Module):
 
     def forward(self, x):
         return self.fc(x)
+
 
 # 2. Wrap the training logic in a function
 def train_loop_per_worker():
@@ -43,7 +45,8 @@ def train_loop_per_worker():
             loss.backward()
             optimizer.step()
         # Report metrics back to Ray Train for tracking/checkpointing
-        train.report({"loss": loss.item(), "epoch": epoch+1})
+        train.report({"loss": loss.item(), "epoch": epoch + 1})
+
 
 # 3. Execute the distributed training
 if __name__ == "__main__":
