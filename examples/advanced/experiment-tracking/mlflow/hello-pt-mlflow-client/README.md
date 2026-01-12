@@ -19,7 +19,7 @@ This example demonstrates **site-specific (decentralized) MLflow tracking** usin
 This example shows how to configure per-client MLflow tracking:
 
 ```python
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 

@@ -11,7 +11,7 @@ as the deep learning training framework with **MLflow experiment tracking**.
 This example demonstrates PyTorch Lightning integration with MLflow tracking:
 
 ```python
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create FedAvg recipe for Lightning model
