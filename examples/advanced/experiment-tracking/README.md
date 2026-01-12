@@ -7,7 +7,7 @@ This section demonstrates how NVIDIA FLARE supports flexible experiment tracking
 These examples use the Recipe API with the `add_experiment_tracking()` utility for simplified configuration:
 
 ```python
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create your training recipe
