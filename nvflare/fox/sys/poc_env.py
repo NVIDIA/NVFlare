@@ -59,7 +59,12 @@ class _PocEnvValidator(BaseModel):
             raise ValueError("clients list cannot be empty")
 
         # Check if both num_clients and clients are specified and inconsistent
-        if self.clients is not None and self.num_clients is not None and self.num_clients > 0 and len(self.clients) != self.num_clients:
+        if (
+            self.clients is not None
+            and self.num_clients is not None
+            and self.num_clients > 0
+            and len(self.clients) != self.num_clients
+        ):
             raise ValueError(
                 f"Inconsistent: num_clients={self.num_clients} but clients list has {len(self.clients)} entries"
             )
