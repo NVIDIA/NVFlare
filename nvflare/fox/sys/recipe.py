@@ -149,14 +149,15 @@ class FoxRecipe(Recipe):
     def process_env(self, env: ExecEnv):
         """Pass server/client objects to the execution environment.
 
-        This allows SimEnv to receive the server/client objects from the recipe
-        without requiring them to be passed twice.
+        This allows SimEnv and FoxPocEnv to receive the server/client objects
+        from the recipe without requiring them to be passed twice.
         """
         # Import here to avoid circular dependency
         from nvflare.fox.sim.sim_env import SimEnv
+        from nvflare.fox.sys.poc_env import PocEnv
 
-        if isinstance(env, SimEnv):
-            # Pass server/client objects to SimEnv if not already set
+        if isinstance(env, (SimEnv, PocEnv)):
+            # Pass server/client objects to the environment if not already set
             if env.server is None:
                 env.server = self.server
             if env.client is None:
@@ -203,6 +204,9 @@ class FoxRecipe(Recipe):
         self.client_app.set_resource_dirs(resource_dirs)
 
     def finalize(self) -> FedJob:
+        print(f"FoxRecipe: Finalizing job '{self.job_name}'...")
+        print("  → Configuring server components...")
+
         server_obj_id = self.job.to_server(self.server_app.obj, "_server")
         job = self.job
 
@@ -225,6 +229,8 @@ class FoxRecipe(Recipe):
 
         job.to_server(controller, id="controller")
 
+        print("  → Configuring client components...")
+
         # add client config
         client_obj_id = job.to_clients(self.client_app.obj, "_client")
         c_collab_obj_ids, c_in_cf_arg, c_out_cf_arg, c_in_rf_arg, c_out_rf_arg = self._create_app_args(
@@ -242,6 +248,8 @@ class FoxRecipe(Recipe):
             resource_dirs=self.client_app.get_resource_dirs(),
         )
         job.to_clients(executor, id="executor", tasks=["*"])
+
+        print("  → Job finalized successfully")
         return job
 
     def _create_app_args(self, app: App, to_f):

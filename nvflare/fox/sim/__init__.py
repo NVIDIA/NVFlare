@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 from nvflare.fox.sim.sim_env import SimEnv
-from nvflare.fox.sim.simulator import Simulator
 
-__all__ = ["SimEnv", "Simulator"]
+__all__ = ["SimEnv", "FoxSimulator"]

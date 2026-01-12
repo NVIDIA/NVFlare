@@ -19,13 +19,13 @@ from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, Print
 from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_intime",
         server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),

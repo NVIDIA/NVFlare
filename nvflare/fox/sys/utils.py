@@ -24,9 +24,9 @@ from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
 def prepare_for_remote_call(cell, app, logger):
-    logger.info(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
+    logger.debug(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
     cell.register_request_cb(channel=MSG_CHANNEL, topic=MSG_TOPIC, cb=_call_app_method, app=app, logger=logger)
-    logger.info(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
+    logger.debug(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
 
 
 def _error_reply(error: str, logger) -> Message:

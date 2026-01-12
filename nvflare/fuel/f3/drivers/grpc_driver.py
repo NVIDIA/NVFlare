@@ -256,7 +256,7 @@ class GrpcDriver(BaseDriver):
                 channel = grpc.secure_channel(
                     address, options=self.options, credentials=get_grpc_client_credentials(params)
                 )
-                self.logger.info(f"created secure channel at {address}")
+                self.logger.debug(f"created secure channel at {address}")
             else:
                 self.logger.info("CLIENT: creating insecure channel")
                 channel = grpc.insecure_channel(address, options=self.options)

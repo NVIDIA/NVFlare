@@ -15,9 +15,9 @@
 """Fox Simulation Environment using nvflare.fox.sim.Simulator."""
 
 import os
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 
@@ -37,8 +37,8 @@ class SimEnv(ExecEnv):
         num_clients: Union[int, Tuple[int, int]] = 2,
         server: object = None,
         client: object = None,
-        server_objects: dict[str, object] = None,
-        client_objects: dict[str, object] = None,
+        server_objects: Dict[str, object] = None,
+        client_objects: Dict[str, object] = None,
         max_workers: int = 100,
         workspace_root: str = WORKSPACE_ROOT,
         extra: dict = None,
@@ -64,7 +64,7 @@ class SimEnv(ExecEnv):
         self.client_objects = client_objects
         self.max_workers = max_workers
         self.workspace_root = workspace_root
-        self._simulator: Optional[Simulator] = None
+        self._simulator: Optional[FoxSimulator] = None
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob using the Fox Simulator.
@@ -79,7 +79,12 @@ class SimEnv(ExecEnv):
         root_dir = os.path.join(self.workspace_root, experiment_name)
         os.makedirs(root_dir, exist_ok=True)
 
-        self._simulator = Simulator(
+        print(f"\n{'='*60}")
+        print("Fox SimEnv: Starting in-process simulation")
+        print(f"{'='*60}")
+        print(f"  → Creating simulator with {self.num_clients} clients...")
+
+        self._simulator = FoxSimulator(
             root_dir=root_dir,
             experiment_name=experiment_name,
             server=self.server,
@@ -90,8 +95,15 @@ class SimEnv(ExecEnv):
             num_clients=self.num_clients,
         )
 
+        print("  → Running simulation...")
+        print(f"{'='*60}\n")
+
         # Run the simulation
         self._simulator.run()
+
+        print(f"\n{'='*60}")
+        print("  → Simulation completed")
+        print(f"{'='*60}\n")
 
         return experiment_name
 

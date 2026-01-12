@@ -74,10 +74,10 @@ class CacheableObject(Downloadable):
     def set_transaction(self, tx_id, ref_id):
         tx_info = DownloadService.get_transaction_info(tx_id)
         self.num_receivers = tx_info.num_receivers
-        self.logger.info(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
+        self.logger.debug(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
 
     def downloaded_to_all(self):
-        self.logger.info(f"object has been downloaded to all {self.num_receivers} sites - clear cache")
+        self.logger.debug(f"object has been downloaded to all {self.num_receivers} sites - clear cache")
         self.clear_cache()
 
     def transaction_done(self, transaction_id: str, status: str):

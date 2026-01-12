@@ -14,7 +14,7 @@
 import copy
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
@@ -227,7 +227,7 @@ class AppRunner:
         return result
 
 
-class Simulator:
+class FoxSimulator:
 
     def __init__(
         self,
@@ -235,8 +235,8 @@ class Simulator:
         experiment_name: str,
         server,
         client,
-        server_objects: dict[str, object] = None,
-        client_objects: dict[str, object] = None,
+        server_objects: Dict[str, object] = None,
+        client_objects: Dict[str, object] = None,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
     ):

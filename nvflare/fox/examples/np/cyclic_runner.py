@@ -18,7 +18,7 @@ from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
-from nvflare.fox.sim.simulator import AppRunner
+from nvflare.fox.sim.foxsimulator import AppRunner
 
 
 def main():

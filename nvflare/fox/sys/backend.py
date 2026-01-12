@@ -70,7 +70,9 @@ class FlareBackend(Backend):
 
         timeout = call_opt.timeout
         if call_opt.expect_result:
-            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {func_name=} {call_opt}")
+            self.logger.debug(
+                f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {func_name=} {call_opt}"
+            )
 
             reply = self.cell.send_request(
                 channel=MSG_CHANNEL,
@@ -105,7 +107,7 @@ class FlareBackend(Backend):
                 raise RuntimeError(f"function {func_name} failed: {error}")
 
             result = reply.payload.get(CallReplyKey.RESULT)
-            self.logger.info(f"got result from {self.target_fqcn} {func_name=}")
+            self.logger.debug(f"got result from {self.target_fqcn} {func_name=}")
             return result
         else:
             # fire and forget

@@ -20,7 +20,7 @@ from .dec import supports_context
 
 def run_server(server_app: ServerApp, logger):
     server_ctx = server_app.new_context(caller=server_app.name, callee=server_app.name)
-    logger.info("initializing server app")
+    logger.debug("initializing server app")
     server_app.initialize(server_ctx)
 
     if not server_app.algos:

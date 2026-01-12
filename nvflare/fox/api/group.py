@@ -119,7 +119,7 @@ class Group:
                 the_backend = p.backend
 
                 with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
-                    self._logger.info(
+                    self._logger.debug(
                         f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
                     )
 

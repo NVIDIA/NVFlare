@@ -19,7 +19,7 @@ from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -56,7 +56,7 @@ def main():
 
     server = Controller(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], cyclic_rounds=2, avg_rounds=3)
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name=exp_name,
         server=server,

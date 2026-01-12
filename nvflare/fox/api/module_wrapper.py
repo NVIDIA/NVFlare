@@ -15,7 +15,10 @@
 """Wrapper to use a module's functions as Fox collab/algo methods."""
 
 import importlib
+import os
+import sys
 from types import ModuleType
+from typing import Union
 
 from .dec import _ATTR_PARAM_NAMES, _FLAG_ALGO, _FLAG_COLLAB, _FLAG_SUPPORT_CTX, get_param_names, is_collab
 
@@ -23,6 +26,87 @@ from .dec import _ATTR_PARAM_NAMES, _FLAG_ALGO, _FLAG_COLLAB, _FLAG_SUPPORT_CTX,
 def _is_algo(func):
     """Check if a function has the @fox.algo decorator."""
     return getattr(func, _FLAG_ALGO, False) is True
+
+
+def get_importable_module_name(module: ModuleType) -> str:
+    """Get an importable module name, handling __main__ case.
+
+    When a script is run as `python script.py`, its __name__ is '__main__',
+    which cannot be imported on remote machines. This function converts
+    '__main__' to the actual importable module path based on the file location.
+
+    Args:
+        module: A Python module object
+
+    Returns:
+        An importable module name string
+
+    Example:
+        # When running: python nvflare/fox/examples/test.py
+        # module.__name__ = '__main__'
+        # Returns: 'nvflare.fox.examples.test'
+    """
+    module_name = module.__name__
+
+    if module_name != "__main__":
+        return module_name
+
+    # Handle __main__ case: derive module name from file path
+    module_file = getattr(module, "__file__", None)
+    if not module_file:
+        raise ValueError(
+            "Cannot determine importable module name for __main__ module. "
+            "Please import the module explicitly instead of running it as a script, "
+            "or pass the module name string directly to ModuleWrapper."
+        )
+
+    # Convert file path to module name
+    # e.g., /path/to/nvflare/fox/examples/test.py -> nvflare.fox.examples.test
+    module_file = os.path.abspath(module_file)
+
+    # Remove .py extension
+    if module_file.endswith(".py"):
+        module_file = module_file[:-3]
+
+    # Find all possible module paths relative to sys.path entries
+    # We prefer longer (more qualified) paths over shorter ones
+    candidates = []
+
+    for path_entry in sys.path:
+        if not path_entry:
+            path_entry = os.getcwd()
+        path_entry = os.path.abspath(path_entry)
+
+        if module_file.startswith(path_entry + os.sep):
+            relative_path = module_file[len(path_entry) :].lstrip(os.sep)
+            # Convert path separators to dots
+            importable_name = relative_path.replace(os.sep, ".")
+            # Verify it's actually importable
+            try:
+                importlib.import_module(importable_name)
+                candidates.append(importable_name)
+            except ImportError:
+                continue
+
+    if not candidates:
+        raise ValueError(
+            f"Cannot determine importable module name from file: {module_file}. "
+            "Please ensure the module is in a package on sys.path, "
+            "or pass the module name string directly to ModuleWrapper."
+        )
+
+    # Prefer the longest path (most qualified) - this ensures we get
+    # 'nvflare.fox.examples.test' instead of just 'test'
+    # Also prioritize paths that start with 'nvflare.' as they're more likely
+    # to be the correct package path for this project
+    def score_candidate(name):
+        # Higher score = better
+        score = name.count(".")
+        if name.startswith("nvflare."):
+            score += 100  # Strong preference for nvflare package paths
+        return score
+
+    return max(candidates, key=score_candidate)
 
 
 class ModuleWrapper:
@@ -54,15 +138,40 @@ class ModuleWrapper:
     or included in job resources).
     """
 
-    def __init__(self, module: ModuleType):
+    def __init__(self, module: Union[ModuleType, str] = None):
         """Initialize wrapper with a module containing @fox.collab/@fox.algo functions.
 
         Args:
-            module: A Python module containing decorated functions.
+            module: A Python module object OR a fully qualified module name string.
+                    When a string is passed, the module will be imported.
+                    When no argument is passed (None), the wrapper is in an uninitialized
+                    state and will be set up by __setstate__ during unpickling.
+
+        Note:
+            For JSON config serialization (PocEnv), we store the module name as
+            self._module which matches the 'module' parameter. FLARE's _get_args()
+            looks for param or _param in __dict__, so _module matches 'module'.
+
+            When running as __main__, we convert to an importable module path
+            so that remote processes can import the same module.
         """
-        # Store module name for pickling (not the module object itself)
-        self._module_name = module.__name__
-        self._setup_methods(module)
+        if module is None:
+            # Uninitialized state - will be set up by __setstate__
+            self._module = None
+            return
+
+        if isinstance(module, ModuleType):
+            # Direct module object (SimEnv, in-process usage)
+            # Use get_importable_module_name to handle __main__ case
+            self._module = get_importable_module_name(module)
+            self._setup_methods(module)
+        elif isinstance(module, str):
+            # Module name string (PocEnv, JSON config reconstruction)
+            self._module = module
+            actual_module = importlib.import_module(module)
+            self._setup_methods(actual_module)
+        else:
+            raise TypeError(f"module must be a ModuleType or str, got {type(module)}")
 
     def _setup_methods(self, module: ModuleType):
         """Find and wrap all collab and algo functions from the module."""
@@ -123,15 +232,15 @@ class ModuleWrapper:
 
     def __deepcopy__(self, memo):
         """Support deepcopy for SimBackend."""
-        module = importlib.import_module(self._module_name)
+        module = importlib.import_module(self._module)
         return ModuleWrapper(module)
 
     def __getstate__(self):
         """Pickle support for FlareBackend - store only module name."""
-        return {"_module_name": self._module_name}
+        return {"_module": self._module}
 
     def __setstate__(self, state):
         """Unpickle support for FlareBackend - re-import and setup."""
-        self._module_name = state["_module_name"]
-        module = importlib.import_module(self._module_name)
+        self._module = state["_module"]
+        module = importlib.import_module(self._module)
         self._setup_methods(module)

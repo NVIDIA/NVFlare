@@ -26,12 +26,27 @@ from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import FoxAdaptor
 from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
 from .ws import FlareWorkspace
+
+_tensor_decomposer_registered = False
+
+
+def _register_tensor_decomposer():
+    """Register PyTorch TensorDecomposer for FOBS serialization (once per process)."""
+    global _tensor_decomposer_registered
+    if _tensor_decomposer_registered:
+        return
+    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+    if ok:
+        fobs.register(tensor_decomposer)
+    _tensor_decomposer_registered = True
 
 
 class _ClientInfo:
@@ -79,6 +94,9 @@ class FoxController(Controller, FoxAdaptor):
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="fox_call")
 
     def start_controller(self, fl_ctx: FLContext):
+        # Register PyTorch TensorDecomposer for tensor serialization over CellNet
+        _register_tensor_decomposer()
+
         engine = fl_ctx.get_engine()
 
         server_obj = engine.get_component(self.server_obj_id)
@@ -192,7 +210,7 @@ class FoxController(Controller, FoxAdaptor):
         )
 
         engine = fl_ctx.get_engine()
-        self.logger.info(f"server engine {type(engine)}")
+        self.logger.debug(f"server engine {type(engine)}")
         all_clients = engine.get_clients()
         num_clients = len(all_clients)
         for c in all_clients:
@@ -206,7 +224,7 @@ class FoxController(Controller, FoxAdaptor):
             fl_ctx=fl_ctx,
         )
         time_taken = time.time() - start_time
-        self.log_info(fl_ctx, f"client sync took {time_taken} seconds")
+        self.log_debug(fl_ctx, f"client sync took {time_taken} seconds")
 
         failed_clients = []
         for c, info in self.client_info.items():
@@ -220,7 +238,7 @@ class FoxController(Controller, FoxAdaptor):
             )
             return
 
-        self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
+        self.log_info(fl_ctx, f"successfully synced {len(self.client_info)} clients")
 
         # register msg CB for processing object calls
         self.cell = engine.get_cell()
@@ -245,7 +263,7 @@ class FoxController(Controller, FoxAdaptor):
 
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
-            self.log_info(fl_ctx, f"successfully synced client {client_name}")
+            self.log_debug(fl_ctx, f"successfully synced client {client_name}")
             collab_itf = result.get(SyncKey.COLLAB_INTERFACE)
             self.client_info[client_name] = _ClientInfo(collab_itf)
         else:

@@ -20,7 +20,7 @@ from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.pt.utils import parse_state_dict
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 from nvflare.fox.sys.downloader import Downloader, download_tensors
 from nvflare.fox.utils.tensor_receiver import TensorReceiver
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -146,7 +146,7 @@ def main():
 
     client = PTTrainer(delta=1.0)
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name="pt_fedavg_stream2",
         server=server,

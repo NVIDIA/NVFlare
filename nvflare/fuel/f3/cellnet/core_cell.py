@@ -805,7 +805,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if not self.int_listener:
             self.int_listener = self.connector_manager.get_internal_listener()
             if self.int_listener:
-                self.logger.info(
+                self.logger.debug(
                     f"{self.my_info.fqcn}: created backbone internal listener "
                     f"for {self.int_listener.get_connection_url()}"
                 )
@@ -834,7 +834,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 listener = self.connector_manager.get_external_listener(url, adhoc)
                 if listener:
                     if not adhoc:
-                        self.logger.info(f"{self.my_info.fqcn}: created backbone external listener for {url}")
+                        self.logger.debug(f"{self.my_info.fqcn}: created backbone external listener for {url}")
                     else:
                         self.logger.info(
                             f"{self.my_info.fqcn}: created adhoc external listener {listener.handle} "
@@ -864,14 +864,14 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"{self.my_info.fqcn}: creating connector to {self.root_url}")
         self.bb_ext_connector = self.connector_manager.get_external_connector(self.root_url, False)
         if self.bb_ext_connector:
-            self.logger.info(f"{self.my_info.fqcn}: created backbone external connector to {self.root_url}")
+            self.logger.debug(f"{self.my_info.fqcn}: created backbone external connector to {self.root_url}")
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone external connector to {self.root_url}")
 
     def _create_internal_connector(self, url: str, resources=None):
         self.bb_int_connector = self.connector_manager.get_internal_connector(url, resources)
         if self.bb_int_connector:
-            self.logger.info(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
+            self.logger.debug(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal connector to {url} on parent")
 

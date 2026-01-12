@@ -17,7 +17,7 @@ class CallOption:
         self,
         expect_result: bool = True,
         blocking: bool = True,
-        timeout: float = 5.0,
+        timeout: float = 60.0,
         secure: bool = False,
         optional: bool = False,
         target=None,
@@ -28,7 +28,7 @@ class CallOption:
         Args:
             expect_result: whether result is expected from the remote object.
             blocking: whether the call is blocking. Only for group calls.
-            timeout: when expecting result, the max number of secs to wait for result.
+            timeout: when expecting result, the max number of secs to wait for result. Default is 60 seconds.
             secure: whether to use P2P secure messaging.
             optional: whether the call is optional.
             target: name of the collab object to be called.

@@ -16,13 +16,13 @@ import logging
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_stream",
         server=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=4),

@@ -353,7 +353,7 @@ class AioGrpcDriver(BaseDriver):
                 channel = grpc.aio.secure_channel(
                     address, options=self.options, credentials=get_grpc_client_credentials(params)
                 )
-                self.logger.info(f"created secure channel at {address}")
+                self.logger.debug(f"created secure channel at {address}")
             else:
                 channel = grpc.aio.insecure_channel(address, options=self.options)
                 self.logger.info(f"created insecure channel at {address}")

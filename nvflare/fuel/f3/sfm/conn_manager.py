@@ -259,7 +259,7 @@ class ConnManager(ConnMonitor):
         if connector.started:
             return
 
-        log.info(f"Connector {connector} is starting")
+        log.debug(f"Connector {connector} is starting")
 
         try:
             self.conn_mgr_executor.submit(self.start_connector_task, connector)
@@ -321,13 +321,13 @@ class ConnManager(ConnMonitor):
             state = connection.state
             connector = connection.connector
             if state == ConnState.CONNECTED:
-                log.info(f"Connection {connection} is created: PID: {os.getpid()}")
+                log.debug(f"Connection {connection} is created: PID: {os.getpid()}")
                 self.handle_new_connection(connection)
                 with self.lock:
                     connector.total_conns += 1
                     connector.curr_conns += 1
             elif state == ConnState.CLOSED:
-                log.info(f"Connection {connection} is closed PID: {os.getpid()}")
+                log.debug(f"Connection {connection} is closed PID: {os.getpid()}")
                 self.close_connection(connection)
                 with self.lock:
                     connector.curr_conns -= 1

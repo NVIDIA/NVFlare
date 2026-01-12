@@ -94,7 +94,7 @@ class AuxRunner(FLComponent):
             if topic in self.topic_table:
                 raise ValueError(f"handler already registered for topic {topic}")
             self.topic_table[topic] = message_handle_func
-            self.logger.info(f"registered aux handler for topic {topic}")
+            self.logger.debug(f"registered aux handler for topic {topic}")
 
     def _process_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         """Call to process the request.

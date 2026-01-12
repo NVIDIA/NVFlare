@@ -18,7 +18,7 @@ from nvflare.fox.examples import get_experiment_root
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
         parallel=3,
     )
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_para_tc",
         server=server,

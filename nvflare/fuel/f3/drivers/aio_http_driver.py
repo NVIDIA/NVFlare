@@ -192,7 +192,7 @@ class AioHttpDriver(BaseDriver):
                 log.info(f"Unknown message type {msg.type} received, ignored")
 
             if conn.closing:
-                log.info(f"Connection {conn} is closed by calling close()")
+                log.debug(f"Connection {conn} is closed by calling close()")
                 break
 
     async def _async_shutdown(self):

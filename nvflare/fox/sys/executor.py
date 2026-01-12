@@ -26,12 +26,27 @@ from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import FoxAdaptor
 from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
 from .ws import FlareWorkspace
+
+_tensor_decomposer_registered = False
+
+
+def _register_tensor_decomposer():
+    """Register PyTorch TensorDecomposer for FOBS serialization (once per process)."""
+    global _tensor_decomposer_registered
+    if _tensor_decomposer_registered:
+        return
+    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+    if ok:
+        fobs.register(tensor_decomposer)
+    _tensor_decomposer_registered = True
 
 
 class FoxExecutor(Executor, FoxAdaptor):
@@ -67,6 +82,9 @@ class FoxExecutor(Executor, FoxAdaptor):
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="fox_call")
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
+        # Register PyTorch TensorDecomposer for tensor serialization over CellNet
+        _register_tensor_decomposer()
+
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()
         client_obj = engine.get_component(self.client_obj_id)
@@ -95,7 +113,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         if self.client_ctx:
-            self.logger.info(f"finalizing client app {self.client_app.name}")
+            self.logger.debug(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
         self.thread_executor.shutdown(wait=True, cancel_futures=True)
 
@@ -170,7 +188,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         server_collab_interface = shareable.get(SyncKey.COLLAB_INTERFACE)
         client_collab_interface = self.client_app.get_collab_interface()
-        self.log_info(fl_ctx, f"{client_collab_interface=} {server_collab_interface=}")
+        self.log_debug(fl_ctx, f"{client_collab_interface=} {server_collab_interface=}")
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
@@ -197,7 +215,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
         self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
-        self.logger.info(f"initializing client app {self.client_app.name}")
+        self.logger.debug(f"initializing client app {self.client_app.name}")
         self.client_app.initialize(self.client_ctx)
 
         reply = make_reply(ReturnCode.OK)

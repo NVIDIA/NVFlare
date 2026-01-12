@@ -27,7 +27,7 @@ from nvflare.fox.examples.np.algos.utils import parse_state_dict as parse_np
 from nvflare.fox.examples.pt.utils import add as add_pt
 from nvflare.fox.examples.pt.utils import div as div_pt
 from nvflare.fox.examples.pt.utils import parse_state_dict as parse_pt
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.foxsimulator import FoxSimulator
 from nvflare.fox.sys.downloader import Downloader, download_arrays, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -209,7 +209,7 @@ def main():
 
     client = PTTrainer(delta=1.0)
 
-    simulator = Simulator(
+    simulator = FoxSimulator(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_mixed",
         server=server,
