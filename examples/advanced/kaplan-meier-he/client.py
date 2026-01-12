@@ -113,7 +113,7 @@ def main():
             hist_obs = {}
             hist_cen = {}
             max_hist_idx = max(event_table.index.values.astype(int))
-            for idx in range(max_hist_idx):
+            for idx in range(max_hist_idx + 1):
                 hist_obs[idx] = 0
                 hist_cen[idx] = 0
             # Assign values
