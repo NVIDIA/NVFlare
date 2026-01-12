@@ -37,7 +37,9 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         model_name: Dictionary mapping model identifiers to filenames, e.g.,
             {"model_1": "model_1.npy", "model_2": "model_2.npy"}.
             If None, defaults to {"server": "server.npy"}.
-        framework: Framework type for the recipe. Defaults to FrameworkType.RAW (used for NumPy).
+        framework: Framework type for the recipe. For NumPy-based workflows, use
+            FrameworkType.RAW, which indicates that the job does not rely on a
+            deep-learning framework adapter and operates directly on NumPy arrays.
         submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
         validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
     """

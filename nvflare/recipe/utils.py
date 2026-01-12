@@ -92,6 +92,10 @@ def add_cross_site_evaluation(
 
     **For standalone CSE without training**, use `NumpyCrossSiteEvalRecipe` instead.
 
+    **Note**: This utility is designed for adding CSE to training recipes. If you call it on
+    a CSE-only recipe (e.g., `NumpyCrossSiteEvalRecipe`), it will detect this and skip
+    adding duplicate validators automatically.
+
     Example:
         ```python
         from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
@@ -112,6 +116,12 @@ def add_cross_site_evaluation(
 
     Raises:
         ValueError: If the recipe doesn't have a framework attribute or uses an unsupported framework.
+
+    Note:
+        - Currently supports PyTorch and NumPy frameworks. TensorFlow support may be added in the future.
+        - For NumPy recipes, validators are automatically added to clients. This is skipped for
+          CSE-only recipes (like `NumpyCrossSiteEvalRecipe`) which already have validators configured.
+        - For PyTorch recipes, client-side validators are typically already configured in the recipe.
     """
     from nvflare.app_common.app_constant import AppConstants
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
@@ -134,9 +144,17 @@ def add_cross_site_evaluation(
     }
 
     if framework not in framework_to_locator:
+        # Build user-friendly error message with supported frameworks
+        supported_list = []
+        for fw_type in framework_to_locator.keys():
+            # Format: "pytorch (FrameworkType.PYTORCH)" and "numpy (FrameworkType.RAW)"
+            supported_list.append(f'"{fw_type.value}" (FrameworkType.{fw_type.name})')
+        supported_str = ", ".join(supported_list)
+
         raise ValueError(
             f"Unsupported framework for cross-site evaluation: {framework}. "
-            f"Supported frameworks: {list(framework_to_locator.keys())}"
+            f"Currently supported: {supported_str}. "
+            f"TensorFlow support may be added in the future."
         )
 
     model_locator_type = framework_to_locator[framework]
@@ -170,10 +188,18 @@ def add_cross_site_evaluation(
     )
     recipe.job.to_server(eval_controller)
 
-    # Auto-add validators for NumPy recipes
+    # Auto-add validators for NumPy recipes (if not already a CSE-only recipe)
     if framework == FrameworkType.RAW:
-        # Import NPValidator and add to clients
+        # Check if this is already a standalone CSE recipe (which already has validators)
+        # NumpyCrossSiteEvalRecipe is CSE-only and already configures validators
         from nvflare.app_common.np.np_validator import NPValidator
 
-        validator = NPValidator()
-        recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
+        # Check if this is a CSE-only recipe by checking the recipe class name
+        # CSE-only recipes already have validators configured, so we skip adding them
+        recipe_class_name = type(recipe).__name__
+        is_cse_only_recipe = "CrossSiteEval" in recipe_class_name or "CSE" in recipe_class_name
+
+        if not is_cse_only_recipe:
+            # For training recipes (e.g., NumpyFedAvgRecipe), add validator for CSE
+            validator = NPValidator()
+            recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
