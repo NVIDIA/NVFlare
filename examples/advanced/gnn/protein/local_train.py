@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tqdm
+from filelock import FileLock
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import f1_score
 from sklearn.multioutput import MultiOutputClassifier
@@ -66,8 +67,12 @@ def main():
     writer = SummaryWriter(os.path.join(args.output_path, str(args.client_id)))
 
     # Create PPI dataset for training.
-    train_dataset = PPI(args.data_path, split="train")
-    val_dataset = PPI(args.data_path, split="val")
+    # Use file lock to ensure only one process downloads/processes at a time
+    os.makedirs(args.data_path, exist_ok=True)
+    lock_file = os.path.join(args.data_path, ".download.lock")
+    with FileLock(lock_file):
+        train_dataset = PPI(args.data_path, split="train")
+        val_dataset = PPI(args.data_path, split="val")
 
     # Group all training graphs into a single graph to perform sampling:
     train_data = Batch.from_data_list(train_dataset)
