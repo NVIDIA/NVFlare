@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.client import Client, from_dict
 from nvflare.apis.event_type import EventType
@@ -32,7 +32,8 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .adaptor import FoxAdaptor
 from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
-from .utils import prepare_for_remote_call
+from .subprocess_launcher import SubprocessLauncher
+from .utils import prepare_for_remote_call, prepare_for_subprocess_call
 from .ws import FlareWorkspace
 
 _tensor_decomposer_registered = False
@@ -50,6 +51,16 @@ def _register_tensor_decomposer():
 
 
 class FoxExecutor(Executor, FoxAdaptor):
+    """Fox Executor for client-side execution.
+
+    Supports two execution modes:
+    - inprocess=True (default): Execute @fox.collab methods in the same process
+    - inprocess=False: Spawn a subprocess for execution (e.g., for torchrun DDP)
+
+    When inprocess=False, the executor spawns a FoxWorker subprocess using the
+    specified launcher command (e.g., "torchrun --nproc_per_node=4"). The worker
+    connects back to the executor via CellNet and handles the actual training.
+    """
 
     def __init__(
         self,
@@ -62,7 +73,31 @@ class FoxExecutor(Executor, FoxAdaptor):
         props: Dict[str, Any] = None,
         resource_dirs: Dict[str, str] = None,
         max_call_threads=100,
+        # Subprocess execution options
+        inprocess: bool = True,
+        subprocess_launcher: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
+        """Initialize FoxExecutor.
+
+        Args:
+            client_obj_id: ID of the client object component.
+            collab_obj_ids: IDs of additional collab objects.
+            incoming_call_filters: Filters for incoming calls.
+            outgoing_call_filters: Filters for outgoing calls.
+            incoming_result_filters: Filters for incoming results.
+            outgoing_result_filters: Filters for outgoing results.
+            props: Additional properties.
+            resource_dirs: Resource directories.
+            max_call_threads: Maximum threads for call handling.
+            inprocess: If True, execute in-process. If False, use subprocess.
+            subprocess_launcher: Launcher command for subprocess mode
+                (e.g., "torchrun --nproc_per_node=4").
+            training_module: Python module containing @fox.collab methods
+                (required when inprocess=False).
+            subprocess_timeout: Timeout for subprocess operations.
+        """
         Executor.__init__(self)
         FoxAdaptor.__init__(
             self,
@@ -80,6 +115,17 @@ class FoxExecutor(Executor, FoxAdaptor):
         self.client_app = None
         self.client_ctx = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="fox_call")
+
+        # Subprocess execution options
+        self.inprocess = inprocess
+        self.subprocess_launcher = subprocess_launcher
+        self.training_module = training_module
+        self.subprocess_timeout = subprocess_timeout
+        self._subprocess_launcher: Optional[SubprocessLauncher] = None
+
+        # Validate subprocess options
+        if not inprocess and not training_module:
+            raise ValueError("training_module is required when inprocess=False")
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         # Register PyTorch TensorDecomposer for tensor serialization over CellNet
@@ -112,6 +158,12 @@ class FoxExecutor(Executor, FoxAdaptor):
             self.system_panic(err, fl_ctx)
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
+        # Stop subprocess if running
+        if self._subprocess_launcher:
+            self.logger.info("Stopping subprocess worker...")
+            self._subprocess_launcher.stop()
+            self._subprocess_launcher = None
+
         if self.client_ctx:
             self.logger.debug(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
@@ -192,12 +244,24 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
+        client_name = fl_ctx.get_identity_name()
 
-        prepare_for_remote_call(
-            cell=cell,
-            app=self.client_app,
-            logger=self.logger,
-        )
+        if self.inprocess:
+            # In-process mode: execute methods directly
+            prepare_for_remote_call(
+                cell=cell,
+                app=self.client_app,
+                logger=self.logger,
+            )
+        else:
+            # Subprocess mode: spawn worker and forward calls
+            self._start_subprocess_worker(cell, client_name)
+            prepare_for_subprocess_call(
+                cell=cell,
+                app=self.client_app,
+                subprocess_launcher=self._subprocess_launcher,
+                logger=self.logger,
+            )
 
         # build proxies
         job_id = fl_ctx.get_job_id()
@@ -221,3 +285,21 @@ class FoxExecutor(Executor, FoxAdaptor):
         reply = make_reply(ReturnCode.OK)
         reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface
         return reply
+
+    def _start_subprocess_worker(self, cell, client_name: str):
+        """Start the subprocess worker for distributed training."""
+        self.logger.info(f"Starting subprocess worker for {client_name}...")
+        self.logger.info(f"  Training module: {self.training_module}")
+        if self.subprocess_launcher:
+            self.logger.info(f"  Launcher: {self.subprocess_launcher}")
+
+        self._subprocess_launcher = SubprocessLauncher(
+            site_name=client_name,
+            training_module=self.training_module,
+            parent_cell=cell,
+            launcher_cmd=self.subprocess_launcher,
+            subprocess_timeout=self.subprocess_timeout,
+        )
+
+        if not self._subprocess_launcher.start():
+            raise RuntimeError("Failed to start subprocess worker")

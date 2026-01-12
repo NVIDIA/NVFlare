@@ -173,6 +173,11 @@ class ModuleWrapper:
         else:
             raise TypeError(f"module must be a ModuleType or str, got {type(module)}")
 
+    @property
+    def module_name(self) -> str:
+        """Get the module name."""
+        return self._module
+
     def _setup_methods(self, module: ModuleType):
         """Find and wrap all collab and algo functions from the module."""
         for name in dir(module):

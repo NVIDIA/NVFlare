@@ -81,6 +81,11 @@ class FoxRecipe(Recipe):
         max_call_threads_for_server=100,
         max_call_threads_for_client=100,
         min_clients: int = 1,
+        # Subprocess execution options (for distributed training like torchrun)
+        inprocess: bool = True,
+        subprocess_launcher: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
         """Create a FoxRecipe for federated learning.
 
@@ -94,6 +99,14 @@ class FoxRecipe(Recipe):
             max_call_threads_for_server: Max threads for server calls.
             max_call_threads_for_client: Max threads for client calls.
             min_clients: Minimum number of clients required.
+            inprocess: If True (default), execute training in-process.
+                If False, spawn subprocess for training (e.g., for torchrun DDP).
+            subprocess_launcher: Launcher command for subprocess mode
+                (e.g., "torchrun --nproc_per_node=4").
+            training_module: Python module containing @fox.collab methods.
+                Required when inprocess=False. If None and using module-based
+                client, will auto-detect from the client module.
+            subprocess_timeout: Timeout for subprocess operations.
 
         Examples:
             # Class-based (traditional)
@@ -105,6 +118,15 @@ class FoxRecipe(Recipe):
 
             # Simplest: use caller's module (contains both @fox.algo and @fox.collab)
             recipe = FoxRecipe(job_name="job", min_clients=5)
+
+            # Subprocess mode for multi-GPU DDP training
+            recipe = FoxRecipe(
+                job_name="fedavg_ddp",
+                min_clients=2,
+                inprocess=False,
+                subprocess_launcher="torchrun --nproc_per_node=4",
+                training_module="my_training",
+            )
         """
         check_str("job_name", job_name)
         check_positive_number("sync_task_timeout", sync_task_timeout)
@@ -142,6 +164,24 @@ class FoxRecipe(Recipe):
         self.max_call_threads_for_server = max_call_threads_for_server
         self.max_call_threads_for_client = max_call_threads_for_client
         self.min_clients = min_clients
+
+        # Subprocess execution options
+        self.inprocess = inprocess
+        self.subprocess_launcher = subprocess_launcher
+        self.subprocess_timeout = subprocess_timeout
+
+        # Auto-detect training_module from client if not provided
+        if training_module:
+            self.training_module = training_module
+        elif not inprocess and isinstance(self.client, ModuleWrapper):
+            # Get module name from ModuleWrapper
+            self.training_module = self.client.module_name
+        else:
+            self.training_module = None
+
+        # Validate subprocess options
+        if not inprocess and not self.training_module:
+            raise ValueError("training_module is required when inprocess=False")
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
@@ -246,6 +286,11 @@ class FoxRecipe(Recipe):
             max_call_threads=self.max_call_threads_for_client,
             props=self.client_app.get_props(),
             resource_dirs=self.client_app.get_resource_dirs(),
+            # Subprocess execution options
+            inprocess=self.inprocess,
+            subprocess_launcher=self.subprocess_launcher,
+            training_module=self.training_module,
+            subprocess_timeout=self.subprocess_timeout,
         )
         job.to_clients(executor, id="executor", tasks=["*"])
 

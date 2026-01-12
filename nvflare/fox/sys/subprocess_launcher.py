@@ -40,12 +40,18 @@ from .worker import (
     ENV_PARENT_FQCN,
     ENV_PARENT_URL,
     ENV_SITE_NAME,
+    ENV_SUBPROCESS_TIMEOUT,
+    ENV_TRACKING_TYPE,
     ENV_WORKER_ID,
     WORKER_CALL_TOPIC,
     WORKER_CHANNEL,
     WORKER_READY_TOPIC,
     WORKER_SHUTDOWN_TOPIC,
 )
+
+# Default timeout values (can be overridden via constructor)
+DEFAULT_SHUTDOWN_TIMEOUT = 5.0
+DEFAULT_PROCESS_WAIT_TIMEOUT = 10.0
 
 
 class SubprocessLauncher:
@@ -77,6 +83,9 @@ class SubprocessLauncher:
         launcher_cmd: Optional[str] = None,
         subprocess_timeout: float = 300.0,
         worker_id: str = "0",
+        shutdown_timeout: float = DEFAULT_SHUTDOWN_TIMEOUT,
+        process_wait_timeout: float = DEFAULT_PROCESS_WAIT_TIMEOUT,
+        tracking_type: Optional[str] = None,
     ):
         """Initialize SubprocessLauncher.
 
@@ -86,8 +95,11 @@ class SubprocessLauncher:
             parent_cell: CellNet cell of the parent FoxExecutor
             launcher_cmd: Optional launcher command (e.g., "torchrun --nproc_per_node=4")
                          If None, runs FoxWorker directly without a launcher.
-            subprocess_timeout: Timeout for subprocess operations
+            subprocess_timeout: Timeout for subprocess call operations.
             worker_id: Unique ID for this worker (default "0")
+            shutdown_timeout: Timeout for sending shutdown signal.
+            process_wait_timeout: Timeout for waiting for process to terminate.
+            tracking_type: Type of experiment tracking (e.g., "mlflow", "tensorboard", "wandb").
         """
         self.site_name = site_name
         self.training_module = training_module
@@ -95,6 +107,9 @@ class SubprocessLauncher:
         self.launcher_cmd = launcher_cmd
         self.subprocess_timeout = subprocess_timeout
         self.worker_id = worker_id
+        self.shutdown_timeout = shutdown_timeout
+        self.process_wait_timeout = process_wait_timeout
+        self.tracking_type = tracking_type
 
         self.logger = get_obj_logger(self)
         self._process: Optional[subprocess.Popen] = None
@@ -151,6 +166,11 @@ class SubprocessLauncher:
         env[ENV_PARENT_FQCN] = self.parent_cell.get_fqcn()
         env[ENV_SITE_NAME] = self.site_name
         env[ENV_WORKER_ID] = self.worker_id
+        env[ENV_SUBPROCESS_TIMEOUT] = str(self.subprocess_timeout)
+
+        # Add tracking type if configured
+        if self.tracking_type:
+            env[ENV_TRACKING_TYPE] = self.tracking_type
 
         # Ensure the training module can be imported
         if "PYTHONPATH" in env:
@@ -299,7 +319,7 @@ class SubprocessLauncher:
                     topic=WORKER_SHUTDOWN_TOPIC,
                     target=self._worker_fqcn,
                     request=Message(payload={}),
-                    timeout=5.0,
+                    timeout=self.shutdown_timeout,
                 )
             except Exception as e:
                 self.logger.warning(f"Error sending shutdown signal: {e}")
@@ -308,7 +328,7 @@ class SubprocessLauncher:
         if self._process:
             try:
                 self._process.terminate()
-                self._process.wait(timeout=10)
+                self._process.wait(timeout=self.process_wait_timeout)
             except subprocess.TimeoutExpired:
                 self._process.kill()
             except Exception as e:

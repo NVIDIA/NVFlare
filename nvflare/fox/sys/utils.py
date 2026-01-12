@@ -24,9 +24,28 @@ from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
 def prepare_for_remote_call(cell, app, logger):
+    """Register callback for in-process method execution."""
     logger.debug(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
     cell.register_request_cb(channel=MSG_CHANNEL, topic=MSG_TOPIC, cb=_call_app_method, app=app, logger=logger)
     logger.debug(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
+
+
+def prepare_for_subprocess_call(cell, app, subprocess_launcher, logger):
+    """Register callback for subprocess method execution.
+
+    Instead of executing methods locally, this forwards calls to the
+    subprocess worker via SubprocessLauncher.
+    """
+    logger.debug(f"register subprocess cb for cell {cell.get_fqcn()}")
+    cell.register_request_cb(
+        channel=MSG_CHANNEL,
+        topic=MSG_TOPIC,
+        cb=_call_subprocess_method,
+        app=app,
+        subprocess_launcher=subprocess_launcher,
+        logger=logger,
+    )
+    logger.debug(f"registered subprocess request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
 
 
 def _error_reply(error: str, logger) -> Message:
@@ -124,3 +143,58 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     except Exception as ex:
         secure_log_traceback(logger)
         return _error_reply(f"exception {type(ex)}", logger)
+
+
+def _call_subprocess_method(request: Message, app: App, subprocess_launcher, logger) -> Message:
+    """Handle remote call by forwarding to subprocess worker.
+
+    This is used in subprocess mode where the actual training runs in a
+    separate process (e.g., launched via torchrun for multi-GPU DDP).
+    """
+    logger.debug("got a remote call (forwarding to subprocess)")
+    payload = request.payload
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"request payload must be dict but got {type(payload)}")
+
+    caller = payload.get(ObjectCallKey.CALLER)
+    if not caller:
+        return _error_reply(f"missing '{ObjectCallKey.CALLER}' from call", logger)
+
+    method_name = payload.get(ObjectCallKey.METHOD_NAME)
+    if not method_name:
+        return _error_reply(f"missing '{ObjectCallKey.METHOD_NAME}' from call", logger)
+
+    target_name = payload.get(ObjectCallKey.TARGET_NAME)
+    if not isinstance(target_name, str):
+        return _error_reply(
+            f"bad '{ObjectCallKey.TARGET_NAME}' from call: expect str but got {type(target_name)}",
+            logger,
+        )
+
+    method_args = payload.get(ObjectCallKey.ARGS)
+    if not method_args:
+        method_args = []
+    elif not isinstance(method_args, (list, tuple)):
+        return _error_reply(f"bad method args: should be list/tuple but got {type(method_args)}", logger)
+
+    method_kwargs = payload.get(ObjectCallKey.KWARGS)
+    if not method_kwargs:
+        method_kwargs = {}
+    elif not isinstance(method_kwargs, dict):
+        return _error_reply(f"bad method kwargs: should be dict but got {type(method_kwargs)}", logger)
+
+    # Forward call to subprocess worker
+    try:
+        logger.debug(f"forwarding {method_name} to subprocess worker")
+        result = subprocess_launcher.call(method_name, args=tuple(method_args), kwargs=method_kwargs)
+
+        # Apply result filters (still done in parent process)
+        ctx = app.new_context(caller=caller, callee=app.name)
+        result = app.apply_outgoing_result_filters(target_name, method_name, result, ctx)
+
+        return new_cell_message(
+            headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}
+        )
+    except Exception as ex:
+        secure_log_traceback(logger)
+        return _error_reply(f"subprocess exception: {type(ex).__name__}: {ex}", logger)

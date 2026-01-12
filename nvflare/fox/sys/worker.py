@@ -63,12 +63,40 @@ ENV_PARENT_URL = "FOX_PARENT_URL"
 ENV_PARENT_FQCN = "FOX_PARENT_FQCN"
 ENV_SITE_NAME = "FOX_SITE_NAME"
 ENV_WORKER_ID = "FOX_WORKER_ID"
+ENV_SUBPROCESS_TIMEOUT = "FOX_SUBPROCESS_TIMEOUT"
+ENV_TRACKING_TYPE = "FOX_TRACKING_TYPE"
 
 # CellNet channel and topics for worker communication
 WORKER_CHANNEL = "fox_worker"
 WORKER_CALL_TOPIC = "call"
 WORKER_READY_TOPIC = "ready"
 WORKER_SHUTDOWN_TOPIC = "shutdown"
+
+# Default timeout values
+DEFAULT_READY_SIGNAL_TIMEOUT = 30.0
+DEFAULT_SUBPROCESS_TIMEOUT = 300.0
+
+# Global tracking writer for subprocess (set during worker startup)
+_tracking_writer = None
+
+
+def get_tracking_writer():
+    """Get the subprocess tracking writer.
+
+    This can be called from user's training code to get a writer for logging
+    metrics when running in subprocess mode.
+
+    Returns:
+        The tracking writer, or None if not in subprocess mode or not configured.
+
+    Example:
+        from nvflare.fox.sys.worker import get_tracking_writer
+
+        writer = get_tracking_writer()
+        if writer:
+            writer.log_metric("loss", loss_value, step=epoch)
+    """
+    return _tracking_writer
 
 
 def _register_tensor_decomposer():
@@ -113,6 +141,13 @@ class FoxWorker:
                 f"This module should be launched by FoxExecutor, not directly. "
                 f"Required: {ENV_PARENT_URL}, {ENV_PARENT_FQCN}"
             )
+
+        # Read timeout configuration from environment
+        timeout_str = os.environ.get(ENV_SUBPROCESS_TIMEOUT, str(DEFAULT_SUBPROCESS_TIMEOUT))
+        try:
+            self.subprocess_timeout = float(timeout_str)
+        except ValueError:
+            self.subprocess_timeout = DEFAULT_SUBPROCESS_TIMEOUT
 
         self.training_app = None
         self.cell: Optional[CoreCell] = None
@@ -222,7 +257,7 @@ class FoxWorker:
                 topic=WORKER_READY_TOPIC,
                 target=self.parent_fqcn,
                 request=ready_msg,
-                timeout=30.0,
+                timeout=self.subprocess_timeout,
             )
             if reply:
                 self.logger.info("Ready - waiting for training calls")
@@ -231,6 +266,35 @@ class FoxWorker:
                 self.logger.warning("No acknowledgment from parent")
         except Exception as e:
             self.logger.error(f"Failed to signal ready: {e}")
+
+    def _setup_tracking(self):
+        """Set up tracking writer for metrics collection.
+
+        Creates a SubprocessWriter that sends metrics to the parent
+        FoxExecutor via CellNet. The executor then forwards them to
+        the configured tracking receiver (MLflow, TensorBoard, etc.).
+        """
+        global _tracking_writer
+
+        # Check if tracking is enabled (set by FoxExecutor)
+        tracking_enabled = os.environ.get(ENV_TRACKING_TYPE)
+        if not tracking_enabled:
+            self.logger.debug("Tracking not enabled")
+            return
+
+        try:
+            from nvflare.fox.tracking import SubprocessWriter
+
+            writer = SubprocessWriter(
+                cell=self.cell,
+                parent_fqcn=self.parent_fqcn,
+                timeout=self.subprocess_timeout,
+                fire_and_forget=True,  # Don't block training for metric sends
+            )
+            _tracking_writer = writer
+            self.logger.info("Subprocess tracking writer configured")
+        except Exception as e:
+            self.logger.warning(f"Failed to set up tracking: {e}")
 
     def start(self):
         """Start the worker and wait for calls from parent."""
@@ -256,6 +320,9 @@ class FoxWorker:
 
             # Give cell time to connect
             time.sleep(0.5)
+
+            # Set up tracking if configured
+            self._setup_tracking()
 
             # Signal ready to parent
             self._signal_ready()
