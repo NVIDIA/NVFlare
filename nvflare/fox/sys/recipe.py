@@ -11,10 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
+import inspect
+import sys
+from types import ModuleType
+from typing import Dict, List, Optional
 
 from nvflare.fox.api.app import App, ClientApp, ServerApp
 from nvflare.fox.api.filter import FilterChain
+from nvflare.fox.api.module_wrapper import ModuleWrapper
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv, Recipe
@@ -23,40 +27,115 @@ from .controller import FoxController
 from .executor import FoxExecutor
 
 
+def _get_caller_module(stack_level: int = 2) -> Optional[ModuleType]:
+    """Get the module of the caller.
+
+    Args:
+        stack_level: How many frames to go back (2 = caller of the function that called this)
+
+    Returns:
+        The caller's module
+    """
+    frame = inspect.currentframe()
+    try:
+        # Go back stack_level frames
+        for _ in range(stack_level):
+            if frame is not None:
+                frame = frame.f_back
+        if frame is not None:
+            module_name = frame.f_globals.get("__name__", "__main__")
+            return sys.modules.get(module_name)
+    finally:
+        del frame
+    return None
+
+
+def _wrap_if_module(obj):
+    """Wrap a module in ModuleWrapper if needed.
+
+    This allows users to pass either:
+    - A class instance (used as-is)
+    - A Python module containing @fox.collab/@fox.algo functions (auto-wrapped)
+
+    Args:
+        obj: Either a class instance or a Python module
+
+    Returns:
+        The original object or a ModuleWrapper if it was a module
+    """
+    if isinstance(obj, ModuleType):
+        return ModuleWrapper(obj)
+    return obj
+
+
 class FoxRecipe(Recipe):
 
     def __init__(
         self,
         job_name: str,
-        server: object,
-        client: object,
-        server_objects: dict[str, object] = None,
-        client_objects: dict[str, object] = None,
+        server: Optional[object] = None,
+        client: Optional[object] = None,
+        server_objects: Optional[Dict[str, object]] = None,
+        client_objects: Optional[Dict[str, object]] = None,
         sync_task_timeout=5,
         max_call_threads_for_server=100,
         max_call_threads_for_client=100,
         min_clients: int = 1,
     ):
+        """Create a FoxRecipe for federated learning.
+
+        Args:
+            job_name: Name of the job.
+            server: Server object with @fox.algo methods. If None, uses the caller's module.
+            client: Client object with @fox.collab methods. If None, uses the caller's module.
+            server_objects: Additional named objects for the server.
+            client_objects: Additional named objects for clients.
+            sync_task_timeout: Timeout for synchronous tasks.
+            max_call_threads_for_server: Max threads for server calls.
+            max_call_threads_for_client: Max threads for client calls.
+            min_clients: Minimum number of clients required.
+
+        Examples:
+            # Class-based (traditional)
+            recipe = FoxRecipe(job_name="job", server=FedAvg(), client=Trainer())
+
+            # Module-based (pass module directly)
+            import my_module
+            recipe = FoxRecipe(job_name="job", server=my_module, client=my_module)
+
+            # Simplest: use caller's module (contains both @fox.algo and @fox.collab)
+            recipe = FoxRecipe(job_name="job", min_clients=5)
+        """
         check_str("job_name", job_name)
         check_positive_number("sync_task_timeout", sync_task_timeout)
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
         check_positive_int("max_call_threads_for_client", max_call_threads_for_client)
         check_positive_int("min_clients", min_clients)
 
-        self.job_name = job_name
-        self.server = server
-        self.client = client
-        self.server_objects = server_objects
-        self.client_objects = client_objects
-        self.server_app = ServerApp(server)
-        self.client_app = ClientApp(client)
+        # Auto-detect caller's module if server/client not provided
+        if server is None or client is None:
+            caller_module = _get_caller_module(stack_level=2)
+            if server is None:
+                server = caller_module
+            if client is None:
+                client = caller_module
 
-        if server_objects:
-            for name, obj in server_objects.items():
+        self.job_name = job_name
+        # Auto-wrap modules with ModuleWrapper
+        self.server = _wrap_if_module(server)
+        self.client = _wrap_if_module(client)
+        # Also wrap modules in server_objects/client_objects
+        self.server_objects = {k: _wrap_if_module(v) for k, v in server_objects.items()} if server_objects else None
+        self.client_objects = {k: _wrap_if_module(v) for k, v in client_objects.items()} if client_objects else None
+        self.server_app = ServerApp(self.server)
+        self.client_app = ClientApp(self.client)
+
+        if self.server_objects:
+            for name, obj in self.server_objects.items():
                 self.server_app.add_collab_object(name, obj)
 
-        if client_objects:
-            for name, obj in client_objects.items():
+        if self.client_objects:
+            for name, obj in self.client_objects.items():
                 self.client_app.add_collab_object(name, obj)
 
         self.sync_task_timeout = sync_task_timeout

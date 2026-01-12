@@ -12,3 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .api.facade import facade as fox
+from .api.module_wrapper import ModuleWrapper

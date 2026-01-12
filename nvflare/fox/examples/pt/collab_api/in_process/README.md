@@ -4,7 +4,9 @@ This guide shows a **progressive comparison** from local simulation to NVFlare F
 
 1. `simulate_fedavg_train.py` - Sequential simulation
 2. `simulate_parallel_fedavg_train.py` - Parallel simulation (mimics Fox pattern)
-3. `collab_fedavg_train.py` - Full Fox federated learning
+3. `collab_fedavg_train.py` - Fox with classes
+4. `collab_fedavg_no_class.py` - Fox with standalone functions (no classes!)
+5. `collab_fedavg_no_class_job.py` - Fox with split server/client modules
 
 The code is intentionally structured to **minimize differences** - making it easy to see exactly what changes at each step.
 
@@ -45,29 +47,24 @@ The parallel version adds a `ClientGroup` class that hides parallelism:
 
 ```python
 class ClientGroup:
-    """A group of clients that can execute methods in parallel."""
+    """A group of clients that can execute functions in parallel."""
 
-    def __init__(self, client_ids, trainer, max_workers=None):
+    def __init__(self, client_ids, max_workers=None):
         self.client_ids = client_ids
-        self.trainer = trainer
         self.max_workers = max_workers or len(client_ids)
+        self._functions = {}
 
-    def __getattr__(self, method_name):
-        """Allow calling any method on the trainer in parallel."""
+    def register(self, func):
+        """Register a function for parallel calls."""
+        self._functions[func.__name__] = func
+        return func
+
+    def __getattr__(self, func_name):
+        """Allow calling registered function in parallel."""
+        func = self._functions.get(func_name)
         def parallel_call(*args, **kwargs):
-            results = []
-            with ThreadPoolExecutor(...) as executor:
-                # Submit all client tasks in parallel
-                future_to_client = {
-                    executor.submit(method, client_id, *args, **kwargs): client_id
-                    for client_id in self.client_ids
-                }
-                # Collect results as they complete
-                for future in as_completed(future_to_client):
-                    client_id = future_to_client[future]
-                    result = future.result()
-                    results.append((client_id, result))
-            return results
+            # ThreadPoolExecutor logic...
+            ...
         return parallel_call
 ```
 
@@ -105,32 +102,32 @@ def train(weights=None):
 ```
 
 ```python
-class Trainer:                                    # + Wrap in class
-    def train(self, client_id, weights=None):     # + Add client_id
-        # Setup data
-        inputs = torch.randn(100, 10)
-        labels = torch.randn(100, 1)
-        dataset = TensorDataset(inputs, labels)
-        dataloader = DataLoader(dataset, batch_size=10)
+@clients.register                                 # + Register with ClientGroup
+def train(client_id, weights=None):               # + Add client_id
+    # Setup data
+    inputs = torch.randn(100, 10)
+    labels = torch.randn(100, 1)
+    dataset = TensorDataset(inputs, labels)
+    dataloader = DataLoader(dataset, batch_size=10)
 
-        model = SimpleModel()
-        if weights is not None:
-            model.load_state_dict(weights)
+    model = SimpleModel()
+    if weights is not None:
+        model.load_state_dict(weights)
 
-        optimizer = optim.SGD(model.parameters(), lr=0.01)
-        criterion = nn.MSELoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    criterion = nn.MSELoss()
 
-        for epoch in range(5):
-            for batch in dataloader:
-                # ... training loop ...
+    for epoch in range(5):
+        for batch in dataloader:
+            # ... training loop ...
 
-        print(f"  [{client_id}] Loss: {loss.item():.4f}")  # + Logging
+    print(f"  [{client_id}] Loss: {loss.item():.4f}")  # + Logging
 
-        return model.state_dict(), loss.item()
+    return model.state_dict(), loss.item()
 ```
 
 **Changes:**
-1. Wrap in `class Trainer`
+1. Add `@clients.register` decorator
 2. Add `client_id` parameter for identification
 3. Add logging with client_id
 
@@ -164,24 +161,23 @@ def fed_avg(clients, num_rounds=5):
 ```
 
 ```python
-def fed_avg(clients, num_rounds=5):
-    print(f"Starting FedAvg for {num_rounds} rounds")
+NUM_ROUNDS = 5                                    # Module-level config
+
+def fed_avg():                                    # - Remove clients param
+    print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
     global_weights = None
 
-    for round_num in range(num_rounds):
+    for round_num in range(NUM_ROUNDS):
         print(f"\n=== Round {round_num + 1} ===")
 
         # Each client trains (in parallel via clients group)
         client_results = clients.train(global_weights)
         # ^^^ Replaces the entire for-loop! ^^^
 
-
-
-
         global_weights, global_loss = weighted_avg(client_results)
         print(f"  Global average loss: {global_loss:.4f}")
 
-    print(f"\nFedAvg completed after {num_rounds} rounds")
+    print(f"\nFedAvg completed after {NUM_ROUNDS} rounds")
     return global_weights
 ```
 
@@ -199,24 +195,22 @@ if __name__ == "__main__":
     clients = ["site-1", "site-2", "site-3", "site-4", "site-5"]
     result = fed_avg(clients, num_rounds=5)
 
-
     print("Job Status:", "Completed")
 ```
 
 ```python
-if __name__ == "__main__":
-    client_ids = ["site-1", "site-2", "site-3", "site-4", "site-5"]
-    trainer = Trainer()                           # + Create trainer
-    clients = ClientGroup(client_ids, trainer)    # + Wrap in ClientGroup
+# ClientGroup and clients defined at module level
 
-    result = fed_avg(clients, num_rounds=5)
+if __name__ == "__main__":
+    result = fed_avg()                            # Just call it!
 
     print("Job Status:", "Completed")
 ```
 
 **Changes:**
-1. Create `Trainer` instance
-2. Wrap client_ids in `ClientGroup` for parallel execution
+1. `ClientGroup` defined at module level
+2. `@clients.register` decorates the train function
+3. Direct `fed_avg()` call - no parameters needed
 
 ---
 
@@ -225,18 +219,19 @@ if __name__ == "__main__":
 | Component | Sequential | Parallel Sim |
 |-----------|------------|--------------|
 | **Imports** | PyTorch only | + threading (hidden in ClientGroup) |
-| **Parallelism** | None (for-loop) | `ClientGroup` abstraction |
-| **Training** | Function | Class + `client_id` parameter |
+| **Parallelism** | None (for-loop) | `ClientGroup` + `@clients.register` |
+| **Training** | Function | Function + `client_id` parameter |
 | **Workflow** | For-loop over clients | `clients.train()` call |
-| **Execution** | Direct function call | ClientGroup wraps trainer |
+| **Execution** | `fed_avg(clients, ...)` | `fed_avg()` |
 
 **Key Insight:** Replace the for-loop with `clients.train()` - parallelism is abstracted away!
 
 ---
 
-## Part 2: Parallel Simulation → Fox API
+## Part 2: Parallel Simulation → Fox API (with Classes)
 
 This section compares `simulate_parallel_fedavg_train.py` with `collab_fedavg_train.py`.
+This shows the class-based Fox API approach.
 
 ### Imports
 
@@ -278,14 +273,15 @@ from nvflare.fox.sys.recipe import FoxRecipe      # +
 ```python
 class ClientGroup:
     """A group of clients that can execute
-    methods in parallel."""
+    functions in parallel."""
 
-    def __init__(self, client_ids, trainer, ...):
-        self.client_ids = client_ids
-        self.trainer = trainer
+    def __init__(self, client_ids, ...):
         ...
 
-    def __getattr__(self, method_name):
+    def register(self, func):
+        ...
+
+    def __getattr__(self, func_name):
         def parallel_call(*args, **kwargs):
             # ThreadPoolExecutor logic...
             ...
@@ -302,37 +298,36 @@ class ClientGroup:
 # fox.clients is a built-in ProxyList that
 # dispatches calls to all clients in parallel.
 
-
 ```
 
 **Change:** Remove `ClientGroup` - Fox provides `fox.clients` built-in.
 
 ---
 
-### Training Class
+### Training
 
 | simulate_parallel_fedavg_train.py | collab_fedavg_train.py |
 |-----------------------------------|------------------------|
 
 ```python
-class Trainer:
-    def train(self, client_id, weights=None):
-        # Setup data
-        inputs = torch.randn(100, 10)
-        ...
+@clients.register                                 # Register with ClientGroup
+def train(client_id, weights=None):               # Standalone function
+    # Setup data
+    inputs = torch.randn(100, 10)
+    ...
 
-        for epoch in range(5):
-            for batch in dataloader:
-                # ... training loop ...
+    for epoch in range(5):
+        for batch in dataloader:
+            # ... training loop ...
 
-        print(f"  [{client_id}] Loss: ...")
+    print(f"  [{client_id}] Loss: ...")
 
-        return model.state_dict(), loss.item()
+    return model.state_dict(), loss.item()
 ```
 
 ```python
-class Trainer:
-    @fox.collab                                   # + Add decorator
+class Trainer:                                    # + Wrap in class
+    @fox.collab                                   # + Fox decorator
     def train(self, weights=None):                # - Remove client_id
         # Setup data
         inputs = torch.randn(100, 10)
@@ -342,15 +337,16 @@ class Trainer:
             for batch in dataloader:
                 # ... training loop ...
 
-        print(f"  [{fox.site_name}] Loss: ...")   # Use fox.site_name
+        print(f"  [{fox.site_name}] Loss: ...")   # + fox.site_name
 
         return model.state_dict(), loss.item()
 ```
 
 **Changes:**
-1. Add `@fox.collab` decorator
-2. Remove `client_id` parameter (Fox injects context)
-3. Use `fox.site_name` instead of `client_id`
+1. Wrap in `class Trainer`
+2. Replace `@clients.register` with `@fox.collab`
+3. Remove `client_id` parameter
+4. Use `fox.site_name` instead of `client_id`
 
 ---
 
@@ -360,11 +356,13 @@ class Trainer:
 |-----------------------------------|------------------------|
 
 ```python
-def fed_avg(clients, num_rounds=5):
-    print(f"Starting FedAvg for {num_rounds} rounds")
+NUM_ROUNDS = 5
+
+def fed_avg():                                    # Standalone function
+    print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
     global_weights = None
 
-    for round_num in range(num_rounds):
+    for round_num in range(NUM_ROUNDS):
         print(f"\n=== Round {round_num + 1} ===")
 
         client_results = clients.train(global_weights)
@@ -372,7 +370,7 @@ def fed_avg(clients, num_rounds=5):
         global_weights, global_loss = weighted_avg(client_results)
         print(f"  Global average loss: {global_loss:.4f}")
 
-    print(f"\nFedAvg completed after {num_rounds} rounds")
+    print(f"\nFedAvg completed after {NUM_ROUNDS} rounds")
     return global_weights
 ```
 
@@ -382,7 +380,7 @@ class FedAvg:                                     # + Wrap in class
         self.num_rounds = num_rounds
 
     @fox.algo                                     # + Add decorator
-    def fed_avg(self):                            # - Remove clients param
+    def fed_avg(self):
         print(f"Starting FedAvg for {self.num_rounds} rounds")
         global_weights = None
 
@@ -400,9 +398,8 @@ class FedAvg:                                     # + Wrap in class
 
 **Changes:**
 1. Wrap in `class FedAvg` with constructor
-2. Add `@fox.algo` decorator
-3. Remove `clients` parameter
-4. Use `fox.clients` instead of passed-in `clients`
+2. Add `@fox.algo` decorator  
+3. Replace `clients.train()` with `fox.clients.train()`
 
 ---
 
@@ -412,12 +409,11 @@ class FedAvg:                                     # + Wrap in class
 |-----------------------------------|------------------------|
 
 ```python
-if __name__ == "__main__":
-    client_ids = ["site-1", ..., "site-5"]
-    trainer = Trainer()
-    clients = ClientGroup(client_ids, trainer)
+# ClientGroup defined at module level
 
-    result = fed_avg(clients, num_rounds=5)
+if __name__ == "__main__":
+    result = fed_avg()
+
 
     print("Job Status:", "Completed")
     print("Results:", "In memory (state_dict)")
@@ -425,8 +421,8 @@ if __name__ == "__main__":
 
 ```python
 if __name__ == "__main__":
-    server = FedAvg(num_rounds=5)                 # + Server object
-    client = Trainer()                            # Client object
+    server = FedAvg(num_rounds=5)                 # + Server class
+    client = Trainer()                            # + Client class
 
     recipe = FoxRecipe(                           # + Recipe configuration
         job_name="fedavg_train",
@@ -443,25 +439,274 @@ if __name__ == "__main__":
 ```
 
 **Changes:**
-1. Create server and client objects separately
+1. Create `FedAvg` and `Trainer` class instances
 2. Configure via `FoxRecipe`
 3. Create `SimEnv` for execution environment
 4. Execute via `recipe.execute(env)`
 
 ---
 
-### Part 2 Summary: Parallel Simulation → Fox API
+### Part 2 Summary: Parallel Simulation → Fox API (Classes)
 
-| Component | Parallel Sim | Fox API |
-|-----------|--------------|---------|
+| Component | Parallel Sim | Fox API (Classes) |
+|-----------|--------------|-------------------|
 | **Imports** | + threading | + Fox, - threading |
 | **Parallelism** | `ClientGroup` (custom) | `fox.clients` (built-in) |
-| **Training** | Class + `client_id` param | Class + `@fox.collab` decorator |
-| **Client ID** | Parameter | `fox.site_name` (injected) |
-| **Workflow** | Function | Class + `@fox.algo` decorator |
-| **Execution** | Direct call | Recipe + Environment pattern |
+| **Training** | `@clients.register` function | `class Trainer` + `@fox.collab` |
+| **Client ID** | `client_id` parameter | `fox.site_name` (injected) |
+| **Workflow** | `fed_avg()` function | `class FedAvg` + `@fox.algo` |
+| **Execution** | Direct `fed_avg()` call | Recipe + Environment pattern |
 
-**Key Insight:** Replace `ClientGroup` with `fox.clients`, add decorators - the training logic stays the same!
+**Key Insight:** Fox's class-based API wraps training and workflow in classes with decorators.
+
+---
+
+## Part 3: Parallel Simulation → Fox API (No Classes!)
+
+This section compares `simulate_parallel_fedavg_train.py` with `collab_fedavg_no_class.py`.
+Both use **standalone functions** - making the comparison clean and direct!
+
+### Imports
+
+| simulate_parallel_fedavg_train.py | collab_fedavg_no_class.py |
+|-----------------------------------|---------------------------|
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+```
+
+```python
+                                                  # - Remove threading imports
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+
+from nvflare.fox import fox                       # + Add Fox imports
+from nvflare.fox.sim import SimEnv                # +
+from nvflare.fox.sys.recipe import FoxRecipe      # +
+```
+
+**Changes:**
+1. Remove threading imports (Fox handles parallelism)
+2. Add 3 Fox imports
+
+---
+
+### Framework Abstraction
+
+| simulate_parallel_fedavg_train.py | collab_fedavg_no_class.py |
+|-----------------------------------|---------------------------|
+
+```python
+class ClientGroup:
+    """A group of clients that can execute
+    functions in parallel."""
+
+    def __init__(self, client_ids, ...):
+        self.client_ids = client_ids
+        ...
+
+    def register(self, func):
+        """Register function for parallel calls."""
+        ...
+
+    def __getattr__(self, func_name):
+        def parallel_call(*args, **kwargs):
+            # ThreadPoolExecutor logic...
+            ...
+        return parallel_call
+```
+
+```python
+# No ClientGroup needed!
+# No custom abstraction at all!
+
+# Fox provides fox.clients automatically.
+# FoxRecipe auto-detects the caller's module.
+
+
+
+
+```
+
+**Change:** Remove `ClientGroup` entirely - Fox provides `fox.clients` built-in.
+
+---
+
+### Training Function
+
+| simulate_parallel_fedavg_train.py | collab_fedavg_no_class.py |
+|-----------------------------------|---------------------------|
+
+```python
+@clients.register                                 # Register with ClientGroup
+def train(client_id, weights=None):               # Need client_id param
+    # Setup data
+    inputs = torch.randn(100, 10)
+    ...
+
+    for epoch in range(5):
+        for batch in dataloader:
+            # ... training loop ...
+
+    print(f"  [{client_id}] Loss: ...")           # Use client_id
+
+    return model.state_dict(), loss.item()
+```
+
+```python
+@fox.collab                                       # + Fox decorator
+def train(weights=None):                          # - No client_id param
+    # Setup data
+    inputs = torch.randn(100, 10)
+    ...
+
+    for epoch in range(5):
+        for batch in dataloader:
+            # ... training loop ...
+
+    print(f"  [{fox.site_name}] Loss: ...")       # + fox.site_name
+
+    return model.state_dict(), loss.item()
+```
+
+**Changes:**
+1. Replace `@clients.register` with `@fox.collab`
+2. Remove `client_id` parameter
+3. Use `fox.site_name` instead of `client_id`
+
+---
+
+### FedAvg Workflow
+
+| simulate_parallel_fedavg_train.py | collab_fedavg_no_class.py |
+|-----------------------------------|---------------------------|
+
+```python
+NUM_ROUNDS = 5
+
+def fed_avg():                                    # Standalone function
+    print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
+    global_weights = None
+
+    for round_num in range(NUM_ROUNDS):
+        print(f"\n=== Round {round_num + 1} ===")
+
+        client_results = clients.train(global_weights)
+
+        global_weights, global_loss = weighted_avg(client_results)
+        print(f"  Global average loss: {global_loss:.4f}")
+
+    print(f"\nFedAvg completed after {NUM_ROUNDS} rounds")
+    return global_weights
+```
+
+```python
+NUM_ROUNDS = 5
+
+@fox.algo                                         # + Add decorator
+def fed_avg():                                    # Same standalone function!
+    print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
+    global_weights = None
+
+    for round_num in range(NUM_ROUNDS):
+        print(f"\n=== Round {round_num + 1} ===")
+
+        client_results = fox.clients.train(global_weights)  # fox.clients
+
+        global_weights, global_loss = weighted_avg(client_results)
+        print(f"  Global average loss: {global_loss:.4f}")
+
+    print(f"\nFedAvg completed after {NUM_ROUNDS} rounds")
+    return global_weights
+```
+
+**Changes:**
+1. Add `@fox.algo` decorator
+2. Replace `clients.train()` with `fox.clients.train()`
+
+That's it! The workflow logic is **identical**.
+
+---
+
+### Execution
+
+| simulate_parallel_fedavg_train.py | collab_fedavg_no_class.py |
+|-----------------------------------|---------------------------|
+
+```python
+if __name__ == "__main__":
+    result = fed_avg()
+
+
+    print("Job Status:", "Completed")
+    print("Results:", "In memory (state_dict)")
+```
+
+```python
+if __name__ == "__main__":
+    recipe = FoxRecipe(job_name="fedavg", min_clients=5)
+    env = SimEnv(num_clients=5)
+    run = recipe.execute(env)
+
+    print("Job Status:", run.get_status())
+    print("Results at:", run.get_result())
+```
+
+**Changes:**
+1. Replace direct `fed_avg()` call with `FoxRecipe` + `SimEnv`
+2. `FoxRecipe` auto-detects the module containing `@fox.algo` and `@fox.collab`
+
+---
+
+### Part 3 Summary: Parallel Sim → Fox (No Classes)
+
+| Component | Parallel Sim | Fox (No Classes) |
+|-----------|--------------|------------------|
+| **Imports** | + threading | + Fox, - threading |
+| **Parallelism** | `ClientGroup` (custom) | `fox.clients` (built-in) |
+| **Training** | `@clients.register` + `client_id` | `@fox.collab` + `fox.site_name` |
+| **Workflow** | `clients.train()` | `fox.clients.train()` |
+| **Execution** | Direct `fed_avg()` call | `FoxRecipe().execute()` |
+
+**Key Insight:** The core training and workflow logic are **nearly identical**!
+- Replace `@clients.register` → `@fox.collab`
+- Replace `client_id` → `fox.site_name`
+- Replace `clients.train()` → `fox.clients.train()`
+- Add `@fox.algo` to the workflow function
+
+The simulation code mirrors Fox so closely that migration is trivial!
+
+---
+
+### Bonus: Split Server and Client Modules
+
+For larger projects, you can split server and client logic into separate files:
+
+```
+collab_fedavg_no_class_client.py   # @fox.collab train()
+collab_fedavg_no_class_server.py   # @fox.algo fed_avg()
+collab_fedavg_no_class_job.py      # Recipe ties them together
+```
+
+```python
+# collab_fedavg_no_class_job.py
+from ... import collab_fedavg_no_class_client as client_module
+from ... import collab_fedavg_no_class_server as server_module
+
+recipe = FoxRecipe(
+    job_name="fedavg_split",
+    server=server_module,   # Auto-wrapped with ModuleWrapper
+    client=client_module,   # Auto-wrapped with ModuleWrapper
+    min_clients=5,
+)
+```
 
 ---
 
@@ -474,11 +719,19 @@ python simulate_fedavg_train.py
 # Parallel simulation (mimics Fox pattern)
 python simulate_parallel_fedavg_train.py
 
-# Fox federated simulation  
+# Fox with classes
 python collab_fedavg_train.py
+
+# Fox with standalone functions (no classes!)
+python collab_fedavg_no_class.py
+
+# Fox with split server/client modules
+python collab_fedavg_no_class_job.py
 ```
 
-All three produce similar output, but:
+All produce similar output, but:
 - `simulate_fedavg_train.py` runs clients **sequentially**
 - `simulate_parallel_fedavg_train.py` runs clients **in parallel threads**
-- `collab_fedavg_train.py` runs clients **in parallel** and can be deployed to **real distributed environments**
+- `collab_fedavg_train.py` runs clients **in parallel** with Fox classes
+- `collab_fedavg_no_class.py` runs clients **in parallel** with Fox standalone functions
+- `collab_fedavg_no_class_job.py` demonstrates **split modules** for real deployments
