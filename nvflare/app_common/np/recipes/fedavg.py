@@ -42,6 +42,7 @@ class _FedAvgValidator(BaseModel):
     aggregator_data_kind: Optional[DataKind]
     launch_external_process: bool = False
     command: str = "python3 -u"
+    framework: FrameworkType = FrameworkType.RAW
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
 
@@ -74,6 +75,7 @@ class NumpyFedAvgRecipe(Recipe):
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+        framework: Framework type for the recipe. Defaults to FrameworkType.RAW (used for NumPy).
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
         DIFF means that only the difference is sent. Defaults to TransferType.FULL.
@@ -112,6 +114,7 @@ class NumpyFedAvgRecipe(Recipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
+        framework: FrameworkType = FrameworkType.RAW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
     ):
@@ -127,6 +130,7 @@ class NumpyFedAvgRecipe(Recipe):
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
             command=command,
+            framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
         )
@@ -141,6 +145,7 @@ class NumpyFedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        self.framework = v.framework
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 

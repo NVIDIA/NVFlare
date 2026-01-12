@@ -19,6 +19,7 @@ from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.spec import Recipe
 
 
@@ -36,6 +37,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         model_name: Dictionary mapping model identifiers to filenames, e.g.,
             {"model_1": "model_1.npy", "model_2": "model_2.npy"}.
             If None, defaults to {"server": "server.npy"}.
+        framework: Framework type for the recipe. Defaults to FrameworkType.RAW (used for NumPy).
         submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
         validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
     """
@@ -46,6 +48,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         min_clients: int = 2,
         model_dir: Optional[str] = None,
         model_name: Optional[dict] = None,
+        framework: FrameworkType = FrameworkType.RAW,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
     ):
@@ -70,8 +73,10 @@ class NumpyCrossSiteEvalRecipe(Recipe):
 
         # Add validators to clients for validation tasks
         job.to_clients(
-            NPValidator(validate_task_name=AppConstants.TASK_VALIDATION),
+            NPValidator(),
             tasks=[AppConstants.TASK_VALIDATION],
         )
+
+        self.framework = framework
 
         super().__init__(job)
