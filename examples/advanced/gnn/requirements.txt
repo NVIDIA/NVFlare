@@ -1,7 +1,7 @@
 torch
 torch_geometric
 tensorboard
-scikit_learn
+scikit-learn
 tqdm
 filelock
 pandas
