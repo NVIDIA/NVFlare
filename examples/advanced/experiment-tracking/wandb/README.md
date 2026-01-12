@@ -11,7 +11,7 @@ with **Weights & Biases (WandB)** experiment tracking.
 This example demonstrates Weights & Biases tracking with flexible options for server-side or client-side metric collection:
 
 ```python
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create FedAvg recipe
