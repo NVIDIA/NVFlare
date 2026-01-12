@@ -1,5 +1,3 @@
-import os
-
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -37,6 +35,7 @@ def train():
     model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.01)
     criterion = nn.MSELoss()
+    loss = None  # Initialize for linter
 
     # Training loop
     for epoch in range(5):

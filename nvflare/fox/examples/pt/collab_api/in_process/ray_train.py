@@ -1,5 +1,4 @@
 # Import ray data if using Ray Data, otherwise keep torch utils
-import ray.data
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -33,6 +32,7 @@ def train_loop_per_worker():
     model = prepare_model(model)
     optimizer = optim.SGD(model.parameters(), lr=0.01)
     criterion = nn.MSELoss()
+    loss = None  # Initialize for linter
 
     # Training loop
     for epoch in range(5):
