@@ -18,6 +18,16 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
+from megatron.core.distributed import DistributedDataParallelConfig
+from megatron.core.optimizer import OptimizerConfig
+from nemo import lightning as nl
+from nemo.collections import llm
+from nemo.lightning.pytorch import callbacks as nl_callbacks
+from nemo.lightning.pytorch.optim import MegatronOptimizerModule
+
+# (1) import nvflare lightning client API
+import nvflare.client.lightning as flare
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
@@ -31,16 +41,6 @@ from bionemo.llm.model.biobert.model import BioBertConfig
 from bionemo.llm.model.config import TorchmetricsConfig
 from bionemo.llm.utils.datamodule_utils import infer_global_batch_size
 from bionemo.llm.utils.logger_utils import WandbConfig, setup_nemo_lightning_logger
-from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
-from megatron.core.distributed import DistributedDataParallelConfig
-from megatron.core.optimizer import OptimizerConfig
-from nemo import lightning as nl
-from nemo.collections import llm
-from nemo.lightning.pytorch import callbacks as nl_callbacks
-from nemo.lightning.pytorch.optim import MegatronOptimizerModule
-
-# (1) import nvflare lightning client API
-import nvflare.client.lightning as flare
 
 
 def train_model(
@@ -102,6 +102,7 @@ def train_model(
     grad_reduce_in_fp32: bool = False,
     label_column: str = "labels",
     classes: list[str] = None,
+    lr_step_reduce: float = 1.05,
 ) -> tuple[Path, Callback | None, nl.Trainer]:
     """Train an ESM2 model on UR data.
 
@@ -163,6 +164,7 @@ def train_model(
         average_in_collective (bool): average in collective
         grad_reduce_in_fp32 (bool): gradient reduction in fp32
         classes (List[str]): unique strings describing the classes for classification. Used to build the same label vocabulary on each client. Should be comma-separated list of strings, e.g. ['pos', 'neg'].
+        lr_step_reduce (float): Factor for linear learning rate decay per federated learning round. Default is 1.05.
     """
     # Create the result directory if it does not exist.
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -280,7 +282,7 @@ def train_model(
 
     # add a learning rate decay for each round
     if input_model.current_round > 0:
-        lr_step_reduce = 1.05  # TODO: make lr_step_reduce configurable
+        # Implement simple linear learning rate decay for each round
         new_lr = lr / (input_model.current_round * lr_step_reduce)
         new_lr_multiplier = lr_multiplier / (input_model.current_round * lr_step_reduce)
         print(f"Reduce lr {lr} by {input_model.current_round * lr_step_reduce}: {new_lr}")
@@ -430,6 +432,30 @@ def finetune_esm2_entrypoint():
         default=None,
         help="Unique strings describing the classes for classification. Used to build the same label vocabulary on each client. Should be comma separate list of strings, e.g. 'pos,neg'",
     )
+    parser.add_argument(
+        "--dataset-name",
+        type=str,
+        required=False,
+        default=None,
+        dest="dataset_name",
+        help="Dataset name for client-specific data path resolution (e.g., 'sabdab', 'tap', 'scl')",
+    )
+    parser.add_argument(
+        "--exp-name",
+        type=str,
+        required=False,
+        default="fedavg",
+        dest="exp_name",
+        help="Experiment name to determine if central training (e.g., 'central', 'fedavg')",
+    )
+    parser.add_argument(
+        "--lr-step-reduce",
+        type=float,
+        required=False,
+        default=1.05,
+        dest="lr_step_reduce",
+        help="Learning rate reduction factor applied per round for federated learning. Default is 1.05.",
+    )
     args = parser.parse_args()
 
     if args.classes:
@@ -440,13 +466,56 @@ def finetune_esm2_entrypoint():
         classes = None
 
     # to avoid padding for single value labels:
-    if args.min_seq_length is not None and args.datset_class is InMemorySingleValueDataset:
+    if args.min_seq_length is not None and args.dataset_class is InMemorySingleValueDataset:
         parser.error("Arguments --min-seq-length cannot be set when using InMemorySingleValueDataset.")
+
+    # Get site name for client-specific configuration
+    flare.init()
+    site_name = flare.get_site_name()
+
+    # Resolve client-specific data paths based on dataset and experiment type
+    train_data_path = args.train_data_path
+    valid_data_path = args.valid_data_path
+    label_column = args.label_column
+
+    if args.dataset_name:
+        if args.dataset_name == "sabdab":
+            # SAbDab dataset configuration
+            if "central" in args.exp_name:
+                train_data_path = "/tmp/data/sabdab_chen/train/sabdab_chen_full_train.csv"
+            else:
+                train_data_path = f"/tmp/data/sabdab_chen/train/sabdab_chen_{site_name}_train.csv"
+            valid_data_path = "/tmp/data/sabdab_chen/val/sabdab_chen_valid.csv"
+
+        elif args.dataset_name == "tap":
+            # TAP dataset configuration with per-client label columns
+            label_column_map = {
+                "site-1": "PSH",
+                "site-2": "PPC",
+                "site-3": "PNC",
+                "site-4": "SFvCSP",
+            }
+            if "central" in args.exp_name:
+                train_data_path = "/tmp/data/tap/train/tap_full_train.csv"
+            else:
+                train_data_path = f"/tmp/data/tap/train/tap_{site_name}_train.csv"
+            valid_data_path = "/tmp/data/tap/val/tap_valid.csv"
+            label_column = label_column_map.get(site_name, args.label_column)
+
+        elif args.dataset_name == "scl":
+            # SCL dataset configuration
+            train_data_path = f"/tmp/data/mixed_soft/train/data_train_{site_name}.csv"
+            valid_data_path = f"/tmp/data/mixed_soft/val/data_val_{site_name}.csv"
+
+        print(f"\n[Site={site_name}] Using dataset '{args.dataset_name}' with:")
+        print(f"  train_data_path: {train_data_path}")
+        print(f"  valid_data_path: {valid_data_path}")
+        print(f"  label_column: {label_column}\n")
 
     # 2. Call pretrain with args
     train_model(
-        train_data_path=args.train_data_path,
-        valid_data_path=args.valid_data_path,
+        train_data_path=train_data_path,
+        valid_data_path=valid_data_path,
         num_nodes=args.num_nodes,
         devices=args.num_gpus,
         min_seq_length=args.min_seq_length,
@@ -499,8 +568,9 @@ def finetune_esm2_entrypoint():
         overlap_param_gather=not args.no_overlap_param_gather,
         average_in_collective=not args.no_average_in_collective,
         grad_reduce_in_fp32=args.grad_reduce_in_fp32,
-        label_column=args.label_column,
+        label_column=label_column,
         classes=classes,
+        lr_step_reduce=args.lr_step_reduce,
     )
 
 
