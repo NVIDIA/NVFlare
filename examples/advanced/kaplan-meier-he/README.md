@@ -296,7 +296,7 @@ For simulation mode (testing and development), we manually prepare the data and 
 
 Split and generate data files for each client with binning interval of 7 days:
 ```commandline
-python utils/prepare_data.py --site_num 5 --bin_days 7 --out_path "/tmp/nvflare/dataset/km_data"
+python utils/prepare_data.py --num_clients 5 --bin_days 7 --out_path "/tmp/nvflare/dataset/km_data"
 ```
 
 **Step 2: Prepare HE Context (Simulation Only)**

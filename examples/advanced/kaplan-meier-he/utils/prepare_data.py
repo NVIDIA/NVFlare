@@ -24,7 +24,7 @@ np.random.seed(77)
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
-    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites, default is 5")
+    parser.add_argument("--num_clients", type=int, default=5, help="Total number of clients, default is 5")
     parser.add_argument(
         "--site_name_prefix",
         type=str,
@@ -36,7 +36,7 @@ def data_split_args_parser():
     return parser
 
 
-def prepare_data(data, site_num, bin_days):
+def prepare_data(data, num_clients, bin_days):
     # Get total data count
     total_data_num = data.shape[0]
     print(f"Total data count: {total_data_num}")
@@ -50,9 +50,9 @@ def prepare_data(data, site_num, bin_days):
     # Split data to clients
     event_clients = {}
     time_clients = {}
-    for i in range(site_num):
-        start = int(i * total_data_num / site_num)
-        end = int((i + 1) * total_data_num / site_num)
+    for i in range(num_clients):
+        start = int(i * total_data_num / num_clients)
+        end = int((i + 1) * total_data_num / num_clients)
         event_i = event[idx[start:end]]
         time_i = time[idx[start:end]]
         event_clients["site-" + str(i + 1)] = event_i
@@ -69,12 +69,12 @@ def main():
     _, data = load_veterans_lung_cancer()
 
     # Prepare data
-    event_clients, time_clients = prepare_data(data=data, site_num=args.site_num, bin_days=args.bin_days)
+    event_clients, time_clients = prepare_data(data=data, num_clients=args.num_clients, bin_days=args.bin_days)
 
     # Save data to csv files
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path, exist_ok=True)
-    for site in range(args.site_num):
+    for site in range(args.num_clients):
         output_file = os.path.join(args.out_path, f"{args.site_name_prefix}{site + 1}.csv")
         df = pd.DataFrame(
             {
