@@ -185,9 +185,10 @@ Each client generates:
 - Load server HE context
 - **Aggregation logic in encrypted space**:
   1. Deserialize each client's encrypted histograms: `ts.ckks_vector_from(he_context, serialized)`
-  2. Element-wise addition of encrypted vectors: `hist_obs_global += hist_obs_he`
-  3. Homomorphic addition performed without decryption
-  4. Serialize aggregated encrypted histograms
+  2. For first client: Initialize global histograms with their encrypted vectors
+  3. For subsequent clients: Element-wise addition of encrypted vectors: `hist_obs_global += hist_obs_he`
+  4. Homomorphic addition performed without decryption
+  5. Serialize aggregated encrypted histograms
 - Send encrypted global histograms back to all clients (ciphertext)
 - **Server never accesses plaintext histogram values**
 
@@ -207,10 +208,10 @@ Each client generates:
 **Key Parameters**:
 - `--encryption`: Enable/disable Homomorphic Encryption (HE)
 - `--bin_days`: Time-binning interval in days (default: 7)
-- `--site_num`: Number of federated sites (default: 5)
+- `--num_clients`: Number of federated sites (default: 5)
 - `--data_root`: Root directory for site data (default: `/tmp/nvflare/dataset/km_data`)
-- `--he_context_path`: Path to HE context for simulation mode (default: `/tmp/nvflare/he_context`)
-- `--startup_kit_location`: Admin startup kit path for production mode
+- `--he_context_path`: Path to client HE context file for simulation mode (default: `/tmp/nvflare/he_context/he_context_client.txt`). Server context file (`he_context_server.txt`) must be in the same directory.
+- `--startup_kit_location`: Admin startup kit path for production mode (if provided, switches to production mode)
 
 **Workflow**:
 
@@ -258,10 +259,10 @@ This example supports both **Simulation Mode** (for local testing) and **Product
 - **Simulation Mode**: 
   - Uses **CKKS scheme** (approximate arithmetic, compatible with production)
   - HE context files are manually created via `prepare_he_context.py`:
-    - Client context: `/tmp/nvflare/he_context/he_context_client.txt`
-    - Server context: `/tmp/nvflare/he_context/he_context_server.txt`
+    - Client context: `/tmp/nvflare/he_context/he_context_client.txt` (default)
+    - Server context: `/tmp/nvflare/he_context/he_context_server.txt` (must be in same directory)
   - Data prepared at `/tmp/nvflare/dataset/km_data`
-  - Paths can be customized via `--he_context_path` (for client context) and `--data_root`
+  - Client context path can be customized via `--he_context_path` parameter (server file must be in same directory)
 - **Production Mode**: 
   - Uses **CKKS scheme**
   - HE context is automatically provisioned into startup kits via `nvflare provision`
@@ -271,7 +272,11 @@ This example supports both **Simulation Mode** (for local testing) and **Product
   - The `--he_context_path` parameter is ignored in production mode
   - **Reuses the same data** from simulation mode at `/tmp/nvflare/dataset/km_data` by default
 
-**Note:** CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption. Both simulation and production modes use the same CKKS scheme for consistency and compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
+**Note:** 
+- CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption.
+- Both simulation and production modes use the same CKKS scheme for consistency and compatibility.
+- Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
+- When customizing `--he_context_path` in simulation mode, the server context file (`he_context_server.txt`) must be in the same directory as the client context file.
 
 | Feature | Simulation Mode | Production Mode |
 |---------|----------------|-----------------|
