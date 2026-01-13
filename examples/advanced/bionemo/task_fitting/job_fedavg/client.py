@@ -53,7 +53,6 @@ def main():
     print(f"[Site={site_name}] Simulating local training only!")
 
     # Construct paths for this client
-    # Construct paths for this client
     data_path = os.path.join(args.data_root, f"data_{site_name}.csv")
     inference_result_path = os.path.join(args.results_path, f"inference_results_{site_name}", "predictions__rank_0.pt")
 
