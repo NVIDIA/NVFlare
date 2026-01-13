@@ -15,7 +15,7 @@ import json
 import threading
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName
@@ -110,7 +110,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         secure=False,
         optional=False,
         abort_signal=None,
-    ) -> Tuple[str, dict]:
+    ) -> tuple[str, dict]:
         pass
 
     def supported_dots(self):
@@ -399,7 +399,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, None)
         if not req_timeout:
             req_timeout = acu.get_positive_float_var(
-                self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 10.0
+                self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 60.0
             )
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
