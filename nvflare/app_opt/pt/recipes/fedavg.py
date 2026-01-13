@@ -61,7 +61,11 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             To enable experiment tracking, either:
             - Pass an AnalyticsReceiver instance explicitly, OR
             - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
-
+        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
+            site names to configuration dicts. Each config dict can contain optional overrides:
+            train_script, train_args, launch_external_process, command, framework,
+            server_expected_format, params_transfer_type.
+            If not provided, the same configuration will be used for all clients.
     Example:
         Basic usage without experiment tracking:
 
@@ -132,6 +136,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -153,6 +158,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
+            per_site_config=per_site_config,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
