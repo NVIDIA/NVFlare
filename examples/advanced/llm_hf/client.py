@@ -12,6 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+HuggingFace LLM client for multi-GPU federated learning.
+
+Supports both SFT (Supervised Fine-Tuning) and PEFT (Parameter-Efficient Fine-Tuning).
+Launch with:
+    - Single GPU: python client.py [args]
+    - Multi GPU: python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]
+    - Multi-node: via client_wrapper.sh
+"""
+
 import argparse
 import copy
 import os
@@ -28,11 +38,14 @@ from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
+# (1) import nvflare client API
 import nvflare.client as flare
 
 
 # Add callback to stop at each epoch
 class StopCallback(TrainerCallback):
+    """Callback to stop training after each epoch for federated learning."""
+
     def on_epoch_end(self, args, state, control, logs=None, **kwargs):
         control.should_training_stop = True
 
@@ -44,20 +57,25 @@ np.random.seed(0)
 
 
 def format_instruction(example):
+    """Format training examples for instruction tuning."""
     return f"### Instruction: Generate Output according to the information and question given by Input. ### Input:{example['input']} ### Response: {example['output']}"
 
 
 def setup_distributed_training():
-    """Setup distributed training environment."""
+    """Setup distributed training environment.
+
+    Returns:
+        tuple: (rank, world_size, local_rank)
+    """
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
-        # Set device
+        # Set device for DDP
         torch.cuda.set_device(local_rank)
 
-        print(f"Distributed training initialized: rank={rank}, world_size={world_size}, local_rank={local_rank}")
+        print(f"DDP rank {rank} initialized: world_size={world_size}, local_rank={local_rank}")
         return rank, world_size, local_rank
     else:
         print("No distributed training environment detected, running in single GPU mode")
@@ -107,9 +125,9 @@ def main():
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument(
-        "--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)"
+        "--wandb_project", type=str, default=None, help="WandB project name (enables WandB if provided)"
     )
-    parser.add_argument("--wandb_run_name", type=str, default="multinode", help="WandB run name")
+    parser.add_argument("--wandb_run_name", type=str, default=None, help="WandB run name")
     args = parser.parse_args()
 
     # Setup distributed training
@@ -134,10 +152,10 @@ def main():
     elif rank == 0:
         print("Rank 0: WandB disabled (WANDB_API_KEY not set), using TensorBoard for logging")
 
-    # initializes NVFlare client API
+    # (2) Initialize NVFlare client API
     # IMPORTANT: Only global rank 0 should interact with NVFlare
     # In multi-node training, rank 0 is on the master node where the FL client runs
-    flare.init(rank=rank)
+    flare.init(rank=f"{rank}")
 
     # If output path exists, remove it (only on main process)
     if rank == 0:
@@ -252,10 +270,10 @@ def main():
         callbacks=[StopCallback()],
     )
 
-    # Train federated rounds
-    # start with global model at the beginning of each round
+    # (3) Train federated rounds
+    # Start with global model at the beginning of each round
     while flare.is_running():
-        # receives golobal model from NVFlare (only on rank 0)
+        # (4) Receive global model from NVFlare (only on rank 0)
         if rank == 0:
             print("Rank 0: Waiting to receive model from FL server...")
             input_model = flare.receive(timeout=600)
@@ -266,7 +284,7 @@ def main():
                     dist.broadcast_object_list(stop_signal, src=0)
                 break
             curr_round = input_model.current_round
-            print(f"Rank 0: Received model for round {curr_round}")
+            print(f"Rank 0: Received model for round {curr_round}, Site={flare.get_site_name()}")
             # Update the key name received from global model if using model def file
             global_model = copy.deepcopy(input_model.params)
             for key in list(global_model.keys()):
@@ -275,7 +293,7 @@ def main():
             curr_round = None
             global_model = None
 
-        # broadcast current round and global_model to all processes
+        # Broadcast current round and global_model to all processes
         if dist.is_initialized():
             curr_round_list = [curr_round]
             global_model_list = [global_model]
@@ -284,27 +302,32 @@ def main():
             curr_round = curr_round_list[0]
             global_model = global_model_list[0]
 
+        # Sync all processes before loading model
         if dist.is_initialized():
             dist.barrier()
 
-        # Load state dict
+        # (5) Load global model state dict
         if train_mode:
             set_peft_model_state_dict(trainer.model, global_model)
         else:
             trainer.model.load_state_dict(global_model)
-        # Wait for main process to finish model loading
+
+        # Wait for all processes to finish model loading
         if dist.is_initialized():
             dist.barrier()
 
-        # Evaluate the global model
+        # (6) Evaluate the global model for server-side model selection
         eval_loss = trainer.evaluate()
         eval_loss = float(eval_loss["eval_loss"])
+        if rank == 0:
+            print(f"Rank 0: Global model eval_loss: {eval_loss}")
 
-        # Train
+        # (7) Train locally
         if curr_round == 0:
             # First round, start from pretrained model
             for epoch in range(args.local_epoch):
-                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                if rank == 0:
+                    print(f"Rank 0: Training local epoch {epoch + 1}/{args.local_epoch}")
                 # train for one epoch
                 if epoch == 0:
                     trainer.train()
@@ -312,7 +335,7 @@ def main():
                     # continue training
                     trainer.train(resume_from_checkpoint=True)
         else:
-            # replace local resume weights with global weights (only on global rank 0)
+            # Replace local resume weights with global weights (only on global rank 0)
             # Use rank (not local_rank) since all nodes share the same filesystem
             if rank == 0:
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
@@ -331,17 +354,18 @@ def main():
             if dist.is_initialized():
                 dist.barrier()
 
-            # continue training
-            # as we used callback, no need to increment num_train_epochs
+            # Continue training from checkpoint
+            # As we used callback, no need to increment num_train_epochs
             for epoch in range(args.local_epoch):
-                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                if rank == 0:
+                    print(f"Rank 0: Training local epoch {epoch + 1}/{args.local_epoch}")
                 trainer.train(resume_from_checkpoint=True)
 
-        # Wait for all process to finish training before continuing
+        # Wait for all processes to finish training before continuing
         if dist.is_initialized():
             dist.barrier()
 
-        # compose output model to send back to server (only on rank 0)
+        # (8) Compose output model to send back to server (only on rank 0)
         if rank == 0:
             if train_mode:
                 # PEFT, load PEFT part from trainer model
@@ -350,26 +374,25 @@ def main():
                 # SFT, load whole model state_dict
                 out_param = trainer.model.state_dict()
 
-            # update the key name sent to global model
+            # Update the key name sent to global model
             if not train_mode:
                 for key in list(out_param.keys()):
                     out_param["model." + key] = out_param.pop(key).cpu()
 
             if args.message_mode.lower() == "numpy":
-                # cast out_param to float32 preparing for communication with numpy
-                # otherwise do nothing
+                # Cast out_param to float32 preparing for communication with numpy
                 out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
 
-            # print the dict size
-            print(f"In total {len(out_param.keys())} params to be sent to server.")
+            # Print the dict size
+            print(f"Rank 0: Sending {len(out_param.keys())} params to server.")
 
-            # construct trained FL model
+            # (9) Construct trained FL model
             output_model = flare.FLModel(
                 params=out_param,
                 metrics={"eval_loss": eval_loss},
                 meta={"NUM_STEPS_CURRENT_ROUND": trainer.train_dataset.num_rows},
             )
-            # send model back to NVFlare
+            # (10) Send model back to NVFlare
             flare.send(output_model)
 
     # Cleanup distributed training environment
