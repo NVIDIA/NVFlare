@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -46,7 +48,9 @@ class Trainer:
                 loss.backward()
                 optimizer.step()
 
-        print(f"  [{fox.site_name}] Loss: {loss.item():.4f}")
+        # Use environment variable for site name (set by FoxWorker)
+        site_name = os.environ.get("FOX_SITE_NAME", "unknown")
+        print(f"  [{site_name}] Loss: {loss.item():.4f}")
 
         # Return updated weights and loss
         return model.state_dict(), loss.item()
@@ -99,4 +103,3 @@ class FedAvg:
 
         print(f"\nFedAvg completed after {self.num_rounds} rounds")
         return global_weights
- 

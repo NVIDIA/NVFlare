@@ -37,6 +37,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .worker import (
+    ENV_CLIENT_CLASS,
     ENV_PARENT_FQCN,
     ENV_PARENT_URL,
     ENV_SITE_NAME,
@@ -86,6 +87,8 @@ class SubprocessLauncher:
         shutdown_timeout: float = DEFAULT_SHUTDOWN_TIMEOUT,
         process_wait_timeout: float = DEFAULT_PROCESS_WAIT_TIMEOUT,
         tracking_type: Optional[str] = None,
+        site_index: int = 0,
+        client_class: Optional[str] = None,
     ):
         """Initialize SubprocessLauncher.
 
@@ -100,6 +103,8 @@ class SubprocessLauncher:
             shutdown_timeout: Timeout for sending shutdown signal.
             process_wait_timeout: Timeout for waiting for process to terminate.
             tracking_type: Type of experiment tracking (e.g., "mlflow", "tensorboard", "wandb").
+            site_index: Index of this site (for unique port assignment, 0-based).
+            client_class: Optional class name for class-based clients (e.g., "Trainer").
         """
         self.site_name = site_name
         self.training_module = training_module
@@ -110,6 +115,8 @@ class SubprocessLauncher:
         self.shutdown_timeout = shutdown_timeout
         self.process_wait_timeout = process_wait_timeout
         self.tracking_type = tracking_type
+        self.site_index = site_index
+        self.client_class = client_class
 
         self.logger = get_obj_logger(self)
         self._process: Optional[subprocess.Popen] = None
@@ -178,6 +185,16 @@ class SubprocessLauncher:
         else:
             env["PYTHONPATH"] = os.getcwd()
 
+        # Set unique MASTER_PORT for torchrun to avoid port conflicts
+        # when multiple sites run on the same machine (simulation mode)
+        # Base port 29500 + site_index to ensure each site uses a different port
+        unique_port = 29500 + self.site_index
+        env["MASTER_PORT"] = str(unique_port)
+
+        # Add client class for class-based clients
+        if self.client_class:
+            env[ENV_CLIENT_CLASS] = self.client_class
+
         return env
 
     def _build_subprocess_cmd(self) -> List[str]:
@@ -185,22 +202,35 @@ class SubprocessLauncher:
 
         Returns:
             List of command arguments
+
+        The command format depends on whether a run_cmd (launcher) is specified:
+        - Without run_cmd: python -m nvflare.fox.sys.worker <training_module>
+        - With run_cmd:    torchrun [opts] --master-port=X -m nvflare.fox.sys.worker <training_module>
+
+        For torchrun/mpirun style launchers, we use -m directly on the launcher
+        since they invoke Python internally. This avoids the invalid command:
+            torchrun python -m ...  (wrong: torchrun would try to run 'python' as a script)
+
+        For torchrun specifically, we inject --master-port to ensure each site uses
+        a unique port (avoids conflicts in simulation mode).
         """
-        # Worker command: python -m nvflare.fox.sys.worker <training_module>
-        worker_cmd = [
-            "python",
-            "-m",
-            "nvflare.fox.sys.worker",
-            self.training_module,
-        ]
+        # Worker module and training module as arguments
+        worker_module = "nvflare.fox.sys.worker"
 
         if self.run_cmd:
-            # Prepend run command (e.g., "torchrun --nproc_per_node=4")
-            # Result: torchrun --nproc_per_node=4 python -m nvflare.fox.sys.worker my_training
+            # Launcher-based execution (e.g., torchrun, mpirun)
             run_cmd_parts = shlex.split(self.run_cmd)
-            return run_cmd_parts + worker_cmd
+
+            # Check if this is torchrun and inject unique --master-port
+            if run_cmd_parts and "torchrun" in run_cmd_parts[0]:
+                # Calculate unique port for this site
+                unique_port = 29500 + self.site_index
+                run_cmd_parts.append(f"--master-port={unique_port}")
+
+            return run_cmd_parts + ["-m", worker_module, self.training_module]
         else:
-            return worker_cmd
+            # Direct Python execution
+            return ["python", "-m", worker_module, self.training_module]
 
     def start(self) -> bool:
         """Start the worker subprocess.
@@ -229,6 +259,7 @@ class SubprocessLauncher:
                 env=env,
                 text=True,
             )
+            self.logger.info(f"Process spawned (pid={self._process.pid})")
 
             # Start thread to capture output
             output_thread = threading.Thread(target=self._capture_output, daemon=True)
@@ -253,7 +284,8 @@ class SubprocessLauncher:
         """Capture and log subprocess output."""
         if self._process and self._process.stdout:
             for line in self._process.stdout:
-                self.logger.info(f"[Worker] {line.rstrip()}")
+                output = line.rstrip()
+                self.logger.debug(f"[Worker] {output}")
 
     def call(self, func_name: str, args: tuple = (), kwargs: dict = None) -> Any:
         """Forward a call to the worker subprocess.

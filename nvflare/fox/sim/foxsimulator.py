@@ -20,8 +20,9 @@ from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
 from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.fox.api.dec import get_object_collab_interface
-from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.api.proxy_utils import create_proxy_with_children
 from nvflare.fox.api.run_server import run_server
+from nvflare.fox.api.subprocess_backend import SubprocessBackend
 from nvflare.fox.sim.backend import SimBackend
 from nvflare.fox.sim.ws import SimWorkspace
 from nvflare.fox.sys.subprocess_launcher import SubprocessLauncher
@@ -40,44 +41,86 @@ class AppRunner:
     """
 
     def _prepare_app_backends(self, app: App, site_name: str = None):
-        """Create SimBackend instances for an app.
+        """Create backend instances for an app.
+
+        For in-process mode, creates SimBackend instances.
+        For subprocess mode, creates SubprocessBackend instances that route
+        calls to the worker subprocess via CellNet.
 
         Args:
             app: The app to create backends for.
             site_name: The site name (used to look up subprocess launcher).
 
         Returns:
-            Dictionary of SimBackend instances keyed by object name.
+            Dictionary of Backend instances keyed by object name.
         """
         # Get subprocess launcher for this site if running in subprocess mode
         launcher = self._subprocess_launchers.get(site_name) if site_name else None
 
-        bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor, launcher)}
-        targets = app.get_collab_objects()
-        for name, obj in targets.items():
-            bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor, launcher)
+        if launcher:
+            # Subprocess mode: use SubprocessBackend that forwards to worker
+            bes = {"": SubprocessBackend(launcher, self.abort_signal, self.thread_executor, target_name="")}
+            targets = app.get_collab_objects()
+            for name, obj in targets.items():
+                bes[name] = SubprocessBackend(launcher, self.abort_signal, self.thread_executor, target_name=name)
+        else:
+            # In-process mode: use SimBackend for direct execution
+            bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor)}
+            targets = app.get_collab_objects()
+            for name, obj in targets.items():
+                bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor)
         return bes
 
-    @staticmethod
-    def _prepare_proxy(for_app: App, target_app: App, backends: dict):
-        app_proxy = Proxy(
-            app=for_app,
-            target_name=target_app.name,
-            target_fqn=target_app.fqn,
-            backend=backends[""],
-            target_interface=get_object_collab_interface(target_app),
-        )
+    def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
+        """Prepare proxy for a target app.
+
+        For both in-process and subprocess modes, uses logical FQN (e.g., "site-1")
+        for proxy identification. The SubprocessBackend handles the actual routing
+        to workers via the launcher - it doesn't use the proxy FQN for CellNet.
+        """
+        # Use logical FQN for all modes (app's own FQN)
+        # SubprocessBackend uses launcher.call() which handles CellNet routing internally
+        target_fqn = target_app.fqn
+
+        # Build child specs with backends and interfaces
+        child_specs = {}
         collab_objs = target_app.get_collab_objects()
         for name, obj in collab_objs.items():
-            p = Proxy(
-                app=for_app,
-                target_name=f"{target_app.name}.{name}",
-                target_fqn="",
-                backend=backends[name],
-                target_interface=get_object_collab_interface(obj),
-            )
-            app_proxy.add_child(name, p)
-        return app_proxy
+            child_specs[name] = {
+                "interface": get_object_collab_interface(obj),
+                "backend": backends[name],
+            }
+
+        # Use shared utility to create proxy with children
+        return create_proxy_with_children(
+            app=for_app,
+            target_name=target_app.name,
+            target_fqn=target_fqn,
+            main_backend=backends[""],
+            main_interface=get_object_collab_interface(target_app),
+            child_specs=child_specs,
+        )
+
+    def _detect_client_class(self, client_app: ClientApp) -> Optional[str]:
+        """Detect the client class name for class-based clients.
+
+        Args:
+            client_app: The ClientApp containing the client object.
+
+        Returns:
+            The class name if using a class-based client, None for module-based.
+        """
+        from nvflare.fox.api.module_wrapper import ModuleWrapper
+
+        # Get the underlying client object from ClientApp
+        client_obj = client_app.obj
+
+        # ModuleWrapper means module-based, no class name needed
+        if isinstance(client_obj, ModuleWrapper):
+            return None
+
+        # Get class name for class-based clients
+        return client_obj.__class__.__name__
 
     def _make_app(self, site_name, fqn):
         """Make a new client app instance for the specified site
@@ -174,11 +217,27 @@ class AppRunner:
         self.training_module = training_module
         self.subprocess_timeout = subprocess_timeout
 
+        # Detect client class name for class-based clients
+        self.client_class = self._detect_client_class(client_app)
+
         # Subprocess management
         self._subprocess_launchers: Dict[str, SubprocessLauncher] = {}
         self._ipc_cell: Optional[CoreCell] = None
 
-        # Build client apps
+        # Store config for deferred setup
+        self.root_dir = root_dir
+        self.experiment_name = experiment_name
+        self.num_clients = num_clients
+
+        # Build client apps (but defer backend/proxy setup until run())
+        self.client_apps = self._build_client_apps(num_clients)
+        self.logger.info(f"created client apps: {self.client_apps.keys()}")
+
+        # These will be set up in run() after subprocesses are started
+        self.exp_dir = None
+
+    def _build_client_apps(self, num_clients: Union[int, Tuple[int, int]]) -> Dict[str, ClientApp]:
+        """Build client app instances."""
         if isinstance(num_clients, int):
             if num_clients <= 0:
                 raise ValueError(f"num_clients must > 0 but got {num_clients}")
@@ -190,7 +249,6 @@ class AppRunner:
             if len(num_clients) != 2:
                 raise ValueError(f"num_clients must be an int or tuple(int, int) but got {num_clients}")
 
-            # tuple of (height x width)
             height, num_children_per_parent = num_clients
             if not isinstance(height, int) or not isinstance(num_children_per_parent, int):
                 raise ValueError(f"num_clients must be an int or tuple(int, int) but got {num_clients}")
@@ -203,27 +261,44 @@ class AppRunner:
         else:
             raise ValueError(f"num_clients must be an int or tuple(int, int) but got {type(num_clients)}")
 
-        self.logger.info(f"created client apps: {client_apps.keys()}")
+        return client_apps
 
-        # Create backends for server
-        backends = {server_app.name: self._prepare_app_backends(server_app)}
+    def _setup_backends_and_proxies(self):
+        """Set up backends and proxies after subprocesses are started.
 
-        # Create backends for clients (with subprocess launchers if needed)
-        for name, app in client_apps.items():
+        This must be called after _start_subprocesses() so that launchers are available.
+        """
+        # Create backends for server (no subprocess launcher for server)
+        backends = {self.server_app.name: self._prepare_app_backends(self.server_app)}
+
+        # Create backends for clients (with subprocess launchers if subprocess mode)
+        for name, app in self.client_apps.items():
             backends[name] = self._prepare_app_backends(app, site_name=name)
 
         exp_id = str(uuid.uuid4())
 
-        for name, app in client_apps.items():
-            server_proxy, client_proxies = self._prepare_proxies(app, server_app, client_apps, backends)
-            ws = SimWorkspace(root_dir=root_dir, experiment_name=experiment_name, site_name=name, exp_id=exp_id)
+        # Set up client apps with proxies
+        for name, app in self.client_apps.items():
+            server_proxy, client_proxies = self._prepare_proxies(app, self.server_app, self.client_apps, backends)
+            ws = SimWorkspace(
+                root_dir=self.root_dir,
+                experiment_name=self.experiment_name,
+                site_name=name,
+                exp_id=exp_id,
+            )
             app.setup(ws, server_proxy, client_proxies, self.abort_signal)
 
-        # prepare server
-        server_proxy, client_proxies = self._prepare_proxies(server_app, server_app, client_apps, backends)
-        ws = SimWorkspace(root_dir=root_dir, experiment_name=experiment_name, site_name=server_app.name, exp_id=exp_id)
-        server_app.setup(ws, server_proxy, client_proxies, self.abort_signal)
-        self.client_apps = client_apps
+        # Set up server with proxies
+        server_proxy, client_proxies = self._prepare_proxies(
+            self.server_app, self.server_app, self.client_apps, backends
+        )
+        ws = SimWorkspace(
+            root_dir=self.root_dir,
+            experiment_name=self.experiment_name,
+            site_name=self.server_app.name,
+            exp_id=exp_id,
+        )
+        self.server_app.setup(ws, server_proxy, client_proxies, self.abort_signal)
         self.exp_dir = ws.get_experiment_dir()
 
     def _build_hierarchical_clients(self, height: int, num_children_per_parent: int):
@@ -253,6 +328,11 @@ class AppRunner:
 
     def _setup_ipc_cell(self):
         """Create a CoreCell for subprocess IPC communication."""
+        # Register tensor decomposer for FOBS (so parent can deserialize worker responses)
+        from nvflare.fox.utils.decomposers import register_available_decomposers
+
+        register_available_decomposers()
+
         # Create a simple CoreCell for local IPC
         # This acts as the "parent" for subprocess workers to connect to
         self._ipc_cell = CoreCell(
@@ -276,7 +356,7 @@ class AppRunner:
         self._setup_ipc_cell()
 
         # Create and start subprocess launcher for each client site
-        for site_name in self.client_apps.keys():
+        for site_index, site_name in enumerate(self.client_apps.keys()):
             self.logger.info(f"Starting subprocess for {site_name}...")
 
             launcher = SubprocessLauncher(
@@ -285,7 +365,9 @@ class AppRunner:
                 parent_cell=self._ipc_cell,
                 run_cmd=self.run_cmd,
                 subprocess_timeout=self.subprocess_timeout,
-                worker_id=site_name,  # Use site name as worker ID
+                worker_id="0",  # Use "0" as worker ID to form FQCN: site-1.worker.0
+                site_index=site_index,  # For unique MASTER_PORT assignment
+                client_class=self.client_class,  # For class-based clients
             )
 
             if not launcher.start():
@@ -320,9 +402,13 @@ class AppRunner:
         self.logger.debug(f"Client Collab Interface: {self.client_app.get_collab_interface()}")
 
         try:
-            # Start subprocesses if needed (before running)
+            # Start subprocesses if needed (before setting up backends/proxies)
             if not self.inprocess:
                 self._start_subprocesses()
+
+            # Set up backends and proxies (after subprocesses are started)
+            # This ensures subprocess launchers are available for SubprocessBackend
+            self._setup_backends_and_proxies()
 
             result = self._try_run()
         except KeyboardInterrupt:

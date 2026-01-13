@@ -24,7 +24,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
-from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.api.proxy_utils import create_proxy_with_children
 from nvflare.fox.utils.decomposers import register_available_decomposers
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
@@ -157,67 +157,60 @@ class FoxExecutor(Executor, FoxAdaptor):
 
     def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
+        target_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         backend = FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
+            target_fqcn=target_fqcn,
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
-        proxy = Proxy(
-            app=self.client_app,
-            target_name=server_name,
-            target_fqn=server_name,
-            backend=backend,
-            target_interface=collab_interface.get(""),
-        )
 
+        # Build child specs (same backend for all, different interfaces)
+        child_specs = {}
         for name, itf in collab_interface.items():
             if name == "":
-                # this is the server app itself
                 continue
-            p = Proxy(
-                app=self.client_app,
-                target_name=f"{server_name}.{name}",
-                target_fqn="",
-                backend=backend,
-                target_interface=itf,
-            )
-            proxy.add_child(name, p)
-        return proxy
+            child_specs[name] = {"interface": itf}  # Uses main_backend by default
+
+        return create_proxy_with_children(
+            app=self.client_app,
+            target_name=server_name,
+            target_fqn=target_fqcn,
+            main_backend=backend,
+            main_interface=collab_interface.get(""),
+            child_specs=child_specs,
+        )
 
     def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_interface, fl_ctx: FLContext):
+        target_fqcn = FQCN.join([client.get_fqcn(), job_id])
         backend = FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
+            target_fqcn=target_fqcn,
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
-        proxy = Proxy(
-            app=self.client_app,
-            target_name=client.name,
-            target_fqn=client.get_fqsn(),
-            backend=backend,
-            target_interface=collab_interface.get(""),
-        )
 
+        # Build child specs (same backend for all, different interfaces)
+        child_specs = {}
         collab_objs = self.client_app.get_collab_objects()
         if collab_objs:
             for name in collab_objs.keys():
-                p = Proxy(
-                    app=self.client_app,
-                    target_name=f"{client.name}.{name}",
-                    target_fqn="",
-                    backend=backend,
-                    target_interface=collab_interface.get(name),
-                )
-                proxy.add_child(name, p)
-        return proxy
+                child_specs[name] = {"interface": collab_interface.get(name)}
+
+        return create_proxy_with_children(
+            app=self.client_app,
+            target_name=client.name,
+            target_fqn=target_fqcn,
+            main_backend=backend,
+            main_interface=collab_interface.get(""),
+            child_specs=child_specs,
+        )
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name != SYNC_TASK_NAME:

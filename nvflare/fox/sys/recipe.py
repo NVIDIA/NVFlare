@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 
 from nvflare.fox.api.app import App, ClientApp, ServerApp
 from nvflare.fox.api.filter import FilterChain
-from nvflare.fox.api.module_wrapper import ModuleWrapper
+from nvflare.fox.api.module_wrapper import ModuleWrapper, get_importable_module_name
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv, Recipe
@@ -202,11 +202,15 @@ class FoxRecipe(Recipe):
         if isinstance(client_obj, ModuleWrapper):
             # Module-based: get from ModuleWrapper
             return client_obj.module_name
-        elif hasattr(client_obj, '__class__') and hasattr(client_obj.__class__, '__module__'):
+        elif hasattr(client_obj, "__class__") and hasattr(client_obj.__class__, "__module__"):
             # Class-based: get from class's module
             module_name = client_obj.__class__.__module__
             # Skip built-in modules
-            if module_name and not module_name.startswith('builtins'):
+            if module_name and not module_name.startswith("builtins"):
+                # Resolve to full importable name (handles __main__ and short names)
+                module = sys.modules.get(module_name)
+                if module:
+                    return get_importable_module_name(module)
                 return module_name
 
         # Could not auto-detect
@@ -216,10 +220,10 @@ class FoxRecipe(Recipe):
         )
 
     def process_env(self, env: ExecEnv):
-        """Pass server/client objects to the execution environment.
+        """Pass server/client objects and subprocess options to the execution environment.
 
-        This allows SimEnv and FoxPocEnv to receive the server/client objects
-        from the recipe without requiring them to be passed twice.
+        This allows SimEnv and PocEnv to receive the configuration from the recipe
+        without requiring them to be passed twice.
         """
         # Import here to avoid circular dependency
         from nvflare.fox.sim.sim_env import SimEnv
@@ -235,6 +239,13 @@ class FoxRecipe(Recipe):
                 env.server_objects = self.server_objects
             if env.client_objects is None:
                 env.client_objects = self.client_objects
+
+            # Pass subprocess options from recipe to environment
+            # These override env defaults since recipe has the authoritative config
+            env.inprocess = self.inprocess
+            env.run_cmd = self.run_cmd
+            env.training_module = self.training_module
+            env.subprocess_timeout = self.subprocess_timeout
 
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)

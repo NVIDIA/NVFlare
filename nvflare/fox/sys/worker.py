@@ -64,6 +64,7 @@ ENV_SITE_NAME = "FOX_SITE_NAME"
 ENV_WORKER_ID = "FOX_WORKER_ID"
 ENV_SUBPROCESS_TIMEOUT = "FOX_SUBPROCESS_TIMEOUT"
 ENV_TRACKING_TYPE = "FOX_TRACKING_TYPE"
+ENV_CLIENT_CLASS = "FOX_CLIENT_CLASS"  # Optional: class name for class-based clients
 
 # CellNet channel and topics for worker communication
 WORKER_CHANNEL = "fox_worker"
@@ -152,17 +153,33 @@ class FoxWorker:
         self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
     def _load_training_module(self):
-        """Load the user's training module and wrap it for Fox calls."""
-        self.logger.info(f"Loading training module: {self.training_module_name}")
+        """Load the user's training module and wrap it for Fox calls.
 
-        # Import ModuleWrapper here to avoid circular imports
-        from nvflare.fox.api.module_wrapper import ModuleWrapper
+        Supports two modes:
+        1. Class-based clients (FOX_CLIENT_CLASS set): Instantiates the specified class
+        2. Module-level functions: Uses ModuleWrapper to expose @fox.collab functions
+        """
+        self.logger.info(f"Loading training module: {self.training_module_name}")
 
         # Import the user's training module
         module = importlib.import_module(self.training_module_name)
 
-        # Wrap it with ModuleWrapper to expose @fox.collab methods
-        self.training_app = ModuleWrapper(module)
+        # Check if a specific client class is specified
+        client_class_name = os.environ.get(ENV_CLIENT_CLASS)
+
+        if client_class_name:
+            # Class-based client: instantiate the specified class
+            self.logger.info(f"Using client class: {client_class_name}")
+            client_class = getattr(module, client_class_name, None)
+            if client_class is None:
+                raise ValueError(f"Client class '{client_class_name}' not found in {self.training_module_name}")
+            self.training_app = client_class()
+        else:
+            # Module-level functions: use ModuleWrapper
+            from nvflare.fox.api.module_wrapper import ModuleWrapper
+
+            self.training_app = ModuleWrapper(module)
+
         self.logger.info("Training module loaded successfully")
 
     def _create_cell(self):

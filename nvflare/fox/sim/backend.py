@@ -33,25 +33,15 @@ class _Waiter(threading.Event):
 
 
 class SimBackend(Backend):
-    """Backend for simulation that can work in-process or via subprocess.
+    """Backend for in-process simulation.
 
-    When subprocess_launcher is provided, calls are forwarded to a subprocess
-    (e.g., for torchrun multi-GPU training). Otherwise, calls are executed
-    directly in-process using the thread executor.
+    Executes @fox.collab methods directly in-process using a thread executor.
+    Symmetric with FlareBackend which sends calls over CellNet.
 
-    This mirrors the FlareBackend pattern where FoxExecutor switches between
-    in-process and subprocess modes based on configuration.
+    For subprocess execution, use SubprocessBackend instead.
     """
 
-    def __init__(
-        self,
-        target_obj_name: str,
-        target_app: App,
-        target_obj,
-        abort_signal,
-        thread_executor,
-        subprocess_launcher=None,
-    ):
+    def __init__(self, target_obj_name: str, target_app: App, target_obj, abort_signal, thread_executor):
         """Initialize SimBackend.
 
         Args:
@@ -59,44 +49,19 @@ class SimBackend(Backend):
             target_app: The App instance containing the target.
             target_obj: The actual target object with @fox.collab methods.
             abort_signal: Signal to abort execution.
-            thread_executor: ThreadPoolExecutor for in-process execution.
-            subprocess_launcher: Optional SubprocessLauncher for subprocess execution.
-                                When provided, calls are forwarded to the subprocess.
+            thread_executor: ThreadPoolExecutor for parallel execution.
         """
         Backend.__init__(self, abort_signal)
         self.target_obj_name = target_obj_name
         self.target_app = target_app
         self.target_obj = target_obj
         self.executor = thread_executor
-        self.subprocess_launcher = subprocess_launcher
 
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)
 
     def call_target(self, context, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
-        # If subprocess launcher is available, forward call to subprocess
-        if self.subprocess_launcher:
-            return self._call_via_subprocess(func_name, args, kwargs, call_opt.timeout)
-
-        # Otherwise, execute in-process
-        return self._call_inprocess(context, target_name, call_opt, func_name, args, kwargs)
-
-    def _call_via_subprocess(self, func_name: str, args: tuple, kwargs: dict, timeout: float):
-        """Forward call to subprocess via launcher."""
-        if self.abort_signal.triggered:
-            return RunAborted("job is aborted")
-
-        if not self.subprocess_launcher.is_ready():
-            raise RuntimeError(f"Subprocess is not ready for {self.target_obj_name}")
-
-        try:
-            result = self.subprocess_launcher.call(func_name, args=args, kwargs=kwargs)
-            return result
-        except Exception as e:
-            return e
-
-    def _call_inprocess(self, context, target_name: str, call_opt: CallOption, func_name: str, args, kwargs):
-        """Execute call in-process using thread executor."""
+        """Execute a call in-process."""
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
