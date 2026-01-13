@@ -83,7 +83,7 @@ class FoxRecipe(Recipe):
         min_clients: int = 1,
         # Subprocess execution options (for distributed training like torchrun)
         inprocess: bool = True,
-        subprocess_launcher: Optional[str] = None,
+        run_cmd: Optional[str] = None,
         training_module: Optional[str] = None,
         subprocess_timeout: float = 300.0,
     ):
@@ -101,11 +101,11 @@ class FoxRecipe(Recipe):
             min_clients: Minimum number of clients required.
             inprocess: If True (default), execute training in-process.
                 If False, spawn subprocess for training (e.g., for torchrun DDP).
-            subprocess_launcher: Launcher command for subprocess mode
+            run_cmd: Command to run the training subprocess
                 (e.g., "torchrun --nproc_per_node=4").
             training_module: Python module containing @fox.collab methods.
-                Required when inprocess=False. If None and using module-based
-                client, will auto-detect from the client module.
+                Auto-detected from client object in most cases. Only needed
+                if auto-detection fails.
             subprocess_timeout: Timeout for subprocess operations.
 
         Examples:
@@ -119,13 +119,12 @@ class FoxRecipe(Recipe):
             # Simplest: use caller's module (contains both @fox.algo and @fox.collab)
             recipe = FoxRecipe(job_name="job", min_clients=5)
 
-            # Subprocess mode for multi-GPU DDP training
+            # Subprocess mode for multi-GPU DDP training (training_module auto-detected)
             recipe = FoxRecipe(
                 job_name="fedavg_ddp",
                 min_clients=2,
                 inprocess=False,
-                subprocess_launcher="torchrun --nproc_per_node=4",
-                training_module="my_training",
+                run_cmd="torchrun --nproc_per_node=4",
             )
         """
         check_str("job_name", job_name)
@@ -167,24 +166,54 @@ class FoxRecipe(Recipe):
 
         # Subprocess execution options
         self.inprocess = inprocess
-        self.subprocess_launcher = subprocess_launcher
+        self.run_cmd = run_cmd
         self.subprocess_timeout = subprocess_timeout
 
         # Auto-detect training_module from client if not provided
-        if training_module:
-            self.training_module = training_module
-        elif not inprocess and isinstance(self.client, ModuleWrapper):
-            # Get module name from ModuleWrapper
-            self.training_module = self.client.module_name
-        else:
-            self.training_module = None
-
-        # Validate subprocess options
-        if not inprocess and not self.training_module:
-            raise ValueError("training_module is required when inprocess=False")
+        self.training_module = self._detect_training_module(training_module, self.client)
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
+
+    def _detect_training_module(self, explicit_module: Optional[str], client_obj) -> Optional[str]:
+        """Auto-detect the training module from client object.
+
+        Handles all cases:
+        - Module-based client (ModuleWrapper): get module_name
+        - Class-based client: get __class__.__module__
+        - Explicit training_module provided: use it directly
+
+        Args:
+            explicit_module: Explicitly provided training_module (if any)
+            client_obj: The client object (ModuleWrapper or class instance)
+
+        Returns:
+            The detected module name, or None if not needed (inprocess=True)
+        """
+        # If explicitly provided, use it
+        if explicit_module:
+            return explicit_module
+
+        # If in-process, no training module needed
+        if self.inprocess:
+            return None
+
+        # Try to detect from client object
+        if isinstance(client_obj, ModuleWrapper):
+            # Module-based: get from ModuleWrapper
+            return client_obj.module_name
+        elif hasattr(client_obj, '__class__') and hasattr(client_obj.__class__, '__module__'):
+            # Class-based: get from class's module
+            module_name = client_obj.__class__.__module__
+            # Skip built-in modules
+            if module_name and not module_name.startswith('builtins'):
+                return module_name
+
+        # Could not auto-detect
+        raise ValueError(
+            "Could not auto-detect training_module for subprocess execution. "
+            "Please provide training_module explicitly."
+        )
 
     def process_env(self, env: ExecEnv):
         """Pass server/client objects to the execution environment.
@@ -288,7 +317,7 @@ class FoxRecipe(Recipe):
             resource_dirs=self.client_app.get_resource_dirs(),
             # Subprocess execution options
             inprocess=self.inprocess,
-            subprocess_launcher=self.subprocess_launcher,
+            run_cmd=self.run_cmd,
             training_module=self.training_module,
             subprocess_timeout=self.subprocess_timeout,
         )

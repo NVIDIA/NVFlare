@@ -61,7 +61,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         max_call_threads=100,
         # Subprocess execution options
         inprocess: bool = True,
-        subprocess_launcher: Optional[str] = None,
+        run_cmd: Optional[str] = None,
         training_module: Optional[str] = None,
         subprocess_timeout: float = 300.0,
     ):
@@ -78,7 +78,7 @@ class FoxExecutor(Executor, FoxAdaptor):
             resource_dirs: Resource directories.
             max_call_threads: Maximum threads for call handling.
             inprocess: If True, execute in-process. If False, use subprocess.
-            subprocess_launcher: Launcher command for subprocess mode
+            run_cmd: Command to run the training subprocess
                 (e.g., "torchrun --nproc_per_node=4").
             training_module: Python module containing @fox.collab methods
                 (required when inprocess=False).
@@ -104,7 +104,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         # Subprocess execution options
         self.inprocess = inprocess
-        self.subprocess_launcher = subprocess_launcher
+        self.run_cmd = run_cmd
         self.training_module = training_module
         self.subprocess_timeout = subprocess_timeout
         self._subprocess_launcher: Optional[SubprocessLauncher] = None
@@ -276,14 +276,14 @@ class FoxExecutor(Executor, FoxAdaptor):
         """Start the subprocess worker for distributed training."""
         self.logger.info(f"Starting subprocess worker for {client_name}...")
         self.logger.info(f"  Training module: {self.training_module}")
-        if self.subprocess_launcher:
-            self.logger.info(f"  Launcher: {self.subprocess_launcher}")
+        if self.run_cmd:
+            self.logger.info(f"  Run command: {self.run_cmd}")
 
         self._subprocess_launcher = SubprocessLauncher(
             site_name=client_name,
             training_module=self.training_module,
             parent_cell=cell,
-            launcher_cmd=self.subprocess_launcher,
+            run_cmd=self.run_cmd,
             subprocess_timeout=self.subprocess_timeout,
         )
 

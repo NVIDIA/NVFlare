@@ -68,7 +68,7 @@ class SubprocessLauncher:
             site_name="site-1",
             training_module="my_training",
             parent_cell=cell,
-            launcher_cmd="torchrun --nproc_per_node=4",
+            run_cmd="torchrun --nproc_per_node=4",
         )
         launcher.start()
         result = launcher.call("train", args=(weights,))
@@ -80,7 +80,7 @@ class SubprocessLauncher:
         site_name: str,
         training_module: str,
         parent_cell: CoreCell,
-        launcher_cmd: Optional[str] = None,
+        run_cmd: Optional[str] = None,
         subprocess_timeout: float = 300.0,
         worker_id: str = "0",
         shutdown_timeout: float = DEFAULT_SHUTDOWN_TIMEOUT,
@@ -93,8 +93,8 @@ class SubprocessLauncher:
             site_name: Name of this site (e.g., site-1)
             training_module: Python module path containing @fox.collab methods
             parent_cell: CellNet cell of the parent FoxExecutor
-            launcher_cmd: Optional launcher command (e.g., "torchrun --nproc_per_node=4")
-                         If None, runs FoxWorker directly without a launcher.
+            run_cmd: Optional command prefix (e.g., "torchrun --nproc_per_node=4")
+                     If None, runs FoxWorker directly.
             subprocess_timeout: Timeout for subprocess call operations.
             worker_id: Unique ID for this worker (default "0")
             shutdown_timeout: Timeout for sending shutdown signal.
@@ -104,7 +104,7 @@ class SubprocessLauncher:
         self.site_name = site_name
         self.training_module = training_module
         self.parent_cell = parent_cell
-        self.launcher_cmd = launcher_cmd
+        self.run_cmd = run_cmd
         self.subprocess_timeout = subprocess_timeout
         self.worker_id = worker_id
         self.shutdown_timeout = shutdown_timeout
@@ -194,11 +194,11 @@ class SubprocessLauncher:
             self.training_module,
         ]
 
-        if self.launcher_cmd:
-            # Prepend launcher (e.g., "torchrun --nproc_per_node=4")
+        if self.run_cmd:
+            # Prepend run command (e.g., "torchrun --nproc_per_node=4")
             # Result: torchrun --nproc_per_node=4 python -m nvflare.fox.sys.worker my_training
-            launcher_parts = shlex.split(self.launcher_cmd)
-            return launcher_parts + worker_cmd
+            run_cmd_parts = shlex.split(self.run_cmd)
+            return run_cmd_parts + worker_cmd
         else:
             return worker_cmd
 

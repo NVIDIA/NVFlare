@@ -1,3 +1,18 @@
+"""Distributed Federated Averaging Simulation using torchrun.
+
+This script demonstrates federated averaging using PyTorch's distributed
+primitives (init_process_group, all_reduce) for true multi-process execution.
+
+Usage:
+    torchrun --nproc_per_node=3 sim_distributed_fedavg_train.py
+
+    Or with more nodes:
+    torchrun --nproc_per_node=5 sim_distributed_fedavg_train.py
+"""
+
+import os
+import sys
+
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -110,9 +125,23 @@ def fed_avg(clients, num_rounds=5):
 
 # 2. Execute the training
 if __name__ == "__main__":
-    clients = ["site-1", "site-2", "site-3", "site-4", "site-5"]
-    result = fed_avg(clients, num_rounds=5)
+    try:
+        # Check if running under torchrun
+        if "RANK" not in os.environ:
+            print("Error: This script must be run with torchrun")
+            print("Usage: torchrun --nproc_per_node=3 sim_distributed_fedavg_train.py")
+            sys.exit(1)
+
+        clients = ["site-1", "site-2", "site-3", "site-4", "site-5"]
+        result = fed_avg(clients, num_rounds=5)
+
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
 # To run:
-# torchrun --nproc_per_node=5 sim_distributed_fedavg_train.py
+# torchrun --nproc_per_node=3 sim_distributed_fedavg_train.py

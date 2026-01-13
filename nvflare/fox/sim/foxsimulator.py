@@ -14,7 +14,7 @@
 import copy
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
@@ -24,16 +24,38 @@ from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
 from nvflare.fox.sim.backend import SimBackend
 from nvflare.fox.sim.ws import SimWorkspace
+from nvflare.fox.sys.subprocess_launcher import SubprocessLauncher
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class AppRunner:
+    """Runner for Fox simulation that manages server and client apps.
 
-    def _prepare_app_backends(self, app: App):
-        bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor)}
+    This is the simulation equivalent of FoxExecutor - it manages client-side
+    execution and supports both in-process and subprocess modes.
+
+    When inprocess=False, it creates a CoreCell for IPC and SubprocessLauncher
+    for each client site to run training in separate processes (e.g., for torchrun).
+    """
+
+    def _prepare_app_backends(self, app: App, site_name: str = None):
+        """Create SimBackend instances for an app.
+
+        Args:
+            app: The app to create backends for.
+            site_name: The site name (used to look up subprocess launcher).
+
+        Returns:
+            Dictionary of SimBackend instances keyed by object name.
+        """
+        # Get subprocess launcher for this site if running in subprocess mode
+        launcher = self._subprocess_launchers.get(site_name) if site_name else None
+
+        bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor, launcher)}
         targets = app.get_collab_objects()
         for name, obj in targets.items():
-            bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor)
+            bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor, launcher)
         return bes
 
     @staticmethod
@@ -107,12 +129,35 @@ class AppRunner:
         client_app: ClientApp,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
+        # Subprocess execution options (like FoxExecutor)
+        inprocess: bool = True,
+        run_cmd: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
+        """Initialize AppRunner.
+
+        Args:
+            root_dir: Root directory for simulation.
+            experiment_name: Name of the experiment.
+            server_app: The server application.
+            client_app: Template for client applications.
+            max_workers: Maximum worker threads.
+            num_clients: Number of clients or (height, width) tuple for hierarchy.
+            inprocess: If True, execute in-process. If False, use subprocess.
+            run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
+            training_module: Python module containing @fox.collab methods (required when inprocess=False).
+            subprocess_timeout: Timeout for subprocess operations.
+        """
         if not isinstance(server_app, ServerApp):
             raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
 
         if not isinstance(client_app, ClientApp):
             raise ValueError(f"client_app must be ClientApp but got {type(client_app)}")
+
+        # Validate subprocess options
+        if not inprocess and not training_module:
+            raise ValueError("training_module is required when inprocess=False")
 
         self.logger = get_obj_logger(self)
         self.abort_signal = Signal()
@@ -123,6 +168,17 @@ class AppRunner:
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fox_call")
 
+        # Subprocess options
+        self.inprocess = inprocess
+        self.run_cmd = run_cmd
+        self.training_module = training_module
+        self.subprocess_timeout = subprocess_timeout
+
+        # Subprocess management
+        self._subprocess_launchers: Dict[str, SubprocessLauncher] = {}
+        self._ipc_cell: Optional[CoreCell] = None
+
+        # Build client apps
         if isinstance(num_clients, int):
             if num_clients <= 0:
                 raise ValueError(f"num_clients must > 0 but got {num_clients}")
@@ -149,10 +205,12 @@ class AppRunner:
 
         self.logger.info(f"created client apps: {client_apps.keys()}")
 
+        # Create backends for server
         backends = {server_app.name: self._prepare_app_backends(server_app)}
 
+        # Create backends for clients (with subprocess launchers if needed)
         for name, app in client_apps.items():
-            backends[name] = self._prepare_app_backends(app)
+            backends[name] = self._prepare_app_backends(app, site_name=name)
 
         exp_id = str(uuid.uuid4())
 
@@ -193,17 +251,89 @@ class AppRunner:
             current_client_fqns = {}
         return client_apps
 
+    def _setup_ipc_cell(self):
+        """Create a CoreCell for subprocess IPC communication."""
+        # Create a simple CoreCell for local IPC
+        # This acts as the "parent" for subprocess workers to connect to
+        self._ipc_cell = CoreCell(
+            fqcn="sim.runner",
+            root_url="grpc://localhost:0",  # Use port 0 to get an available port
+            secure=False,  # Local IPC doesn't need security
+            credentials={},
+            create_internal_listener=True,  # Create listener for workers to connect
+        )
+        self._ipc_cell.start()
+        self.logger.info(f"IPC Cell started at {self._ipc_cell.get_internal_listener_url()}")
+
+    def _start_subprocesses(self):
+        """Start subprocess workers for all client sites."""
+        if self.inprocess:
+            return
+
+        self.logger.info("Starting subprocess workers...")
+
+        # Create IPC cell for communication
+        self._setup_ipc_cell()
+
+        # Create and start subprocess launcher for each client site
+        for site_name in self.client_apps.keys():
+            self.logger.info(f"Starting subprocess for {site_name}...")
+
+            launcher = SubprocessLauncher(
+                site_name=site_name,
+                training_module=self.training_module,
+                parent_cell=self._ipc_cell,
+                run_cmd=self.run_cmd,
+                subprocess_timeout=self.subprocess_timeout,
+                worker_id=site_name,  # Use site name as worker ID
+            )
+
+            if not launcher.start():
+                raise RuntimeError(f"Failed to start subprocess for {site_name}")
+
+            self._subprocess_launchers[site_name] = launcher
+
+        self.logger.info(f"All {len(self._subprocess_launchers)} subprocess workers started")
+
+    def _stop_subprocesses(self):
+        """Stop all subprocess workers."""
+        if not self._subprocess_launchers:
+            return
+
+        self.logger.info("Stopping subprocess workers...")
+
+        for site_name, launcher in self._subprocess_launchers.items():
+            self.logger.info(f"Stopping subprocess for {site_name}...")
+            launcher.stop()
+
+        self._subprocess_launchers.clear()
+
+        # Stop IPC cell
+        if self._ipc_cell:
+            self._ipc_cell.stop()
+            self._ipc_cell = None
+
+        self.logger.info("All subprocess workers stopped")
+
     def run(self):
         self.logger.debug(f"Server Collab Interface: {self.server_app.get_collab_interface()}")
         self.logger.debug(f"Client Collab Interface: {self.client_app.get_collab_interface()}")
 
         try:
+            # Start subprocesses if needed (before running)
+            if not self.inprocess:
+                self._start_subprocesses()
+
             result = self._try_run()
         except KeyboardInterrupt:
             self.logger.info("execution is aborted by user")
             self.abort_signal.trigger(True)
             result = None
         finally:
+            # Stop subprocesses
+            if not self.inprocess:
+                self._stop_subprocesses()
+
             self.thread_executor.shutdown(wait=True, cancel_futures=True)
         self.logger.info(f"Experiment results are in {self.exp_dir}")
         return result
@@ -228,6 +358,11 @@ class AppRunner:
 
 
 class FoxSimulator:
+    """High-level Fox simulation runner.
+
+    Provides a simple API to run Fox simulations with server and client objects.
+    Supports both in-process and subprocess execution modes.
+    """
 
     def __init__(
         self,
@@ -239,7 +374,29 @@ class FoxSimulator:
         client_objects: Dict[str, object] = None,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
+        # Subprocess execution options
+        inprocess: bool = True,
+        run_cmd: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
+        """Initialize FoxSimulator.
+
+        Args:
+            root_dir: Root directory for simulation output.
+            experiment_name: Name of the experiment.
+            server: Server object with @fox.algo methods.
+            client: Client object with @fox.collab methods.
+            server_objects: Additional server collab objects.
+            client_objects: Additional client collab objects.
+            max_workers: Maximum worker threads.
+            num_clients: Number of clients or (height, width) tuple.
+            inprocess: If True, execute in-process. If False, use subprocess.
+            run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
+            training_module: Python module containing @fox.collab methods
+                            (required when inprocess=False).
+            subprocess_timeout: Timeout for subprocess operations.
+        """
         server_app: ServerApp = ServerApp(server)
         client_app: ClientApp = ClientApp(client)
 
@@ -247,6 +404,12 @@ class FoxSimulator:
         self.experiment_name = experiment_name
         self.max_workers = max_workers
         self.num_clients = num_clients
+
+        # Subprocess options
+        self.inprocess = inprocess
+        self.run_cmd = run_cmd
+        self.training_module = training_module
+        self.subprocess_timeout = subprocess_timeout
 
         if server_objects:
             for name, obj in server_objects.items():
@@ -303,5 +466,10 @@ class FoxSimulator:
             client_app=self.client_app,
             max_workers=self.max_workers,
             num_clients=self.num_clients,
+            # Pass subprocess options
+            inprocess=self.inprocess,
+            run_cmd=self.run_cmd,
+            training_module=self.training_module,
+            subprocess_timeout=self.subprocess_timeout,
         )
         return runner.run()

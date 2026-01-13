@@ -28,7 +28,8 @@ class SimEnv(ExecEnv):
     """Simulation execution environment for Fox using the Fox Simulator.
 
     This environment runs federated learning jobs using the Fox simulation
-    backend, which provides a lightweight in-process simulation.
+    backend. Supports both in-process simulation and subprocess execution
+    (e.g., for torchrun multi-GPU training).
     """
 
     def __init__(
@@ -41,6 +42,11 @@ class SimEnv(ExecEnv):
         client_objects: Dict[str, object] = None,
         max_workers: int = 100,
         workspace_root: str = WORKSPACE_ROOT,
+        # Subprocess execution options
+        inprocess: bool = True,
+        run_cmd: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
         extra: dict = None,
     ):
         """Initialize Fox simulation execution environment.
@@ -53,6 +59,11 @@ class SimEnv(ExecEnv):
             client_objects: Additional client-side collab objects.
             max_workers: Maximum number of worker threads.
             workspace_root: Root directory for simulation workspace.
+            inprocess: If True, execute in-process. If False, use subprocess.
+            run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
+            training_module: Python module containing @fox.collab methods
+                            (required when inprocess=False).
+            subprocess_timeout: Timeout for subprocess operations.
             extra: Extra env config info.
         """
         super().__init__(extra)
@@ -64,6 +75,13 @@ class SimEnv(ExecEnv):
         self.client_objects = client_objects
         self.max_workers = max_workers
         self.workspace_root = workspace_root
+
+        # Subprocess options
+        self.inprocess = inprocess
+        self.run_cmd = run_cmd
+        self.training_module = training_module
+        self.subprocess_timeout = subprocess_timeout
+
         self._simulator: Optional[FoxSimulator] = None
 
     def deploy(self, job: FedJob) -> str:
@@ -80,7 +98,12 @@ class SimEnv(ExecEnv):
         os.makedirs(root_dir, exist_ok=True)
 
         print(f"\n{'='*60}")
-        print("Fox SimEnv: Starting in-process simulation")
+        if self.inprocess:
+            print("Fox SimEnv: Starting in-process simulation")
+        else:
+            print("Fox SimEnv: Starting subprocess simulation")
+            if self.run_cmd:
+                print(f"  Run command: {self.run_cmd}")
         print(f"{'='*60}")
         print(f"  → Creating simulator with {self.num_clients} clients...")
 
@@ -93,6 +116,11 @@ class SimEnv(ExecEnv):
             client_objects=self.client_objects,
             max_workers=self.max_workers,
             num_clients=self.num_clients,
+            # Subprocess options
+            inprocess=self.inprocess,
+            run_cmd=self.run_cmd,
+            training_module=self.training_module,
+            subprocess_timeout=self.subprocess_timeout,
         )
 
         print("  → Running simulation...")

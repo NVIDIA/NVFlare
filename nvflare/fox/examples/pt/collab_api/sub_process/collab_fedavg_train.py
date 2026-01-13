@@ -4,8 +4,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.fox import fox
-from nvflare.fox.sim import SimEnv
-from nvflare.fox.sys.recipe import FoxRecipe
 
 # 1. Define Model, Data, and Training Function
 
@@ -101,30 +99,4 @@ class FedAvg:
 
         print(f"\nFedAvg completed after {self.num_rounds} rounds")
         return global_weights
-
-
-# 2. Execute the training
-if __name__ == "__main__":
-    server = FedAvg(num_rounds=5)
-    client = Trainer()
-
-    recipe = FoxRecipe(
-        job_name="distributed_fedavg_train",
-        server=server,
-        client=client,
-        min_clients=5,
-    )
-    env = SimEnv(num_clients=5)
-
-    run = recipe.execute(env)
-
-    print()
-    print("Job Status:", run.get_status())
-    print("Results at:", run.get_result())
-
-
-# To run (in-process simulation):
-# python collab_distributed_fedavg_train.py
-#
-# To run with FLARE (distributed subprocess):
-# nvflare simulator -w /tmp/workspace -n 5 -t 1 job_folder
+ 

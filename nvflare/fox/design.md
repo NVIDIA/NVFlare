@@ -185,7 +185,7 @@ recipe = FoxRecipe(
     server=server_module,      # Module with @fox.algo
     client=client_module,      # Module with @fox.collab
     inprocess=True,            # or False for subprocess
-    subprocess_launcher="torchrun --nproc_per_node=4",
+    run_cmd="torchrun --nproc_per_node=4",
     tracking_type="tensorboard",
 )
 ```
@@ -658,8 +658,7 @@ FoxRecipe
             └── config_fed_client.json
                     └── FoxExecutor component
                             ├── inprocess: true/false
-                            ├── subprocess_launcher: "torchrun ..."
-                            └── training_module: "my_training"
+                            └── run_cmd: "torchrun ..."
 ```
 
 ---
@@ -697,8 +696,8 @@ recipe = FoxRecipe(
     job_name="fedavg",
     min_clients=2,
     inprocess=False,
-    subprocess_launcher="torchrun --nproc_per_node=4",
-    training_module="my_training",
+    run_cmd="torchrun --nproc_per_node=4",
+    # training_module auto-detected from client
 )
 env = PocEnv(num_clients=2)
 run = recipe.execute(env)
