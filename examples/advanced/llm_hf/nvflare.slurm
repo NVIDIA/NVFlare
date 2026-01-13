@@ -9,6 +9,26 @@
 #SBATCH --output=slurm_logs/%x_%j.out
 #SBATCH --error=slurm_logs/%x_%j.err
 
+################################################################################
+# NVFlare Testing/Development SLURM Script
+################################################################################
+#
+# ⚠️  IMPORTANT: This script is for TESTING and DEVELOPMENT only!
+#
+# This script runs both the NVFlare server and client within a single
+# time-limited SLURM job. This approach has the following limitations:
+#
+# ❌ Server stops when SLURM job time limit expires
+# ❌ Cannot support multiple independent cluster sites
+# ❌ Requires restarting both server and client for each session
+# ❌ Not suitable for long-running federated learning workflows
+#
+# 📋 For PRODUCTION deployments with multiple sites:
+#    - Run NVFlare server on standalone infrastructure (not in SLURM)
+#    - Run NVFlare clients as resident services on login nodes
+#
+################################################################################
+
 # Create logs directory if it doesn't exist
 mkdir -p slurm_logs
 

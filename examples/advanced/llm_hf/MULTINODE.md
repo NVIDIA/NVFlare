@@ -1,8 +1,12 @@
 # Multi-Node Training Solution Summary
 
-## Quick Reference
+## Overview
 
-This quick reference describes how to run NVIDIA FLARE in an SLURM-managed cluster environment.
+This document describes how to run NVIDIA FLARE in an SLURM-managed cluster environment for testing and development purposes. Both the NVFlare server and client run together in a single SLURM job.
+
+**Note**: This approach is designed for testing/development on a single cluster. For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure.
+
+## Quick Reference
 
 ### Key Files
 - **`nvflare.slurm`** - SLURM batch script
