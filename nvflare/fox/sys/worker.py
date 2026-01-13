@@ -52,10 +52,9 @@ import threading
 import time
 from typing import Optional
 
+from nvflare.fox.utils.decomposers import register_available_decomposers
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 # Environment variable names (set by FoxExecutor)
@@ -97,13 +96,6 @@ def get_tracking_writer():
             writer.log_metric("loss", loss_value, step=epoch)
     """
     return _tracking_writer
-
-
-def _register_tensor_decomposer():
-    """Register PyTorch TensorDecomposer for FOBS serialization."""
-    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
-    if ok:
-        fobs.register(tensor_decomposer)
 
 
 class FoxWorker:
@@ -308,7 +300,7 @@ class FoxWorker:
 
         try:
             # Register tensor decomposer for FOBS
-            _register_tensor_decomposer()
+            register_available_decomposers()
 
             # Load the user's training module
             self._load_training_module()

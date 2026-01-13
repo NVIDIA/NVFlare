@@ -25,9 +25,8 @@ from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.utils.decomposers import register_available_decomposers
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.import_utils import optional_import
 
 from .adaptor import FoxAdaptor
 from .backend import FlareBackend
@@ -35,19 +34,6 @@ from .constants import SYNC_TASK_NAME, SyncKey
 from .subprocess_launcher import SubprocessLauncher
 from .utils import prepare_for_remote_call, prepare_for_subprocess_call
 from .ws import FlareWorkspace
-
-_tensor_decomposer_registered = False
-
-
-def _register_tensor_decomposer():
-    """Register PyTorch TensorDecomposer for FOBS serialization (once per process)."""
-    global _tensor_decomposer_registered
-    if _tensor_decomposer_registered:
-        return
-    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
-    if ok:
-        fobs.register(tensor_decomposer)
-    _tensor_decomposer_registered = True
 
 
 class FoxExecutor(Executor, FoxAdaptor):
@@ -129,7 +115,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         # Register PyTorch TensorDecomposer for tensor serialization over CellNet
-        _register_tensor_decomposer()
+        register_available_decomposers()
 
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()

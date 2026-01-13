@@ -11,3 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Fox utility modules."""
+
+from .decomposers import (
+    add_custom_decomposer,
+    get_registered_frameworks,
+    is_registered,
+    register_available_decomposers,
+    register_decomposer,
+    register_decomposers,
+)
