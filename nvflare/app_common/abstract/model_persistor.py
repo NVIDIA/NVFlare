@@ -103,5 +103,20 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
+    @abstractmethod
     def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
+        """Retrieve a specific model by file name.
+
+        This method is called by get() to load a specific model from the inventory.
+        Implementations should load the model from the specified file and return
+        it as a ModelLearnable object.
+
+        Args:
+            model_file: Name or path of the model file to retrieve
+            fl_ctx: FLContext
+
+        Returns:
+            ModelLearnable object containing the model data
+
+        """
         pass
