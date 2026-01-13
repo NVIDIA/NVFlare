@@ -123,10 +123,10 @@ Instead of using data ranges, you can split your data into separate files for ea
 
 per_site_config={
     "site-1": {
-        "train_args": "--data_path /data/site1_iris.csv --train_start 0 --train_end 40 ..."
+        "train_args": "--data_path /data/site1_iris.csv ..."
     },
     "site-2": {
-        "train_args": "--data_path /data/site2_iris.csv --train_start 40 --train_end 80 ..."
+        "train_args": "--data_path /data/site2_iris.csv ..."
     },
     # ... more sites
 }

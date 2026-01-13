@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Literal
+from typing import Literal, Optional
+
+from pydantic import BaseModel
 
 from nvflare.app_common.aggregators import CollectAndAssembleAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
@@ -20,6 +22,14 @@ from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
+
+
+# Internal — not part of the public API
+class _SVMValidator(BaseModel):
+    # Allow custom types (e.g., Aggregator) in validation. Required by Pydantic v2.
+    model_config = {"arbitrary_types_allowed": True}
+
+    kernel: Literal["linear", "poly", "rbf", "sigmoid"]
 
 
 class SVMFedAvgRecipe(FedAvgRecipe):
@@ -51,7 +61,6 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             Defaults to 'rbf'.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
-        backend: Backend library to use ('sklearn' or 'cuml'). Defaults to 'sklearn'.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
@@ -110,21 +119,19 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         kernel: Literal["linear", "poly", "rbf", "sigmoid"] = "rbf",
         train_script: str,
         train_args: str = "",
-        backend: Literal["sklearn", "cuml"] = "sklearn",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
-        self.kernel = kernel
-        self.backend = backend
+        v = _SVMValidator(kernel=kernel)
+        self.kernel = v.kernel
 
         # Create SVM-specific persistor
-        persistor = JoblibModelParamPersistor(initial_params={"kernel": kernel})
+        persistor = JoblibModelParamPersistor(initial_params={"kernel": self.kernel})
 
         # Create SVM-specific aggregator with assembler
-        assembler = SVMAssembler(kernel=kernel)
-        # K-Means uses custom assembler for mini-batch aggregation
-        assembler_id = "kmeans_assembler"
+        assembler = SVMAssembler(kernel=self.kernel)
+        assembler_id = "svm_assembler"
         aggregator = CollectAndAssembleAggregator(assembler_id=assembler_id)
 
         # Call the unified FedAvgRecipe with SVM-specific settings

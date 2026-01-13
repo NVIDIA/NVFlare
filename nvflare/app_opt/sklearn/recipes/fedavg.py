@@ -120,7 +120,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Create sklearn-specific persistor
         persistor = JoblibModelParamPersistor(initial_params=model_params or {})

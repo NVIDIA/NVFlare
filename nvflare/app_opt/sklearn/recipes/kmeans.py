@@ -12,12 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
+from pydantic import BaseModel, conint
+
 from nvflare.app_common.aggregators import CollectAndAssembleAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
+
+
+# Internal — not part of the public API
+class _KMeansValidator(BaseModel):
+    # Allow custom types (e.g., Aggregator) in validation. Required by Pydantic v2.
+    model_config = {"arbitrary_types_allowed": True}
+
+    n_clusters: conint(gt=0)
 
 
 class KMeansFedAvgRecipe(FedAvgRecipe):
@@ -111,9 +123,10 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         train_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
-        self.n_clusters = n_clusters
+        v = _KMeansValidator(n_clusters=n_clusters)
+        self.n_clusters = v.n_clusters
 
         # Create KMeans-specific persistor
         persistor = JoblibModelParamPersistor(initial_params={"n_clusters": n_clusters})

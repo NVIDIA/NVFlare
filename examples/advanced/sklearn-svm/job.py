@@ -38,13 +38,6 @@ def define_parser():
         help="Kernel type for SVM",
     )
     parser.add_argument(
-        "--backend",
-        type=str,
-        default="sklearn",
-        choices=["sklearn", "cuml"],
-        help="Backend library (sklearn or cuml)",
-    )
-    parser.add_argument(
         "--data_path",
         type=str,
         default="/tmp/nvflare/dataset/cancer.csv",
@@ -92,12 +85,10 @@ def main():
 
     n_clients = args.n_clients
     kernel = args.kernel
-    backend = args.backend
     data_path = args.data_path
 
     print(f"Creating SVM recipe with {n_clients} clients")
     print(f"Kernel: {kernel}")
-    print(f"Backend: {backend}")
     print(f"Data path: {data_path}")
 
     # Calculate per-client data splits (non-overlapping ranges)
@@ -105,7 +96,7 @@ def main():
     clients = [site_name for site_name in splits.keys()]
     per_site_config = {
         site_name: {
-            "train_args": f"--data_path {data_path} --backend {backend} --train_start {split['train_start']} "
+            "train_args": f"--data_path {data_path} --train_start {split['train_start']} "
             f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
             f"--valid_end {split['valid_end']}"
         }
@@ -118,7 +109,6 @@ def main():
         kernel=kernel,
         train_script="client.py",
         per_site_config=per_site_config,
-        backend=backend,
     )
 
     print("Executing recipe in simulation environment...")
