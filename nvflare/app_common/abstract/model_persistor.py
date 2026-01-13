@@ -103,13 +103,15 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    @abstractmethod
     def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
         """Retrieve a specific model by file name.
 
         This method is called by get() to load a specific model from the inventory.
-        Implementations should load the model from the specified file and return
-        it as a ModelLearnable object.
+        Persistors that support multiple models (e.g., for cross-site evaluation)
+        should override this method to load the specified model file.
+
+        Simple persistors that only work with a single model (like NPModelPersistor)
+        do not need to implement this method.
 
         Args:
             model_file: Name or path of the model file to retrieve
@@ -118,5 +120,13 @@ class ModelPersistor(LearnablePersistor, ABC):
         Returns:
             ModelLearnable object containing the model data
 
+        Raises:
+            NotImplementedError: If the persistor doesn't support retrieving specific models
+
         """
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement get_model(). "
+            "This persistor does not support retrieving specific models by name. "
+            "For cross-site evaluation with multiple models, use a persistor that implements get_model() "
+            "(e.g., PTFileModelPersistor, TFModelPersistor)."
+        )
