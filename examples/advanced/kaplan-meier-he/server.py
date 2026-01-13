@@ -54,7 +54,7 @@ class KM(ModelController):
 
         hist_obs_global = {}
         hist_cen_global = {}
-        for idx in range(hist_idx_max + 1):
+        for idx in range(hist_idx_max):
             hist_obs_global[idx] = 0
             hist_cen_global[idx] = 0
 

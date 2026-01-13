@@ -14,7 +14,7 @@
 
 from model import SimpleNetwork
 
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 if __name__ == "__main__":

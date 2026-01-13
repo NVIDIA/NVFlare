@@ -13,7 +13,7 @@ This example demonstrates the **Recipe API** for easily adding TensorBoard strea
 This example uses the `FedAvgRecipe` with the `add_experiment_tracking()` utility to easily add TensorBoard streaming:
 
 ```python
-from nvflare.app_opt.pt.recipes import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create training recipe
