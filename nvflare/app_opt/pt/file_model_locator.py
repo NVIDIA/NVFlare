@@ -43,11 +43,23 @@ class PTFileModelLocator(ModelLocator):
             self._initialize(fl_ctx)
 
     def _initialize(self, fl_ctx: FLContext):
+        if not self.pt_persistor_id:
+            raise ValueError(
+                "PTFileModelLocator requires a valid pt_persistor_id, but got empty string. "
+                "Ensure your PyTorch recipe includes an initial_model to create a persistor."
+            )
+
         engine = fl_ctx.get_engine()
         self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
-        if self.model_persistor is None or not isinstance(self.model_persistor, PTFileModelPersistor):
+        if self.model_persistor is None:
             raise ValueError(
-                f"pt_persistor_id component must be PTFileModelPersistor. " f"But got: {type(self.model_persistor)}"
+                f"No component found with ID '{self.pt_persistor_id}'. "
+                f"Ensure the PTFileModelPersistor is registered in the recipe."
+            )
+        if not isinstance(self.model_persistor, PTFileModelPersistor):
+            raise ValueError(
+                f"Component '{self.pt_persistor_id}' must be PTFileModelPersistor, "
+                f"but got: {type(self.model_persistor)}"
             )
         fobs.register(TensorDecomposer)
 

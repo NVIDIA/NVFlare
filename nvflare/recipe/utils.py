@@ -153,7 +153,7 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe)
         ```
 
-    Example (TensorFlow - requires client script support):
+    Example (TensorFlow - Client API pattern, recommended):
         ```python
         from nvflare.app_opt.tf.recipes import FedAvgRecipe
         from nvflare.recipe.utils import add_cross_site_evaluation
@@ -165,6 +165,24 @@ def add_cross_site_evaluation(
 
         # Note: client.py must handle flare.is_evaluate() for validation
         add_cross_site_evaluation(recipe)
+        ```
+
+    Example (TensorFlow - Component-based alternative):
+        ```python
+        from nvflare.app_opt.tf.recipes import FedAvgRecipe
+        from nvflare.app_opt.tf.tf_validator import TFValidator
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        recipe = FedAvgRecipe(
+            name="my-job", min_clients=2, num_rounds=3,
+            initial_model=MyTFModel(), train_script="client.py"
+        )
+
+        add_cross_site_evaluation(recipe)
+
+        # Optional: manually add TFValidator for component-based validation
+        validator = TFValidator(model=my_model, data_loader=test_loader)
+        recipe.job.to_clients(validator, tasks=["validate"])
         ```
 
     Args:
@@ -242,10 +260,21 @@ def add_cross_site_evaluation(
     # Create model locator with appropriate parameters
     locator_kwargs = {}
     if locator_config["persistor_param"] is not None:
-        # For PyTorch locator, get persistor_id from comp_ids
+        # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
         if hasattr(recipe.job, "comp_ids"):
             persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+            if not persistor_id:
+                raise ValueError(
+                    f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
+                    f"but no persistor_id found in recipe.job.comp_ids. "
+                    f"Ensure your recipe includes an initial_model to create a persistor."
+                )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
+        else:
+            raise ValueError(
+                f"Recipe {type(recipe).__name__} does not have comp_ids. "
+                f"Cross-site evaluation requires recipes that track component IDs."
+            )
 
     model_locator = locator_class(**locator_kwargs)
     model_locator_id = recipe.job.to_server(model_locator)
@@ -274,9 +303,11 @@ def add_cross_site_evaluation(
             validator = NPValidator()
             recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
 
-    # Note: TensorFlow and PyTorch use Client API pattern (flare.is_evaluate())
-    # Validators are not auto-added for these frameworks as they handle validation
-    # in the training script itself
+    # Note: TensorFlow and PyTorch use Client API pattern (flare.is_evaluate()) by default.
+    # Validators are not auto-added for these frameworks as they typically handle validation
+    # in the training script itself. However, TFValidator is available for users who prefer
+    # a component-based approach (similar to NumPy's NPValidator) - it must be manually added
+    # to the job using recipe.job.to_clients(validator, tasks=["validate"])
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
@@ -285,6 +316,22 @@ def add_cross_site_evaluation(
 def _has_task_executor(job, task_name: str) -> bool:
     """Check if any executor is already configured for the specified task.
 
+    This function inspects the job's internal structure to determine if a validator
+    or executor is already handling the specified task. It uses defensive programming
+    to handle potential variations in the internal API structure.
+
+    IMPORTANT: This function accesses the private attribute job._deploy_map because:
+    1. No public API exists in FedJob to query configured executors
+    2. This check is necessary to avoid adding duplicate validators for CSE
+    3. Without this, we'd rely on fragile string matching on recipe class names
+
+    The implementation uses defensive programming (hasattr checks, try-except) to
+    minimize fragility. If FedJob's internal structure changes, this function will
+    gracefully return False rather than crashing.
+
+    Future improvement: FedJob could provide a public method like get_executors(target)
+    to make this check safer and more maintainable.
+
     Args:
         job: FedJob instance to check
         task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
@@ -292,7 +339,11 @@ def _has_task_executor(job, task_name: str) -> bool:
     Returns:
         True if an executor is already configured for this task, False otherwise
     """
-    # Check all client apps in the deployment map for executors handling this task
+    # Access _deploy_map (private attribute) - see docstring for justification
+    # Defensive check: ensure _deploy_map exists before accessing
+    if not hasattr(job, "_deploy_map"):
+        return False
+
     for target, app in job._deploy_map.items():
         # Skip server apps, only check client apps
         if target == "server":
@@ -304,8 +355,17 @@ def _has_task_executor(job, task_name: str) -> bool:
             # Check if it's a ClientAppConfig with executors
             if hasattr(app_config, "executors"):
                 for executor_def in app_config.executors:
-                    # Check if this executor handles the task
-                    # Tasks can be ["*"] (all tasks) or specific task names
-                    if "*" in executor_def.tasks or task_name in executor_def.tasks:
-                        return True
+                    # Defensive check: ensure executor_def has tasks attribute
+                    if not hasattr(executor_def, "tasks"):
+                        continue
+
+                    try:
+                        # Check if this executor handles the task
+                        # Tasks can be ["*"] (all tasks) or specific task names
+                        if "*" in executor_def.tasks or task_name in executor_def.tasks:
+                            return True
+                    except (TypeError, AttributeError):
+                        # Handle case where tasks is not iterable or comparable
+                        # This could happen if tasks has an unexpected type
+                        continue
     return False

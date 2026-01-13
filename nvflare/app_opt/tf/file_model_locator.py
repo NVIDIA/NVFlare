@@ -41,11 +41,23 @@ class TFFileModelLocator(ModelLocator):
             self._initialize(fl_ctx)
 
     def _initialize(self, fl_ctx: FLContext):
+        if not self.tf_persistor_id:
+            raise ValueError(
+                "TFFileModelLocator requires a valid tf_persistor_id, but got empty string. "
+                "Ensure your TensorFlow recipe includes an initial_model to create a persistor."
+            )
+
         engine = fl_ctx.get_engine()
         self.model_persistor: TFModelPersistor = engine.get_component(self.tf_persistor_id)
-        if self.model_persistor is None or not isinstance(self.model_persistor, TFModelPersistor):
+        if self.model_persistor is None:
             raise ValueError(
-                f"tf_persistor_id component must be TFModelPersistor. " f"But got: {type(self.model_persistor)}"
+                f"No component found with ID '{self.tf_persistor_id}'. "
+                f"Ensure the TFModelPersistor is registered in the recipe."
+            )
+        if not isinstance(self.model_persistor, TFModelPersistor):
+            raise ValueError(
+                f"Component '{self.tf_persistor_id}' must be TFModelPersistor, "
+                f"but got: {type(self.model_persistor)}"
             )
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
@@ -73,7 +85,7 @@ class TFFileModelLocator(ModelLocator):
         if model_name not in list(self.model_inventory.keys()):
             raise ValueError(f"model inventory does not contain: {model_name}")
 
-        model_learnable = self.model_persistor.get_model(model_name, fl_ctx)
+        model_learnable = self.model_persistor.get(model_name, fl_ctx)
         dxo = model_learnable_to_dxo(model_learnable)
 
         return dxo
