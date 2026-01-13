@@ -46,7 +46,7 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     elif default_context:
         return default_context
     else:
-        raise RuntimeError("APIContext is None")
+        raise RuntimeError("APIContext is None. Did you call flare.init() before using the Client API?")
 
 
 def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = None) -> APIContext:
