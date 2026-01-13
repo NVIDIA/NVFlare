@@ -47,6 +47,11 @@ MODEL_LOCATOR_REGISTRY = {
         "locator_class": "NPModelLocator",
         "persistor_param": None,  # NPModelLocator doesn't use persistor_id
     },
+    "tensorflow": {
+        "locator_module": "nvflare.app_opt.tf.file_model_locator",
+        "locator_class": "TFFileModelLocator",
+        "persistor_param": "tf_persistor_id",
+    },
 }
 
 
@@ -96,7 +101,32 @@ def add_cross_site_evaluation(
     a CSE-only recipe (e.g., `NumpyCrossSiteEvalRecipe`), it will detect this and skip
     adding duplicate validators automatically.
 
-    Example:
+    **WARNING**: Do not call this function multiple times on the same recipe instance.
+    This function is idempotent and will raise a RuntimeError if called more than once
+    on the same recipe to prevent duplicate component registration.
+
+    **IMPORTANT for PyTorch**: Your client training script must handle validation tasks by
+    checking `flare.is_evaluate()` and returning metrics without training. Example pattern:
+
+        ```python
+        # In your client script:
+        while flare.is_running():
+            input_model = flare.receive()
+            model.load_state_dict(input_model.params)
+
+            # Evaluate model (always required)
+            metrics = evaluate(model, test_loader)
+
+            # Handle CSE validation task
+            if flare.is_evaluate():
+                output_model = flare.FLModel(metrics=metrics)
+                flare.send(output_model)
+                continue  # Skip training for validation-only tasks
+
+            # Normal training code here...
+        ```
+
+    Example (NumPy - fully automatic):
         ```python
         from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
         from nvflare.recipe.utils import add_cross_site_evaluation
@@ -109,6 +139,34 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe)
         ```
 
+    Example (PyTorch - requires client script support):
+        ```python
+        from nvflare.app_opt.pt.recipes import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        recipe = FedAvgRecipe(
+            name="my-job", min_clients=2, num_rounds=3,
+            initial_model=MyModel(), train_script="client.py"
+        )
+
+        # Note: client.py must handle flare.is_evaluate() for validation
+        add_cross_site_evaluation(recipe)
+        ```
+
+    Example (TensorFlow - requires client script support):
+        ```python
+        from nvflare.app_opt.tf.recipes import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        recipe = FedAvgRecipe(
+            name="my-job", min_clients=2, num_rounds=3,
+            initial_model=MyTFModel(), train_script="client.py"
+        )
+
+        # Note: client.py must handle flare.is_evaluate() for validation
+        add_cross_site_evaluation(recipe)
+        ```
+
     Args:
         recipe: Recipe instance to augment with cross-site evaluation.
         submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
@@ -116,17 +174,33 @@ def add_cross_site_evaluation(
 
     Raises:
         ValueError: If the recipe doesn't have a framework attribute or uses an unsupported framework.
+        RuntimeError: If cross-site evaluation has already been added to this recipe.
 
     Note:
-        - Currently supports PyTorch and NumPy frameworks. TensorFlow support may be added in the future.
-        - For NumPy recipes, validators are automatically added to clients. This is skipped for
-          CSE-only recipes (like `NumpyCrossSiteEvalRecipe`) which already have validators configured.
-        - For PyTorch recipes, client-side validators are typically already configured in the recipe.
+        - Currently supports PyTorch, NumPy, and TensorFlow frameworks.
+        - **NumPy recipes**: Validators (NPValidator) are automatically added to clients to handle
+          validation tasks. The function intelligently detects if validators are already configured
+          by checking for executors handling TASK_VALIDATION, avoiding duplicates for CSE-only recipes
+          (like `NumpyCrossSiteEvalRecipe`).
+        - **PyTorch recipes**: No separate validator component is needed. The client training script
+          handles validation tasks through the Client API's `flare.is_evaluate()` check. See the
+          hello-pt example for implementation pattern.
+        - **TensorFlow recipes**: Similar to PyTorch, uses the Client API pattern. The client script
+          should handle validation tasks via `flare.is_evaluate()` check.
     """
     from nvflare.app_common.app_constant import AppConstants
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.job_config.script_runner import FrameworkType
+
+    # Idempotency check: prevent multiple calls on the same recipe
+    if hasattr(recipe, "_cse_added") and recipe._cse_added:
+        raise RuntimeError(
+            f"Cross-site evaluation has already been added to recipe '{recipe.name}'. "
+            "Calling add_cross_site_evaluation() multiple times would create duplicate "
+            "model locators, validators, and controllers, which can cause unexpected behavior. "
+            "Please call this function only once per recipe instance."
+        )
 
     # Auto-detect framework from recipe
     if not hasattr(recipe, "framework"):
@@ -141,6 +215,7 @@ def add_cross_site_evaluation(
     framework_to_locator = {
         FrameworkType.PYTORCH: "pytorch",
         FrameworkType.RAW: "numpy",  # NumPy uses RAW framework type
+        FrameworkType.TENSORFLOW: "tensorflow",
     }
 
     if framework not in framework_to_locator:
@@ -152,9 +227,7 @@ def add_cross_site_evaluation(
         supported_str = ", ".join(supported_list)
 
         raise ValueError(
-            f"Unsupported framework for cross-site evaluation: {framework}. "
-            f"Currently supported: {supported_str}. "
-            f"TensorFlow support may be added in the future."
+            f"Unsupported framework for cross-site evaluation: {framework}. " f"Currently supported: {supported_str}."
         )
 
     model_locator_type = framework_to_locator[framework]
@@ -188,18 +261,51 @@ def add_cross_site_evaluation(
     )
     recipe.job.to_server(eval_controller)
 
-    # Auto-add validators for NumPy recipes (if not already a CSE-only recipe)
+    # Auto-add validators for NumPy recipes (if not already configured)
     if framework == FrameworkType.RAW:
-        # Check if this is already a standalone CSE recipe (which already has validators)
-        # NumpyCrossSiteEvalRecipe is CSE-only and already configures validators
         from nvflare.app_common.np.np_validator import NPValidator
 
-        # Check if this is a CSE-only recipe by checking the recipe class name
-        # CSE-only recipes already have validators configured, so we skip adding them
-        recipe_class_name = type(recipe).__name__
-        is_cse_only_recipe = "CrossSiteEval" in recipe_class_name or "CSE" in recipe_class_name
+        # Check if validators are already configured for TASK_VALIDATION
+        # This is more robust than string matching on recipe class names
+        has_validator = _has_task_executor(recipe.job, AppConstants.TASK_VALIDATION)
 
-        if not is_cse_only_recipe:
+        if not has_validator:
             # For training recipes (e.g., NumpyFedAvgRecipe), add validator for CSE
             validator = NPValidator()
             recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
+
+    # Note: TensorFlow and PyTorch use Client API pattern (flare.is_evaluate())
+    # Validators are not auto-added for these frameworks as they handle validation
+    # in the training script itself
+
+    # Mark that CSE has been added to prevent duplicate calls
+    recipe._cse_added = True
+
+
+def _has_task_executor(job, task_name: str) -> bool:
+    """Check if any executor is already configured for the specified task.
+
+    Args:
+        job: FedJob instance to check
+        task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
+
+    Returns:
+        True if an executor is already configured for this task, False otherwise
+    """
+    # Check all client apps in the deployment map for executors handling this task
+    for target, app in job._deploy_map.items():
+        # Skip server apps, only check client apps
+        if target == "server":
+            continue
+
+        # Get the client app configuration
+        if hasattr(app, "app_config"):
+            app_config = app.app_config
+            # Check if it's a ClientAppConfig with executors
+            if hasattr(app_config, "executors"):
+                for executor_def in app_config.executors:
+                    # Check if this executor handles the task
+                    # Tasks can be ["*"] (all tasks) or specific task names
+                    if "*" in executor_def.tasks or task_name in executor_def.tasks:
+                        return True
+    return False

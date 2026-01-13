@@ -37,9 +37,6 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         model_name: Dictionary mapping model identifiers to filenames, e.g.,
             {"model_1": "model_1.npy", "model_2": "model_2.npy"}.
             If None, defaults to {"server": "server.npy"}.
-        framework: Framework type for the recipe. For NumPy-based workflows, use
-            FrameworkType.RAW, which indicates that the job does not rely on a
-            deep-learning framework adapter and operates directly on NumPy arrays.
         submit_model_timeout: Timeout (seconds) for submitting models to clients. Defaults to 600.
         validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
     """
@@ -50,7 +47,6 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         min_clients: int = 2,
         model_dir: Optional[str] = None,
         model_name: Optional[dict] = None,
-        framework: FrameworkType = FrameworkType.RAW,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
     ):
@@ -79,6 +75,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
             tasks=[AppConstants.TASK_VALIDATION],
         )
 
-        self.framework = framework
+        # Set framework for external API compatibility (e.g., add_cross_site_evaluation)
+        self.framework = FrameworkType.RAW
 
         super().__init__(job)
