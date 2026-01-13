@@ -67,7 +67,7 @@ def main():
             f"Inference results not found at {inference_result_path}. Did you run the inference job first?"
         )
     except KeyError:
-        raise KeyError(f"Inference results file doesn't contain 'embeddings' key. File may be corrupted.")
+        raise KeyError("Inference results file doesn't contain 'embeddings' key. File may be corrupted.")
 
     # Read labels
     try:
