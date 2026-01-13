@@ -111,6 +111,7 @@ class KM_HE(ModelController):
 
         hist_obs_global = None
         hist_cen_global = None
+        is_first = True
         for fl_model in sag_result:
             site = fl_model.meta.get("client_name", None)
             hist_obs_he_serial = fl_model.params["hist_obs"]
@@ -118,17 +119,15 @@ class KM_HE(ModelController):
             hist_cen_he_serial = fl_model.params["hist_cen"]
             hist_cen_he = ts.ckks_vector_from(he_context, hist_cen_he_serial)
 
-            if not hist_obs_global:
+            if is_first:
                 self.logger.info(f"assign global hist (ciphertext) with result from {site}")
                 hist_obs_global = hist_obs_he
+                self.logger.info(f"assign global censored hist (ciphertext) with result from {site}")
+                hist_cen_global = hist_cen_he
+                is_first = False
             else:
                 self.logger.info(f"add ciphertext to global hist with result from {site}")
                 hist_obs_global += hist_obs_he
-
-            if not hist_cen_global:
-                self.logger.info(f"assign global censored hist (ciphertext) with result from {site}")
-                hist_cen_global = hist_cen_he
-            else:
                 self.logger.info(f"add ciphertext to global censored hist with result from {site}")
                 hist_cen_global += hist_cen_he
 

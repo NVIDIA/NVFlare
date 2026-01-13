@@ -201,10 +201,10 @@ def main():
             time_unfold = []
             event_unfold = []
             for i in range(max_idx_global):
-                for j in range(int(hist_obs_global[i])):
+                for j in range(hist_obs_global[i]):
                     time_unfold.append(i)
                     event_unfold.append(True)
-                for k in range(int(hist_cen_global[i])):
+                for k in range(hist_cen_global[i]):
                     time_unfold.append(i)
                     event_unfold.append(False)
             time_unfold = np.array(time_unfold)
