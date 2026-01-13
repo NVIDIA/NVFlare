@@ -42,7 +42,7 @@ python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00
 
 ## Implementation Overview
 
-This implementation uses NVFlare's modern recipe-based pattern for federated learning with HuggingFace LLMs. Below is an overview of the key components:
+This implementation uses NVFlare's recipe-based pattern for federated learning with HuggingFace LLMs. Below is an overview of the key components:
 
 ### Data
 - **Datasets**: Three public instruction-tuning datasets (Dolly, Alpaca, OASST1)
@@ -99,7 +99,7 @@ Key features:
 ### Server-Side Code / Job Recipe
 **`job.py`** - Job configuration using NVFlare's `FedAvgRecipe` pattern
 
-**Modern Recipe-Based Approach:**
+**Recipe-Based Approach:**
 ```python
 # Create recipe with FedAvgRecipe
 recipe = FedAvgRecipe(
@@ -387,131 +387,6 @@ Alpaca:
 Oasst1:
 ![peft](./figs/peft_oasst1.png)
 
-## Recipe Pattern and New Features
 
-### Modern Recipe-Based Implementation
-This example uses NVFlare's `FedAvgRecipe` pattern, which provides several advantages over manual job configuration:
-
-**Benefits:**
-1. **Simpler Configuration**: Recipe pattern reduces boilerplate code significantly
-2. **Better Maintainability**: Aligned with NVFlare best practices and community examples
-3. **Improved Consistency**: Same patterns as other multi-gpu examples in NVFlare
-4. **Enhanced Documentation**: Better comments following numbered step pattern
-5. **Easier Extension**: Recipe pattern makes it easier to add new features
-6. **Community Standards**: Follows patterns used across NVFlare examples
-
-### Key Pattern Differences
-
-**Job Configuration** (`job.py`):
-- **Before**: Custom recipe class with manual `FedJob` creation, manual setup of controller, persistor, model selector, filters
-- **Now**: Uses `FedAvgRecipe` which automatically configures components, uses `per_site_config` for site-specific settings
-
-**Client API** (`client.py`):
-- **Before**: Basic comments and structure
-- **Now**: Enhanced documentation with numbered steps (1-10), more explicit rank handling, better separation of concerns
-
-### New Features
-
-The updated implementation includes several new features:
-
-**1. TensorBoard Experiment Tracking**
-```bash
-python job.py \
-    --client_ids dolly \
-    --data_path ${PWD}/dataset \
-    --workspace_dir ${PWD}/workspace/with_tracking \
-    --job_dir ${PWD}/workspace/jobs/with_tracking \
-    --use_tracking
-```
-
-**2. Export Configuration Only**
-Generate job configuration without executing:
-```bash
-python job.py \
-    --client_ids dolly \
-    --data_path ${PWD}/dataset \
-    --job_dir ${PWD}/workspace/jobs/exported \
-    --export_config
-```
-
-**3. Flexible Per-Site Configuration**
-Different clients can have different:
-- Data paths
-- GPU configurations
-- Master ports for DDP
-- Training arguments
-
-### Backward Compatibility
-
-All existing command-line arguments and workflows are preserved:
-- Single-GPU, multi-GPU, and multi-node training continue to work as before
-- Same support for SFT and PEFT modes
-- Quantization and tensor communication features unchanged
-- All existing example commands in this README remain valid
-
-### Migration Notes
-
-For users with custom modifications to the old implementation:
-
-1. **Custom Components**: Add them after recipe creation using `recipe.job.to()`
-   ```python
-   recipe = FedAvgRecipe(...)
-   recipe.job.to(my_custom_component, "server")
-   recipe.job.to(my_filter, "site-1", filter_type=FilterType.TASK_DATA)
-   ```
-
-2. **Per-Site Customization**: Use `per_site_config` dictionary instead of manual loop
-   ```python
-   per_site_config = {
-       "site-1": {"train_args": "...", "command": "..."},
-       "site-2": {"train_args": "...", "command": "..."},
-   }
-   ```
-
-3. **Model Definition**: No changes needed to `hf_sft_model.py` or `hf_peft_model.py`
-
-For more details on the migration, see [MIGRATION_SUMMARY.md](MIGRATION_SUMMARY.md).
-
-## Multi-node Training
-The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).
-
-### 1. Create a fresh virtual environment on your cluster
-Create a fresh virtual environment on your cluster and install the requrements.
-```bash
-export VENV_DIR=<path/to/your/venv>
-```
-
-### 2. Create a NVFlare project
-As an example, we create a project with only one client for the Dolly dataset.
-```bash
-nvflare poc prepare -c site-dolly
-```
-Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
-
-```bash
-export NVFLARE_PROJECT=<your/path/to/prod_00>
-```
-
-### 3. (Optionally) Set your Weights and Biases API Key
-The training can be logged to WandB if you provide and API key via
-
-```bash
-export WANDB_API_KEY=<your_wandb_api_key>
-```
-
-### 4. Submit the SLURM Job
-
-Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
-
-```
-#SBATCH -A [ACCOUNT_NAME]
-#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
-```
-
-By default, you can submit a job, requesting 2 nodes with 8 GPUs via
-
-```bash
-sbatch nvflare.slurm
-```
-
+## Multi-node SLURM Support
 For more options, see [MULTINODE.md](MULTINODE.md#testing).
