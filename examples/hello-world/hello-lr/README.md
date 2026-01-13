@@ -154,7 +154,7 @@ script.
   model, sent by the server, using `flare.receive()` API. The received
   global model is an instance of `FLModel`.
 - A local validation is first performed, where validation metrics
-  (accuracy and precision) are computed and streamed to the server
+  (accuracy and precision) are computed and streamed to the server.
   The streamed metrics can be loaded and visualized using TensorBoard.
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
