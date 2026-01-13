@@ -88,12 +88,12 @@ python3 -m torch.distributed.run --nproc_per_node=4 client.py
 When running multiple clients on the same machine, use different master ports:
 ```python
 per_site_config={
-    "site-1": FedAvgPerSiteConfig(
-        command="... --master_port=7777",
-    ),
-    "site-2": FedAvgPerSiteConfig(
-        command="... --master_port=8888",
-    ),
+    "site-1": {
+        "command": "... --master_port=7777",
+    },
+    "site-2": {
+        "command": "... --master_port=8888",
+    },
 }
 ```
 
