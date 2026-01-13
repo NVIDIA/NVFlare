@@ -108,7 +108,10 @@ def validate(data, theta):
     # Compute probabilities from current weights
     proba = sigmoid(np.dot(valid_X, theta))
 
-    return {"accuracy": accuracy_score(valid_y, proba.round()), "precision": precision_score(valid_y, proba.round())}
+    return {
+        "accuracy": accuracy_score(valid_y.flatten(), proba.flatten().round()),
+        "precision": precision_score(valid_y.flatten(), proba.flatten().round()),
+    }
 
 
 def main():

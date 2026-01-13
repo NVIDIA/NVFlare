@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
         else:
             test_X = np.concatenate((np.ones((test_X.shape[0], 1)), test_X), axis=1)
-            proba = sigmoid(np.dot(test_X, theta))
+            proba = sigmoid(np.dot(test_X, theta)).flatten()
 
         print("accuracy:", accuracy_score(test_y, proba.round()))
         print("precision:", precision_score(test_y, proba.round()))
