@@ -135,7 +135,7 @@ class FedAvgRecipe(Recipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(

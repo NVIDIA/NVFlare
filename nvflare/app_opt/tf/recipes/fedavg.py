@@ -136,7 +136,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(

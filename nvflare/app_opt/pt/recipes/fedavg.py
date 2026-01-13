@@ -136,7 +136,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        per_site_config: dict[str, dict] | None = None,
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
