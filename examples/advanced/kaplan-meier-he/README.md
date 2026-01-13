@@ -54,50 +54,215 @@ With these two settings, the server will have no access to any knowledge regardi
 
 The final Kaplan-Meier survival analysis will be performed locally on the global aggregated event list, recovered from decrypted global histograms.
 
-## Baseline Kaplan-Meier Analysis
-We first illustrate the baseline centralized Kaplan-Meier analysis without any secure features. We used veterans_lung_cancer dataset by
-`from sksurv.datasets import load_veterans_lung_cancer`, and used `Status` as the event type and `Survival_in_days` as the event time to construct the event list.
+## Example Structure
 
-To run the baseline script, simply execute:
+This section describes the key components of the federated Kaplan-Meier example.
+
+### Data
+
+**Dataset**: This example uses the `veterans_lung_cancer` dataset from `sksurv.datasets.load_veterans_lung_cancer`. The dataset contains survival information for veterans with advanced lung cancer.
+
+**Key Features**:
+- `Survival Days`: Time from observation start to end (event time)
+- `Status`: Boolean indicating if death occurred (TRUE) or patient was censored (FALSE)
+- Other features: Age, Celltype, Karnofsky score, Diagtime, Prior treatment, Treatment type
+
+**Data Preparation**: 
+- Script: `utils/prepare_data.py`
+- Splits the centralized dataset into multiple sites (default: 5 sites)
+- Applies time-binning (default: 7 days) to protect privacy
+- Output location: `/tmp/nvflare/dataset/km_data`
+- Each site receives a CSV file with its partition of the data
+
+**Time-Binning**: Raw survival times are discretized into bins (e.g., weekly intervals) to create histograms. This reduces granularity and prevents identification of individual patients from aggregated data.
+
+### Model
+
+**Algorithm**: Kaplan-Meier Estimator (non-parametric survival analysis)
+- Library: [lifelines](https://zenodo.org/records/10456828) - `KaplanMeierFitter`
+- Estimates survival function: S(t) = probability of surviving beyond time t
+- Accounts for both observed events (deaths) and censored observations
+- Non-iterative, one-shot analysis performed locally after receiving aggregated data
+
+**Output Files**: 
+
+Each client generates:
+1. **Survival Curve Plot**:
+   - Without HE: `km_curve_fl.png`
+   - With HE: `km_curve_fl_he.png`
+   - Baseline (centralized): `km_curve_baseline.png`
+   - Shows probability of survival over time (monotonically decreasing)
+
+2. **Analysis Details** (`km_global.json`):
+   - `timeline`: Time points where events occur
+   - `km_estimate`: Kaplan-Meier survival probability at each time point
+   - `event_count`: Number of events at each time point
+   - `survival_rate`: 1 - survival probability (death rate)
+
+### Client Side Code
+
+**Implementation**: 
+- Without HE: `client.py` using NVFlare Client API
+- With HE: `client_he.py` using NVFlare Client API + TenSEAL
+
+**Workflow Without HE** (`client.py` - 2 rounds):
+
+**Round 1**: 
+- Load local data from CSV (`event` and `time` columns)
+- Convert local event data into two histograms using `survival_table_from_events`:
+  - `hist_obs`: observed events (deaths)
+  - `hist_cen`: censored events (survival)
+- Send local histograms to server (plaintext)
+
+**Round 2**:
+- Receive aggregated global histograms from server
+- Unfold histograms back to event list
+- Perform Kaplan-Meier analysis locally using `lifelines.KaplanMeierFitter`
+- Generate and save survival curve plot (`km_curve_fl.png`)
+- Save analysis details to JSON (`km_global.json`)
+
+**Workflow With HE** (`client_he.py` - 3 rounds):
+
+**Round 1**: 
+- Load local data from CSV and HE context
+- Compute local histogram from data to determine `max_hist_idx` (maximum bin number needed)
+- Send `max_hist_idx` to server (plaintext metadata)
+
+**Round 2**:
+- Receive global `max_idx_global` from server (ensures all clients use same histogram length)
+- Create two uniform-length histograms: `hist_obs` and `hist_cen` (zero-padded to global length)
+- Encrypt both histograms as vectors using CKKS: `ts.ckks_vector(he_context, values)`
+- Serialize encrypted vectors
+- Send encrypted histograms to server (ciphertext)
+
+**Round 3**:
+- Receive encrypted global histograms from server (ciphertext)
+- Deserialize using `ts.ckks_vector_from(he_context, serialized_data)`
+- Decrypt histograms: `hist.decrypt()` 
+- Round float values to integers (CKKS returns approximate values)
+- Unfold histograms to event list
+- Perform Kaplan-Meier analysis locally using `lifelines.KaplanMeierFitter`
+- Generate and save survival curve plot (`km_curve_fl_he.png`)
+- Save analysis details to JSON (`km_global.json`)
+
+**HE Context Management**:
+- Loads client context from `client_context.tenseal` (production) or specified path (simulation)
+- Supports both base64-encoded (.txt, simulation) and raw binary (.tenseal, production) formats
+- Context used for both encryption and decryption operations
+
+### Server Side Code
+
+**Implementation**: 
+- Without HE: `server.py` - `KM` class (extends `ModelController`)
+- With HE: `server_he.py` - `KM_HE` class (extends `ModelController`)
+
+**Workflow Without HE** (`server.py` - 2 rounds):
+
+**Round 1**: 
+- Send empty start signal to all clients (`current_round=1`)
+- Collect local histograms from all clients (plaintext dictionaries)
+
+**Round 2**:
+- **Aggregation logic**:
+  1. Find maximum histogram index across all clients
+  2. Initialize global histograms (`hist_obs_global`, `hist_cen_global`) with zeros
+  3. Element-wise addition: iterate through each client's histograms and sum values
+- Send aggregated global histograms back to all clients (plaintext)
+
+**Workflow With HE** (`server_he.py` - 3 rounds):
+
+**Round 1**: 
+- Send empty start signal to all clients (`current_round=1`)
+- Collect `max_idx` from all clients (plaintext metadata)
+
+**Round 2**:
+- **Aggregation logic**:
+  - Compute `max_idx_global = max(all_max_idx) + 1` (plus 1 for array indexing)
+- Send `max_idx_global` to all clients (plaintext)
+- Collect encrypted histograms from all clients (serialized ciphertext)
+
+**Round 3**:
+- Load server HE context
+- **Aggregation logic in encrypted space**:
+  1. Deserialize each client's encrypted histograms: `ts.ckks_vector_from(he_context, serialized)`
+  2. For first client: Initialize global histograms with their encrypted vectors
+  3. For subsequent clients: Element-wise addition of encrypted vectors: `hist_obs_global += hist_obs_he`
+  4. Homomorphic addition performed without decryption
+  5. Serialize aggregated encrypted histograms
+- Send encrypted global histograms back to all clients (ciphertext)
+- **Server never accesses plaintext histogram values**
+
+**Key Differences**:
+- **Without HE**: Server sees plaintext histograms, handles varying lengths dynamically
+- **With HE**: Server only sees ciphertext after Round 2; max_idx synchronization ensures uniform vector lengths for HE addition
+
+**HE Context Management** (HE mode only):
+- Loads server context from `server_context.tenseal` (production) or specified path (simulation)
+- Supports both base64-encoded (.txt, simulation) and raw binary (.tenseal, production) formats
+- Server context cannot decrypt data, only perform homomorphic operations
+
+### Job Recipe
+
+**Configuration**: `job.py` using NVFlare Recipe API
+
+**Key Parameters**:
+- `--encryption`: Enable/disable Homomorphic Encryption (HE)
+- `--bin_days`: Time-binning interval in days (default: 7)
+- `--num_clients`: Number of federated sites (default: 5)
+- `--data_root`: Root directory for site data (default: `/tmp/nvflare/dataset/km_data`)
+- `--he_context_path`: Path to client HE context file for simulation mode (default: `/tmp/nvflare/he_context/he_context_client.txt`). Server context file (`he_context_server.txt`) must be in the same directory.
+- `--startup_kit_location`: Admin startup kit path for production mode (if provided, switches to production mode)
+
+**Workflow**:
+
+**Without HE** (2 rounds):
+1. **Round 1**: Server sends start signal → Clients send local histograms (plaintext)
+2. **Round 2**: Server sends aggregated global histograms → Clients perform local KM analysis
+
+**With HE** (3 rounds):
+1. **Round 1**: Server sends start signal → Clients send max bin index (plaintext metadata)
+2. **Round 2**: Server sends global max index → Clients send encrypted histograms (ciphertext)
+3. **Round 3**: Server sends encrypted global histograms → Clients decrypt and perform local KM analysis
+
+**Components**:
+- **Server**: `KM` class (without HE) or `KM_HE` class (with HE), both extend `ModelController`
+- **Client**: Standard client script (`client.py` or `client_he.py`) using NVFlare Client API
+- **Communication**: `FLModel` with flexible `params` dict supporting different data types per round
+- **Recipe API**: Simplifies job packaging and execution across simulation and production modes
+
+## Baseline Kaplan-Meier Analysis
+
+Before running federated analysis, you can verify the centralized baseline.
+
+**Purpose**: Establish ground truth for comparison with federated results.
+
+**Script**: `utils/baseline_kaplan_meier.py`
+
+**Execution**:
 ```commandline
 python utils/baseline_kaplan_meier.py
 ```
-By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp/nvflare/baseline` directory. The resulting KM curve is shown below:
+
+**Output**: 
+- KM curve image: `km_curve_baseline.png` at `/tmp/nvflare/baseline`
+- Shows both daily resolution (no binning) and weekly binning
+- The two curves align well, with weekly-binned curve having lower resolution
+
 ![KM survival baseline](figs/km_curve_baseline.png)
-Here, we show the survival curve for both daily (without binning) and weekly binning. The two curves aligns well with each other, while the weekly-binned curve has lower resolution.
 
+## Run the Job
 
-## Federated Kaplan-Meier Analysis w/o and w/ HE 
-We make use of FLARE ModelController API to implement the federated Kaplan-Meier analysis, both without and with HE.
-
-The Flare ModelController API (`ModelController`) provides the functionality of flexible FLModel payloads for each round of federated analysis. This gives us the flexibility of transmitting various information needed by our scheme at different stages of federated learning.
-
-Our [existing HE examples](../cifar10/cifar10-real-world) uses data filter mechanism for HE, provisioning the HE context information (specs and keys) for both client and server of the federated job under [CKKS](../../../nvflare/app_opt/he/model_encryptor.py) scheme. In this example, we would like to illustrate ModelController's capability in supporting customized needs beyond the existing HE functionalities (designed mainly for encrypting deep learning models):
-- Different content at different rounds of federated learning, where only specific payloads need to be encrypted
-- Flexibility in choosing what to encrypt (histograms) versus what to send in plain text (metadata)
-
-With the ModelController API, such "proof of concept" experiment becomes easy. In this example, the federated analysis pipeline includes 2 rounds without HE, or 3 rounds with HE.
-
-For the federated analysis without HE, the detailed steps are as follows:
-1. Server sends the simple start message without any payload.
-2. Clients submit the local event histograms to server. Server aggregates the histograms with varying lengths by adding event counts of the same slot together, and sends the aggregated histograms back to clients.
-
-For the federated analysis with HE, we need to ensure proper HE aggregation using CKKS, and the detailed steps are as follows:
-1. Server send the simple start message without any payload. 
-2. Clients collect the information of the local maximum bin number (for event time) and send to server, where server aggregates the information by selecting the maximum among all clients. The global maximum number is then distributed back to clients. This step is necessary because we would like to standardize the histograms generated by all clients, such that they will have the exact same length and can be encrypted as vectors of same size, which will be addable.
-3. Clients condense their local raw event lists into two histograms with the global length received, encrypt the histrogram value vectors, and send to server. Server aggregated the received histograms by adding the encrypted vectors together, and sends the aggregated histograms back to clients.
-
-After these rounds, the federated work is completed. Then at each client, the aggregated histograms will be decrypted and converted back to an event list, and Kaplan-Meier analysis can be performed on the global information.
+This example supports both **Simulation Mode** (for local testing) and **Production Mode** (for real-world deployment).
 
 ### HE Context and Data Management
 
 - **Simulation Mode**: 
   - Uses **CKKS scheme** (approximate arithmetic, compatible with production)
   - HE context files are manually created via `prepare_he_context.py`:
-    - Client context: `/tmp/nvflare/he_context/he_context_client.txt`
-    - Server context: `/tmp/nvflare/he_context/he_context_server.txt`
+    - Client context: `/tmp/nvflare/he_context/he_context_client.txt` (default)
+    - Server context: `/tmp/nvflare/he_context/he_context_server.txt` (must be in same directory)
   - Data prepared at `/tmp/nvflare/dataset/km_data`
-  - Paths can be customized via `--he_context_path` (for client context) and `--data_root`
+  - Client context path can be customized via `--he_context_path` parameter (server file must be in same directory)
 - **Production Mode**: 
   - Uses **CKKS scheme**
   - HE context is automatically provisioned into startup kits via `nvflare provision`
@@ -107,11 +272,11 @@ After these rounds, the federated work is completed. Then at each client, the ag
   - The `--he_context_path` parameter is ignored in production mode
   - **Reuses the same data** from simulation mode at `/tmp/nvflare/dataset/km_data` by default
 
-**Note:** CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption. Both simulation and production modes use the same CKKS scheme for consistency and compatibility. Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
-
-## Run the job
-
-This example supports both **Simulation Mode** (for local testing) and **Production Mode** (for real-world deployment).
+**Note:** 
+- CKKS scheme provides strong encryption with approximate arithmetic, which works well for this Kaplan-Meier analysis. The histogram counts are encrypted as floating-point numbers and rounded back to integers after decryption.
+- Both simulation and production modes use the same CKKS scheme for consistency and compatibility.
+- Production mode can reuse the data prepared during simulation mode, eliminating redundant data preparation.
+- When customizing `--he_context_path` in simulation mode, the server context file (`he_context_server.txt`) must be in the same directory as the client context file.
 
 | Feature | Simulation Mode | Production Mode |
 |---------|----------------|-----------------|
@@ -131,7 +296,7 @@ For simulation mode (testing and development), we manually prepare the data and 
 
 Split and generate data files for each client with binning interval of 7 days:
 ```commandline
-python utils/prepare_data.py --site_num 5 --bin_days 7 --out_path "/tmp/nvflare/dataset/km_data"
+python utils/prepare_data.py --num_clients 5 --bin_days 7 --out_path "/tmp/nvflare/dataset/km_data"
 ```
 
 **Step 2: Prepare HE Context (Simulation Only)**
@@ -299,8 +464,17 @@ After the job completes, shut down all parties gracefully via admin console:
 > shutdown all
 ```
 
-## Display Result
+## Results
 
-By comparing the two curves, we can observe that all curves are identical:
+By comparing the curves from different modes, we can observe that all approaches produce identical survival curves:
+
+**Federated Learning without HE:**
 ![KM survival fl](figs/km_curve_fl.png)
+
+**Federated Learning with HE:**
 ![KM survival fl_he](figs/km_curve_fl_he.png)
+
+The federated Kaplan-Meier curves (with and without HE) match the centralized baseline, demonstrating that:
+- Time-binning preserves the overall survival trend
+- Homomorphic encryption adds security without affecting accuracy
+- The federated approach produces statistically equivalent results to centralized analysis
