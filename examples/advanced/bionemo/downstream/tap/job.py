@@ -32,7 +32,7 @@ def main(args):
     # Determine validation check interval based on experiment type
     if "central" in args.exp_name:
         print("Simulating central training...")
-        assert args.num_clients == 1, "Use num_clients=1 for simulating 'central' training setting."
+        # in central training, we allow several clients to train on the same data (each with a different end point), but we only run one round of training
         assert args.num_rounds == 1, "Use num_rounds=1 for simulating 'central' training setting."
         val_check_interval = int(args.local_steps / 20)  # 20 times per training
     else:  # local or fedavg setting
