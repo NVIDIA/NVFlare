@@ -17,13 +17,12 @@ import os
 import shlex
 import shutil
 import socket
+import ssl
 import subprocess
 import tempfile
-from typing import Any, Dict, Optional
 
 import grpc
-from requests import Request, Response, Session
-from requests.adapters import HTTPAdapter
+from requests import Response
 
 
 class NVFlareConfig:
@@ -66,25 +65,6 @@ def try_bind_address(host: str, port: int):
     return None
 
 
-def _create_http_session(ca_path=None, cert_path=None, prv_key_path=None):
-    session = Session()
-    adapter = HTTPAdapter(max_retries=1)
-    session.mount("https://", adapter)
-    if ca_path:
-        session.verify = ca_path
-        session.cert = (cert_path, prv_key_path)
-    return session
-
-
-def _send_request(
-    session, api_point, headers: Optional[Dict[str, Any]] = None, payload: Optional[Dict[str, Any]] = None
-) -> Response:
-    req = Request("POST", api_point, json=payload, headers=headers)
-    prepared = session.prepare_request(req)
-    resp = session.send(prepared)
-    return resp
-
-
 def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list) -> dict:
     result = {}
     for k in required_args:
@@ -109,12 +89,7 @@ def construct_dummy_overseer_response(overseer_agent_conf: dict, role: str) -> R
 
 def get_required_args_for_overseer_agent(overseer_agent_class: str, role: str) -> list:
     """Gets required argument list for a specific overseer agent class."""
-    if overseer_agent_class == "nvflare.ha.overseer_agent.HttpOverseerAgent":
-        required_args = ["overseer_end_point", "role", "project", "name"]
-        if role == NVFlareRole.SERVER:
-            required_args.extend(["fl_port", "admin_port"])
-        return required_args
-    elif overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
+    if overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
         required_args = ["sp_end_point"]
         return required_args
     else:
@@ -167,27 +142,26 @@ def _get_conn_sec(startup: str):
 
 
 def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
-    with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
-        trusted_certs = f.read()
-    with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
-        private_key = f.read()
-    with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
-        certificate_chain = f.read()
 
     conn_sec = _get_conn_sec(startup)
     secure = True
     if conn_sec == "clear":
         secure = False
 
-    call_credentials = grpc.metadata_call_credentials(
-        lambda context, callback: callback((("x-custom-token", token),), None)
-    )
-    credentials = grpc.ssl_channel_credentials(
-        certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
-    )
-
-    composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
     if secure:
+        with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
+            trusted_certs = f.read()
+        with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
+            private_key = f.read()
+        with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
+            certificate_chain = f.read()
+        call_credentials = grpc.metadata_call_credentials(
+            lambda context, callback: callback((("x-custom-token", token),), None)
+        )
+        credentials = grpc.ssl_channel_credentials(
+            certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
+        )
+        composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
         channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
     else:
         channel = grpc.insecure_channel(target=f"{host}:{port}")
@@ -197,6 +171,66 @@ def check_grpc_server_running(startup: str, host: str, port: int, token=None) ->
     except grpc.FutureTimeoutError:
         return False
     return True
+
+
+def check_socket_server_running(startup: str, host: str, port: int, scheme: str = "https") -> bool:
+    """Check if socket-based server (HTTP/HTTPS/TCP/STCP) is running and accessible.
+
+    This function performs a socket connection test with optional SSL/TLS.
+    It's used for HTTP/WebSocket and TCP-based FL servers.
+
+    Args:
+        startup: Path to startup directory containing certificates
+        host: Server hostname or IP address
+        port: Server port number
+        scheme: URL scheme ("http", "https", "tcp", "stcp")
+
+    Returns:
+        True if server is accessible, False otherwise
+    """
+    conn_sec = _get_conn_sec(startup)
+    secure = True
+    if conn_sec == "clear":
+        secure = False
+
+    # Determine if we need SSL based on scheme
+    use_ssl = secure and scheme in ["https", "stcp"]
+
+    # Try a socket connection to check if port is reachable
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(10)
+
+    try:
+        if use_ssl:
+            # For secure connection, wrap socket with SSL and use client certificates
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            ca_path = os.path.join(startup, _get_ca_cert_file_name())
+            cert_path = os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT))
+            prv_key_path = os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT))
+
+            context.load_verify_locations(ca_path)
+            context.load_cert_chain(cert_path, prv_key_path)
+            # Check hostname may fail for localhost, so disable it for preflight check
+            context.check_hostname = False
+
+            ssl_sock = context.wrap_socket(sock, server_hostname=host)
+            ssl_sock.connect((host, port))
+            ssl_sock.close()
+        else:
+            # For insecure connection, just check if we can connect
+            sock.connect((host, port))
+            sock.close()
+
+        return True
+    except (socket.timeout, socket.error, ssl.SSLError, OSError, ConnectionRefusedError):
+        # Connection failed - server is not accessible
+        return False
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
 
 
 def run_command_in_subprocess(command):
@@ -211,3 +245,36 @@ def run_command_in_subprocess(command):
         universal_newlines=True,
     )
     return process
+
+
+def get_communication_scheme(package_path: str, config_name: str, default_scheme: str = "http") -> str:
+    """Read the communication scheme from package configuration files.
+
+    This function checks multiple sources to determine the communication scheme:
+    1. For servers: fed_server.json (service.scheme)
+    2. For all packages: comm_config.json in local/ or startup/ directories
+
+    Args:
+        package_path: Path to the package directory
+        config_name: Name of the configuration file (fed_server.json, fed_client.json, fed_admin.json)
+        default_scheme: Default scheme to return if no scheme is found
+
+    Returns:
+        The communication scheme (e.g., "grpc", "http")
+    """
+    # First try to read from fed_xxx.json
+    startup = os.path.join(package_path, "startup")
+    fed_config_file = os.path.join(startup, config_name)
+    if os.path.exists(fed_config_file):
+        try:
+            with open(fed_config_file, "r") as f:
+                fed_config = json.load(f)
+                server_conf = fed_config.get("servers", [{}])[0]
+                service_config = server_conf.get("service", {})
+                scheme = service_config.get("scheme")
+                if scheme:
+                    return scheme.lower()
+        except Exception:
+            pass
+
+    return default_scheme

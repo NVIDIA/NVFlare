@@ -1,0 +1,6 @@
+nvflare~=2.7.2rc
+torch
+torchvision
+tensorboard
+tqdm
+nibabel

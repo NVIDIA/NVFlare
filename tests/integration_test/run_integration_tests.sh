@@ -9,7 +9,7 @@ PYTHONPATH="${PWD}/../.."
 export GRPC_POLL_STRATEGY="poll"
 export GRPC_ENABLE_FORK_SUPPORT="False"
 
-backends=(numpy tensorflow pytorch overseer auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
+backends=(numpy tensorflow pytorch auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
 
 usage()
 {
@@ -56,14 +56,6 @@ run_preflight_check_test()
     eval "$cmd"
 }
 
-run_overseer_test()
-{
-    echo "Running overseer integration tests."
-    cmd="$cmd overseer_test.py"
-    echo "$cmd"
-    eval "$cmd"
-}
-
 run_system_test()
 {
     echo "Running system integration tests with backend $m."
@@ -83,8 +75,6 @@ run_tensorflow()
 
 if [[ $m == "tensorflow" ]]; then
     run_tensorflow
-elif [[ $m == "overseer" ]]; then
-    run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
 else

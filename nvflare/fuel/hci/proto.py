@@ -41,6 +41,7 @@ class ProtoKey(object):
     TOKEN = "token"
     DETAILS = "details"
     STATUS = "status"
+    APP_DATA = "app_data"  # used by application to add additional data
 
 
 class MetaKey(object):

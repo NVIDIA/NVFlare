@@ -76,7 +76,5 @@ submit_job ../../job2
 
 ### Jobs
 
-* job1: The job is called `hello-numpy-sag`. site_a will allow this job to run.
+* job1: The job is called `hello-numpy`. site_a will allow this job to run.
 * job2: The job is called `FL Demo Job1`. site_a will block this job to run.
-
-

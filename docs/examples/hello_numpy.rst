@@ -73,9 +73,37 @@ The model implementation is located in ``model.py``.
 
 Client Code
 ------------------
-Notice the training code follows the standard FL client pattern.
-The only difference is that we added a few lines to receive and send data to the server.
+The client training script follows the standard FL client pattern.
 
+On the client side, the training workflow is as follows:
+
+   1. Receive the model from the FL server
+   2. Perform training on the received global model
+   3. Send the updated model back to the FL server
+
+Using NVFlare's Client API, there are three essential methods to help achieve this workflow:
+
+   - ``flare.init()``: Initializes NVFlare Client API environment
+   - ``flare.receive()``: Receives model from the FL server
+   - ``flare.send()``: Sends the model to the FL server
+
+The following code snippet highlights how these methods are used:
+
+.. code-block:: python
+
+   import nvflare.client as flare
+
+   flare.init()  # 1. Initialize NVFlare Client API
+   input_model = flare.receive()  # 2. Receive model from server
+   params = input_model.params  # 3. Extract model parameters
+
+   # Your training code here
+   new_params = train(params)
+
+   output_model = flare.FLModel(params=new_params)  # 4. Package results
+   flare.send(output_model)  # 5. Send updated model to server
+
+For the complete implementation, see the full client code below:
 
 .. literalinclude:: ../../../examples/hello-world/hello-numpy/client.py
     :language: python
@@ -126,3 +154,21 @@ Use the following command in your terminal to start the job with the specified n
 
 The full source code for this exercise can be found in
 :github_nvflare_link:`examples/hello-world/hello-numpy <examples/hello-world/hello-numpy/>`.
+
+Previous Versions of this Example
+----------------------------------
+
+For users on older versions of NVIDIA FLARE, this example had different names:
+
+**"Hello Scatter and Gather" (versions 2.0-2.4):**
+
+   - `hello-numpy-sag for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-numpy-sag>`_
+
+**"Hello FedAvg NumPy" (versions 2.5-2.6):**
+
+   - `hello-fedavg-numpy for 2.5 <https://github.com/NVIDIA/NVFlare/tree/2.5/examples/hello-world/hello-fedavg-numpy>`_
+   - `hello-fedavg-numpy for 2.6 <https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/hello-fedavg-numpy>`_

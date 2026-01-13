@@ -14,6 +14,15 @@ NVIDIA FLARE
    Installation <installation>
    getting_started
    Quick Start <quickstart>
+   system_architecture/index
+   user_guide/confidential_computing/index
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: How-to Guides
+
+   how-to-guide/index
 
 .. toctree::
    :maxdepth: -1
@@ -26,7 +35,6 @@ NVIDIA FLARE
    programming_guide
    best_practices
    edge_development/index
-   confidential_computing/index
 
 .. toctree::
    :maxdepth: -1

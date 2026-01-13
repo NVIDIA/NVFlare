@@ -49,7 +49,7 @@ Download and install the KeyCloak following the instruction guide from https://w
 ### Set up FL Client Job Authorization Requirement
 
 ```
-cp -r site/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/* 
+cp -r site/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/*
 ```
 
 Save the KeyCloak public_key in the `/tmp/nvflare/poc/keycloak-site-authentication/prod_00/site_a/local/public_key.pem` file, with the following format:
@@ -74,7 +74,7 @@ The CustomSecurityHandler in the custom/keycloak_security_handler.py contains th
 ### Set up Admin user authentication
 
 ```
-cp -r admin/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/myuser@example.co/local/* 
+cp -r admin/local/* /tmp/nvflare/poc/keycloak-site-authentication/prod_00/myuser@example.co/local/*
 ```
 
 In the local/custom/resources.json config file, it contains the following admin event handler. the "orgs" arg provides a list of site names, and it's corresponding KeyCloak access_token URLs:
@@ -116,15 +116,15 @@ At the prompt, enter the user email `myuser@example.com`, and then provide the p
 
 With this system set up, the `site_a` will require only the authenticated admin user to be able to submit and run a job. `site_b` does not have this additional security requirement. Any admin user can submit and run the job.
 
-Let's choose the `hello-numpy-sag` job from the `hello-world` examples. For demonstrating purpose, let's change the `min_clients` in the job meta.json to 1.  
+Let's choose the `hello-numpy` job from the `hello-world` examples. For demonstrating purpose, let's change the `min_clients` in the job configuration to 1.
 
 #### Authenticated admin user
 
-* `myuser@example.com` is successfully authenticated to `site_a` KeyCloak system. The `hello-numpy-sag` job is successfully submitted and run on both `site_a` and `site_b`.
+* `myuser@example.com` is successfully authenticated to `site_a` KeyCloak system. The `hello-numpy` job is successfully submitted and run on both `site_a` and `site_b`.
 
 #### Un-authenticated admin user
 
-* If the `myuser@example.com` admin user provides the wrong password, or for some reason KeyCloak system is not available when starting the admin tool, or submitting the job, the `hello-numpy-sag` job won't be able to run the `site_a`. 
+* If the `myuser@example.com` admin user provides the wrong password, or for some reason KeyCloak system is not available when starting the admin tool, or submitting the job, the `hello-numpy` job won't be able to run the `site_a`.
 * `site_a` will show "ERROR - Authorization failed".
 * The job can successfully run on `site-b`.
 * `list_jobs -d JOB_ID` command will show "job_deploy_detail" information of this job.
