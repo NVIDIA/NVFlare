@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 from server import KM
 from server_he import KM_HE
@@ -150,8 +151,9 @@ def main():
     elif args.encryption:
         # In simulation mode, use the manually prepared context files
         he_context_path_client = args.he_context_path
-        # Derive server path from client path
-        he_context_path_server = he_context_path_client.replace("he_context_client.txt", "he_context_server.txt")
+        # Derive server path from client path using proper path manipulation
+        dir_path = os.path.dirname(he_context_path_client)
+        he_context_path_server = os.path.join(dir_path, "he_context_server.txt")
     else:
         # No encryption - values won't be used
         he_context_path_client = None
