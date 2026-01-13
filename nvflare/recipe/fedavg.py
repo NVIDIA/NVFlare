@@ -218,8 +218,14 @@ class FedAvgRecipe(Recipe):
         if self.per_site_config is not None:
             for site_name, site_config in self.per_site_config.items():
                 # Use site-specific config or fall back to defaults
-                script = site_config.get("train_script") if site_config.get("train_script") is not None else self.train_script
-                script_args = site_config.get("train_args") if site_config.get("train_args") is not None else self.train_args
+                script = (
+                    site_config.get("train_script")
+                    if site_config.get("train_script") is not None
+                    else self.train_script
+                )
+                script_args = (
+                    site_config.get("train_args") if site_config.get("train_args") is not None else self.train_args
+                )
                 launch_external = (
                     site_config.get("launch_external_process")
                     if site_config.get("launch_external_process") is not None
