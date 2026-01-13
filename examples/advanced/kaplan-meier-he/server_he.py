@@ -14,6 +14,7 @@
 
 import base64
 import logging
+import os
 
 import tenseal as ts
 
@@ -25,7 +26,7 @@ from nvflare.app_common.workflows.model_controller import ModelController
 
 class KM_HE(ModelController):
     def __init__(self, min_clients: int, he_context_path: str):
-        super(KM_HE, self).__init__()
+        super(KM_HE, self).__init__(persistor_id="")
         self.logger = logging.getLogger(self.__class__.__name__)
         self.min_clients = min_clients
         self.he_context_path = he_context_path
@@ -39,9 +40,30 @@ class KM_HE(ModelController):
         _ = self.distribute_global_hist(hist_obs_global, hist_cen_global)
 
     def read_data(self, file_name: str):
+        # Handle both absolute and relative paths
+        # In production mode, HE context files are in the startup directory
+        if not os.path.isabs(file_name) and not os.path.exists(file_name):
+            # Try CWD/startup/ (production deployment location)
+            cwd = os.getcwd()
+            startup_path = os.path.join(cwd, "startup", file_name)
+            if os.path.exists(startup_path):
+                file_name = startup_path
+                self.logger.info(f"Using HE context file from startup directory: {file_name}")
+
         with open(file_name, "rb") as f:
             data = f.read()
-        return base64.b64decode(data)
+
+        # Handle both base64-encoded (simulation mode) and raw binary (production mode) formats
+        # Production mode (HEBuilder): files are raw binary (.tenseal)
+        # Simulation mode (prepare_he_context.py): files are base64-encoded (.txt)
+        if file_name.endswith(".tenseal"):
+            # Production mode: raw binary format
+            self.logger.info("Using raw binary HE context (production mode)")
+            return data
+        else:
+            # Simulation mode: base64-encoded format (.txt files)
+            self.logger.info("Using base64-encoded HE context (simulation mode)")
+            return base64.b64decode(data)
 
     def start_fl_collect_max_idx(self):
         self.logger.info("send initial message to all sites to start FL \n")
@@ -51,7 +73,7 @@ class KM_HE(ModelController):
         return results
 
     def aggr_max_idx(self, sag_result: dict[str, dict[str, FLModel]]):
-        self.logger.info("aggregate max histogram index \n")
+        self.logger.info("aggregate max histogram index (cleartext) \n")
 
         if not sag_result:
             raise RuntimeError("input is None or empty")
@@ -64,7 +86,7 @@ class KM_HE(ModelController):
         return max(max_idx_global) + 1
 
     def distribute_max_idx_collect_enc_stats(self, result: int):
-        self.logger.info("send global max_index to all sites \n")
+        self.logger.info("send global max_index (cleartext) to all sites \n")
 
         model = FLModel(
             params={"max_idx_global": result},
@@ -78,7 +100,7 @@ class KM_HE(ModelController):
         return results
 
     def aggr_he_hist(self, sag_result: dict[str, dict[str, FLModel]]):
-        self.logger.info("aggregate histogram within HE \n")
+        self.logger.info("aggregate histogram (ciphertext) within HE \n")
 
         # Load HE context
         he_context_serial = self.read_data(self.he_context_path)
@@ -89,25 +111,24 @@ class KM_HE(ModelController):
 
         hist_obs_global = None
         hist_cen_global = None
+        is_first = True
         for fl_model in sag_result:
             site = fl_model.meta.get("client_name", None)
             hist_obs_he_serial = fl_model.params["hist_obs"]
-            hist_obs_he = ts.bfv_vector_from(he_context, hist_obs_he_serial)
+            hist_obs_he = ts.ckks_vector_from(he_context, hist_obs_he_serial)
             hist_cen_he_serial = fl_model.params["hist_cen"]
-            hist_cen_he = ts.bfv_vector_from(he_context, hist_cen_he_serial)
+            hist_cen_he = ts.ckks_vector_from(he_context, hist_cen_he_serial)
 
-            if not hist_obs_global:
-                print(f"assign global hist with result from {site}")
+            if is_first:
+                self.logger.info(f"assign global hist (ciphertext) with result from {site}")
                 hist_obs_global = hist_obs_he
-            else:
-                print(f"add to global hist with result from {site}")
-                hist_obs_global += hist_obs_he
-
-            if not hist_cen_global:
-                print(f"assign global hist with result from {site}")
+                self.logger.info(f"assign global censored hist (ciphertext) with result from {site}")
                 hist_cen_global = hist_cen_he
+                is_first = False
             else:
-                print(f"add to global hist with result from {site}")
+                self.logger.info(f"add ciphertext to global hist with result from {site}")
+                hist_obs_global += hist_obs_he
+                self.logger.info(f"add ciphertext to global censored hist with result from {site}")
                 hist_cen_global += hist_cen_he
 
         # return the two accumulated vectors, serialized for transmission
@@ -116,7 +137,7 @@ class KM_HE(ModelController):
         return hist_obs_global_serial, hist_cen_global_serial
 
     def distribute_global_hist(self, hist_obs_global_serial, hist_cen_global_serial):
-        self.logger.info("send global accumulated histograms within HE to all sites \n")
+        self.logger.info("send global accumulated histograms (ciphertext) to all sites \n")
 
         model = FLModel(
             params={"hist_obs_global": hist_obs_global_serial, "hist_cen_global": hist_cen_global_serial},
