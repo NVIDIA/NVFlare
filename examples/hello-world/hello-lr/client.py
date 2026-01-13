@@ -85,7 +85,7 @@ def train_newton_raphson(data, theta):
     gradient = np.dot(train_X.T, (train_y - proba))
 
     # The hessian is X^T . D . X, where D is the
-    # diagnoal matrix with values proba * (1 - proba)
+    # diagonal matrix with values proba * (1 - proba)
     D = np.diag((proba * (1 - proba))[:, 0])
     hessian = train_X.T.dot(D).dot(train_X)
 
