@@ -36,8 +36,6 @@ class TestDriverManager:
             ("stcp", TcpDriver),
             ("http", AioHttpDriver),
             ("https", AioHttpDriver),
-            ("ws", AioHttpDriver),
-            ("wss", AioHttpDriver),
             ("atcp", AioTcpDriver),
             ("satcp", AioTcpDriver),
         ],
