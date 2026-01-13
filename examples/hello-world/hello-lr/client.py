@@ -23,6 +23,7 @@ import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.client.tracking import SummaryWriter
 
 
 def parse_arguments():
@@ -129,6 +130,9 @@ def main():
     # Load client site data.
     data = load_data(data_root, site_name)
 
+    # Get metric summary writer for TensorBoard
+    writer = SummaryWriter()
+
     while flare.is_running():
         # Receive global model (FLModel) from server.
         global_model = flare.receive()
@@ -149,6 +153,10 @@ def main():
         print(f"[ROUND {curr_round}] - start validation of global model on client: {site_name}")
         validation_scores = validate(data, global_weights)
         print(f"[ROUND {curr_round}] - validation metric scores on client: {site_name} = {validation_scores}")
+
+        # Write validation metrics to TensorBoard
+        writer.add_scalar(f"{site_name}/accuracy", validation_scores["accuracy"], curr_round)
+        writer.add_scalar(f"{site_name}/precision", validation_scores["precision"], curr_round)
 
         # Local training
         print(f"[ROUND {curr_round}] - start local training on client site: {site_name}")

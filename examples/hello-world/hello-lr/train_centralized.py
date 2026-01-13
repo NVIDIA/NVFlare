@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ if __name__ == "__main__":
         "--solver",
         type=str,
         default="custom",
-        help=("which solver to use: custom (default) or sklearn " "LogisticRegression. The results are the same. "),
+        help="which solver to use: custom (default) or sklearn LogisticRegression. The results are the same.",
     )
     args = parser.parse_args()
 
@@ -85,34 +85,34 @@ if __name__ == "__main__":
         )
     )
 
-if args.solver == "sklearn":
-    train_y = train_y.reshape(-1)
+    if args.solver == "sklearn":
+        train_y = train_y.reshape(-1)
 
-print("training data X loaded. shape:", train_X.shape)
-print("training data y loaded. shape:", train_y.shape)
-
-if args.solver == "sklearn":
-    clf = LogisticRegression(random_state=0, solver="newton-cholesky", verbose=1).fit(train_X, train_y)
-
-else:
-    theta = lr_solver(train_X, train_y)
-
-for site in range(4):
-
-    print("\nsite - {}".format(site + 1))
-    test_X = np.load(os.path.join(DATA_ROOT, "site-{}.test.x.npy".format(site + 1)))
-    test_y = np.load(os.path.join(DATA_ROOT, "site-{}.test.y.npy".format(site + 1)))
-    test_y = test_y.reshape(-1)
-
-    print("validation set n_samples: ", test_X.shape[0])
+    print("training data X loaded. shape:", train_X.shape)
+    print("training data y loaded. shape:", train_y.shape)
 
     if args.solver == "sklearn":
-        proba = clf.predict_proba(test_X)
-        proba = proba[:, 1]
+        clf = LogisticRegression(random_state=0, solver="newton-cholesky", verbose=1).fit(train_X, train_y)
 
     else:
-        test_X = np.concatenate((np.ones((test_X.shape[0], 1)), test_X), axis=1)
-        proba = sigmoid(np.dot(test_X, theta))
+        theta = lr_solver(train_X, train_y)
 
-    print("accuracy:", accuracy_score(test_y, proba.round()))
-    print("precision:", precision_score(test_y, proba.round()))
+    for site in range(4):
+
+        print(f"\nsite - {site + 1}")
+        test_X = np.load(os.path.join(DATA_ROOT, f"site-{site + 1}.test.x.npy"))
+        test_y = np.load(os.path.join(DATA_ROOT, f"site-{site + 1}.test.y.npy"))
+        test_y = test_y.reshape(-1)
+
+        print("validation set n_samples: ", test_X.shape[0])
+
+        if args.solver == "sklearn":
+            proba = clf.predict_proba(test_X)
+            proba = proba[:, 1]
+
+        else:
+            test_X = np.concatenate((np.ones((test_X.shape[0], 1)), test_X), axis=1)
+            proba = sigmoid(np.dot(test_X, theta))
+
+        print("accuracy:", accuracy_score(test_y, proba.round()))
+        print("precision:", precision_score(test_y, proba.round()))
