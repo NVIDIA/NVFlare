@@ -89,23 +89,26 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare examples tests integration research"
-    echo "checking license header in folder: $folders_to_check_license"
-    (grep -r --include "*.py" --exclude-dir "*protos*" --exclude "modeling_roberta.py" -L \
-    "\(# Copyright (c) \(2021\|2022\|2023\|2024\|2025\|2026\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
-    ${folders_to_check_license} || true) > no_license.lst
-    if [ -s no_license.lst ]; then
-        # The file is not-empty.
-        cat no_license.lst
-        echo "License text not found on the above files."
-        echo "Please fix them."
-        rm -f no_license.lst
+    folders=("nvflare" "examples" "tests" "integration" "research")
+
+    echo "Checking license headers..."
+
+    license_regex='Copyright \(c\) 20[0-9]{2}, NVIDIA CORPORATION\.  All rights reserved\.|This file is released into the public domain\.'
+
+    missing=$(grep -rL \
+        --include="*.py" \
+        --exclude-dir="*protos*" \
+        --exclude="modeling_roberta.py" \
+        -E "$license_regex" \
+        "${folders[@]}" || true)
+
+    if [ -n "$missing" ]; then
+        echo "License header missing in the following files:"
+        echo "$missing"
         exit 1
-    else
-        echo "All Python files in folder ${folders_to_check_license} have license header"
-        rm -f no_license.lst
     fi
-    echo "finished checking license header"
+
+    echo "All Python files in folder ${folders} have valid license header"
 }
 
 function flake8_check() {
