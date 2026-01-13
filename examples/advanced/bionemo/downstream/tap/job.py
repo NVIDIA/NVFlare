@@ -30,7 +30,6 @@ def main(args):
     print(f"Downloaded {args.model} to {checkpoint_path}")
 
     # Determine validation check interval based on experiment type
-    # Determine validation check interval based on experiment type
     if "central" in args.exp_name:
         print("Simulating central training...")
         assert args.num_clients == 1, "Use num_clients=1 for simulating 'central' training setting."
