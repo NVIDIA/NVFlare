@@ -125,9 +125,14 @@ def main():
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument(
-        "--wandb_project", type=str, default=None, help="WandB project name (enables WandB if provided and WANDB_API_KEY is set)"
+        "--wandb_project",
+        type=str,
+        default=None,
+        help="WandB project name (enables WandB if provided and WANDB_API_KEY is set)",
     )
-    parser.add_argument("--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name, default to nvflare_llm")
+    parser.add_argument(
+        "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name, default to nvflare_llm"
+    )
     args = parser.parse_args()
 
     # Setup distributed training
