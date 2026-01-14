@@ -23,7 +23,7 @@ Per-Client Data Splits:
 
 import argparse
 
-from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+from nvflare.app_opt.sklearn import SVMFedAvgRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -36,13 +36,6 @@ def define_parser():
         default="rbf",
         choices=["linear", "poly", "rbf", "sigmoid"],
         help="Kernel type for SVM",
-    )
-    parser.add_argument(
-        "--backend",
-        type=str,
-        default="sklearn",
-        choices=["sklearn", "cuml"],
-        help="Backend library (sklearn or cuml)",
     )
     parser.add_argument(
         "--data_path",
@@ -92,42 +85,35 @@ def main():
 
     n_clients = args.n_clients
     kernel = args.kernel
-    backend = args.backend
     data_path = args.data_path
 
     print(f"Creating SVM recipe with {n_clients} clients")
     print(f"Kernel: {kernel}")
-    print(f"Backend: {backend}")
     print(f"Data path: {data_path}")
 
     # Calculate per-client data splits (non-overlapping ranges)
     splits = calculate_data_splits(n_clients)
-    train_args = {
-        site_name: f"--data_path {data_path} --backend {backend} --train_start {split['train_start']} "
-        f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
-        f"--valid_end {split['valid_end']}"
+    clients = [site_name for site_name in splits.keys()]
+    per_site_config = {
+        site_name: {
+            "train_args": f"--data_path {data_path} --train_start {split['train_start']} "
+            f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
+            f"--valid_end {split['valid_end']}"
+        }
         for site_name, split in splits.items()
     }
-
-    print("Per-client data splits:")
-    for site_name, split in splits.items():
-        print(
-            f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
-            f"valid [{split['valid_start']}:{split['valid_end']}]"
-        )
 
     recipe = SVMFedAvgRecipe(
         name="sklearn_svm",
         min_clients=n_clients,
         kernel=kernel,
         train_script="client.py",
-        train_args=train_args,
-        backend=backend,
+        per_site_config=per_site_config,
     )
 
     print("Executing recipe in simulation environment...")
     print("Note: SVM training only requires 1 round (round 0 for training, round 1 for validation)")
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    env = SimEnv(clients=clients, num_threads=n_clients)
     run = recipe.execute(env)
 
     print()
