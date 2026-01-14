@@ -127,8 +127,8 @@ def main():
     parser.add_argument(
         "--wandb_project",
         type=str,
-        default=None,
-        help="WandB project name (enables WandB if provided and WANDB_API_KEY is set)",
+        default="nvflare_llm",
+        help="WandB project name (default: nvflare_llm). WandB is enabled if WANDB_API_KEY is set.",
     )
     parser.add_argument(
         "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name, default to nvflare_llm"
@@ -143,11 +143,10 @@ def main():
     device_map = {"": local_rank}
 
     # Set WandB environment variables (only if API key is set and rank 0 will actually log)
-    wandb_enabled = args.wandb_project and os.environ.get("WANDB_API_KEY")
+    wandb_enabled = bool(os.environ.get("WANDB_API_KEY"))
     if wandb_enabled:
         os.environ["WANDB_PROJECT"] = args.wandb_project
-        if args.wandb_run_name:
-            os.environ["WANDB_NAME"] = args.wandb_run_name
+        os.environ["WANDB_NAME"] = args.wandb_run_name
         # Add FL-specific tags
         os.environ["WANDB_TAGS"] = (
             f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
