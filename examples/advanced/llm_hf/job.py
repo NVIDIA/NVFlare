@@ -67,8 +67,12 @@ def define_parser():
     parser.add_argument("--multi_node", action="store_true", help="Enable multi-node training")
     parser.add_argument("--startup_kit_location", type=str, default=None, help="Startup kit location")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Username for production mode")
-    parser.add_argument("--wandb_project", type=str, default=None, help="WandB project name (optional)")
-    parser.add_argument("--wandb_run_name", type=str, default=None, help="WandB run name (optional)")
+    parser.add_argument(
+        "--wandb_project", type=str, default="nvflare_llm", help="WandB project name (default: nvflare_llm)"
+    )
+    parser.add_argument(
+        "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name (default: nvflare_llm)"
+    )
     parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
     parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
@@ -145,9 +149,8 @@ def main():
             f"--lr_scheduler {args.lr_scheduler}"
         )
 
-        if args.wandb_project:
-            run_name = args.wandb_run_name if args.wandb_run_name else f"nvflare_{train_mode}_{client_id}"
-            script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {run_name}"
+        # Add WandB arguments (will be enabled if WANDB_API_KEY is set)
+        script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {args.wandb_run_name}"
 
         # Determine command for multi-GPU or multi-node
         site_config = {"train_args": script_args}
