@@ -387,6 +387,5 @@ Alpaca:
 Oasst1:
 ![peft](./figs/peft_oasst1.png)
 
-
-## Multi-node SLURM Support
-For more options, see [MULTINODE.md](MULTINODE.md#testing).
+## Multi-node Training
+The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).

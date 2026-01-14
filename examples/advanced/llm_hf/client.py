@@ -125,9 +125,9 @@ def main():
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
     parser.add_argument(
-        "--wandb_project", type=str, default=None, help="WandB project name (enables WandB if provided)"
+        "--wandb_project", type=str, default=None, help="WandB project name (enables WandB if provided and WANDB_API_KEY is set)"
     )
-    parser.add_argument("--wandb_run_name", type=str, default=None, help="WandB run name")
+    parser.add_argument("--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name, default to nvflare_llm")
     args = parser.parse_args()
 
     # Setup distributed training
@@ -155,7 +155,7 @@ def main():
     # (2) Initialize NVFlare client API
     # IMPORTANT: Only global rank 0 should interact with NVFlare
     # In multi-node training, rank 0 is on the master node where the FL client runs
-    flare.init(rank=f"{rank}")
+    flare.init(rank=rank)
 
     # If output path exists, remove it (only on main process)
     if rank == 0:

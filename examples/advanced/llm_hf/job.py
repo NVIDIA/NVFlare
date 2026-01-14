@@ -225,8 +225,8 @@ def main():
 
     run = recipe.execute(env)
     print()
-    print("Result:", run.get_result())
-    print("Status:", run.get_status())
+    print("Job Status is:", run.get_status())
+    print("Result can be found in:", run.get_result())
     print()
 
 
