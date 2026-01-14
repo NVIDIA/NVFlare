@@ -34,7 +34,6 @@ class NPValidator(Executor):
         self,
         epsilon=1,
         sleep_time=0,
-        validate_task_name=AppConstants.TASK_VALIDATION,
     ):
         # Init functions of components should be very minimal. Init
         # is called when json is read. A big init will cause json loading to halt
@@ -44,7 +43,7 @@ class NPValidator(Executor):
         self.logger = get_obj_logger(self)
         self._random_epsilon = epsilon
         self._sleep_time = sleep_time
-        self._validate_task_name = validate_task_name
+        self._validate_task_name = AppConstants.TASK_VALIDATION
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:
