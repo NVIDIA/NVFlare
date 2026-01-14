@@ -72,6 +72,6 @@ class HIGGSDataLoader(XGBDataLoader):
         x_valid, y_valid, total_valid_data_num = _read_higgs_with_pandas(
             data_path=data_path, start=valid_index["start"], end=valid_index["end"]
         )
-        dmat_valid = xgb.DMatrix(x_valid, label=y_valid, data_split_mode=self.data_split_mode)
+        dmat_valid = xgb.DMatrix(x_valid, label=y_valid)
 
         return dmat_train, dmat_valid
