@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,21 +19,19 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.fuel.utils import fobs
+from nvflare.app_opt.tf.model_persistor import TFModelPersistor
 
 
-class PTFileModelLocator(ModelLocator):
-    def __init__(self, pt_persistor_id: str):
+class TFFileModelLocator(ModelLocator):
+    def __init__(self, tf_persistor_id: str):
         """The ModelLocator's job is to find and locate the models inventory saved during training.
 
         Args:
-            pt_persistor_id (str): ModelPersistor component ID
+            tf_persistor_id (str): ModelPersistor component ID for TensorFlow models
         """
         super().__init__()
 
-        self.pt_persistor_id = pt_persistor_id
+        self.tf_persistor_id = tf_persistor_id
 
         self.model_persistor = None
         self.model_inventory = {}
@@ -43,28 +41,27 @@ class PTFileModelLocator(ModelLocator):
             self._initialize(fl_ctx)
 
     def _initialize(self, fl_ctx: FLContext):
-        if not self.pt_persistor_id:
+        if not self.tf_persistor_id:
             raise ValueError(
-                "PTFileModelLocator requires a valid pt_persistor_id, but got empty string. "
-                "Ensure your PyTorch recipe includes an initial_model to create a persistor."
+                "TFFileModelLocator requires a valid tf_persistor_id, but got empty string. "
+                "Ensure your TensorFlow recipe includes an initial_model to create a persistor."
             )
 
         engine = fl_ctx.get_engine()
-        self.model_persistor: PTFileModelPersistor = engine.get_component(self.pt_persistor_id)
+        self.model_persistor: TFModelPersistor = engine.get_component(self.tf_persistor_id)
         if self.model_persistor is None:
             raise ValueError(
-                f"No component found with ID '{self.pt_persistor_id}'. "
-                f"Ensure the PTFileModelPersistor is registered in the recipe."
+                f"No component found with ID '{self.tf_persistor_id}'. "
+                f"Ensure the TFModelPersistor is registered in the recipe."
             )
-        if not isinstance(self.model_persistor, PTFileModelPersistor):
+        if not isinstance(self.model_persistor, TFModelPersistor):
             raise ValueError(
-                f"Component '{self.pt_persistor_id}' must be PTFileModelPersistor, "
+                f"Component '{self.tf_persistor_id}' must be TFModelPersistor, "
                 f"but got: {type(self.model_persistor)}"
             )
-        fobs.register(TensorDecomposer)
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
-        """Returns the list of model names that should be included from server in cross site validation.add().
+        """Returns the list of model names that should be included from server in cross site validation.
 
         Args:
             fl_ctx (FLContext): FL Context object.
