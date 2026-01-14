@@ -17,7 +17,6 @@ import os
 import numpy as np
 
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
-CLIENT_MODEL_DIR = "/tmp/nvflare/client_pretrain_models"
 
 
 def _save_model(model_data, model_dir: str, model_file: str):
@@ -29,11 +28,13 @@ def _save_model(model_data, model_dir: str, model_file: str):
 
 if __name__ == "__main__":
     """
-    This is the tool to generate the pre-trained models for demonstrating the cross-validation without training.
+    Generate pre-trained models for cross-site evaluation demo.
+
+    In CSE, the server provides models to clients for evaluation.
+    Clients validate these models on their local data.
     """
 
     model_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
 
     _save_model(model_data=model_data, model_dir=SERVER_MODEL_DIR, model_file="server_1.npy")
     _save_model(model_data=model_data, model_dir=SERVER_MODEL_DIR, model_file="server_2.npy")
-    _save_model(model_data=model_data, model_dir=CLIENT_MODEL_DIR, model_file="best_numpy.npy")
