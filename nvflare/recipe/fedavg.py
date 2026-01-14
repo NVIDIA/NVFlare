@@ -49,6 +49,8 @@ class _FedAvgValidator(BaseModel):
     model_persistor: Optional[ModelPersistor]
     analytics_receiver: Any
     per_site_config: Optional[dict[str, dict]] = None
+    launch_once: bool
+    shutdown_timeout: float
 
 
 class FedAvgRecipe(Recipe):
@@ -106,7 +108,13 @@ class FedAvgRecipe(Recipe):
             - framework (FrameworkType): Framework type
             - server_expected_format (ExchangeFormat): Exchange format
             - params_transfer_type (TransferType): Parameter transfer type
+            - launch_once (bool): Whether to launch external process once or per task
+            - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+        launch_once: Whether the external process will be launched only once at the beginning 
+            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -136,6 +144,8 @@ class FedAvgRecipe(Recipe):
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -155,6 +165,8 @@ class FedAvgRecipe(Recipe):
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
         )
 
         self.name = v.name
@@ -173,6 +185,8 @@ class FedAvgRecipe(Recipe):
         self.model_persistor = v.model_persistor
         self.analytics_receiver = v.analytics_receiver
         self.per_site_config = v.per_site_config
+        self.launch_once = v.launch_once
+        self.shutdown_timeout = v.shutdown_timeout
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
             if self.initial_model is None and self.model_persistor is None:
@@ -235,6 +249,14 @@ class FedAvgRecipe(Recipe):
                 framework = site_config.get("framework") or self.framework
                 expected_format = site_config.get("server_expected_format") or self.server_expected_format
                 transfer_type = site_config.get("params_transfer_type") or self.params_transfer_type
+                launch_once = (
+                    site_config.get("launch_once") if site_config.get("launch_once") is not None else self.launch_once
+                )
+                shutdown_timeout = (
+                    site_config.get("shutdown_timeout")
+                    if site_config.get("shutdown_timeout") is not None
+                    else self.shutdown_timeout
+                )
 
                 executor = ScriptRunner(
                     script=script,
@@ -244,6 +266,8 @@ class FedAvgRecipe(Recipe):
                     framework=framework,
                     server_expected_format=expected_format,
                     params_transfer_type=transfer_type,
+                    launch_once=launch_once,
+                    shutdown_timeout=shutdown_timeout,
                 )
                 job.to(executor, site_name)
         else:
@@ -255,6 +279,8 @@ class FedAvgRecipe(Recipe):
                 framework=self.framework,
                 server_expected_format=self.server_expected_format,
                 params_transfer_type=self.params_transfer_type,
+                launch_once=self.launch_once,
+                shutdown_timeout=self.shutdown_timeout,
             )
             job.to_clients(executor)
 
