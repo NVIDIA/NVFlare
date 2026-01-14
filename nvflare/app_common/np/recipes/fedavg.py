@@ -44,8 +44,6 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    launch_once: bool = True
-    shutdown_timeout: float = 0.0
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -79,10 +77,6 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
         DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-        launch_once: Whether the external process will be launched only once at the beginning
-            or on each task. Only used if `launch_external_process` is True. Defaults to True.
-        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
-            Only used if `launch_external_process` is True. Defaults to 0.0.
 
     Example:
         ```python
@@ -120,8 +114,6 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        launch_once: bool = True,
-        shutdown_timeout: float = 0.0,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -137,8 +129,6 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
-            launch_once=launch_once,
-            shutdown_timeout=shutdown_timeout,
         )
 
         self.name = v.name
@@ -151,10 +141,12 @@ class NumpyFedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        # Framework is set internally for proper behavior:
+        # - RAW for external APIs (CSE auto-detection)
+        # - NUMPY for ScriptRunner (correct parameter exchange)
+        self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.launch_once = v.launch_once
-        self.shutdown_timeout = v.shutdown_timeout
 
         # Create FedJob
         job = FedJob(name=self.name)
@@ -189,6 +181,8 @@ class NumpyFedAvgRecipe(Recipe):
         # Send the controller to the server
         job.to_server(controller)
 
+        # Use FrameworkType.NUMPY for ScriptRunner to ensure correct parameter exchange
+        # (self.framework is RAW for external API compatibility)
         executor = ScriptRunner(
             script=self.train_script,
             script_args=self.train_args,
@@ -197,8 +191,6 @@ class NumpyFedAvgRecipe(Recipe):
             framework=FrameworkType.NUMPY,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
-            launch_once=self.launch_once,
-            shutdown_timeout=self.shutdown_timeout,
         )
         job.to_clients(executor)
 
