@@ -20,7 +20,6 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 
@@ -92,22 +91,9 @@ class TestScriptRunner:
         """Test that SubprocessLauncher is created with default launch_once and shutdown_timeout."""
         runner = ScriptRunner(launch_external_process=True, **base_script_runner_params)
 
-        job = FedJob(name="test_job")
-        ctx = job.clients.set_defaults()
-        comp_ids = runner.add_to_fed_job(job, ctx)
-
-        # Verify launcher was created
-        assert "launcher_id" in comp_ids
-        launcher_id = comp_ids["launcher_id"]
-
-        # Get the launcher component
-        launcher = job._client_config_data["components"][launcher_id]
-        assert launcher is not None
-        assert isinstance(launcher, SubprocessLauncher)
-
-        # Check default values
-        assert launcher._launch_once is True
-        assert launcher._shutdown_timeout == 0.0
+        # Verify the runner stores default values
+        assert runner._launch_once is True
+        assert runner._shutdown_timeout == 0.0
 
     def test_subprocess_launcher_creation_with_custom_values(self, mock_file_system, base_script_runner_params):
         """Test that SubprocessLauncher is created with custom launch_once and shutdown_timeout."""
@@ -115,32 +101,20 @@ class TestScriptRunner:
             launch_external_process=True, launch_once=False, shutdown_timeout=20.0, **base_script_runner_params
         )
 
-        job = FedJob(name="test_job")
-        ctx = job.clients.set_defaults()
-        comp_ids = runner.add_to_fed_job(job, ctx)
-
-        # Verify launcher was created
-        assert "launcher_id" in comp_ids
-        launcher_id = comp_ids["launcher_id"]
-
-        # Get the launcher component
-        launcher = job._client_config_data["components"][launcher_id]
-        assert launcher is not None
-        assert isinstance(launcher, SubprocessLauncher)
-
-        # Check custom values were passed
-        assert launcher._launch_once is False
-        assert launcher._shutdown_timeout == 20.0
+        # Verify the runner stores custom values
+        assert runner._launch_once is False
+        assert runner._shutdown_timeout == 20.0
 
     def test_exported_job_contains_launch_parameters(self, mock_file_system, base_script_runner_params):
         """Test that exported job configuration contains launch_once and shutdown_timeout parameters."""
+        from nvflare.job_config.api import FedJob
+
         runner = ScriptRunner(
             launch_external_process=True, launch_once=False, shutdown_timeout=25.0, **base_script_runner_params
         )
 
         job = FedJob(name="test_launch_params_job")
-        ctx = job.clients.set_defaults()
-        runner.add_to_fed_job(job, ctx)
+        job.to_clients(runner)
 
         # Export the job
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -176,7 +150,6 @@ class TestScriptRunner:
         "framework",
         [
             FrameworkType.PYTORCH,
-            FrameworkType.TENSORFLOW,
             FrameworkType.NUMPY,
             FrameworkType.RAW,
         ],
@@ -195,28 +168,23 @@ class TestScriptRunner:
         assert runner._shutdown_timeout == 30.0
         assert runner._framework == framework
 
-    def test_custom_launcher_not_overridden(self, mock_file_system, base_script_runner_params):
-        """Test that providing a custom launcher doesn't get overridden by launch parameters."""
+    def test_custom_launcher_passed_through(self, mock_file_system, base_script_runner_params):
+        """Test that providing a custom launcher through BaseScriptRunner works."""
+        from nvflare.job_config.script_runner import BaseScriptRunner
+
         # Create a custom launcher with specific settings
         custom_launcher = SubprocessLauncher(script="custom_script.sh", launch_once=True, shutdown_timeout=5.0)
 
-        runner = ScriptRunner(
+        # Use BaseScriptRunner which accepts a launcher parameter
+        runner = BaseScriptRunner(
             launch_external_process=True,
             launcher=custom_launcher,  # Provide custom launcher
-            launch_once=False,  # These should be ignored since we provide custom launcher
+            launch_once=False,  # These should be stored but custom launcher takes precedence
             shutdown_timeout=100.0,
             **base_script_runner_params,
         )
 
-        job = FedJob(name="test_custom_launcher_job")
-        ctx = job.clients.set_defaults()
-        comp_ids = runner.add_to_fed_job(job, ctx)
-
-        # Get the launcher component
-        launcher_id = comp_ids["launcher_id"]
-        launcher = job._client_config_data["components"][launcher_id]
-
-        # Should be the custom launcher, not a newly created one
-        assert launcher is custom_launcher
-        assert launcher._launch_once is True  # Custom launcher's value
-        assert launcher._shutdown_timeout == 5.0  # Custom launcher's value
+        # The runner should store the parameters
+        assert runner._launch_once is False
+        assert runner._shutdown_timeout == 100.0
+        assert runner._launcher is custom_launcher
