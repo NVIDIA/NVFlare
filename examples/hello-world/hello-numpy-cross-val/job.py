@@ -24,8 +24,6 @@ This example demonstrates two modes:
 
 import argparse
 
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
@@ -98,15 +96,8 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
         train_args="",
     )
 
-    # Add validator to clients for cross-site evaluation
-    # Note: NumpyFedAvgRecipe only adds training components (ScriptRunner).
-    # We must manually add NPValidator for CSE validation tasks.
-    validator = NPValidator(validate_task_name=AppConstants.TASK_VALIDATION)
-    recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
-
-    # Add cross-site evaluation using utility function
-    # This is the recommended approach for adding cross-site evaluation
-    add_cross_site_evaluation(recipe, model_locator_type="numpy")
+    # Add cross-site evaluation
+    add_cross_site_evaluation(recipe)
 
     # Run in simulation environment
     env = SimEnv(num_clients=n_clients)

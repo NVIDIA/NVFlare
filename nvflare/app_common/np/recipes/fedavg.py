@@ -141,6 +141,10 @@ class NumpyFedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        # Framework is set internally for proper behavior:
+        # - RAW for external APIs (CSE auto-detection)
+        # - NUMPY for ScriptRunner (correct parameter exchange)
+        self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
@@ -177,6 +181,8 @@ class NumpyFedAvgRecipe(Recipe):
         # Send the controller to the server
         job.to_server(controller)
 
+        # Use FrameworkType.NUMPY for ScriptRunner to ensure correct parameter exchange
+        # (self.framework is RAW for external API compatibility)
         executor = ScriptRunner(
             script=self.train_script,
             script_args=self.train_args,
