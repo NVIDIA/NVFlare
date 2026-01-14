@@ -38,4 +38,4 @@ See individual job folders for detailed documentation.
 
 ## Reference
 
-Based on the NVIDIA BioNeMo Service [task-fitting example](https://github.com/NVIDIA/digital-biology-examples/blob/f488b23b89ffb92705cdc2c89bacff4eafaaed5b/examples/service/notebooks/task-fitting-predictor.ipynb), adapted to run locally with NVIDIA FLARE.
+Based on the NVIDIA BioNeMo Service [task-fitting example](https://github.com/NVIDIA/digital-biology-examples/blob/api/examples/service/notebooks/task-fitting-predictor.ipynb), adapted to run locally with NVIDIA FLARE.
