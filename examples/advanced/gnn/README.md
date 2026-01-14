@@ -109,11 +109,26 @@ The recipe is configured in `job.py` with parameters such as:
 - Learning rate and optimizer settings
 - Data paths
 
+The recipe uses **per-site configuration** (`per_site_config`) to provide site-specific training arguments:
+```python
+per_site_config = {}
+for i in range(1, num_clients + 1):
+    site_name = f"site-{i}"
+    per_site_config[site_name] = {
+        "train_args": f"--data_path {data_path} --epochs {epochs_per_round} ..."
+    }
+```
+
+This pattern allows each site to receive customized arguments, making it easy to:
+- Specify different data paths per site
+- Configure site-specific hyperparameters
+- Support heterogeneous client configurations
+
 The recipe automatically handles:
 - Job structure creation
 - Workflow configuration (ScatterAndGather)
 - Model aggregation setup (FedAvgAggregator)
-- Client deployment configuration
+- Client deployment configuration with per-site customization
 
 ### Folder Structure
 

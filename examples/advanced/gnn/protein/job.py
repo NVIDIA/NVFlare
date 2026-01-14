@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-from typing import Dict
 
 from torch_geometric.nn import GraphSAGE
 
@@ -49,16 +48,18 @@ def create_job(
         out_channels=64,
     )
 
-    # Create per-client arguments (client_id derived from site name in client script)
-    train_args: Dict[str, str] = {}
+    # Create per-site configuration with site-specific arguments
+    per_site_config = {}
     for i in range(1, num_clients + 1):
         site_name = f"site-{i}"
-        train_args[site_name] = (
-            f"--data_path {data_path} "
-            f"--epochs {epochs_per_round} "
-            f"--num_clients {num_clients} "
-            f"--output_path {output_path}"
-        )
+        per_site_config[site_name] = {
+            "train_args": (
+                f"--data_path {data_path} "
+                f"--epochs {epochs_per_round} "
+                f"--num_clients {num_clients} "
+                f"--output_path {output_path}"
+            )
+        }
 
     # Create FedAvgRecipe with initial_model to ensure persistor is added
     recipe = FedAvgRecipe(
@@ -67,7 +68,7 @@ def create_job(
         min_clients=num_clients,
         num_rounds=num_rounds,
         train_script="client.py",
-        train_args=train_args,
+        per_site_config=per_site_config,
     )
 
     # Add model selector for validation metric tracking
