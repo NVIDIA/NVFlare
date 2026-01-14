@@ -19,8 +19,9 @@ import tensorflow as tf
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelDescriptor, ModelLearnable, ModelLearnableKey, make_model_learnable
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
 
 
