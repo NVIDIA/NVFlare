@@ -33,7 +33,7 @@ HI_PORT = 65535
 MAX_ITER_SIZE = 10
 RANDOM_TRIES = 20
 BIND_TIME_OUT = 5
-SECURE_SCHEMES = {"https", "wss", "grpcs", "agrpcs", "ngrpcs", "stcp", "satcp"}
+SECURE_SCHEMES = {"https", "grpcs", "agrpcs", "ngrpcs", "stcp", "satcp"}
 
 # GRPC can't handle frame size over 2G. So the limit is set to (2G-2M)
 MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024 - (2 * 1024 * 1024)
