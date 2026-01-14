@@ -19,6 +19,7 @@ from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.spec import Recipe
 
 
@@ -70,8 +71,11 @@ class NumpyCrossSiteEvalRecipe(Recipe):
 
         # Add validators to clients for validation tasks
         job.to_clients(
-            NPValidator(validate_task_name=AppConstants.TASK_VALIDATION),
+            NPValidator(),
             tasks=[AppConstants.TASK_VALIDATION],
         )
+
+        # Set framework for external API compatibility (e.g., add_cross_site_evaluation)
+        self.framework = FrameworkType.RAW
 
         super().__init__(job)

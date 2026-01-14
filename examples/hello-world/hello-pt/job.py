@@ -53,7 +53,7 @@ def main():
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     if args.cross_site_eval:
-        add_cross_site_evaluation(recipe, model_locator_type="pytorch")
+        add_cross_site_evaluation(recipe)
 
     # Run FL simulation
     env = SimEnv(num_clients=n_clients)

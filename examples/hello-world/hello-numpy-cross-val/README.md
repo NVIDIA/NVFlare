@@ -134,7 +134,7 @@ recipe = NumpyFedAvgRecipe(
 )
 
 # 2. Add cross-site validation with one line
-add_cross_site_evaluation(recipe, model_locator_type="numpy")
+add_cross_site_evaluation(recipe)
 
 # 3. Execute
 env = SimEnv(num_clients=2)
@@ -207,7 +207,7 @@ recipe = FedAvgRecipe(
     initial_model=YourModel(),
 )
 
-add_cross_site_evaluation(recipe, model_locator_type="pytorch")
+add_cross_site_evaluation(recipe)
 ```
 
 ---
@@ -220,7 +220,7 @@ add_cross_site_evaluation(recipe, model_locator_type="pytorch")
 from nvflare.recipe import PocEnv
 
 recipe = NumpyFedAvgRecipe(...)
-add_cross_site_evaluation(recipe, model_locator_type="numpy")
+add_cross_site_evaluation(recipe)
 
 env = PocEnv(num_clients=2)
 run = recipe.execute(env)
@@ -233,7 +233,7 @@ run = recipe.execute(env)
 from nvflare.recipe import ProdEnv
 
 recipe = NumpyFedAvgRecipe(...)
-add_cross_site_evaluation(recipe, model_locator_type="numpy")
+add_cross_site_evaluation(recipe)
 
 env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
 run = recipe.execute(env)  # Submits and runs the job
@@ -244,7 +244,7 @@ run = recipe.execute(env)  # Submits and runs the job
 from nvflare.recipe import ProdEnv
 
 recipe = NumpyFedAvgRecipe(...)
-add_cross_site_evaluation(recipe, model_locator_type="numpy")
+add_cross_site_evaluation(recipe)
 
 env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
 recipe.export(job_dir="/tmp/nvflare/prod/job_config", env=env)  # Creates job files only
