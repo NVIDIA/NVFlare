@@ -12,188 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Job configuration for LLM HuggingFace federated learning using FedAvgRecipe pattern.
+"""
+
 import argparse
 import os
+from typing import Dict
 
-from nvflare import FedJob, FilterType
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from nvflare.recipe import ProdEnv, SimEnv
-from nvflare.recipe.spec import Recipe
-
-
-def main(args):
-    train_script = "client.py"
-    client_ids = args.client_ids
-    num_clients = len(client_ids)
-    # get the GPU assignments and ports
-    gpus = split_gpus(args.gpu)
-    gpus = [g.split(",") for g in gpus]
-    ports = args.ports
-
-    print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
-    # make sure the number of GPUs matches the number of clients
-    if len(gpus) != num_clients:
-        raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
-    # make sure the number of ports equal or greater than the number of clients
-    if len(ports) < num_clients:
-        raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
-
-    if args.threads:
-        num_threads = args.threads
-    else:
-        num_threads = num_clients
-
-    num_rounds = args.num_rounds
-    workspace_dir = args.workspace_dir
-    job_dir = args.job_dir
-    model_name_or_path = args.model_name_or_path
-    train_mode = args.train_mode
-    message_mode = args.message_mode
-
-    # Create the FedJob
-    if train_mode.lower() == "sft":
-        job = FedJob(name="llm_hf_sft", min_clients=num_clients)
-        output_path = "sft"
-    elif train_mode.lower() == "peft":
-        job = FedJob(name="llm_hf_peft", min_clients=num_clients)
-        output_path = "peft"
-    else:
-        raise ValueError(f"Invalid train_mode: {train_mode}, only SFT and PEFT are supported.")
-
-    # Define the FedAvg controller workflow and send to server
-    controller = FedAvg(
-        num_clients=num_clients,
-        num_rounds=num_rounds,
-    )
-    job.to(controller, "server")
-
-    if args.quantize_mode:
-        # If using quantization, add quantize filters.
-        quantizer = ModelQuantizer(quantization_type=args.quantize_mode)
-        dequantizer = ModelDequantizer()
-        job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
-        job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
-
-    # Define the model persistor and send to server
-    if train_mode.lower() == "sft":
-        # First send the model to the server
-        job.to("hf_sft_model.py", "server")
-        # Then send the model persistor to the server
-        model_args = {"path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
-    elif train_mode.lower() == "peft":
-        # First send the model to the server
-        job.to("hf_peft_model.py", "server")
-        # Then send the model persistor to the server
-        model_args = {"path": "hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
-    # When using message_mode="tensor", we need to set allow_numpy_conversion=False
-    allow_numpy_conversion = message_mode != "tensor"
-    job.to(
-        PTFileModelPersistor(model=model_args, allow_numpy_conversion=allow_numpy_conversion), "server", id="persistor"
-    )
-
-    # Add model selection widget and send to server
-    job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
-
-    # Send ScriptRunner to all clients
-    client_names = []
-    for i in range(num_clients):
-        client_id = client_ids[i]
-        site_name = f"site-{client_id}"
-        client_names.append(site_name)
-        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
-        data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
-
-        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
-
-        # Add WandB arguments if provided
-        if args.wandb_project:
-            wandb_run_name = args.wandb_run_name if args.wandb_run_name else f"nvflare_{train_mode.lower()}_{client_id}"
-            script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {wandb_run_name}"
-        if message_mode == "tensor":
-            server_expected_format = "pytorch"
-        elif message_mode == "numpy":
-            server_expected_format = "numpy"
-        else:
-            raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
-
-        if args.multi_node:
-            # Multi-GPU/Multi-node distributed training
-            # Use a wrapper script that handles srun coordination
-            # The wrapper script will detect if running on single or multiple nodes
-            print(f"Client {client_id}: Creating multi-node training job with {len(gpus[i])} GPUs per node")
-
-            # Send the wrapper script to the client
-            job.to("client_wrapper.sh", site_name)
-
-            # Use the wrapper script which will call srun if needed
-            runner = ScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                server_expected_format=server_expected_format,
-                launch_external_process=True,
-                command="bash custom/client_wrapper.sh",
-            )
-        elif len(gpus[i]) == 1:
-            # Single-GPU training
-            print(f"Client {client_id}: Creating single-GPU training job with {len(gpus[i])} GPUs")
-
-            runner = ScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                server_expected_format=server_expected_format,
-                launch_external_process=True,
-            )
-        elif len(gpus[i]) > 1:
-            # Multi-GPU training (single node)
-            print(f"Client {client_id}: Creating multi-GPU training job with {len(gpus[i])} GPUs")
-
-            runner = ScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                server_expected_format=server_expected_format,
-                launch_external_process=True,
-                command=f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(gpus[i])} --master_port={ports[i]}",
-            )
-        job.to(runner, site_name, tasks=["train"])
-
-        if args.quantize_mode:
-            job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
-            job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
-
-        # Add additional parameters to clients
-        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
-        job.to(client_params, site_name)
-
-    # Export the job
-    print("job_dir=", job_dir)
-    job.export_job(job_dir)
-
-    # Run job using a recipe
-    recipe = Recipe(job)
-    if args.startup_kit_location:
-        # Run the job in production mode
-        print("Running job in production mode...")
-        print("startup_kit_location=", args.startup_kit_location)
-        print("username=", args.username)
-        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
-        run = recipe.execute(env)
-        print("Job Status is:", run.get_status())
-        print("Job Result is:", run.get_result())
-    else:
-        # Run the job in simulation mode
-        print("Running job in simulation mode...")
-        print("workspace_dir=", workspace_dir)
-        print("num_threads=", num_threads)
-        env = SimEnv(clients=client_names, num_threads=num_threads, gpu_config=args.gpu, workspace_root=workspace_dir)
-        run = recipe.execute(env)
-        print("Job Status is:", run.get_status())
-        print("Job Result is:", run.get_result())
+from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking
 
 
 def define_parser():
@@ -202,108 +33,205 @@ def define_parser():
         "--client_ids",
         nargs="+",
         type=str,
-        default="",
-        help="Clinet IDs, used to get the data path for each client",
+        default=None,
+        help="Client/site names (space-separated). Used directly as site names and for data paths (e.g., 'dolly', 'hospital-1').",
     )
-    parser.add_argument(
-        "--num_rounds",
-        type=int,
-        default=3,
-        help="Number of rounds, default to 3",
-    )
+    parser.add_argument("--num_rounds", type=int, default=3, help="Number of FL rounds")
     parser.add_argument(
         "--workspace_dir",
         type=str,
         default="/tmp/nvflare/jobs/llm_hf/workdir",
-        help="work directory, default to '/tmp/nvflare/jobs/llm_hf/workdir'",
+        help="Work directory for simulator runs",
     )
     parser.add_argument(
         "--job_dir",
         type=str,
         default="/tmp/nvflare/jobs/llm_hf/jobdir",
-        help="directory for job export, default to '/tmp/nvflare/jobs/llm_hf/jobdir'",
+        help="Directory for job export",
     )
-    parser.add_argument(
-        "--model_name_or_path",
-        type=str,
-        default="meta-llama/llama-3.2-1b",
-        help="model name or path",
-    )
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default="",
-        help="root directory for training and validation data",
-    )
-    parser.add_argument(
-        "--train_mode",
-        type=str,
-        default="SFT",
-        help="training mode, SFT or PEFT, default to SFT",
-    )
-    parser.add_argument(
-        "--quantize_mode",
-        type=str,
-        default=None,
-        help="quantization mode, default to None (no quantization)",
-    )
-    parser.add_argument(
-        "--message_mode",
-        type=str,
-        default="numpy",
-        help="message mode, numpy or tensor, default to numpy",
-    )
-    parser.add_argument(
-        "--threads",
-        type=int,
-        help="number of threads to use for FL simulation, default to the number of clients",
-    )
+    parser.add_argument("--model_name_or_path", type=str, default="meta-llama/llama-3.2-1b", help="Model name or path")
+    parser.add_argument("--data_path", type=str, default="", help="Root directory for training and validation data")
+    parser.add_argument("--train_mode", type=str, default="SFT", help="Training mode, SFT or PEFT")
+    parser.add_argument("--quantize_mode", type=str, default=None, help="Quantization mode, default None")
+    parser.add_argument("--message_mode", type=str, default="numpy", help="Message mode: numpy or tensor")
+    parser.add_argument("--local_epoch", type=int, default=1, help="Number of local training epochs per round")
+    parser.add_argument("--lr_scheduler", type=str, default="constant", help="Learning rate scheduler type")
+    parser.add_argument("--threads", type=int, help="Number of threads for FL simulation")
     parser.add_argument(
         "--gpu",
         type=str,
         default="0",
-        help="gpu assignments for simulating clients, comma separated, default to single gpu",
+        help="GPU assignments for simulated clients, comma separated, default single GPU",
+    )
+    parser.add_argument("--ports", nargs="+", default=["7777"], help="Ports for clients, default to 7777")
+    parser.add_argument("--multi_node", action="store_true", help="Enable multi-node training")
+    parser.add_argument("--startup_kit_location", type=str, default=None, help="Startup kit location")
+    parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Username for production mode")
+    parser.add_argument(
+        "--wandb_project", type=str, default="nvflare_llm", help="WandB project name (default: nvflare_llm)"
     )
     parser.add_argument(
-        "--ports",
-        nargs="+",
-        default="7777",
-        help="ports for the clients, default to one client 7777",
+        "--wandb_run_name", type=str, default="nvflare_llm", help="WandB run name (default: nvflare_llm)"
     )
-    parser.add_argument(
-        "--multi_node",
-        action="store_true",
-        help="enable multi-node training, default to False",
-    )
-    parser.add_argument(
-        "--startup_kit_location",
-        type=str,
-        default=None,
-        help="startup kit location, default to None",
-    )
-    parser.add_argument(
-        "--username",
-        type=str,
-        default="admin@nvidia.com",
-        help="username, default to None",
-    )
-    parser.add_argument(
-        "--wandb_project",
-        type=str,
-        default=None,
-        help="WandB project name (enables WandB tracking if provided)",
-    )
-    parser.add_argument(
-        "--wandb_run_name",
-        type=str,
-        default=None,
-        help="WandB run name (defaults to nvflare_<mode>_<client_id>)",
-    )
+    parser.add_argument("--use_tracking", action="store_true", help="Enable TensorBoard tracking")
+    parser.add_argument("--export_config", action="store_true", help="Export job config only")
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    print("Starting job...")
+def main():
+    print("Starting llm_hf recipe job...")
     args = define_parser()
     print("args:", args)
-    main(args)
+
+    client_ids = args.client_ids
+    if not client_ids:
+        raise ValueError("client_ids cannot be empty. Please specify at least one client ID.")
+    num_clients = len(client_ids)
+    gpus = split_gpus(args.gpu)
+    gpus = [g.split(",") for g in gpus]
+    ports = args.ports if isinstance(args.ports, list) else [args.ports]
+
+    print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
+    if len(gpus) != num_clients:
+        raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
+    if len(ports) < num_clients:
+        raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
+
+    num_threads = args.threads if args.threads else num_clients
+
+    # Determine train mode and model configuration
+    train_mode = args.train_mode.lower()
+    if train_mode == "sft":
+        from hf_sft_model import CausalLMModel
+
+        initial_model = CausalLMModel(model_name_or_path=args.model_name_or_path)
+        job_name = "llm_hf_sft"
+        output_path = "sft"
+    elif train_mode == "peft":
+        from hf_peft_model import CausalLMPEFTModel
+
+        initial_model = CausalLMPEFTModel(model_name_or_path=args.model_name_or_path)
+        job_name = "llm_hf_peft"
+        output_path = "peft"
+    else:
+        raise ValueError(f"Invalid train_mode: {train_mode}, only SFT and PEFT are supported (case-insensitive).")
+
+    # Determine message mode and server format
+    message_mode = args.message_mode.lower()
+    if message_mode == "tensor":
+        server_expected_format = "pytorch"
+    elif message_mode == "numpy":
+        server_expected_format = "numpy"
+    else:
+        raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
+
+    # Use client_ids directly as site names
+    client_names = client_ids
+
+    # Build per_site_config for multi-GPU or multi-node scenarios
+    per_site_config: Dict[str, Dict] = {}
+    for idx, client_id in enumerate(client_ids):
+        site_name = client_names[idx]
+        site_gpus = gpus[idx]
+        data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
+        data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
+
+        # Build script arguments for this site
+        script_args = (
+            f"--model_name_or_path {args.model_name_or_path} "
+            f"--data_path_train {data_path_train} "
+            f"--data_path_valid {data_path_valid} "
+            f"--output_path {output_path} "
+            f"--train_mode {train_mode} "
+            f"--message_mode {message_mode} "
+            f"--num_rounds {args.num_rounds} "
+            f"--local_epoch {args.local_epoch} "
+            f"--lr_scheduler {args.lr_scheduler}"
+        )
+
+        # Add WandB arguments (will be enabled if WANDB_API_KEY is set)
+        script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {args.wandb_run_name}"
+
+        # Determine command for multi-GPU or multi-node
+        site_config = {"train_args": script_args}
+
+        if args.multi_node:
+            site_config["command"] = "bash custom/client_wrapper.sh"
+        elif len(site_gpus) > 1:
+            site_config["command"] = (
+                f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(site_gpus)} "
+                f"--master_port={ports[idx]}"
+            )
+
+        per_site_config[site_name] = site_config
+
+    # Create FedAvgRecipe
+    recipe = FedAvgRecipe(
+        name=job_name,
+        initial_model=initial_model,
+        min_clients=num_clients,
+        num_rounds=args.num_rounds,
+        train_script="client.py",
+        server_expected_format=server_expected_format,
+        launch_external_process=True,  # Always use external process for LLM training
+        per_site_config=per_site_config,
+    )
+
+    # Add client params to reduce timeout failures for longer LLM runs
+    for site_name in client_names:
+        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
+        recipe.job.to(client_params, site_name)
+
+    # Add client_wrapper.sh for multi-node training
+    if args.multi_node:
+        for site_name in client_names:
+            recipe.job.to("client_wrapper.sh", site_name)
+
+    # Add quantization filters if specified
+    if args.quantize_mode:
+        from nvflare import FilterType
+
+        quantizer = ModelQuantizer(quantization_type=args.quantize_mode.lower())
+        dequantizer = ModelDequantizer()
+
+        # Add to server
+        recipe.job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
+        recipe.job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+
+        # Add to all clients
+        for site_name in client_names:
+            recipe.job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
+            recipe.job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
+
+    # Add experiment tracking if requested
+    if args.use_tracking:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
+    # Export job configuration
+    print("Exporting job to", args.job_dir)
+    recipe.export(args.job_dir)
+    print("Job config exported to", args.job_dir)
+
+    # If export-only mode, stop here
+    if args.export_config:
+        return
+
+    # Run recipe
+    if args.startup_kit_location:
+        print("Running job in production mode...")
+        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+    else:
+        print("Running job in simulation mode...")
+        env = SimEnv(
+            clients=client_names, num_threads=num_threads, gpu_config=args.gpu, workspace_root=args.workspace_dir
+        )
+
+    run = recipe.execute(env)
+    print()
+    print("Job Status is:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
+
+
+if __name__ == "__main__":
+    main()
