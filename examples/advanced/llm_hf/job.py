@@ -29,7 +29,13 @@ from nvflare.recipe import ProdEnv, SimEnv, add_experiment_tracking
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--client_ids", nargs="+", type=str, default="", help="Client IDs, used to build data paths")
+    parser.add_argument(
+        "--client_ids",
+        nargs="+",
+        type=str,
+        default="",
+        help="Client/site names (space-separated). Used directly as site names and for data paths (e.g., 'dolly', 'hospital-1').",
+    )
     parser.add_argument("--num_rounds", type=int, default=3, help="Number of FL rounds")
     parser.add_argument(
         "--workspace_dir",
@@ -115,8 +121,8 @@ def main():
     else:
         raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
-    # Build train_args string for each client
-    client_names = [f"site-{client_id}" for client_id in client_ids]
+    # Use client_ids directly as site names
+    client_names = client_ids
 
     # Build per_site_config for multi-GPU or multi-node scenarios
     per_site_config: Dict[str, Dict] = {}
@@ -163,7 +169,6 @@ def main():
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
-        train_args="",  # Will be overridden by per_site_config
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
         per_site_config=per_site_config,

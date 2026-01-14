@@ -150,7 +150,7 @@ SLURM Job (2 nodes allocated)
 The `job.py` script accepts several arguments relevant to multi-node training:
 
 **Required:**
-- `--client_ids`: Client identifiers (e.g., `dolly`)
+- `--client_ids`: Client/site names, space-separated (e.g., `dolly` or `hospital-1`). Used directly as site names.
 - `--data_path`: Root directory containing client datasets
 - `--multi_node`: Flag to enable multi-node training mode
 

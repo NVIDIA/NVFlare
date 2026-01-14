@@ -170,7 +170,7 @@ python job.py \
 ```
 
 **Key Job Arguments:**
-- `--client_ids`: Client identifiers (used for data paths)
+- `--client_ids`: Client/site names (space-separated). Used directly as site names (e.g., `dolly`, `hospital-1`)
 - `--data_path`: Root directory containing client datasets
 - `--train_mode`: `SFT` or `PEFT`
 - `--message_mode`: `numpy` (float32) or `tensor` (bf16)
