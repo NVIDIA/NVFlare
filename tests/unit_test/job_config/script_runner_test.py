@@ -107,15 +107,15 @@ class TestScriptRunner:
 
     def test_exported_job_contains_launch_parameters(self, mock_file_system, base_script_runner_params):
         """Test that exported job configuration contains launch_once and shutdown_timeout parameters."""
-        from nvflare.job_config.api import FedJob
         from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
 
         runner = ScriptRunner(
             launch_external_process=True, launch_once=False, shutdown_timeout=25.0, **base_script_runner_params
         )
 
         job = FedJob(name="test_launch_params_job")
-        
+
         # Add a minimal server component (required for export)
         controller = ScatterAndGather(
             min_clients=1,
@@ -123,7 +123,7 @@ class TestScriptRunner:
             wait_time_after_min_received=0,
         )
         job.to_server(controller)
-        
+
         # Add the runner to clients
         job.to_clients(runner)
 

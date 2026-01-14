@@ -82,20 +82,20 @@ class TestSubprocessLauncher:
     def test_launch_once_false_behavior(self):
         """Test that launch_once=False is properly configured."""
         launcher = SubprocessLauncher("echo 'test'", launch_once=False)
-        
+
         # Verify launch_once is set to False
         assert launcher._launch_once is False
-        
+
         # Verify the process is initially None
         assert launcher._process is None
 
     def test_launch_once_true_behavior(self):
         """Test that launch_once=True is properly configured."""
         launcher = SubprocessLauncher("echo 'test'", launch_once=True)
-        
+
         # Verify launch_once is set to True
         assert launcher._launch_once is True
-        
+
         # Verify the process is initially None
         assert launcher._process is None
 
@@ -112,7 +112,7 @@ class TestSubprocessLauncher:
             clean_up_script="echo 'cleanup'",
             shutdown_timeout=0.0,
         )
-        
+
         # Verify parameters are set correctly
         assert launcher._launch_once is False
         assert launcher._clean_up_script == "echo 'cleanup'"
