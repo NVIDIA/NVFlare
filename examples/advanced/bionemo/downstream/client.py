@@ -16,6 +16,9 @@
 
 import os
 import shutil
+import signal
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -580,42 +583,35 @@ def finetune_esm2_entrypoint():
     )
     print("#### train_model returned successfully ####", flush=True)
 
+
 if __name__ == "__main__":
-    import os
-    import sys
-    import signal
-    import subprocess
-    
+    # BioNeMo training code
     finetune_esm2_entrypoint()
-    
-    print('###### Training completed ######', flush=True)
-    
-    # Kill PyTorch Inductor worker child processes that prevent clean exit
+    print("###### Training completed ######", flush=True)
+
+    # Kill any remaining PyTorch Inductor worker child processes that could prevent clean exit
     my_pid = os.getpid()
-    
+
     try:
         result = subprocess.run(
-            ['ps', '--ppid', str(my_pid), '-o', 'pid', '--no-headers'],
-            capture_output=True,
-            text=True,
-            timeout=2
+            ["ps", "--ppid", str(my_pid), "-o", "pid", "--no-headers"], capture_output=True, text=True, timeout=2
         )
-        
-        child_pids = [int(pid.strip()) for pid in result.stdout.strip().split('\n') if pid.strip()]
-        
+
+        child_pids = [int(pid.strip()) for pid in result.stdout.strip().split("\n") if pid.strip()]
+
         if child_pids:
-            print(f'###### Killing {len(child_pids)} child processes ######', flush=True)
+            print(f"###### Killing {len(child_pids)} child processes ######", flush=True)
             for child_pid in child_pids:
                 try:
                     os.kill(child_pid, signal.SIGKILL)
                 except:
                     pass
-            
+
             import time
+
             time.sleep(0.5)
     except:
         pass
-    
+
     sys.stdout.flush()
     os._exit(0)
-    

@@ -56,6 +56,9 @@ def main(args):
         train_args=script_args,
         launch_external_process=True,
         command="python3",
+        launch_once=False,
+        shutdown_timeout=30,
+        server_expected_format="pytorch",  # this will send pytorch tensors directly between clients and server, bypassing the need for numpy conversion
     )
 
     # Add custom components using recipe's filter API
