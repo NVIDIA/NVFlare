@@ -84,6 +84,9 @@ def main():
         )
 
         # Add data loaders to each client
+        # Note: CSVDataLoader automatically handles client-specific data loading.
+        # Even though we pass the same folder path, each client will load its own data
+        # from {dataset_path}/{client_id}/ at runtime (e.g., site-1 loads from site-1/ subdirectory)
         for i in range(1, args.site_num + 1):
             dataloader = CSVDataLoader(folder=dataset_path)
             recipe.add_to_client(f"site-{i}", dataloader)
@@ -106,10 +109,12 @@ def main():
         )
 
         # Add data loaders to each client
-        # Note: CSVDataLoader is used here for the secure example's data format
+        # Note: CSVDataLoader automatically handles client-specific data loading.
+        # For vertical mode, each client loads different feature columns from its subdirectory:
+        # - site-1 (rank 0): loads features + labels from {dataset_path}/site-1/
+        # - site-2, site-3: load different features (no labels) from their respective subdirectories
         for i in range(1, args.site_num + 1):
             dataloader = CSVDataLoader(folder=dataset_path)
-            # For vertical XGBoost, each client gets its own split of columns
             recipe.add_to_client(f"site-{i}", dataloader)
 
     # Export and run

@@ -52,6 +52,7 @@ class MockVerticalDataLoader(XGBDataLoader):
         self.has_labels = has_labels
         self.n_samples = n_samples
         self.n_features = n_features
+        self.data_split_mode = 1  # 1 = vertical (column split)
 
     def load_data(self):
         """Generate synthetic vertical data (features split across clients)."""

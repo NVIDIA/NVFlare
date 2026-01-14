@@ -78,6 +78,9 @@ def run_psi_job(args):
     job.to_clients(executor, id="psi_executor", tasks=["PSI"])
 
     # Local PSI handler
+    # Note: LocalPSI automatically handles client-specific data loading.
+    # The data_split_path uses "site-x" as a placeholder, which is replaced with the actual
+    # client_id (e.g., "site-1", "site-2") at runtime by the LocalPSI.load_items() method.
     local_psi = LocalPSI(psi_writer_id="psi_writer", data_split_path=args.data_split_path, id_col=args.id_col)
     job.to_clients(local_psi, id="local_psi")
 
@@ -128,6 +131,9 @@ def run_training_job(args):
     )
 
     # Add data loaders to each client
+    # Note: VerticalDataLoader handles client-specific data loading.
+    # The {SITE_NAME} placeholder in paths is replaced with the actual site name (e.g., "site-1")
+    # so each client loads from its own directory with its specific feature columns.
     for site_id in range(1, args.site_num + 1):
         site_name = f"site-{site_id}"
         data_loader = VerticalDataLoader(

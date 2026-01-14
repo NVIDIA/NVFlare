@@ -61,9 +61,37 @@ This will generate data splits for 3 clients under all experimental settings.
 > different sites. For more information on how to perform PSI, please refer to the
 > [PSI example](../../../../examples/advanced/psi).
 
+### Expected Folder Structure
 
-> **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
-> and will be used by jobs by specifying the path within `config_fed_client`
+After running `prepare_data.sh`, your data will be organized as follows:
+
+```
+/tmp/nvflare/dataset/xgb_dataset/
+├── horizontal_xgb_data/
+│   ├── site-1/
+│   │   ├── train.csv  (all features + labels, subset of rows)
+│   │   └── valid.csv
+│   ├── site-2/
+│   │   ├── train.csv  (all features + labels, different rows)
+│   │   └── valid.csv
+│   └── site-3/
+│       ├── train.csv  (all features + labels, different rows)
+│       └── valid.csv
+└── vertical_xgb_data/
+    ├── site-1/
+    │   ├── train.csv  (subset of features + labels, all rows)
+    │   └── valid.csv
+    ├── site-2/
+    │   ├── train.csv  (different features, no labels, all rows)
+    │   └── valid.csv
+    └── site-3/
+        ├── train.csv  (different features, no labels, all rows)
+        └── valid.csv
+```
+
+**Important:** When using `CSVDataLoader` in your job script, you only need to specify the base folder
+(e.g., `/tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data`). The framework automatically loads
+client-specific data from the corresponding subdirectory (e.g., `site-1/`, `site-2/`) at runtime.
 
 ## Run Baseline and Standalone Experiments
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
