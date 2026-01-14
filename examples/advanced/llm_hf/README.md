@@ -118,14 +118,14 @@ recipe = FedAvgRecipe(
 Each client can have custom configurations for different data paths and multi-GPU setups:
 ```python
 per_site_config = {
-    "site-dolly": {
+    "dolly": {
         "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
                       "--data_path_train ./dataset/dolly/training.jsonl "
                       "--data_path_valid ./dataset/dolly/validation.jsonl ...",
         "command": "python3 -m torch.distributed.run --nnodes=1 "
                    "--nproc_per_node=2 --master_port=7777"
     },
-    "site-alpaca": {
+    "alpaca": {
         "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
                       "--data_path_train ./dataset/alpaca/training.jsonl ...",
         "command": "python3 -m torch.distributed.run --nnodes=1 "
