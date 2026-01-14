@@ -448,7 +448,10 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             self.run_manager.add_handler(widget)
 
     def get_cell(self):
-        return self.cell
+        if self.cell:
+            return self.cell
+        elif self.run_manager and self.run_manager.cell:
+            return self.run_manager.cell
 
     def initialize_comm(self, cell: Cell):
         """This is called when the communication cell has been created.
