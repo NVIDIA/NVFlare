@@ -21,7 +21,9 @@ Run this after inference to train an MLP classifier on the embeddings.
 
 import os
 
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_common.np.recipes.fedavg import (  # we use the Numpy version of FedAvgRecipe here as the training is implemented with sklearn
+    NumpyFedAvgRecipe,
+)
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
@@ -47,7 +49,7 @@ else:
 script_args = f"--data-root {data_root} --results-path {results_path} --aggregation-epochs 4 --lr 1e-5 --batch-size 128 --embedding-dimensions {embedding_dimensions}"
 
 # Create FedAvgRecipe for MLP training
-recipe = FedAvgRecipe(
+recipe = NumpyFedAvgRecipe(
     name=job_name, min_clients=n_clients, num_rounds=100, train_script="client.py", train_args=script_args
 )
 

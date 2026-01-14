@@ -174,6 +174,7 @@ def main():
             params=local_weights,
             params_type=input_model.params_type,
             metrics={"accuracy": float(test_accuracy), "train_accuracy": float(train_accuracy)},
+            meta={"NUM_STEPS_CURRENT_ROUND": args.aggregation_epochs * len(X_train)},
         )
         flare.send(output_model)
 
