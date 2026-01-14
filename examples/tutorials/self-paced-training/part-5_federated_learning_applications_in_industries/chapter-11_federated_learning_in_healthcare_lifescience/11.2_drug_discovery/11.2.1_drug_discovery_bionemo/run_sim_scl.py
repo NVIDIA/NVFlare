@@ -14,9 +14,9 @@
 
 import argparse
 
+from bionemo.core.data.load import load
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
-from bionemo.core.data.load import load
 from nvflare import FilterType
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister

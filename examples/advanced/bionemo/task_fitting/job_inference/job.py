@@ -22,6 +22,7 @@ Run this after data splitting to perform federated embedding extraction.
 import os
 
 from bionemo.core.data.load import load
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
