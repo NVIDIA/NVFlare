@@ -101,7 +101,7 @@ class AioHttpDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["http", "https", "ws", "wss"]
+        return ["http", "https"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
