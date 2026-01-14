@@ -174,3 +174,75 @@ class TestFedAvgRecipe:
             "num_rounds": num_rounds,
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)
+
+    def test_launch_once_default(self, mock_file_system, base_recipe_params):
+        """Test that launch_once defaults to True."""
+        recipe = FedAvgRecipe(name="test_launch_once_default", **base_recipe_params)
+
+        assert recipe.launch_once is True
+        assert recipe.shutdown_timeout == 0.0
+
+    @pytest.mark.parametrize(
+        "launch_once,shutdown_timeout",
+        [
+            (True, 0.0),  # Default values
+            (False, 0.0),  # launch_once=False with default timeout
+            (True, 10.0),  # launch_once=True with custom timeout
+            (False, 15.0),  # launch_once=False with custom timeout
+        ],
+    )
+    def test_launch_once_and_shutdown_timeout(self, mock_file_system, base_recipe_params, launch_once, shutdown_timeout):
+        """Test FedAvgRecipe with various launch_once and shutdown_timeout configurations."""
+        recipe = FedAvgRecipe(
+            name="test_launch_config",
+            launch_external_process=True,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            **base_recipe_params,
+        )
+
+        assert recipe.launch_once == launch_once
+        assert recipe.shutdown_timeout == shutdown_timeout
+        assert recipe.launch_external_process is True
+
+    def test_launch_once_per_site_config(self, mock_file_system, base_recipe_params):
+        """Test per-site configuration with different launch_once settings."""
+        per_site_config = {
+            "site-1": {
+                "launch_once": False,
+                "shutdown_timeout": 15.0,
+            },
+            "site-2": {
+                "launch_once": True,
+                "shutdown_timeout": 5.0,
+            },
+        }
+
+        recipe = FedAvgRecipe(
+            name="test_per_site_launch",
+            launch_external_process=True,
+            launch_once=True,  # Default
+            shutdown_timeout=10.0,  # Default
+            per_site_config=per_site_config,
+            **base_recipe_params,
+        )
+
+        # Check default values are stored
+        assert recipe.launch_once is True
+        assert recipe.shutdown_timeout == 10.0
+        assert recipe.per_site_config == per_site_config
+
+    def test_launch_once_in_process_mode(self, mock_file_system, base_recipe_params):
+        """Test that launch_once and shutdown_timeout can be set even with in-process execution."""
+        recipe = FedAvgRecipe(
+            name="test_in_process",
+            launch_external_process=False,  # In-process mode
+            launch_once=False,
+            shutdown_timeout=10.0,
+            **base_recipe_params,
+        )
+
+        # Values should be stored even though they won't be used in in-process mode
+        assert recipe.launch_once is False
+        assert recipe.shutdown_timeout == 10.0
+        assert recipe.launch_external_process is False
