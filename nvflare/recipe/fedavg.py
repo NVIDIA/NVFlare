@@ -111,7 +111,7 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
-        launch_once: Whether the external process will be launched only once at the beginning 
+        launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.

@@ -66,7 +66,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
             If not provided, the same configuration will be used for all clients.
-        launch_once: Whether the external process will be launched only once at the beginning 
+        launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.

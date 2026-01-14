@@ -64,7 +64,10 @@ class TestScriptRunner:
     ):
         """Test various launch_once and shutdown_timeout configurations."""
         runner = ScriptRunner(
-            launch_external_process=True, launch_once=launch_once, shutdown_timeout=shutdown_timeout, **base_script_runner_params
+            launch_external_process=True,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            **base_script_runner_params,
         )
 
         assert runner._launch_once == launch_once
@@ -144,7 +147,9 @@ class TestScriptRunner:
             job.export_job(temp_dir)
 
             # Check client config
-            client_config_path = os.path.join(temp_dir, "test_launch_params_job", "app", "config", "config_fed_client.json")
+            client_config_path = os.path.join(
+                temp_dir, "test_launch_params_job", "app", "config", "config_fed_client.json"
+            )
             assert os.path.exists(client_config_path)
 
             with open(client_config_path, "r") as f:

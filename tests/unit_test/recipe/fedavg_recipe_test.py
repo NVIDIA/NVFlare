@@ -191,7 +191,9 @@ class TestFedAvgRecipe:
             (False, 15.0),  # launch_once=False with custom timeout
         ],
     )
-    def test_launch_once_and_shutdown_timeout(self, mock_file_system, base_recipe_params, launch_once, shutdown_timeout):
+    def test_launch_once_and_shutdown_timeout(
+        self, mock_file_system, base_recipe_params, launch_once, shutdown_timeout
+    ):
         """Test FedAvgRecipe with various launch_once and shutdown_timeout configurations."""
         recipe = FedAvgRecipe(
             name="test_launch_config",

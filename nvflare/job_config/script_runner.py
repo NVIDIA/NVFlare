@@ -115,7 +115,7 @@ class BaseScriptRunner:
                 Via CP: peers are both connected to the CP
                 If not specified, will be via CP.
 
-            launch_once (bool): Whether the external process will be launched only once at the beginning 
+            launch_once (bool): Whether the external process will be launched only once at the beginning
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
 
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
@@ -331,7 +331,7 @@ class ScriptRunner(BaseScriptRunner):
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
             pipe_connect_type (str): how pipe peers are to be connected
-            launch_once (bool): Whether the external process will be launched only once at the beginning 
+            launch_once (bool): Whether the external process will be launched only once at the beginning
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.

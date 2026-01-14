@@ -75,9 +75,7 @@ class TestSubprocessLauncher:
     )
     def test_launch_once_and_shutdown_timeout_initialization(self, launch_once, shutdown_timeout):
         """Test various launch_once and shutdown_timeout configurations."""
-        launcher = SubprocessLauncher(
-            script="echo 'test'", launch_once=launch_once, shutdown_timeout=shutdown_timeout
-        )
+        launcher = SubprocessLauncher(script="echo 'test'", launch_once=launch_once, shutdown_timeout=shutdown_timeout)
         assert launcher._launch_once == launch_once
         assert launcher._shutdown_timeout == shutdown_timeout
 
@@ -106,9 +104,9 @@ class TestSubprocessLauncher:
         """Test that launch_once=True keeps process running across tasks."""
         tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
-        
+
         # Use a long-running process
-        launcher = SubprocessLauncher("python3 -c \"import time; time.sleep(100)\"", launch_once=True)
+        launcher = SubprocessLauncher('python3 -c "import time; time.sleep(100)"', launch_once=True)
         launcher._app_dir = tempdir
 
         # Initialize should launch the process
@@ -145,7 +143,7 @@ class TestSubprocessLauncher:
         """Test that clean_up_script can be used with launch_once=False."""
         tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
-        
+
         launcher = SubprocessLauncher(
             script="echo 'main'",
             launch_once=False,
@@ -161,7 +159,7 @@ class TestSubprocessLauncher:
         # Launch and stop task
         status = launcher.launch_task(task_name, dxo.to_shareable(), fl_ctx, signal)
         assert status is True
-        
+
         launcher.stop_task(task_name, fl_ctx, signal)
         assert launcher._process is None
 
