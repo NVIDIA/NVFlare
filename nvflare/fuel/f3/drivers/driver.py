@@ -56,7 +56,7 @@ class Driver(ABC):
     @abstractmethod
     def supported_transports() -> List[str]:
         """Return a list of transports supported by this driver, for example
-        ["http", "https", "ws", "wss"]
+        ["http", "https", "grpc", "grpcs"]
         """
         pass
 
