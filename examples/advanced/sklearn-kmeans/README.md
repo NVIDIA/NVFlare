@@ -98,11 +98,15 @@ Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 - **Unbalanced splits**: Give clients different amounts of data
 - **Separate validation**: Use different validation sets per client
 
-Pass a dict to `train_args` for per-client configuration:
+Use `per_site_config` to pass `train_args` for per-client configuration:
 ```python
-train_args = {
-    "site-1": "--data_path /data/iris.csv --train_start 0 --train_end 40 ...",
-    "site-2": "--data_path /data/iris.csv --train_start 40 --train_end 80 ...",
+per_site_config={
+    "site-1": {
+        "train_args": "--data_path /data/iris.csv --train_start 0 --train_end 40 ..."
+    },
+    "site-2": {
+        "train_args": "--data_path /data/iris.csv --train_start 40 --train_end 80 ..."
+    },
     # ... more sites
 }
 ```
@@ -117,10 +121,14 @@ Instead of using data ranges, you can split your data into separate files for ea
 # - /data/site2_iris.csv
 # - /data/site3_iris.csv
 
-train_args = {
-    "site-1": "--data_path /data/site1_iris.csv",
-    "site-2": "--data_path /data/site2_iris.csv",
-    "site-3": "--data_path /data/site3_iris.csv",
+per_site_config={
+    "site-1": {
+        "train_args": "--data_path /data/site1_iris.csv ..."
+    },
+    "site-2": {
+        "train_args": "--data_path /data/site2_iris.csv ..."
+    },
+    # ... more sites
 }
 ```
 

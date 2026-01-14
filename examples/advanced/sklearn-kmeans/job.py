@@ -23,7 +23,7 @@ Per-Client Data Splits:
 
 import argparse
 
-from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+from nvflare.app_opt.sklearn import KMeansFedAvgRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -89,19 +89,15 @@ def main():
 
     # Calculate per-client data splits (non-overlapping ranges)
     splits = calculate_data_splits(n_clients)
-    train_args = {
-        site_name: f"--data_path {data_path} --train_start {split['train_start']} "
-        f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
-        f"--valid_end {split['valid_end']}"
+    clients = [site_name for site_name in splits.keys()]
+    per_site_config = {
+        site_name: {
+            "train_args": f"--data_path {data_path} --train_start {split['train_start']} "
+            f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
+            f"--valid_end {split['valid_end']}"
+        }
         for site_name, split in splits.items()
     }
-
-    print("Per-client data splits:")
-    for site_name, split in splits.items():
-        print(
-            f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
-            f"valid [{split['valid_start']}:{split['valid_end']}]"
-        )
 
     recipe = KMeansFedAvgRecipe(
         name="sklearn_kmeans",
@@ -109,11 +105,11 @@ def main():
         num_rounds=num_rounds,
         n_clusters=n_clusters,
         train_script="client.py",
-        train_args=train_args,
+        per_site_config=per_site_config,
     )
 
     print("Executing recipe in simulation environment...")
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    env = SimEnv(clients=clients, num_threads=n_clients)
     run = recipe.execute(env)
 
     print()

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATASET_PATH="/tmp/nvflare/dataset/sklearn_breast_cancer.csv"
+DATASET_PATH="/tmp/nvflare/dataset/cancer.csv"
 script_dir="$( dirname -- "$0"; )";
 
 if [ -f "$DATASET_PATH" ]; then
