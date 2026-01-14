@@ -440,7 +440,7 @@ def finetune_esm2_entrypoint():
         classes = None
 
     # to avoid padding for single value labels:
-    if args.min_seq_length is not None and args.datset_class is InMemorySingleValueDataset:
+    if args.min_seq_length is not None and args.dataset_class is InMemorySingleValueDataset:
         parser.error("Arguments --min-seq-length cannot be set when using InMemorySingleValueDataset.")
 
     # 2. Call pretrain with args
