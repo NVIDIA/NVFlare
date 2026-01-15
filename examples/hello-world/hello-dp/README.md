@@ -1,7 +1,7 @@
 
 # Hello Differential Privacy
 
-This example demonstrates how to use NVIDIA FLARE with PyTorch and **Differential Privacy (DP)** to train a regression model using federated averaging (FedAvg) with privacy guarantees. The example uses **[Opacus](https://opacus.ai)** to implement DP-SGD (Differentially Private Stochastic Gradient Descent) during local client training on each client. This achieves sample-level differential privacy.
+This example demonstrates how to use NVIDIA FLARE with PyTorch and **Differential Privacy (DP)** to train a fraud detection model using federated averaging (FedAvg) with privacy guarantees. The example uses **[Opacus](https://opacus.ai)** to implement DP-SGD (Differentially Private Stochastic Gradient Descent) during local client training on each client. This achieves sample-level differential privacy.
 
 ## What is Differential Privacy?
 
@@ -61,24 +61,32 @@ hello-dp
 
 ## Data
 
-This example uses the [California Housing dataset](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_california_housing.html) - a regression problem to predict median house values in California districts.
+This example uses the [Credit Card Fraud Detection dataset](https://www.openml.org/d/1597) from OpenML - a binary classification problem to detect fraudulent credit card transactions.
 
 **Dataset characteristics:**
-- 20,640 samples
-- 8 features (median income, house age, average rooms, etc.)
-- 1 target (median house value)
+- ~284,000 samples (Normal: 284,315, Fraud: 492)
+- 29 features (anonymized transaction features V1-V28, Amount)
+- 2 classes: Normal (0) and Fraud (1)
+- **Highly imbalanced**: ~99.8% normal, ~0.2% fraud
+
+**Important Note**: This dataset is extremely imbalanced with only 492 fraud cases out of 284,807 transactions. This presents additional challenges for training:
+- Standard accuracy can be misleading (99.8% accuracy by always predicting "normal")
+- **F1 Score and Precision/Recall** are more meaningful metrics for fraud detection
+- The model must learn to detect the rare fraud class despite the imbalance
+
+This is a **privacy-sensitive** use case - credit card transaction data requires strong privacy protection, making it ideal for demonstrating differential privacy in federated learning.
 
 In a real FL experiment, each client would have their own dataset. For this example, the dataset is automatically partitioned across clients, so each client has a non-overlapping subset of the data.
 
 ## Model
 
-The model is a simple Multi-Layer Perceptron (MLP) for tabular data regression. The implementation can be found in [model.py](model.py).
+The model is a simple Multi-Layer Perceptron (MLP) for binary classification. The implementation can be found in [model.py](model.py).
 
 ```python
 class TabularMLP(nn.Module):
-    """Simple Multi-Layer Perceptron for tabular data regression"""
+    """Simple Multi-Layer Perceptron for tabular data classification"""
     
-    def __init__(self, input_dim=8, hidden_dims=[64, 32], output_dim=1):
+    def __init__(self, input_dim=29, hidden_dims=[64, 32], output_dim=2):
         super(TabularMLP, self).__init__()
         
         layers = []
@@ -98,9 +106,9 @@ class TabularMLP(nn.Module):
 ```
 
 The architecture:
-- **Input layer**: 8 features
+- **Input layer**: 29 features (transaction data)
 - **Hidden layers**: 64 → 32 neurons with ReLU activation and dropout
-- **Output layer**: 1 neuron (house price prediction)
+- **Output layer**: 2 neurons (normal vs fraud)
 
 ## Client Code with Differential Privacy
 
@@ -157,7 +165,7 @@ while flare.is_running():
     clean_params = {k.replace("_module.", ""): v for k, v in model_state.items()}
     output_model = flare.FLModel(
         params=clean_params,
-        metrics={"rmse": rmse, "privacy_epsilon": epsilon}
+        metrics={"accuracy": accuracy, "f1_score": f1_score, "privacy_epsilon": epsilon}
     )
     flare.send(output_model)
 ```
@@ -191,7 +199,7 @@ recipe = FedAvgRecipe(
     name="hello-dp",
     min_clients=n_clients,
     num_rounds=num_rounds,
-    initial_model=TabularMLP(input_dim=8, hidden_dims=[64, 32], output_dim=1),
+    initial_model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),
     train_script="client.py",
     train_args=f"--batch_size {batch_size} --target_epsilon {target_epsilon} --n_clients {n_clients}",
 )
@@ -221,19 +229,6 @@ Parameters:
 - `--num_rounds`: Number of federated rounds (default: 5)
 - `--batch_size`: Training batch size (default: 64)
 - `--target_epsilon`: **Total** privacy budget across all rounds - **lower = stronger privacy** (default: 1.0)
-- `--cross_site_eval`: Enable cross-site evaluation after training
-
-To run with cross-site evaluation:
-
-```bash
-python job.py --cross_site_eval
-```
-
-The cross-site evaluation results can be viewed with:
-
-```bash
-cat /tmp/nvflare/simulation/hello-dp/server/simulate_job/cross_site_val/cross_val_results.json
-```
 
 ## Visualize Results
 
@@ -245,7 +240,7 @@ tensorboard --logdir /tmp/nvflare/simulation/hello-dp
 
 Open http://localhost:6006 to see:
 - Training loss over time
-- RMSE (Root Mean Squared Error)
+- **Accuracy** and **F1 Score** (fraud detection metrics)
 - Privacy epsilon spent per client
 
 ## Privacy-Utility Trade-off

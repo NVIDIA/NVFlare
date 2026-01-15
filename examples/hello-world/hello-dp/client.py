@@ -22,7 +22,8 @@ import torch
 import torch.nn as nn
 from model import TabularMLP
 from opacus import PrivacyEngine
-from sklearn.datasets import fetch_california_housing
+from sklearn.datasets import fetch_openml
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.optim import Adam
@@ -34,11 +35,17 @@ from nvflare.client.tracking import SummaryWriter
 
 
 def load_data(client_id, n_clients, batch_size):
-    """Load and partition California Housing dataset"""
-    # Load dataset
-    housing = fetch_california_housing()
-    X, y = housing.data, housing.target
-
+    """Load and partition Credit Card Fraud dataset"""
+    print("Loading Credit Card Fraud Detection dataset...")
+    
+    # Load dataset from OpenML
+    data = fetch_openml('creditcard', version=1, as_frame=True, parser='auto')
+    X = data.data.values
+    y = data.target.values.astype(int)  # Convert to binary: 0=normal, 1=fraud
+    
+    print(f"Dataset loaded: {X.shape[0]} samples, {X.shape[1]} features")
+    print(f"Class distribution - Normal: {(y==0).sum()}, Fraud: {(y==1).sum()}")
+    
     # Split data across clients
     client_data_size = len(X) // n_clients
     start_idx = client_id * client_data_size
@@ -48,7 +55,7 @@ def load_data(client_id, n_clients, batch_size):
     y_client = y[start_idx:end_idx]
 
     # Train/test split
-    X_train, X_test, y_train, y_test = train_test_split(X_client, y_client, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X_client, y_client, test_size=0.2, random_state=42, stratify=y_client)
 
     # Standardize features
     scaler = StandardScaler()
@@ -57,9 +64,9 @@ def load_data(client_id, n_clients, batch_size):
 
     # Convert to PyTorch tensors
     X_train_tensor = torch.FloatTensor(X_train)
-    y_train_tensor = torch.FloatTensor(y_train).reshape(-1, 1)
+    y_train_tensor = torch.LongTensor(y_train)
     X_test_tensor = torch.FloatTensor(X_test)
-    y_test_tensor = torch.FloatTensor(y_test).reshape(-1, 1)
+    y_test_tensor = torch.LongTensor(y_test)
 
     # Create datasets and loaders
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
@@ -71,28 +78,34 @@ def load_data(client_id, n_clients, batch_size):
     return train_loader, test_loader
 
 
-def evaluate(net, data_loader, device):
-    """Evaluate model using Mean Squared Error"""
-    net.eval()
-    total_loss = 0.0
-    criterion = nn.MSELoss()
-
+def evaluate(model, data_loader, device):
+    """Evaluate model using Accuracy and F1 Score"""
+    model.eval()
+    all_predictions = []
+    all_targets = []
+    
     with torch.no_grad():
         for data, target in data_loader:
             data, target = data.to(device), target.to(device)
-            output = net(data)
-            loss = criterion(output, target)
-            total_loss += loss.item() * data.size(0)
-
-    mse = total_loss / len(data_loader.dataset)
-    rmse = mse**0.5
-    print(f"Test RMSE: {rmse:.4f}")
-    return rmse
+            outputs = model(data)
+            _, predicted = torch.max(outputs.data, 1)
+            
+            all_predictions.extend(predicted.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+    
+    # Calculate metrics using sklearn
+    accuracy = accuracy_score(all_targets, all_predictions)
+    precision = precision_score(all_targets, all_predictions, zero_division=0)
+    recall = recall_score(all_targets, all_predictions, zero_division=0)
+    f1 = f1_score(all_targets, all_predictions, zero_division=0)
+    
+    print(f"Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}")
+    return accuracy, f1, precision, recall
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument(
         "--target_epsilon",
@@ -107,13 +120,14 @@ def main():
 
     batch_size = args.batch_size
     epochs = args.epochs
-    lr = 0.01
+    lr = 0.001
 
-    # Model definition
-    model = TabularMLP(input_dim=8, hidden_dims=[64, 32], output_dim=1)
+    # Model definition - dimensions will be determined from incoming model
+    # Placeholder model just to initialize (will be overwritten by server model)
+    model = TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    criterion = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss()
     optimizer = Adam(model.parameters(), lr=lr)
 
     # (2) Initialize NVFlare client API
@@ -126,12 +140,20 @@ def main():
 
     # Load data for this client
     train_loader, test_loader = load_data(client_id, args.n_clients, batch_size)
+    
+    # Get actual feature dimensions from data
+    sample_batch = next(iter(train_loader))
+    n_features = sample_batch[0].shape[1]
+    n_classes = 2  # Binary classification: normal vs fraud
+    
+    print(f"Data loaded: {n_features} features, {n_classes} classes")
 
     # (optional) metrics tracking
     summary_writer = SummaryWriter()
 
     print(f"Client {client_name}: Using Differential Privacy with epsilon={args.target_epsilon}")
     print("Note: Privacy budget will accumulate across ALL federated rounds")
+    print(f"Model: {n_features} features -> 64 -> 32 -> {n_classes} classes (fraud detection)")
 
     # Initialize privacy engine once (outside the training loop)
     privacy_engine = None
@@ -153,14 +175,17 @@ def main():
             model.load_state_dict(input_model.params, strict=True)
         model.to(device)
 
-        # (optional) Task branch for cross-site evaluation
-        if flare.is_evaluate():
-            print(f"site = {client_name}, running cross-site evaluation")
-            # For CSE, evaluate and return metrics without training
-            rmse = evaluate(model, test_loader, device)
-            output_model = flare.FLModel(metrics={"rmse": rmse})
-            flare.send(output_model)
-            continue
+        # Evaluate the global model
+        global_test_accuracy, global_test_f1, global_test_precision, global_test_recall = evaluate(model, test_loader, device)
+        summary_writer.add_scalar(tag="global_test_accuracy", scalar=global_test_accuracy, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="global_test_f1", scalar=global_test_f1, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="global_test_precision", scalar=global_test_precision, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="global_test_recall", scalar=global_test_recall, global_step=input_model.current_round)
+
+        print(f"site={client_name}, Global Test Accuracy: {global_test_accuracy:.4f}, Global Test F1: {global_test_f1:.4f}")
+
+        # Train the model with differential privacy
+        model.train()
 
         # ====== DIFFERENTIAL PRIVACY SETUP (First Round Only) ======
         # Initialize privacy engine ONLY in first round to track budget across ALL rounds
@@ -192,7 +217,6 @@ def main():
             print("=" * 60)
         # ========================================
 
-        model.train()
         steps = epochs * len(train_loader)
 
         for epoch in range(epochs):
@@ -208,26 +232,24 @@ def main():
 
                 running_loss += loss.item()
 
-                if i % 10 == 9:  # Print every 10 batches
-                    avg_loss = running_loss / 10
-
-                    # Optional: Log metrics
-                    global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=global_step)
-
-                    print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Batch: {i + 1}, Loss: {avg_loss:.4f}")
-                    running_loss = 0.0
+            # Print every epoch
+            avg_loss = running_loss / len(train_loader)
+            summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=input_model.current_round * steps + epoch)
+            print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}")
+            running_loss = 0.0
 
         # Evaluate on train and test sets at the end of the round
         print(f"\nEvaluating model after round {input_model.current_round}...")
-        train_rmse = evaluate(model, train_loader, device)
-        test_rmse = evaluate(model, test_loader, device)
-        
+        train_accuracy, train_f1, train_precision, train_recall = evaluate(model, train_loader, device)
+        test_accuracy, test_f1, test_precision, test_recall = evaluate(model, test_loader, device)
+
         # Log metrics to TensorBoard
-        summary_writer.add_scalar(tag="train_rmse", scalar=train_rmse, global_step=input_model.current_round)
-        summary_writer.add_scalar(tag="test_rmse", scalar=test_rmse, global_step=input_model.current_round)
-        
-        print(f"Round {input_model.current_round} - Train RMSE: {train_rmse:.4f}, Test RMSE: {test_rmse:.4f}")
+        summary_writer.add_scalar(tag="train_accuracy", scalar=train_accuracy, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="test_accuracy", scalar=test_accuracy, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="train_f1_score", scalar=train_f1, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="test_f1_score", scalar=test_f1, global_step=input_model.current_round)
+
+        print(f"Round {input_model.current_round} - Train: Acc={train_accuracy:.4f}, F1={train_f1:.4f} | Test: Acc={test_accuracy:.4f}, F1={test_f1:.4f}")
 
         # Print cumulative privacy budget spent
         epsilon = privacy_engine.get_epsilon(args.target_delta)
@@ -254,7 +276,13 @@ def main():
 
         output_model = flare.FLModel(
             params=clean_params,
-            metrics={"rmse": test_rmse, "train_rmse": train_rmse, "test_rmse": test_rmse, "privacy_epsilon": epsilon},
+            metrics={
+                "accuracy": global_test_accuracy,  # Global model accuracy (for server model selection)
+                "f1_score": global_test_f1,
+                "precision": global_test_precision,
+                "recall": global_test_recall,
+                "privacy_epsilon": epsilon,
+            },
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         print(f"site: {client_name}, sending model to server.")

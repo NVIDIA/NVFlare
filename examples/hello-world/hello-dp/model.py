@@ -24,6 +24,11 @@ class TabularMLP(nn.Module):
     def __init__(self, input_dim=8, hidden_dims=[64, 32], output_dim=1):
         super(TabularMLP, self).__init__()
 
+        # Store dimensions as they are required by job api to restore the class parameters during execution of the job
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.output_dim = output_dim
+
         layers = []
         prev_dim = input_dim
 
