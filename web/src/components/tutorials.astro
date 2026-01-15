@@ -138,10 +138,16 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
   },
   {
-    title: "ML/DL to FL",
-    tags: ["beg.", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
-    description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lightning, and tensorflow.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+    title: "Hello NumPy",
+    tags: ["beg.", "algorithm", "client-api", "numpy", "recipe-api"],
+    description: "Simple federated learning example using NumPy and the Recipe API. Shows how to convert NumPy ML code to FL with FedAvg.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-numpy`
+  },
+  {
+    title: "Multi-GPU Training",
+    tags: ["int.", "pytorch", "lightning", "tensorflow", "recipe-api"],
+    description: "Multi-GPU federated learning examples for PyTorch, Lightning, and TensorFlow using the Recipe API.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/multi-gpu`
   },
   {
     title: "Hello FedAvg",
@@ -163,14 +169,14 @@ const tutorials = [
   },
   {
     title: "Hello PyTorch",
-    tags: ["beg.", "algorithm", "pytorch", "model-controller", "dl"],
-    description: "Example of an image classifier with FedAvg using PyTorch as the deep learning training framework.",
+    tags: ["beg.", "algorithm", "pytorch", "recipe-api", "client-api", "dl"],
+    description: "Image classifier using PyTorch and FedAvg Recipe. Shows how to convert PyTorch ML code to FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
   },
   {
     title: "Hello TensorFlow",
-    tags: ["beg.", "algorithm", "tensorflow", "model-controller", "dl"],
-    description: "Example of an image classifier with FedAvg using TensorFlow as the deep learning training framework.",
+    tags: ["beg.", "algorithm", "tensorflow", "recipe-api", "client-api", "dl"],
+    description: "MNIST classifier using TensorFlow and FedAvg Recipe. Shows how to convert TensorFlow ML code to FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-tf/README.md`
   },
   {
