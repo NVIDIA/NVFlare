@@ -68,6 +68,169 @@ federated learning setting.
 
 After this, we can utilize the Job Recipe to define and run the federated learning job. See :ref:`job_recipe` for details.
 
+Understanding the Client API and Job Recipe Relationship
+=========================================================
+
+The Client API and Job Recipe API serve different purposes in the federated learning workflow:
+
+* **Client API** (``nvflare.client``) - Used in your training script (``client.py``) to:
+
+  * Receive models from the FL server
+  * Send updated models back to the server
+  * Access FL system information (job ID, site name, etc.)
+  * Determine task types (training, evaluation, etc.)
+
+* **Job Recipe API** (``nvflare.recipe``) - Used in your job definition (``job.py``) to:
+
+  * Define the FL workflow (e.g., FedAvg, Cyclic, Swarm Learning)
+  * Specify job parameters (number of clients, rounds, model, etc.)
+  * Configure execution environment (Simulation, POC, Production)
+  * Add features like experiment tracking, cross-site evaluation, etc.
+
+Complete Working Example
+=========================
+
+Here's a complete example showing how Client API and Job Recipe work together:
+
+**Project Structure:**
+
+.. code-block:: none
+
+    my-fl-project/
+    ├── job.py              # Job definition (Job Recipe API)
+    ├── client.py           # Training script (Client API)
+    ├── model.py            # Model definition (optional)
+    └── requirements.txt    # Dependencies
+
+**Step 1: Define your training script using Client API** (``client.py``):
+
+.. code-block:: python
+
+    import nvflare.client as flare
+    import torch
+    from model import Net
+
+    def train(net, train_loader, device):
+        # Your existing training code
+        net.train()
+        for data, target in train_loader:
+            # ... training logic ...
+        return net
+
+    def evaluate(net, test_loader, device):
+        # Your existing evaluation code
+        net.eval()
+        accuracy = 0.0
+        # ... evaluation logic ...
+        return accuracy
+
+    def main():
+        # Initialize Client API
+        flare.init()
+
+        # Setup
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        net = Net().to(device)
+        train_loader, test_loader = load_data()
+
+        # Federated Learning Loop
+        while flare.is_running():
+            # Receive global model from server
+            input_model = flare.receive()
+
+            # Load received weights
+            net.load_state_dict(input_model.params)
+
+            # Local training
+            net = train(net, train_loader, device)
+
+            # Evaluation
+            accuracy = evaluate(net, test_loader, device)
+
+            # Send updated model back to server
+            output_model = flare.FLModel(
+                params=net.state_dict(),
+                metrics={"accuracy": accuracy}
+            )
+            flare.send(output_model)
+
+    if __name__ == "__main__":
+        main()
+
+**Step 2: Define your FL job using Job Recipe** (``job.py``):
+
+.. code-block:: python
+
+    import argparse
+    from model import Net
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.recipe import SimEnv, add_experiment_tracking
+
+    def main():
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--n_clients", type=int, default=2)
+        parser.add_argument("--num_rounds", type=int, default=5)
+        parser.add_argument("--batch_size", type=int, default=32)
+        args = parser.parse_args()
+
+        # Create the FL job using Recipe API
+        recipe = FedAvgRecipe(
+            name="my-pytorch-job",
+            min_clients=args.n_clients,
+            num_rounds=args.num_rounds,
+            initial_model=Net(),
+            train_script="client.py",
+            train_args=f"--batch_size {args.batch_size}",
+        )
+
+        # Optional: Add experiment tracking
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
+        # Execute in simulation environment
+        env = SimEnv(num_clients=args.n_clients)
+        run = recipe.execute(env)
+
+        print(f"Job completed with status: {run.get_status()}")
+        print(f"Results saved to: {run.get_result()}")
+
+    if __name__ == "__main__":
+        main()
+
+**Step 3: Run your FL job:**
+
+.. code-block:: bash
+
+    # Run with default parameters
+    python job.py
+
+    # Run with custom parameters
+    python job.py --n_clients 5 --num_rounds 10 --batch_size 64
+
+The same job can run in different environments by changing the environment:
+
+.. code-block:: python
+
+    # Simulation (single process, fast for debugging)
+    from nvflare.recipe import SimEnv
+    env = SimEnv(num_clients=2)
+
+    # POC (multi-process, closer to production)
+    from nvflare.recipe import PocEnv
+    env = PocEnv(num_clients=2)
+
+    # Production (distributed deployment)
+    from nvflare.recipe import ProdEnv
+    env = ProdEnv(startup_kit_location="/path/to/admin/startup")
+
+Key Benefits of This Approach
+==============================
+
+1. **Separation of Concerns**: Training logic (Client API) is separate from job configuration (Job Recipe)
+2. **Minimal Code Changes**: Convert centralized training to FL with just a few lines
+3. **Environment Flexibility**: Same code works in simulation, POC, and production
+4. **Easy Experimentation**: Change FL parameters without modifying training code
+5. **Built-in Features**: Add tracking, cross-site evaluation, etc. with single function calls
+
 Below is a table overview of key Client APIs.
 
 .. list-table:: Client API
@@ -136,12 +299,39 @@ Below is a table overview of key Client APIs.
      - MLflowWriter mimics the usage of MLflow.
      - :class:`MLflowWriter<nvflare.client.tracking.MLflowWriter>`
 
-Please check Client API Module :mod:`nvflare.client.api` for more in-depth
-information about all of the Client API functionalities.
+When to Use Client API
+======================
 
-If you are using PyTorch Lightning in your training code, you can check the
-Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
+The Client API is the **recommended starting point** for most users, especially when:
 
+* You have existing centralized training code
+* You want minimal code changes to enable FL
+* You're using common frameworks (PyTorch, TensorFlow, NumPy, etc.)
+* You need quick experimentation and prototyping
+* You prefer a simple, intuitive API
+
+**When to consider alternatives:**
+
+* **ModelLearner API**: If you need more control over the learning lifecycle
+* **Executor API**: If you need full customization of task handling
+* **3rd-Party Integration**: If integrating with external training systems
+
+For more information on alternative APIs, see :ref:`execution_api_type`.
+
+Additional Resources
+====================
+
+**API Documentation:**
+
+* Client API Module: :mod:`nvflare.client.api` - Complete API reference
+* PyTorch Lightning API: :mod:`nvflare.app_opt.lightning.api` - Lightning-specific integration
+* Job Recipe Guide: :ref:`job_recipe` - How to define and run FL jobs
+
+**Guides:**
+
+* :ref:`client_api_usage` - User guide with more examples
+* :ref:`job_recipe` - Job Recipe tutorial
+* :ref:`fl_simulator` - Simulation environment details
 
 Client API communication patterns
 =================================
@@ -190,15 +380,33 @@ than CellPipe, it's not suitable for high-frequency metrics exchange.
 Examples
 ========
 
-For examples of using Client API with different frameworks, please refer to:
+For complete working examples of using Client API with Job Recipes across different frameworks:
 
-- PyTorch: :ref:`hello_pt`
-- PyTorch Lightning: :ref:`hello_lightning`
-- TensorFlow: :ref:`hello_tf`
-- HuggingFace: :github_nvflare_link:`llm_hf <examples/llm_hf>`
+**Hello World Examples** (Recommended for beginners):
 
-For additional examples, also take a look at the
-:github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`.
+- PyTorch: :ref:`hello_pt` - CIFAR-10 image classification
+- NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
+- PyTorch Lightning: :ref:`hello_lightning` - Lightning integration
+- TensorFlow: :ref:`hello_tf` - MNIST classification
+- Flower: :github_nvflare_link:`hello-flower <examples/hello-world/hello-flower>` - Flower on FLARE
+
+**Advanced Examples:**
+
+- HuggingFace Transformers: :github_nvflare_link:`llm_hf <examples/llm_hf>` - Large language model training
+- XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
+- Scikit-learn: :github_nvflare_link:`sklearn examples <examples/advanced/sklearn-*>` - Traditional ML algorithms
+
+**Step-by-Step Tutorials:**
+
+For progressive learning, explore the :github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`,
+which covers different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) using the same datasets.
+
+Each example includes:
+
+* Complete source code with ``job.py`` and ``client.py``
+* README with setup instructions
+* Requirements file for dependencies
+* Comments explaining key concepts
 
 
 Custom Data Class Serialization/Deserialization

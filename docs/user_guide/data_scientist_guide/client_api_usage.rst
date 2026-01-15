@@ -66,9 +66,86 @@ federated learning, for example:
 With 5 lines of code changes, we convert the centralized training code to
 a federated learning setting.
 
-After this, we can utilize the job templates and the :ref:`job_cli`
-to generate a job so it can be run using :ref:`fl_simulator`
-or submit to a deployed NVFlare system.
+After this, we can utilize the :ref:`job_recipe` to define and run the federated learning job.
+
+Combining Client API with Job Recipe
+=====================================
+
+The Client API handles the **client-side training code** (what each client does with the model),
+while the Job Recipe handles the **job definition** (how the FL workflow is configured and executed).
+
+Here's how they work together in a complete example:
+
+**File structure:**
+
+.. code-block:: none
+
+    my-fl-project/
+    ├── job.py              # Job definition using Recipe API
+    ├── client.py           # Client training script using Client API
+    └── requirements.txt    # Dependencies
+
+**client.py** - Client-side training using Client API:
+
+.. code-block:: python
+
+    import nvflare.client as flare
+    import numpy as np
+
+    def train(input_arr):
+        # Simulate training by adding 1 to each element
+        output_arr = input_arr + 1
+        return output_arr
+
+    def main():
+        flare.init()
+
+        while flare.is_running():
+            # Receive global model from server
+            input_model = flare.receive()
+            params = input_model.params
+
+            # Perform local training
+            new_params = train(params)
+
+            # Send updated model back to server
+            output_model = flare.FLModel(params=new_params)
+            flare.send(output_model)
+
+    if __name__ == "__main__":
+        main()
+
+**job.py** - Job definition using Recipe API:
+
+.. code-block:: python
+
+    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+    from nvflare.recipe import SimEnv
+
+    # Define the federated learning job
+    recipe = NumpyFedAvgRecipe(
+        name="my-fl-job",
+        min_clients=2,
+        num_rounds=3,
+        initial_model=[[1, 2, 3], [4, 5, 6]],
+        train_script="client.py",
+    )
+
+    # Run in simulation environment
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+    print(f"Job completed: {run.get_status()}")
+
+**Running the job:**
+
+.. code-block:: bash
+
+    python job.py
+
+This will run the federated learning job in simulation mode. The same recipe can be used
+with different environments (``SimEnv``, ``PocEnv``, ``ProdEnv``) without changing the code.
+
+For more details on Job Recipes, see :ref:`job_recipe`.
 
 Below is a table overview of key Client APIs.
 
@@ -139,11 +216,69 @@ Below is a table overview of key Client APIs.
      - :class:`MLflowWriter<nvflare.client.tracking.MLflowWriter>`
 
 
-For more details on communication configuration, please refer to :ref:`client_api`.
+Framework-Specific Examples
+===========================
 
-Please check Client API Module :mod:`nvflare.client.api` for more in-depth
-information about all of the Client API functionalities.
+The Client API works with various ML frameworks. Here are complete examples:
 
-If you are using PyTorch Lightning in your training code, you can check the
-Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
+**PyTorch Example:**
 
+.. code-block:: python
+
+    # job.py
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.recipe import SimEnv
+    from model import SimpleNetwork
+
+    recipe = FedAvgRecipe(
+        name="hello-pt",
+        min_clients=2,
+        num_rounds=2,
+        initial_model=SimpleNetwork(),
+        train_script="client.py",
+        train_args="--batch_size 32",
+    )
+
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+.. code-block:: python
+
+    # client.py
+    import nvflare.client as flare
+
+    def main():
+        flare.init()
+
+        while flare.is_running():
+            input_model = flare.receive()
+
+            # Load model weights
+            net.load_state_dict(input_model.params)
+
+            # Train locally
+            train(net, train_loader)
+
+            # Send back updated model
+            output_model = flare.FLModel(
+                params=net.state_dict(),
+                metrics={"accuracy": accuracy}
+            )
+            flare.send(output_model)
+
+For complete working examples, see:
+
+* PyTorch: :github_nvflare_link:`hello-pt <examples/hello-world/hello-pt>`
+* NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>`
+* PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>`
+* TensorFlow: :github_nvflare_link:`hello-tf <examples/hello-world/hello-tf>`
+
+Additional Resources
+====================
+
+For more details on Client API:
+
+* Client API Module: :mod:`nvflare.client.api` - In-depth API documentation
+* Communication Configuration: :ref:`client_api` - Advanced configuration details
+* PyTorch Lightning API: :mod:`nvflare.app_opt.lightning.api` - Lightning-specific integration
+* Job Recipe Guide: :ref:`job_recipe` - How to define and run FL jobs
