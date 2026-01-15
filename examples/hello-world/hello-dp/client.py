@@ -44,7 +44,7 @@ def load_data(client_id, n_clients, batch_size):
     y = data.target.values.astype(int)  # Convert to binary: 0=normal, 1=fraud
 
     print(f"Dataset loaded: {X.shape[0]} samples, {X.shape[1]} features")
-    print(f"Class distribution - Normal: {(y==0).sum()}, Fraud: {(y==1).sum()}")
+    print(f"Class distribution - Normal: {(y == 0).sum()}, Fraud: {(y == 1).sum()}")
 
     # Split data across clients
     client_data_size = len(X) // n_clients
