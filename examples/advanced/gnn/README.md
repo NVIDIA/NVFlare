@@ -143,7 +143,7 @@ gnn/
     ├── client.py                   # FL client script
     ├── local_train.py              # Local training baseline
     ├── model.py                    # Custom SAGE model
-    └── process_elliptic.py         # Data preprocessing
+    └── prepare_data.py             # Data preprocessing
 ```
 
 ## Run Job

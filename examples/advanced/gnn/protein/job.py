@@ -16,65 +16,8 @@ import argparse
 
 from torch_geometric.nn import GraphSAGE
 
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import ProdEnv, SimEnv
-
-
-def create_job(
-    num_clients: int,
-    num_rounds: int,
-    epochs_per_round: int,
-    data_path: str,
-    output_path: str = "./output",
-) -> FedAvgRecipe:
-    """Create a protein classification job using FedAvgRecipe.
-
-    Args:
-        num_clients: Number of clients
-        num_rounds: Number of federated learning rounds
-        epochs_per_round: Number of local epochs per round for each client
-        data_path: Path to the PPI dataset
-        output_path: Output path for results
-
-    Returns:
-        FedAvgRecipe configured for protein classification
-    """
-    # Configure and instantiate protein-specific model
-    model = GraphSAGE(
-        in_channels=50,
-        hidden_channels=64,
-        num_layers=2,
-        out_channels=64,
-    )
-
-    # Create per-site configuration with site-specific arguments
-    per_site_config = {}
-    for i in range(1, num_clients + 1):
-        site_name = f"site-{i}"
-        per_site_config[site_name] = {
-            "train_args": (
-                f"--data_path {data_path} "
-                f"--epochs {epochs_per_round} "
-                f"--num_clients {num_clients} "
-                f"--output_path {output_path}"
-            )
-        }
-
-    # Create FedAvgRecipe with initial_model to ensure persistor is added
-    recipe = FedAvgRecipe(
-        name="gnn_protein",
-        initial_model=model,
-        min_clients=num_clients,
-        num_rounds=num_rounds,
-        train_script="client.py",
-        per_site_config=per_site_config,
-    )
-
-    # Add model selector for validation metric tracking
-    recipe.job.to(IntimeModelSelector(key_metric="validation_f1"), "server", id="model_selector")
-
-    return recipe
 
 
 def main():
@@ -151,18 +94,40 @@ def main():
     print(f"Epochs per round: {args.epochs_per_round}")
     print(f"Data path: {args.data_path}")
 
-    # Create recipe
-    recipe = create_job(
-        num_clients=args.num_clients,
+    # Create model
+    model = GraphSAGE(
+        in_channels=50,
+        hidden_channels=64,
+        num_layers=2,
+        out_channels=64,
+    )
+
+    # Create per-site configuration with site-specific arguments
+    per_site_config = {}
+    for i in range(1, args.num_clients + 1):
+        site_name = f"site-{i}"
+        per_site_config[site_name] = {
+            "train_args": (
+                f"--data_path {args.data_path} "
+                f"--epochs {args.epochs_per_round} "
+                f"--num_clients {args.num_clients} "
+                f"--output_path {args.output_path}"
+            )
+        }
+
+    # Create FedAvgRecipe
+    recipe = FedAvgRecipe(
+        name="gnn_protein",
+        initial_model=model,
+        min_clients=args.num_clients,
         num_rounds=args.num_rounds,
-        epochs_per_round=args.epochs_per_round,
-        data_path=args.data_path,
-        output_path=args.output_path,
+        train_script="client.py",
+        per_site_config=per_site_config,
     )
 
     # Export job
     print(f"Exporting job to {args.job_dir}")
-    recipe.job.export_job(args.job_dir)
+    recipe.export(args.job_dir)
 
     # Run recipe
     client_names = [f"site-{i}" for i in range(1, args.num_clients + 1)]
@@ -179,8 +144,10 @@ def main():
         env = SimEnv(clients=client_names, num_threads=num_threads, workspace_root=args.workspace_dir)
 
     run = recipe.execute(env)
+    print()
     print("Job Status is:", run.get_status())
-    print("Job Result is:", run.get_result())
+    print("Result can be found in:", run.get_result())
+    print()
 
 
 if __name__ == "__main__":

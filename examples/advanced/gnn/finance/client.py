@@ -20,7 +20,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from model import SAGE
-from process_elliptic import process_elliptic
+from prepare_data import process_elliptic
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
@@ -159,7 +159,7 @@ def main():
         # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
-            metrics={"validation_auc": global_auc},
+            metrics={"accuracy": global_auc},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         # Send model back to NVFlare
