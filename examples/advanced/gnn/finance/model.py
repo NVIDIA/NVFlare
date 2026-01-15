@@ -20,7 +20,10 @@ from torch_geometric.nn import SAGEConv
 class SAGE(nn.Module):
     def __init__(self, in_channels, hidden_channels, num_classes, num_layers):
         super().__init__()
+        self.hidden_channels = hidden_channels
+        self.num_classes = num_classes
         self.num_layers = num_layers
+        self.in_channels = in_channels
         self.convs = nn.ModuleList()
         for i in range(num_layers):
             in_channels = in_channels if i == 0 else hidden_channels
