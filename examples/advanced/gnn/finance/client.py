@@ -159,7 +159,7 @@ def main():
         # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
-            metrics={"accuracy": global_auc},
+            metrics={"validation_auc": global_auc},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         # Send model back to NVFlare

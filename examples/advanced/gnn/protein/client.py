@@ -198,7 +198,7 @@ def main():
         # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
-            metrics={"accuracy": global_f1},
+            metrics={"validation_f1": global_f1},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         # Send model back to NVFlare
