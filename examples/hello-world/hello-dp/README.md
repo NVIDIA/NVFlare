@@ -132,24 +132,24 @@ while flare.is_running():
     # Privacy budget accumulates across ALL federated rounds
     if input_model.current_round == 0:
         # Calculate total epochs across all rounds for privacy accounting
-        total_epochs = epochs * input_model.total_rounds
+        total_epochs = args.epochs * input_model.total_rounds
         
         privacy_engine = PrivacyEngine()
         model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
             module=model,
             optimizer=optimizer,
             data_loader=train_loader,
-            epochs=total_epochs,           # Total across ALL rounds
-            target_epsilon=1.0,             # Target privacy budget
-            target_delta=1e-5,              # Failure probability
-            max_grad_norm=1.0,              # Gradient clipping
+            epochs=total_epochs,                    # Total across ALL rounds
+            target_epsilon=args.target_epsilon,     # Target privacy budget
+            target_delta=args.target_delta,         # Failure probability
+            max_grad_norm=args.max_grad_norm,       # Gradient clipping
         )
         # Noise multiplier is computed automatically
         print(f"Noise multiplier: {optimizer.noise_multiplier:.4f}")
     # ==================================
     
     # Train as usual - PrivacyEngine handles gradient clipping & noise
-    for epoch in range(epochs):
+    for epoch in range(args.epochs):
         for data, target in train_loader:
             optimizer.zero_grad()
             loss = criterion(model(data), target)
@@ -157,8 +157,8 @@ while flare.is_running():
             optimizer.step()
     
     # Check cumulative privacy budget spent
-    epsilon = privacy_engine.get_epsilon(1e-5)
-    print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = 1e-5")
+    epsilon = privacy_engine.get_epsilon(args.target_delta)
+    print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = {args.target_delta})")
     
     # Send model back (extract clean params without "_module." prefix)
     model_state = model.cpu().state_dict()
