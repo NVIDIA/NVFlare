@@ -2,6 +2,19 @@
 This example illustrates the use of NVIDIA FLARE enabling secure federated [XGBoost](https://github.com/dmlc/xgboost) under both horizontal and vertical collaborations.
 The examples are based on a [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) to perform fraud detection.
 
+## Project Structure
+
+This example provides two separate, focused job scripts:
+
+- **`job.py`** - Horizontal federated XGBoost (with/without Homomorphic Encryption)
+- **`job_vertical.py`** - Vertical federated XGBoost (with/without Homomorphic Encryption)
+
+Each can be run independently with default parameters:
+```bash
+python job.py              # Horizontal FL
+python job_vertical.py     # Vertical FL
+```
+
 ## Secure Federated Training of XGBoost
 Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](../fedxgb/README.md).
 
@@ -118,6 +131,11 @@ This example now uses the **Recipe API** for simplified job configuration. The R
 - Automatic configuration of TensorBoard tracking
 - Built-in support for secure training via `secure=True` parameter
 - Cleaner, more maintainable code
+- Separate, focused examples for horizontal and vertical federated learning
+
+**Example Structure:**
+- `job.py` - Horizontal federated XGBoost (with/without HE)
+- `job_vertical.py` - Vertical federated XGBoost (with/without HE)
 
 **Important Note for Secure Training:**
 When using `secure=True` for Homomorphic Encryption, you **must** provide `client_ranks`:
@@ -140,12 +158,15 @@ The running time of each job depends mainly on the encryption workload.
 Assuming we use libnvflare.so plugin located in `/tmp/nvflare/plugins/libnvflare.so`, to run vertical simulations:
 
 ```bash
-# Without encryption
-python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
+# Without encryption (runs with defaults)
+python job_vertical.py
+
+# With custom parameters
+python job_vertical.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --site_num 3 --round_num 3
 
 # With encryption (secure)
 NVFLARE_XGB_PLUGIN_NAME=nvflare NVFLARE_XGB_PLUGIN_PATH=/tmp/nvflare/plugins/libnvflare.so \
-python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure
+python job_vertical.py --secure
 ```
 
 **Code Example:**
@@ -193,11 +214,14 @@ run.simulator_run("/tmp/nvflare/workspace/works/vertical_secure")
 To run horizontal simulations:
 
 ```bash
-# Without encryption
-python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
+# Without encryption (runs with defaults)
+python job.py
+
+# With custom parameters
+python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --site_num 3 --round_num 3
 
 # With encryption (secure) - requires additional setup
-python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure
+python job.py --secure
 ```
 
 **Code Example:**
