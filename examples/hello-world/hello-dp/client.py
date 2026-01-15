@@ -148,18 +148,16 @@ def main():
             global_params = {}
             for k, v in input_model.params.items():
                 global_params[f"_module.{k}"] = v
-            model.load_state_dict(global_params)
+            model.load_state_dict(global_params, strict=True)
         else:
-            model.load_state_dict(input_model.params)
+            model.load_state_dict(input_model.params, strict=True)
         model.to(device)
-
-        # (5) Evaluate on received model for model selection
-        rmse = evaluate(model, test_loader, device)
 
         # (optional) Task branch for cross-site evaluation
         if flare.is_evaluate():
             print(f"site = {client_name}, running cross-site evaluation")
-            # For CSE, just return the evaluation metrics without training
+            # For CSE, evaluate and return metrics without training
+            rmse = evaluate(model, test_loader, device)
             output_model = flare.FLModel(metrics={"rmse": rmse})
             flare.send(output_model)
             continue
@@ -220,6 +218,17 @@ def main():
                     print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Batch: {i + 1}, Loss: {avg_loss:.4f}")
                     running_loss = 0.0
 
+        # Evaluate on train and test sets at the end of the round
+        print(f"\nEvaluating model after round {input_model.current_round}...")
+        train_rmse = evaluate(model, train_loader, device)
+        test_rmse = evaluate(model, test_loader, device)
+        
+        # Log metrics to TensorBoard
+        summary_writer.add_scalar(tag="train_rmse", scalar=train_rmse, global_step=input_model.current_round)
+        summary_writer.add_scalar(tag="test_rmse", scalar=test_rmse, global_step=input_model.current_round)
+        
+        print(f"Round {input_model.current_round} - Train RMSE: {train_rmse:.4f}, Test RMSE: {test_rmse:.4f}")
+
         # Print cumulative privacy budget spent
         epsilon = privacy_engine.get_epsilon(args.target_delta)
         print(f"\n=== Privacy Budget (Round {input_model.current_round}/{input_model.total_rounds - 1}) ===")
@@ -245,7 +254,7 @@ def main():
 
         output_model = flare.FLModel(
             params=clean_params,
-            metrics={"rmse": rmse, "privacy_epsilon": epsilon},
+            metrics={"rmse": test_rmse, "train_rmse": train_rmse, "test_rmse": test_rmse, "privacy_epsilon": epsilon},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         print(f"site: {client_name}, sending model to server.")

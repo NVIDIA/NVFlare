@@ -5,7 +5,7 @@ This example demonstrates how to use NVIDIA FLARE with PyTorch and **Differentia
 
 ## What is Differential Privacy?
 
-[Differential Privacy (DP)](https://en.wikipedia.org/wiki/Differential_privacy) is a mathematical framework that provides strong privacy guarantees when handling sensitive data. In Federated Learning, DP protects user information by adding carefully calibrated noise to model updates during training.
+[Differential Privacy (DP)](https://en.wikipedia.org/wiki/Differential_privacy) is a mathematical framework that provides strong privacy guarantees when handling sensitive data. In Federated Learning, DP protects user information by adding carefully calibrated noise to the model training process.
 
 **DP-SGD** adds noise during each optimization step:
 1. **Gradient Clipping**: Gradients are clipped to bound sensitivity
@@ -56,7 +56,6 @@ hello-dp
 |-- client.py             # client training script with DP-SGD using Opacus
 |-- model.py              # MLP model definition for tabular data
 |-- job.py                # job recipe that defines client and server configurations
-|-- hello-dp.ipynb        # Jupyter notebook version
 |-- requirements.txt      # dependencies
 ```
 
@@ -248,10 +247,6 @@ Open http://localhost:6006 to see:
 - Training loss over time
 - RMSE (Root Mean Squared Error)
 - Privacy epsilon spent per client
-
-## Notebook
-
-For an interactive version of this example, see [hello-dp.ipynb](./hello-dp.ipynb), which can be executed in Google Colab.
 
 ## Privacy-Utility Trade-off
 
