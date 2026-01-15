@@ -294,6 +294,8 @@ The validation AUC scores are shown below:
 - Federated learning achieves significantly better performance than local training using individual site data only
 - Performance is comparable to centralized training (black curve) using the whole dataset
 
+## Note on running with ProdEnv
+Site names (e.g. site-1, site-2) in project.yml needs to match the intended data split. 
 
 ## Citation for Elliptic++ Dataset
 
