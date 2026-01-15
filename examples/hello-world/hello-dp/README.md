@@ -1,11 +1,11 @@
 
 # Hello Differential Privacy
 
-This example demonstrates how to use NVIDIA FLARE with PyTorch and **Differential Privacy (DP)** to train a regression model using federated averaging (FedAvg) with privacy guarantees. The example uses **Opacus** to implement DP-SGD (Differentially Private Stochastic Gradient Descent) during local client training.
+This example demonstrates how to use NVIDIA FLARE with PyTorch and **Differential Privacy (DP)** to train a regression model using federated averaging (FedAvg) with privacy guarantees. The example uses **[Opacus](https://opacus.ai)** to implement DP-SGD (Differentially Private Stochastic Gradient Descent) during local client training on each client. This achieves sample-level differential privacy.
 
 ## What is Differential Privacy?
 
-[Differential Privacy (DP)](https://arxiv.org/abs/1607.00133) is a mathematical framework that provides strong privacy guarantees when handling sensitive data. In Federated Learning, DP protects user information by adding carefully calibrated noise to model updates during training.
+[Differential Privacy (DP)](https://en.wikipedia.org/wiki/Differential_privacy) is a mathematical framework that provides strong privacy guarantees when handling sensitive data. In Federated Learning, DP protects user information by adding carefully calibrated noise to model updates during training.
 
 **DP-SGD** adds noise during each optimization step:
 1. **Gradient Clipping**: Gradients are clipped to bound sensitivity
@@ -16,9 +16,14 @@ The privacy-utility trade-off is controlled by epsilon (ε):
 - **Lower ε** = Stronger privacy, more noise, lower accuracy
 - **Higher ε** = Weaker privacy, less noise, higher accuracy
 
+Typical values:
+- **ε ≤ 1.0**: Strong privacy (recommended for sensitive data)
+- **ε = 1.0-3.0**: Moderate privacy (good balance) - default is 1.0
+- **ε > 10**: Weak privacy (minimal protection)
+
 ## NVIDIA FLARE Installation
 
-For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
 ```bash
 pip install nvflare
@@ -109,20 +114,31 @@ import nvflare.client as flare
 # Initialize NVFlare client
 flare.init()
 
+# Initialize privacy engine once (in first round only)
+privacy_engine = None
+
 while flare.is_running():
-    # Receive model from server
     input_model = flare.receive()
     model.load_state_dict(input_model.params)
     
-    # === Apply Differential Privacy ===
-    privacy_engine = PrivacyEngine()
-    model, optimizer, train_loader = privacy_engine.make_private(
-        module=model,
-        optimizer=optimizer,
-        data_loader=train_loader,
-        noise_multiplier=1.1,  # Controls noise level
-        max_grad_norm=1.0,      # Gradient clipping threshold
-    )
+    # === Apply Differential Privacy (First Round Only) ===
+    # Privacy budget accumulates across ALL federated rounds
+    if input_model.current_round == 0:
+        # Calculate total epochs across all rounds for privacy accounting
+        total_epochs = epochs * input_model.total_rounds
+        
+        privacy_engine = PrivacyEngine()
+        model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
+            module=model,
+            optimizer=optimizer,
+            data_loader=train_loader,
+            epochs=total_epochs,           # Total across ALL rounds
+            target_epsilon=1.0,             # Target privacy budget
+            target_delta=1e-5,              # Failure probability
+            max_grad_norm=1.0,              # Gradient clipping
+        )
+        # Noise multiplier is computed automatically
+        print(f"Noise multiplier: {optimizer.noise_multiplier:.4f}")
     # ==================================
     
     # Train as usual - PrivacyEngine handles gradient clipping & noise
@@ -133,22 +149,26 @@ while flare.is_running():
             loss.backward()
             optimizer.step()
     
-    # Check privacy budget spent
+    # Check cumulative privacy budget spent
     epsilon = privacy_engine.get_epsilon(delta)
-    print(f"Privacy spent: (ε = {epsilon:.2f}, δ = {delta})")
+    print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = {delta})")
     
-    # Send model back (note: use _module to get original model)
+    # Send model back (extract clean params without "_module." prefix)
+    model_state = model.cpu().state_dict()
+    clean_params = {k.replace("_module.", ""): v for k, v in model_state.items()}
     output_model = flare.FLModel(
-        params=model._module.state_dict(),
+        params=clean_params,
         metrics={"rmse": rmse, "privacy_epsilon": epsilon}
     )
     flare.send(output_model)
 ```
 
-The `PrivacyEngine.make_private()` method:
+The `PrivacyEngine.make_private_with_epsilon()` method:
 1. Wraps the model to enable per-sample gradient computation
-2. Modifies the optimizer to clip gradients and add noise
-3. Wraps the data loader for privacy accounting
+2. Automatically computes the noise multiplier for target epsilon
+3. Modifies the optimizer to clip gradients and add noise
+4. Wraps the data loader for privacy accounting
+5. Tracks privacy budget cumulatively across all federated rounds
 
 ## Server-Side Workflow
 
@@ -181,6 +201,8 @@ env = SimEnv(num_clients=n_clients)
 recipe.execute(env=env)
 ```
 
+**Important**: Privacy budget (ε) accumulates across ALL federated rounds. The `target_epsilon` parameter specifies the total privacy budget for the entire training process, not per round.
+
 ## Run Job
 
 From the terminal, run:
@@ -192,14 +214,14 @@ python job.py
 To customize parameters:
 
 ```bash
-python job.py --n_clients 2 --num_rounds 5 --target_epsilon 50.0
+python job.py --n_clients 2 --num_rounds 5 --target_epsilon 1.0
 ```
 
 Parameters:
 - `--n_clients`: Number of federated clients (default: 2)
 - `--num_rounds`: Number of federated rounds (default: 5)
 - `--batch_size`: Training batch size (default: 64)
-- `--target_epsilon`: Target privacy budget - **lower values = stronger privacy** (default: 50.0)
+- `--target_epsilon`: **Total** privacy budget across all rounds - **lower = stronger privacy** (default: 1.0)
 - `--cross_site_eval`: Enable cross-site evaluation after training
 
 To run with cross-site evaluation:
@@ -233,35 +255,44 @@ For an interactive version of this example, see [hello-dp.ipynb](./hello-dp.ipyn
 
 ## Privacy-Utility Trade-off
 
-Differential Privacy involves a trade-off between privacy and model utility:
+Differential Privacy involves a trade-off between privacy and model utility. The privacy budget (ε) accumulates across all federated rounds:
 
-| Epsilon (ε) | Privacy Level | Model Accuracy |
-|-------------|---------------|----------------|
-| ε = 10      | Strong        | Lower          |
-| ε = 50      | Moderate      | Good (default) |
-| ε = 100+    | Weak          | Higher         |
+| Epsilon (ε) | Privacy Level | Model Accuracy | Use Case |
+|-------------|---------------|----------------|----------|
+| ε ≤ 0.5     | Very Strong   | Lower          | Highly sensitive (medical) |
+| ε = 0.5-1.0 | Strong        | Moderate       | Sensitive (financial) |
+| ε = 1.0-3.0 | Moderate      | Good (default) | General private data |
+| ε = 3.0-10  | Weak          | Better         | Lightly sensitive |
+| ε > 10      | Minimal       | Best           | Not recommended for privacy |
+
+**Important Notes:**
+- The epsilon value is **cumulative** across all federated rounds
+- Lower epsilon = stronger privacy but may require more rounds or lower accuracy
+- The noise multiplier is automatically computed to meet your target epsilon
 
 **Recommendations:**
-- Start with `--target_epsilon 50.0` for a balanced trade-off
-- For sensitive data (medical, financial), use ε < 10
-- Adjust `max_grad_norm` (gradient clipping) to control sensitivity
-- Pre-train on public data before fine-tuning on private data
+- Start with `--target_epsilon 1.0` (default) for a good privacy-utility balance
+- For highly sensitive data (medical, financial), use ε ≤ 1.0
+- Adjust `max_grad_norm` (gradient clipping) if needed
+- Consider pre-training on public data before fine-tuning on private data
+- Monitor cumulative epsilon across rounds
 
 ## Output Summary
 
 #### Initialization
 * **TensorBoard**: Logs available at /tmp/nvflare/simulation/hello-dp/server/simulate_job/tb_events
 * **Workflow**: FedAvg controller initialized with DP-enabled clients
+* **Privacy**: Privacy engine initialized in round 0, tracks cumulative budget
 
 #### Each Round
 * **Model Distribution**: Global model sent to clients
 * **Local Training**: Each client trains with DP-SGD using Opacus
-* **Privacy Tracking**: Epsilon (ε) logged for each client
+* **Privacy Tracking**: Cumulative epsilon (ε) logged for each client
 * **Aggregation**: DP-trained models aggregated on server
 
 #### Completion
 * **Final Model**: Trained model with privacy guarantees
-* **Privacy Budget**: Total privacy spent tracked per client
+* **Privacy Budget**: Final cumulative privacy budget reported (should be ≤ target_epsilon)
 
 ## References
 

@@ -96,7 +96,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--target_epsilon", type=float, default=50.0, 
+    parser.add_argument("--target_epsilon", type=float, default=1.0, 
                         help="Target epsilon for differential privacy (lower = more private)")
     parser.add_argument("--target_delta", type=float, default=1e-5,
                         help="Target delta for differential privacy")
@@ -132,6 +132,10 @@ def main():
     summary_writer = SummaryWriter()
     
     print(f"Client {client_name}: Using Differential Privacy with epsilon={args.target_epsilon}")
+    print(f"Note: Privacy budget will accumulate across ALL federated rounds")
+    
+    # Initialize privacy engine once (outside the training loop)
+    privacy_engine = None
     
     while flare.is_running():
         # (3) Receives FLModel from NVFlare
@@ -139,7 +143,15 @@ def main():
         print(f"site = {client_name}, current_round={input_model.current_round}")
         
         # (4) Loads model from NVFlare
-        model.load_state_dict(input_model.params)
+        # Handle Opacus-wrapped model state dict
+        if privacy_engine is not None and hasattr(model, '_module'):
+            # Opacus wraps the model, so we need to add "_module." prefix
+            global_params = {}
+            for k, v in input_model.params.items():
+                global_params[f"_module.{k}"] = v
+            model.load_state_dict(global_params)
+        else:
+            model.load_state_dict(input_model.params)
         model.to(device)
         
         # (5) Evaluate on received model for model selection
@@ -153,17 +165,34 @@ def main():
             flare.send(output_model)
             continue
         
-        # ====== DIFFERENTIAL PRIVACY SETUP ======
-        # Attach PrivacyEngine to the model, optimizer, and data loader
-        privacy_engine = PrivacyEngine()
-        
-        model, optimizer, train_loader = privacy_engine.make_private(
-            module=model,
-            optimizer=optimizer,
-            data_loader=train_loader,
-            noise_multiplier=1.1,
-            max_grad_norm=args.max_grad_norm,
-        )
+        # ====== DIFFERENTIAL PRIVACY SETUP (First Round Only) ======
+        # Initialize privacy engine ONLY in first round to track budget across ALL rounds
+        if input_model.current_round == 0:
+            print(f"\n=== Initializing Differential Privacy (Round 0) ===")
+            print(f"Target epsilon: {args.target_epsilon}")
+            print(f"Target delta: {args.target_delta}")
+            print(f"Max gradient norm: {args.max_grad_norm}")
+            
+            # Calculate total epochs across ALL federated rounds for privacy accounting
+            total_epochs_all_rounds = epochs * input_model.total_rounds
+            
+            privacy_engine = PrivacyEngine()
+            model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
+                module=model,
+                optimizer=optimizer,
+                data_loader=train_loader,
+                epochs=total_epochs_all_rounds,  # Total across ALL rounds
+                target_epsilon=args.target_epsilon,
+                target_delta=args.target_delta,
+                max_grad_norm=args.max_grad_norm,
+            )
+            
+            # Get the automatically computed noise multiplier
+            noise_multiplier = optimizer.noise_multiplier
+            print(f"Computed noise multiplier: {noise_multiplier:.4f}")
+            print(f"Privacy budget will accumulate across {input_model.total_rounds} rounds")
+            print(f"Total epochs for privacy accounting: {total_epochs_all_rounds}")
+            print("=" * 60)
         # ========================================
         
         model.train()
@@ -192,17 +221,32 @@ def main():
                     print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Batch: {i + 1}, Loss: {avg_loss:.4f}")
                     running_loss = 0.0
         
-        # Print privacy budget spent
+        # Print cumulative privacy budget spent
         epsilon = privacy_engine.get_epsilon(args.target_delta)
-        print(f"Client {client_name}: Privacy spent - (ε = {epsilon:.2f}, δ = {args.target_delta})")
+        print(f"\n=== Privacy Budget (Round {input_model.current_round}/{input_model.total_rounds-1}) ===")
+        print(f"Cumulative ε = {epsilon:.2f} (target: {args.target_epsilon})")
+        print(f"δ = {args.target_delta}")
+        if input_model.current_round < input_model.total_rounds - 1:
+            print(f"⚠️  Privacy budget is accumulating! More rounds remaining.")
+        else:
+            print(f"✓ Final cumulative privacy budget after all rounds")
+        print("=" * 60)
+        
         summary_writer.add_scalar(tag="privacy_epsilon", scalar=epsilon, 
                                    global_step=input_model.current_round)
         
         print(f"Finished Training for {client_name}")
         
         # (6) Construct trained FL model
+        # Extract original model weights (remove "_module." prefix from Opacus)
+        model_state_dict = model.cpu().state_dict()
+        clean_params = {}
+        for k, v in model_state_dict.items():
+            clean_key = k.replace("_module.", "")
+            clean_params[clean_key] = v
+        
         output_model = flare.FLModel(
-            params=model._module.cpu().state_dict(),  # Note: use _module to get original model from PrivacyEngine
+            params=clean_params,
             metrics={"rmse": rmse, "privacy_epsilon": epsilon},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
