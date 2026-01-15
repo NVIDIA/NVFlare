@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import argparse
-
+import os
 from monai.apps.utils import download_and_extract
 
 
@@ -35,4 +35,9 @@ if __name__ == "__main__":
         "--output_dir", "-o", type=str, help="target directory to save extracted files.", default="./data"
     )
     args = parser.parse_args()
+
+    print(f"Downloading data to {args.output_dir}")
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
     download_spleen_dataset(args.filepath, args.output_dir)
