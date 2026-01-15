@@ -29,8 +29,12 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--train_script", type=str, default="client.py")
-    parser.add_argument("--target_epsilon", type=float, default=1.0,
-                        help="Target epsilon for differential privacy (lower = more private)")
+    parser.add_argument(
+        "--target_epsilon",
+        type=float,
+        default=1.0,
+        help="Target epsilon for differential privacy (lower = more private)",
+    )
     parser.add_argument("--cross_site_eval", action="store_true")
 
     return parser.parse_args()
