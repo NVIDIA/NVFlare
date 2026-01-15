@@ -126,18 +126,6 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job-level-authorization/README.md`
   },
   {
-    title: "Federated Learning Hub",
-    tags: ["adv.", "deployment"],
-    description: "Allow hierarchical interaction between several levels of NVIDIA FLARE FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/fl_hub/README.md`
-  },
-  {
-    title: "Getting Started",
-    tags: ["beg.", "algorithm", "client-api", "model-controller", "job-api", "pytorch", "lightning", "sklearn", "tensorflow"],
-    description: "Getting started examples using the Client API, Model Controller API, and Job API for different frameworks.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/getting_started`
-  },
-  {
     title: "Step-by-Step CIFAR10 Examples",
     tags: ["beg.", "algorithm", "pytorch", "dl"],
     description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
@@ -152,7 +140,7 @@ const tutorials = [
   {
     title: "ML/DL to FL",
     tags: ["beg.", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
-    description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
+    description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lightning, and tensorflow. (Available in upcoming release)",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
   },
   {
@@ -214,7 +202,7 @@ const tutorials = [
     title: "Survival Analysis with Federated Kaplan-Meier",
     tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics", "highlight"],
     description:
-      "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
+      "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE). (Available in upcoming release)",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
   },
   {
@@ -263,26 +251,14 @@ const tutorials = [
   {
     title: "Federated Vertical XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Example using Private Set Intersection and XGBoost on vertically split HIGGS data.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/vertical_xgboost/README.md`
+    description: "Vertical federated XGBoost using Private Set Intersection on HIGGS data. Part of consolidated XGBoost examples. (Available in upcoming release - completed Jan 13, 2026)",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md`
   },
   {
     title: "NVFlare + MONAI integration",
     tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
     description: "Using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/README.md`
-  },
-  {
-    title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
-    tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
-    description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
-  },
-  {
-    title: "Federated Learning for Prostate Segmentation from Multi-source Data",
-    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
-    description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
   },
   {
     title: "Federated Statistics for Images",
@@ -375,12 +351,6 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api/tf`
   },
   {
-    title: "End-to-End Federated XGBoost for Financial Credit Card Detection",
-    tags: ["adv.", "algorithm", "xgboost", "finance"],
-    description: "Show the end-to-end process of feature engineering, pre-processing and training in federated settings. You can use FLARE to perform federated ETL and then training.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance-end-to-end`
-  },
-  {
     title: "Auto-FedRL",
     tags: ["adv.", "algorithm", "research", "pytorch"],
     description: "Efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm.",
@@ -432,16 +402,9 @@ const tutorials = [
     title: "Secure Federated XGBoost with Homomorphic Encryption",
     tags: ["adv.", "algorithm", "xgboost", "he", "highlight"],
     description:
-      "Federated secure training with XGBoost using homomorphic encryption.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+      "Federated secure training with XGBoost using homomorphic encryption for both horizontal and vertical FL. (Available in upcoming release - completed Jan 13, 2026)",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb_secure/README.md`,
   },
-   {
-      title: "Federated Embedding Model Training",
-      tags: ["adv.", "algorithm", "rag", "embedding"],
-      description:
-        "Embedding tuning tasks, illustrates how to adapt a local training script with SentenceTransformers trainer to NVFlare.",
-      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/rag/README.md`,
-    },
     {
       title: "Object Streaming",
       tags: ["adv.", "streaming"],
