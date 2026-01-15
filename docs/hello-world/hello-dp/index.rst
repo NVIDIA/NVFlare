@@ -172,8 +172,8 @@ The client code `client.py <client.py>`_ implements DP-SGD using **Opacus**. The
                optimizer.step()
        
        # Check cumulative privacy budget spent
-       epsilon = privacy_engine.get_epsilon(delta)
-       print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = {delta})")
+       epsilon = privacy_engine.get_epsilon(args.target_delta)
+       print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = {args.target_delta})")
        
        # Send model back (extract clean params without "_module." prefix)
        model_state = model.cpu().state_dict()
