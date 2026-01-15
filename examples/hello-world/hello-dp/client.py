@@ -99,7 +99,6 @@ def evaluate(model, data_loader, device):
     recall = recall_score(all_targets, all_predictions, zero_division=0)
     f1 = f1_score(all_targets, all_predictions, zero_division=0)
     
-    print(f"Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}")
     return accuracy, f1, precision, recall
 
 
@@ -242,6 +241,9 @@ def main():
         print(f"\nEvaluating model after round {input_model.current_round}...")
         train_accuracy, train_f1, train_precision, train_recall = evaluate(model, train_loader, device)
         test_accuracy, test_f1, test_precision, test_recall = evaluate(model, test_loader, device)
+
+        print(f"Train Accuracy: {train_accuracy:.4f}, Train F1: {train_f1:.4f}, Train Precision: {train_precision:.4f}, Train Recall: {train_recall:.4f}")
+        print(f"Test Accuracy: {test_accuracy:.4f}, Test F1: {test_f1:.4f}, Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}")
 
         # Log metrics to TensorBoard
         summary_writer.add_scalar(tag="train_accuracy", scalar=train_accuracy, global_step=input_model.current_round)

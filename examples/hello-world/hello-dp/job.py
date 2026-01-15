@@ -25,9 +25,9 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=5)
+    parser.add_argument("--num_rounds", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument(
         "--target_epsilon",
