@@ -103,9 +103,9 @@ class FoxRecipe(Recipe):
                 If False, spawn subprocess for training (e.g., for torchrun DDP).
             run_cmd: Command to run the training subprocess
                 (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.collab methods.
-                Auto-detected from client object in most cases. Only needed
-                if auto-detection fails.
+            training_module: Python module to run in subprocess. If None, auto-detected
+                from client object. Required for Client API pattern where the training
+                script is separate from the client object (FoxClientAPI).
             subprocess_timeout: Timeout for subprocess operations.
 
         Examples:
@@ -125,6 +125,17 @@ class FoxRecipe(Recipe):
                 min_clients=2,
                 inprocess=False,
                 run_cmd="torchrun --nproc_per_node=4",
+            )
+
+            # Client API with explicit training module
+            recipe = FoxRecipe(
+                job_name="fedavg_client_api",
+                server=FedAvg(),
+                client=FoxClientAPI(),
+                min_clients=2,
+                inprocess=False,
+                run_cmd="torchrun --nproc_per_node=4",
+                training_module="my_training_script",
             )
         """
         check_str("job_name", job_name)
@@ -169,31 +180,28 @@ class FoxRecipe(Recipe):
         self.run_cmd = run_cmd
         self.subprocess_timeout = subprocess_timeout
 
-        # Auto-detect training_module from client if not provided
-        self.training_module = self._detect_training_module(training_module, self.client)
+        # Use explicit training_module if provided, otherwise auto-detect
+        if training_module:
+            self.training_module = training_module
+        else:
+            self.training_module = self._detect_training_module(self.client)
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
 
-    def _detect_training_module(self, explicit_module: Optional[str], client_obj) -> Optional[str]:
+    def _detect_training_module(self, client_obj) -> Optional[str]:
         """Auto-detect the training module from client object.
 
         Handles all cases:
         - Module-based client (ModuleWrapper): get module_name
         - Class-based client: get __class__.__module__
-        - Explicit training_module provided: use it directly
 
         Args:
-            explicit_module: Explicitly provided training_module (if any)
             client_obj: The client object (ModuleWrapper or class instance)
 
         Returns:
             The detected module name, or None if not needed (inprocess=True)
         """
-        # If explicitly provided, use it
-        if explicit_module:
-            return explicit_module
-
         # If in-process, no training module needed
         if self.inprocess:
             return None
@@ -213,10 +221,10 @@ class FoxRecipe(Recipe):
                     return get_importable_module_name(module)
                 return module_name
 
-        # Could not auto-detect
-        raise ValueError(
-            "Could not auto-detect training_module for subprocess execution. "
-            "Please provide training_module explicitly."
+        # Could not auto-detect - this is a bug, not user error
+        raise RuntimeError(
+            f"Failed to auto-detect training module from client object {type(client_obj)}. "
+            "This is an internal error - please report it."
         )
 
     def process_env(self, env: ExecEnv):

@@ -135,7 +135,11 @@ class AppRunner:
         # If the app contains "make_client_app" method, call it to make the app instance!
         # Otherwise, make the instance by deep copying.
         # If the client_app object cannot be deep-copied, then it must provide the make_client_app method.
+        # Check both the ClientApp and its underlying object for the method
         make_client_app_f = getattr(self.client_app, MAKE_CLIENT_APP_METHOD, None)
+        if not make_client_app_f:
+            # Check the underlying object
+            make_client_app_f = getattr(self.client_app.obj, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(site_name, BackendType.SIMULATION)
             if not isinstance(app, ClientApp):
@@ -222,7 +226,8 @@ class AppRunner:
 
         # Subprocess management
         self._subprocess_launchers: Dict[str, SubprocessLauncher] = {}
-        self._ipc_cell: Optional[CoreCell] = None
+        self._server_cell: Optional[CoreCell] = None
+        self._client_cells: Dict[str, CoreCell] = {}
 
         # Store config for deferred setup
         self.root_dir = root_dir
@@ -327,47 +332,84 @@ class AppRunner:
         return client_apps
 
     def _setup_ipc_cell(self):
-        """Create a CoreCell for subprocess IPC communication."""
-        # Register tensor decomposer for FOBS (so parent can deserialize worker responses)
-        from nvflare.fox.utils.decomposers import register_available_decomposers
+        """Create CoreCells for subprocess IPC communication.
 
+        Follows CellNet established pattern:
+        1. Create a local server cell (so client cells don't try external connection)
+        2. Create client cells with internal listeners for subprocess workers
+        """
+        from nvflare.fox.utils.decomposers import register_available_decomposers
+        from nvflare.fuel.f3.cellnet.fqcn import FQCN
+        from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+
+        # Register tensor decomposer for FOBS
         register_available_decomposers()
 
-        # Create a simple CoreCell for local IPC
-        # This acts as the "parent" for subprocess workers to connect to
-        self._ipc_cell = CoreCell(
-            fqcn="sim.runner",
-            root_url="grpc://localhost:0",  # Use port 0 to get an available port
-            secure=False,  # Local IPC doesn't need security
+        # Get an available port
+        port = get_open_tcp_port(resources={})
+
+        # Create a local server cell first
+        # This registers in ALL_CELLS so client cells won't try to connect externally
+        self._server_cell = CoreCell(
+            fqcn=FQCN.ROOT_SERVER,
+            root_url=f"tcp://127.0.0.1:{port}",
+            secure=False,
             credentials={},
-            create_internal_listener=True,  # Create listener for workers to connect
+            create_internal_listener=True,
         )
-        self._ipc_cell.start()
-        self.logger.info(f"IPC Cell started at {self._ipc_cell.get_internal_listener_url()}")
+        self._server_cell.start()
+        self.logger.info(f"Server cell started at {self._server_cell.get_internal_listener_url()}")
 
     def _start_subprocesses(self):
-        """Start subprocess workers for all client sites."""
+        """Start subprocess workers for all client sites.
+
+        Follows CellNet established pattern:
+        1. Create server cell (so clients don't try external connection)
+        2. Create client cell for each site with internal listener
+        3. Subprocess workers connect via parent_url
+        """
         if self.inprocess:
             return
 
         self.logger.info("Starting subprocess workers...")
 
-        # Create IPC cell for communication
+        # Create server cell first (establishes local CellNet)
         self._setup_ipc_cell()
+
+        # Get server's internal listener URL for client cells
+        server_url = self._server_cell.get_internal_listener_url()
 
         # Create and start subprocess launcher for each client site
         for site_index, site_name in enumerate(self.client_apps.keys()):
             self.logger.info(f"Starting subprocess for {site_name}...")
 
+            # Create client cell for this site with internal listener
+            from nvflare.fuel.f3.cellnet.fqcn import FQCN
+
+            client_fqcn = FQCN.join([site_name, "app"])
+            client_cell = CoreCell(
+                fqcn=client_fqcn,
+                root_url=self._server_cell.get_root_url_for_child(),
+                secure=False,
+                credentials={},
+                create_internal_listener=True,  # Workers connect here
+                parent_url=server_url,
+            )
+            client_cell.start()
+            self._client_cells[site_name] = client_cell
+
+            self.logger.info(f"Client cell {client_fqcn} started at {client_cell.get_internal_listener_url()}")
+
+            # Create subprocess launcher with client cell
             launcher = SubprocessLauncher(
                 site_name=site_name,
                 training_module=self.training_module,
-                parent_cell=self._ipc_cell,
+                parent_cell=client_cell,
                 run_cmd=self.run_cmd,
                 subprocess_timeout=self.subprocess_timeout,
-                worker_id="0",  # Use "0" as worker ID to form FQCN: site-1.worker.0
-                site_index=site_index,  # For unique MASTER_PORT assignment
-                client_class=self.client_class,  # For class-based clients
+                worker_id="0",
+                site_index=site_index,
+                client_class=self.client_class,
             )
 
             if not launcher.start():
@@ -378,22 +420,29 @@ class AppRunner:
         self.logger.info(f"All {len(self._subprocess_launchers)} subprocess workers started")
 
     def _stop_subprocesses(self):
-        """Stop all subprocess workers."""
+        """Stop all subprocess workers and cells."""
         if not self._subprocess_launchers:
             return
 
         self.logger.info("Stopping subprocess workers...")
 
+        # Stop subprocess launchers
         for site_name, launcher in self._subprocess_launchers.items():
             self.logger.info(f"Stopping subprocess for {site_name}...")
             launcher.stop()
 
         self._subprocess_launchers.clear()
 
-        # Stop IPC cell
-        if self._ipc_cell:
-            self._ipc_cell.stop()
-            self._ipc_cell = None
+        # Stop client cells
+        for site_name, cell in self._client_cells.items():
+            self.logger.debug(f"Stopping client cell for {site_name}...")
+            cell.stop()
+        self._client_cells.clear()
+
+        # Stop server cell
+        if self._server_cell:
+            self._server_cell.stop()
+            self._server_cell = None
 
         self.logger.info("All subprocess workers stopped")
 

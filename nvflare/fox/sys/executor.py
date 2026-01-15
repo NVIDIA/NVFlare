@@ -129,7 +129,10 @@ class FoxExecutor(Executor, FoxAdaptor):
         app = ClientApp(client_obj)
 
         # If the app contains "make_client_app" method, call it to make the app instance!
+        # Check both the ClientApp and its underlying object for the method
         make_client_app_f = getattr(app, MAKE_CLIENT_APP_METHOD, None)
+        if not make_client_app_f:
+            make_client_app_f = getattr(app.obj, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(client_name, BackendType.FLARE)
             if not isinstance(app, ClientApp):
@@ -265,6 +268,25 @@ class FoxExecutor(Executor, FoxAdaptor):
         reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface
         return reply
 
+    def _detect_client_class(self) -> Optional[str]:
+        """Detect the client class name for class-based clients.
+
+        Returns:
+            The class name if using a class-based client (e.g., "FoxClientAPI"),
+            None for module-based clients.
+        """
+        from nvflare.fox.api.module_wrapper import ModuleWrapper
+
+        # Get the underlying client object from ClientApp
+        client_obj = self.client_app.obj
+
+        # ModuleWrapper means module-based, no class name needed
+        if isinstance(client_obj, ModuleWrapper):
+            return None
+
+        # Get class name for class-based clients
+        return client_obj.__class__.__name__
+
     def _start_subprocess_worker(self, cell, client_name: str):
         """Start the subprocess worker for distributed training."""
         self.logger.info(f"Starting subprocess worker for {client_name}...")
@@ -272,12 +294,18 @@ class FoxExecutor(Executor, FoxAdaptor):
         if self.run_cmd:
             self.logger.info(f"  Run command: {self.run_cmd}")
 
+        # Detect client class for Client API mode (e.g., "FoxClientAPI")
+        client_class = self._detect_client_class()
+        if client_class:
+            self.logger.info(f"  Client class: {client_class}")
+
         self._subprocess_launcher = SubprocessLauncher(
             site_name=client_name,
             training_module=self.training_module,
             parent_cell=cell,
             run_cmd=self.run_cmd,
             subprocess_timeout=self.subprocess_timeout,
+            client_class=client_class,
         )
 
         if not self._subprocess_launcher.start():

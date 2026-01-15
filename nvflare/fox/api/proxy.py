@@ -123,9 +123,9 @@ class Proxy:
         We first try to find the interface from the proxy itself. If not found, we try to find it from child proxies.
 
         """
-        # self.logger.debug(f"trying to find interface for {func_name}")
+        # self.logger.debug(f"_find_interface({func_name}) for target {self.target_name}")
         args = self.target_interface.get(func_name) if self.target_interface else None
-        if args:
+        if args is not None:  # Found in main interface (note: empty list [] is valid for no-param methods)
             return self, args
 
         # try children
@@ -134,7 +134,7 @@ class Proxy:
         the_name = None
         for n, c in self.children.items():
             args = c.target_interface.get(func_name) if c.target_interface else None
-            if not args:
+            if args is None:  # Not found in this child (note: empty list [] is valid for no-param methods)
                 continue
 
             # self.logger.debug(f"found interface for func {func_name}: defined in child {n}")

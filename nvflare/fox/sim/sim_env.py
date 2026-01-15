@@ -45,7 +45,6 @@ class SimEnv(ExecEnv):
         # Subprocess execution options
         inprocess: bool = True,
         run_cmd: Optional[str] = None,
-        training_module: Optional[str] = None,
         subprocess_timeout: float = 300.0,
         extra: dict = None,
     ):
@@ -61,8 +60,6 @@ class SimEnv(ExecEnv):
             workspace_root: Root directory for simulation workspace.
             inprocess: If True, execute in-process. If False, use subprocess.
             run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.collab methods
-                            (required when inprocess=False).
             subprocess_timeout: Timeout for subprocess operations.
             extra: Extra env config info.
         """
@@ -79,8 +76,8 @@ class SimEnv(ExecEnv):
         # Subprocess options
         self.inprocess = inprocess
         self.run_cmd = run_cmd
-        self.training_module = training_module
         self.subprocess_timeout = subprocess_timeout
+        self.training_module = None  # Auto-detected from recipe, not user-facing
 
         self._simulator: Optional[FoxSimulator] = None
 

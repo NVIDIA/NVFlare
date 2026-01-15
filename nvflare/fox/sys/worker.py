@@ -25,7 +25,7 @@ Architecture:
                                                     ↑ this module        ↑ user's module
 
     Environment vars (set by FoxExecutor, invisible to user):
-        FOX_PARENT_URL    = grpc://localhost:8002
+        FOX_PARENT_URL    = tcp://localhost:8002  (protocol from FLARE config)
         FOX_PARENT_FQCN   = site-1.job123
         FOX_SITE_NAME     = site-1
 
@@ -78,6 +78,32 @@ DEFAULT_SUBPROCESS_TIMEOUT = 300.0
 
 # Global tracking writer for subprocess (set during worker startup)
 _tracking_writer = None
+
+# Global FoxClientAPI instance for Client API mode
+_client_api = None
+
+
+def get_client_api():
+    """Get the FoxClientAPI instance for this worker.
+
+    User's main() calls this to get the API for receive/send.
+    Only available in Client API mode (when training module has main()).
+
+    Returns:
+        FoxClientAPI instance, or None if not in Client API mode.
+
+    Example:
+        from nvflare.fox.sys.worker import get_client_api
+
+        def main():
+            flare = get_client_api()
+            flare.init()
+            while flare.is_running():
+                model = flare.receive()
+                # ... train ...
+                flare.send(result)
+    """
+    return _client_api
 
 
 def get_tracking_writer():
@@ -184,10 +210,12 @@ class FoxWorker:
 
     def _create_cell(self):
         """Create CellNet cell to connect to parent FoxExecutor."""
-        # Worker cell FQCN: site-1.worker.0
-        worker_fqcn = f"{self.site_name}.worker.{self.worker_id}"
+        # Worker cell FQCN must be a child of parent's FQCN for routing to work.
+        # Parent FQCN is e.g. "site-1.app", so worker should be "site-1.app.worker.0"
+        worker_fqcn = f"{self.parent_fqcn}.worker.{self.worker_id}"
 
-        self.logger.info("Connecting to parent FoxExecutor...")
+        self.logger.info(f"Connecting to parent FoxExecutor at {self.parent_fqcn}...")
+        self.logger.info(f"Worker FQCN: {worker_fqcn}")
 
         # Connect to parent using parent_url parameter
         self.cell = CoreCell(
@@ -306,9 +334,108 @@ class FoxWorker:
             self.logger.warning(f"Failed to set up tracking: {e}")
 
     def start(self):
-        """Start the worker and wait for calls from parent."""
+        """Start the worker.
+
+        Supports two modes based on client type:
+        1. Client API (FoxClientAPI): Run training script top-to-bottom
+        2. Collab API (@fox.collab methods): Wait for RPC calls
+
+        For Client API with DDP:
+        - All ranks run the training script
+        - Rank 0 also handles server communication via CellNet
+        """
         self.logger.info(f"Starting Fox worker (rank={self.rank}, world_size={self.world_size})")
 
+        # Check if using Client API mode (FoxClientAPI as client)
+        client_class_name = os.environ.get(ENV_CLIENT_CLASS)
+        use_client_api = client_class_name == "FoxClientAPI"
+
+        if use_client_api:
+            # Client API mode: run training script on all ranks
+            self._start_client_api_mode()
+        else:
+            # Collab API mode: rank 0 waits for RPC, others wait for signal
+            self._start_collab_api_mode()
+
+    def _start_client_api_mode(self):
+        """Start in Client API mode - all ranks run the training script.
+
+        The training script uses receive/send pattern (no main() needed):
+            flare.init()
+            while flare.is_running():
+                model = flare.receive()
+                result = train(model)
+                flare.send(result)
+        """
+        global _client_api
+
+        self.logger.info("Client API mode: running training script")
+
+        try:
+            if self.rank == 0:
+                # Rank 0: Set up CellNet first
+                register_available_decomposers()
+
+                # Create FoxClientAPI instance
+                from nvflare.client.in_process.fox_api import FoxClientAPI
+
+                _client_api = FoxClientAPI()
+                self.training_app = _client_api
+
+                # Create CellNet and register handlers
+                self._create_cell()
+                self._register_handlers()
+                self.cell.start()
+
+                time.sleep(0.5)
+
+                # Set up tracking if configured
+                self._setup_tracking()
+
+                # Signal ready to parent
+                self._signal_ready()
+
+                self.logger.info("Rank 0: CellNet ready, running training script...")
+            else:
+                # Other ranks: create a local FoxClientAPI for DDP sync
+                from nvflare.client.in_process.fox_api import FoxClientAPI
+
+                _client_api = FoxClientAPI()
+                self.logger.info(f"Rank {self.rank}: running training script (will sync with rank 0)")
+
+            # IMPORTANT: When running with -m, this module may be pre-imported into sys.modules
+            # before execution starts. The pre-imported version has _client_api=None.
+            # We need to update the existing module's _client_api attribute so that when
+            # client scripts import it, they get the correct instance.
+            import sys
+
+            worker_module_name = "nvflare.fox.sys.worker"
+            worker_module = sys.modules.get(worker_module_name)
+            if worker_module:
+                # Update the existing module's _client_api attribute
+                worker_module._client_api = _client_api
+            else:
+                # Module not in sys.modules yet - register __main__ as the worker module
+                this_module = sys.modules.get("__main__")
+                if this_module:
+                    sys.modules[worker_module_name] = this_module
+
+            # ALL ranks run the training script (executes top to bottom)
+            self.logger.info(f"Running training module: {self.training_module_name}")
+            import runpy
+
+            runpy.run_module(self.training_module_name, run_name="__main__", alter_sys=True)
+
+            self.logger.info("Training script completed")
+
+        except Exception as e:
+            self.logger.exception(f"Worker error: {e}")
+            raise
+        finally:
+            self._cleanup()
+
+    def _start_collab_api_mode(self):
+        """Start in Collab API mode - rank 0 waits for RPC calls."""
         # Only rank 0 communicates with parent in DDP mode
         if self.rank != 0:
             self.logger.info(f"Rank {self.rank}: participating in DDP, rank 0 coordinates")

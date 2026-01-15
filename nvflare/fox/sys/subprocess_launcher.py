@@ -137,8 +137,12 @@ class SubprocessLauncher:
         except Exception:
             pass
 
-        # Fallback: use a default local URL
-        return "grpc://localhost:8002"
+        # Fallback: use configured internal connection scheme
+        from nvflare.fuel.f3.comm_config import CommConfigurator
+
+        comm_configurator = CommConfigurator()
+        scheme = comm_configurator.get_internal_connection_scheme("tcp")
+        return f"{scheme}://localhost:8002"
 
     def _setup_handlers(self):
         """Set up CellNet handlers for worker communication."""
@@ -155,7 +159,10 @@ class SubprocessLauncher:
         self.logger.info(f"Worker ready: rank={payload.get('rank')}, world_size={payload.get('world_size')}")
 
         self._worker_info = payload
-        self._worker_fqcn = f"{self.site_name}.worker.{payload.get('worker_id', '0')}"
+        # Worker FQCN is a child of parent cell's FQCN: parent.worker.id
+        parent_fqcn = self.parent_cell.get_fqcn()
+        self._worker_fqcn = f"{parent_fqcn}.worker.{payload.get('worker_id', '0')}"
+        self.logger.debug(f"Worker FQCN: {self._worker_fqcn}")
         self._ready_event.set()
 
         return Message(payload={"status": "acknowledged"})
@@ -330,6 +337,9 @@ class SubprocessLauncher:
                 raise RuntimeError(f"No response from worker for {func_name}")
 
             payload = reply.payload
+            if payload is None:
+                raise RuntimeError(f"Empty payload in response from worker for {func_name}")
+
             if "error" in payload:
                 raise RuntimeError(f"Worker error: {payload['error']}")
 
@@ -337,6 +347,11 @@ class SubprocessLauncher:
 
         except Exception as e:
             self.logger.error(f"Call to worker failed: {e}")
+            # Check if subprocess is still running
+            if self._process:
+                poll_result = self._process.poll()
+                if poll_result is not None:
+                    self.logger.error(f"Worker subprocess exited with code: {poll_result}")
             raise
 
     def stop(self):
