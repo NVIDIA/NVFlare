@@ -45,7 +45,9 @@ def main():
     model = ModerateTFNet()
     model.build(input_shape=(None, 32, 32, 3))
 
-    callbacks = [tf.keras.callbacks.TensorBoard(log_dir="./logs", write_graph=False)]
+    callbacks = [
+        tf.keras.callbacks.TensorBoard(log_dir="/tmp/nvflare/simulation/cifar10_central/logs", write_graph=False)
+    ]
 
     loss = losses.SparseCategoricalCrossentropy(from_logits=True)
     model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01, momentum=0.9), loss=loss, metrics=["accuracy"])
