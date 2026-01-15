@@ -51,7 +51,9 @@ def main():
         name="hello-dp",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),  # Credit card fraud: 29 features, 2 classes
+        initial_model=TabularMLP(
+            input_dim=29, hidden_dims=[64, 32], output_dim=2
+        ),  # Credit card fraud: 29 features, 2 classes
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size} --epochs {epochs} --target_epsilon {args.target_epsilon} --n_clients {n_clients}",
     )

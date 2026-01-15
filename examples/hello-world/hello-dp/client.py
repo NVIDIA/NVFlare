@@ -37,15 +37,15 @@ from nvflare.client.tracking import SummaryWriter
 def load_data(client_id, n_clients, batch_size):
     """Load and partition Credit Card Fraud dataset"""
     print("Loading Credit Card Fraud Detection dataset...")
-    
+
     # Load dataset from OpenML
-    data = fetch_openml('creditcard', version=1, as_frame=True, parser='auto')
+    data = fetch_openml("creditcard", version=1, as_frame=True, parser="auto")
     X = data.data.values
     y = data.target.values.astype(int)  # Convert to binary: 0=normal, 1=fraud
-    
+
     print(f"Dataset loaded: {X.shape[0]} samples, {X.shape[1]} features")
     print(f"Class distribution - Normal: {(y==0).sum()}, Fraud: {(y==1).sum()}")
-    
+
     # Split data across clients
     client_data_size = len(X) // n_clients
     start_idx = client_id * client_data_size
@@ -55,7 +55,9 @@ def load_data(client_id, n_clients, batch_size):
     y_client = y[start_idx:end_idx]
 
     # Train/test split
-    X_train, X_test, y_train, y_test = train_test_split(X_client, y_client, test_size=0.2, random_state=42, stratify=y_client)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_client, y_client, test_size=0.2, random_state=42, stratify=y_client
+    )
 
     # Standardize features
     scaler = StandardScaler()
@@ -83,22 +85,22 @@ def evaluate(model, data_loader, device):
     model.eval()
     all_predictions = []
     all_targets = []
-    
+
     with torch.no_grad():
         for data, target in data_loader:
             data, target = data.to(device), target.to(device)
             outputs = model(data)
             _, predicted = torch.max(outputs.data, 1)
-            
+
             all_predictions.extend(predicted.cpu().numpy())
             all_targets.extend(target.cpu().numpy())
-    
+
     # Calculate metrics using sklearn
     accuracy = accuracy_score(all_targets, all_predictions)
     precision = precision_score(all_targets, all_predictions, zero_division=0)
     recall = recall_score(all_targets, all_predictions, zero_division=0)
     f1 = f1_score(all_targets, all_predictions, zero_division=0)
-    
+
     return accuracy, f1, precision, recall
 
 
@@ -139,12 +141,12 @@ def main():
 
     # Load data for this client
     train_loader, test_loader = load_data(client_id, args.n_clients, batch_size)
-    
+
     # Get actual feature dimensions from data
     sample_batch = next(iter(train_loader))
     n_features = sample_batch[0].shape[1]
     n_classes = 2  # Binary classification: normal vs fraud
-    
+
     print(f"Data loaded: {n_features} features, {n_classes} classes")
 
     # (optional) metrics tracking
@@ -175,13 +177,23 @@ def main():
         model.to(device)
 
         # Evaluate the global model
-        global_test_accuracy, global_test_f1, global_test_precision, global_test_recall = evaluate(model, test_loader, device)
-        summary_writer.add_scalar(tag="global_test_accuracy", scalar=global_test_accuracy, global_step=input_model.current_round)
+        global_test_accuracy, global_test_f1, global_test_precision, global_test_recall = evaluate(
+            model, test_loader, device
+        )
+        summary_writer.add_scalar(
+            tag="global_test_accuracy", scalar=global_test_accuracy, global_step=input_model.current_round
+        )
         summary_writer.add_scalar(tag="global_test_f1", scalar=global_test_f1, global_step=input_model.current_round)
-        summary_writer.add_scalar(tag="global_test_precision", scalar=global_test_precision, global_step=input_model.current_round)
-        summary_writer.add_scalar(tag="global_test_recall", scalar=global_test_recall, global_step=input_model.current_round)
+        summary_writer.add_scalar(
+            tag="global_test_precision", scalar=global_test_precision, global_step=input_model.current_round
+        )
+        summary_writer.add_scalar(
+            tag="global_test_recall", scalar=global_test_recall, global_step=input_model.current_round
+        )
 
-        print(f"site={client_name}, Global Test Accuracy: {global_test_accuracy:.4f}, Global Test F1: {global_test_f1:.4f}")
+        print(
+            f"site={client_name}, Global Test Accuracy: {global_test_accuracy:.4f}, Global Test F1: {global_test_f1:.4f}"
+        )
 
         # Train the model with differential privacy
         model.train()
@@ -233,7 +245,9 @@ def main():
 
             # Print every epoch
             avg_loss = running_loss / len(train_loader)
-            summary_writer.add_scalar(tag="train_loss", scalar=avg_loss, global_step=input_model.current_round * steps + epoch)
+            summary_writer.add_scalar(
+                tag="train_loss", scalar=avg_loss, global_step=input_model.current_round * steps + epoch
+            )
             print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}")
             running_loss = 0.0
 
@@ -242,8 +256,12 @@ def main():
         train_accuracy, train_f1, train_precision, train_recall = evaluate(model, train_loader, device)
         test_accuracy, test_f1, test_precision, test_recall = evaluate(model, test_loader, device)
 
-        print(f"Train Accuracy: {train_accuracy:.4f}, Train F1: {train_f1:.4f}, Train Precision: {train_precision:.4f}, Train Recall: {train_recall:.4f}")
-        print(f"Test Accuracy: {test_accuracy:.4f}, Test F1: {test_f1:.4f}, Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}")
+        print(
+            f"Train Accuracy: {train_accuracy:.4f}, Train F1: {train_f1:.4f}, Train Precision: {train_precision:.4f}, Train Recall: {train_recall:.4f}"
+        )
+        print(
+            f"Test Accuracy: {test_accuracy:.4f}, Test F1: {test_f1:.4f}, Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}"
+        )
 
         # Log metrics to TensorBoard
         summary_writer.add_scalar(tag="train_accuracy", scalar=train_accuracy, global_step=input_model.current_round)
@@ -251,7 +269,9 @@ def main():
         summary_writer.add_scalar(tag="train_f1_score", scalar=train_f1, global_step=input_model.current_round)
         summary_writer.add_scalar(tag="test_f1_score", scalar=test_f1, global_step=input_model.current_round)
 
-        print(f"Round {input_model.current_round} - Train: Acc={train_accuracy:.4f}, F1={train_f1:.4f} | Test: Acc={test_accuracy:.4f}, F1={test_f1:.4f}")
+        print(
+            f"Round {input_model.current_round} - Train: Acc={train_accuracy:.4f}, F1={train_f1:.4f} | Test: Acc={test_accuracy:.4f}, F1={test_f1:.4f}"
+        )
 
         # Print cumulative privacy budget spent
         epsilon = privacy_engine.get_epsilon(args.target_delta)
