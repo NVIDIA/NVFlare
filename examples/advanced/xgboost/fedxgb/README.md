@@ -3,41 +3,6 @@ Several mechanisms have been proposed for training an XGBoost model in a federat
 In these examples, we illustrate the use of NVFlare to carry out *horizontal* federated learning using two approaches: histogram-based collaboration and tree-based collaboration.
 And *vertical* federated learning using histogram-based collaboration.
 
-## What's New with Recipe API
-
-The histogram-based horizontal federated learning examples now use the **Recipe API** for simplified job configuration.
-
-**Key improvements**:
-- **Simpler code**: Recipe API reduces boilerplate by ~40%
-- **Single job file**: `job.py` replaces `xgb_fl_job_horizontal.py`
-- **Cleaner structure**: Data loader moved from `src/` to root level for consistency
-- **Same functionality**: All features preserved (histogram, histogram_v2, TensorBoard tracking)
-
-**Quick comparison**:
-
-Before (FedJob API):
-```python
-from nvflare.job_config.api import FedJob
-from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-# ... 50+ lines of component configuration ...
-```
-
-After (Recipe API):
-```python
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
-
-recipe = XGBHistogramRecipe(
-    name="xgb_higgs",
-    min_clients=2,
-    num_rounds=100,
-    algorithm="histogram_v2",
-)
-# Add clients and run - that's it!
-```
-
-See the [Recipe API Guide](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html) for more details.
-
 ## Horizontal Federated XGBoost
 Under horizontal setting, each participant joining the federated learning will have part of
 the whole data samples / instances / records, while each sample has all the features.
@@ -167,7 +132,7 @@ The following cases will be covered:
 - Tree-based collaboration with cyclic training based on uniform / exponential / square data split for 5 / 20 clients
 - Tree-based collaboration with bagging training based on uniform / exponential / square data split for 5 / 20 clients w/ and w/o scaled learning rate
 
-#### Histogram-Based (Recipe API)
+#### Histogram-Based
 
 Histogram-based experiments now use the `XGBHistogramRecipe` for simplified configuration.
 
@@ -200,6 +165,14 @@ from nvflare.recipe import SimEnv
 from higgs_data_loader import HIGGSDataLoader
 
 # Create recipe
+# Build per-site configuration with data loaders
+per_site_config = {}
+for site_id in range(1, 3):
+    data_loader = HIGGSDataLoader(
+        data_split_filename=f"/tmp/data/data_site-{site_id}.json"
+    )
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
 recipe = XGBHistogramRecipe(
     name="xgb_higgs_histogram",
     min_clients=2,
@@ -211,14 +184,8 @@ recipe = XGBHistogramRecipe(
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
+    per_site_config=per_site_config,
 )
-
-# Add data loaders to each client
-for site_id in range(1, 3):
-    data_loader = HIGGSDataLoader(
-        data_split_filename=f"/tmp/data/data_site-{site_id}.json"
-    )
-    recipe.add_to_client(f"site-{site_id}", data_loader)
 
 # Run simulation
 env = SimEnv()
@@ -235,13 +202,71 @@ As expected, we can observe that all histogram-based experiments results in iden
 
 #### Tree-Based (Bagging and Cyclic)
 
-> **_NOTE:_** Tree-based algorithms (bagging and cyclic) are not yet converted to Recipe API.
-> They still use the FedJob API. Recipe API support for these algorithms is planned for a future release.
-> For bagging, see `XGBBaggingRecipe` in `nvflare.app_opt.xgboost.recipes`.
+Tree-based federated XGBoost now uses the `XGBBaggingRecipe` which supports both bagging and cyclic modes.
 
-Tree-based experiments can be run with:
-```
+**Bagging Mode** (Federated Random Forest):
+- Each client trains a local sub-forest on their data
+- Sub-forests are aggregated on the server to form the global model
+- Typically uses 1 round with multiple parallel trees per client
+
+**Cyclic Mode** (Sequential Training):
+- Clients train sequentially in rounds
+- Each round, one or more clients contribute to the global model
+- Typically uses many rounds (e.g., 100)
+
+Run tree-based experiments with:
+```bash
 bash run_experiment_horizontal_tree.sh
+```
+
+Or run individual experiments:
+```bash
+# Bagging mode with uniform learning rate
+python3 job_tree.py --site_num 5 --training_algo bagging --split_method uniform --lr_mode uniform
+
+# Bagging mode with scaled learning rate (data-size dependent)
+python3 job_tree.py --site_num 5 --training_algo bagging --split_method exponential --lr_mode scaled
+
+# Cyclic mode
+python3 job_tree.py --site_num 5 --training_algo cyclic --split_method uniform --lr_mode uniform
+```
+
+**Python API:**
+```python
+from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
+from higgs_data_loader import HIGGSDataLoader
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for site_id in range(1, 6):
+    data_loader = HIGGSDataLoader(
+        data_split_filename=f"/tmp/data/data_site-{site_id}.json"
+    )
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
+# Bagging mode (federated Random Forest)
+recipe = XGBBaggingRecipe(
+    name="random_forest",
+    min_clients=5,
+    training_mode="bagging",
+    num_rounds=1,
+    num_local_parallel_tree=5,
+    local_subsample=0.8,
+    per_site_config=per_site_config,
+)
+
+# Or Cyclic mode
+recipe = XGBBaggingRecipe(
+    name="cyclic_xgb",
+    min_clients=5,
+    training_mode="cyclic",
+    num_rounds=100,
+    per_site_config=per_site_config,
+)
+
+# Run
+env = SimEnv()
+env.run(recipe)
 ```
 The resulting validation AUC curves are shown below:
 
@@ -327,7 +352,7 @@ for site_id in range(1, 3):
         label_owner="site-1",
         train_proportion=0.8,
     )
-    recipe.add_to_client(f"site-{site_id}", data_loader)
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
 
 # Run simulation
 env = SimEnv()

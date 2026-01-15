@@ -104,8 +104,12 @@ class TestXGBVerticalRecipe:
 
             # Add mock data loaders
             # site-1 has labels, site-2 has features only
-            recipe.add_to_client("site-1", MockVerticalDataLoader(has_labels=True, n_samples=50, n_features=3))
-            recipe.add_to_client("site-2", MockVerticalDataLoader(has_labels=False, n_samples=50, n_features=3))
+            per_site_config = {
+                "site-1": {"data_loader": MockVerticalDataLoader(has_labels=True, n_samples=50, n_features=3)},
+                "site-2": {"data_loader": MockVerticalDataLoader(has_labels=False, n_samples=50, n_features=3)},
+            }
+            recipe.per_site_config = per_site_config
+            recipe.job = recipe.configure()
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -167,11 +171,15 @@ class TestXGBVerticalRecipe:
                 label_owner="site-2",  # site-2 has labels
             )
 
-            # Add data loaders - only site-2 has labels
+            # Configure per-site data loaders - only site-2 has labels
+            per_site_config = {}
             for site_id in range(1, num_clients + 1):
                 has_labels = site_id == 2  # Only site-2 has labels
-                data_loader = MockVerticalDataLoader(has_labels=has_labels, n_samples=30, n_features=2)
-                recipe.add_to_client(f"site-{site_id}", data_loader)
+                per_site_config[f"site-{site_id}"] = {
+                    "data_loader": MockVerticalDataLoader(has_labels=has_labels, n_samples=30, n_features=2)
+                }
+            recipe.per_site_config = per_site_config
+            recipe.job = recipe.configure()
 
             run = recipe.execute(env)
             assert run.get_result() is not None
@@ -190,9 +198,7 @@ class TestXGBVerticalRecipe:
         server_components = recipe.job.get_server_components()
         assert "tb_receiver" in server_components
 
-        # Add a client and verify TensorBoard writer is configured
-        data_loader = MockVerticalDataLoader(has_labels=True)
-        recipe.add_to_client("site-1", data_loader)
+        # Verify TensorBoard tracking is configured (components added in configure())
 
         # Check that metrics_writer and event_to_fed are added
         client_components = recipe.job.get_client_components("site-1")

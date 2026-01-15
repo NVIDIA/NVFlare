@@ -75,9 +75,10 @@ class XGBVerticalRecipe(Recipe):
         use_gpus (bool, optional): Whether to use GPUs for training. Default is False.
         secure (bool, optional): Enable secure training with Homomorphic Encryption (HE). Default is False.
             Requires encryption plugins to be installed and configured.
+            When secure=True, client_ranks must be provided.
         client_ranks (dict, optional): Mapping of client names to ranks for secure training.
-            If None, auto-generates ranks (e.g., {"site-1": 0, "site-2": 1, ...}).
-            Only used when secure=True.
+            Required when secure=True. Maps each client name to a unique rank (0-indexed).
+            Example: {"site-1": 0, "site-2": 1, "site-3": 2}.
         xgb_params (dict, optional): XGBoost parameters passed to xgboost.train(). If None, uses default params.
             Default params: max_depth=8, eta=0.1, objective='binary:logistic', eval_metric='auc',
             tree_method='hist', nthread=16.
@@ -85,6 +86,9 @@ class XGBVerticalRecipe(Recipe):
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
         in_process (bool, optional): Whether to run in-process (required for vertical). Default is True.
         model_file_name (str, optional): Model file name. Default is 'test.model.json'.
+        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
+            Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            Example: {"site-1": {"data_loader": VerticalDataLoader(...)}, "site-2": {...}}
 
     Example:
         .. code-block:: python
@@ -96,26 +100,34 @@ class XGBVerticalRecipe(Recipe):
             # Step 1: Run PSI first (separate job) to get intersection files
             # ... PSI job execution ...
 
-            # Step 2: Create vertical XGBoost recipe
+            # Step 2: Create vertical XGBoost recipe with per-site data loaders
             recipe = XGBVerticalRecipe(
                 name="xgb_vertical",
                 min_clients=2,
                 num_rounds=100,
                 label_owner="site-1",  # Only site-1 has labels
+                per_site_config={
+                "site-1": {
+                    "data_loader": VerticalDataLoader(
+                        data_split_path="/tmp/data/site-1/higgs.data.csv",
+                        psi_path="/tmp/psi/site-1/intersection.txt",
+                        id_col="uid",
+                        label_owner="site-1",
+                        train_proportion=0.8,
+                    )
+                },
+                "site-2": {
+                    "data_loader": VerticalDataLoader(
+                        data_split_path="/tmp/data/site-2/higgs.data.csv",
+                        psi_path="/tmp/psi/site-2/intersection.txt",
+                        id_col="uid",
+                        label_owner="site-1",
+                        train_proportion=0.8,
+                    )
+                },
             )
 
-            # Step 3: Add data loaders (must use PSI results)
-            for site_id in range(1, 3):
-                data_loader = VerticalDataLoader(
-                    data_split_path=f"/tmp/data/site-{site_id}/higgs.data.csv",
-                    psi_path=f"/tmp/psi/site-{site_id}/intersection.txt",
-                    id_col="uid",
-                    label_owner="site-1",
-                    train_proportion=0.8,
-                )
-                recipe.add_to_client(f"site-{site_id}", data_loader)
-
-            # Step 4: Run
+            # Step 3: Run
             env = SimEnv()
             env.run(recipe)
 
@@ -124,6 +136,8 @@ class XGBVerticalRecipe(Recipe):
         - Only one client should be designated as label_owner
         - All clients must have overlapping sample IDs (after PSI)
         - Uses histogram_v2 algorithm with data_split_mode=1 (vertical)
+        - Data loaders must be configured via per_site_config parameter
+        - Executor and metrics components are automatically added to all clients
         - TensorBoard tracking is automatically configured
     """
 
@@ -142,6 +156,7 @@ class XGBVerticalRecipe(Recipe):
         metrics_writer_id: str = "metrics_writer",
         in_process: bool = True,
         model_file_name: str = "test.model.json",
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Set default XGBoost params if not provided
         if xgb_params is None:
@@ -153,10 +168,6 @@ class XGBVerticalRecipe(Recipe):
                 "tree_method": "hist",
                 "nthread": 16,
             }
-
-        # Auto-generate client ranks if not provided and secure=True
-        if secure and client_ranks is None:
-            client_ranks = {f"site-{i}": i - 1 for i in range(1, min_clients + 1)}
 
         # Validate inputs internally
         v = _XGBVerticalValidator(
@@ -188,6 +199,7 @@ class XGBVerticalRecipe(Recipe):
         self.metrics_writer_id = v.metrics_writer_id
         self.in_process = v.in_process
         self.model_file_name = v.model_file_name
+        self.per_site_config = per_site_config
 
         # Configure the job
         self.job = self.configure()
@@ -223,56 +235,36 @@ class XGBVerticalRecipe(Recipe):
         tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
         job.to_server(tb_receiver, id="tb_receiver")
 
-        # Store executor params for later use in add_to_client()
-        self._executor_params = {
-            "data_loader_id": self.data_loader_id,
-            "metrics_writer_id": self.metrics_writer_id,
-            "in_process": True if self.secure else self.in_process,  # Secure training requires in_process
-            "model_file_name": self.model_file_name,
-        }
-
-        return job
-
-    def add_to_client(self, site_name: str, dataloader):
-        """Add executor, dataloader, and tracking components to a specific client site.
-
-        Args:
-            site_name: Name of the client site (e.g., 'site-1')
-            dataloader: VerticalDataLoader instance for this client
-
-        Returns:
-            self: Returns self for method chaining
-
-        Note:
-            The dataloader must be configured with:
-            - data_split_path: Path to this client's feature data
-            - psi_path: Path to PSI intersection file for this client
-            - id_col: Column name for sample IDs
-            - label_owner: Same as recipe's label_owner
-            - train_proportion: Train/validation split ratio
-        """
+        # Add executor to all clients with specific tasks for vertical XGBoost
         from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 
-        # Add executor with specific tasks for vertical XGBoost
-        executor = FedXGBHistogramExecutor(**self._executor_params)
-        self.job.to(executor, site_name, id="xgb_hist_executor", tasks=["config", "start"])
+        executor = FedXGBHistogramExecutor(
+            data_loader_id=self.data_loader_id,
+            metrics_writer_id=self.metrics_writer_id,
+            in_process=True if self.secure else self.in_process,  # Secure training requires in_process
+            model_file_name=self.model_file_name,
+        )
+        job.to_clients(executor, id="xgb_hist_executor", tasks=["config", "start"])
 
-        # Add dataloader
-        self.job.to(dataloader, site_name, id=self.data_loader_id)
-
-        # Add TensorBoard writer
+        # Add TensorBoard writer and event converter to all clients
+        from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
         from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 
         metrics_writer = TBWriter(event_type="analytix_log_stats")
-        self.job.to(metrics_writer, site_name, id=self.metrics_writer_id)
-
-        # Add event converter to federate events
-        from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+        job.to_clients(metrics_writer, id=self.metrics_writer_id)
 
         event_to_fed = ConvertToFedEvent(
             events_to_convert=["analytix_log_stats"],
             fed_event_prefix="fed.",
         )
-        self.job.to(event_to_fed, site_name, id="event_to_fed")
+        job.to_clients(event_to_fed, id="event_to_fed")
 
-        return self
+        # Add per-site data loaders if configured
+        if self.per_site_config:
+            for site_name, site_config in self.per_site_config.items():
+                data_loader = site_config.get("data_loader")
+                if data_loader is None:
+                    raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+                job.to(data_loader, site_name, id=self.data_loader_id)
+
+        return job

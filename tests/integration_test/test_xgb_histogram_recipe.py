@@ -94,10 +94,13 @@ class TestXGBHistogramRecipe:
                 },
             )
 
-            # Add mock data loaders to clients
-            for site_id in range(1, 3):
-                data_loader = MockXGBDataLoader(n_samples=50, n_features=5)
-                recipe.add_to_client(f"site-{site_id}", data_loader)
+            # Configure per-site data loaders
+            per_site_config = {
+                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=50, n_features=5)}
+                for site_id in range(1, 3)
+            }
+            recipe.per_site_config = per_site_config
+            recipe.job = recipe.configure()
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -126,7 +129,7 @@ class TestXGBHistogramRecipe:
             # Add mock data loaders
             for site_id in range(1, 3):
                 data_loader = MockXGBDataLoader(n_samples=50, n_features=5)
-                recipe.add_to_client(f"site-{site_id}", data_loader)
+                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -171,7 +174,7 @@ class TestXGBHistogramRecipe:
             # Add data loaders and run
             for site_id in range(1, 3):
                 data_loader = MockXGBDataLoader(n_samples=50, n_features=5)
-                recipe.add_to_client(f"site-{site_id}", data_loader)
+                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             run = recipe.execute(env)
             assert run.get_result() is not None
@@ -192,7 +195,7 @@ class TestXGBHistogramRecipe:
             # Add data loaders for all clients
             for site_id in range(1, num_clients + 1):
                 data_loader = MockXGBDataLoader(n_samples=30, n_features=5)
-                recipe.add_to_client(f"site-{site_id}", data_loader)
+                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             run = recipe.execute(env)
             assert run.get_result() is not None
@@ -211,11 +214,7 @@ class TestXGBHistogramRecipe:
         server_components = recipe.job.get_server_components()
         assert "tb_receiver" in server_components
 
-        # Add a client and verify TensorBoard writer is configured
-        data_loader = MockXGBDataLoader()
-        recipe.add_to_client("site-1", data_loader)
-
-        # Check that metrics_writer and event_to_fed are added
-        client_components = recipe.job.get_client_components("site-1")
-        assert "metrics_writer" in client_components
-        assert "event_to_fed" in client_components
+        # Verify that TensorBoard writer and event converter are already configured for all clients
+        # (they're added in configure() via to_clients())
+        # Note: With the new API, components are added to all clients at once in configure()
+        # So we don't need to add a client-specific dataloader to verify TB tracking

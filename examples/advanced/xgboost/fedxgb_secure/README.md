@@ -119,6 +119,15 @@ This example now uses the **Recipe API** for simplified job configuration. The R
 - Built-in support for secure training via `secure=True` parameter
 - Cleaner, more maintainable code
 
+**Important Note for Secure Training:**
+When using `secure=True` for Homomorphic Encryption, you **must** provide `client_ranks`:
+```python
+# Generate client ranks: maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, num_clients + 1)}
+
+recipe = XGBHistogramRecipe(..., secure=True, client_ranks=client_ranks)
+```
+
 For more details on the Recipe API, see the [Recipe API documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
 
 ### Running Experiments
@@ -146,6 +155,16 @@ from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.recipe import SimEnv
 
+# Generate client ranks (required for secure training)
+# Maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, 4)}
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for i in range(1, 4):
+    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data")
+    per_site_config[f"site-{i}"] = {"data_loader": dataloader}
+
 # Create vertical XGBoost recipe with secure training
 recipe = XGBVerticalRecipe(
     name="vertical_secure",
@@ -153,18 +172,15 @@ recipe = XGBVerticalRecipe(
     num_rounds=3,
     label_owner="site-1",
     secure=True,  # Enable Homomorphic Encryption
+    client_ranks=client_ranks,  # Required when secure=True
     xgb_params={
         "max_depth": 3,
         "eta": 0.1,
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
+    per_site_config=per_site_config,
 )
-
-# Add data loaders to clients
-for i in range(1, 4):
-    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data")
-    recipe.add_to_client(f"site-{i}", dataloader)
 
 # Run simulation
 env = SimEnv(num_clients=3)
@@ -191,6 +207,16 @@ from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.recipe import SimEnv
 
+# Generate client ranks (required for secure training)
+# Maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, 4)}
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for i in range(1, 4):
+    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data")
+    per_site_config[f"site-{i}"] = {"data_loader": dataloader}
+
 # Create horizontal XGBoost recipe with secure training
 recipe = XGBHistogramRecipe(
     name="horizontal_secure",
@@ -198,18 +224,15 @@ recipe = XGBHistogramRecipe(
     num_rounds=3,
     algorithm="histogram_v2",
     secure=True,  # Enable Homomorphic Encryption
+    client_ranks=client_ranks,  # Required when secure=True
     xgb_params={
         "max_depth": 3,
         "eta": 0.1,
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
+    per_site_config=per_site_config,
 )
-
-# Add data loaders to clients
-for i in range(1, 4):
-    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data")
-    recipe.add_to_client(f"site-{i}", dataloader)
 
 # Export job (simulator run requires additional context setup for secure horizontal)
 env = SimEnv(num_clients=3)

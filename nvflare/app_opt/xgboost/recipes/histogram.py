@@ -71,23 +71,27 @@ class XGBHistogramRecipe(Recipe):
         use_gpus (bool, optional): Whether to use GPUs for training. Default is False.
         secure (bool, optional): Enable secure training with Homomorphic Encryption (HE). Default is False.
             Requires encryption plugins to be installed and configured.
+            When secure=True, client_ranks must be provided.
         client_ranks (dict, optional): Mapping of client names to ranks for secure training.
-            If None, auto-generates ranks (e.g., {"site-1": 0, "site-2": 1, ...}).
-            Only used when secure=True.
+            Required when secure=True. Maps each client name to a unique rank (0-indexed).
+            Example: {"site-1": 0, "site-2": 1, "site-3": 2}.
         xgb_params (dict, optional): XGBoost parameters passed to xgboost.train(). If None, uses default params.
             Default params: max_depth=8, eta=0.1, objective='binary:logistic', eval_metric='auc',
             tree_method='hist', nthread=16.
         data_loader_id (str, optional): ID of the data loader component. Default is 'dataloader'.
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
+        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
+            Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
 
     Example:
         .. code-block:: python
 
             from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
-            from nvflare.app_opt.xgboost.higgs_data_loader import HIGGSDataLoader
+            from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
             from nvflare.recipe import SimEnv
 
-            # Create recipe
+            # Create recipe with per-site data loaders
             recipe = XGBHistogramRecipe(
                 name="xgb_higgs_histogram",
                 min_clients=2,
@@ -99,14 +103,11 @@ class XGBHistogramRecipe(Recipe):
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
+                per_site_config={
+                    "site-1": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
+                    "site-2": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
+                },
             )
-
-            # Add data loaders to clients
-            for i in range(1, 3):
-                data_loader = HIGGSDataLoader(
-                    data_split_filename=f"/tmp/data/site-{i}.json"
-                )
-                recipe.add_to_client(f"site-{i}", data_loader)
 
             # Run simulation
             env = SimEnv()
@@ -114,8 +115,9 @@ class XGBHistogramRecipe(Recipe):
 
     Note:
         - 'histogram_v2' is the recommended algorithm (newer and more stable).
-        - Clients must be added using add_to_client() after recipe creation.
+        - Data loaders must be configured via per_site_config parameter.
         - TensorBoard tracking is automatically configured for both server and clients.
+        - Executor and metrics components are automatically added to all clients.
     """
 
     def __init__(
@@ -131,6 +133,7 @@ class XGBHistogramRecipe(Recipe):
         xgb_params: Optional[dict] = None,
         data_loader_id: str = "dataloader",
         metrics_writer_id: str = "metrics_writer",
+        per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Set default XGBoost params if not provided
         if xgb_params is None:
@@ -142,10 +145,6 @@ class XGBHistogramRecipe(Recipe):
                 "tree_method": "hist",
                 "nthread": 16,
             }
-
-        # Auto-generate client ranks if not provided and secure=True
-        if secure and client_ranks is None:
-            client_ranks = {f"site-{i}": i - 1 for i in range(1, min_clients + 1)}
 
         # Validate inputs internally
         v = _XGBHistogramValidator(
@@ -173,6 +172,7 @@ class XGBHistogramRecipe(Recipe):
         self.xgb_params = v.xgb_params
         self.data_loader_id = v.data_loader_id
         self.metrics_writer_id = v.metrics_writer_id
+        self.per_site_config = per_site_config
 
         # Configure the job
         self.job = self.configure()
@@ -192,16 +192,16 @@ class XGBHistogramRecipe(Recipe):
             controller = XGBFedController()
             job.to_server(controller, id="xgb_controller")
 
-            # Note: Executor will be added per-client in add_to_client()
-            self._executor_class = FedXGBHistogramExecutor
-            self._executor_params = {
-                "data_loader_id": self.data_loader_id,
-                "num_rounds": self.num_rounds,
-                "early_stopping_rounds": self.early_stopping_rounds,
-                "xgb_params": self.xgb_params,
-                "metrics_writer_id": self.metrics_writer_id,
-                "use_gpus": self.use_gpus,
-            }
+            # Add executor to all clients
+            executor = FedXGBHistogramExecutor(
+                data_loader_id=self.data_loader_id,
+                num_rounds=self.num_rounds,
+                early_stopping_rounds=self.early_stopping_rounds,
+                xgb_params=self.xgb_params,
+                metrics_writer_id=self.metrics_writer_id,
+                use_gpus=self.use_gpus,
+            )
+            job.to_clients(executor, id="xgb_executor")
 
         elif self.algorithm == "histogram_v2":
             # Newer histogram-based implementation (recommended)
@@ -224,16 +224,16 @@ class XGBHistogramRecipe(Recipe):
             controller = XGBFedController(**controller_kwargs)
             job.to_server(controller, id="xgb_controller")
 
-            # Note: Executor will be added per-client in add_to_client()
-            self._executor_class = FedXGBHistogramExecutor
-            self._executor_params = {
+            # Add executor to all clients
+            executor_params = {
                 "data_loader_id": self.data_loader_id,
                 "metrics_writer_id": self.metrics_writer_id,
             }
-
-            # Add in_process flag if secure training is enabled
             if self.secure:
-                self._executor_params["in_process"] = True
+                executor_params["in_process"] = True
+
+            executor = FedXGBHistogramExecutor(**executor_params)
+            job.to_clients(executor, id="xgb_executor")
 
         # Add TensorBoard receiver to server
         from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
@@ -241,38 +241,25 @@ class XGBHistogramRecipe(Recipe):
         tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
         job.to_server(tb_receiver, id="tb_receiver")
 
-        return job
-
-    def add_to_client(self, site_name: str, dataloader):
-        """Add executor, dataloader, and tracking components to a specific client site.
-
-        Args:
-            site_name: Name of the client site (e.g., 'site-1')
-            dataloader: XGBDataLoader instance for this client
-
-        Returns:
-            self: Returns self for method chaining
-        """
-        # Add executor
-        executor = self._executor_class(**self._executor_params)
-        self.job.to(executor, site_name)
-
-        # Add dataloader
-        self.job.to(dataloader, site_name, id=self.data_loader_id)
-
-        # Add TensorBoard writer
+        # Add TensorBoard writer and event converter to all clients
+        from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
         from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 
         metrics_writer = TBWriter(event_type="analytix_log_stats")
-        self.job.to(metrics_writer, site_name, id=self.metrics_writer_id)
-
-        # Add event converter to federate events
-        from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+        job.to_clients(metrics_writer, id=self.metrics_writer_id)
 
         event_to_fed = ConvertToFedEvent(
             events_to_convert=["analytix_log_stats"],
             fed_event_prefix="fed.",
         )
-        self.job.to(event_to_fed, site_name, id="event_to_fed")
+        job.to_clients(event_to_fed, id="event_to_fed")
 
-        return self
+        # Add per-site data loaders if configured
+        if self.per_site_config:
+            for site_name, site_config in self.per_site_config.items():
+                data_loader = site_config.get("data_loader")
+                if data_loader is None:
+                    raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+                job.to(data_loader, site_name, id=self.data_loader_id)
+
+        return job

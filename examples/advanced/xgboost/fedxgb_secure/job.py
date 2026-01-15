@@ -69,6 +69,21 @@ def main():
         "nthread": args.nthread,
     }
 
+    # Generate client ranks if secure training is enabled
+    # Maps client names to ranks (0-indexed)
+    client_ranks = None
+    if args.secure:
+        client_ranks = {f"site-{i}": i - 1 for i in range(1, args.site_num + 1)}
+
+    # Build per-site configuration with data loaders
+    # Note: CSVDataLoader automatically handles client-specific data loading.
+    # Each client loads from {dataset_path}/{client_id}/ at runtime
+    per_site_config = {}
+    for i in range(1, args.site_num + 1):
+        site_name = f"site-{i}"
+        dataloader = CSVDataLoader(folder=dataset_path)
+        per_site_config[site_name] = {"data_loader": dataloader}
+
     # Create recipe based on data split mode
     if args.data_split_mode == "horizontal":
         # Horizontal histogram-based XGBoost
@@ -80,22 +95,16 @@ def main():
             early_stopping_rounds=3,
             use_gpus=False,
             secure=args.secure,
+            client_ranks=client_ranks,
             xgb_params=xgb_params,
+            per_site_config=per_site_config,
         )
-
-        # Add data loaders to each client
-        # Note: CSVDataLoader automatically handles client-specific data loading.
-        # Even though we pass the same folder path, each client will load its own data
-        # from {dataset_path}/{client_id}/ at runtime (e.g., site-1 loads from site-1/ subdirectory)
-        for i in range(1, args.site_num + 1):
-            dataloader = CSVDataLoader(folder=dataset_path)
-            recipe.add_to_client(f"site-{i}", dataloader)
 
     else:  # vertical
         # Vertical histogram-based XGBoost
-        # Generate client ranks for secure training
-        client_ranks = {f"site-{i}": i - 1 for i in range(1, args.site_num + 1)}
-
+        # For vertical mode, each client loads different feature columns:
+        # - site-1 (rank 0): loads features + labels from {dataset_path}/site-1/
+        # - site-2, site-3: load different features (no labels) from their respective subdirectories
         recipe = XGBVerticalRecipe(
             name=job_name,
             min_clients=args.site_num,
@@ -104,18 +113,10 @@ def main():
             early_stopping_rounds=3,
             use_gpus=False,
             secure=args.secure,
-            client_ranks=client_ranks if args.secure else None,
+            client_ranks=client_ranks,
             xgb_params=xgb_params,
+            per_site_config=per_site_config,
         )
-
-        # Add data loaders to each client
-        # Note: CSVDataLoader automatically handles client-specific data loading.
-        # For vertical mode, each client loads different feature columns from its subdirectory:
-        # - site-1 (rank 0): loads features + labels from {dataset_path}/site-1/
-        # - site-2, site-3: load different features (no labels) from their respective subdirectories
-        for i in range(1, args.site_num + 1):
-            dataloader = CSVDataLoader(folder=dataset_path)
-            recipe.add_to_client(f"site-{i}", dataloader)
 
     # Export and run
     env = SimEnv(num_clients=args.site_num)

@@ -16,7 +16,7 @@ import argparse
 
 from higgs_data_loader import HIGGSDataLoader
 
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -28,14 +28,19 @@ def define_parser():
         default="/tmp/nvflare/dataset/xgboost_higgs",
         help="Path to dataset files for each site",
     )
-    parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
-    parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
+    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument(
+        "--round_num",
+        type=int,
+        default=None,
+        help="Total number of training rounds (default: 1 for bagging, 100 for cyclic)",
+    )
     parser.add_argument(
         "--training_algo",
         type=str,
-        default="histogram_v2",
-        choices=["histogram", "histogram_v2"],
-        help="Training algorithm (histogram or histogram_v2)",
+        default="bagging",
+        choices=["bagging", "cyclic"],
+        help="Training algorithm (bagging or cyclic)",
     )
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
@@ -53,14 +58,22 @@ def define_parser():
     parser.add_argument("--eta", type=float, default=0.1, help="learning rate (eta) for xgboost")
     parser.add_argument("--objective", type=str, default="binary:logistic", help="objective for xgboost")
     parser.add_argument("--eval_metric", type=str, default="auc", help="eval_metric for xgboost")
-    parser.add_argument("--early_stopping_rounds", type=int, default=2, help="early stopping rounds")
     parser.add_argument("--use_gpus", action="store_true", help="use GPUs for training")
+    parser.add_argument(
+        "--lr_mode",
+        type=str,
+        default="uniform",
+        choices=["uniform", "scaled"],
+        help="learning rate mode (uniform or scaled)",
+    )
+    parser.add_argument("--num_local_parallel_tree", type=int, default=5, help="number of parallel trees per client")
+    parser.add_argument("--local_subsample", type=float, default=0.8, help="subsample ratio for local training")
 
     return parser.parse_args()
 
 
 def _get_job_name(args) -> str:
-    return f"higgs_{args.site_num}_{args.training_algo}_{args.split_method}_split"
+    return f"higgs_{args.site_num}_{args.training_algo}_{args.split_method}_split_{args.lr_mode}"
 
 
 def _get_data_path(args) -> str:
@@ -72,32 +85,39 @@ def main():
     job_name = _get_job_name(args)
     dataset_path = _get_data_path(args)
 
-    # XGBoost parameters
-    xgb_params = {
-        "max_depth": args.max_depth,
-        "eta": args.eta,
-        "objective": args.objective,
-        "eval_metric": args.eval_metric,
-        "tree_method": args.tree_method,
-        "nthread": args.nthread,
-    }
-
     # Build per-site configuration with data loaders
     per_site_config = {}
     for site_id in range(1, args.site_num + 1):
         site_name = f"site-{site_id}"
         data_loader = HIGGSDataLoader(data_split_filename=f"{dataset_path}/data_site-{site_id}.json")
-        per_site_config[site_name] = {"data_loader": data_loader}
+
+        site_config = {"data_loader": data_loader}
+
+        # For scaled lr_mode, add custom learning rate scale based on data size
+        if args.lr_mode == "scaled":
+            # In a real scenario, you'd calculate lr_scale based on actual data size
+            # For now, we use a simple formula based on site_num
+            lr_scale = 1.0 / args.site_num
+            site_config["lr_scale"] = lr_scale
+
+        per_site_config[site_name] = site_config
 
     # Create recipe
-    recipe = XGBHistogramRecipe(
+    recipe = XGBBaggingRecipe(
         name=job_name,
         min_clients=args.site_num,
-        num_rounds=args.round_num,
-        algorithm=args.training_algo,
-        early_stopping_rounds=args.early_stopping_rounds,
+        training_mode=args.training_algo,
+        num_rounds=args.round_num,  # Will default based on training_mode if None
+        num_local_parallel_tree=args.num_local_parallel_tree,
+        local_subsample=args.local_subsample,
+        learning_rate=args.eta,
+        objective=args.objective,
+        max_depth=args.max_depth,
+        eval_metric=args.eval_metric,
+        tree_method=args.tree_method,
         use_gpus=args.use_gpus,
-        xgb_params=xgb_params,
+        nthread=args.nthread,
+        lr_mode=args.lr_mode,
         per_site_config=per_site_config,
     )
 

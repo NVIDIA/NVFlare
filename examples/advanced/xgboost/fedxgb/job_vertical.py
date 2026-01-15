@@ -17,12 +17,8 @@ import argparse
 from local_psi import LocalPSI
 from vertical_data_loader import VerticalDataLoader
 
-from nvflare.app_common.psi.dh_psi.dh_psi_controller import DhPSIController
-from nvflare.app_common.psi.file_psi_writer import FilePSIWriter
-from nvflare.app_common.psi.psi_executor import PSIExecutor
-from nvflare.app_opt.psi.dh_psi.dh_psi_task_handler import DhPSITaskHandler
+from nvflare.app_common.psi.recipes.dh_psi import DhPSIRecipe
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
-from nvflare.job_config.api import FedJob
 from nvflare.recipe import SimEnv
 
 
@@ -66,38 +62,26 @@ def run_psi_job(args):
     print("STEP 1: Running PSI Job to compute sample intersection")
     print("=" * 80 + "\n")
 
-    job_name = "xgboost_vertical_psi"
-    job = FedJob(name=job_name, min_clients=args.site_num)
-
-    # PSI Controller
-    controller = DhPSIController()
-    job.to_server(controller)
-
-    # PSI Executor
-    executor = PSIExecutor(psi_algo_id="dh_psi")
-    job.to_clients(executor, id="psi_executor", tasks=["PSI"])
-
-    # Local PSI handler
-    # Note: LocalPSI automatically handles client-specific data loading.
+    # Local PSI component handles client-specific data loading.
     # The data_split_path uses "site-x" as a placeholder, which is replaced with the actual
     # client_id (e.g., "site-1", "site-2") at runtime by the LocalPSI.load_items() method.
     local_psi = LocalPSI(psi_writer_id="psi_writer", data_split_path=args.data_split_path, id_col=args.id_col)
-    job.to_clients(local_psi, id="local_psi")
 
-    # PSI task handler
-    task_handler = DhPSITaskHandler(local_psi_id="local_psi")
-    job.to_clients(task_handler, id="dh_psi")
-
-    # PSI writer
-    psi_writer = FilePSIWriter(output_path=args.psi_output_path)
-    job.to_clients(psi_writer, id="psi_writer")
+    # Use DhPSIRecipe to create the PSI job
+    recipe = DhPSIRecipe(
+        name="xgboost_vertical_psi",
+        min_clients=args.site_num,
+        local_psi=local_psi,
+        output_path=args.psi_output_path,
+    )
 
     # Run PSI job
     env = SimEnv()
-    env.run(job, work_dir=f"/tmp/nvflare/workspace/works/{job_name}")
+    run = recipe.execute(env)
 
     print("\n" + "=" * 80)
     print(f"PSI Complete! Intersection files saved to: {args.psi_output_path}")
+    print(f"Job Status: {run.get_status()}")
     print("=" * 80 + "\n")
 
 
@@ -120,20 +104,9 @@ def run_training_job(args):
         "nthread": args.nthread,
     }
 
-    # Create vertical XGBoost recipe
-    recipe = XGBVerticalRecipe(
-        name="xgboost_vertical",
-        min_clients=args.site_num,
-        num_rounds=args.round_num,
-        label_owner=args.label_owner,
-        early_stopping_rounds=args.early_stopping_rounds,
-        xgb_params=xgb_params,
-    )
-
-    # Add data loaders to each client
-    # Note: VerticalDataLoader handles client-specific data loading.
-    # The {SITE_NAME} placeholder in paths is replaced with the actual site name (e.g., "site-1")
-    # so each client loads from its own directory with its specific feature columns.
+    # Build per-site configuration with data loaders
+    # Note: Each site has different feature columns but the same sample IDs (aligned via PSI)
+    per_site_config = {}
     for site_id in range(1, args.site_num + 1):
         site_name = f"site-{site_id}"
         data_loader = VerticalDataLoader(
@@ -143,7 +116,18 @@ def run_training_job(args):
             label_owner=args.label_owner,
             train_proportion=args.train_proportion,
         )
-        recipe.add_to_client(site_name, data_loader)
+        per_site_config[site_name] = {"data_loader": data_loader}
+
+    # Create vertical XGBoost recipe
+    recipe = XGBVerticalRecipe(
+        name="xgboost_vertical",
+        min_clients=args.site_num,
+        num_rounds=args.round_num,
+        label_owner=args.label_owner,
+        early_stopping_rounds=args.early_stopping_rounds,
+        xgb_params=xgb_params,
+        per_site_config=per_site_config,
+    )
 
     # Run training
     env = SimEnv()
