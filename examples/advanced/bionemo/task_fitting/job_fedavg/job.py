@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,17 +13,17 @@
 # limitations under the License.
 
 """
-Federated MLP Training using FedAvgRecipe
+Federated MLP Training using FedAvgRecipe with PyTorch
 
-This script replaces the ModelLearner-based approach in task_fitting.ipynb with FedAvgRecipe.
+This script uses PyTorch-based federated learning to train an MLP classifier 
+on protein embeddings for subcellular location prediction.
 Run this after inference to train an MLP classifier on the embeddings.
 """
 
 import os
 
-from nvflare.app_common.np.recipes.fedavg import (  # we use the Numpy version of FedAvgRecipe here as the training is implemented with sklearn
-    NumpyFedAvgRecipe,
-)
+from model import ProteinMLP, CLASS_LABELS
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
@@ -32,7 +32,7 @@ n_clients = 3
 data_root = "/tmp/data/mixed_soft"
 results_path = "/tmp/data/mixed_soft/results"
 split_alpha = 1.0
-embedding_dimensions = 320  # embedding dimensions of ESM2-8m
+embedding_dimensions = 1280  # embedding dimensions of ESM2-650m (use 320 for ESM2-8m)
 
 # Set environment variable for local vs federated training
 training_mode = input("Training mode (local/fedavg): ").strip().lower()
@@ -46,11 +46,25 @@ else:
     print("Running FEDERATED training...")
 
 # Build script arguments for MLP training
-script_args = f"--data-root {data_root} --results-path {results_path} --aggregation-epochs 4 --lr 1e-5 --batch-size 128 --embedding-dimensions {embedding_dimensions}"
+script_args = (
+    f"--data-root {data_root} "
+    f"--results-path {results_path} "
+    f"--aggregation-epochs 20 "
+    f"--lr 1e-5 "
+    f"--batch-size 128 "
+    f"--embedding-dimensions {embedding_dimensions}"
+)
 
 # Create FedAvgRecipe for MLP training
-recipe = NumpyFedAvgRecipe(
-    name=job_name, min_clients=n_clients, num_rounds=100, train_script="client.py", train_args=script_args
+print(f"Creating initial model with {len(CLASS_LABELS)} classes")
+
+recipe = FedAvgRecipe(
+    name=job_name,
+    min_clients=n_clients,
+    num_rounds=50,
+    initial_model=ProteinMLP(input_dim=embedding_dimensions, num_classes=len(CLASS_LABELS)),
+    train_script="client.py",
+    train_args=script_args,
 )
 
 # Enable TensorBoard tracking
@@ -60,7 +74,7 @@ add_experiment_tracking(recipe, "tensorboard")
 env = SimEnv(
     num_clients=n_clients,
     workspace_root=f"/tmp/nvflare/bionemo/{job_name}_alpha{split_alpha}",
-    num_threads=n_clients,  # MLP is lightweight, can run in parallel
+    num_threads=n_clients,  # MLP training can run in parallel
 )
 run = recipe.execute(env)
 print()
