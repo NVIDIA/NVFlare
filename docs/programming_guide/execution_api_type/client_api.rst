@@ -424,13 +424,6 @@ For complete working examples of using Client API with Job Recipes across differ
 For progressive learning, explore the :ref:`self_paced_training` materials,
 which cover different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) with comprehensive tutorials and examples.
 
-Each example includes:
-
-* Complete source code with ``job.py`` and ``client.py``
-* README with setup instructions
-* Requirements file for dependencies
-* Comments explaining key concepts
-
 
 Custom Data Class Serialization/Deserialization
 ===============================================
