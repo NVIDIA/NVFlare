@@ -52,6 +52,10 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
+        launch_once: Whether the external process will be launched only once at the beginning
+            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
 
     Example:
         Basic usage with same config for all clients:
@@ -121,6 +125,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
     ):
         # Create sklearn-specific persistor
         persistor = JoblibModelParamPersistor(initial_params=model_params or {})
@@ -141,4 +147,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=TransferType.FULL,
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
         )

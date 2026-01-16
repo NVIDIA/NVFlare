@@ -46,6 +46,8 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     analytics_receiver: Optional[AnalyticsReceiver] = None
+    launch_once: bool = True
+    shutdown_timeout: float = 0.0
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -82,6 +84,11 @@ class NumpyFedAvgRecipe(Recipe):
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
             MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
             Use `add_experiment_tracking()` utility function to easily add tracking.
+        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        launch_once: Whether the external process will be launched only once at the beginning
+            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
 
     Example:
         ```python
@@ -120,6 +127,8 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -136,6 +145,8 @@ class NumpyFedAvgRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             analytics_receiver=analytics_receiver,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
         )
 
         self.name = v.name
@@ -155,6 +166,8 @@ class NumpyFedAvgRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.analytics_receiver = v.analytics_receiver
+        self.launch_once = v.launch_once
+        self.shutdown_timeout = v.shutdown_timeout
 
         # Create BaseFedJob (provides ConvertToFedEvent for experiment tracking)
         job = BaseFedJob(
@@ -203,6 +216,8 @@ class NumpyFedAvgRecipe(Recipe):
             framework=FrameworkType.NUMPY,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            launch_once=self.launch_once,
+            shutdown_timeout=self.shutdown_timeout,
         )
         job.to_clients(executor)
 
