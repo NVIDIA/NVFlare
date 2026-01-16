@@ -253,7 +253,7 @@ View training metrics and privacy budget in TensorBoard:
 
    tensorboard --logdir /tmp/nvflare/simulation/hello-dp
 
-Open ``http://localhost:6006`` to see:
+Open http\://localhost:6006 to see:
 
 - Training loss over time
 - **Accuracy** and **F1 Score** (fraud detection metrics)
