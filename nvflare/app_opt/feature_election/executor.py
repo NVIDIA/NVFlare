@@ -167,11 +167,22 @@ class FeatureElectionExecutor(Executor):
     def _handle_apply_mask(self, shareable: Shareable) -> Shareable:
         try:
             mask = np.array(shareable.get("global_feature_mask"), dtype=bool)
+            
+            # Validate mask length
+            if len(mask) != self.X_train.shape[1]:
+                logger.error(
+                    f"Mask length ({len(mask)}) doesn't match number of features ({self.X_train.shape[1]})"
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            
             logger.info(f"Permanently applying mask: {np.sum(mask)} features selected")
 
             self.X_train = self.X_train[:, mask]
             self.X_val = self.X_val[:, mask]
             return make_reply(ReturnCode.OK)
+        except Exception as e:
+            logger.error(f"Mask application failed: {e}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         except Exception as e:
             logger.error(f"Mask application failed: {e}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
