@@ -181,9 +181,6 @@ class FeatureElectionExecutor(Executor):
         except Exception as e:
             logger.error(f"Mask application failed: {e}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        except Exception as e:
-            logger.error(f"Mask application failed: {e}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def _handle_train(self, shareable: Shareable) -> Shareable:
         try:
