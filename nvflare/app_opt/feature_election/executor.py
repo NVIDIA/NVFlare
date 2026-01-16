@@ -182,7 +182,6 @@ class FeatureElectionExecutor(Executor):
             X_tr = scaler.fit_transform(self.X_train)
 
             # Initialize model if not yet fitted (first round)
-            # Initialize model if not yet fitted (first round)
             if not hasattr(self.model, "coef_"):
                 # Use a small batch for initialization to avoid single-sample issues
                 init_size = min(10, len(X_tr))
