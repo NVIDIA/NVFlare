@@ -285,7 +285,8 @@ class FeatureElectionController(Controller):
     def _aggregate_weights(self, results: Dict[str, Shareable]):
         """FedAvg-style weight aggregation"""
         total_samples = 0
-        weighted_weights = None
+        total_samples = 0
+        weighted_weights = {}
 
         for shareable in results.values():
             if "params" not in shareable:
@@ -293,6 +294,9 @@ class FeatureElectionController(Controller):
             n = shareable.get("num_samples", 1)
             weights = shareable.get("params")
             if weights is not None:
+                # Initialize weighted_weights from first valid weights
+                if not weighted_weights:
+                    weighted_weights = {k: np.zeros_like(np.array(v)) for k, v in weights.items()}
                 for k, v in weights.items():
                     # Ensure v is a numpy array before operations
                     v_array = np.array(v)
