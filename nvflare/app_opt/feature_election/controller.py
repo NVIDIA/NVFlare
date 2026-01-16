@@ -285,7 +285,6 @@ class FeatureElectionController(Controller):
     def _aggregate_weights(self, results: Dict[str, Shareable]):
         """FedAvg-style weight aggregation"""
         total_samples = 0
-        total_samples = 0
         weighted_weights = {}
 
         for shareable in results.values():
