@@ -168,8 +168,6 @@ Start the MLflow server with one of the following commands:
 
   mlflow ui -port 5000
 
-For more information with an example walkthrough, see the :github_nvflare_link:`FedAvg with SAG with MLflow tutorial <examples/hello-world/step-by-step/cifar10/sag_mlflow/sag_mlflow.ipynb>`.
-
 
 Streaming metrics to FL clients
 ===============================

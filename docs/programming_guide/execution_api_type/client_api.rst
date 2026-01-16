@@ -197,8 +197,6 @@ For examples of using Client API with different frameworks, please refer to:
 - TensorFlow: :ref:`hello_tf`
 - HuggingFace: :github_nvflare_link:`llm_hf <examples/llm_hf>`
 
-For additional examples, also take a look at the
-:github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`.
 
 
 Custom Data Class Serialization/Deserialization
