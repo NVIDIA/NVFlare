@@ -111,6 +111,7 @@ recipe = FedAvgRecipe(
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
     per_site_config=per_site_config,  # Site-specific configurations
+    key_metric="neg_eval_loss",
 )
 ```
 
