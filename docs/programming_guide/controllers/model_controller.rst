@@ -266,5 +266,4 @@ Advanced examples:
 * :github_nvflare_link:`FedOpt <nvflare/app_opt/pt/fedopt_ctl.py>`
 * :github_nvflare_link:`PTFedAvgEarlyStopping <nvflare/app_opt/pt/fedavg_early_stopping.py>`
 * :github_nvflare_link:`Kaplan-Meier <examples/advanced/kaplan-meier-he/src/kaplan_meier_wf_he.py>`
-* :github_nvflare_link:`Logistic Regression Newton Raphson <examples/advanced/lr-newton-raphson/job/newton_raphson/app/custom/newton_raphson_workflow.py>`
 * :github_nvflare_link:`FedBPT <research/fed-bpt/src/global_es.py>`
