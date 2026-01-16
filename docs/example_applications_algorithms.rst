@@ -128,6 +128,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 ==========================
 
   * :github_nvflare_link:`Financial Application with Federated XGBoost Methods <examples/advanced/finance>` Example using XGBoost in various ways to train a federated model to perform fraud detection with a finance dataset.
+  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
 
 Setting up a virtual environment for examples and notebooks

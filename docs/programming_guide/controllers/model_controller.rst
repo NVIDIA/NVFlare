@@ -264,6 +264,5 @@ Advanced examples:
 
 * :github_nvflare_link:`Scaffold <nvflare/app_common/workflows/scaffold.py>`
 * :github_nvflare_link:`FedOpt <nvflare/app_opt/pt/fedopt_ctl.py>`
-* :github_nvflare_link:`PTFedAvgEarlyStopping <nvflare/app_opt/pt/fedavg_early_stopping.py>`
 * :github_nvflare_link:`Kaplan-Meier <examples/advanced/kaplan-meier-he/server_he.py>`
 * :github_nvflare_link:`FedBPT <research/fed-bpt/src/global_es.py>`
