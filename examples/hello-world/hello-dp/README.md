@@ -159,15 +159,6 @@ while flare.is_running():
     # Check cumulative privacy budget spent
     epsilon = privacy_engine.get_epsilon(args.target_delta)
     print(f"Cumulative privacy spent: (ε = {epsilon:.2f}, δ = {args.target_delta})")
-    
-    # Send model back (extract clean params without "_module." prefix)
-    model_state = model.cpu().state_dict()
-    clean_params = {k.replace("_module.", ""): v for k, v in model_state.items()}
-    output_model = flare.FLModel(
-        params=clean_params,
-        metrics={"accuracy": accuracy, "f1_score": f1_score, "privacy_epsilon": epsilon}
-    )
-    flare.send(output_model)
 ```
 
 The `PrivacyEngine.make_private_with_epsilon()` method:
