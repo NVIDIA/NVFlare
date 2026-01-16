@@ -226,11 +226,15 @@ class FeatureElection:
             for k in range(n_classes):
                 idx_k = np.where(y_encoded == k)[0]
                 np.random.shuffle(idx_k)
-                proportions = (label_distribution[k] * len(idx_k)).astype(int)[:-1]
-                splits = np.split(idx_k, np.cumsum(proportions))
-                for i in range(num_clients):
-                    if i < len(splits):
-                        client_indices[i].extend(splits[i])
+                proportions = (label_distribution[k] * len(idx_k)).astype(int)
+                # Ensure all samples are distributed and last client gets remainder
+                total_assigned = proportions[:-1].sum()
+                proportions[-1] = max(0, len(idx_k) - total_assigned)
+                
+                start = 0
+                for i, prop in enumerate(proportions):
+                    client_indices[i].extend(idx_k[start : start + prop])
+                    start += prop
 
             for indices_i in client_indices:
                 client_data.append((X.iloc[indices_i], y.iloc[indices_i]))
