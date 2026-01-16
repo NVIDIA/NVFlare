@@ -111,12 +111,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 
   * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
-11. FL Hierarchical Unification Bridge (HUB)
-============================================
-
-  * :github_nvflare_link:`FL HUB <examples/advanced/fl_hub>` - Example for FL HUB allowing hierarchical interaction between several levels of FLARE FL systems.
-
-12. Federated Large Language Model (LLM)
+11. Federated Large Language Model (LLM)
 ========================================
 
   * :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` - Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
@@ -125,13 +120,13 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` - Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 
 
-13. Graph Neural Network (GNN)
+12. Graph Neural Network (GNN)
 ==============================
 
   * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
   * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
-14. Financial Applications
+13. Financial Applications
 ==========================
 
   * :github_nvflare_link:`Financial Application with Federated XGBoost Methods <examples/advanced/finance>` Example using XGBoost in various ways to train a federated model to perform fraud detection with a finance dataset.
