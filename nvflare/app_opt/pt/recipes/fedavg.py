@@ -113,6 +113,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Also supports: "mlflow", "wandb"
         ```
 
+        Using launch_once=False to restart the external process for each task:
+
+        ```python
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            train_args="--epochs 5 --batch_size 32",
+            launch_external_process=True,
+            launch_once=False,  # Process will restart for each task
+            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
+        )
+        ```
+
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
         are aggregated using weighted averaging based on the number of training
