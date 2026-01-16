@@ -18,29 +18,28 @@ PyTorch-based federated learning client for MLP training on protein embeddings
 import argparse
 import os
 
-import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from model import CLASS_LABELS, ProteinMLP
 from torch.utils.data import DataLoader, TensorDataset
 
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
-from model import CLASS_LABELS, ProteinMLP
 
 
 def evaluate_model(model, data_loader, criterion, device, compute_loss=True):
     """
     Evaluate model on given data loader.
-    
+
     Args:
         model: PyTorch model to evaluate
         data_loader: DataLoader containing evaluation data
         criterion: Loss function
         device: Device to run evaluation on
         compute_loss: Whether to compute and return loss (default: True)
-    
+
     Returns:
         tuple: (accuracy, avg_loss) if compute_loss=True, else (accuracy, None)
     """
@@ -48,23 +47,23 @@ def evaluate_model(model, data_loader, criterion, device, compute_loss=True):
     correct = 0
     total = 0
     total_loss = 0.0
-    
+
     with torch.no_grad():
         for inputs, targets in data_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
-            
+
             if compute_loss:
                 loss = criterion(outputs, targets)
                 total_loss += loss.item()
-            
+
             _, predicted = torch.max(outputs.data, 1)
             total += targets.size(0)
             correct += (predicted == targets).sum().item()
-    
+
     accuracy = correct / total
     avg_loss = total_loss / len(data_loader) if compute_loss else None
-    
+
     return accuracy, avg_loss
 
 
@@ -99,9 +98,7 @@ def main():
 
     # Construct paths
     data_path = os.path.join(args.data_root, f"data_{site_name}.csv")
-    inference_result_path = os.path.join(
-        args.results_path, f"inference_results_{site_name}", "predictions__rank_0.pt"
-    )
+    inference_result_path = os.path.join(args.results_path, f"inference_results_{site_name}", "predictions__rank_0.pt")
 
     # Read embeddings
     try:
@@ -135,7 +132,7 @@ def main():
     for index, row in labels_df.iterrows():
         embedding = protein_embeddings[index].to(torch.float32)
         label_idx = label_to_idx[row["labels"]]
-        
+
         if row["SET"] == "train":
             X_train.append(embedding)
             y_train.append(label_idx)
@@ -154,7 +151,7 @@ def main():
     # Create data loaders
     train_dataset = TensorDataset(X_train, y_train)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    
+
     test_dataset = TensorDataset(X_test, y_test)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
@@ -183,13 +180,14 @@ def main():
         train_accuracy, _ = evaluate_model(model, train_loader, criterion, device, compute_loss=False)
         test_accuracy, _ = evaluate_model(model, test_loader, criterion, device, compute_loss=False)
 
-
         # Log metrics to summary writer
         global_step = input_model.current_round
         summary_writer.add_scalar(tag="train_accuracy", scalar=train_accuracy, global_step=global_step)
         summary_writer.add_scalar(tag="accuracy", scalar=test_accuracy, global_step=global_step)
 
-        print(f"[Site={site_name}] Global Model - Train Accuracy: {train_accuracy:.4f}, Test Accuracy: {test_accuracy:.4f}")
+        print(
+            f"[Site={site_name}] Global Model - Train Accuracy: {train_accuracy:.4f}, Test Accuracy: {test_accuracy:.4f}"
+        )
 
         # Local training
         model.train()
@@ -197,38 +195,42 @@ def main():
             epoch_loss = 0.0
             epoch_correct = 0
             epoch_total = 0
-            
+
             for batch_idx, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(device), targets.to(device)
-                
+
                 # Forward pass
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
-                
+
                 # Backward pass
                 loss.backward()
                 optimizer.step()
-                
+
                 # Track metrics
                 epoch_loss += loss.item()
                 _, predicted = torch.max(outputs.data, 1)
                 epoch_total += targets.size(0)
                 epoch_correct += (predicted == targets).sum().item()
-            
+
             epoch_accuracy = epoch_correct / epoch_total
             avg_loss = epoch_loss / len(train_loader)
-            print(f"[Site={site_name}] Epoch {epoch+1}/{args.aggregation_epochs} - Loss: {avg_loss:.4f}, Accuracy: {epoch_accuracy:.4f}")
+            print(
+                f"[Site={site_name}] Epoch {epoch + 1}/{args.aggregation_epochs} - Loss: {avg_loss:.4f}, Accuracy: {epoch_accuracy:.4f}"
+            )
 
         # Evaluate after training
         final_train_accuracy, _ = evaluate_model(model, train_loader, criterion, device, compute_loss=False)
         final_test_accuracy, avg_test_loss = evaluate_model(model, test_loader, criterion, device, compute_loss=True)
 
-        print(f"[Site={site_name}] After training - Train Accuracy: {final_train_accuracy:.4f}, Test Accuracy: {final_test_accuracy:.4f}")
+        print(
+            f"[Site={site_name}] After training - Train Accuracy: {final_train_accuracy:.4f}, Test Accuracy: {final_test_accuracy:.4f}"
+        )
 
         # Prepare metrics
         metrics = {
-            "accuracy": test_accuracy, # global model test accuracy used for global model selection
+            "accuracy": test_accuracy,  # global model test accuracy used for global model selection
             "train_accuracy": train_accuracy,
             "final_test_accuracy": final_test_accuracy,
             "final_train_accuracy": final_train_accuracy,

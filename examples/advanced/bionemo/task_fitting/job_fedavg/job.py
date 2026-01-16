@@ -22,7 +22,8 @@ Run this after inference to train an MLP classifier on the embeddings.
 
 import os
 
-from model import ProteinMLP, CLASS_LABELS
+from model import CLASS_LABELS, ProteinMLP
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking

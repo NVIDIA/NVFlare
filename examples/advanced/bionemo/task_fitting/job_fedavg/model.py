@@ -15,24 +15,23 @@
 PyTorch MLP model for protein subcellular location classification
 """
 
-import torch
 import torch.nn as nn
 
 
 class ProteinMLP(nn.Module):
     """
     Multi-Layer Perceptron for protein subcellular location classification.
-    
+
     Architecture:
         - Input: Protein embeddings (default: 1280 dimensions from ESM2-650m)
         - Hidden layers: 512 -> 256 -> 128
         - Output: 10 classes (subcellular locations)
     """
-    
+
     def __init__(self, input_dim: int = 1280, num_classes: int = 10):
         """
         Initialize the MLP model.
-        
+
         Args:
             input_dim: Dimension of input embeddings (default: 1280 for ESM2-650m)
             num_classes: Number of output classes (default: 10 subcellular locations)
@@ -41,20 +40,17 @@ class ProteinMLP(nn.Module):
 
         self.input_dim = input_dim
         self.num_classes = num_classes
-        
+
         self.network = nn.Sequential(
             nn.Linear(input_dim, 512),
             nn.ReLU(),
-            
             nn.Linear(512, 256),
             nn.ReLU(),
-            
             nn.Linear(256, 128),
             nn.ReLU(),
-            
-            nn.Linear(128, num_classes)
+            nn.Linear(128, num_classes),
         )
-    
+
     def forward(self, x):
         """Forward pass through the network."""
         return self.network(x)
