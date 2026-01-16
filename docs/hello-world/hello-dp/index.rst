@@ -232,12 +232,12 @@ To customize parameters:
 
 .. code-block:: bash
 
-   python job.py --n_clients 2 --num_rounds 5 --target_epsilon 1.0
+   python job.py --n_clients 2 --num_rounds 10 --target_epsilon 1.0
 
 Parameters:
 
 - ``--n_clients``: Number of federated clients (default: 2)
-- ``--num_rounds``: Number of federated rounds (default: 5)
+- ``--num_rounds``: Number of federated rounds (default: 10)
 - ``--batch_size``: Training batch size (default: 64)
 - ``--target_epsilon``: **Total** privacy budget across all rounds - **lower = stronger privacy** (default: 1.0)
 

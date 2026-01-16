@@ -3,3 +3,4 @@ torch
 tensorboard
 scikit-learn
 opacus
+pandas
