@@ -300,7 +300,9 @@ class FeatureElectionController(Controller):
                         logger.warning(f"Unexpected weight key '{k}' from client, skipping")
                         continue
                     if weighted_weights[k].shape != v_array.shape:
-                        logger.error(f"Weight shape mismatch for key '{k}': expected {weighted_weights[k].shape}, got {v_array.shape}")
+                        logger.error(
+                            f"Weight shape mismatch for key '{k}': expected {weighted_weights[k].shape}, got {v_array.shape}"
+                        )
                         continue
                     weighted_weights[k] += v_array * n
                 total_samples += n

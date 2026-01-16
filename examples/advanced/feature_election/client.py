@@ -161,7 +161,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                 # Try to extract any number
                 match = re.search(r"\d+", site_name)
                 client_id = int(match.group()) - 1 if match else 0
-            
+
             # Ensure client_id is non-negative
             if client_id < 0:
                 logger.warning(f"Parsed negative client_id ({client_id}) from '{site_name}', using 0")

@@ -230,7 +230,7 @@ class FeatureElection:
                 # Ensure all samples are distributed and last client gets remainder
                 total_assigned = proportions[:-1].sum()
                 proportions[-1] = max(0, len(idx_k) - total_assigned)
-                
+
                 start = 0
                 for i, prop in enumerate(proportions):
                     client_indices[i].extend(idx_k[start : start + prop])
