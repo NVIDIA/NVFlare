@@ -25,5 +25,4 @@ example that implements the :class:`cross site model evaluation workflow<nvflare
 
 Examples with Cross Site Model Evaluation / Federated Evaluation Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-See :github_nvflare_link:`Hello Numpy Cross-Site Validation <examples/hello-world/hello-numpy-cross-val>` and
-:github_nvflare_link:`Step-by-step Cross-site Evaluation <examples/hello-world/step-by-step/cifar10/cse/cse.ipynb>` for examples using server-controlled cross-site evaluation workflows.
+See :github_nvflare_link:`Hello Numpy Cross-Site Validation <examples/hello-world/hello-numpy-cross-val>` for examples using server-controlled cross-site evaluation workflows.
