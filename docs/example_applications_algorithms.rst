@@ -61,8 +61,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`Federated Linear Model with Scikit-learn (GitHub) <examples/advanced/sklearn-linear>` - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
   * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
   * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_.
-  * :github_nvflare_link:`Federated Horizontal XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
-  * :github_nvflare_link:`Federated Vertical XGBoost (GitHub) <examples/advanced/vertical_xgboost>` - Example using Private Set Intersection and XGBoost on vertically split HIGGS data.
+  * :github_nvflare_link:`Federated XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches. Also includes an example of vertical federated XGBoost.
 
 6. Medical Image Analysis
 =========================
@@ -97,7 +96,6 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - :ref:`(documentation) <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - :ref:`(documentation) <experiment_tracking_mlflow>`- Example integrating Hello PyTorch with MLflow with streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
-  * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local#51-flare-monai-integration-experiment-tracking-with-mlflow>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
 
   .. toctree::
     :maxdepth: 1
@@ -123,8 +121,8 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 12. Graph Neural Network (GNN)
 ==============================
 
-  * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
-  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
+  * :github_nvflare_link:`Protein Classification <examples/advanced/gnn>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
+  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
 13. Financial Applications
 ==========================
