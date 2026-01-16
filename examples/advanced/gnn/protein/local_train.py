@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tqdm
+from filelock import FileLock
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import f1_score
 from sklearn.multioutput import MultiOutputClassifier
@@ -29,7 +30,7 @@ from torch_geometric.loader import DataLoader, LinkNeighborLoader
 from torch_geometric.nn import GraphSAGE
 
 np.random.seed(77)
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def main():
@@ -45,7 +46,7 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
     )
@@ -66,8 +67,12 @@ def main():
     writer = SummaryWriter(os.path.join(args.output_path, str(args.client_id)))
 
     # Create PPI dataset for training.
-    train_dataset = PPI(args.data_path, split="train")
-    val_dataset = PPI(args.data_path, split="val")
+    # Use file lock to ensure only one process downloads/processes at a time
+    os.makedirs(args.data_path, exist_ok=True)
+    lock_file = os.path.join(args.data_path, ".download.lock")
+    with FileLock(lock_file):
+        train_dataset = PPI(args.data_path, split="train")
+        val_dataset = PPI(args.data_path, split="val")
 
     # Group all training graphs into a single graph to perform sampling:
     train_data = Batch.from_data_list(train_dataset)
@@ -75,7 +80,7 @@ def main():
     # Split the training graph into subgraphs according to the number of clients
     node_idx = np.arange(train_data.num_nodes)
     np.random.shuffle(node_idx)
-    client_idx = np.split(node_idx, args.total_clients)
+    client_idx = np.split(node_idx, args.num_clients)
 
     # Get the subgraph for the client
     if args.client_id == 0:

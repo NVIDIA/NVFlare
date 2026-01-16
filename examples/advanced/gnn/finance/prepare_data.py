@@ -16,7 +16,7 @@ import numpy as np
 import torch
 
 
-def process_ellipitc(df_features, df_edges, df_classes):
+def process_elliptic(df_features, df_edges, df_classes):
     # map "illicit" to label 1, "licit" to label 0, and "unknown" to label 2
     df_classes["class"] = df_classes["class"].map({1: 1, 2: 0, 3: 2})
 
@@ -31,6 +31,8 @@ def process_ellipitc(df_features, df_edges, df_classes):
     edges = df_edges.copy()
     edges.txId1 = edges.txId1.map(map_id)
     edges.txId2 = edges.txId2.map(map_id)
+    # Drop edges with unmapped nodes (NaN values) before converting to int
+    edges = edges.dropna()
     edges = edges.astype(int)
 
     edge_index = np.array(edges.values).T
@@ -52,7 +54,12 @@ def process_ellipitc(df_features, df_edges, df_classes):
     for key in node_features.keys():
         if "feature" not in key:
             node_features = node_features.drop([key], axis=1)
-    node_features = torch.tensor(np.array(node_features.values))
+
+    # Convert to numpy array and handle NaN values
+    node_features_array = node_features.values.astype(np.float64)
+    # Fill NaN values with 0 (or you could use mean imputation)
+    node_features_array = np.nan_to_num(node_features_array, nan=0.0, posinf=0.0, neginf=0.0)
+    node_features = torch.tensor(node_features_array, dtype=torch.float64)
     y_train = labels[classified_idx]
 
     return node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train
