@@ -19,16 +19,16 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from process_elliptic import process_ellipitc
-from pyg_sage import SAGE
+from model import SAGE
+from prepare_data import process_elliptic
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
 
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-# (1) import nvflare client API
+# Import nvflare client API
 import nvflare.client as flare
 
 
@@ -45,15 +45,9 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
-    )
-    parser.add_argument(
-        "--client_id",
-        type=int,
-        default=0,
-        help="0: use all data, 1-N: use data from client N",
     )
     parser.add_argument(
         "--output_path",
@@ -62,8 +56,16 @@ def main():
     )
     args = parser.parse_args()
 
+    # Initialize NVFlare client API first to get site name
+    flare.init()
+
+    # Derive client_id from site name (e.g., "site-1" -> 1)
+    site_name = flare.get_site_name()
+    client_id = int(site_name.split("-")[-1])
+    print(f"Site: {site_name}, Client ID: {client_id}")
+
     # Set up tensorboard
-    writer = SummaryWriter(os.path.join(args.output_path, str(args.client_id)))
+    writer = SummaryWriter(os.path.join(args.output_path, str(client_id)))
 
     # Create elliptic dataset for training.
     df_classes = pd.read_csv(os.path.join(args.data_path, "txs_classes.csv"))
@@ -71,7 +73,7 @@ def main():
     df_features = pd.read_csv(os.path.join(args.data_path, "txs_features.csv"))
 
     # Preprocess data
-    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_ellipitc(
+    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_elliptic(
         df_features, df_edges, df_classes
     )
 
@@ -84,23 +86,20 @@ def main():
     _, _, y_train, _, train_idx, valid_idx = train_test_split(
         node_features[classified_idx], y_train, classified_idx, test_size=0.1, random_state=77, stratify=y_train
     )
-    # Futher split train data into two clients
-    _, _, _, _, train_1_idx, train_2_idx = train_test_split(
-        node_features[train_idx], y_train, train_idx, test_size=0.5, random_state=77, stratify=y_train
-    )
 
-    # Get the subgraph index for the client
-    # note that client 0 uses all data
-    # client 1 uses data from classified_1 and unclassified data
-    # client 2 uses data from classified_2 and unclassified data
-    if args.client_id == 0:
-        train_data_sub = train_data
-    if args.client_id == 1:
-        train_data_sub = train_data.subgraph(torch.tensor(train_1_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_1_idx))
-    elif args.client_id == 2:
-        train_data_sub = train_data.subgraph(torch.tensor(train_2_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_2_idx))
+    # Split train data among clients
+    np.random.seed(77)
+    shuffled_train_idx = np.array(train_idx)
+    np.random.shuffle(shuffled_train_idx)
+    client_train_splits = np.array_split(shuffled_train_idx, args.num_clients)
+
+    # Get the subgraph index for the client (client_id is 1-indexed)
+    # Each client uses their subset of classified data plus all unclassified data
+    client_subset_idx = client_train_splits[client_id - 1]
+    combined_idx = np.concatenate([client_subset_idx, unclassified_idx])
+    train_data_sub = train_data.subgraph(torch.tensor(combined_idx))
+    # After subgraph, the first len(client_subset_idx) nodes are the training nodes
+    train_idx_subset = np.arange(len(client_subset_idx))
     train_data = train_data.to(DEVICE)
     train_data_sub = train_data_sub.to(DEVICE)
 
@@ -108,62 +107,62 @@ def main():
     model = SAGE(train_data_sub.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
     model.double()
 
-    # (2) initializes NVFlare client API
-    flare.init()
+    # Define evaluation logic outside the training loop for efficiency
+    # This function is reused for evaluation on both trained and received model
+    def evaluate(input_weights, step):
+        model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
+        model_eval.double()
+        model_eval.load_state_dict(input_weights)
+        # (optional) use GPU to speed things up
+        model_eval.to(DEVICE)
+
+        with torch.no_grad():
+            model_eval.eval()
+            out = model_eval(train_data)
+            # Model outputs log-probabilities, convert to probabilities using exp()
+            y_prob = torch.exp(out)[:, 1].detach().cpu().numpy()
+            y_true = train_data.y.detach().cpu().numpy()
+            val_auc = roc_auc_score(y_true[valid_idx], y_prob[valid_idx])
+            print(f"Validation AUC: {val_auc:.4f} ")
+            writer.add_scalar("val_auc", val_auc, step)
+        return val_auc
 
     while flare.is_running():
-        # (3) receives FLModel from NVFlare
+        # Receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
 
-        # (3) loads model from NVFlare
+        # Loads model from NVFlare
         model.load_state_dict(input_model.params)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
         # (optional) use GPU to speed things up
         model.to(DEVICE)
+
         # (optional) calculate total steps
-        steps = args.epochs * len(train_idx)
+        steps = args.epochs * len(train_idx_subset)
         for epoch in range(1, args.epochs + 1):
             model.train()
             optimizer.zero_grad()
             # perform full batch training using all classified data
             out = model(train_data_sub)
-            loss = F.nll_loss(out[train_idx], train_data_sub.y[train_idx].T.to(torch.long))
+            loss = F.nll_loss(out[train_idx_subset], train_data_sub.y[train_idx_subset].to(torch.long))
             loss.backward()
             optimizer.step()
             print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
             writer.add_scalar("train_loss", loss.item(), input_model.current_round * args.epochs + epoch)
 
-            # (5) wraps evaluation logic into a method to re-use for
-            #       evaluation on both trained and received model
-            def evaluate(input_weights):
-                model_eval = SAGE(train_data.num_node_features, hidden_channels=256, num_classes=2, num_layers=3)
-                model_eval.double()
-                model_eval.load_state_dict(input_weights)
-                # (optional) use GPU to speed things up
-                model_eval.to(DEVICE)
-
-                with torch.no_grad():
-                    model_eval.eval()
-                    out = model_eval(train_data)
-                    y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
-                    y_true = train_data.y.detach().cpu().numpy()
-                    val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
-                    print(f"Validation AUC: {val_auc:.4f} ")
-                    writer.add_scalar("val_auc", val_auc, input_model.current_round * args.epochs + epoch)
-                return val_auc
-
-        # (6) evaluate on received model for model selection
-        global_auc = evaluate(input_model.params)
-        # (7) construct trained FL model
+        # Evaluate on received model for model selection
+        final_step = input_model.current_round * args.epochs + args.epochs
+        global_auc = evaluate(input_model.params, final_step)
+        # Construct trained FL model
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
             metrics={"validation_auc": global_auc},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
-        # (8) send model back to NVFlare
+        # Send model back to NVFlare
         flare.send(output_model)
 
 

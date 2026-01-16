@@ -19,14 +19,14 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from process_elliptic import process_ellipitc
-from pyg_sage import SAGE
+from model import SAGE
+from prepare_data import process_elliptic
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Data
 
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
         default=70,
     )
     parser.add_argument(
-        "--total_clients",
+        "--num_clients",
         type=int,
         default=2,
     )
@@ -68,7 +68,7 @@ def main():
     df_features = pd.read_csv(os.path.join(args.data_path, "txs_features.csv"))
 
     # Preprocess data
-    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_ellipitc(
+    node_features, classified_idx, unclassified_idx, edge_index, weights, labels, y_train = process_elliptic(
         df_features, df_edges, df_classes
     )
 
@@ -81,23 +81,26 @@ def main():
     _, _, y_train, _, train_idx, valid_idx = train_test_split(
         node_features[classified_idx], y_train, classified_idx, test_size=0.1, random_state=77, stratify=y_train
     )
-    # Futher split train data into two clients
-    _, _, _, _, train_1_idx, train_2_idx = train_test_split(
-        node_features[train_idx], y_train, train_idx, test_size=0.5, random_state=77, stratify=y_train
-    )
+
+    # Split train data among clients
+    np.random.seed(77)
+    shuffled_train_idx = np.array(train_idx)
+    np.random.shuffle(shuffled_train_idx)
+    client_train_splits = np.array_split(shuffled_train_idx, args.num_clients)
 
     # Get the subgraph index for the client
-    # note that client 0 uses all data
-    # client 1 uses data from classified_1 and unclassified data
-    # client 2 uses data from classified_2 and unclassified data
+    # client 0 uses all data, client 1-N use their respective subsets
     if args.client_id == 0:
         train_data_sub = train_data
-    if args.client_id == 1:
-        train_data_sub = train_data.subgraph(torch.tensor(train_1_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_1_idx))
-    elif args.client_id == 2:
-        train_data_sub = train_data.subgraph(torch.tensor(train_2_idx.append(unclassified_idx)))
-        train_idx = np.arange(len(train_2_idx))
+        train_idx_subset = train_idx
+    else:
+        # Each client uses their subset of classified data plus all unclassified data
+        client_subset_idx = client_train_splits[args.client_id - 1]
+        combined_idx = np.concatenate([client_subset_idx, unclassified_idx])
+        train_data_sub = train_data.subgraph(torch.tensor(combined_idx))
+        # After subgraph, the first len(client_subset_idx) nodes are the training nodes
+        train_idx_subset = np.arange(len(client_subset_idx))
+
     train_data = train_data.to(DEVICE)
     train_data_sub = train_data_sub.to(DEVICE)
 
@@ -111,7 +114,7 @@ def main():
         optimizer.zero_grad()
         # perform full batch training using all classified data
         out = model(train_data_sub)
-        loss = F.nll_loss(out[train_idx], train_data_sub.y[train_idx].T.to(torch.long))
+        loss = F.nll_loss(out[train_idx_subset], train_data_sub.y[train_idx_subset].to(torch.long))
         loss.backward()
         optimizer.step()
         print(f"Epoch: {epoch:02d}, Loss: {loss:.4f}")
@@ -122,9 +125,10 @@ def main():
             with torch.no_grad():
                 model.eval()
                 out = model(train_data)
-                y_pred = torch.argmax(out, dim=1).detach().cpu().numpy()
+                # Model outputs log-probabilities, convert to probabilities using exp()
+                y_prob = torch.exp(out)[:, 1].detach().cpu().numpy()
                 y_true = train_data.y.detach().cpu().numpy()
-                val_auc = roc_auc_score(y_true[valid_idx], y_pred[valid_idx])
+                val_auc = roc_auc_score(y_true[valid_idx], y_prob[valid_idx])
                 print(f"Validation AUC: {val_auc:.4f} ")
                 writer.add_scalar("val_auc", val_auc, epoch)
 
