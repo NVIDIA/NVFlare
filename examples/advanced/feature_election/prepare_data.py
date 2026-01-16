@@ -125,9 +125,12 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
                 client_indices[i % num_clients].append(idx)
         else:
             # Fewer samples than clients: distribute to random clients
-            chosen_clients = np.random.choice(num_clients, size=len(class_indices), replace=False)
-            for client_id, idx in zip(chosen_clients, class_indices):
-                client_indices[client_id].append(idx)
+            if len(class_indices) < num_clients:
+                # Can only distribute to as many clients as we have samples
+                chosen_clients = np.random.choice(num_clients, size=len(class_indices), replace=False)
+            else:
+                # Randomly select which clients get these samples
+                chosen_clients = np.random.choice(num_clients, size=len(class_indices), replace=True)
 
     client_dfs = []
     for indices in client_indices:
