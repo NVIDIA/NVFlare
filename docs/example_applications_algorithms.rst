@@ -98,6 +98,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 =========================
 
   * :github_nvflare_link:`MONAI Integration (GitHub) <integration/monai>` - For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle `MONAI <https://project-monai.github.io/>`_
+  * :github_nvflare_link:`Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <examples/advanced/brats18>` - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
 
 8. Federated Statistics
 =======================
@@ -127,7 +128,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - :ref:`(documentation) <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - :ref:`(documentation) <experiment_tracking_mlflow>`- Example integrating Hello PyTorch with MLflow with streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
-  * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
+  * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local#51-flare-monai-integration-experiment-tracking-with-mlflow>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
 
   .. toctree::
     :maxdepth: 1
@@ -236,7 +237,9 @@ Most hello-* examples use a custom folder within the FL application.
 Note that using a custom folder in the app needs to be :ref:`allowed <troubleshooting_byoc>` when using secure provisioning.
 By default, this option is disabled in the secure mode. POC mode, however, will work with custom code by default.
 
-In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>` example assumes that the
+In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>`,
+:github_nvflare_link:`prostate segmentation <examples/advanced/prostate>`,
+and :github_nvflare_link:`BraTS18 segmentation <examples/advanced/brats18>` examples assume that the
 learner code is already installed on the client's system and available in the PYTHONPATH.
 Hence, the app folders do not include the custom code there.
 The PYTHONPATH is set in the ``run_poc.sh`` or ``run_secure.sh`` scripts of the example.
