@@ -92,7 +92,6 @@ def main():
         name=job_name,
         min_clients=args.site_num,
         num_rounds=args.round_num,
-        algorithm="histogram_v2",
         early_stopping_rounds=3,
         use_gpus=False,
         secure=args.secure,

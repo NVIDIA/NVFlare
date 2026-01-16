@@ -246,7 +246,6 @@ recipe = XGBHistogramRecipe(
     name="horizontal_secure",
     min_clients=3,
     num_rounds=3,
-    algorithm="histogram_v2",
     secure=True,  # Enable Homomorphic Encryption
     client_ranks=client_ranks,  # Required when secure=True
     xgb_params={

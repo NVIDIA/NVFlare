@@ -28,7 +28,6 @@ class _XGBHistogramValidator(BaseModel):
     name: str
     min_clients: int
     num_rounds: int
-    algorithm: str
     early_stopping_rounds: int
     use_gpus: bool
     secure: bool
@@ -36,13 +35,6 @@ class _XGBHistogramValidator(BaseModel):
     xgb_params: dict
     data_loader_id: str
     metrics_writer_id: str
-
-    @field_validator("algorithm")
-    @classmethod
-    def check_algorithm(cls, v):
-        if v not in ["histogram", "histogram_v2"]:
-            raise ValueError("algorithm must be 'histogram' or 'histogram_v2'")
-        return v
 
     @field_validator("num_rounds")
     @classmethod
@@ -56,8 +48,6 @@ class XGBHistogramRecipe(Recipe):
     """XGBoost Histogram-Based Recipe for horizontal federated learning.
 
     This recipe implements horizontal federated XGBoost using histogram-based algorithms.
-    It supports two algorithm variants: 'histogram' (original) and 'histogram_v2' (newer).
-
     In horizontal federated learning, each client has different samples with the same features.
     The histogram-based approach enables efficient gradient boosting by computing histograms
     of gradients and hessians collaboratively across clients.
@@ -66,7 +56,6 @@ class XGBHistogramRecipe(Recipe):
         name (str): Name of the federated job.
         min_clients (int): The minimum number of clients for the job.
         num_rounds (int): Number of boosting rounds.
-        algorithm (str, optional): Algorithm variant ('histogram' or 'histogram_v2'). Default is 'histogram_v2'.
         early_stopping_rounds (int, optional): Early stopping rounds. Default is 2.
         use_gpus (bool, optional): Whether to use GPUs for training. Default is False.
         secure (bool, optional): Enable secure training with Homomorphic Encryption (HE). Default is False.
@@ -96,7 +85,6 @@ class XGBHistogramRecipe(Recipe):
                 name="xgb_higgs_histogram",
                 min_clients=2,
                 num_rounds=100,
-                algorithm="histogram_v2",
                 xgb_params={
                     "max_depth": 8,
                     "eta": 0.1,
@@ -114,7 +102,6 @@ class XGBHistogramRecipe(Recipe):
             env.run(recipe)
 
     Note:
-        - 'histogram_v2' is the recommended algorithm (newer and more stable).
         - Data loaders must be configured via per_site_config parameter.
         - TensorBoard tracking is automatically configured for both server and clients.
         - Executor and metrics components are automatically added to all clients.
@@ -125,7 +112,6 @@ class XGBHistogramRecipe(Recipe):
         name: str,
         min_clients: int,
         num_rounds: int,
-        algorithm: str = "histogram_v2",
         early_stopping_rounds: int = 2,
         use_gpus: bool = False,
         secure: bool = False,
@@ -151,7 +137,6 @@ class XGBHistogramRecipe(Recipe):
             name=name,
             min_clients=min_clients,
             num_rounds=num_rounds,
-            algorithm=algorithm,
             early_stopping_rounds=early_stopping_rounds,
             use_gpus=use_gpus,
             secure=secure,
@@ -164,7 +149,6 @@ class XGBHistogramRecipe(Recipe):
         self.name = v.name
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
-        self.algorithm = v.algorithm
         self.early_stopping_rounds = v.early_stopping_rounds
         self.use_gpus = v.use_gpus
         self.secure = v.secure
@@ -183,57 +167,36 @@ class XGBHistogramRecipe(Recipe):
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
-        # Configure controller and executor based on algorithm
-        if self.algorithm == "histogram":
-            # Original histogram-based implementation
-            from nvflare.app_opt.xgboost.histogram_based.controller import XGBFedController
-            from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor
+        # Configure controller and executor (histogram-based V2)
+        from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
+        from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 
-            controller = XGBFedController()
-            job.to_server(controller, id="xgb_controller")
+        controller_kwargs = {
+            "num_rounds": self.num_rounds,
+            "data_split_mode": 0,  # 0 = horizontal
+            "secure_training": self.secure,
+            "xgb_options": {"early_stopping_rounds": self.early_stopping_rounds, "use_gpus": self.use_gpus},
+            "xgb_params": self.xgb_params,
+        }
 
-            # Add executor to all clients
-            executor = FedXGBHistogramExecutor(
-                data_loader_id=self.data_loader_id,
-                num_rounds=self.num_rounds,
-                early_stopping_rounds=self.early_stopping_rounds,
-                xgb_params=self.xgb_params,
-                metrics_writer_id=self.metrics_writer_id,
-                use_gpus=self.use_gpus,
-            )
-            job.to_clients(executor, id="xgb_executor")
+        # Add client_ranks if secure training is enabled
+        if self.secure and self.client_ranks:
+            controller_kwargs["client_ranks"] = self.client_ranks
+            controller_kwargs["in_process"] = True  # Required for secure training
 
-        elif self.algorithm == "histogram_v2":
-            # Newer histogram-based implementation (recommended)
-            from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-            from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
+        controller = XGBFedController(**controller_kwargs)
+        job.to_server(controller, id="xgb_controller")
 
-            controller_kwargs = {
-                "num_rounds": self.num_rounds,
-                "data_split_mode": 0,  # 0 = horizontal
-                "secure_training": self.secure,
-                "xgb_options": {"early_stopping_rounds": self.early_stopping_rounds, "use_gpus": self.use_gpus},
-                "xgb_params": self.xgb_params,
-            }
+        # Add executor to all clients
+        executor_params = {
+            "data_loader_id": self.data_loader_id,
+            "metrics_writer_id": self.metrics_writer_id,
+        }
+        if self.secure:
+            executor_params["in_process"] = True
 
-            # Add client_ranks if secure training is enabled
-            if self.secure and self.client_ranks:
-                controller_kwargs["client_ranks"] = self.client_ranks
-                controller_kwargs["in_process"] = True  # Required for secure training
-
-            controller = XGBFedController(**controller_kwargs)
-            job.to_server(controller, id="xgb_controller")
-
-            # Add executor to all clients
-            executor_params = {
-                "data_loader_id": self.data_loader_id,
-                "metrics_writer_id": self.metrics_writer_id,
-            }
-            if self.secure:
-                executor_params["in_process"] = True
-
-            executor = FedXGBHistogramExecutor(**executor_params)
-            job.to_clients(executor, id="xgb_executor")
+        executor = FedXGBHistogramExecutor(**executor_params)
+        job.to_clients(executor, id="xgb_executor")
 
         # Add TensorBoard receiver to server
         from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver

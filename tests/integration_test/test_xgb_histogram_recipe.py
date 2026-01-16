@@ -16,9 +16,10 @@
 
 These are smoke tests to verify that XGBHistogramRecipe works without errors.
 Tests verify:
-- Recipe can be instantiated with different algorithms
+- Recipe can be instantiated and configured
 - Job completes successfully
 - TensorBoard tracking is configured
+- Per-site data loaders work correctly
 
 Tests do NOT verify:
 - Model accuracy or convergence
@@ -37,7 +38,6 @@ import os
 import tempfile
 
 import numpy as np
-import pytest
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
@@ -75,48 +75,21 @@ class TestXGBHistogramRecipe:
     They use synthetic data and minimal training rounds for speed.
     """
 
-    def test_histogram_v2_algorithm(self):
-        """Test histogram_v2 algorithm (recommended) completes successfully."""
+    def test_histogram_algorithm(self):
+        """Test histogram algorithm completes successfully."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_histogram_v2"))
-
-            recipe = XGBHistogramRecipe(
-                name="test_histogram_v2",
-                min_clients=2,
-                num_rounds=2,  # Minimal rounds for speed
-                algorithm="histogram_v2",
-                early_stopping_rounds=1,
-                xgb_params={
-                    "max_depth": 3,
-                    "eta": 0.1,
-                    "objective": "binary:logistic",
-                    "eval_metric": "auc",
-                },
-            )
+            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_histogram"))
 
             # Configure per-site data loaders
             per_site_config = {
                 f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=50, n_features=5)}
                 for site_id in range(1, 3)
             }
-            recipe.per_site_config = per_site_config
-            recipe.job = recipe.configure()
-
-            # Run and verify completion
-            run = recipe.execute(env)
-            assert run.get_result() is not None
-            assert os.path.exists(run.get_result())
-
-    def test_histogram_algorithm(self):
-        """Test original histogram algorithm completes successfully."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_histogram"))
 
             recipe = XGBHistogramRecipe(
                 name="test_histogram",
                 min_clients=2,
-                num_rounds=2,
-                algorithm="histogram",
+                num_rounds=2,  # Minimal rounds for speed
                 early_stopping_rounds=1,
                 xgb_params={
                     "max_depth": 3,
@@ -124,27 +97,13 @@ class TestXGBHistogramRecipe:
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
+                per_site_config=per_site_config,
             )
-
-            # Add mock data loaders
-            for site_id in range(1, 3):
-                data_loader = MockXGBDataLoader(n_samples=50, n_features=5)
-                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             # Run and verify completion
             run = recipe.execute(env)
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
-
-    def test_invalid_algorithm_raises_error(self):
-        """Test that invalid algorithm raises ValueError."""
-        with pytest.raises(ValueError, match="algorithm must be 'histogram' or 'histogram_v2'"):
-            XGBHistogramRecipe(
-                name="test_invalid",
-                min_clients=2,
-                num_rounds=2,
-                algorithm="invalid_algo",
-            )
 
     def test_custom_xgb_params(self):
         """Test that custom XGBoost parameters are accepted."""
@@ -160,21 +119,22 @@ class TestXGBHistogramRecipe:
                 "nthread": 4,
             }
 
+            # Configure per-site data loaders
+            per_site_config = {
+                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=50, n_features=5)}
+                for site_id in range(1, 3)
+            }
+
             recipe = XGBHistogramRecipe(
                 name="test_custom_params",
                 min_clients=2,
                 num_rounds=1,
-                algorithm="histogram_v2",
                 xgb_params=custom_params,
+                per_site_config=per_site_config,
             )
 
             # Verify params are stored
             assert recipe.xgb_params == custom_params
-
-            # Add data loaders and run
-            for site_id in range(1, 3):
-                data_loader = MockXGBDataLoader(n_samples=50, n_features=5)
-                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             run = recipe.execute(env)
             assert run.get_result() is not None
@@ -185,17 +145,18 @@ class TestXGBHistogramRecipe:
             num_clients = 5
             env = SimEnv(num_clients=num_clients, workspace_root=os.path.join(tmpdir, "test_multi_client"))
 
+            # Configure per-site data loaders
+            per_site_config = {
+                f"site-{site_id}": {"data_loader": MockXGBDataLoader(n_samples=30, n_features=5)}
+                for site_id in range(1, num_clients + 1)
+            }
+
             recipe = XGBHistogramRecipe(
                 name="test_multi_client",
                 min_clients=num_clients,
                 num_rounds=1,
-                algorithm="histogram_v2",
+                per_site_config=per_site_config,
             )
-
-            # Add data loaders for all clients
-            for site_id in range(1, num_clients + 1):
-                data_loader = MockXGBDataLoader(n_samples=30, n_features=5)
-                recipe.add_dataloader(data_loader, site_name=f"site-{site_id}")
 
             run = recipe.execute(env)
             assert run.get_result() is not None
@@ -207,7 +168,6 @@ class TestXGBHistogramRecipe:
             name="test_tb",
             min_clients=2,
             num_rounds=1,
-            algorithm="histogram_v2",
         )
 
         # Verify TensorBoard receiver is added to server

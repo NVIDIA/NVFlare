@@ -30,13 +30,6 @@ def define_parser():
     )
     parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
     parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
-    parser.add_argument(
-        "--training_algo",
-        type=str,
-        default="histogram_v2",
-        choices=["histogram", "histogram_v2"],
-        help="Training algorithm (histogram or histogram_v2)",
-    )
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
@@ -60,7 +53,7 @@ def define_parser():
 
 
 def _get_job_name(args) -> str:
-    return f"higgs_{args.site_num}_{args.training_algo}_{args.split_method}_split"
+    return f"higgs_{args.site_num}_histogram_{args.split_method}_split"
 
 
 def _get_data_path(args) -> str:
@@ -94,7 +87,6 @@ def main():
         name=job_name,
         min_clients=args.site_num,
         num_rounds=args.round_num,
-        algorithm=args.training_algo,
         early_stopping_rounds=args.early_stopping_rounds,
         use_gpus=args.use_gpus,
         xgb_params=xgb_params,

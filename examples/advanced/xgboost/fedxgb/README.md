@@ -177,7 +177,6 @@ recipe = XGBHistogramRecipe(
     name="xgb_higgs_histogram",
     min_clients=2,
     num_rounds=100,
-    algorithm="histogram_v2",  # or "histogram"
     xgb_params={
         "max_depth": 8,
         "eta": 0.1,
