@@ -293,13 +293,15 @@ class FeatureElectionController(Controller):
             n = shareable.get("num_samples", 1)
             weights = shareable.get("params")
             if weights is not None:
-                if weighted_weights is None:
-                    # Initialize with proper numpy arrays
-                    weighted_weights = {k: np.zeros_like(np.array(v)) for k, v in weights.items()}
-
                 for k, v in weights.items():
                     # Ensure v is a numpy array before operations
                     v_array = np.array(v)
+                    if k not in weighted_weights:
+                        logger.warning(f"Unexpected weight key '{k}' from client, skipping")
+                        continue
+                    if weighted_weights[k].shape != v_array.shape:
+                        logger.error(f"Weight shape mismatch for key '{k}': expected {weighted_weights[k].shape}, got {v_array.shape}")
+                        continue
                     weighted_weights[k] += v_array * n
                 total_samples += n
 
