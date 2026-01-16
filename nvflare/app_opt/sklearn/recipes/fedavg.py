@@ -52,6 +52,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are
+            a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
 
     Example:
         Basic usage with same config for all clients:
@@ -121,6 +123,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "accuracy",
     ):
         # Create sklearn-specific persistor
         persistor = JoblibModelParamPersistor(initial_params=model_params or {})
@@ -141,4 +144,5 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=TransferType.FULL,
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
+            key_metric=key_metric,
         )

@@ -123,6 +123,7 @@ def main():
         num_rounds=args.num_rounds,
         train_script="client.py",
         per_site_config=per_site_config,
+        key_metric="validation_f1",
     )
 
     # Export job

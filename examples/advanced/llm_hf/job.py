@@ -175,6 +175,7 @@ def main():
         server_expected_format=server_expected_format,
         launch_external_process=True,  # Always use external process for LLM training
         per_site_config=per_site_config,
+        key_metric="neg_eval_loss",
     )
 
     # Add client params to reduce timeout failures for longer LLM runs
