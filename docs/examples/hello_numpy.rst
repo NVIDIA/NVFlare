@@ -8,7 +8,7 @@ It is recommended to create a virtual environment and run everything within a vi
 
 NVIDIA FLARE Installation
 -------------------------
-For the complete installation instructions, see :ref:`installation`
+For the complete installation instructions, see :doc:`installation`
 
 .. code-block:: text
 
