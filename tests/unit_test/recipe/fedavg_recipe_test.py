@@ -17,9 +17,15 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
 
@@ -68,6 +74,26 @@ class MyAggregator(ModelAggregator):
         # reset the sum and count
         self.sum = {}
         self.count = 0
+
+    def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """Accept a shareable from a client."""
+        dxo = from_shareable(shareable)
+        if dxo.data_kind == DataKind.WEIGHTS:
+            # Convert to FLModel format for our custom logic
+            model = FLModel(params=dxo.data, params_type=ParamsType.FULL)
+            self.accept_model(model)
+            return True
+        return False
+
+    def aggregate(self, fl_ctx: FLContext) -> Shareable:
+        """Perform aggregation and return result as Shareable."""
+        aggregated_model = self.aggregate_model()
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=aggregated_model.params)
+        return dxo.to_shareable()
+
+    def reset(self, fl_ctx: FLContext):
+        """Reset the aggregator state."""
+        self.reset_stats()
 
 
 class InvalidAggregator:
@@ -118,6 +144,11 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.job.name == expected_name
 
 
+def get_model_selector(recipe):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get("model_selector")
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
@@ -128,6 +159,14 @@ class TestFedAvgRecipe:
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.initial_model is None
         assert isinstance(recipe.aggregator, Aggregator)
+
+    def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params):
+        key_metric = "val_auc"
+        recipe = FedAvgRecipe(name="test_fedavg_key_metric", key_metric=key_metric, **base_recipe_params)
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
 
     def test_custom_aggregator_initialization(self, mock_file_system, base_recipe_params, custom_aggregator):
         """Test FedAvgRecipe initialization with custom aggregator."""
@@ -175,76 +214,19 @@ class TestFedAvgRecipe:
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)
 
-    def test_launch_once_default(self, mock_file_system, base_recipe_params):
-        """Test that launch_once defaults to True."""
-        recipe = FedAvgRecipe(name="test_launch_once_default", **base_recipe_params)
 
-        assert recipe.launch_once is True
-        assert recipe.shutdown_timeout == 0.0
+class TestFedAvgRecipeKeyMetricVariants:
+    """Test key_metric passthrough for NumPy FedAvg recipes."""
 
-    @pytest.mark.parametrize(
-        "launch_once,shutdown_timeout",
-        [
-            (True, 0.0),  # Default values
-            (False, 0.0),  # launch_once=False with default timeout
-            (True, 10.0),  # launch_once=True with custom timeout
-            (False, 15.0),  # launch_once=False with custom timeout
-        ],
-    )
-    def test_launch_once_and_shutdown_timeout(
-        self, mock_file_system, base_recipe_params, launch_once, shutdown_timeout
-    ):
-        """Test FedAvgRecipe with various launch_once and shutdown_timeout configurations."""
-        recipe = FedAvgRecipe(
-            name="test_launch_config",
-            launch_external_process=True,
-            launch_once=launch_once,
-            shutdown_timeout=shutdown_timeout,
-            **base_recipe_params,
+    def test_key_metric_passthrough_numpy(self, mock_file_system):
+        key_metric = "val_loss"
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_key_metric",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric=key_metric,
         )
 
-        assert recipe.launch_once == launch_once
-        assert recipe.shutdown_timeout == shutdown_timeout
-        assert recipe.launch_external_process is True
-
-    def test_launch_once_per_site_config(self, mock_file_system, base_recipe_params):
-        """Test per-site configuration with different launch_once settings."""
-        per_site_config = {
-            "site-1": {
-                "launch_once": False,
-                "shutdown_timeout": 15.0,
-            },
-            "site-2": {
-                "launch_once": True,
-                "shutdown_timeout": 5.0,
-            },
-        }
-
-        recipe = FedAvgRecipe(
-            name="test_per_site_launch",
-            launch_external_process=True,
-            launch_once=True,  # Default
-            shutdown_timeout=10.0,  # Default
-            per_site_config=per_site_config,
-            **base_recipe_params,
-        )
-
-        # Check default values are stored
-        assert recipe.launch_once is True
-        assert recipe.shutdown_timeout == 10.0
-        assert recipe.per_site_config == per_site_config
-
-    def test_launch_once_in_process_mode(self, mock_file_system, base_recipe_params):
-        """Test that launch_once and shutdown_timeout can be set even with in-process execution."""
-        recipe = FedAvgRecipe(
-            name="test_in_process",
-            launch_external_process=False,  # In-process mode
-            launch_once=False,
-            shutdown_timeout=10.0,
-            **base_recipe_params,
-        )
-
-        # Values should be stored even though they won't be used in in-process mode
-        assert recipe.launch_once is False
-        assert recipe.shutdown_timeout == 10.0
-        assert recipe.launch_external_process is False
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric

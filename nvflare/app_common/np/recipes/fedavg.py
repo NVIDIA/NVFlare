@@ -46,6 +46,7 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     analytics_receiver: Optional[AnalyticsReceiver] = None
+    key_metric: str
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -82,6 +83,9 @@ class NumpyFedAvgRecipe(Recipe):
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
             MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
             Use `add_experiment_tracking()` utility function to easily add tracking.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         ```python
@@ -120,6 +124,7 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -136,6 +141,7 @@ class NumpyFedAvgRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             analytics_receiver=analytics_receiver,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -155,12 +161,14 @@ class NumpyFedAvgRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.analytics_receiver = v.analytics_receiver
+        self.key_metric = v.key_metric
 
         # Create BaseFedJob (provides ConvertToFedEvent for experiment tracking)
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
             analytics_receiver=self.analytics_receiver,
+            key_metric=self.key_metric,
         )
 
         # Define the controller and send to server

@@ -63,12 +63,11 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            server_expected_format, params_transfer_type.
             If not provided, the same configuration will be used for all clients.
-        launch_once: Whether the external process will be launched only once at the beginning
-            or on each task. Only used if `launch_external_process` is True. Defaults to True.
-        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
-            Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         Basic usage without experiment tracking:
@@ -110,22 +109,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Also supports: "mlflow", "wandb"
         ```
 
-        Using launch_once=False to restart the external process for each task:
-
-        ```python
-        recipe = FedAvgRecipe(
-            name="my_fedavg_job",
-            initial_model=pretrained_model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="client.py",
-            train_args="--epochs 5 --batch_size 32",
-            launch_external_process=True,
-            launch_once=False,  # Process will restart for each task
-            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
-        )
-        ```
-
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
         are aggregated using weighted averaging based on the number of training
@@ -157,8 +140,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
-        launch_once: bool = True,
-        shutdown_timeout: float = 0.0,
+        key_metric: str = "accuracy",
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -178,8 +160,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
-            launch_once=launch_once,
-            shutdown_timeout=shutdown_timeout,
+            key_metric=key_metric,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
