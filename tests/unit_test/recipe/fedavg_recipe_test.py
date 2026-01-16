@@ -17,7 +17,6 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
-from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.fl_model import FLModel
