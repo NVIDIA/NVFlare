@@ -17,7 +17,6 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
@@ -51,8 +50,6 @@ class _FedAvgValidator(BaseModel):
     analytics_receiver: Any
     per_site_config: Optional[dict[str, dict]] = None
     key_metric: str
-    negate_key_metric: bool
-    model_selector: Optional[FLComponent]
 
 
 class FedAvgRecipe(Recipe):
@@ -113,13 +110,7 @@ class FedAvgRecipe(Recipe):
             If not provided, the same configuration will be used for all clients.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Defaults to "accuracy". Only used if model_selector is not provided.
-        negate_key_metric: Whether to negate the key metric (e.g., when using loss where lower is better).
-            If True, the metric will be inverted for model selection. Defaults to False.
-            Only used if model_selector is not provided.
-        model_selector: Custom model selector component for advanced use cases. If provided, this will be used
-            instead of the default IntimeModelSelector. When None, an IntimeModelSelector will be created
-            automatically using key_metric and negate_key_metric parameters.
+            Defaults to "accuracy".
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -150,8 +141,6 @@ class FedAvgRecipe(Recipe):
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
-        negate_key_metric: bool = False,
-        model_selector: Optional[FLComponent] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -172,8 +161,6 @@ class FedAvgRecipe(Recipe):
             analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
             key_metric=key_metric,
-            negate_key_metric=negate_key_metric,
-            model_selector=model_selector,
         )
 
         self.name = v.name
@@ -193,8 +180,6 @@ class FedAvgRecipe(Recipe):
         self.analytics_receiver = v.analytics_receiver
         self.per_site_config = v.per_site_config
         self.key_metric = v.key_metric
-        self.negate_key_metric = v.negate_key_metric
-        self.model_selector = v.model_selector
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
             if self.initial_model is None and self.model_persistor is None:
@@ -203,22 +188,12 @@ class FedAvgRecipe(Recipe):
                     "Consider using framework-specific wrappers (e.g., SklearnFedAvgRecipe) for convenience."
                 )
 
-        # Create model selector if not provided
-        if self.model_selector is None:
-            from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-
-            model_selector_to_use = IntimeModelSelector(
-                key_metric=self.key_metric, negate_key_metric=self.negate_key_metric
-            )
-        else:
-            model_selector_to_use = self.model_selector
-
         # Create BaseFedJob - all frameworks use it for consistency
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
             analytics_receiver=self.analytics_receiver,
-            model_selector=model_selector_to_use,
+            key_metric=self.key_metric,
         )
 
         # Setup framework-specific model components and persistor
