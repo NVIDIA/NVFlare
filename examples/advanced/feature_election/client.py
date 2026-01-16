@@ -154,12 +154,19 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
 
         # Parse client_id from site name (e.g., "site-1" -> 0)
         try:
+        # Parse client_id from site name (e.g., "site-1" -> 0)
+        try:
             if site_name.startswith("site-"):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
                 # Try to extract any number
                 match = re.search(r"\d+", site_name)
                 client_id = int(match.group()) - 1 if match else 0
+            
+            # Ensure client_id is non-negative
+            if client_id < 0:
+                logger.warning(f"Parsed negative client_id ({client_id}) from '{site_name}', using 0")
+                client_id = 0
         except (ValueError, AttributeError):
             logger.warning(f"Could not parse client_id from '{site_name}', using 0")
             client_id = 0
