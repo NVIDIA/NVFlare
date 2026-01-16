@@ -153,7 +153,6 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         site_name = fl_ctx.get_identity_name()
 
         # Parse client_id from site name (e.g., "site-1" -> 0)
-        try:
         # Parse client_id from site name (e.g., "site-1" -> 0)
         try:
             if site_name.startswith("site-"):
