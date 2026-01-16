@@ -19,11 +19,15 @@ import torch.nn as nn
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe as TFFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -141,6 +145,11 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.job.name == expected_name
 
 
+def get_model_selector(recipe):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get("model_selector")
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
@@ -151,6 +160,14 @@ class TestFedAvgRecipe:
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.initial_model is None
         assert isinstance(recipe.aggregator, Aggregator)
+
+    def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params):
+        key_metric = "val_auc"
+        recipe = FedAvgRecipe(name="test_fedavg_key_metric", key_metric=key_metric, **base_recipe_params)
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
 
     def test_custom_aggregator_initialization(self, mock_file_system, base_recipe_params, custom_aggregator):
         """Test FedAvgRecipe initialization with custom aggregator."""
@@ -197,3 +214,28 @@ class TestFedAvgRecipe:
             "num_rounds": num_rounds,
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)
+
+
+class TestFedAvgRecipeKeyMetricVariants:
+    """Test key_metric passthrough for TF and NumPy FedAvg recipes."""
+
+    def test_key_metric_passthrough_tf(self, mock_file_system, base_recipe_params):
+        key_metric = "val_f1"
+        recipe = TFFedAvgRecipe(name="test_tf_key_metric", key_metric=key_metric, **base_recipe_params)
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
+
+    def test_key_metric_passthrough_numpy(self, mock_file_system):
+        key_metric = "val_loss"
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_key_metric",
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric=key_metric,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
