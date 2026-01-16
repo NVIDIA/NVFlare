@@ -4,6 +4,10 @@
 Client API
 ##########
 
+.. note::
+   **Quick Start:** If you're new to FLARE and want a quick practical guide, see :ref:`client_api_usage` in the User Guide.
+   This page provides in-depth technical details for researchers and developers.
+
 The FLARE Client API provides an easy way for users to convert their centralized,
 local training code into federated learning code with the following benefits:
 
@@ -124,6 +128,22 @@ Here's a complete example showing how Client API and Job Recipe work together:
         # ... evaluation logic ...
         return accuracy
 
+    def load_data():
+        # Your data loading logic here
+        # This should return training and test data loaders
+        from torchvision import datasets, transforms
+        from torch.utils.data import DataLoader
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
+        test_dataset = datasets.MNIST('./data', train=False, transform=transform)
+        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+        return train_loader, test_loader
+
     def main():
         # Initialize Client API
         flare.init()
@@ -230,6 +250,9 @@ Key Benefits of This Approach
 3. **Environment Flexibility**: Same code works in simulation, POC, and production
 4. **Easy Experimentation**: Change FL parameters without modifying training code
 5. **Built-in Features**: Add tracking, cross-site evaluation, etc. with single function calls
+
+Client API Reference
+====================
 
 Below is a table overview of key Client APIs.
 
@@ -396,10 +419,10 @@ For complete working examples of using Client API with Job Recipes across differ
 - XGBoost: :github_nvflare_link:`xgboost examples <examples/advanced/xgboost>` - Tree-based federated learning
 - Scikit-learn: :github_nvflare_link:`sklearn examples <examples/advanced/sklearn-*>` - Traditional ML algorithms
 
-**Step-by-Step Tutorials:**
+**Self-Paced Learning:**
 
-For progressive learning, explore the :github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`,
-which covers different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) using the same datasets.
+For progressive learning, explore the :ref:`self_paced_training` materials,
+which cover different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) with comprehensive tutorials and examples.
 
 Each example includes:
 
