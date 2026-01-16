@@ -3,12 +3,12 @@
 Hello NumPy
 ===========
 
-This example demonstrates how to use NVIDIA FLARE with NumPy to train a simple model using federated averaging (FedAvg). The complete example code can be found in the `hello-numpy directory <examples/hello-world/hello-numpy/>`_.
+This example demonstrates how to use NVIDIA FLARE with NumPy to train a simple model using federated averaging (FedAvg). The complete example code can be found in the :github_nvflare_link:`hello-numpy directory <examples/hello-world/hello-numpy>`.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 NVIDIA FLARE Installation
 -------------------------
-For the complete installation instructions, see `installation <../../installation.html>`_
+For the complete installation instructions, see :ref:`installation`
 
 .. code-block:: text
 
