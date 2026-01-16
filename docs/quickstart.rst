@@ -25,16 +25,18 @@ The following hello-world examples demonstrate different federated learning algo
 
 2. **Hello Lightning** - Example using PyTorch Lightning for streamlined model training. :doc:`hello-world/hello-lightning/index`
 
-3. **Hello TensorFlow** - Federated averaging using TensorFlow models. :doc:`hello-world/hello-tf/index`
+3. **Hello Differential Privacy** - `Federated learning with differential privacy using PyTorch and Opacus for privacy-preserving training. <hello-world/hello-dp/index.html>`_
 
-4. **Hello Logistic Regression** - Federated logistic regression example using scikit-learn. :doc:`hello-world/hello-lr/index`
+4. **Hello TensorFlow** - `Federated averaging using TensorFlow models. <hello-world/hello-tf/index.html>`_
 
-5. **Hello Cyclic** - Cyclic federated learning workflow example. :doc:`hello-world/hello-cyclic/index`
+5. **Hello Logistic Regression** - `Federated logistic regression example using scikit-learn. <hello-world/hello-lr/index.html>`_
 
-6. **Hello Tabular Statistics** - Federated statistics computation example. :doc:`hello-world/hello-tabular-stats/index`
+6. **Hello Cyclic** - `Cyclic federated learning workflow example. <hello-world/hello-cyclic/index.html>`_
 
-7. **Hello Flower** - Running Flower apps in FLARE. :doc:`hello-world/hello-flower/index`
+7. **Hello Tabular Statistics** - `Federated statistics computation example. <hello-world/hello-tabular-stats/index.html>`_
 
-8. **Hello XGBoost** - Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. :doc:`hello-world/hello-xgboost/index`
+8. **Hello Flower** - `Running Flower apps in FLARE. <hello-world/hello-flower/index.html>`_
+
+9. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
 
 Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
