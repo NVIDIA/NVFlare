@@ -24,8 +24,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe as TFFedAvgRecipe
 
