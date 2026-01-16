@@ -182,8 +182,11 @@ class FeatureElectionExecutor(Executor):
             X_tr = scaler.fit_transform(self.X_train)
 
             # Initialize model if not yet fitted (first round)
+            # Initialize model if not yet fitted (first round)
             if not hasattr(self.model, "coef_"):
-                self.model.partial_fit(X_tr[:1], self.y_train[:1], classes=np.unique(self.y_train))
+                # Use a small batch for initialization to avoid single-sample issues
+                init_size = min(10, len(X_tr))
+                self.model.partial_fit(X_tr[:init_size], self.y_train[:init_size], classes=np.unique(self.y_train))
 
             # Load global parameters if available
             if "params" in shareable:
