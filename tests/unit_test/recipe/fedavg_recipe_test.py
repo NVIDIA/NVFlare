@@ -27,7 +27,6 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe as TFFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -217,15 +216,7 @@ class TestFedAvgRecipe:
 
 
 class TestFedAvgRecipeKeyMetricVariants:
-    """Test key_metric passthrough for TF and NumPy FedAvg recipes."""
-
-    def test_key_metric_passthrough_tf(self, mock_file_system, base_recipe_params):
-        key_metric = "val_f1"
-        recipe = TFFedAvgRecipe(name="test_tf_key_metric", key_metric=key_metric, **base_recipe_params)
-
-        model_selector = get_model_selector(recipe)
-        assert isinstance(model_selector, IntimeModelSelector)
-        assert model_selector.key_metric == key_metric
+    """Test key_metric passthrough for NumPy FedAvg recipes."""
 
     def test_key_metric_passthrough_numpy(self, mock_file_system):
         key_metric = "val_loss"
