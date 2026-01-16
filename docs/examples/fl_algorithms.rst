@@ -29,13 +29,6 @@ SCAFFOLD
 namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the `implementation <https://github.com/Xtra-Computing/NIID-Bench>`_
 as described in `Li et al. <https://arxiv.org/abs/2102.02079>`_. An example configuration can be found in cifar10_scaffold of :github_nvflare_link:`CIFAR-10 example <examples/advanced/cifar10>`.
 
-Ditto
------
-`Ditto <https://arxiv.org/abs/2012.04221>`_ uses a slightly modified version of the prostate Learner implementation,
-namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model
-training and a controllable prox term. See the :github_nvflare_link:`prostate segmentation example <examples/advanced/prostate>`
-for an example with ditto in addition to FedProx, FedAvg, and centralized training.
-
 Federated XGBoost
 -----------------
 
