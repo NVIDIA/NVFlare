@@ -241,11 +241,6 @@ Examples
 For examples of using Client API with different frameworks,
 please refer to :github_nvflare_link:`examples/hello-world/ml-to-fl <examples/hello-world/ml-to-fl>`.
 
-For additional examples, also take a look at the
-:github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`
-that use Client API to write the
-:github_nvflare_link:`train script <examples/hello-world/step-by-step/cifar10/code/fl/train.py>`.
-
 
 Selection of Job Templates (deprecated)
 =======================================
