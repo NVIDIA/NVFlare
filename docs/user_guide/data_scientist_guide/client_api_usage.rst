@@ -96,10 +96,10 @@ Then run your federated learning job:
 
 That's it! Your training script (with Client API) and job definition work together to run federated learning.
 
-**Learn More:**
+See the **Learn More** section at the bottom for detailed guides and resources.
 
-* :ref:`job_recipe` - Complete guide on Job Recipes, execution environments (SimEnv/PocEnv/ProdEnv), and advanced options
-* :ref:`client_api` - Programming Guide with detailed technical examples
+Client API Reference
+====================
 
 Below is a table overview of key Client APIs.
 
