@@ -41,11 +41,6 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
 --------------------------------
 
   * :github_nvflare_link:`image_stats <examples/hello-world/step-by-step/cifar10/stats/image_stats.ipynb>` - federated statistics (histograms) of CIFAR10.
-  * :github_nvflare_link:`sag <examples/hello-world/step-by-step/cifar10/sag/sag.ipynb>` - scatter and gather (SAG) workflow with PyTorch with Client API.
-  * :github_nvflare_link:`sag_deploy_map <examples/hello-world/step-by-step/cifar10/sag_deploy_map/sag_deploy_map.ipynb>` - scatter and gather workflow with deploy_map configuration for deployment of apps to different sites using the Client API.
-  * :github_nvflare_link:`sag_executor <examples/hello-world/step-by-step/cifar10/sag_executor/sag_executor.ipynb>` - scatter and gather workflow demonstrating show to write client-side executors.
-  * :github_nvflare_link:`sag_mlflow <examples/hello-world/step-by-step/cifar10/sag_mlflow/sag_mlflow.ipynb>` - MLflow experiment tracking logs with the Client API in scatter & gather workflows.
-  * :github_nvflare_link:`sag_he <examples/hello-world/step-by-step/cifar10/sag_he/sag_he.ipynb>` - homomorphic encryption using Client API and POC -he mode.
   * :github_nvflare_link:`cse <examples/hello-world/step-by-step/cifar10/cse/cse.ipynb>` - cross-site evaluation using the Client API.
   * :github_nvflare_link:`cyclic <examples/hello-world/step-by-step/cifar10/cyclic/cyclic.ipynb>` - cyclic weight transfer workflow with server-side controller.
   * :github_nvflare_link:`cyclic_ccwf <examples/hello-world/step-by-step/cifar10/cyclic_ccwf/cyclic_ccwf.ipynb>` - client-controlled cyclic weight transfer workflow with client-side controller.
@@ -98,7 +93,6 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 =========================
 
   * :github_nvflare_link:`MONAI Integration (GitHub) <integration/monai>` - For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle `MONAI <https://project-monai.github.io/>`_
-  * :github_nvflare_link:`Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <examples/advanced/brats18>` - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
 
 8. Federated Statistics
 =======================
@@ -237,9 +231,7 @@ Most hello-* examples use a custom folder within the FL application.
 Note that using a custom folder in the app needs to be :ref:`allowed <troubleshooting_byoc>` when using secure provisioning.
 By default, this option is disabled in the secure mode. POC mode, however, will work with custom code by default.
 
-In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>`,
-:github_nvflare_link:`prostate segmentation <examples/advanced/prostate>`,
-and :github_nvflare_link:`BraTS18 segmentation <examples/advanced/brats18>` examples assume that the
+In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>` example assumes that the
 learner code is already installed on the client's system and available in the PYTHONPATH.
 Hence, the app folders do not include the custom code there.
 The PYTHONPATH is set in the ``run_poc.sh`` or ``run_secure.sh`` scripts of the example.

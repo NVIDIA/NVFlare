@@ -211,7 +211,7 @@ script.
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
   above. This is implemented in the
-  `train_newton_raphson() <./client.py>`_ method. Each client then
+  :github_nvflare_link:`train_newton_raphson() <examples/hello-world/hello-lr/client.py>` method. Each client then
   sends the computed results (always in `FLModel` format) to server for aggregation,
   using `flare.send()`  API.
 

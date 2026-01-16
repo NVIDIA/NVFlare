@@ -189,7 +189,7 @@ From terminal simply run the job script to execute the job in a simulation envir
    python job.py
 
 .. note::
-   As part of the job script, use ``add_experiment_tracking(recipe, tracking_type="tensorboard")`` to stream training metrics to the server using NVIDIA FLARE's `SummaryWriter <https://nvflare.readthedocs.io/en/main/apidocs/nvflare.client.tracking.html#nvflare.client.tracking.SummaryWriter>`_ in `client.py <client.py>`_.
+   As part of the job script, use ``add_experiment_tracking(recipe, tracking_type="tensorboard")`` to stream training metrics to the server using NVIDIA FLARE's `SummaryWriter <https://nvflare.readthedocs.io/en/main/apidocs/nvflare.client.tracking.html#nvflare.client.tracking.SummaryWriter>`_ in :github_nvflare_link:`client.py <examples/hello-world/hello-pt/client.py>`.
 
 Notebook
 --------
