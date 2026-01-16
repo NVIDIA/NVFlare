@@ -215,13 +215,6 @@ The job recipe defines the FL workflow:
 
 ## Additional Examples
 
-### Step-by-Step Examples
-Detailed tutorials covering specific FL techniques and workflows:
-- [CIFAR-10 Examples](./step-by-step/cifar10/) - FedAvg, Cyclic, Cross-Site Validation, Swarm Learning
-- [Higgs Examples](./step-by-step/higgs/) - Scikit-learn, XGBoost, Federated Statistics
-
-[Learn more →](./step-by-step/)
-
 ### ML-to-FL Conversion
 Learn how to convert existing ML/DL code to federated learning:
 - [PyTorch Conversion](./ml-to-fl/pt/)
