@@ -112,6 +112,22 @@ pip install -r requirements.txt
 python job.py
 ```
 
+#### [Hello Differential Privacy](./hello-dp/)
+Train a fraud detection model with differential privacy guarantees using PyTorch and Opacus.
+
+**What you'll learn:**
+- Implementing differential privacy with DP-SGD using Opacus
+- Privacy budget tracking across federated rounds
+- Training on privacy-sensitive data (credit card fraud)
+- Privacy-utility trade-offs in federated learning
+
+**Run it:**
+```bash
+cd hello-dp
+pip install -r requirements.txt
+python job.py
+```
+
 #### [Hello TensorFlow](./hello-tf/)
 Train an MNIST classifier using TensorFlow and FedAvg.
 
@@ -214,13 +230,6 @@ The job recipe defines the FL workflow:
 ```
 
 ## Additional Examples
-
-### Step-by-Step Examples
-Detailed tutorials covering specific FL techniques and workflows:
-- [CIFAR-10 Examples](./step-by-step/cifar10/) - FedAvg, Cyclic, Cross-Site Validation, Swarm Learning
-- [Higgs Examples](./step-by-step/higgs/) - Scikit-learn, XGBoost, Federated Statistics
-
-[Learn more →](./step-by-step/)
 
 ### ML-to-FL Conversion
 Learn how to convert existing ML/DL code to federated learning:
