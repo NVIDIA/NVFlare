@@ -51,7 +51,7 @@ def main():
     # Create statistics generator
     stats_generator = MonaiBundleStatistics(bundle_root=os.path.join(os.getcwd(), args.bundle_root))
 
-    sites = [f"site-{i+1}" for i in range(args.n_clients)]
+    sites = [f"site-{i + 1}" for i in range(args.n_clients)]
 
     # Create FedStatsRecipe
     recipe = FedStatsRecipe(
@@ -66,10 +66,10 @@ def main():
 
     # Setup simulation environment
     env = SimEnv(clients=sites, workspace_root=args.workspace)
-    
+
     # Execute the recipe
     run = recipe.execute(env)
-    
+
     print()
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

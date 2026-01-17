@@ -59,24 +59,15 @@ def main():
         name="spleen_bundle_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=FLUNet(spatial_dims=3,
+        initial_model=FLUNet(
+            spatial_dims=3,
             in_channels=1,
             out_channels=2,
-            channels=[
-                16,
-                32,
-                64,
-                128,
-                256
-            ],
-            strides=[
-                2,
-                2,
-                2,
-                2
-            ],
-        num_res_units=2,
-        norm="batch"),
+            channels=[16, 32, 64, 128, 256],
+            strides=[2, 2, 2, 2],
+            num_res_units=2,
+            norm="batch"
+        ),
         train_script="client.py",
         train_args=train_args,
         aggregator_data_kind=DataKind.WEIGHT_DIFF if args.send_weight_diff else DataKind.WEIGHTS,
@@ -90,10 +81,10 @@ def main():
 
     # Setup simulation environment
     env = SimEnv(num_clients=args.n_clients, num_threads=args.threads, workspace_root=args.workspace)
-    
+
     # Execute the recipe
     run = recipe.execute(env)
-    
+
     print()
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

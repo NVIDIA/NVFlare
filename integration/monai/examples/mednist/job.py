@@ -19,12 +19,10 @@ This example shows federated learning with MONAI using Client API and FedAvgReci
 """
 
 import argparse
-import os
 
 from model import FLDenseNet121
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -57,10 +55,10 @@ def main():
 
     # Setup simulation environment
     env = SimEnv(num_clients=args.n_clients, num_threads=args.threads, workspace_root=args.workspace)
-    
+
     # Execute the recipe
     run = recipe.execute(env)
-    
+
     print()
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())

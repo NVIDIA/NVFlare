@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import os
 
 from monai.bundle import ConfigParser
-#from monai.data import ITKReader, load_decathlon_datalist
+# from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
@@ -25,7 +24,7 @@ from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, 
 class MonaiBundleStatistics(Statistics):
     """Statistics generator that computes statistics from MONAI bundle datasets."""
 
-    def __init__(self, bundle_root: str, data_list_key: str="train"):
+    def __init__(self, bundle_root: str, data_list_key: str = "train"):
         super().__init__()
         self.bundle_root = bundle_root
         self.train_parser = None
@@ -40,13 +39,13 @@ class MonaiBundleStatistics(Statistics):
         # Parse MONAI bundle configuration
         self.train_parser = ConfigParser()
         self.train_parser.read_config(os.path.join(self.bundle_root, "configs/train.json"))
-        
+
         # Get dataset configuration
         self.data_list = self.train_parser.get_parsed_content(f"{self.data_list_key}#dataset#data")
-        
+
         if len(self.data_list) == 0:
             raise ValueError(f"Data list is empty for key: {self.data_list_key}")
-        
+
         # Setup image loader
         self.image_loader = LoadImage(image_only=True)
 
@@ -75,24 +74,24 @@ class MonaiBundleStatistics(Statistics):
     def failure_count(self, dataset_name: str, feature_name: str) -> int:
         return 0
 
-    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, 
+    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int,
                   global_min_value: float, global_max_value: float) -> Histogram:
         """Compute histogram over all images in the dataset."""
         import numpy as np
-        
+
         # Initialize histogram bins
         bins = np.linspace(global_min_value, global_max_value, num_of_bins + 1)
         counts = np.zeros(num_of_bins, dtype=int)
-        
+
         # Accumulate histogram over all images
         for item in self.data_list:
             image_path = item["image"]
             image = self.image_loader(image_path)
-            
+
             # Compute histogram for this image
             hist, _ = np.histogram(image.flatten(), bins=bins)
             counts += hist
-        
+
         # Create Histogram object
         histogram_bins = []
         for i in range(num_of_bins):
@@ -101,5 +100,5 @@ class MonaiBundleStatistics(Statistics):
                 high_value=bins[i + 1],
                 sample_count=int(counts[i])
             ))
-        
+
         return Histogram(HistogramType.STANDARD, histogram_bins)
