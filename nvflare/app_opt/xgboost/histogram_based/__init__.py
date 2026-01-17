@@ -11,3 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import warnings
+
+warnings.warn(
+    "The 'nvflare.app_opt.xgboost.histogram_based' module (V1) is deprecated and will be removed in "
+    "version 2.8.0. Please use 'nvflare.app_opt.xgboost.histogram_based_v2' instead, or set "
+    "algorithm='histogram_v2' in XGBHistogramRecipe.",
+    DeprecationWarning,
+    stacklevel=2,
+)
