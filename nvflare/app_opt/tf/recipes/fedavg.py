@@ -69,6 +69,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         Basic usage without experiment tracking:
@@ -159,6 +162,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
+        key_metric: str = "accuracy",
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -180,6 +184,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             per_site_config=per_site_config,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
+            key_metric=key_metric,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

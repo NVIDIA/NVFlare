@@ -16,14 +16,15 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -44,6 +45,8 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    analytics_receiver: Optional[AnalyticsReceiver] = None
+    key_metric: str
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -76,7 +79,13 @@ class NumpyFedAvgRecipe(Recipe):
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
+            MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
+            Use `add_experiment_tracking()` utility function to easily add tracking.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         ```python
@@ -114,6 +123,8 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -129,6 +140,8 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            analytics_receiver=analytics_receiver,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -147,9 +160,16 @@ class NumpyFedAvgRecipe(Recipe):
         self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.analytics_receiver = v.analytics_receiver
+        self.key_metric = v.key_metric
 
-        # Create FedJob
-        job = FedJob(name=self.name)
+        # Create BaseFedJob (provides ConvertToFedEvent for experiment tracking)
+        job = BaseFedJob(
+            name=self.name,
+            min_clients=self.min_clients,
+            analytics_receiver=self.analytics_receiver,
+            key_metric=self.key_metric,
+        )
 
         # Define the controller and send to server
         if self.aggregator is None:

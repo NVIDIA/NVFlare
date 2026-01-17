@@ -94,7 +94,7 @@ class FederatedClientBase:
             compression=compression,
             cell=cell,
             client_register_interval=client_args.get("client_register_interval", 2.0),
-            timeout=client_args.get("communication_timeout", 30.0),
+            timeout=client_args.get("communication_timeout", 300.0),
             maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
 

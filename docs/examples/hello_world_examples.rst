@@ -6,7 +6,6 @@ Hello World examples can be run from the :github_nvflare_link:`hello_world noteb
 .. toctree::
 
    :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>`
-   :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>`
    hello_numpy
    hello_cross_val
    :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>`
