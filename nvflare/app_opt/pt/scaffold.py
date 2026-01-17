@@ -67,6 +67,7 @@ class PTScaffoldHelper(object):
         self.c_global = None
         self.c_local = None
         self.c_delta_para = None
+        self.device = None
 
     def init(self, model):
         # create models for SCAFFOLD correction terms
@@ -78,6 +79,11 @@ class PTScaffoldHelper(object):
             c_init_para[k] = torch.zeros_like(c_init_para[k])
         self.c_global.load_state_dict(c_init_para)
         self.c_local.load_state_dict(c_init_para)
+
+        # Set the device of the correction terms to the device of the model
+        self.device = next(model.parameters()).device
+        self.c_global.to(self.device)
+        self.c_local.to(self.device)
 
     def get_params(self):
         self.cnt = 0

@@ -29,7 +29,7 @@ The ``pyproject.toml`` file exists in the job's ``custom`` folder. It is an impo
 client app definition and configuration information. Such information is used by the Flower system to find the
 server app and the client app, and to pass app-specific configuration to the apps.
 
-Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this example <examples/hello-world/hello-flower/jobs/hello-flwr-pt/app/custom/pyproject.toml>`.
+Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this example <examples/hello-world/hello-flower/flwr-pt/pyproject.toml>`.
 
 .. code-block:: toml
 

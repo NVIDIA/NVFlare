@@ -18,13 +18,6 @@ Tutorial Catalog
 - Browse and filter a comprehensive set of examples by experience level, framework, algorithm, application, industry, API, and privacy algorithm.
 - `Explore the Catalog <https://nvidia.github.io/NVFlare/catalog/>`_
 
-Step-by-Step Walkthroughs
--------------------------
-
-- Explore different FL algorithms using the same datasets (CIFAR10 for images, Higgs for tabular data).
-- Covers FedAvg, Cyclic, Swarm Learning, Federated Statistics, Scikit-learn, XGBoost, and more.
-- `Step-by-step examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`_
-
 Feature Tutorials
 -----------------
 

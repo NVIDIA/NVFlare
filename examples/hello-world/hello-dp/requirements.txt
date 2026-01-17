@@ -1,0 +1,6 @@
+nvflare[PT]~=2.7.0rc
+torch
+tensorboard
+scikit-learn
+opacus
+pandas

@@ -77,7 +77,7 @@ Model
 
 In PyTorch, neural networks are implemented by defining a class (e.g., ``SimpleNetwork``) that extends ``nn.Module``. 
 The network's architecture is set up in the __init__ method, while the forward method determines how input data flows
-through the layers. For faster computations, the model is transferred to a hardware accelerator (such as NVIDIA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in `model.py <model.py>`_.
+through the layers. For faster computations, the model is transferred to a hardware accelerator (such as NVIDIA GPUs) if available; otherwise, it runs on the CPU. The implementation of this model can be found in :github_nvflare_link:`model.py <examples/hello-world/hello-pt/model.py>`.
 
 .. code-block:: python
 
@@ -113,7 +113,7 @@ On the client side, the training workflow is as follows:
 2. Perform local training on the received global model and/or evaluate the received global model for model selection.
 3. Send the new model back to the FL server.
 
-The client code (`client.py <./client.py>`_) is responsible for implementing this training workflow. Notice the training code is almost identical to a standard training PyTorch code. 
+The client code (:github_nvflare_link:`client.py <examples/hello-world/hello-pt/client.py>`) is responsible for implementing this training workflow. Notice the training code is almost identical to a standard training PyTorch code. 
 The only difference is that we added a few lines to receive and send data to the server.
 
 Using NVFlare's client API, we can easily adapt machine learning code that was written for centralized training and apply it in a federated scenario.
@@ -189,12 +189,12 @@ From terminal simply run the job script to execute the job in a simulation envir
    python job.py
 
 .. note::
-   As part of the job script, use ``add_experiment_tracking(recipe, tracking_type="tensorboard")`` to stream training metrics to the server using NVIDIA FLARE's `SummaryWriter <https://nvflare.readthedocs.io/en/main/apidocs/nvflare.client.tracking.html#nvflare.client.tracking.SummaryWriter>`_ in `client.py <client.py>`_.
+   As part of the job script, use ``add_experiment_tracking(recipe, tracking_type="tensorboard")`` to stream training metrics to the server using NVIDIA FLARE's `SummaryWriter <https://nvflare.readthedocs.io/en/main/apidocs/nvflare.client.tracking.html#nvflare.client.tracking.SummaryWriter>`_ in :github_nvflare_link:`client.py <examples/hello-world/hello-pt/client.py>`.
 
 Notebook
 --------
 
-For an interactive version of this example, see this `notebook <./hello-pt.ipynb>`_, which can be executed in Google Colab.
+For an interactive version of this example, see this :github_nvflare_link:`notebook <examples/hello-world/hello-pt/hello-pt.ipynb>`, which can be executed in Google Colab.
 
 Output summary
 --------------

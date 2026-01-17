@@ -224,6 +224,9 @@ class ScatterAndGatherScaffold(ScatterAndGather):
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     self._engine.persist_components(fl_ctx, completed=False)
 
+                # Reset aggregator state for next round
+                self.aggregator.reset(fl_ctx)
+
                 gc.collect()
 
             self._phase = AppConstants.PHASE_FINISHED

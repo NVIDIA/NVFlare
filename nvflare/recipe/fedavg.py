@@ -49,6 +49,7 @@ class _FedAvgValidator(BaseModel):
     model_persistor: Optional[ModelPersistor]
     analytics_receiver: Any
     per_site_config: Optional[dict[str, dict]] = None
+    key_metric: str
 
 
 class FedAvgRecipe(Recipe):
@@ -107,6 +108,9 @@ class FedAvgRecipe(Recipe):
             - server_expected_format (ExchangeFormat): Exchange format
             - params_transfer_type (TransferType): Parameter transfer type
             If not provided, the same configuration will be used for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -136,6 +140,7 @@ class FedAvgRecipe(Recipe):
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -155,6 +160,7 @@ class FedAvgRecipe(Recipe):
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -173,6 +179,7 @@ class FedAvgRecipe(Recipe):
         self.model_persistor = v.model_persistor
         self.analytics_receiver = v.analytics_receiver
         self.per_site_config = v.per_site_config
+        self.key_metric = v.key_metric
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
             if self.initial_model is None and self.model_persistor is None:
@@ -186,6 +193,7 @@ class FedAvgRecipe(Recipe):
             name=self.name,
             min_clients=self.min_clients,
             analytics_receiver=self.analytics_receiver,
+            key_metric=self.key_metric,
         )
 
         # Setup framework-specific model components and persistor
