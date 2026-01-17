@@ -6,7 +6,7 @@ In this example, we will show how to generate federated statistics for tabular d
 
 NVIDIA FLARE Installation
 -------------------------
-for the complete installation instructions, see `installation <../../installation.html>`_
+for the complete installation instructions, see :doc:`Installation </installation>`
 
 .. code-block:: text
 
