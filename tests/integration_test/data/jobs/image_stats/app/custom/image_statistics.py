@@ -17,9 +17,9 @@ import os
 from typing import Optional
 
 import numpy as np
-
 from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 from nvflare.security.logging import secure_log_traceback
