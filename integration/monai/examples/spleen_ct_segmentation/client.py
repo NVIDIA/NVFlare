@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import os
 
 from monai.fl.client import MonaiAlgo
 from monai.fl.utils.exchange_object import ExchangeObject
@@ -62,7 +61,7 @@ def main():
         # Evaluate the global weights
         test_report = algo.evaluate(data=global_weights)
         test_key_metric = test_report.metrics.get("val_accuracy")
-        print(f"Test report:")
+        print("Test report:")
         for key, value in test_report.metrics.items():
             print(f"{key}: {value}")
             # Log each metric to SummaryWriter
@@ -79,7 +78,7 @@ def main():
         statistics = updated_weights.statistics
         executed_steps = statistics.get(FlStatistics.NUM_EXECUTED_ITERATIONS)
         print(f"Completed {executed_steps} training steps for current round")
-        
+
         # Log training statistics to SummaryWriter
         if statistics:
             for key, value in statistics.items():
