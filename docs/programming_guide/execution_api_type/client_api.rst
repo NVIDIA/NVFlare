@@ -195,7 +195,7 @@ For examples of using Client API with different frameworks, please refer to:
 - PyTorch: :ref:`hello_pt`
 - PyTorch Lightning: :ref:`hello_lightning`
 - TensorFlow: :ref:`hello_tf`
-- HuggingFace: :github_nvflare_link:`llm_hf <examples/llm_hf>`
+- HuggingFace: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>`
 
 
 
