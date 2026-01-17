@@ -65,6 +65,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type.
             If not provided, the same configuration will be used for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         Basic usage without experiment tracking:
@@ -137,6 +140,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         model_persistor: Optional[ModelPersistor] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "accuracy",
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -156,6 +160,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             model_persistor=model_persistor,
             analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
+            key_metric=key_metric,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

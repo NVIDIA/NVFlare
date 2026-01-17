@@ -393,7 +393,10 @@ def main():
             # (9) Construct trained FL model
             output_model = flare.FLModel(
                 params=out_param,
-                metrics={"eval_loss": eval_loss},
+                metrics={
+                    "eval_loss": eval_loss,
+                    "neg_eval_loss": -eval_loss,
+                },
                 meta={"NUM_STEPS_CURRENT_ROUND": trainer.train_dataset.num_rows},
             )
             # (10) Send model back to NVFlare
