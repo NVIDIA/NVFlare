@@ -17,7 +17,6 @@ import os
 
 import torch
 import torch.optim as optim
-
 from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SlidingWindowInferer
 from monai.losses import DiceLoss
@@ -40,6 +39,7 @@ from monai.transforms import (
     RandShiftIntensityd,
     Spacingd,
 )
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
