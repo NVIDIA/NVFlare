@@ -33,7 +33,7 @@ def define_parser():
         "--client_ids",
         nargs="+",
         type=str,
-        default="",
+        default=None,
         help="Client/site names (space-separated). Used directly as site names and for data paths (e.g., 'dolly', 'hospital-1').",
     )
     parser.add_argument("--num_rounds", type=int, default=3, help="Number of FL rounds")

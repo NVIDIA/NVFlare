@@ -79,7 +79,7 @@ Blogs & Videos: 2023
 
 Blogs & Videos: 2022
 --------------------
-* **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/?ncid=so-nvsh-705336#cid=ix11_so-nvsh_en-us>`__ (NVIDIA Technical Blog)
+* **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/>`__ (NVIDIA Technical Blog)
 * **2022-08** `Using Federated Learning to Bridge Data Silos in Financial Services <https://developer.nvidia.com/blog/using-federated-learning-to-bridge-data-silos-in-financial-services/>`__ (NVIDIA Technical Blog)
 * **2022-06** `Experimenting with Novel Distributed Applications Using NVIDIA Flare 2.1 <https://developer.nvidia.com/blog/experimenting-with-novel-distributed-applications-using-nvidia-flare-2-1/>`__ (NVIDIA Technical Blog)
 * **2022-03** `Flywheel & NVIDIA FLARE Demo <https://youtu.be/v-EKZC4yvY4?si=5U_xZ_WKKb8AkCgT>`__ (`Flywheel <https://flywheel.io/>`__  Video)

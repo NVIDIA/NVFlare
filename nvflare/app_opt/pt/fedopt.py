@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         """
         super().__init__()
         if not optimizer_args:
-            self.logger("No optimizer_args provided. Using FedOpt with SGD and lr 1.0")
+            self.logger.warning("No optimizer_args provided. Using FedOpt with SGD and lr 1.0")
             optimizer_args = {"name": "SGD", "args": {"lr": 1.0}}
 
         if not isinstance(optimizer_args, dict):
@@ -76,10 +76,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         self.model = None
         self.optimizer = None
         self.lr_scheduler = None
-        if device is None:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
+        self.device = device
         self.optimizer_name = None
         self.lr_scheduler_name = None
 
@@ -96,6 +93,12 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         if event_type == EventType.START_RUN:
             # Initialize the optimizer with current global model params
             engine = fl_ctx.get_engine()
+
+            # select device for server-side optimization
+            if self.device is None:
+                self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            else:
+                self.device = torch.device(self.device)
 
             if isinstance(self.source_model, str):
                 self.model = engine.get_component(self.source_model)
