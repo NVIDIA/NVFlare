@@ -1,2 +1,3 @@
 nvflare~=2.7.0rc
 tensorflow[and-cuda]
+tensorboard
