@@ -52,6 +52,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are
+            a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -125,6 +127,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "accuracy",
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):
@@ -147,6 +150,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=TransferType.FULL,
             model_persistor=persistor,  # Pass sklearn-specific persistor
             per_site_config=per_site_config,
+            key_metric=key_metric,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
         )
