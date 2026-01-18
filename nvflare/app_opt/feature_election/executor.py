@@ -16,7 +16,6 @@ import logging
 from typing import Dict, Optional, Tuple
 
 import numpy as np
-
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression, SGDClassifier
