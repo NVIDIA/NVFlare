@@ -203,7 +203,7 @@ class FeatureElectionExecutor(Executor):
             self.model.partial_fit(X_tr, self.y_train)
 
             resp = make_reply(ReturnCode.OK)
-resp["params"] = {"weight_0": self.model.coef_.tolist(), "weight_1": self.model.intercept_.tolist()}
+            resp["params"] = {"weight_0": self.model.coef_.tolist(), "weight_1": self.model.intercept_.tolist()}
             resp["num_samples"] = len(self.X_train)
             return resp
         except Exception as e:
