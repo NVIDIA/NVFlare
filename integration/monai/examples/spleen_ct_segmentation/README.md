@@ -77,9 +77,9 @@ For visualization the results, see [stats_demo.ipynb](./stats_demo.ipynb).
 ## Architecture
 
 This example uses:
-- **Client API**: Simple Python API for FL training (see `train.py`)
+- **Client API**: Simple Python API for FL training (see `client.py`)
 - **FedAvgRecipe**: Pre-configured FedAvg workflow (see `job.py`)
 - **MONAI Bundle**: Standard MONAI model and configuration
 - **FedStatsRecipe**: Federated statistics collection (see `job_stats.py`)
 
-The training script (`train.py`) uses NVFlare's Client API with MONAI's bundle configuration, eliminating the need for custom executors or the deprecated `monai_nvflare` package.
+The training script (`client.py`) uses NVFlare's Client API with MONAI's bundle configuration, eliminating the need for custom executors or the deprecated `monai_nvflare` package.
