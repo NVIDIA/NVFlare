@@ -22,7 +22,7 @@ python3 download_spleen_dataset.py --output_dir /tmp/MONAI/data
 
 Update the data path in the downloaded bundle
 ```bash
-sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' /home/hroth/Code/nvflare/monai/integration/monai/examples/spleen_ct_segmentation/bundles/spleen_ct_segmentation/configs/*.json
+sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' ./bundles/spleen_ct_segmentation/configs/*.json
 ```
 
 
@@ -62,7 +62,7 @@ python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.5.
 
 Update the data path in the downloaded bundle
 ```bash
-sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' /home/hroth/Code/nvflare/monai/integration/monai/examples/spleen_ct_segmentation/bundles/spleen_ct_segmentation/configs/*.json
+sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' ./bundles/spleen_ct_segmentation/configs/*.json
 ```
 
 Run statistics job
