@@ -169,8 +169,6 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         except (ValueError, IndexError):
             client_id = 0
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
-        # Load data
-        X_train, y_train, X_val, y_val, feature_names = load_client_data(
             client_id=client_id,
             num_clients=self.num_clients,
             split_strategy=self.split_strategy,
