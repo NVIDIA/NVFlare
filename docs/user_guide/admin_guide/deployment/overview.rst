@@ -294,11 +294,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
   This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
 
-- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`pre_installer` command of the FLARE CLI.
-
-.. code-block::
-
-    nvflare pre-install
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, the workload must be pre-installed on target machines before starting the experiments. This can be done by building Docker images with the application code pre-installed.
 
 .. note::
     Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.
