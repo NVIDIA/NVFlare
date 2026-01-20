@@ -1,6 +1,22 @@
 # 3D Spleen CT Segmentation - Simulation
 
-This example demonstrates federated learning with [MONAI Bundles](https://monai.readthedocs.io/en/1.3.1/bundle_intro.html) using NVFlare's Client API and FedAvgRecipe.
+This example demonstrates federated learning with [MONAI Bundles](https://monai.readthedocs.io/en/1.3.1/bundle_intro.html) using NVFlare's Client API and Recipes.
+
+## Directory Structure
+
+```
+spleen_ct_segmentation/
+├── job_fedavg/              # Federated training with FedAvg
+│   ├── job.py              # Job configuration and launcher
+│   └── client.py           # Client training script
+├── job_stats/              # Federated statistics collection
+│   ├── job.py              # Statistics job configuration
+│   └── client.py           # Client statistics script
+├── bundles/                # MONAI bundles (downloaded)
+├── model.py                # Model definition (FLUNet)
+├── client_stats.py         # Statistics generator implementation
+└── download_spleen_dataset.py  # Data download script
+```
 
 ## Setup
 
@@ -33,7 +49,7 @@ sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' ./bundl
 **Note:** Full training takes several hours. For quick testing, reduce `--num_rounds` to 5-10.
 
 ```bash
-python job.py --n_clients 2 --num_rounds 10 --local_epochs 10 --tracking "tensorboard"
+python job_fedavg/job.py --n_clients 2 --num_rounds 10 --local_epochs 10 --tracking "tensorboard"
 ```
 
 Optional arguments:
@@ -42,6 +58,8 @@ Optional arguments:
 - `--local_epochs`: Local training epochs per round (default: 10)
 - `--threads`: Parallel threads for simulation (default: 2)
 - `--workspace`: NVFlare workspace directory (default: /tmp/nvflare/simulation)
+- `--send_weight_diff`: Send weight differences instead of full weights
+- `--tracking`: Experiment tracking type (tensorboard, mlflow, both, none)
 
 ### TensorBoard Monitoring
 
@@ -53,7 +71,7 @@ tensorboard --logdir /tmp/nvflare/simulation/spleen_bundle_fedavg
 
 To compute dataset statistics before training:
 
-# Prepare data and bundle for statistics job
+### Prepare data and bundle for statistics job
 
 Download the bundle (if you haven't already downloaded above)
 ```bash
@@ -65,21 +83,35 @@ Update the data path in the downloaded bundle
 sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' ./bundles/spleen_ct_segmentation/configs/*.json
 ```
 
-Run statistics job
+### Run statistics job
+
 ```bash
-python job_stats.py --n_clients 2
+python job_stats/job.py --n_clients 2
 ```
 
 Results are saved in the workspace under `/tmp/nvflare/simulation/spleen_bundle_stats/server/simulate_job/statistics/image_statistics.json`.
 
-For visualization the results, see [stats_demo.ipynb](./stats_demo.ipynb).
+For visualization of the results, see [stats_demo.ipynb](./stats_demo.ipynb).
 
 ## Architecture
 
 This example uses:
-- **Client API**: Simple Python API for FL training (see `client.py`)
-- **FedAvgRecipe**: Pre-configured FedAvg workflow (see `job.py`)
+- **Client API**: Simple Python API for FL training (see `job_fedavg/client.py`)
+- **FedAvgRecipe**: Pre-configured FedAvg workflow (see `job_fedavg/job.py`)
 - **MONAI Bundle**: Standard MONAI model and configuration
-- **FedStatsRecipe**: Federated statistics collection (see `job_stats.py`)
+- **MonaiAlgo**: MONAI's federated learning client algorithm for bundle integration
+- **FedStatsRecipe**: Federated statistics collection (see `job_stats/job.py`)
 
-The training script (`client.py`) uses NVFlare's Client API with MONAI's bundle configuration, eliminating the need for custom executors or the deprecated `monai_nvflare` package.
+### FedAvg Training Workflow
+
+The `job_fedavg/` directory contains:
+- `job.py`: Configures and launches the FedAvg experiment using `FedAvgRecipe`
+- `client.py`: Client-side training logic using MONAI's `MonaiAlgo` with NVFlare's Client API
+
+### Statistics Collection Workflow
+
+The `job_stats/` directory contains:
+- `job.py`: Configures and launches the statistics collection using `FedStatsRecipe`
+- `client.py`: Client-side statistics collection
+
+The training script (`job_fedavg/client.py`) uses NVFlare's Client API with MONAI's `MonaiAlgo` for seamless bundle integration, eliminating the need for custom executors or the deprecated `monai_nvflare` package.
