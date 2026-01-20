@@ -152,7 +152,6 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         # Extract client ID from site name
         site_name = fl_ctx.get_identity_name()
 
-        # Parse client_id from site name (e.g., "site-1" -> 0)
         # Extract client ID from site name
         site_name = fl_ctx.get_identity_name()
 
@@ -161,8 +160,14 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
             if site_name.startswith("site-"):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
-                # Try to extract any number
-        # Load data
+                # Try to extract any number from site name
+                match = re.search(r'\d+', site_name)
+                if match:
+                    client_id = int(match.group()) - 1
+                else:
+                    client_id = 0
+        except (ValueError, IndexError):
+            client_id = 0
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
         # Load data
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
