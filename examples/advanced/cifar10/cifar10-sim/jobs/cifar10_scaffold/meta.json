@@ -1,9 +1,0 @@
-{
-    "name": "cifar10_scaffold",
-    "deploy_map": {
-        "cifar10_scaffold": [
-            "@ALL"
-        ]
-    },
-    "min_clients": 8
-}

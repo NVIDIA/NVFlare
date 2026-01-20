@@ -420,6 +420,10 @@ For complete working examples of using Client API with Job Recipes across differ
 - Scikit-learn: :github_nvflare_link:`sklearn examples <examples/advanced/sklearn-*>` - Traditional ML algorithms
 
 **Self-Paced Learning:**
+- PyTorch: :ref:`hello_pt`
+- PyTorch Lightning: :ref:`hello_lightning`
+- TensorFlow: :ref:`hello_tf`
+- HuggingFace: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>`
 
 For progressive learning, explore the :ref:`self_paced_training` materials,
 which cover different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) with comprehensive tutorials and examples.

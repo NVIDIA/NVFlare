@@ -401,7 +401,8 @@ class Cell(StreamCell):
             return self._get_result(req_id)
         except Exception as ex:
             self.logger.error(f"exception sending request: {secure_format_exception(ex)}")
-            return self._get_result(req_id)
+            self.requests_dict.pop(req_id, None)
+            raise ex
 
     def _process_reply(self, future: StreamFuture):
         headers = future.headers
