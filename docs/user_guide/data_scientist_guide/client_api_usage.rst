@@ -69,7 +69,7 @@ a federated learning setting.
 Defining and Running the FL Job
 ================================
 
-After modifying your training script with Client API, you need to create a ``job.py`` file to define how the job runs:
+After modifying your training script with the Client API, you need to create a ``job.py`` file to define how the job runs:
 
 .. code-block:: python
 

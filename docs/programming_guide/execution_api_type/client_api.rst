@@ -5,8 +5,10 @@ Client API
 ##########
 
 .. note::
-   **Quick Start:** If you're new to FLARE and want a quick practical guide, see :ref:`client_api_usage` in the User Guide.
-   This page provides in-depth technical details for researchers and developers.
+   **For Data Scientists:** If you want a practical guide with less technical detail, see :ref:`client_api_usage` in the User Guide.
+   This page provides comprehensive technical documentation for researchers and developers.
+
+   **New to FLARE?** Start with the :ref:`quickstart` guide.
 
 The FLARE Client API provides an easy way for users to convert their centralized,
 local training code into federated learning code with the following benefits:
@@ -68,7 +70,7 @@ federated learning, for example:
     flare.send(output_model) # 5. Sends the model to NVFlare side.
 
 With 5 lines of code changes, we convert the centralized training code to
-federated learning setting.
+a federated learning setting.
 
 After this, we can utilize the Job Recipe to define and run the federated learning job. See :ref:`job_recipe` for details.
 
@@ -333,13 +335,7 @@ The Client API is the **recommended starting point** for most users, especially 
 * You need quick experimentation and prototyping
 * You prefer a simple, intuitive API
 
-**When to consider alternatives:**
-
-* **ModelLearner API**: If you need more control over the learning lifecycle
-* **Executor API**: If you need full customization of task handling
-* **3rd-Party Integration**: If integrating with external training systems
-
-For more information on alternative APIs, see :ref:`execution_api_type`.
+For information on other execution APIs, see :ref:`execution_api_type`.
 
 Additional Resources
 ====================
@@ -379,7 +375,7 @@ Sub-process Client API
 
 On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
 and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
-whether to launch the external script everytime when getting the task from server, or just launch the script once at the event
+whether to launch the external script every time when getting the task from server, or just launch the script once at the event
 of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
 (default) or FilePipe.
 
@@ -420,10 +416,6 @@ For complete working examples of using Client API with Job Recipes across differ
 - Scikit-learn: :github_nvflare_link:`sklearn examples <examples/advanced/sklearn-*>` - Traditional ML algorithms
 
 **Self-Paced Learning:**
-- PyTorch: :ref:`hello_pt`
-- PyTorch Lightning: :ref:`hello_lightning`
-- TensorFlow: :ref:`hello_tf`
-- HuggingFace: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>`
 
 For progressive learning, explore the :ref:`self_paced_training` materials,
 which cover different FL algorithms (FedAvg, Cyclic, Swarm Learning, etc.) with comprehensive tutorials and examples.
