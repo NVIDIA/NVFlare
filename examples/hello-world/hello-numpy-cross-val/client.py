@@ -64,6 +64,9 @@ def main():
             print(f"Received weights: {input_np_arr}")
         else:
             # Initialize with simple numpy array for first round
+            # Note: Size of 10 is arbitrary for this mock example. The example's train() and
+            # evaluate() functions work with any array size. In real applications, initialize
+            # with appropriate model dimensions that match your actual model architecture.
             input_np_arr = np.array([0.0] * 10)
             print(f"No initial model provided, using zero initialization: {input_np_arr}")
 
