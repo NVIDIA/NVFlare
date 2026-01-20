@@ -21,9 +21,9 @@ Hello-world Examples
 
 The following hello-world examples demonstrate different federated learning algorithms and workflows. Each example includes instructions and code to help you get started.
 
-1. **Hello PyTorch** - `Federated averaging with PyTorch models and training loops. <hello-world/hello-pt/index.html>`_
+1. **Hello PyTorch** - Federated averaging with PyTorch models and training loops. :doc:`hello-world/hello-pt/index`
 
-2. **Hello Lightning** - `Example using PyTorch Lightning for streamlined model training. <hello-world/hello-lightning/index.html>`_
+2. **Hello Lightning** - Example using PyTorch Lightning for streamlined model training. :doc:`hello-world/hello-lightning/index`
 
 3. **Hello Differential Privacy** - `Federated learning with differential privacy using PyTorch and Opacus for privacy-preserving training. <hello-world/hello-dp/index.html>`_
 
@@ -39,4 +39,4 @@ The following hello-world examples demonstrate different federated learning algo
 
 9. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
 
-Let's start with Hello PyTorch: `Federated averaging with PyTorch models and training loops. <hello-world/hello-pt/index.html>`_
+Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
