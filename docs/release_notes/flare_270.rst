@@ -181,7 +181,7 @@ and real-world industry use cases.
 Extra Features
 ==============
 
-There are additional new features released in version 2.7.0, including memory management improvements with FileDownloader for large model streaming and a pre-install CLI command for environments where dynamic code deployment is restricted. You can find more details in :ref:`extra_270`.
+There are additional new features released in version 2.7.0, including memory management improvements with FileDownloader for large model streaming. You can find more details in :ref:`extra_270`.
 
 
 
