@@ -88,22 +88,7 @@ sbatch nvflare.slurm
 
 ---
 
-## Problem Evolution and Solutions
-
-This document captures all the issues encountered and solutions implemented for multi-node distributed training with NVFlare and PyTorch DDP on SLURM.
-
-### Issues Encountered (in order)
-
-1. **"flare.init timeout" error** - Multiple FL clients trying to initialize on different nodes
-2. **"missing job on client" error** - FL client couldn't execute the training command
-3. **Environment variable scope** - Variables set in SLURM script weren't available in FL client process
-4. **"Invalid device ordinal" error** - Wrong CUDA device mapping (global rank vs local rank)
-5. **"Connection refused" error** - All processes trying to connect to NVFlare client
-6. **NCCL warnings** - Process group initialization warnings
-
-## Final Solution: Wrapper Script Approach
-
-### Architecture
+## Architecture
 
 ```
 SLURM Job (2 nodes allocated)
@@ -203,17 +188,6 @@ SLURM Job (2 nodes allocated)
    - All 16 processes train together using PyTorch DDP
    - Only rank 0 calls `flare.receive()` and `flare.send()`
    - Model updates synchronized across all processes
-
-## Current Solution Advantages
-
-✅ **Recipe Pattern**: Uses `FedAvgRecipe` for maintainable configuration  
-✅ **Separation of concerns**: Job creation vs execution  
-✅ **Environment isolation**: Wrapper script runs in correct environment  
-✅ **Flexibility**: Works for both single-node and multi-node via `--multi_node` flag  
-✅ **Per-Site Configuration**: Different commands and arguments per client via `per_site_config`  
-✅ **Simplicity**: No complex string escaping or variable expansion  
-✅ **Debugging**: Wrapper script provides clear logging  
-✅ **Portability**: Easy to modify for different cluster setups
 
 ## Job Configuration Arguments
 
