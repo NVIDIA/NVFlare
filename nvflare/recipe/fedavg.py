@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -40,7 +39,6 @@ class _FedAvgValidator(BaseModel):
     # Legacy parameters for backward compatibility (not used by new FedAvg)
     aggregator: Optional[Aggregator] = None
     aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS
-    analytics_receiver: Optional[AnalyticsReceiver] = None
     # Core parameters
     launch_external_process: bool
     command: str
@@ -89,8 +87,6 @@ class FedAvgRecipe(Recipe):
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver).
-            Use add_experiment_tracking() utility function for easier setup. Defaults to None.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
@@ -142,7 +138,6 @@ class FedAvgRecipe(Recipe):
         # Legacy parameters for backward compatibility
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         # Core parameters
         launch_external_process: bool = False,
         command: str = "python3 -u",
@@ -170,7 +165,6 @@ class FedAvgRecipe(Recipe):
             train_args=train_args,
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
-            analytics_receiver=analytics_receiver,
             launch_external_process=launch_external_process,
             command=command,
             framework=framework,
@@ -195,7 +189,6 @@ class FedAvgRecipe(Recipe):
         self.train_args = v.train_args
         self.aggregator = v.aggregator
         self.aggregator_data_kind = v.aggregator_data_kind
-        self.analytics_receiver = v.analytics_receiver
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.framework = v.framework
