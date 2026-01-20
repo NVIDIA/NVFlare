@@ -45,58 +45,22 @@ class WeightedAggregationHelper(object):
         self.history = list()
 
     def add(self, data, weight, contributor_name, contribution_round):
-        """Compute weighted sum and sum of weights.
-
-        Uses in-place operations to minimize memory copies.
-        """
+        """Compute weighted sum and sum of weights."""
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-
+                if self.weigh_by_local_iter:
+                    weighted_value = v * weight
+                else:
+                    weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext
                 current_total = self.total.get(k, None)
                 if current_total is None:
-                    # First contribution: clone and scale in-place if weigh_by_local_iter
-                    if self.weigh_by_local_iter:
-                        if hasattr(v, "clone"):
-                            # PyTorch tensor: clone then in-place multiply
-                            self.total[k] = v.clone().mul_(weight)
-                        elif hasattr(v, "copy"):
-                            # NumPy array: copy then in-place multiply
-                            self.total[k] = v.copy()
-                            self.total[k] *= weight
-                        else:
-                            # Fallback for other types
-                            self.total[k] = v * weight
-                    else:
-                        # No weighting: just clone/copy
-                        if hasattr(v, "clone"):
-                            self.total[k] = v.clone()
-                        elif hasattr(v, "copy"):
-                            self.total[k] = v.copy()
-                        else:
-                            self.total[k] = v
+                    self.total[k] = weighted_value
                     self.counts[k] = weight
                 else:
-                    # Subsequent contributions: in-place accumulate
-                    if self.weigh_by_local_iter:
-                        if hasattr(current_total, "add_"):
-                            # PyTorch: in-place add with alpha (v * weight)
-                            current_total.add_(v, alpha=weight)
-                        elif hasattr(current_total, "__iadd__"):
-                            # NumPy: compute weighted and add in-place
-                            current_total += v * weight
-                        else:
-                            self.total[k] = current_total + v * weight
-                    else:
-                        if hasattr(current_total, "add_"):
-                            current_total.add_(v)
-                        elif hasattr(current_total, "__iadd__"):
-                            current_total += v
-                        else:
-                            self.total[k] = current_total + v
+                    self.total[k] = current_total + weighted_value
                     self.counts[k] = self.counts[k] + weight
-
             self.history.append(
                 {
                     "contributor_name": contributor_name,
@@ -106,32 +70,11 @@ class WeightedAggregationHelper(object):
             )
 
     def get_result(self):
-        """Divide weighted sum by sum of weights.
-
-        Uses in-place division to minimize memory copies.
-        Returns the aggregated dict and resets internal state.
-        """
+        """Divide weighted sum by sum of weights."""
         with self.lock:
-            # In-place division where possible
-            for k, v in self.total.items():
-                scale = 1.0 / self.counts[k]
-                if hasattr(v, "mul_"):
-                    # PyTorch: in-place multiply by scale
-                    v.mul_(scale)
-                elif hasattr(v, "__imul__"):
-                    # NumPy: in-place multiply
-                    v *= scale
-                else:
-                    # Fallback: create new value
-                    self.total[k] = v * scale
-
-            # Return the total dict directly (ownership transferred)
-            result = self.total
-            # Reset with new empty dicts
-            self.total = dict()
-            self.counts = dict()
-            self.history = list()
-            return result
+            aggregated_dict = {k: v * (1.0 / self.counts[k]) for k, v in self.total.items()}
+            self.reset_stats()
+            return aggregated_dict
 
     def get_history(self):
         return self.history
