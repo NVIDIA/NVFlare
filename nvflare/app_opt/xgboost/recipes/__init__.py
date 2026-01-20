@@ -13,5 +13,7 @@
 # limitations under the License.
 
 from .bagging import XGBBaggingRecipe
+from .histogram import XGBHorizontalRecipe
+from .vertical import XGBVerticalRecipe
 
-__all__ = ["XGBBaggingRecipe"]
+__all__ = ["XGBBaggingRecipe", "XGBHorizontalRecipe", "XGBVerticalRecipe"]
