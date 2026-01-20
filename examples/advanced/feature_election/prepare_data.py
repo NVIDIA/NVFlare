@@ -203,6 +203,41 @@ def _split_non_iid(
     return [df.iloc[indices].copy() for indices in client_indices]
 
 
+def _safe_train_test_split(
+    X: np.ndarray,
+    y: np.ndarray,
+    test_size: float,
+    random_state: int,
+    client_id: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Perform train/test split with stratification when possible.
+
+    Falls back to random split if any class has fewer than 2 samples.
+
+    Args:
+        X: Feature array
+        y: Target array
+        test_size: Fraction of data for validation
+        random_state: Random seed
+        client_id: Client identifier for logging
+
+    Returns:
+        Tuple of (X_train, X_val, y_train, y_val)
+    """
+    unique, counts = np.unique(y, return_counts=True)
+    can_stratify = np.all(counts >= 2)
+
+    if can_stratify:
+        return train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+    else:
+        logger.warning(
+            f"Client {client_id}: Cannot stratify (some classes have <2 samples). "
+            f"Using random split instead. Class distribution: {dict(zip(unique, counts))}"
+        )
+        return train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+
 def load_client_data(
     client_id: int,
     num_clients: int,
@@ -245,22 +280,9 @@ def load_client_data(
             X = df.drop(columns=["target"]).values
             y = df["target"].values
 
-            # Check if stratification is possible (all classes must have at least 2 samples)
-            unique, counts = np.unique(y, return_counts=True)
-            can_stratify = np.all(counts >= 2)
-
-            if can_stratify:
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
-                )
-            else:
-                logger.warning(
-                    f"Client {client_id}: Cannot stratify pre-generated data (some classes have <2 samples). "
-                    f"Using random split instead. Class distribution: {dict(zip(unique, counts))}"
-                )
-                X_train, X_val, y_train, y_val = train_test_split(
-                    X, y, test_size=test_size, random_state=random_state + client_id
-                )
+            X_train, X_val, y_train, y_val = _safe_train_test_split(
+                X, y, test_size, random_state + client_id, client_id
+            )
             return X_train, y_train, X_val, y_val, feature_names
 
     # Generate synthetic data
@@ -283,22 +305,7 @@ def load_client_data(
     y = client_df["target"].values
 
     # Train/validation split
-    # Check if stratification is possible (all classes must have at least 2 samples)
-    unique, counts = np.unique(y, return_counts=True)
-    can_stratify = np.all(counts >= 2)
-
-    if can_stratify:
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
-        )
-    else:
-        logger.warning(
-            f"Client {client_id}: Cannot stratify (some classes have <2 samples). "
-            f"Using random split instead. Class distribution: {dict(zip(unique, counts))}"
-        )
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=random_state + client_id
-        )
+    X_train, X_val, y_train, y_val = _safe_train_test_split(X, y, test_size, random_state + client_id, client_id)
 
     logger.info(f"Client {client_id}: {len(X_train)} train samples, {len(X_val)} val samples")
 
