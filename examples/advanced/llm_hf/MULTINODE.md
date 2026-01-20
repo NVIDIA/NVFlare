@@ -22,6 +22,72 @@ This document describes how to run NVIDIA FLARE in an SLURM-managed cluster envi
 
 ---
 
+## Architecture: Testing/Development Mode
+
+This example uses `nvflare.slurm` to run both the NVFlare server and client within a single SLURM job:
+
+- Both NVFlare server and client run within a single SLURM job
+- Time-limited execution (e.g., 30 minutes to a few hours)
+- Useful for testing and development
+- Single cluster site only
+
+## ⚠️ Known Limitations
+
+This testing/development approach has the following limitations for production use:
+
+- ❌ **Time-limited**: Server stops when SLURM job ends (cannot support long-running federated learning workflows)
+- ❌ **Single-site only**: Cannot support multiple independent cluster sites
+- ❌ **Not scalable**: Requires restarting both server and client for each training session
+- ❌ **Resource inefficient**: Holds compute resources even during idle federated learning rounds
+
+**Note**: For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure and running clients as resident services on login nodes. This example focuses on the single-cluster testing scenario.
+
+## Quick Start
+
+For initial testing with a SLURM cluster, you can use the provided `nvflare.slurm` script that runs both server and client as a single job. See the details in [MULTINODE.md](MULTINODE.md).
+
+### 1. Create a fresh virtual environment on your cluster
+Create a fresh virtual environment on your cluster and install the requirements.
+
+```bash
+export VENV_DIR=<path/to/your/venv>
+```
+
+### 2. Create a NVFlare project
+As an example, we create a project with only one client for the Dolly dataset.
+
+```bash
+nvflare poc prepare -c site-dolly
+```
+
+Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
+
+```bash
+export NVFLARE_PROJECT=<your/path/to/prod_00>
+```
+
+### 3. (Optionally) Set your Weights and Biases API Key
+The training can be logged to WandB if you provide and API key via
+
+```bash
+export WANDB_API_KEY=<your_wandb_api_key>
+```
+
+### 4. Submit the SLURM Job
+Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
+```
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
+```
+
+By default, you can submit a job, requesting 2 nodes with 8 GPUs via
+
+```bash
+sbatch nvflare.slurm
+```
+
+---
+
 ## Problem Evolution and Solutions
 
 This document captures all the issues encountered and solutions implemented for multi-node distributed training with NVFlare and PyTorch DDP on SLURM.
