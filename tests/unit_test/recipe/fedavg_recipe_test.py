@@ -209,7 +209,6 @@ class TestFedAvgRecipeKeyMetricVariants:
         assert model_selector.key_metric == key_metric
 
 
-
 class TestFedAvgRecipeEarlyStopping:
     """Test early stopping configuration for FedAvgRecipe."""
 
@@ -275,4 +274,3 @@ class TestFedAvgRecipeValidation:
                 aggregator=invalid_aggregator,  # type: ignore[arg-type]
                 **base_recipe_params,
             )
-
