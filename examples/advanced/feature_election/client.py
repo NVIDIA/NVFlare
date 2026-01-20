@@ -162,29 +162,8 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
                 # Try to extract any number
-        # Extract client ID from site name
-        site_name = fl_ctx.get_identity_name()
-
-        # Parse client_id from site name (e.g., "site-1" -> 0)
-        try:
-            if site_name.startswith("site-"):
-                client_id = int(site_name.split("-")[1]) - 1
-            else:
-                # Try to extract any number
-                match = re.search(r"\d+", site_name)
-                client_id = int(match.group()) - 1 if match else 0
-            
-            # Validate client_id is in valid range
-            if client_id < 0 or client_id >= self.num_clients:
-                raise ValueError(f"Parsed client_id {client_id} from '{site_name}' is out of range [0, {self.num_clients-1}]. "
-                               f"Please ensure site names match the expected pattern with IDs 1-{self.num_clients}.")
-                
-        except (ValueError, AttributeError) as e:
-            if "out of range" in str(e):
-                raise  # Re-raise the range error
-            raise ValueError(f"Could not parse valid client_id from '{site_name}'. "
-                           f"Expected format: 'site-N' where N is between 1 and {self.num_clients}") from e
-
+        # Load data
+        X_train, y_train, X_val, y_val, feature_names = load_client_data(
         # Load data
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
             client_id=client_id,
