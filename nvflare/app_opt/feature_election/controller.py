@@ -154,7 +154,7 @@ class FeatureElectionController(Controller):
         self.broadcast_and_wait(
             task=task,
             min_responses=self.min_clients,
-            wait_time_after_min_received=5,
+            wait_time_after_min_received=0.5,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )

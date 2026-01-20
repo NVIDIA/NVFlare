@@ -161,7 +161,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
                 # Try to extract any number from site name
-                match = re.search(r'\d+', site_name)
+                match = re.search(r"\d+", site_name)
                 if match:
                     client_id = int(match.group()) - 1
                 else:
