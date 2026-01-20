@@ -39,8 +39,8 @@ def main():
         help="Path to MONAI bundle relative to job directory",
     )
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
-    parser.add_argument("--num_rounds", type=int, default=100, help="Number of FL rounds")
-    parser.add_argument("--local_epochs", type=int, default=10, help="Number of local training epochs per round")
+    parser.add_argument("--num_rounds", type=int, default=10, help="Number of FL rounds")
+    parser.add_argument("--local_epochs", type=int, default=1, help="Number of local training epochs per round")
     parser.add_argument("--threads", type=int, default=2, help="Number of parallel threads")
     parser.add_argument(
         "--workspace", type=str, default="/tmp/nvflare/simulation", help="Workspace directory for simulation"

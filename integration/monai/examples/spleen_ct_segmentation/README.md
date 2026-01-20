@@ -46,16 +46,16 @@ sed -i 's|/workspace/data/Task09_Spleen|/tmp/MONAI/data/Task09_Spleen|g' ./bundl
 
 ### Basic Training with FedAvg
 
-**Note:** Full training takes several hours. For quick testing, reduce `--num_rounds` to 5-10.
+**Note:** Full training might take several hours. For quick testing, we reduce `--num_rounds` to 5.
 
 ```bash
-python job_fedavg/job.py --n_clients 2 --num_rounds 10 --local_epochs 10 --tracking "tensorboard"
+python job_fedavg/job.py --n_clients 2 --num_rounds 3 --local_epochs 1 --tracking "tensorboard"
 ```
 
 Optional arguments:
 - `--n_clients`: Number of federated clients (default: 2)
-- `--num_rounds`: Number of FL rounds (default: 100)
-- `--local_epochs`: Local training epochs per round (default: 10)
+- `--num_rounds`: Number of FL rounds (default: 10)
+- `--local_epochs`: Local training epochs per round (default: 1)
 - `--threads`: Parallel threads for simulation (default: 2)
 - `--workspace`: NVFlare workspace directory (default: /tmp/nvflare/simulation)
 - `--send_weight_diff`: Send weight differences instead of full weights
