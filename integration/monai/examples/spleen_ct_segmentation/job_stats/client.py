@@ -15,8 +15,6 @@
 import os
 
 from monai.bundle import ConfigParser
-
-# from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
