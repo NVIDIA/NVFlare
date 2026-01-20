@@ -59,7 +59,7 @@ def main():
     )
 
     # Setup simulation environment
-    env = SimEnv(clients=sites, workspace_root=args.workspace)
+    env = SimEnv(clients=sites, num_threads=args.n_clients, workspace_root=args.workspace)
 
     # Execute the recipe
     run = recipe.execute(env)
