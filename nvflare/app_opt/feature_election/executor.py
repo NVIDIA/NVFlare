@@ -18,7 +18,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression, SGDClassifier
+from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import StandardScaler
 
@@ -58,9 +58,11 @@ class FeatureElectionExecutor(Executor):
         self.X_val = None
         self.y_val = None
 
-        # Essentially logistic regression
+        # Use LogisticRegression with LBFGS solver - much faster convergence than SGDClassifier
+        # for small-to-medium datasets. warm_start=True allows incremental training across rounds.
         self.global_feature_mask = None
-        self.model = SGDClassifier(loss="log_loss", max_iter=1000, warm_start=True, random_state=42)
+        self.model = LogisticRegression(max_iter=1000, solver="lbfgs", warm_start=True, random_state=42)
+        self._model_initialized = False  # Track if model has been fit
 
         self._set_default_params()
 
@@ -185,22 +187,22 @@ class FeatureElectionExecutor(Executor):
             scaler = StandardScaler()
             X_tr = scaler.fit_transform(self.X_train)
 
-            # Initialize model if not yet fitted (first round)
-            if not hasattr(self.model, "coef_"):
-                # Use a small batch for initialization to avoid single-sample issues
-                init_size = min(10, len(X_tr))
-                self.model.partial_fit(X_tr[:init_size], self.y_train[:init_size], classes=np.unique(self.y_train))
-
-            # Load global parameters if available
+            # Load global parameters if available (from previous round's aggregation)
             if "params" in shareable:
                 p = shareable["params"]
-                if "weight_0" in p:
+                if "weight_0" in p and "weight_1" in p:
+                    # Initialize model structure if needed
+                    if not self._model_initialized:
+                        # Quick fit to establish coef_ shape, then overwrite
+                        self.model.fit(X_tr[:10], self.y_train[:10])
+                        self._model_initialized = True
+                    # Set aggregated weights
                     self.model.coef_ = np.array(p["weight_0"])
-                if "weight_1" in p:
                     self.model.intercept_ = np.array(p["weight_1"])
 
-            # partial_fit continues from current weights
-            self.model.partial_fit(X_tr, self.y_train)
+            # Train with warm_start=True continues from current weights
+            self.model.fit(X_tr, self.y_train)
+            self._model_initialized = True
 
             resp = make_reply(ReturnCode.OK)
             resp["params"] = {"weight_0": self.model.coef_.tolist(), "weight_1": self.model.intercept_.tolist()}

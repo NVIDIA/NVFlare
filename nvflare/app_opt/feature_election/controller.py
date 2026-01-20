@@ -151,10 +151,12 @@ class FeatureElectionController(Controller):
         )
 
         # Broadcast and wait for results
+        # NOTE: Reduced wait_time_after_min_received from 5 to 0 for faster execution
+        # The previous 5-second wait added significant latency per phase
         self.broadcast_and_wait(
             task=task,
             min_responses=self.min_clients,
-            wait_time_after_min_received=0.5,
+            wait_time_after_min_received=0,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
