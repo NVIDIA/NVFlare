@@ -44,8 +44,8 @@ class _XGBHistogramValidator(BaseModel):
         return v
 
 
-class XGBHistogramRecipe(Recipe):
-    """XGBoost Histogram-Based Recipe for horizontal federated learning.
+class XGBHorizontalRecipe(Recipe):
+    """XGBoost Horizontal Federated Learning Recipe.
 
     This recipe implements horizontal federated XGBoost using histogram-based algorithms.
     In horizontal federated learning, each client has different samples with the same features.
@@ -76,13 +76,13 @@ class XGBHistogramRecipe(Recipe):
     Example:
         .. code-block:: python
 
-            from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+            from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
             from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
             from nvflare.recipe import SimEnv
 
             # Create recipe with per-site data loaders
-            recipe = XGBHistogramRecipe(
-                name="xgb_higgs_histogram",
+            recipe = XGBHorizontalRecipe(
+                name="xgb_higgs_horizontal",
                 min_clients=2,
                 num_rounds=100,
                 xgb_params={

@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests for XGBHistogramRecipe.
+"""Integration tests for XGBHorizontalRecipe.
 
-These are smoke tests to verify that XGBHistogramRecipe works without errors.
+These are smoke tests to verify that XGBHorizontalRecipe works without errors.
 Tests verify:
 - Recipe can be instantiated and configured
 - Job completes successfully
@@ -41,7 +41,7 @@ import numpy as np
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -68,8 +68,8 @@ class MockXGBDataLoader(XGBDataLoader):
         return dtrain, dval
 
 
-class TestXGBHistogramRecipe:
-    """Smoke tests for XGBHistogramRecipe.
+class TestXGBHorizontalRecipe:
+    """Smoke tests for XGBHorizontalRecipe.
 
     These tests verify that the recipe can be instantiated and run without errors.
     They use synthetic data and minimal training rounds for speed.
@@ -86,7 +86,7 @@ class TestXGBHistogramRecipe:
                 for site_id in range(1, 3)
             }
 
-            recipe = XGBHistogramRecipe(
+            recipe = XGBHorizontalRecipe(
                 name="test_histogram",
                 min_clients=2,
                 num_rounds=2,  # Minimal rounds for speed
@@ -125,7 +125,7 @@ class TestXGBHistogramRecipe:
                 for site_id in range(1, 3)
             }
 
-            recipe = XGBHistogramRecipe(
+            recipe = XGBHorizontalRecipe(
                 name="test_custom_params",
                 min_clients=2,
                 num_rounds=1,
@@ -151,7 +151,7 @@ class TestXGBHistogramRecipe:
                 for site_id in range(1, num_clients + 1)
             }
 
-            recipe = XGBHistogramRecipe(
+            recipe = XGBHorizontalRecipe(
                 name="test_multi_client",
                 min_clients=num_clients,
                 num_rounds=1,
@@ -164,7 +164,7 @@ class TestXGBHistogramRecipe:
 
     def test_tensorboard_tracking_configured(self):
         """Test that TensorBoard tracking components are configured."""
-        recipe = XGBHistogramRecipe(
+        recipe = XGBHorizontalRecipe(
             name="test_tb",
             min_clients=2,
             num_rounds=1,

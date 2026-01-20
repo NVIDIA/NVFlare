@@ -16,7 +16,7 @@ import argparse
 
 from higgs_data_loader import HIGGSDataLoader
 
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -83,7 +83,7 @@ def main():
         per_site_config[site_name] = {"data_loader": data_loader}
 
     # Create recipe
-    recipe = XGBHistogramRecipe(
+    recipe = XGBHorizontalRecipe(
         name=job_name,
         min_clients=args.site_num,
         num_rounds=args.round_num,

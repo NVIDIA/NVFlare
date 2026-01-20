@@ -114,11 +114,19 @@ PSI will be performed first to identify and match the overlapping samples, then 
 We first run the centralized trainings to get the baseline performance, then run the federated XGBoost training using NVFlare Simulator via the [Recipe API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
 
 ### Centralized Baselines
-For centralize training, we train the XGBoost model on the whole dataset, as well as subsets with different subsample rates
+For centralized training, we train the XGBoost model on the whole dataset, as well as subsets with different subsample rates
 and parallel tree settings.
+
+Run directly with Python:
+```bash
+# Example commands:
+python3 utils/baseline_centralized.py --num_parallel_tree 1 --data_path "${DATASET_ROOT}/HIGGS.csv"
+python3 utils/baseline_centralized.py --num_parallel_tree 5 --subsample 0.8 --data_path "${DATASET_ROOT}/HIGGS.csv"
+python3 utils/baseline_centralized.py --num_parallel_tree 20 --subsample 0.8 --data_path "${DATASET_ROOT}/HIGGS.csv"
 ```
-bash run_experiment_centralized.sh ${DATASET_ROOT}
-```
+
+Modify `--num_parallel_tree` and `--subsample` parameters as needed to test different configurations.
+
 The results by default will be stored in the folder `/tmp/nvflare/workspace/centralized/`.
 
 ![Centralized validation curve](./figs/Centralized.png)
@@ -134,24 +142,18 @@ The following cases will be covered:
 
 #### Histogram-Based
 
-Histogram-based experiments now use the `XGBHistogramRecipe` for simplified configuration.
+Histogram-based experiments now use the `XGBHorizontalRecipe` for simplified configuration.
 
-Run with the provided script:
+Run directly with Python:
 ```bash
-bash run_experiment_horizontal_histogram.sh
-```
+# 2 clients with uniform split
+python3 job.py --site_num 2 --round_num 100 --split_method uniform
 
-Or run directly with custom parameters:
-```bash
-python job.py \
-    --site_num 2 \
-    --round_num 100 \
-    --training_algo histogram_v2 \
-    --split_method uniform
+# 5 clients with uniform split
+python3 job.py --site_num 5 --round_num 100 --split_method uniform
 ```
 
 **Available parameters**:
-- `--training_algo`: Choose `histogram` or `histogram_v2` (recommended)
 - `--site_num`: Number of clients (default: 2)
 - `--round_num`: Number of boosting rounds (default: 100)
 - `--split_method`: Data split method - `uniform`, `linear`, `square`, or `exponential`
@@ -160,7 +162,7 @@ python job.py \
 
 **Code example** (`job.py`):
 ```python
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.recipe import SimEnv
 from higgs_data_loader import HIGGSDataLoader
 
@@ -173,8 +175,8 @@ for site_id in range(1, 3):
     )
     per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
 
-recipe = XGBHistogramRecipe(
-    name="xgb_higgs_histogram",
+recipe = XGBHorizontalRecipe(
+    name="xgb_higgs_horizontal",
     min_clients=2,
     num_rounds=100,
     xgb_params={
@@ -213,12 +215,7 @@ Tree-based federated XGBoost now uses the `XGBBaggingRecipe` which supports both
 - Each round, one or more clients contribute to the global model
 - Typically uses many rounds (e.g., 100)
 
-Run tree-based experiments with:
-```bash
-bash run_experiment_horizontal_tree.sh
-```
-
-Or run individual experiments:
+Run tree-based experiments directly:
 ```bash
 # Bagging mode with uniform learning rate
 python3 job_tree.py --site_num 5 --training_algo bagging --split_method uniform --lr_mode uniform
@@ -228,7 +225,13 @@ python3 job_tree.py --site_num 5 --training_algo bagging --split_method exponent
 
 # Cyclic mode
 python3 job_tree.py --site_num 5 --training_algo cyclic --split_method uniform --lr_mode uniform
+
+# More examples with different configurations
+python3 job_tree.py --site_num 20 --training_algo bagging --split_method square --lr_mode scaled
+python3 job_tree.py --site_num 20 --training_algo cyclic --split_method square --lr_mode uniform
 ```
+
+Modify `--site_num`, `--split_method`, and `--lr_mode` parameters as needed for different configurations.
 
 **Python API:**
 ```python
@@ -305,12 +308,7 @@ python job_vertical.py --run_training
 
 Or run both steps together:
 ```bash
-python job_vertical.py --run_psi --run_training
-```
-
-Alternatively, use the provided script:
-```bash
-bash run_experiment_vertical.sh
+python3 job_vertical.py --run_psi --run_training
 ```
 
 **Available parameters**:

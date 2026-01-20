@@ -108,14 +108,39 @@ client-specific data from the corresponding subdirectory (e.g., `site-1/`, `site
 
 ## Run Baseline and Standalone Experiments
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
-In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process.
+In this case, we utilize the `mock` plugin to simulate the homomorphic encryption process.
 
-To run all experiments, we provide a script for all settings.
+Run experiments directly with Python:
+```bash
+# Baseline training
+python3 ./train_standalone/train_base.py --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/base_cpu --gpu 0
+
+# Horizontal federated training (non-encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/hori_cpu_non_enc \
+    --vert 0 --gpu 0 --enc 0
+
+# Horizontal federated training (encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/hori_cpu_enc \
+    --vert 0 --gpu 0 --enc 1
+
+# Vertical federated training (non-encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_non_enc \
+    --vert 1 --gpu 0 --enc 0
+
+# Vertical federated training (encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_enc \
+    --vert 1 --gpu 0 --enc 1
 ```
-bash run_training_standalone.sh
-```
-This will cover baseline centralized training, federated xgboost run in the same machine
-(server and clients are running in different processes) with and without secure feature.
+
+Modify `--vert` (0=horizontal, 1=vertical), `--enc` (0=non-encrypted, 1=encrypted), and `--gpu` parameters for different configurations.
 
 > **_NOTE:_** In this example, we use the `mock` plugin to simulate the homomorphic encryption process.
 > The actual encryption plugin will be used in the next step.
@@ -127,7 +152,7 @@ This will cover baseline centralized training, federated xgboost run in the same
 This example now uses the **Recipe API** for simplified job configuration. The Recipe API provides high-level abstractions that reduce boilerplate code while maintaining full functionality.
 
 **Key Benefits:**
-- Simplified job creation with `XGBHistogramRecipe` and `XGBVerticalRecipe`
+- Simplified job creation with `XGBHorizontalRecipe` and `XGBVerticalRecipe`
 - Automatic configuration of TensorBoard tracking
 - Built-in support for secure training via `secure=True` parameter
 - Cleaner, more maintainable code
@@ -143,7 +168,7 @@ When using `secure=True` for Homomorphic Encryption, you **must** provide `clien
 # Generate client ranks: maps each client name to a unique rank (0-indexed)
 client_ranks = {f"site-{i}": i - 1 for i in range(1, num_clients + 1)}
 
-recipe = XGBHistogramRecipe(..., secure=True, client_ranks=client_ranks)
+recipe = XGBHorizontalRecipe(..., secure=True, client_ranks=client_ranks)
 ```
 
 For more details on the Recipe API, see the [Recipe API documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
@@ -227,7 +252,7 @@ python job.py --secure
 **Code Example:**
 
 ```python
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.recipe import SimEnv
 
@@ -242,7 +267,7 @@ for i in range(1, 4):
     per_site_config[f"site-{i}"] = {"data_loader": dataloader}
 
 # Create horizontal XGBoost recipe with secure training
-recipe = XGBHistogramRecipe(
+recipe = XGBHorizontalRecipe(
     name="horizontal_secure",
     min_clients=3,
     num_rounds=3,

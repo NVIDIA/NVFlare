@@ -30,7 +30,7 @@ Run with custom parameters:
 import argparse
 
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-from nvflare.app_opt.xgboost.recipes import XGBHistogramRecipe
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -88,7 +88,7 @@ def main():
     }
 
     # Create horizontal XGBoost recipe
-    recipe = XGBHistogramRecipe(
+    recipe = XGBHorizontalRecipe(
         name=job_name,
         min_clients=args.site_num,
         num_rounds=args.round_num,
