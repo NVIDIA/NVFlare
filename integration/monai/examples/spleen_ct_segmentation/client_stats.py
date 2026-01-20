@@ -15,9 +15,9 @@
 import os
 
 from monai.bundle import ConfigParser
+
 # from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
-
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
 
@@ -74,8 +74,9 @@ class MonaiBundleStatistics(Statistics):
     def failure_count(self, dataset_name: str, feature_name: str) -> int:
         return 0
 
-    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int,
-                  global_min_value: float, global_max_value: float) -> Histogram:
+    def histogram(
+        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+    ) -> Histogram:
         """Compute histogram over all images in the dataset."""
         import numpy as np
 
@@ -95,10 +96,6 @@ class MonaiBundleStatistics(Statistics):
         # Create Histogram object
         histogram_bins = []
         for i in range(num_of_bins):
-            histogram_bins.append(Bin(
-                low_value=bins[i],
-                high_value=bins[i + 1],
-                sample_count=int(counts[i])
-            ))
+            histogram_bins.append(Bin(low_value=bins[i], high_value=bins[i + 1], sample_count=int(counts[i])))
 
         return Histogram(HistogramType.STANDARD, histogram_bins)

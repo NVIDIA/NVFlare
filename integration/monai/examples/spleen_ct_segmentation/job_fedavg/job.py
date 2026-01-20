@@ -32,18 +32,29 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bundle_root", type=str, default="bundles/spleen_ct_segmentation",
-                        help="Path to MONAI bundle relative to job directory")
+    parser.add_argument(
+        "--bundle_root",
+        type=str,
+        default="bundles/spleen_ct_segmentation",
+        help="Path to MONAI bundle relative to job directory",
+    )
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
     parser.add_argument("--num_rounds", type=int, default=100, help="Number of FL rounds")
     parser.add_argument("--local_epochs", type=int, default=10, help="Number of local training epochs per round")
     parser.add_argument("--threads", type=int, default=2, help="Number of parallel threads")
-    parser.add_argument("--workspace", type=str, default="/tmp/nvflare/simulation",
-                        help="Workspace directory for simulation")
-    parser.add_argument("--send_weight_diff", action="store_true", help="Send weight differences instead of full weights")
-    parser.add_argument("--tracking", type=str, default="tensorboard",
-                        choices=["tensorboard", "mlflow", "both", "none"],
-                        help="Experiment tracking type")
+    parser.add_argument(
+        "--workspace", type=str, default="/tmp/nvflare/simulation", help="Workspace directory for simulation"
+    )
+    parser.add_argument(
+        "--send_weight_diff", action="store_true", help="Send weight differences instead of full weights"
+    )
+    parser.add_argument(
+        "--tracking",
+        type=str,
+        default="tensorboard",
+        choices=["tensorboard", "mlflow", "both", "none"],
+        help="Experiment tracking type",
+    )
     args = parser.parse_args()
 
     # Set device
@@ -66,9 +77,9 @@ def main():
             channels=[16, 32, 64, 128, 256],
             strides=[2, 2, 2, 2],
             num_res_units=2,
-            norm="batch"
+            norm="batch",
         ),
-        train_script="client.py",
+        train_script=os.path.join(os.getcwd(), "client.py"),
         train_args=train_args,
         aggregator_data_kind=DataKind.WEIGHT_DIFF if args.send_weight_diff else DataKind.WEIGHTS,
     )

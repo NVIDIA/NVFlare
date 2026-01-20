@@ -31,11 +31,14 @@ def main():
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
     parser.add_argument("--num_rounds", type=int, default=5, help="Number of FL rounds")
     parser.add_argument("--threads", type=int, default=2, help="Number of parallel threads")
-    parser.add_argument("--workspace", type=str, default="fedavg_workspace",
-                        help="Workspace directory for simulation")
-    parser.add_argument("--tracking", type=str, default="tensorboard",
-                        choices=["tensorboard", "mlflow", "both", "none"],
-                        help="Experiment tracking type")
+    parser.add_argument("--workspace", type=str, default="fedavg_workspace", help="Workspace directory for simulation")
+    parser.add_argument(
+        "--tracking",
+        type=str,
+        default="tensorboard",
+        choices=["tensorboard", "mlflow", "both", "none"],
+        help="Experiment tracking type",
+    )
     args = parser.parse_args()
 
     # Create FedAvgRecipe
@@ -43,7 +46,9 @@ def main():
         name="mednist_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=FLDenseNet121(spatial_dims=2, in_channels=1, out_channels=6),  # We wrap the DenseNet121 into FLDenseNet121 to preserve the configuration when sending the model to the server.
+        initial_model=FLDenseNet121(
+            spatial_dims=2, in_channels=1, out_channels=6
+        ),  # We wrap the DenseNet121 into FLDenseNet121 to preserve the configuration when sending the model to the server.
         train_script="client.py",
     )
 

@@ -14,12 +14,11 @@
 
 import argparse
 
-from monai.fl.client import MonaiAlgo
-from monai.fl.utils.exchange_object import ExchangeObject
-from monai.fl.utils.constants import FlStatistics
-
 # (1) import nvflare client API
 import nvflare.client as flare
+from monai.fl.client import MonaiAlgo
+from monai.fl.utils.constants import FlStatistics
+from monai.fl.utils.exchange_object import ExchangeObject
 from nvflare.client.tracking import SummaryWriter
 
 
@@ -27,7 +26,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle_root", type=str, required=True, help="Path to MONAI bundle")
     parser.add_argument("--local_epochs", type=int, default=1, help="Number of local training epochs")
-    parser.add_argument("--send_weight_diff", action="store_true", help="Send weight differences instead of full weights")
+    parser.add_argument(
+        "--send_weight_diff", action="store_true", help="Send weight differences instead of full weights"
+    )
     args = parser.parse_args()
 
     # (2) initializes NVFlare client API
@@ -83,7 +84,9 @@ def main():
         if statistics:
             for key, value in statistics.items():
                 if isinstance(value, (int, float)):
-                    summary_writer.add_scalar(tag=f"training/{key}", scalar=value, global_step=input_model.current_round)
+                    summary_writer.add_scalar(
+                        tag=f"training/{key}", scalar=value, global_step=input_model.current_round
+                    )
 
         # Convert MONAI ExchangeObject back to NVFlare FLModel
         output_model = flare.FLModel(
@@ -92,7 +95,7 @@ def main():
             meta={
                 "weight_type": updated_weights.weight_type.value if updated_weights.weight_type else "WEIGHTS",
                 "NUM_STEPS_CURRENT_ROUND": executed_steps,
-                "accuracy": test_key_metric  # NVFlare expects the key metric to be "accuracy"
+                "accuracy": test_key_metric,  # NVFlare expects the key metric to be "accuracy"
             },
         )
 

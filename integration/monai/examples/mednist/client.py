@@ -33,6 +33,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
+# (1) import nvflare client API
+import nvflare.client as flare
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader
@@ -42,9 +45,6 @@ from monai.inferers import SimpleInferer
 from monai.networks import eval_mode
 from monai.networks.nets import densenet121
 from monai.transforms import Compose, EnsureChannelFirstD, LoadImageD, ScaleIntensityD
-
-# (1) import nvflare client API
-import nvflare.client as flare
 
 # (optional) metrics
 from nvflare.client.tracking import SummaryWriter

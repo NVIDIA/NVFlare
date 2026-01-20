@@ -22,7 +22,7 @@ using FedStatsRecipe.
 import argparse
 import os
 
-from client_stats import MonaiBundleStatistics
+from client import MonaiBundleStatistics
 
 from nvflare.recipe import SimEnv
 from nvflare.recipe.fedstats import FedStatsRecipe
@@ -30,23 +30,17 @@ from nvflare.recipe.fedstats import FedStatsRecipe
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bundle_root", type=str, default="bundles/spleen_ct_segmentation",
-                        help="Path to MONAI bundle")
+    parser.add_argument(
+        "--bundle_root", type=str, default="bundles/spleen_ct_segmentation", help="Path to MONAI bundle"
+    )
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
-    parser.add_argument("--workspace", type=str, default="/tmp/nvflare/simulation",
-                        help="Workspace directory for simulation")
+    parser.add_argument(
+        "--workspace", type=str, default="/tmp/nvflare/simulation", help="Workspace directory for simulation"
+    )
     args = parser.parse_args()
 
     # Statistics configuration
-    statistic_configs = {
-        "count": {},
-        "histogram": {
-            "*": {
-                "bins": 8,
-                "range": [-200, 300]
-            }
-        }
-    }
+    statistic_configs = {"count": {}, "histogram": {"*": {"bins": 8, "range": [-200, 300]}}}
 
     # Create statistics generator
     stats_generator = MonaiBundleStatistics(bundle_root=os.path.join(os.getcwd(), args.bundle_root))

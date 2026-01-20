@@ -24,7 +24,7 @@ class FLUNet(UNet):
         channels=[16, 32, 64, 128, 256],
         strides=[2, 2, 2, 2],
         num_res_units=2,
-        norm="batch"
+        norm="batch",
     ):
         # Store configuration for JobAPI
         self.spatial_dims = spatial_dims
@@ -42,5 +42,5 @@ class FLUNet(UNet):
             channels=channels,
             strides=strides,
             num_res_units=num_res_units,
-            norm=norm
+            norm=norm,
         )
