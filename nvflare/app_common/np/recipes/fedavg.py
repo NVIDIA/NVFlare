@@ -188,6 +188,7 @@ class NumpyFedAvgRecipe(Recipe):
         if self.initial_model is not None:
             # Add persistor and initial model directly
             persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+            job.comp_ids["persistor_id"] = persistor_id
 
         controller = ScatterAndGather(
             min_clients=self.min_clients,

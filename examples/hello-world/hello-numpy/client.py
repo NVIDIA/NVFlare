@@ -58,8 +58,14 @@ def main():
         input_model = flare.receive()
         print(f"Client {client_name}, current_round={input_model.current_round}")
 
-        input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
-        print(f"Received weights: {input_np_arr}")
+        # Handle empty params (can happen when no initial model provided)
+        if NPConstants.NUMPY_KEY in input_model.params:
+            input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
+            print(f"Received weights: {input_np_arr}")
+        else:
+            # Initialize with simple numpy array for first round
+            input_np_arr = np.array([0.0] * 10)
+            print(f"No initial model provided, using zero initialization: {input_np_arr}")
 
         new_params = train(input_np_arr)
 
