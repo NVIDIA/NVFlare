@@ -6,15 +6,14 @@ This example demonstrates federated learning with [MONAI Bundles](https://monai.
 
 ```
 spleen_ct_segmentation/
-├── job_fedavg/              # Federated training with FedAvg
+├── job_fedavg/           # Federated training with FedAvg
 │   ├── job.py              # Job configuration and launcher
 │   └── client.py           # Client training script
-├── job_stats/              # Federated statistics collection
+│   └── model.py            # Model definition (FLUNet)
+├── job_stats/            # Federated statistics collection
 │   ├── job.py              # Statistics job configuration
-│   └── client.py           # Client statistics script
-├── bundles/                # MONAI bundles (downloaded)
-├── model.py                # Model definition (FLUNet)
-├── client_stats.py         # Statistics generator implementation
+│   └── client.py           # Client Statistics generator implementation
+├── bundles/              # MONAI bundles (downloaded)
 └── download_spleen_dataset.py  # Data download script
 ```
 
