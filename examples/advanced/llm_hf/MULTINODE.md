@@ -67,7 +67,7 @@ export NVFLARE_PROJECT=<your/path/to/prod_00>
 ```
 
 ### 3. (Optionally) Set your Weights and Biases API Key
-The training can be logged to WandB if you provide and API key via
+The training can be logged to WandB if you provide an API key via
 
 ```bash
 export WANDB_API_KEY=<your_wandb_api_key>
