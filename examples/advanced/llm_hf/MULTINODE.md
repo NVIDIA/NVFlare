@@ -57,7 +57,7 @@ export VENV_DIR=<path/to/your/venv>
 As an example, we create a project with only one client for the Dolly dataset.
 
 ```bash
-nvflare poc prepare -c site-dolly
+nvflare poc prepare -c dolly
 ```
 
 Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
