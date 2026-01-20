@@ -341,6 +341,7 @@ recipe = XGBVerticalRecipe(
 )
 
 # Add data loaders (requires PSI results)
+per_site_config = {}
 for site_id in range(1, 3):
     data_loader = VerticalDataLoader(
         data_split_path=f"/tmp/data/site-{site_id}/higgs.data.csv",

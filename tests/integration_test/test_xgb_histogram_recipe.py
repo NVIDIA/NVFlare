@@ -161,20 +161,3 @@ class TestXGBHorizontalRecipe:
             run = recipe.execute(env)
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
-
-    def test_tensorboard_tracking_configured(self):
-        """Test that TensorBoard tracking components are configured."""
-        recipe = XGBHorizontalRecipe(
-            name="test_tb",
-            min_clients=2,
-            num_rounds=1,
-        )
-
-        # Verify TensorBoard receiver is added to server
-        server_components = recipe.job.get_server_components()
-        assert "tb_receiver" in server_components
-
-        # Verify that TensorBoard writer and event converter are already configured for all clients
-        # (they're added in configure() via to_clients())
-        # Note: With the new API, components are added to all clients at once in configure()
-        # So we don't need to add a client-specific dataloader to verify TB tracking

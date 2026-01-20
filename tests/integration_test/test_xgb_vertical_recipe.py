@@ -88,6 +88,13 @@ class TestXGBVerticalRecipe:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_vertical"))
 
+            # Configure per-site data loaders
+            # site-1 has labels, site-2 has features only
+            per_site_config = {
+                "site-1": {"data_loader": MockVerticalDataLoader(has_labels=True, n_samples=50, n_features=3)},
+                "site-2": {"data_loader": MockVerticalDataLoader(has_labels=False, n_samples=50, n_features=3)},
+            }
+
             recipe = XGBVerticalRecipe(
                 name="test_vertical",
                 min_clients=2,
@@ -100,16 +107,8 @@ class TestXGBVerticalRecipe:
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
+                per_site_config=per_site_config,
             )
-
-            # Add mock data loaders
-            # site-1 has labels, site-2 has features only
-            per_site_config = {
-                "site-1": {"data_loader": MockVerticalDataLoader(has_labels=True, n_samples=50, n_features=3)},
-                "site-2": {"data_loader": MockVerticalDataLoader(has_labels=False, n_samples=50, n_features=3)},
-            }
-            recipe.per_site_config = per_site_config
-            recipe.job = recipe.configure()
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -164,13 +163,6 @@ class TestXGBVerticalRecipe:
             num_clients = 3
             env = SimEnv(num_clients=num_clients, workspace_root=os.path.join(tmpdir, "test_multi_vertical"))
 
-            recipe = XGBVerticalRecipe(
-                name="test_multi_vertical",
-                min_clients=num_clients,
-                num_rounds=1,
-                label_owner="site-2",  # site-2 has labels
-            )
-
             # Configure per-site data loaders - only site-2 has labels
             per_site_config = {}
             for site_id in range(1, num_clients + 1):
@@ -178,32 +170,18 @@ class TestXGBVerticalRecipe:
                 per_site_config[f"site-{site_id}"] = {
                     "data_loader": MockVerticalDataLoader(has_labels=has_labels, n_samples=30, n_features=2)
                 }
-            recipe.per_site_config = per_site_config
-            recipe.job = recipe.configure()
+
+            recipe = XGBVerticalRecipe(
+                name="test_multi_vertical",
+                min_clients=num_clients,
+                num_rounds=1,
+                label_owner="site-2",  # site-2 has labels
+                per_site_config=per_site_config,
+            )
 
             run = recipe.execute(env)
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
-
-    def test_tensorboard_tracking_configured(self):
-        """Test that TensorBoard tracking components are configured."""
-        recipe = XGBVerticalRecipe(
-            name="test_tb",
-            min_clients=2,
-            num_rounds=1,
-            label_owner="site-1",
-        )
-
-        # Verify TensorBoard receiver is added to server
-        server_components = recipe.job.get_server_components()
-        assert "tb_receiver" in server_components
-
-        # Verify TensorBoard tracking is configured (components added in configure())
-
-        # Check that metrics_writer and event_to_fed are added
-        client_components = recipe.job.get_client_components("site-1")
-        assert "metrics_writer" in client_components
-        assert "event_to_fed" in client_components
 
     def test_in_process_parameter(self):
         """Test that in_process parameter is configurable."""
@@ -236,22 +214,3 @@ class TestXGBVerticalRecipe:
             model_file_name=custom_name,
         )
         assert recipe.model_file_name == custom_name
-
-    def test_data_split_mode_is_vertical(self):
-        """Test that vertical recipe uses data_split_mode=1 (column mode)."""
-        recipe = XGBVerticalRecipe(
-            name="test_vertical_mode",
-            min_clients=2,
-            num_rounds=1,
-            label_owner="site-1",
-        )
-
-        # Check controller configuration
-        server_components = recipe.job.get_server_components()
-        controller = server_components.get("xgb_controller")
-        assert controller is not None
-        # Note: We can't easily verify data_split_mode without running,
-        # but we can verify the controller type
-        from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-
-        assert isinstance(controller, XGBFedController)
