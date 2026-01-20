@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import pytest
 import torch.nn as nn
 
 from nvflare.apis.job_def import SERVER_SITE_NAME
-from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
@@ -130,12 +129,13 @@ class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params):
-        """Test FedAvgRecipe initialization with default aggregator."""
+        """Test FedAvgRecipe initialization with default (built-in) aggregation."""
         recipe = FedAvgRecipe(name="test_fedavg", **base_recipe_params)
 
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.initial_model is None
-        assert isinstance(recipe.aggregator, Aggregator)
+        # When no aggregator is passed, built-in weighted averaging is used
+        assert recipe.aggregator is None
 
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params):
         key_metric = "val_auc"
@@ -153,7 +153,6 @@ class TestFedAvgRecipe:
         assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
         assert isinstance(recipe.aggregator, MyAggregator)
-        assert isinstance(recipe.aggregator, Aggregator)
 
     def test_initial_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
         """Test FedAvgRecipe with initial model."""
@@ -190,6 +189,73 @@ class TestFedAvgRecipe:
             "num_rounds": num_rounds,
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)
+
+
+class TestFedAvgRecipeEarlyStopping:
+    """Test early stopping configuration for FedAvgRecipe."""
+
+    def test_early_stopping_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with early stopping configuration."""
+        recipe = FedAvgRecipe(
+            name="test_early_stop",
+            stop_cond="accuracy >= 80",
+            patience=5,
+            task_to_optimize="validate",
+            **base_recipe_params,
+        )
+
+        assert_recipe_basics(recipe, "test_early_stop", base_recipe_params)
+        assert recipe.stop_cond == "accuracy >= 80"
+        assert recipe.patience == 5
+        assert recipe.task_to_optimize == "validate"
+
+    def test_save_filename_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with custom save filename."""
+        recipe = FedAvgRecipe(
+            name="test_save_file",
+            save_filename="best_model.pt",
+            **base_recipe_params,
+        )
+
+        assert recipe.save_filename == "best_model.pt"
+
+    def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with exclude_vars configuration."""
+        recipe = FedAvgRecipe(
+            name="test_exclude",
+            exclude_vars="bn.*|running_mean|running_var",
+            **base_recipe_params,
+        )
+
+        assert recipe.exclude_vars == "bn.*|running_mean|running_var"
+
+    def test_aggregation_weights_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with per-client aggregation weights."""
+        weights = {"site-1": 2.0, "site-2": 1.0}
+        recipe = FedAvgRecipe(
+            name="test_weights",
+            aggregation_weights=weights,
+            **base_recipe_params,
+        )
+
+        assert recipe.aggregation_weights == weights
+
+
+class TestFedAvgRecipeValidation:
+    """Test FedAvgRecipe input validation."""
+
+    def test_invalid_aggregator_type_raises_validation_error(self, mock_file_system, base_recipe_params):
+        """Test that invalid aggregator type raises Pydantic validation error."""
+        from pydantic import ValidationError
+
+        invalid_aggregator = InvalidAggregator()
+
+        with pytest.raises(ValidationError, match="should be an instance of Aggregator"):
+            FedAvgRecipe(
+                name="test_invalid_agg",
+                aggregator=invalid_aggregator,  # type: ignore[arg-type]
+                **base_recipe_params,
+            )
 
 
 class TestFedAvgRecipeKeyMetricVariants:
