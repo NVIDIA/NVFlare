@@ -18,7 +18,6 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -58,8 +57,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
-            If not provided, no experiment tracking will be enabled.
         per_site_config: Per-site configuration for the federated learning job.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
@@ -109,7 +106,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[Dict[str, Dict]] = None,
         key_metric: str = "accuracy",
         # New FedAvg features
@@ -139,7 +135,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
             key_metric=key_metric,
             stop_cond=stop_cond,
