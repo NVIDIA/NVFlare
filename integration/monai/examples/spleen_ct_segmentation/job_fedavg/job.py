@@ -35,7 +35,7 @@ def main():
     parser.add_argument(
         "--bundle_root",
         type=str,
-        default="bundles/spleen_ct_segmentation",
+        default="../bundles/spleen_ct_segmentation",
         help="Path to MONAI bundle relative to job directory",
     )
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
@@ -60,8 +60,12 @@ def main():
     # Set device
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Get the directory where this job.py file is located
+    job_dir = os.path.dirname(os.path.abspath(__file__))
+
     # Create train arguments for client.py
-    train_args = f"--bundle_root {os.path.join(os.getcwd(), args.bundle_root)} --local_epochs {args.local_epochs}"
+    bundle_path = os.path.join(job_dir, args.bundle_root)
+    train_args = f"--bundle_root {bundle_path} --local_epochs {args.local_epochs}"
     if args.send_weight_diff:
         train_args += " --send_weight_diff"
 
@@ -79,7 +83,7 @@ def main():
             num_res_units=2,
             norm="batch",
         ),
-        train_script=os.path.join(os.getcwd(), "client.py"),
+        train_script=os.path.join(job_dir, "client.py"),
         train_args=train_args,
         aggregator_data_kind=DataKind.WEIGHT_DIFF if args.send_weight_diff else DataKind.WEIGHTS,
     )
