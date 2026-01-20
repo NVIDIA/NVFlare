@@ -44,7 +44,7 @@ This testing/development approach has the following limitations for production u
 
 ## Quick Start
 
-For initial testing with a SLURM cluster, you can use the provided `nvflare.slurm` script that runs both server and client as a single job. See the details in [MULTINODE.md](MULTINODE.md).
+For initial testing with a SLURM cluster, you can use the provided `nvflare.slurm` script that runs both server and client as a single job. 
 
 ### 1. Create a fresh virtual environment on your cluster
 Create a fresh virtual environment on your cluster and install the requirements.
