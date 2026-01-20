@@ -109,6 +109,7 @@ def main():
         },
         train_script="client.py",
         per_site_config=per_site_config,
+        key_metric="AUC",
     )
 
     print("Executing recipe in simulation environment...")

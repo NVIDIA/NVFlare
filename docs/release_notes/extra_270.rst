@@ -56,26 +56,6 @@ The file downloading process requires three steps:
 3. Recipients download the files one by one with received RIDs.
 
 
-Pre-Install CLI Command
------------------------
-
-In cases where custom code or dynamic code is not allowed to be deployed, we need to pre-install the application to the
-host. Although you can manually deploy this code without using any tool or command, the following pre-install tool
-may provide a simpler method.
-
-The code pre-installer handles:
-- Installation of application code
-- Installation of shared libraries
-- Site-specific customizations
-- Python package dependencies
-
-The tool provides two main commands:
-- `prepare`: Package application code for installation
-- `install`: Install packaged code to target sites
-
-:ref:`pre_installer`
-
-
 New documentations
 ------------------
 Along with the new features, we add a lot documentations related to the features, in addition, we added the following

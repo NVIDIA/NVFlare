@@ -187,7 +187,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Code-Pre-install](./advanced/code-pre-install/README.md)   | NA        | This example demonstrates how to use NVFLARE's code pre-installer in a real-world scenario. |
 | [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs. |
  
