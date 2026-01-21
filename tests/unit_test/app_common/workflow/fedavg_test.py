@@ -436,7 +436,7 @@ class TestPTFedAvgInitialModel:
                 super().__init__()
                 self.linear = nn.Linear(10, 5)
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model = SimpleModel()
         controller = PTFedAvg(initial_model=model)
@@ -449,7 +449,7 @@ class TestPTFedAvgInitialModel:
 
     def test_initial_model_with_dict(self):
         """Test initial_model with dict is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
         controller = PTFedAvg(initial_model=model_dict)
@@ -458,7 +458,7 @@ class TestPTFedAvgInitialModel:
 
     def test_initial_model_with_flmodel(self):
         """Test initial_model with FLModel is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         fl_model = FLModel(params={"w": 1.0})
         controller = PTFedAvg(initial_model=fl_model)
@@ -467,7 +467,7 @@ class TestPTFedAvgInitialModel:
 
     def test_initial_model_with_none(self):
         """Test initial_model with None is allowed."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         controller = PTFedAvg(initial_model=None)
 
@@ -477,7 +477,7 @@ class TestPTFedAvgInitialModel:
         """Test initial_model with invalid type raises TypeError."""
         import pytest
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         with pytest.raises(TypeError, match="initial_model must be"):
             PTFedAvg(initial_model="invalid_string")  # type: ignore[arg-type]
@@ -490,7 +490,7 @@ class TestPTFedAvgInitialModel:
 
     def test_task_name_parameter(self):
         """Test task_name parameter is passed correctly."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         controller = PTFedAvg(task_name="validate")
         assert controller.task_name == "validate"
@@ -500,7 +500,7 @@ class TestPTFedAvgInitialModel:
 
     def test_backward_compatibility_alias(self):
         """Test PTFedAvgEarlyStopping alias still works for backward compatibility."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg, PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg, PTFedAvgEarlyStopping
 
         # Verify alias points to same class
         assert PTFedAvgEarlyStopping is PTFedAvg
@@ -519,7 +519,7 @@ class TestPTFedAvgModelPersistence:
         """Test save_model_file and load_model_file work correctly with PyTorch."""
         import torch
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         controller = PTFedAvg()
 
@@ -544,7 +544,7 @@ class TestPTFedAvgModelPersistence:
         """Test load_model_file works when metadata file doesn't exist."""
         import torch
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         controller = PTFedAvg()
 
@@ -561,7 +561,7 @@ class TestPTFedAvgModelPersistence:
 
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         controller = PTFedAvg()
 

@@ -52,7 +52,7 @@ class PTFedAvg(FedAvg):
         ```python
         from model import Net
         from nvflare import FedJob
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         job = FedJob(name="pt_fedavg")
         controller = PTFedAvg(

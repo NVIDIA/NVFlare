@@ -15,7 +15,7 @@
 from model import Net
 
 from nvflare import FedJob
-from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+from nvflare.app_opt.pt.fedavg import PTFedAvgEarlyStopping
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
