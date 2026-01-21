@@ -155,11 +155,12 @@ def main():
     test_dataset = TensorDataset(X_test, y_test)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
 
-    # Initialize model
+    # Initialize model and move to device
     model = ProteinMLP(input_dim=args.embedding_dimensions, num_classes=len(CLASS_LABELS))
-    print(f"[Site={site_name}] Model initialized with {sum(p.numel() for p in model.parameters())} parameters")
+    model.to(device)
+    print(f"[Site={site_name}] Model initialized with {sum(p.numel() for p in model.parameters())} parameters on {device}")
 
-    # Define loss function and optimizer
+    # Define loss function and optimizer (after model is on device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
@@ -173,7 +174,6 @@ def main():
         if not sim_local:
             model.load_state_dict(input_model.params, strict=True)
             print(f"[Site={site_name}] Loaded global model weights")
-        model.to(device)
 
         # Evaluate received global model
         train_accuracy, _ = evaluate_model(model, train_loader, criterion, device, compute_loss=False)
