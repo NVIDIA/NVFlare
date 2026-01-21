@@ -29,13 +29,6 @@ SCAFFOLD
 namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the `implementation <https://github.com/Xtra-Computing/NIID-Bench>`_
 as described in `Li et al. <https://arxiv.org/abs/2102.02079>`_. An example configuration can be found in cifar10_scaffold of :github_nvflare_link:`CIFAR-10 example <examples/advanced/cifar10>`.
 
-Ditto
------
-`Ditto <https://arxiv.org/abs/2012.04221>`_ uses a slightly modified version of the prostate Learner implementation,
-namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model
-training and a controllable prox term. See the :github_nvflare_link:`prostate segmentation example <examples/advanced/prostate>`
-for an example with ditto in addition to FedProx, FedAvg, and centralized training.
-
 Federated XGBoost
 -----------------
 
@@ -60,5 +53,5 @@ Federated Analytics
 
 * :github_nvflare_link:`Federated Statistics for medical imaging (Github) <examples/advanced/federated-statistics/image_stats/README.md>` - Example of gathering local image histogram to compute the global dataset histograms.
 * :github_nvflare_link:`Federated Statistics for tabular data with DataFrame (Github) <examples/advanced/federated-statistics/df_stats/README.md>` - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
-* :github_nvflare_link:`Federated Statistics with Monai Statistics integration for Spleen CT Image (Github) <integration/monai/examples/spleen_ct_segmentation/README.md>` - Example demonstrated Monai statistics integration and few other features in federated statistics
+* :github_nvflare_link:`Federated Statistics with Monai Statistics integration for Spleen CT Image (Github) <integration/monai/examples/spleen_ct_segmentation_local/README.md>` - Example demonstrated Monai statistics integration and few other features in federated statistics
 
