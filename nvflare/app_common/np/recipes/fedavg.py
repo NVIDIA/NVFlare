@@ -48,6 +48,7 @@ class _FedAvgValidator(BaseModel):
     analytics_receiver: Optional[AnalyticsReceiver] = None
     launch_once: bool = True
     shutdown_timeout: float = 0.0
+    key_metric: str
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -88,6 +89,9 @@ class NumpyFedAvgRecipe(Recipe):
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         ```python
@@ -128,6 +132,7 @@ class NumpyFedAvgRecipe(Recipe):
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -146,6 +151,7 @@ class NumpyFedAvgRecipe(Recipe):
             analytics_receiver=analytics_receiver,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -167,12 +173,14 @@ class NumpyFedAvgRecipe(Recipe):
         self.analytics_receiver = v.analytics_receiver
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
+        self.key_metric = v.key_metric
 
         # Create BaseFedJob (provides ConvertToFedEvent for experiment tracking)
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
             analytics_receiver=self.analytics_receiver,
+            key_metric=self.key_metric,
         )
 
         # Define the controller and send to server

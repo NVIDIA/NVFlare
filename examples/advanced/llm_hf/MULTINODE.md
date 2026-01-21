@@ -1,8 +1,12 @@
 # Multi-Node Training Solution Summary
 
-## Quick Reference
+## Overview
 
-This quick reference describes how to run NVIDIA FLARE in an SLURM-managed cluster environment.
+This document describes how to run NVIDIA FLARE in an SLURM-managed cluster environment for testing and development purposes. Both the NVFlare server and client run together in a single SLURM job.
+
+**Note**: This approach is designed for testing/development on a single cluster. For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure.
+
+## Quick Reference
 
 ### Key Files
 - **`nvflare.slurm`** - SLURM batch script
@@ -18,22 +22,73 @@ This quick reference describes how to run NVIDIA FLARE in an SLURM-managed clust
 
 ---
 
-## Problem Evolution and Solutions
+## Architecture: Testing/Development Mode
 
-This document captures all the issues encountered and solutions implemented for multi-node distributed training with NVFlare and PyTorch DDP on SLURM.
+This example uses `nvflare.slurm` to run both the NVFlare server and client within a single SLURM job:
 
-### Issues Encountered (in order)
+- Both NVFlare server and client run within a single SLURM job
+- Time-limited execution (e.g., 30 minutes to a few hours)
+- Useful for testing and development
+- Single cluster site only
 
-1. **"flare.init timeout" error** - Multiple FL clients trying to initialize on different nodes
-2. **"missing job on client" error** - FL client couldn't execute the training command
-3. **Environment variable scope** - Variables set in SLURM script weren't available in FL client process
-4. **"Invalid device ordinal" error** - Wrong CUDA device mapping (global rank vs local rank)
-5. **"Connection refused" error** - All processes trying to connect to NVFlare client
-6. **NCCL warnings** - Process group initialization warnings
+## ⚠️ Known Limitations
 
-## Final Solution: Wrapper Script Approach
+This testing/development approach has the following limitations for production use:
 
-### Architecture
+- ❌ **Time-limited**: Server stops when SLURM job ends (cannot support long-running federated learning workflows)
+- ❌ **Single-site only**: Cannot support multiple independent cluster sites
+- ❌ **Not scalable**: Requires restarting both server and client for each training session
+- ❌ **Resource inefficient**: Holds compute resources even during idle federated learning rounds
+
+**Note**: For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure and running clients as resident services on login nodes. This example focuses on the single-cluster testing scenario.
+
+## Quick Start
+
+For initial testing with a SLURM cluster, you can use the provided `nvflare.slurm` script that runs both server and client as a single job. 
+
+### 1. Create a fresh virtual environment on your cluster
+Create a fresh virtual environment on your cluster and install the requirements.
+
+```bash
+export VENV_DIR=<path/to/your/venv>
+```
+
+### 2. Create a NVFlare project
+As an example, we create a project with only one client for the Dolly dataset.
+
+```bash
+nvflare poc prepare -c dolly
+```
+
+Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
+
+```bash
+export NVFLARE_PROJECT=<your/path/to/prod_00>
+```
+
+### 3. (Optionally) Set your Weights and Biases API Key
+The training can be logged to WandB if you provide an API key via
+
+```bash
+export WANDB_API_KEY=<your_wandb_api_key>
+```
+
+### 4. Submit the SLURM Job
+Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
+```
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
+```
+
+By default, you can submit a job, requesting 2 nodes with 8 GPUs via
+
+```bash
+sbatch nvflare.slurm
+```
+
+---
+
+## Architecture
 
 ```
 SLURM Job (2 nodes allocated)
@@ -133,17 +188,6 @@ SLURM Job (2 nodes allocated)
    - All 16 processes train together using PyTorch DDP
    - Only rank 0 calls `flare.receive()` and `flare.send()`
    - Model updates synchronized across all processes
-
-## Current Solution Advantages
-
-✅ **Recipe Pattern**: Uses `FedAvgRecipe` for maintainable configuration  
-✅ **Separation of concerns**: Job creation vs execution  
-✅ **Environment isolation**: Wrapper script runs in correct environment  
-✅ **Flexibility**: Works for both single-node and multi-node via `--multi_node` flag  
-✅ **Per-Site Configuration**: Different commands and arguments per client via `per_site_config`  
-✅ **Simplicity**: No complex string escaping or variable expansion  
-✅ **Debugging**: Wrapper script provides clear logging  
-✅ **Portability**: Easy to modify for different cluster setups
 
 ## Job Configuration Arguments
 

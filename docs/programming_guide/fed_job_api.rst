@@ -410,4 +410,4 @@ Example:
 Examples
 ========
 
-To see examples of how the FedJob API can be used for different applications, refer the :github_nvflare_link:`Getting Started <examples/getting_started>` and :github_nvflare_link:`Job API <examples/advanced/job_api>` examples.
+To see examples of how the FedJob API can be used for different applications, refer the :github_nvflare_link:`Hello World <examples/hello-world>` and :github_nvflare_link:`Job API <examples/advanced/job_api>` examples.

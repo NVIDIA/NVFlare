@@ -50,6 +50,7 @@ class HEModelDecryptor(DXOFilter):
         self.logger.info("Using HE model decryptor.")
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
+        self.data_kinds = data_kinds
 
         decomposers.register()
 

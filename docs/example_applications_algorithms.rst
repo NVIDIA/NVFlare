@@ -16,12 +16,7 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
 
   examples/hello_world_examples
 
-1.1. Deep Learning to Federated Learning
-----------------------------------------
-
-  * :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>` - Example for converting Deep Learning (DL) to Federated Learning (FL) using the Client API.
-
-1.2. Workflows
+1.1. Workflows
 --------------
 
   * :ref:`Hello NumPy <hello_numpy>` - Example using the FedAvg workflow with a NumPy trainer
@@ -29,7 +24,7 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
   * :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>` - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
   * :github_nvflare_link:`Swarm Learning <examples/advanced/swarm_learning>` - Example using Swarm Learning and Client-Controlled Cross-site Evaluation workflows.
 
-1.3. Deep Learning
+1.2. Deep Learning
 ------------------
 
   * :ref:`Hello PyTorch <hello_pt_job_api>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
@@ -59,7 +54,6 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
 Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <filters_for_privacy>` that can be applied as data is sent or received between peers.
 
   * :github_nvflare_link:`Federated Learning with CIFAR-10 (GitHub) <examples/advanced/cifar10>` - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
-  * :github_nvflare_link:`Differential Privacy for BraTS18 segmentation (GitHub) <examples/advanced/brats18>`- Example using SVT Differential Privacy for BraTS18 segmentation.
 
 5. Traditional ML examples
 ==========================
@@ -67,16 +61,12 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`Federated Linear Model with Scikit-learn (GitHub) <examples/advanced/sklearn-linear>` - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
   * :github_nvflare_link:`Federated K-Means Clustering with Scikit-learn (GitHub) <examples/advanced/sklearn-kmeans>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
   * :github_nvflare_link:`Federated SVM with Scikit-learn (GitHub) <examples/advanced/sklearn-svm>` - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_.
-  * :github_nvflare_link:`Federated Horizontal XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
-  * :github_nvflare_link:`Federated Learning for Random Forest based on XGBoost (GitHub) <examples/advanced/random_forest>` - Example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `Random Forest <https://xgboost.readthedocs.io/en/stable/tutorials/rf.html>`_.
-  * :github_nvflare_link:`Federated Vertical XGBoost (GitHub) <examples/advanced/vertical_xgboost>` - Example using Private Set Intersection and XGBoost on vertically split HIGGS data.
+  * :github_nvflare_link:`Federated XGBoost (GitHub) <examples/advanced/xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches. Also includes an example of vertical federated XGBoost.
 
 6. Medical Image Analysis
 =========================
 
   * :github_nvflare_link:`MONAI Integration (GitHub) <integration/monai>` - For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle `MONAI <https://project-monai.github.io/>`_
-  * :github_nvflare_link:`Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <examples/advanced/brats18>` - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
-  * :github_nvflare_link:`Federated Learning for Prostate Segmentation from Multi-source Data (GitHub) <examples/advanced/prostate>` - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
 
 7. Federated Statistics
 =======================
@@ -106,7 +96,6 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`FL Experiment Tracking with TensorBoard Streaming <examples/advanced/experiment-tracking/tensorboard>` - :ref:`(documentation) <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with MLflow <examples/advanced/experiment-tracking/mlflow>` - :ref:`(documentation) <experiment_tracking_mlflow>`- Example integrating Hello PyTorch with MLflow with streaming from clients to server
   * :github_nvflare_link:`FL Experiment Tracking with Weights and Biases <examples/advanced/experiment-tracking/wandb>` - Example integrating Hello PyTorch with Weights and Biases streaming capability from clients to server.
-  * :github_nvflare_link:`MONAI FLARE Integration Experiment Tracking <integration/monai/examples/spleen_ct_segmentation_local#51-experiment-tracking-with-mlflow>` - Example using FLARE and MONAI integration with experiment tracking streaming from clients to server.
 
   .. toctree::
     :maxdepth: 1
@@ -120,12 +109,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 
   * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
-11. FL Hierarchical Unification Bridge (HUB)
-============================================
-
-  * :github_nvflare_link:`FL HUB <examples/advanced/fl_hub>` - Example for FL HUB allowing hierarchical interaction between several levels of FLARE FL systems.
-
-12. Federated Large Language Model (LLM)
+11. Federated Large Language Model (LLM)
 ========================================
 
   * :github_nvflare_link:`Parameter Efficient Fine Turning <integration/nemo/examples/peft>` - Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.
@@ -134,16 +118,17 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
   * :github_nvflare_link:`LLM Tuning via HuggingFace SFT Trainer <examples/advanced/llm_hf>` - Example for using FLARE with a HuggingFace trainer for LLM tuning tasks.
 
 
-13. Graph Neural Network (GNN)
+12. Graph Neural Network (GNN)
 ==============================
 
-  * :github_nvflare_link:`Protein Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
-  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
+  * :github_nvflare_link:`Protein Classification <examples/advanced/gnn>` - Example using GNNs for Protein Classification using `PPI <http://snap.stanford.edu/graphsage/#code>`_ dataset using GraphSAGE.
+  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
-14. Financial Applications
+13. Financial Applications
 ==========================
 
   * :github_nvflare_link:`Financial Application with Federated XGBoost Methods <examples/advanced/finance>` Example using XGBoost in various ways to train a federated model to perform fraud detection with a finance dataset.
+  * :github_nvflare_link:`Financial Transaction Classification <examples/advanced/gnn>` - Example using GNNs for Financial Transaction Classification with `Elliptic++ <https://github.com/git-disl/EllipticPlusPlus>`_ dataset using GraphSAGE.
 
 
 Setting up a virtual environment for examples and notebooks
@@ -220,9 +205,7 @@ Most hello-* examples use a custom folder within the FL application.
 Note that using a custom folder in the app needs to be :ref:`allowed <troubleshooting_byoc>` when using secure provisioning.
 By default, this option is disabled in the secure mode. POC mode, however, will work with custom code by default.
 
-In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>`,
-:github_nvflare_link:`prostate segmentation <examples/advanced/prostate>`,
-and :github_nvflare_link:`BraTS18 segmentation <examples/advanced/brats18>` examples assume that the
+In contrast, the :github_nvflare_link:`CIFAR-10 <examples/advanced/cifar10>` example assumes that the
 learner code is already installed on the client's system and available in the PYTHONPATH.
 Hence, the app folders do not include the custom code there.
 The PYTHONPATH is set in the ``run_poc.sh`` or ``run_secure.sh`` scripts of the example.
