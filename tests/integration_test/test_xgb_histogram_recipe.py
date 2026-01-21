@@ -38,6 +38,11 @@ import os
 import tempfile
 
 import numpy as np
+import pytest
+
+# Skip all tests in this module if xgboost is not installed
+pytest.importorskip("xgboost")
+
 import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
