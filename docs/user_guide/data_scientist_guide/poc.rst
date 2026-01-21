@@ -40,7 +40,7 @@ We can use the :ref:`job_cli` to easily submit a job to the POC system. (Note: W
 
 .. code-block::
 
-  nvflare job submit -j NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+  nvflare job submit -j NVFlare/examples/hello-world/hello-numpy
 
 .. code-block::
 
