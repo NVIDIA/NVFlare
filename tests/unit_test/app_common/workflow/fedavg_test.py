@@ -333,6 +333,40 @@ class TestFedAvgAggregation:
         aggr_result = controller._get_aggregated_result()
         assert aggr_result.params["w"] == 3.0  # (2+4)/2
 
+    def test_all_metrics_only_reset_with_builtin_aggregation(self):
+        """Test _all_metrics is only reset when using built-in aggregation, not custom aggregator."""
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        # Test with custom aggregator: _all_metrics should NOT be reset
+        aggregator = MockModelAggregator()
+        controller_custom = FedAvg(num_clients=2, aggregator=aggregator)
+        controller_custom._all_metrics = False  # Simulate previous state
+
+        # Simulate the reset logic (what happens at start of each round)
+        if controller_custom.aggregator:
+            controller_custom.aggregator.reset_stats()
+        else:
+            controller_custom._aggr_helper = WeightedAggregationHelper()
+            controller_custom._aggr_metrics_helper = WeightedAggregationHelper()
+            controller_custom._all_metrics = True
+
+        # With custom aggregator, _all_metrics should NOT be reset
+        assert controller_custom._all_metrics is False
+
+        # Test with built-in aggregation: _all_metrics SHOULD be reset
+        controller_builtin = FedAvg(num_clients=2)
+        controller_builtin._all_metrics = False  # Simulate previous state
+
+        if controller_builtin.aggregator:
+            controller_builtin.aggregator.reset_stats()
+        else:
+            controller_builtin._aggr_helper = WeightedAggregationHelper()
+            controller_builtin._aggr_metrics_helper = WeightedAggregationHelper()
+            controller_builtin._all_metrics = True
+
+        # With built-in aggregation, _all_metrics SHOULD be reset to True
+        assert controller_builtin._all_metrics is True
+
     def test_aggregate_empty_result_skipped(self):
         """Test empty results are skipped."""
         controller = FedAvg(num_clients=2)

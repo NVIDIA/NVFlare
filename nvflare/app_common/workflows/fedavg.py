@@ -154,7 +154,8 @@ class FedAvg(BaseFedAvg):
                 # Use built-in InTime aggregation
                 self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
                 self._aggr_metrics_helper = WeightedAggregationHelper()
-            self._all_metrics = True
+                self._all_metrics = True  # Only used by built-in aggregation
+            # Shared state for both aggregator types
             self._received_count = 0
             self._expected_count = len(clients)
             self._params_type = None
