@@ -132,7 +132,7 @@ def add_cross_site_evaluation(
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         recipe = NumpyFedAvgRecipe(
-            name="my-job", min_clients=2, num_rounds=3, train_script="client.py"
+            name="my-job", initial_model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
         )
 
         # That's it! Framework auto-detected, validator auto-added

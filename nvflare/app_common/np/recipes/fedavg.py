@@ -21,7 +21,6 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -34,7 +33,7 @@ class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Optional[list] = None
+    initial_model: list
     min_clients: int
     num_rounds: int
     train_script: str
@@ -45,7 +44,6 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    analytics_receiver: Optional[AnalyticsReceiver] = None
     key_metric: str
 
 
@@ -80,9 +78,6 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
-            MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
-            Use `add_experiment_tracking()` utility function to easily add tracking.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
@@ -112,7 +107,7 @@ class NumpyFedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Optional[list] = None,
+        initial_model: list,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -123,7 +118,6 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         key_metric: str = "accuracy",
     ):
         # Validate inputs internally
@@ -140,7 +134,6 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
-            analytics_receiver=analytics_receiver,
             key_metric=key_metric,
         )
 
@@ -160,14 +153,12 @@ class NumpyFedAvgRecipe(Recipe):
         self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.analytics_receiver = v.analytics_receiver
         self.key_metric = v.key_metric
 
-        # Create BaseFedJob (provides ConvertToFedEvent for experiment tracking)
+        # Create BaseFedJob
         job = BaseFedJob(
             name=self.name,
             min_clients=self.min_clients,
-            analytics_receiver=self.analytics_receiver,
             key_metric=self.key_metric,
         )
 
@@ -183,11 +174,10 @@ class NumpyFedAvgRecipe(Recipe):
         shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
         aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
-        # Handle initial model if provided
-        persistor_id = ""
-        if self.initial_model is not None:
-            # Add persistor and initial model directly
-            persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+        # Add persistor with initial model
+        persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+        # Note: Unlike PyTorch/TensorFlow, NumPy recipes do NOT set comp_ids["persistor_id"]
+        # because NPModelLocator doesn't use persistor_id (see MODEL_LOCATOR_REGISTRY in recipe/utils.py)
 
         controller = ScatterAndGather(
             min_clients=self.min_clients,
@@ -196,7 +186,6 @@ class NumpyFedAvgRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            allow_empty_global_weights=True,  # Allow empty weights if no initial model
         )
         # Send the controller to the server
         job.to_server(controller)
