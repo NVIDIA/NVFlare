@@ -58,6 +58,7 @@ def main():
         input_model = flare.receive()
         print(f"Client {client_name}, current_round={input_model.current_round}")
 
+        # Get model parameters
         input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
         print(f"Received weights: {input_np_arr}")
 
