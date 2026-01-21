@@ -1,7 +1,7 @@
 ---
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 
 const series_dli = {
   id: "DLI", // id must not have spaces
@@ -179,10 +179,10 @@ const series_100 = {
           link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/fed_job_api.html`,
         },
         {
-          title: "ML/DL to FL",
-          tags: ["beg.", "numpy", "pytorch", "lightning", "tensorflow"],
-          description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+          title: "ML/DL to FL Examples",
+          tags: ["beg.", "numpy", "pytorch", "lightning", "tensorflow", "recipe-api"],
+          description: "Examples for converting Machine Learning code to Federated Learning using the Recipe API. See hello-numpy, hello-pt, hello-tf, and multi-gpu examples.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world#examples-by-framework`
         },
         {
           title: "Hello FedAvg",
@@ -307,6 +307,18 @@ const series_200 = {
       title: "201: FL Algorithms",
       description: "See how FL algorithms can be implemented in a variety of frameworks.",
       cards: [
+        {
+          title: "Step-by-Step CIFAR10 Examples",
+          tags: ["beg.", "algorithm", "pytorch", "dl"],
+          description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
+        },
+        {
+          title: "Step-by-Step HIGGS Examples",
+          tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
+          description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
+        },
         {
           title: "Hello FedAvg",
           tags: ["beg.", "algorithm", "pytorch", "dl"],
