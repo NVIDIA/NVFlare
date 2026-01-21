@@ -19,12 +19,52 @@ from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
 class CSVDataLoader(XGBDataLoader):
     def __init__(self, folder: str):
-        """Reads CSV dataset and return XGB data matrix.
+        """Reads CSV dataset and returns XGB data matrix with automatic client-specific loading.
 
-        Note: if split mode is vertical, we assume the label owner is rank 0.
+        This data loader automatically handles site-specific data loading. Even though you pass
+        the same folder path to all clients, each client will load its own data based on its
+        client_id (which is injected by the framework at runtime).
+
+        Expected folder structure:
+            {folder}/
+            ├── site-1/
+            │   ├── train.csv
+            │   └── valid.csv
+            ├── site-2/
+            │   ├── train.csv
+            │   └── valid.csv
+            └── site-3/
+                ├── train.csv
+                └── valid.csv
+
+        For horizontal mode (row split):
+            - Each site's CSV contains all features + labels
+            - Each site has different rows (samples)
+
+        For vertical mode (column split):
+            - site-1 (rank 0) contains subset of features + labels
+            - Other sites contain different features, no labels
+            - All sites have the same rows (samples)
 
         Args:
-            folder: Folder to find the CSV files
+            folder: Base folder path containing client-specific subdirectories.
+                Each client will automatically load from {folder}/{client_id}/
+
+        Example:
+            .. code-block:: python
+
+                # In your job script - same data loader for all clients
+                for i in range(1, 4):
+                    dataloader = CSVDataLoader(folder="/tmp/data/horizontal")
+                    recipe.add_to_client(f"site-{i}", dataloader)
+
+                # At runtime:
+                # site-1 loads: /tmp/data/horizontal/site-1/train.csv
+                # site-2 loads: /tmp/data/horizontal/site-2/train.csv
+                # site-3 loads: /tmp/data/horizontal/site-3/train.csv
+
+        Note:
+            In vertical mode, the label owner is always rank 0 (typically site-1).
         """
         self.folder = folder
 
