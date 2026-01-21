@@ -157,7 +157,6 @@ def main():
 
     # Initialize model
     model = ProteinMLP(input_dim=args.embedding_dimensions, num_classes=len(CLASS_LABELS))
-    model = model.to(device)
     print(f"[Site={site_name}] Model initialized with {sum(p.numel() for p in model.parameters())} parameters")
 
     # Define loss function and optimizer
