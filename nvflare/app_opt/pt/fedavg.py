@@ -87,7 +87,8 @@ class PTFedAvg(FedAvg):
             initial_model_params = initial_model
         else:
             raise TypeError(
-                f"initial_model must be torch.nn.Module, dict, FLModel, or None, " f"got {type(initial_model).__name__}"
+                f"initial_model must be torch.nn.Module, dict, FLModel, or None, "
+                f"but got {type(initial_model).__name__}"
             )
 
         super().__init__(

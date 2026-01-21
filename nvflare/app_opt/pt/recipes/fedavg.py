@@ -164,8 +164,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             return self.initial_model.state_dict()
 
         raise TypeError(
-            f"initial_model must be a dict, torch.nn.Module, or None. "
-            f"Got {type(self.initial_model).__name__}."
+            f"initial_model must be a dict, torch.nn.Module, or None. " f"Got {type(self.initial_model).__name__}."
         )
 
     def _setup_model_and_persistor(self, job) -> str:
