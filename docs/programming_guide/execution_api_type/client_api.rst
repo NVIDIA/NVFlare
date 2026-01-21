@@ -403,10 +403,10 @@ For complete working examples of using Client API with Job Recipes across differ
 
 **Hello World Examples** (Recommended for beginners):
 
-- PyTorch: :ref:`hello_pt` - CIFAR-10 image classification
+- PyTorch: :ref:`hello_pt_job_api` - CIFAR-10 image classification
 - NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>` - Basic FL concepts
-- PyTorch Lightning: :ref:`hello_lightning` - Lightning integration
-- TensorFlow: :ref:`hello_tf` - MNIST classification
+- PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>` - Lightning integration
+- TensorFlow: :ref:`hello_tf_job_api` - MNIST classification
 - Flower: :github_nvflare_link:`hello-flower <examples/hello-world/hello-flower>` - Flower on FLARE
 
 **Advanced Examples:**
