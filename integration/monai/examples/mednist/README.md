@@ -48,7 +48,7 @@ while flare.is_running():
     flare.send(output_model)
 ```
 
-For more complex scenarios with MONAI bundles, see the [spleen CT segmentation example](../spleen_ct_segmentation/README.md)).
+For more complex scenarios with MONAI bundles, see the [spleen CT segmentation example](../spleen_ct_segmentation/README.md).
 
 We use **FedAvgRecipe** for Pythonic job configuration and simply run
 
