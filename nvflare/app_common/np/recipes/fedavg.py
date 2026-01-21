@@ -84,7 +84,6 @@ class NumpyFedAvgRecipe(Recipe):
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
             MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
             Use `add_experiment_tracking()` utility function to easily add tracking.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
