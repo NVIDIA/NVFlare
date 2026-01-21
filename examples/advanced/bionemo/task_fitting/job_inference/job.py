@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,8 @@ results_path = "/tmp/data/mixed_soft/results"
 micro_bs = 64
 
 # Download model checkpoint
-checkpoint_path = load("esm2/8m:2.0")
+# checkpoint_path = load("esm2/8m:2.0")
+checkpoint_path = load("esm2/650m:2.0")
 print(f"Downloaded model to {checkpoint_path}")
 
 # Create results directory
