@@ -154,7 +154,8 @@ class FedAvg(BaseFedAvg):
                 # Use built-in InTime aggregation
                 self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
                 self._aggr_metrics_helper = WeightedAggregationHelper()
-            self._all_metrics = True
+                self._all_metrics = True  # Only used by built-in aggregation
+            # Shared state for both aggregator types
             self._received_count = 0
             self._expected_count = len(clients)
             self._params_type = None
@@ -255,7 +256,7 @@ class FedAvg(BaseFedAvg):
         """Get the final aggregated result after all clients have responded."""
         if self.aggregator:
             # Use custom aggregator
-            result = self.aggregator.aggregate_model()
+            result: FLModel= self.aggregator.aggregate_model()
             result.meta = result.meta or {}
             result.meta["nr_aggregated"] = self._received_count
             result.meta["current_round"] = self.current_round
