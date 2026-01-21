@@ -479,8 +479,8 @@ class TestFedAvgLoadSaveModel:
         assert loaded.params["w"] == 123.0
 
 
-class TestPTFedAvgEarlyStoppingInitialModel:
-    """Test PTFedAvgEarlyStopping initial_model type handling."""
+class TestPTFedAvgInitialModel:
+    """Test PTFedAvg initial_model type handling."""
 
     def test_initial_model_with_nn_module(self):
         """Test initial_model with torch.nn.Module extracts state_dict."""
@@ -491,10 +491,10 @@ class TestPTFedAvgEarlyStoppingInitialModel:
                 super().__init__()
                 self.linear = nn.Linear(10, 5)
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model = SimpleModel()
-        controller = PTFedAvgEarlyStopping(initial_model=model)
+        controller = PTFedAvg(initial_model=model)
 
         # initial_model should be converted to state_dict (OrderedDict)
         assert controller.initial_model is not None
@@ -504,27 +504,27 @@ class TestPTFedAvgEarlyStoppingInitialModel:
 
     def test_initial_model_with_dict(self):
         """Test initial_model with dict is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
-        controller = PTFedAvgEarlyStopping(initial_model=model_dict)
+        controller = PTFedAvg(initial_model=model_dict)
 
         assert controller.initial_model == model_dict
 
     def test_initial_model_with_flmodel(self):
         """Test initial_model with FLModel is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         fl_model = FLModel(params={"w": 1.0})
-        controller = PTFedAvgEarlyStopping(initial_model=fl_model)
+        controller = PTFedAvg(initial_model=fl_model)
 
         assert controller.initial_model is fl_model
 
     def test_initial_model_with_none(self):
         """Test initial_model with None is allowed."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        controller = PTFedAvgEarlyStopping(initial_model=None)
+        controller = PTFedAvg(initial_model=None)
 
         assert controller.initial_model is None
 
@@ -532,23 +532,23 @@ class TestPTFedAvgEarlyStoppingInitialModel:
         """Test initial_model with invalid type raises TypeError."""
         import pytest
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model="invalid_string")  # type: ignore[arg-type]
+            PTFedAvg(initial_model="invalid_string")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model=12345)  # type: ignore[arg-type]
+            PTFedAvg(initial_model=12345)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+            PTFedAvg(initial_model=[1, 2, 3])  # type: ignore[arg-type]
 
     def test_task_name_parameter(self):
         """Test task_name parameter is passed correctly."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        controller = PTFedAvgEarlyStopping(task_name="validate")
+        controller = PTFedAvg(task_name="validate")
         assert controller.task_name == "validate"
 
-        controller2 = PTFedAvgEarlyStopping()
+        controller2 = PTFedAvg()
         assert controller2.task_name == "train"  # default
