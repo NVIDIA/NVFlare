@@ -314,7 +314,7 @@ instructions in :github_nvflare_link:`this document <integration/xgboost/encrypt
 NVFlare Provisioning
 --------------------
 For horizontal secure training, the NVFlare system must be provisioned with a homomorphic encryption context. The HEBuilder in ``project.yml`` is used to achieve this.
-An example configuration can be found at :github_nvflare_link:`secure_project.yml <examples/advanced/cifar10/cifar10-real-world/workspaces/secure_project.yml#L64>`.
+An example configuration can be found at :github_nvflare_link:`secure_project.yml <examples/advanced/cifar10/cifar10-real-world/workspaces/secure_project.yml>`.
 
 This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
 
