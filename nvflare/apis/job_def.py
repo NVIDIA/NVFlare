@@ -130,14 +130,14 @@ class Job:
         ::
 
             "deploy_map": {
-                "hello-numpy-sag-server": [
+                "hello-numpy-server": [
                   "server"
                 ],
-                "hello-numpy-sag-client": [
+                "hello-numpy-client": [
                   "client1",
                   "client2"
                 ],
-                "hello-numpy-sag-client3": [
+                "hello-numpy-client3": [
                   "client3"
                 ]
               },
