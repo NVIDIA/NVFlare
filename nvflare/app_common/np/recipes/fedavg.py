@@ -34,7 +34,7 @@ class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Optional[list] = None
+    initial_model: list
     min_clients: int
     num_rounds: int
     train_script: str
@@ -112,7 +112,7 @@ class NumpyFedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Optional[list] = None,
+        initial_model: list,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -183,13 +183,10 @@ class NumpyFedAvgRecipe(Recipe):
         shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
         aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
-        # Handle initial model if provided
-        persistor_id = ""
-        if self.initial_model is not None:
-            # Add persistor and initial model directly
-            persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
-            # Note: Unlike PyTorch/TensorFlow, NumPy recipes do NOT set comp_ids["persistor_id"]
-            # because NPModelLocator doesn't use persistor_id (see MODEL_LOCATOR_REGISTRY in recipe/utils.py)
+        # Add persistor with initial model
+        persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+        # Note: Unlike PyTorch/TensorFlow, NumPy recipes do NOT set comp_ids["persistor_id"]
+        # because NPModelLocator doesn't use persistor_id (see MODEL_LOCATOR_REGISTRY in recipe/utils.py)
 
         controller = ScatterAndGather(
             min_clients=self.min_clients,
@@ -198,7 +195,6 @@ class NumpyFedAvgRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            allow_empty_global_weights=True,  # Allow empty weights if no initial model
         )
         # Send the controller to the server
         job.to_server(controller)
