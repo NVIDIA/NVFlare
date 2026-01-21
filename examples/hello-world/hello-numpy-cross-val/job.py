@@ -87,11 +87,14 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
     print("\n=== Running Training + Cross-Site Evaluation ===\n")
     print(f"Configuration: {n_clients} clients, {num_rounds} training rounds\n")
 
-    # Create standard FedAvg recipe
+    # Create standard FedAvg recipe with initial model
+    import numpy as np
+
     recipe = NumpyFedAvgRecipe(
         name="hello-numpy-train-cse",
         min_clients=n_clients,
         num_rounds=num_rounds,
+        initial_model=np.array([0.0] * 10),  # Initial model for CSE example
         train_script="client.py",
         train_args="",
     )
