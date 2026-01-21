@@ -375,17 +375,23 @@ class Communicator:
         self.logger.debug(f"pulling task from parent FQCN: {parent_fqcn}")
 
         fqcn = FQCN.join([parent_fqcn, job_id])
-        task = self.cell.send_request(
-            target=fqcn,
-            channel=CellChannel.SERVER_COMMAND,
-            topic=ServerCommandNames.GET_TASK,
-            request=task_message,
-            timeout=timeout,
-            optional=True,
-            abort_signal=fl_ctx.get_run_abort_signal(),
-        )
+        task = None
+        try:
+            task = self.cell.send_request(
+                target=fqcn,
+                channel=CellChannel.SERVER_COMMAND,
+                topic=ServerCommandNames.GET_TASK,
+                request=task_message,
+                timeout=timeout,
+                optional=True,
+                abort_signal=fl_ctx.get_run_abort_signal(),
+            )
+            return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
+        except Exception as ex:
+            self.logger.error(f"Error getting task: {ex}")
+            return_code = ReturnCode.INVALID_REQUEST
+
         end_time = time.time()
-        return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
         if return_code == ReturnCode.OK:
             size = task.get_header(MessageHeaderKey.PAYLOAD_LEN)
@@ -405,9 +411,8 @@ class Communicator:
                 self.pending_task = task_data
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
-            return None
-        else:
             task = None
+        else:
             self.logger.warning(f"Failed to get_task from {parent_fqcn}. Will try it again.")
 
         return task
