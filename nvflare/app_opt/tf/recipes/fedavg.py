@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -55,11 +55,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
-            If not provided, no experiment tracking will be enabled.
-            To enable experiment tracking, either:
-            - Pass an AnalyticsReceiver instance explicitly, OR
-            - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
@@ -134,9 +129,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         are aggregated using weighted averaging based on the number of training
         samples provided by each client.
 
-        Experiment tracking is opt-in. No tracking components are configured by default,
-        avoiding unnecessary dependencies.
-
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
     """
@@ -180,7 +172,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
