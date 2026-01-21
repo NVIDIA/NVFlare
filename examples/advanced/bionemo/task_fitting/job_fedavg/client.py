@@ -158,7 +158,9 @@ def main():
     # Initialize model and move to device
     model = ProteinMLP(input_dim=args.embedding_dimensions, num_classes=len(CLASS_LABELS))
     model.to(device)
-    print(f"[Site={site_name}] Model initialized with {sum(p.numel() for p in model.parameters())} parameters on {device}")
+    print(
+        f"[Site={site_name}] Model initialized with {sum(p.numel() for p in model.parameters())} parameters on {device}"
+    )
 
     # Define loss function and optimizer (after model is on device)
     criterion = nn.CrossEntropyLoss()
