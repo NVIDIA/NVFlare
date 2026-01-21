@@ -74,7 +74,7 @@ python3 job.py --n_clients 2
 The cross-site evaluation results are saved as JSON:
 
 ```bash
-cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
+cat cat /tmp/nvflare/simulation/hello-pt-cse/server/simulate_job/cross_site_val/cross_val_results.json
 ```
 
 **Example output:**

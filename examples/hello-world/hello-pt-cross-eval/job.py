@@ -64,7 +64,7 @@ def main():
     print(f"Job status: {run.get_status()}")
     print()
     print("To view results:")
-    print(f"  cat {run.get_result()}/cross_site_val/cross_val_results.json")
+    print(f"  cat {run.get_result()}/server/simulate_job/cross_site_val/cross_val_results.json")
     print()
 
 
