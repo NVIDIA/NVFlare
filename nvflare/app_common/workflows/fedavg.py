@@ -66,7 +66,7 @@ class FedAvg(BaseFedAvg):
             If None, early stopping is disabled. Defaults to None.
         patience (int, optional): The number of rounds with no improvement after which
             FL will be stopped. Only applies if stop_cond is set. Defaults to None.
-        task_to_optimize (str, optional): Task name for training. Defaults to "train".
+        task_name (str, optional): Task name for training. Defaults to "train".
         exclude_vars (str, optional): Regex pattern for variables to exclude from
             aggregation. Defaults to None. Only used when no custom aggregator is provided.
         aggregation_weights (dict, optional): Per-client aggregation weights.
@@ -81,7 +81,7 @@ class FedAvg(BaseFedAvg):
         aggregator: Optional[ModelAggregator] = None,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: Optional[str] = "train",
+        task_name: Optional[str] = "train",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         **kwargs,
@@ -98,7 +98,7 @@ class FedAvg(BaseFedAvg):
         # Early stopping configuration
         self.stop_cond = stop_cond
         self.patience = patience
-        self.task_to_optimize = task_to_optimize
+        self.task_name = task_name
 
         # Aggregation configuration (used only when no custom aggregator)
         self.exclude_vars = exclude_vars
@@ -161,7 +161,7 @@ class FedAvg(BaseFedAvg):
 
             # Non-blocking send with callback for streaming aggregation
             self.send_model(
-                task_name=self.task_to_optimize,
+                task_name=self.task_name,
                 targets=clients,
                 data=model,
                 callback=self._aggregate_one_result,
@@ -335,6 +335,30 @@ class FedAvg(BaseFedAvg):
 
         self.num_fl_rounds_without_improvement += 1
         return False
+
+    def load_model(self) -> FLModel:
+        """Load model. Uses persistor if available, otherwise uses load_model_file.
+
+        Override `load_model_file` for framework-specific deserialization (e.g., torch.load).
+
+        Returns:
+            FLModel: loaded model, or None if loading fails
+        """
+        if self.persistor:
+            # Use persistor (parent class behavior)
+            return super().load_model()
+        elif self.save_filename:
+            # Try to load from file
+            filepath = os.path.join(self.get_run_dir(), self.save_filename)
+            if os.path.exists(filepath):
+                self.info(f"Loading model from {filepath}")
+                return self.load_model_file(filepath)
+            else:
+                self.info(f"No saved model found at {filepath}, starting fresh")
+                return FLModel(params={})
+        else:
+            self.warning("No persistor or save_filename configured")
+            return FLModel(params={})
 
     def save_model(self, model: FLModel) -> None:
         """Save model. Uses persistor if available, otherwise uses save_model_file.

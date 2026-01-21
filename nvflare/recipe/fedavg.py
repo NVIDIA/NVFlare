@@ -53,7 +53,6 @@ class _FedAvgValidator(BaseModel):
     # New FedAvg features
     stop_cond: Optional[str] = None
     patience: Optional[int] = None
-    task_to_optimize: str = "train"
     save_filename: str = "FL_global_model.pt"
     exclude_vars: Optional[str] = None
     aggregation_weights: Optional[Dict[str, float]] = None
@@ -125,7 +124,6 @@ class FedAvgRecipe(Recipe):
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
             Only applies if stop_cond is set. Defaults to None.
-        task_to_optimize: Task name for training. Defaults to "train".
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -165,7 +163,6 @@ class FedAvgRecipe(Recipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: str = "train",
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
@@ -192,7 +189,6 @@ class FedAvgRecipe(Recipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
-            task_to_optimize=task_to_optimize,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
@@ -218,7 +214,6 @@ class FedAvgRecipe(Recipe):
         self.key_metric = v.key_metric
         self.stop_cond = v.stop_cond
         self.patience = v.patience
-        self.task_to_optimize = v.task_to_optimize
         self.save_filename = v.save_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
@@ -260,7 +255,7 @@ class FedAvgRecipe(Recipe):
             aggregator=model_aggregator,
             stop_cond=self.stop_cond,
             patience=self.patience,
-            task_to_optimize=self.task_to_optimize,
+            task_name="train",
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
         )

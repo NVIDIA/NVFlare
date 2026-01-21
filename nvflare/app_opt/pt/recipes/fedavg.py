@@ -64,7 +64,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        task_to_optimize: Task name for training. Defaults to "train".
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -115,7 +114,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: str = "train",
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
@@ -145,7 +143,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
-            task_to_optimize=task_to_optimize,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,

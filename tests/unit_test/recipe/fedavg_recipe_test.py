@@ -218,14 +218,12 @@ class TestFedAvgRecipeEarlyStopping:
             name="test_early_stop",
             stop_cond="accuracy >= 80",
             patience=5,
-            task_to_optimize="validate",
             **base_recipe_params,
         )
 
         assert_recipe_basics(recipe, "test_early_stop", base_recipe_params)
         assert recipe.stop_cond == "accuracy >= 80"
         assert recipe.patience == 5
-        assert recipe.task_to_optimize == "validate"
 
     def test_save_filename_configuration(self, mock_file_system, base_recipe_params):
         """Test FedAvgRecipe with custom save filename."""
