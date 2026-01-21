@@ -126,30 +126,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
         )
 
-    def _get_initial_model_params(self):
-        """Convert initial_model to dict of params for TensorFlow.
-
-        Handles:
-        - dict: return as-is
-        - tf.keras.Model: call get_weights() and convert to dict
-        - None: return None
-        """
-        if self.initial_model is None:
-            return None
-
-        if isinstance(self.initial_model, dict):
-            return self.initial_model
-
-        # Try TensorFlow/Keras model
-        if hasattr(self.initial_model, "get_weights"):
-            weights = self.initial_model.get_weights()
-            # Convert to dict with layer indices as keys
-            return {f"layer_{i}": w for i, w in enumerate(weights)}
-
-        raise TypeError(
-            f"initial_model must be a dict, tf.keras.Model, or None. " f"Got {type(self.initial_model).__name__}."
-        )
-
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle TensorFlow-specific model setup."""
         if self.initial_model is not None:

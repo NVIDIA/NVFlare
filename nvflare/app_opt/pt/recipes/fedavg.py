@@ -142,31 +142,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             aggregation_weights=aggregation_weights,
         )
 
-    def _get_initial_model_params(self) -> Optional[Dict]:
-        """Convert initial_model to dict of params for PyTorch.
-
-        Handles:
-        - dict: return as-is
-        - torch.nn.Module: call state_dict()
-        - None: return None
-        """
-        if self.initial_model is None:
-            return None
-
-        if isinstance(self.initial_model, dict):
-            return self.initial_model
-
-        # Try PyTorch nn.Module
-        from nvflare.fuel.utils.import_utils import optional_import
-
-        nn, torch_ok = optional_import(module="torch.nn")
-        if torch_ok and isinstance(self.initial_model, nn.Module):
-            return self.initial_model.state_dict()
-
-        raise TypeError(
-            f"initial_model must be a dict, torch.nn.Module, or None. " f"Got {type(self.initial_model).__name__}."
-        )
-
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
         if self.initial_model is not None:
