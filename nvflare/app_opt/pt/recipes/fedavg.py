@@ -18,7 +18,6 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -58,11 +57,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
-            If not provided, no experiment tracking will be enabled.
-            To enable experiment tracking, either:
-            - Pass an AnalyticsReceiver instance explicitly, OR
-            - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
@@ -98,16 +92,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             stop_cond="accuracy >= 95",
             patience=3
         )
-        ```
-
-        Enable experiment tracking (Option 2 - add after creation):
-
-        ```python
-        from nvflare.recipe.utils import add_experiment_tracking
-
-        recipe = FedAvgRecipe(...)  # Create recipe first
-        add_experiment_tracking(recipe, "tensorboard")  # Add tracking later
-        # Also supports: "mlflow", "wandb"
         ```
 
         Using launch_once=False to restart the external process for each request:
@@ -149,7 +133,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,

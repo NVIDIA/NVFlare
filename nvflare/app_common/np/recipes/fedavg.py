@@ -21,7 +21,6 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -45,7 +44,6 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    analytics_receiver: Optional[AnalyticsReceiver] = None
     launch_once: bool = True
     shutdown_timeout: float = 0.0
     key_metric: str
@@ -82,9 +80,6 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
-            MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
-            Use `add_experiment_tracking()` utility function to easily add tracking.
         launch_once: Controls the lifecycle of the external process. If True (default), the process
             is launched once at startup and persists throughout all rounds, handling multiple training
             requests. If False, a new process is launched and torn down for each individual request
@@ -132,7 +127,6 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -151,7 +145,6 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
-            analytics_receiver=analytics_receiver,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
@@ -173,7 +166,6 @@ class NumpyFedAvgRecipe(Recipe):
         self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.analytics_receiver = v.analytics_receiver
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric

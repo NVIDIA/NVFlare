@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -85,32 +84,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         )
         ```
 
-        Enable TensorBoard experiment tracking (Option 1 - pass explicitly):
-
-        ```python
-        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-        recipe = FedAvgRecipe(
-            name="my_fedavg_job",
-            initial_model=pretrained_model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="client.py",
-            train_args="--epochs 5 --batch_size 32",
-            analytics_receiver=TBAnalyticsReceiver()
-        )
-        ```
-
-        Enable experiment tracking (Option 2 - add after creation):
-
-        ```python
-        from nvflare.recipe.utils import add_experiment_tracking
-
-        recipe = FedAvgRecipe(...)  # Create recipe first
-        add_experiment_tracking(recipe, "tensorboard")  # Add tracking later
-        # Also supports: "mlflow", "wandb"
-        ```
-
         Using launch_once=False to restart the external process for each task:
 
         ```python
@@ -153,7 +126,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,

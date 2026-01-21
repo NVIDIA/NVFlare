@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.base_fed_job import BaseFedJob
@@ -47,7 +46,6 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor] = None
-    analytics_receiver: Any = None
     per_site_config: Optional[dict[str, dict]] = None
     launch_once: bool = True
     shutdown_timeout: float = 0.0
@@ -156,7 +154,6 @@ class FedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
