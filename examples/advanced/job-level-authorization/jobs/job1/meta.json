@@ -1,5 +1,5 @@
 {
-  "name": "hello-numpy-sag",
+  "name": "hello-numpy",
   "resource_spec": {},
   "min_clients" : 1,
   "deploy_map": {

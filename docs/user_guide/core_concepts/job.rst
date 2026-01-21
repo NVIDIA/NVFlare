@@ -56,14 +56,14 @@ Here is an example for meta.json:
             }
         },
         "deploy_map": {
-            "hello-numpy-sag-server": [
+            "hello-numpy-server": [
                 "server"
             ],
-            "hello-numpy-sag-client": [
+            "hello-numpy-client": [
                 "client1",
                 "client2"
             ],
-            "hello-numpy-sag-client3": [
+            "hello-numpy-client3": [
                 "client3"
             ]
         },
@@ -81,6 +81,10 @@ Pay attention to the following:
     - deploy_map: what apps go to which sites (see :ref:`deploy_map`)
     - min_clients: minimum clients required for this job
     - mandatory_clients: mandatory clients required for this job
+
+Additional optional configuration parameters:
+
+    - stats_pool_config: configure statistics pool saving for post-job analysis (see :ref:`diagnostic_commands` for details)
 
 The system also keeps additional information about the job such as:
 
@@ -268,7 +272,7 @@ parameters, as shown in its init method:
 NVFLARE is a multi-job system that allows multiple jobs to be running concurrently, as long as system resources are available.
 
 The ``max_jobs`` parameter controls how many jobs at the maximum are allowed at the same time. If you want your system to run only one
-job at a time, you can set it to 1. 
+job at a time, you can set it to 1.
 
 The ``max_schedule_count`` parameter controls how many times at the maximum a job will be tried, in case it failed to be scheduled repeatedly.
 If you want the job to be tried forever, you can set this parameter to be a very large number, but it may never be scheduled if it requires resources
@@ -287,10 +291,10 @@ Combining Parameters to Achieve Optimal Scheduling Results
 So how to combine these parameters to achieve optimal scheduling results? It depends.
 
 If your jobs usually take a short time to complete, you may want the jobs to be retried very frequently and many times (set ``max_schedule_interval`` to a small
-number, and ``max_schedule_count`` to a proper number). 
+number, and ``max_schedule_count`` to a proper number).
 
 If your jobs usually take a long time, you may want the jobs to be tried less frequently but enough times to make sure that a job is not given up prematurely.
-You also don't want to have a long system idle time when all current jobs are done but waiting jobs are not tried in time (say < 10 seconds). 
+You also don't want to have a long system idle time when all current jobs are done but waiting jobs are not tried in time (say < 10 seconds).
 
 An overall strategy is perhaps to make sure the ``min_schedule_interval * max_schedule_count`` to be a little larger than the longest execution time of your jobs.
 For example, if you set ``min_schedule_interval`` to 10 seconds and your job execution could be as long as 1 hour, then ``max_schedule_count`` could be about 360.
