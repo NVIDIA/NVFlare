@@ -199,6 +199,7 @@ class TestFedAvgRecipeKeyMetricVariants:
         key_metric = "val_loss"
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_key_metric",
+            initial_model=[1.0, 2.0, 3.0],
             min_clients=2,
             train_script="mock_train_script.py",
             key_metric=key_metric,
