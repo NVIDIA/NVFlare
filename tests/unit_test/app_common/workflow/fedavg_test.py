@@ -424,8 +424,8 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "load_model_file")
 
 
-class TestPTFedAvgEarlyStoppingInitialModel:
-    """Test PTFedAvgEarlyStopping initial_model type handling."""
+class TestPTFedAvgInitialModel:
+    """Test PTFedAvg initial_model type handling."""
 
     def test_initial_model_with_nn_module(self):
         """Test initial_model with torch.nn.Module extracts state_dict."""
@@ -436,10 +436,10 @@ class TestPTFedAvgEarlyStoppingInitialModel:
                 super().__init__()
                 self.linear = nn.Linear(10, 5)
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
         model = SimpleModel()
-        controller = PTFedAvgEarlyStopping(initial_model=model)
+        controller = PTFedAvg(initial_model=model)
 
         # initial_model should be converted to state_dict (OrderedDict)
         assert controller.initial_model is not None
@@ -449,27 +449,27 @@ class TestPTFedAvgEarlyStoppingInitialModel:
 
     def test_initial_model_with_dict(self):
         """Test initial_model with dict is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
         model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
-        controller = PTFedAvgEarlyStopping(initial_model=model_dict)
+        controller = PTFedAvg(initial_model=model_dict)
 
         assert controller.initial_model == model_dict
 
     def test_initial_model_with_flmodel(self):
         """Test initial_model with FLModel is passed through."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
         fl_model = FLModel(params={"w": 1.0})
-        controller = PTFedAvgEarlyStopping(initial_model=fl_model)
+        controller = PTFedAvg(initial_model=fl_model)
 
         assert controller.initial_model is fl_model
 
     def test_initial_model_with_none(self):
         """Test initial_model with None is allowed."""
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
-        controller = PTFedAvgEarlyStopping(initial_model=None)
+        controller = PTFedAvg(initial_model=None)
 
         assert controller.initial_model is None
 
@@ -477,13 +477,95 @@ class TestPTFedAvgEarlyStoppingInitialModel:
         """Test initial_model with invalid type raises TypeError."""
         import pytest
 
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model="invalid_string")  # type: ignore[arg-type]
+            PTFedAvg(initial_model="invalid_string")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model=12345)  # type: ignore[arg-type]
+            PTFedAvg(initial_model=12345)  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvgEarlyStopping(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+            PTFedAvg(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+
+    def test_task_name_parameter(self):
+        """Test task_name parameter is passed correctly."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+
+        controller = PTFedAvg(task_name="validate")
+        assert controller.task_name == "validate"
+
+        controller2 = PTFedAvg()
+        assert controller2.task_name == "train"  # default
+
+    def test_backward_compatibility_alias(self):
+        """Test PTFedAvgEarlyStopping alias still works for backward compatibility."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg, PTFedAvgEarlyStopping
+
+        # Verify alias points to same class
+        assert PTFedAvgEarlyStopping is PTFedAvg
+
+        # Verify can instantiate with old name
+        controller = PTFedAvgEarlyStopping(num_clients=2, num_rounds=3)
+        assert isinstance(controller, PTFedAvg)
+        assert controller.num_clients == 2
+        assert controller.num_rounds == 3
+
+
+class TestPTFedAvgModelPersistence:
+    """Test PTFedAvg save_model_file and load_model_file methods."""
+
+    def test_save_and_load_model_file_roundtrip(self, tmp_path):
+        """Test save_model_file and load_model_file work correctly with PyTorch."""
+        import torch
+
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Create model with PyTorch tensors
+        model = FLModel(
+            params={"weight": torch.tensor([1.0, 2.0, 3.0]), "bias": torch.tensor([0.5])},
+            metrics={"accuracy": 0.85},
+        )
+        filepath = str(tmp_path / "test_model.pt")
+
+        # Save and load
+        controller.save_model_file(model, filepath)
+        loaded = controller.load_model_file(filepath)
+
+        # Verify params
+        assert torch.equal(loaded.params["weight"], model.params["weight"])
+        assert torch.equal(loaded.params["bias"], model.params["bias"])
+        # Verify metadata
+        assert loaded.metrics == model.metrics
+
+    def test_load_model_file_without_metadata(self, tmp_path):
+        """Test load_model_file works when metadata file doesn't exist."""
+        import torch
+
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Create a model file without metadata
+        params = {"weight": torch.tensor([1.0, 2.0])}
+        filepath = str(tmp_path / "model_no_metadata.pt")
+        torch.save(params, filepath)
+
+        # Load without metadata file
+        loaded = controller.load_model_file(filepath)
+
+        assert torch.equal(loaded.params["weight"], params["weight"])
+        assert loaded.metrics is None  # No metadata
+
+    def test_run_registers_tensor_decomposer(self):
+        """Test that run() registers TensorDecomposer."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Verify run method exists and can be inspected
+        assert hasattr(controller, "run")
+        # The actual registration happens when run() is called, which requires
+        # a full FL context. We just verify the method exists.

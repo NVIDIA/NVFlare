@@ -22,13 +22,13 @@ from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.fuel.utils import fobs
 
 
-class PTFedAvgEarlyStopping(FedAvg):
+class PTFedAvg(FedAvg):
     """PyTorch FedAvg Controller with Early Stopping and Model Selection.
 
     This is a PyTorch-specific wrapper around the generic FedAvg controller.
     It adds PyTorch-specific model serialization using torch.save/torch.load.
 
-    The new FedAvg controller already includes:
+    The FedAvg controller includes:
     - InTime (streaming) aggregation for memory efficiency
     - Early stopping support
     - Best model selection and saving
@@ -52,10 +52,10 @@ class PTFedAvgEarlyStopping(FedAvg):
         ```python
         from model import Net
         from nvflare import FedJob
-        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvg
 
-        job = FedJob(name="fedavg_with_early_stopping")
-        controller = PTFedAvgEarlyStopping(
+        job = FedJob(name="pt_fedavg")
+        controller = PTFedAvg(
             num_clients=2,
             num_rounds=10,
             stop_cond="accuracy >= 80",
@@ -150,3 +150,7 @@ class PTFedAvgEarlyStopping(FedAvg):
             model = FLModel(params=params)
 
         return model
+
+
+# Backward compatibility alias
+PTFedAvgEarlyStopping = PTFedAvg

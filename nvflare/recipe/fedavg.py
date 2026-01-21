@@ -75,10 +75,10 @@ class FedAvgRecipe(Recipe):
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
         initial_model: Initial model to start federated training with. Can be:
-            - nn.Module for PyTorch (will call .state_dict())
-            - tf.keras.Model for TensorFlow
-            - dict for sklearn/RAW frameworks (model parameters)
-            - None (no initial model)
+            - dict: model parameters as dict
+            - None: no initial model
+            For framework-specific types (nn.Module, tf.keras.Model), use the
+            corresponding framework recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -321,11 +321,8 @@ class FedAvgRecipe(Recipe):
     def _get_initial_model_params(self) -> Optional[Dict]:
         """Convert initial_model to dict of params.
 
-        Handles:
-        - dict: return as-is
-        - PyTorch nn.Module: call state_dict()
-        - TensorFlow model: call get_weights()
-        - None: return None
+        Base implementation handles dict and None. Framework-specific subclasses
+        should override this to handle their model types (e.g., nn.Module, tf.keras.Model).
 
         Returns:
             Optional[Dict]: model parameters as dict, or None
@@ -336,18 +333,13 @@ class FedAvgRecipe(Recipe):
         if isinstance(self.initial_model, dict):
             return self.initial_model
 
-        # Try PyTorch nn.Module
-        if hasattr(self.initial_model, "state_dict"):
-            return self.initial_model.state_dict()
-
-        # Try TensorFlow/Keras model
-        if hasattr(self.initial_model, "get_weights"):
-            weights = self.initial_model.get_weights()
-            # Convert to dict with layer indices as keys
-            return {f"layer_{i}": w for i, w in enumerate(weights)}
-
-        # Unknown type - try to use as-is
-        return self.initial_model
+        # Unknown type - subclasses should override for framework-specific handling
+        raise TypeError(
+            f"initial_model must be a dict or None for the base recipe. "
+            f"Got {type(self.initial_model).__name__}. "
+            f"Use a framework-specific recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe) "
+            f"for nn.Module or other model types."
+        )
 
     def _get_model_aggregator(self):
         """Get the ModelAggregator for the FedAvg controller.
