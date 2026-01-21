@@ -45,7 +45,7 @@ This will create embedding files in `/tmp/data/mixed_soft/results/` for each cli
 Key parameters in `job.py`:
 - `n_clients`: Number of federated clients (default: 3)
 - `num_rounds`: Number of federated training rounds (default: 100)
-- `aggregation_epochs`: Local epochs per round (default: 4)
+- `aggregation_epochs`: Local epochs per round (default: 20)
 - `lr`: Learning rate (default: 1e-5)
 - `batch_size`: Training batch size (default: 128)
 - `embedding_dimensions`: ESM2 embedding size (320 for 8m, 1280 for 650m)
