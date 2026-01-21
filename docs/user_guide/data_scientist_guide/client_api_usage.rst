@@ -66,9 +66,40 @@ federated learning, for example:
 With 5 lines of code changes, we convert the centralized training code to
 a federated learning setting.
 
-After this, we can utilize the job templates and the :ref:`job_cli`
-to generate a job so it can be run using :ref:`fl_simulator`
-or submit to a deployed NVFlare system.
+Defining and Running the FL Job
+================================
+
+After modifying your training script with the Client API, you need to create a ``job.py`` file to define how the job runs:
+
+.. code-block:: python
+
+    # job.py - Define and run the FL job
+    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+    from nvflare.recipe import SimEnv
+
+    recipe = NumpyFedAvgRecipe(
+        name="my-fl-job",
+        min_clients=2,
+        num_rounds=3,
+        initial_model=[[1, 2, 3], [4, 5, 6]],
+        train_script="client.py",  # Points to your Client API script
+    )
+
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+Then run your federated learning job:
+
+.. code-block:: bash
+
+    python job.py
+
+That's it! Your training script (with Client API) and job definition work together to run federated learning.
+
+See the **Learn More** section at the bottom for detailed guides and resources.
+
+Client API Reference
+====================
 
 Below is a table overview of key Client APIs.
 
@@ -139,11 +170,22 @@ Below is a table overview of key Client APIs.
      - :class:`MLflowWriter<nvflare.client.tracking.MLflowWriter>`
 
 
-For more details on communication configuration, please refer to :ref:`client_api`.
+Working Examples
+================
 
-Please check Client API Module :mod:`nvflare.client.api` for more in-depth
-information about all of the Client API functionalities.
+For complete working examples across different frameworks:
 
-If you are using PyTorch Lightning in your training code, you can check the
-Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
+* PyTorch: :github_nvflare_link:`hello-pt <examples/hello-world/hello-pt>`
+* NumPy: :github_nvflare_link:`hello-numpy <examples/hello-world/hello-numpy>`
+* PyTorch Lightning: :github_nvflare_link:`hello-lightning <examples/hello-world/hello-lightning>`
+* TensorFlow: :github_nvflare_link:`hello-tf <examples/hello-world/hello-tf>`
 
+Each example shows both the Client API training script (``client.py``) and Job Recipe definition (``job.py``).
+
+Learn More
+==========
+
+* :ref:`job_recipe` - How to define and run FL jobs with your training script
+* :ref:`client_api` - Programming Guide with detailed examples and technical details
+* :mod:`nvflare.client.api` - Complete API reference documentation
+* :mod:`nvflare.app_opt.lightning.api` - PyTorch Lightning integration

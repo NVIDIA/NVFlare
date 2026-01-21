@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
+from monai.networks.nets import DenseNet121
 
-warnings.warn(
-    "The 'nvflare.app_opt.xgboost.histogram_based' module (V1) is deprecated and will be removed in "
-    "version 2.8.0. Please use 'nvflare.app_opt.xgboost.histogram_based_v2' instead, or set "
-    "algorithm='histogram_v2' in XGBHistogramRecipe.",
-    DeprecationWarning,
-    stacklevel=2,
-)
+
+class FLDenseNet121(DenseNet121):
+    def __init__(self, spatial_dims=2, in_channels=1, out_channels=6):
+
+        # Store configuration for JobAPI
+        self.spatial_dims = spatial_dims
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        super().__init__(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=out_channels)
