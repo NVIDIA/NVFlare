@@ -58,17 +58,9 @@ def main():
         input_model = flare.receive()
         print(f"Client {client_name}, current_round={input_model.current_round}")
 
-        # Handle empty params (can happen when no initial model provided)
-        if NPConstants.NUMPY_KEY in input_model.params:
-            input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
-            print(f"Received weights: {input_np_arr}")
-        else:
-            # Initialize with simple numpy array for first round
-            # Note: Size of 10 is arbitrary for this mock example. The example's train() and
-            # evaluate() functions work with any array size. In real applications, initialize
-            # with appropriate model dimensions that match your actual model architecture.
-            input_np_arr = np.array([0.0] * 10)
-            print(f"No initial model provided, using zero initialization: {input_np_arr}")
+        # Get model parameters
+        input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
+        print(f"Received weights: {input_np_arr}")
 
         # Train the model
         new_params = train(input_np_arr)
