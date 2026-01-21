@@ -120,7 +120,6 @@ class PTFedAvg(FedAvg):
         torch.save(model.params, filepath)
 
         # Save FLModel metadata (metrics, params_type, etc.) separately
-        # Save FLModel metadata (metrics, params_type, etc.) separately
         params = model.params
         try:
             model.params = {}  # Temporarily remove params to save only metadata
