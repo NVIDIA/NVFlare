@@ -75,13 +75,13 @@ PyTorch MLP with:
 The job uses the PyTorch `FedAvgRecipe`:
 
 ```python
-from nvflare.app_common.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from model import ProteinMLP
 
 recipe = FedAvgRecipe(
     name=job_name,
     min_clients=n_clients,
-    num_rounds=100,
+    num_rounds=50,
     initial_model=ProteinMLP(input_dim=1280, num_classes=10),
     train_script="client.py",
     train_args=script_args,
@@ -99,7 +99,7 @@ python job.py
 
 The job will:
 1. Initialize a PyTorch MLP model with reproducible weights
-2. Train for 100 rounds of federated averaging
+2. Train for 50 rounds of federated averaging
 3. Log metrics to TensorBoard
 4. Save results to `/tmp/nvflare/bionemo/{job_name}_alpha1.0/`
 
