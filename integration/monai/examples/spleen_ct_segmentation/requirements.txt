@@ -1,0 +1,12 @@
+tqdm
+nibabel
+fire
+pytorch-ignite>=0.4.10
+monai>=1.3.0
+nvflare[PT]>=2.7.2rc
+tensorboard
+scikit-image
+pandas
+matplotlib
+monai[ignite,tqdm]
+huggingface_hub

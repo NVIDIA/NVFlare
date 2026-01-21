@@ -399,7 +399,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, None)
         if not req_timeout:
             req_timeout = acu.get_positive_float_var(
-                self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 60.0
+                self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 300.0
             )
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 

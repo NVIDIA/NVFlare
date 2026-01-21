@@ -7,7 +7,7 @@ For detailed documentation, see the `Hello TensorFlow <https://www.tensorflow.or
 
 We recommend using the `NVIDIA TensorFlow docker <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow>`_ for GPU support. If GPU is not required, a Python virtual environment is sufficient.
 
-To run this example with the FLARE API, refer to the `hello_world notebook <../hello_world.ipynb>`_.
+To run this example with the FLARE API, refer to the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
 Run NVIDIA TensorFlow Container
 -------------------------------

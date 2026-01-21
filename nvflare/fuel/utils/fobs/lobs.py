@@ -21,6 +21,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs import deserialize, get_dot_handler, serialize
 from nvflare.fuel.utils.fobs.buf_list_stream import BufListStream
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
+from nvflare.fuel.utils.fobs.decomposer import Externalizer, Internalizer
 
 # DAT: Datum App Type
 HEADER_STRUCT = struct.Struct(">BBQ")  # marker(1), dot(1), size(8)
@@ -91,7 +92,8 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: di
 
     """
     mgr = DatumManager(max_value_size, fobs_ctx=fobs_ctx)
-    main_body = serialize(obj, mgr)
+    externalizer = Externalizer(mgr)
+    main_body = serialize(externalizer.externalize(obj), mgr)
     header = _Header(MARKER_MAIN, 0, len(main_body))
     stream.write(header.to_bytes())
     stream.write(main_body)
@@ -285,7 +287,9 @@ def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
             if not handler:
                 raise RuntimeError(f"cannot find handler for Datum Object Type {datum.dot}")
             handler.process_datum(datum, mgr)
-    return deserialize(main_body, mgr)
+    internalizer = Internalizer(mgr)
+    obj = deserialize(main_body, mgr)
+    return internalizer.internalize(obj)
 
 
 def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None, fobs_ctx: dict = None):

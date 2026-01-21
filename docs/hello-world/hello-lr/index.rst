@@ -196,7 +196,7 @@ above.
 Client Side
 -----------
 
-On the client side, the local training logic is implemented `client.py <./client.py>`_.
+On the client side, the local training logic is implemented in :github_nvflare_link:`client.py <examples/hello-world/hello-lr/client.py>`.
 
 The implementation is based on the `Client API <https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api>`_. This
 allows user to add minimum `nvflare`-specific codes to turn a typical
@@ -211,7 +211,7 @@ script.
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
   above. This is implemented in the
-  `train_newton_raphson() <./client.py>`_ method. Each client then
+  :github_nvflare_link:`train_newton_raphson() <examples/hello-world/hello-lr/client.py>` method. Each client then
   sends the computed results (always in `FLModel` format) to server for aggregation,
   using `flare.send()`  API.
 

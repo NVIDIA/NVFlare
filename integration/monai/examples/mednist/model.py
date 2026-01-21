@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,3 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+from monai.networks.nets import DenseNet121
+
+
+class FLDenseNet121(DenseNet121):
+    def __init__(self, spatial_dims=2, in_channels=1, out_channels=6):
+
+        # Store configuration for JobAPI
+        self.spatial_dims = spatial_dims
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        super().__init__(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=out_channels)
