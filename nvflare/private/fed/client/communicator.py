@@ -414,7 +414,8 @@ class Communicator:
             task = None
         else:
             self.logger.warning(f"Failed to get_task from {parent_fqcn}. Will try it again.")
-
+            task = None
+            
         return task
 
     def submit_update(
