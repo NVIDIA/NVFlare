@@ -4,7 +4,7 @@ In these examples, we illustrate the use of NVFlare to carry out *horizontal* fe
 And *vertical* federated learning using histogram-based collaboration.
 
 ## Horizontal Federated XGBoost
-Under horizontal setting, each participant joining the federated learning will have part of 
+Under horizontal setting, each participant joining the federated learning will have part of
 the whole data samples / instances / records, while each sample has all the features.
 
 ### Histogram-based Collaboration
@@ -27,17 +27,17 @@ Trained trees are collected and passed to the server / other clients for aggrega
 Under this setting, we can further distinguish between two types of tree-based collaboration: cyclic and bagging.
 
 #### Cyclic Training
-"Cyclic XGBoost" is one way of performing tree-based federated boosting with 
-multiple sites: at each round of tree boosting, instead of relying on the whole 
-data statistics collected from all clients, the boosting relies on only 1 client's 
-local data. The resulting tree sequence is then forwarded to the next client for 
+"Cyclic XGBoost" is one way of performing tree-based federated boosting with
+multiple sites: at each round of tree boosting, instead of relying on the whole
+data statistics collected from all clients, the boosting relies on only 1 client's
+local data. The resulting tree sequence is then forwarded to the next client for
 next round's boosting. Such training scheme have been proposed in literatures [1] [2].
 
 #### Bagging Aggregation
 
-"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting. 
+"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting.
 
-This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling. 
+This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling.
 
 In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which is shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
 
@@ -47,48 +47,48 @@ Specifically, the global model is updated by aggregating the trees from all clie
 The XGBoost Booster api is leveraged to create in-memory Booster objects that persist across rounds to cache predictions from trees added in previous rounds and retain other data structures needed for training.
 
 ## Vertical Federated XGBoost
-Under vertical setting, each participant joining the federated learning will 
+Under vertical setting, each participant joining the federated learning will
 have part of the whole features, while each site has all the overlapping instances.
 
 ### Private Set Intersection (PSI)
-Since not every site will have the same set of data samples (rows), we will use PSI to first compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In the following example, we add a `uid_{idx}` to each instance and give each site 
+Since not every site will have the same set of data samples (rows), we will use PSI to first compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In the following example, we add a `uid_{idx}` to each instance and give each site
 a portion of the dataset that includes a common overlap. After PSI, the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../../psi/README.md).
 > **_NOTE:_** The uid can be a composition of multiple variables with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
 
 ### Histogram-based Collaboration
-Similar to its horizontal counterpart, under vertical collaboration, histogram-based collaboration will 
+Similar to its horizontal counterpart, under vertical collaboration, histogram-based collaboration will
 aggregate the gradient information from each site and update the global model accordingly, resulting in
-the same model as the centralized / histogram-based horizontal training. 
+the same model as the centralized / histogram-based horizontal training.
 We leverage the [vertical federated learning support](https://github.com/dmlc/xgboost/issues/8424) in the XGBoost open-source library. This allows for the distributed XGBoost algorithm to operate in a federated manner on vertically split data.
 
 ## Data Preparation
-Assuming the HIGGS data has been downloaded following [the instructions](../README.md), we further split the data 
+Assuming the HIGGS data has been downloaded following [the instructions](../README.md), we further split the data
 horizontally and vertically for federated learning.
 
 In horizontal settings, each party holds different data samples with the same set of features.
 To simulate this, we split the HIGGS data by rows, and assigning each party a subset of the data samples.
-In vertical settings, each party holds different features of the same data samples, and usually, the population 
+In vertical settings, each party holds different features of the same data samples, and usually, the population
 on each site will not fully overlap. To simulate this, we split the HIGGS data by both columns and rows, each site
 will have different features with overlapping data samples.
 More details will be provided in the following sub-sections.
- 
+
 
 Data splits used in this example can be generated with
 ```
 DATASET_ROOT=~/.cache/dataset/HIGGS
 bash prepare_data.sh ${DATASET_ROOT}
 ```
-Please modify the path according to your own dataset location. 
-The generated horizontal train config files and vertical data files will be stored in the 
+Please modify the path according to your own dataset location.
+The generated horizontal train config files and vertical data files will be stored in the
 folder `/tmp/nvflare/dataset/`, this output path can be changed in the script `prepare_data.sh`.
 
 ### Horizontal Data Split
 Since HIGGS dataset is already randomly recorded,
 horizontal data split will be specified by the continuous index ranges for each client,
 rather than a vector of random instance indices.
-We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
+We provide four options to split the dataset to simulate the non-uniformity in data quantity:
 
-1. uniform: all clients has the same amount of data 
+1. uniform: all clients has the same amount of data
 2. linear: the amount of data is linearly correlated with the client ID (1 to M)
 3. square: the amount of data is correlated with the client ID in a squared fashion (1^2 to M^2)
 4. exponential: the amount of data is correlated with the client ID in an exponential fashion (exp(1) to exp(M))
@@ -105,20 +105,28 @@ In this example, we generate data splits with three client sizes: 2, 5 and 20, u
 ### Vertical Data Split
 For vertical, we simulate a realistic 2-client scenario where participants share overlapping data samples (rows) with different features (columns).
 We split the HIGGS dataset both horizontally and vertically. As a result, each site has an overlapping subset of the rows and a  subset of the 29 columns. Since the first column of HIGGS is the class label, we give site-1 the label column for simplicity's sake.
-<img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/> 
+<img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/>
 
 PSI will be performed first to identify and match the overlapping samples, then the training will be done on the intersected data.
 
 
 ## Experiments
-We first run the centralized trainings to get the baseline performance, then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
+We first run the centralized trainings to get the baseline performance, then run the federated XGBoost training using NVFlare Simulator via the [Recipe API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
 
 ### Centralized Baselines
-For centralize training, we train the XGBoost model on the whole dataset, as well as subsets with different subsample rates
+For centralized training, we train the XGBoost model on the whole dataset, as well as subsets with different subsample rates
 and parallel tree settings.
+
+Run directly with Python:
+```bash
+# Example commands:
+python3 utils/baseline_centralized.py --num_parallel_tree 1 --data_path "${DATASET_ROOT}/HIGGS.csv"
+python3 utils/baseline_centralized.py --num_parallel_tree 5 --subsample 0.8 --data_path "${DATASET_ROOT}/HIGGS.csv"
+python3 utils/baseline_centralized.py --num_parallel_tree 20 --subsample 0.8 --data_path "${DATASET_ROOT}/HIGGS.csv"
 ```
-bash run_experiment_centralized.sh ${DATASET_ROOT}
-```
+
+Modify `--num_parallel_tree` and `--subsample` parameters as needed to test different configurations.
+
 The results by default will be stored in the folder `/tmp/nvflare/workspace/centralized/`.
 
 ![Centralized validation curve](./figs/Centralized.png)
@@ -128,26 +136,139 @@ and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
 
 ### Horizontal Experiments
 The following cases will be covered:
-- Histogram-based collaboration based on uniform data split for 2 / 5 clients
+- Histogram-based collaboration based on uniform data split for 2 / 5 clients (using **Recipe API**)
 - Tree-based collaboration with cyclic training based on uniform / exponential / square data split for 5 / 20 clients
 - Tree-based collaboration with bagging training based on uniform / exponential / square data split for 5 / 20 clients w/ and w/o scaled learning rate
 
-Histogram-based experiments can be run with:
-```
-bash run_experiment_horizontal_histogram.sh
+#### Histogram-Based
+
+Histogram-based experiments now use the `XGBHorizontalRecipe` for simplified configuration.
+
+Run directly with Python:
+```bash
+# 2 clients with uniform split
+python3 job.py --site_num 2 --round_num 100 --split_method uniform
+
+# 5 clients with uniform split
+python3 job.py --site_num 5 --round_num 100 --split_method uniform
 ```
 
-> **_NOTE:_** "histogram_v2" implements a fault-tolerant XGBoost training by using 
+**Available parameters**:
+- `--site_num`: Number of clients (default: 2)
+- `--round_num`: Number of boosting rounds (default: 100)
+- `--split_method`: Data split method - `uniform`, `linear`, `square`, or `exponential`
+- `--max_depth`, `--eta`, `--objective`, `--eval_metric`: XGBoost hyperparameters
+- `--use_gpus`: Enable GPU training (requires CUDA)
+
+**Code example** (`job.py`):
+```python
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
+from nvflare.recipe import SimEnv
+from higgs_data_loader import HIGGSDataLoader
+
+# Create recipe
+# Build per-site configuration with data loaders
+per_site_config = {}
+for site_id in range(1, 3):
+    data_loader = HIGGSDataLoader(
+        data_split_filename=f"/tmp/data/data_site-{site_id}.json"
+    )
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
+recipe = XGBHorizontalRecipe(
+    name="xgb_higgs_horizontal",
+    min_clients=2,
+    num_rounds=100,
+    xgb_params={
+        "max_depth": 8,
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "eval_metric": "auc",
+    },
+    per_site_config=per_site_config,
+)
+
+# Run simulation
+env = SimEnv()
+env.run(recipe)
+```
+
+> **_NOTE:_** "histogram_v2" implements a fault-tolerant XGBoost training by using
 > NVFlare as the communicator rather than relying on XGBoost MPI, for more information, please refer to this [TechBlog](https://developer.nvidia.com/blog/federated-xgboost-made-practical-and-productive-with-nvidia-flare/).
 
-Model accuracy curve during training can be visualized in tensorboard, 
+Model accuracy curve during training can be visualized in tensorboard,
 recorded in the simulator folder under `/tmp/nvflare/workspace/works/`.
 As expected, we can observe that all histogram-based experiments results in identical curves as centeralized training:
 ![Horizontal Histogram XGBoost Graph](./figs/histogram.png)
 
-Tree-based experiments can be run with:
+#### Tree-Based (Bagging and Cyclic)
+
+Tree-based federated XGBoost now uses the `XGBBaggingRecipe` which supports both bagging and cyclic modes.
+
+**Bagging Mode** (Federated Random Forest):
+- Each client trains a local sub-forest on their data
+- Sub-forests are aggregated on the server to form the global model
+- Typically uses 1 round with multiple parallel trees per client
+
+**Cyclic Mode** (Sequential Training):
+- Clients train sequentially in rounds
+- Each round, one or more clients contribute to the global model
+- Typically uses many rounds (e.g., 100)
+
+Run tree-based experiments directly:
+```bash
+# Bagging mode with uniform learning rate
+python3 job_tree.py --site_num 5 --training_algo bagging --split_method uniform --lr_mode uniform
+
+# Bagging mode with scaled learning rate (data-size dependent)
+python3 job_tree.py --site_num 5 --training_algo bagging --split_method exponential --lr_mode scaled
+
+# Cyclic mode
+python3 job_tree.py --site_num 5 --training_algo cyclic --split_method uniform --lr_mode uniform
+
+# More examples with different configurations
+python3 job_tree.py --site_num 20 --training_algo bagging --split_method square --lr_mode scaled
+python3 job_tree.py --site_num 20 --training_algo cyclic --split_method square --lr_mode uniform
 ```
-bash run_experiment_horizontal_tree.sh
+
+Modify `--site_num`, `--split_method`, and `--lr_mode` parameters as needed for different configurations.
+
+**Python API:**
+```python
+from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
+from higgs_data_loader import HIGGSDataLoader
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for site_id in range(1, 6):
+    data_loader = HIGGSDataLoader(
+        data_split_filename=f"/tmp/data/data_site-{site_id}.json"
+    )
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
+# Bagging mode (federated Random Forest)
+recipe = XGBBaggingRecipe(
+    name="random_forest",
+    min_clients=5,
+    training_mode="bagging",
+    num_rounds=1,
+    num_local_parallel_tree=5,
+    local_subsample=0.8,
+    per_site_config=per_site_config,
+)
+
+# Or Cyclic mode
+recipe = XGBBaggingRecipe(
+    name="cyclic_xgb",
+    min_clients=5,
+    training_mode="cyclic",
+    num_rounds=100,
+    per_site_config=per_site_config,
+)
+
+# Run
+env = SimEnv()
+env.run(recipe)
 ```
 The resulting validation AUC curves are shown below:
 
@@ -158,19 +279,89 @@ As illustrated, we can have the following observations:
 - cyclic training performs ok under uniform split (the purple curve), however under non-uniform split, it will have significant performance drop (the brown curve)
 - bagging training performs better than cyclic under both uniform and non-uniform data splits (orange v.s. purple, red/green v.s. brown)
 - with uniform shrinkage, bagging will have significant performance drop under non-uniform split (green v.s. orange)
-- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve comparable/better performance as uniform data split (red v.s. orange) 
+- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve comparable/better performance as uniform data split (red v.s. orange)
 - bagging under uniform data split (orange), and bagging with data-size dependent shrinkage under non-uniform data split(red), can achieve comparable/better performance as compared with centralized training baseline (blue)
 
 For model size, centralized training and cyclic training will have a model consisting of `num_round` trees,
 while the bagging models consist of `num_round * num_client` trees, since each round,
 bagging training boosts a forest consisting of individually trained trees from each client.
 
-### Vertical Experiments
+### Vertical Experiments (Recipe API)
 
-Create the psi job using the predefined psi_csv template:
+Vertical federated learning now uses the `XGBVerticalRecipe` for simplified configuration.
+
+#### Two-Step Workflow
+
+Vertical XGBoost requires a two-step process:
+
+**Step 1: Run PSI (Private Set Intersection)**
+```bash
+python job_vertical.py --run_psi
 ```
-bash run_experiment_vertical.sh
+
+This computes the intersection of sample IDs across clients and saves intersection files.
+
+**Step 2: Run Training**
+```bash
+python job_vertical.py --run_training
 ```
+
+Or run both steps together:
+```bash
+python3 job_vertical.py --run_psi --run_training
+```
+
+**Available parameters**:
+- `--site_num`: Number of clients (default: 2)
+- `--round_num`: Number of boosting rounds (default: 100)
+- `--label_owner`: Client ID with labels (default: 'site-1')
+- `--id_col`: Column name for sample IDs (default: 'uid')
+- `--train_proportion`: Train/validation split ratio (default: 0.8)
+- `--max_depth`, `--eta`, `--objective`, `--eval_metric`: XGBoost hyperparameters
+- `--early_stopping_rounds`: Early stopping (default: 3)
+
+**Code example** (`job_vertical.py`):
+```python
+from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
+from nvflare.recipe import SimEnv
+from vertical_data_loader import VerticalDataLoader
+
+# Create vertical XGBoost recipe
+recipe = XGBVerticalRecipe(
+    name="xgb_vertical",
+    min_clients=2,
+    num_rounds=100,
+    label_owner="site-1",  # Only site-1 has labels
+    xgb_params={
+        "max_depth": 8,
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "eval_metric": "auc",
+    },
+)
+
+# Add data loaders (requires PSI results)
+per_site_config = {}
+for site_id in range(1, 3):
+    data_loader = VerticalDataLoader(
+        data_split_path=f"/tmp/data/site-{site_id}/higgs.data.csv",
+        psi_path=f"/tmp/psi/site-{site_id}/intersection.txt",
+        id_col="uid",
+        label_owner="site-1",
+        train_proportion=0.8,
+    )
+    per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
+
+# Run simulation
+env = SimEnv()
+env.run(recipe)
+```
+
+**Key Points**:
+- PSI must be run first to align sample IDs across clients
+- Only `label_owner` client has target labels, others have features only
+- All clients must use the same `label_owner` value
+- Intersection files are saved and reused for training
 
 Model accuracy can be visualized in tensorboard:
 ```
@@ -194,4 +385,4 @@ If using multiple GPUs, we can map each rank to a different GPU device, however 
 ## Reference
 [1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095
 
-[2] Yamamoto, F. et al., "New Approaches to Federated XGBoost Learning for Privacy-Preserving Data Analysis," ICONIP 2020 - International Conference on Neural Information Processing, 2020, Lecture Notes in Computer Science, vol 12533 
+[2] Yamamoto, F. et al., "New Approaches to Federated XGBoost Learning for Privacy-Preserving Data Analysis," ICONIP 2020 - International Conference on Neural Information Processing, 2020, Lecture Notes in Computer Science, vol 12533
