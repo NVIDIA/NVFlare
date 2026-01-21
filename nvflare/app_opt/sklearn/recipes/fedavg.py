@@ -52,8 +52,11 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
-        launch_once: Whether the external process will be launched only once at the beginning
-            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are

@@ -85,8 +85,11 @@ class NumpyFedAvgRecipe(Recipe):
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
             MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
             Use `add_experiment_tracking()` utility function to easily add tracking.
-        launch_once: Whether the external process will be launched only once at the beginning
-            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
