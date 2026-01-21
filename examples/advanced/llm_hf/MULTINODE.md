@@ -22,22 +22,73 @@ This document describes how to run NVIDIA FLARE in an SLURM-managed cluster envi
 
 ---
 
-## Problem Evolution and Solutions
+## Architecture: Testing/Development Mode
 
-This document captures all the issues encountered and solutions implemented for multi-node distributed training with NVFlare and PyTorch DDP on SLURM.
+This example uses `nvflare.slurm` to run both the NVFlare server and client within a single SLURM job:
 
-### Issues Encountered (in order)
+- Both NVFlare server and client run within a single SLURM job
+- Time-limited execution (e.g., 30 minutes to a few hours)
+- Useful for testing and development
+- Single cluster site only
 
-1. **"flare.init timeout" error** - Multiple FL clients trying to initialize on different nodes
-2. **"missing job on client" error** - FL client couldn't execute the training command
-3. **Environment variable scope** - Variables set in SLURM script weren't available in FL client process
-4. **"Invalid device ordinal" error** - Wrong CUDA device mapping (global rank vs local rank)
-5. **"Connection refused" error** - All processes trying to connect to NVFlare client
-6. **NCCL warnings** - Process group initialization warnings
+## ⚠️ Known Limitations
 
-## Final Solution: Wrapper Script Approach
+This testing/development approach has the following limitations for production use:
 
-### Architecture
+- ❌ **Time-limited**: Server stops when SLURM job ends (cannot support long-running federated learning workflows)
+- ❌ **Single-site only**: Cannot support multiple independent cluster sites
+- ❌ **Not scalable**: Requires restarting both server and client for each training session
+- ❌ **Resource inefficient**: Holds compute resources even during idle federated learning rounds
+
+**Note**: For production deployments with multiple sites, consider deploying the NVFlare server on standalone infrastructure and running clients as resident services on login nodes. This example focuses on the single-cluster testing scenario.
+
+## Quick Start
+
+For initial testing with a SLURM cluster, you can use the provided `nvflare.slurm` script that runs both server and client as a single job. 
+
+### 1. Create a fresh virtual environment on your cluster
+Create a fresh virtual environment on your cluster and install the requirements.
+
+```bash
+export VENV_DIR=<path/to/your/venv>
+```
+
+### 2. Create a NVFlare project
+As an example, we create a project with only one client for the Dolly dataset.
+
+```bash
+nvflare poc prepare -c dolly
+```
+
+Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
+
+```bash
+export NVFLARE_PROJECT=<your/path/to/prod_00>
+```
+
+### 3. (Optionally) Set your Weights and Biases API Key
+The training can be logged to WandB if you provide an API key via
+
+```bash
+export WANDB_API_KEY=<your_wandb_api_key>
+```
+
+### 4. Submit the SLURM Job
+Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
+```
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
+```
+
+By default, you can submit a job, requesting 2 nodes with 8 GPUs via
+
+```bash
+sbatch nvflare.slurm
+```
+
+---
+
+## Architecture
 
 ```
 SLURM Job (2 nodes allocated)
@@ -64,8 +115,11 @@ SLURM Job (2 nodes allocated)
 - **Does NOT use srun** to run the job script (only ONE FL client)
 
 #### 2. **Job Configuration** (`job.py`)
-- Sends wrapper script to client: `job.to("client_wrapper.sh", site_name)`
-- ScriptRunner uses simple command: `bash client_wrapper.sh`
+- Uses `FedAvgRecipe` with `per_site_config` for multi-node setup
+- When `--multi_node` flag is set:
+  - Sets command in per_site_config: `"command": "bash custom/client_wrapper.sh"`
+  - Adds wrapper script to job: `recipe.job.to("client_wrapper.sh", site_name)`
+- Script arguments passed via `"train_args"` in per_site_config
 - No need to handle environment variables in Python
 
 #### 3. **Wrapper Script** (`client_wrapper.sh`)
@@ -77,7 +131,9 @@ SLURM Job (2 nodes allocated)
 - Uses `CUDA_VISIBLE_DEVICES` to set GPUs. Assumes that they are set as comma-separated list, e.g. "0,1,2,3,4,5,6,7".
 
 **Why this works:**
-- The wrapper script is included in the FL job package
+- The wrapper script is included in the FL job package via `recipe.job.to("client_wrapper.sh", site_name)`
+- It's placed in the `custom/` subdirectory of the job workspace
+- Command is set to `bash custom/client_wrapper.sh` in the per_site_config
 - It runs in the same environment as the SLURM job (has access to `srun` and SLURM variables)
 - It handles all the complexity of multi-node coordination
 
@@ -99,17 +155,23 @@ SLURM Job (2 nodes allocated)
    export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
    export MASTER_PORT=29500
    # Start NVFlare server and client
-   python3 job.py --client_ids dolly --gpu "[0,1,2,3,4,5,6,7]" ...
+   python3 job.py --client_ids dolly --data_path ${PWD}/dataset \
+       --gpu "[0,1,2,3,4,5,6,7]" --multi_node \
+       --workspace_dir ${PWD}/workspace --job_dir ${PWD}/jobs
    ```
 
 3. **`job.py` creates and exports FL job**:
-   - Includes `client_wrapper.sh` in job package
-   - Includes `client.py` training script
-   - ScriptRunner configured to run: `bash client_wrapper.sh`
+   - Uses `FedAvgRecipe` to configure the federated learning job
+   - For multi-node mode (`--multi_node` flag):
+     - Sets command via `per_site_config`: `"command": "bash custom/client_wrapper.sh"`
+     - Adds wrapper script: `recipe.job.to("client_wrapper.sh", site_name)`
+   - Includes `client.py` training script automatically via recipe
+   - Exports job configuration to specified directory
 
 4. **NVFlare client receives training task**:
-   - Extracts job files to workspace
-   - Executes: `bash client_wrapper.sh client.py --args...`
+   - Extracts job files to workspace (including `custom/client_wrapper.sh`)
+   - Executes command from per_site_config: `bash custom/client_wrapper.sh`
+   - Wrapper script receives training script path and arguments
 
 5. **Wrapper script detects multi-node setup**:
    ```bash
@@ -127,28 +189,73 @@ SLURM Job (2 nodes allocated)
    - Only rank 0 calls `flare.receive()` and `flare.send()`
    - Model updates synchronized across all processes
 
-## Current Solution Advantages
+## Job Configuration Arguments
 
-✅ **Separation of concerns**: Job creation vs execution
-✅ **Environment isolation**: Wrapper script runs in correct environment
-✅ **Flexibility**: Works for both single-node and multi-node
-✅ **Simplicity**: No complex string escaping or variable expansion
-✅ **Debugging**: Wrapper script provides clear logging
-✅ **Portability**: Easy to modify for different cluster setups
+The `job.py` script accepts several arguments relevant to multi-node training:
+
+**Required:**
+- `--client_ids`: Client/site names, space-separated (e.g., `dolly` or `hospital-1`). Used directly as site names.
+- `--data_path`: Root directory containing client datasets
+- `--multi_node`: Flag to enable multi-node training mode
+
+**Optional:**
+- `--gpu`: GPU assignments (e.g., `"[0,1,2,3,4,5,6,7]"` for 8 GPUs)
+- `--num_rounds`: Number of FL rounds (default: 3)
+- `--local_epoch`: Local training epochs per round (default: 1)
+- `--lr_scheduler`: Learning rate scheduler (default: "constant")
+- `--train_mode`: Training mode - `SFT` or `PEFT` (default: "SFT")
+- `--message_mode`: Communication format - `numpy` or `tensor` (default: "numpy")
+- `--quantize_mode`: Model quantization for communication (e.g., `float16`, `blockwise8`)
+- `--wandb_project`: WandB project name for experiment tracking
+- `--wandb_run_name`: WandB run name
+- `--use_tracking`: Enable TensorBoard tracking
+
+**Example with all key arguments:**
+```bash
+python3 job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --multi_node \
+    --gpu "[0,1,2,3,4,5,6,7]" \
+    --num_rounds 5 \
+    --local_epoch 2 \
+    --lr_scheduler cosine_with_restarts \
+    --train_mode SFT \
+    --message_mode tensor \
+    --wandb_project my_llm_project \
+    --workspace_dir ${PWD}/workspace \
+    --job_dir ${PWD}/jobs
+```
 
 ## Testing
 
 ### Single Node (8 GPUs)
+When testing with a single node, you can either:
+
+**Option 1: Without `--multi_node` flag** (uses torchrun directly, no wrapper):
+```bash
+python3 job.py --client_ids dolly --data_path ./dataset \
+    --gpu "[0,1,2,3,4,5,6,7]" \
+    --workspace_dir ./workspace --job_dir ./jobs
+```
+
+**Option 2: With `--multi_node` flag** (uses wrapper script):
 ```bash
 sbatch --nodes=1 --gpus-per-node=8 nvflare.slurm
 ```
-Wrapper script detects `NNODES=1` and uses torchrun directly.
+Wrapper script detects `NNODES=1` and uses torchrun directly (no srun).
 
 ### Multi-Node (2 nodes, 16 GPUs)
+**Required: Must use `--multi_node` flag**
 ```bash
 sbatch --nodes=2 --gpus-per-node=8 nvflare.slurm
 ```
 Wrapper script detects `NNODES=2` and uses srun + torchrun.
+
+**The `--multi_node` flag is critical** - it tells `job.py` to:
+- Use `client_wrapper.sh` instead of direct torchrun
+- Include the wrapper script in the job package
+- Set the correct command in the job configuration
 
 ## Troubleshooting
 
@@ -221,9 +328,11 @@ In total X params to be sent to server.
 ## Key Principles for Multi-Node NVFlare + PyTorch DDP
 
 1. **One FL Client Per Multi-node Cluster**: Only one NVFlare client process is needed per cluster, and it should run on the SLURM master node.
-2. **Rank 0 Only for FL Operations**: Only global rank 0 talks to FL server
-3. **Local Rank for GPU Selection**: Use local_rank (0-7) for `cuda:X` device mapping
-4. **Global Rank for FL Communication**: Use rank (0-15) for NVFlare API calls
-5. **Broadcast Coordination**: Rank 0 broadcasts FL state to all other ranks
-6. **Shared Filesystem**: Only rank 0 saves checkpoints (avoid conflicts)
-7. **Wrapper Script Pattern**: Separate job creation from execution environment
+2. **Use `--multi_node` Flag**: Must be set in `job.py` to enable wrapper script and correct command configuration
+3. **Recipe-Based Configuration**: Use `FedAvgRecipe` with `per_site_config` for flexible job setup
+4. **Rank 0 Only for FL Operations**: Only global rank 0 talks to FL server
+5. **Local Rank for GPU Selection**: Use local_rank (0-7) for `cuda:X` device mapping
+6. **Global Rank for FL Communication**: Use rank (0-15) for NVFlare API calls
+7. **Broadcast Coordination**: Rank 0 broadcasts FL state to all other ranks
+8. **Shared Filesystem**: Only rank 0 saves checkpoints (avoid conflicts)
+9. **Wrapper Script Pattern**: Separate job creation from execution environment via `client_wrapper.sh`
