@@ -51,6 +51,7 @@ class _FedAvgValidator(BaseModel):
     per_site_config: Optional[dict[str, dict]] = None
     launch_once: bool
     shutdown_timeout: float
+    key_metric: str
 
 
 class FedAvgRecipe(Recipe):
@@ -115,6 +116,9 @@ class FedAvgRecipe(Recipe):
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
@@ -146,6 +150,7 @@ class FedAvgRecipe(Recipe):
         per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -167,6 +172,7 @@ class FedAvgRecipe(Recipe):
             per_site_config=per_site_config,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -187,6 +193,7 @@ class FedAvgRecipe(Recipe):
         self.per_site_config = v.per_site_config
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
+        self.key_metric = v.key_metric
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
             if self.initial_model is None and self.model_persistor is None:
@@ -200,6 +207,7 @@ class FedAvgRecipe(Recipe):
             name=self.name,
             min_clients=self.min_clients,
             analytics_receiver=self.analytics_receiver,
+            key_metric=self.key_metric,
         )
 
         # Setup framework-specific model components and persistor
