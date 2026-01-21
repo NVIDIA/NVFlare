@@ -120,10 +120,13 @@ class PTFedAvg(FedAvg):
         torch.save(model.params, filepath)
 
         # Save FLModel metadata (metrics, params_type, etc.) separately
+        # Save FLModel metadata (metrics, params_type, etc.) separately
         params = model.params
-        model.params = {}  # Temporarily remove params to save only metadata
-        fobs.dumpf(model, f"{filepath}.metadata")
-        model.params = params  # Restore params
+        try:
+            model.params = {}  # Temporarily remove params to save only metadata
+            fobs.dumpf(model, f"{filepath}.metadata")
+        finally:
+            model.params = params  # Restore params
 
     def load_model_file(self, filepath: str) -> FLModel:
         """Load model using PyTorch's torch.load.
