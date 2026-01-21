@@ -390,13 +390,8 @@ class TestFedAvgAggregation:
 class TestFedAvgAggregationWeights:
     """Test FedAvg aggregation weights."""
 
-    def test_aggregation_weights_applied(self):
-        """Test per-client aggregation weights are applied."""
-        controller = FedAvg(
-            num_clients=2,
-            aggregation_weights={"site-1": 2.0, "site-2": 1.0},
-        )
-
+    def _setup_controller(self, controller):
+        """Helper to setup controller for aggregation tests."""
         from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
         controller._aggr_helper = WeightedAggregationHelper()
@@ -406,6 +401,14 @@ class TestFedAvgAggregationWeights:
         controller._expected_count = 2
         controller._params_type = None
         controller.current_round = 0
+
+    def test_aggregation_weights_applied(self):
+        """Test per-client aggregation weights are applied."""
+        controller = FedAvg(
+            num_clients=2,
+            aggregation_weights={"site-1": 2.0, "site-2": 1.0},
+        )
+        self._setup_controller(controller)
 
         # Result from site-1 with weight 2.0
         result1 = FLModel(
@@ -426,6 +429,136 @@ class TestFedAvgAggregationWeights:
         aggr_result = controller._get_aggregated_result()
         # Weighted average: (1.0*2.0 + 4.0*1.0) / (2.0 + 1.0) = 6.0/3.0 = 2.0
         assert aggr_result.params["w"] == 2.0
+
+    def test_aggregation_weights_combined_with_num_steps(self):
+        """Test aggregation_weights combined with NUM_STEPS_CURRENT_ROUND.
+
+        Weight formula: weight = aggregation_weight * n_iter
+        """
+        controller = FedAvg(
+            num_clients=2,
+            aggregation_weights={"site-1": 2.0, "site-2": 1.0},
+        )
+        self._setup_controller(controller)
+
+        # site-1: weight=2.0, n_iter=10 -> total_weight = 20
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 10},
+        )
+        # site-2: weight=1.0, n_iter=30 -> total_weight = 30
+        result2 = FLModel(
+            params={"w": 6.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 30},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        # Weighted average: (1.0*20 + 6.0*30) / (20 + 30) = (20 + 180) / 50 = 200/50 = 4.0
+        assert aggr_result.params["w"] == 4.0
+
+    def test_aggregation_weights_with_different_num_steps(self):
+        """Test aggregation without explicit weights uses NUM_STEPS_CURRENT_ROUND only."""
+        controller = FedAvg(num_clients=2)  # No aggregation_weights
+        self._setup_controller(controller)
+
+        # site-1: n_iter=100
+        result1 = FLModel(
+            params={"w": 2.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 100},
+        )
+        # site-2: n_iter=300
+        result2 = FLModel(
+            params={"w": 6.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 300},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        # Weighted average: (2.0*100 + 6.0*300) / (100 + 300) = (200 + 1800) / 400 = 2000/400 = 5.0
+        assert aggr_result.params["w"] == 5.0
+
+    def test_aggregation_with_multi_value_state_dict(self):
+        """Test aggregation with state dict containing multiple parameters."""
+        controller = FedAvg(
+            num_clients=2,
+            aggregation_weights={"site-1": 1.0, "site-2": 3.0},
+        )
+        self._setup_controller(controller)
+
+        # site-1: multiple params, weight=1, n_iter=10 -> total=10
+        result1 = FLModel(
+            params={"layer1.weight": 1.0, "layer1.bias": 0.5, "layer2.weight": 2.0, "layer2.bias": 0.1},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 10},
+        )
+        # site-2: weight=3, n_iter=10 -> total=30
+        result2 = FLModel(
+            params={"layer1.weight": 5.0, "layer1.bias": 2.5, "layer2.weight": 6.0, "layer2.bias": 0.5},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 10},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        # Total weights: 10 + 30 = 40
+        # layer1.weight: (1.0*10 + 5.0*30) / 40 = 160/40 = 4.0
+        assert aggr_result.params["layer1.weight"] == 4.0
+        # layer1.bias: (0.5*10 + 2.5*30) / 40 = 80/40 = 2.0
+        assert aggr_result.params["layer1.bias"] == 2.0
+        # layer2.weight: (2.0*10 + 6.0*30) / 40 = 200/40 = 5.0
+        assert aggr_result.params["layer2.weight"] == 5.0
+        # layer2.bias: (0.1*10 + 0.5*30) / 40 = 16/40 = 0.4
+        assert aggr_result.params["layer2.bias"] == 0.4
+
+    def test_aggregation_three_clients_varied_weights_and_steps(self):
+        """Test aggregation with 3 clients having different weights and num_steps."""
+        controller = FedAvg(
+            num_clients=3,
+            aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 0.5},
+        )
+        self._setup_controller(controller)
+        controller._expected_count = 3
+
+        # site-1: weight=1.0, n_iter=100 -> total=100
+        result1 = FLModel(
+            params={"w": 10.0, "b": 1.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 100},
+        )
+        # site-2: weight=2.0, n_iter=50 -> total=100
+        result2 = FLModel(
+            params={"w": 20.0, "b": 2.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 50},
+        )
+        # site-3: weight=0.5, n_iter=200 -> total=100
+        result3 = FLModel(
+            params={"w": 30.0, "b": 3.0},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-3", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 200},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+        controller._aggregate_one_result(result3)
+
+        aggr_result = controller._get_aggregated_result()
+        # Total weights: 100 + 100 + 100 = 300
+        # w: (10*100 + 20*100 + 30*100) / 300 = 6000/300 = 20.0
+        assert aggr_result.params["w"] == 20.0
+        # b: (1*100 + 2*100 + 3*100) / 300 = 600/300 = 2.0
+        assert aggr_result.params["b"] == 2.0
 
 
 class TestFedAvgLoadSaveModel:
