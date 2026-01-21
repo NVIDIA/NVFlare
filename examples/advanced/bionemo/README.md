@@ -13,7 +13,7 @@ In this repo you will find two notebooks under the `task_fitting` and `downstrea
 
 ## Requirements
 
-<div class="alert alert-block alert-info"> <b>NOTE:</b> This notebook is designed to run inside the BioNeMo Framework Docker container. Follow these [instructions](https://docs.nvidia.com/ai-enterprise/deployment/vmware/latest/docker.html) to set up your Docker environment and execute the following bash script before opening this notebook.</div>
+<div class="alert alert-block alert-info"> <b>NOTE:</b> This notebook is designed to run inside the BioNeMo Framework Docker container. Follow these <a href="https://docs.nvidia.com/ai-enterprise/deployment/vmware/latest/docker.html">instructions</a> to set up your Docker environment and execute the following bash script before opening this notebook.</div>
 
 To set up your environment, simply run (outside this notebook):
 
