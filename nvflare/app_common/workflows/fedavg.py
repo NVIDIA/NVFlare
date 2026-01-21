@@ -256,7 +256,7 @@ class FedAvg(BaseFedAvg):
         """Get the final aggregated result after all clients have responded."""
         if self.aggregator:
             # Use custom aggregator
-            result: FLModel= self.aggregator.aggregate_model()
+            result: FLModel = self.aggregator.aggregate_model()
             result.meta = result.meta or {}
             result.meta["nr_aggregated"] = self._received_count
             result.meta["current_round"] = self.current_round
