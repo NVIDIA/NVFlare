@@ -62,7 +62,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
-        task_to_optimize: Task name for training. Defaults to "train".
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -111,7 +110,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: str = "train",
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
@@ -139,10 +137,35 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
-            task_to_optimize=task_to_optimize,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+        )
+
+    def _get_initial_model_params(self) -> Optional[Dict]:
+        """Convert initial_model to dict of params for PyTorch.
+
+        Handles:
+        - dict: return as-is
+        - torch.nn.Module: call state_dict()
+        - None: return None
+        """
+        if self.initial_model is None:
+            return None
+
+        if isinstance(self.initial_model, dict):
+            return self.initial_model
+
+        # Try PyTorch nn.Module
+        from nvflare.fuel.utils.import_utils import optional_import
+
+        nn, torch_ok = optional_import(module="torch.nn")
+        if torch_ok and isinstance(self.initial_model, nn.Module):
+            return self.initial_model.state_dict()
+
+        raise TypeError(
+            f"initial_model must be a dict, torch.nn.Module, or None. "
+            f"Got {type(self.initial_model).__name__}."
         )
 
     def _setup_model_and_persistor(self, job) -> str:

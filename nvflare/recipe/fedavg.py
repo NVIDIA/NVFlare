@@ -51,7 +51,6 @@ class _FedAvgValidator(BaseModel):
     # New FedAvg features
     stop_cond: Optional[str] = None
     patience: Optional[int] = None
-    task_to_optimize: str = "train"
     save_filename: str = "FL_global_model.pt"
     exclude_vars: Optional[str] = None
     aggregation_weights: Optional[Dict[str, float]] = None
@@ -115,7 +114,6 @@ class FedAvgRecipe(Recipe):
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
             Only applies if stop_cond is set. Defaults to None.
-        task_to_optimize: Task name for training. Defaults to "train".
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
@@ -150,7 +148,6 @@ class FedAvgRecipe(Recipe):
         # New FedAvg features
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: str = "train",
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
@@ -175,7 +172,6 @@ class FedAvgRecipe(Recipe):
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
-            task_to_optimize=task_to_optimize,
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
@@ -199,7 +195,6 @@ class FedAvgRecipe(Recipe):
         self.key_metric = v.key_metric
         self.stop_cond = v.stop_cond
         self.patience = v.patience
-        self.task_to_optimize = v.task_to_optimize
         self.save_filename = v.save_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
@@ -241,7 +236,7 @@ class FedAvgRecipe(Recipe):
             aggregator=model_aggregator,
             stop_cond=self.stop_cond,
             patience=self.patience,
-            task_to_optimize=self.task_to_optimize,
+            task_name="train",
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
         )
@@ -295,11 +290,8 @@ class FedAvgRecipe(Recipe):
     def _get_initial_model_params(self) -> Optional[Dict]:
         """Convert initial_model to dict of params.
 
-        Handles:
-        - dict: return as-is
-        - PyTorch nn.Module: call state_dict()
-        - TensorFlow model: call get_weights()
-        - None: return None
+        Base implementation handles dict and None. Framework-specific subclasses
+        should override this to handle their model types (e.g., nn.Module, tf.keras.Model).
 
         Returns:
             Optional[Dict]: model parameters as dict, or None
@@ -310,18 +302,13 @@ class FedAvgRecipe(Recipe):
         if isinstance(self.initial_model, dict):
             return self.initial_model
 
-        # Try PyTorch nn.Module
-        if hasattr(self.initial_model, "state_dict"):
-            return self.initial_model.state_dict()
-
-        # Try TensorFlow/Keras model
-        if hasattr(self.initial_model, "get_weights"):
-            weights = self.initial_model.get_weights()
-            # Convert to dict with layer indices as keys
-            return {f"layer_{i}": w for i, w in enumerate(weights)}
-
-        # Unknown type - try to use as-is
-        return self.initial_model
+        # Unknown type - subclasses should override for framework-specific handling
+        raise TypeError(
+            f"initial_model must be a dict or None for the base recipe. "
+            f"Got {type(self.initial_model).__name__}. "
+            f"Use a framework-specific recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe) "
+            f"for nn.Module or other model types."
+        )
 
     def _get_model_aggregator(self):
         """Get the ModelAggregator for the FedAvg controller.

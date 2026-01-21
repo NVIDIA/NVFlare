@@ -71,20 +71,24 @@ class PTFedAvgEarlyStopping(FedAvg):
         *args,
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
-        task_to_optimize: Optional[str] = "train",
+        task_name: Optional[str] = "train",
         save_filename: Optional[str] = "FL_global_model.pt",
         initial_model: Optional[Union[torch.nn.Module, dict, FLModel]] = None,
         **kwargs,
     ) -> None:
         # Convert PyTorch model to dict if needed
-        if initial_model is not None and hasattr(initial_model, "state_dict"):
+        if initial_model is None:
+            initial_model_params = None
+        elif isinstance(initial_model, torch.nn.Module):
             initial_model_params = initial_model.state_dict()
         elif isinstance(initial_model, dict):
             initial_model_params = initial_model
         elif isinstance(initial_model, FLModel):
             initial_model_params = initial_model
         else:
-            initial_model_params = initial_model
+            raise TypeError(
+                f"initial_model must be torch.nn.Module, dict, FLModel, or None, " f"got {type(initial_model).__name__}"
+            )
 
         super().__init__(
             *args,
@@ -92,7 +96,7 @@ class PTFedAvgEarlyStopping(FedAvg):
             save_filename=save_filename,
             stop_cond=stop_cond,
             patience=patience,
-            task_to_optimize=task_to_optimize,
+            task_name=task_name,
             **kwargs,
         )
 

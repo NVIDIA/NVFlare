@@ -59,7 +59,7 @@ class TestFedAvgInit:
         assert controller.aggregator is None
         assert controller.stop_cond is None
         assert controller.patience is None
-        assert controller.task_to_optimize == "train"
+        assert controller.task_name == "train"
         assert controller.save_filename == "FL_global_model.pt"
         assert controller.exclude_vars is None
         assert controller.aggregation_weights == {}
@@ -76,7 +76,7 @@ class TestFedAvgInit:
             aggregator=aggregator,
             stop_cond="accuracy >= 80",
             patience=3,
-            task_to_optimize="validate",
+            task_name="validate",
             save_filename="best_model.pt",
             exclude_vars="bn.*",
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
@@ -88,7 +88,7 @@ class TestFedAvgInit:
         assert controller.aggregator is aggregator
         assert controller.stop_cond == "accuracy >= 80"
         assert controller.patience == 3
-        assert controller.task_to_optimize == "validate"
+        assert controller.task_name == "validate"
         assert controller.save_filename == "best_model.pt"
         assert controller.exclude_vars == "bn.*"
         assert controller.aggregation_weights == {"site-1": 2.0, "site-2": 1.0}
@@ -392,3 +392,163 @@ class TestFedAvgAggregationWeights:
         aggr_result = controller._get_aggregated_result()
         # Weighted average: (1.0*2.0 + 4.0*1.0) / (2.0 + 1.0) = 6.0/3.0 = 2.0
         assert aggr_result.params["w"] == 2.0
+
+
+class TestFedAvgLoadSaveModel:
+    """Test FedAvg load_model and save_model overrides."""
+
+    def test_load_model_with_persistor_delegates_to_parent(self):
+        """Test load_model delegates to parent when persistor is available."""
+        controller = FedAvg()
+        # Verify methods exist
+        assert hasattr(controller, "load_model")
+        assert hasattr(controller, "save_model")
+        assert hasattr(controller, "save_model_file")
+        assert hasattr(controller, "load_model_file")
+
+    def test_load_model_returns_empty_flmodel_when_no_config(self):
+        """Test load_model returns empty FLModel when no persistor or save_filename."""
+        controller = FedAvg()
+        controller.persistor = None
+        controller.save_filename = None
+
+        result = controller.load_model()
+
+        assert isinstance(result, FLModel)
+        assert result.params == {}
+
+    def test_save_model_file_and_load_model_file_roundtrip(self, tmp_path):
+        """Test save_model_file and load_model_file work correctly."""
+        controller = FedAvg()
+        model = FLModel(params={"w": 1.0, "b": 2.0}, metrics={"accuracy": 0.9})
+        filepath = str(tmp_path / "test_model.pt")
+
+        # Save and load
+        controller.save_model_file(model, filepath)
+        loaded = controller.load_model_file(filepath)
+
+        assert loaded.params == model.params
+        assert loaded.metrics == model.metrics
+
+    def test_load_model_from_file_when_exists(self, tmp_path):
+        """Test load_model loads from file when save_filename is set and file exists."""
+        controller = FedAvg(save_filename="model.pt")
+        controller.persistor = None
+
+        # Create a model file
+        from nvflare.fuel.utils import fobs
+
+        model = FLModel(params={"w": 42.0})
+        filepath = tmp_path / "model.pt"
+        fobs.dumpf(model, str(filepath))
+
+        # Mock get_run_dir to return tmp_path
+        controller.get_run_dir = lambda: str(tmp_path)
+
+        loaded = controller.load_model()
+        assert loaded.params["w"] == 42.0
+
+    def test_load_model_returns_empty_when_file_not_exists(self, tmp_path):
+        """Test load_model returns empty FLModel when file doesn't exist."""
+        controller = FedAvg(save_filename="nonexistent.pt")
+        controller.persistor = None
+        controller.get_run_dir = lambda: str(tmp_path)
+
+        loaded = controller.load_model()
+        assert isinstance(loaded, FLModel)
+        assert loaded.params == {}
+
+    def test_save_model_to_file(self, tmp_path):
+        """Test save_model saves to file when no persistor."""
+        controller = FedAvg(save_filename="saved_model.pt")
+        controller.persistor = None
+        controller.get_run_dir = lambda: str(tmp_path)
+
+        model = FLModel(params={"w": 123.0})
+        controller.save_model(model)
+
+        # Verify file was created
+        import os
+
+        assert os.path.exists(tmp_path / "saved_model.pt")
+
+        # Verify content
+        from nvflare.fuel.utils import fobs
+
+        loaded = fobs.loadf(str(tmp_path / "saved_model.pt"))
+        assert loaded.params["w"] == 123.0
+
+
+class TestPTFedAvgEarlyStoppingInitialModel:
+    """Test PTFedAvgEarlyStopping initial_model type handling."""
+
+    def test_initial_model_with_nn_module(self):
+        """Test initial_model with torch.nn.Module extracts state_dict."""
+        import torch.nn as nn
+
+        class SimpleModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(10, 5)
+
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        model = SimpleModel()
+        controller = PTFedAvgEarlyStopping(initial_model=model)
+
+        # initial_model should be converted to state_dict (OrderedDict)
+        assert controller.initial_model is not None
+        assert isinstance(controller.initial_model, dict)
+        assert "linear.weight" in controller.initial_model
+        assert "linear.bias" in controller.initial_model
+
+    def test_initial_model_with_dict(self):
+        """Test initial_model with dict is passed through."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
+        controller = PTFedAvgEarlyStopping(initial_model=model_dict)
+
+        assert controller.initial_model == model_dict
+
+    def test_initial_model_with_flmodel(self):
+        """Test initial_model with FLModel is passed through."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        fl_model = FLModel(params={"w": 1.0})
+        controller = PTFedAvgEarlyStopping(initial_model=fl_model)
+
+        assert controller.initial_model is fl_model
+
+    def test_initial_model_with_none(self):
+        """Test initial_model with None is allowed."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        controller = PTFedAvgEarlyStopping(initial_model=None)
+
+        assert controller.initial_model is None
+
+    def test_initial_model_with_invalid_type_raises_error(self):
+        """Test initial_model with invalid type raises TypeError."""
+        import pytest
+
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        with pytest.raises(TypeError, match="initial_model must be"):
+            PTFedAvgEarlyStopping(initial_model="invalid_string")  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="initial_model must be"):
+            PTFedAvgEarlyStopping(initial_model=12345)  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="initial_model must be"):
+            PTFedAvgEarlyStopping(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+
+    def test_task_name_parameter(self):
+        """Test task_name parameter is passed correctly."""
+        from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
+
+        controller = PTFedAvgEarlyStopping(task_name="validate")
+        assert controller.task_name == "validate"
+
+        controller2 = PTFedAvgEarlyStopping()
+        assert controller2.task_name == "train"  # default
