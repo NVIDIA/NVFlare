@@ -241,6 +241,10 @@ Examples
 For examples of using Client API with different frameworks,
 please refer to :github_nvflare_link:`examples/hello-world/ml-to-fl <examples/hello-world/ml-to-fl>`.
 
+- PyTorch: :ref:`hello_pt`
+- PyTorch Lightning: :ref:`hello_lightning`
+- TensorFlow: :ref:`hello_tf`
+- HuggingFace: :github_nvflare_link:`llm_hf <examples/advanced/llm_hf>`
 
 Selection of Job Templates (deprecated)
 =======================================
