@@ -66,8 +66,11 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             train_script, train_args, launch_external_process, command, framework,
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
             If not provided, the same configuration will be used for all clients.
-        launch_once: Whether the external process will be launched only once at the beginning
-            or on each task. Only used if `launch_external_process` is True. Defaults to True.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
@@ -113,7 +116,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Also supports: "mlflow", "wandb"
         ```
 
-        Using launch_once=False to restart the external process for each task:
+        Using launch_once=False to restart the external process for each request:
 
         ```python
         recipe = FedAvgRecipe(
@@ -124,7 +127,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             train_script="client.py",
             train_args="--epochs 5 --batch_size 32",
             launch_external_process=True,
-            launch_once=False,  # Process will restart for each task
+            launch_once=False,  # Process restarts for each server request
             shutdown_timeout=10.0  # Wait 10 seconds before shutdown
         )
         ```
