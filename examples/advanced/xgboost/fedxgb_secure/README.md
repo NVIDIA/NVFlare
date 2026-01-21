@@ -2,8 +2,21 @@
 This example illustrates the use of NVIDIA FLARE enabling secure federated [XGBoost](https://github.com/dmlc/xgboost) under both horizontal and vertical collaborations.
 The examples are based on a [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) to perform fraud detection.
 
+## Project Structure
+
+This example provides two separate, focused job scripts:
+
+- **`job.py`** - Horizontal federated XGBoost (with/without Homomorphic Encryption)
+- **`job_vertical.py`** - Vertical federated XGBoost (with/without Homomorphic Encryption)
+
+Each can be run independently with default parameters:
+```bash
+python job.py              # Horizontal FL
+python job_vertical.py     # Vertical FL
+```
+
 ## Secure Federated Training of XGBoost
-Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](../fedxgb/README.md). 
+Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](../fedxgb/README.md).
 
 In this example, we further extend the existing horizontal and vertical federated learning approaches to support secure federated learning using homomorphic encryption. Depending on the characteristics of the data to be encrypted, we can choose between [CKKS](https://github.com/OpenMined/TenSEAL) and [Paillier](https://github.com/intel/pailliercryptolib_python).
 
@@ -14,15 +27,15 @@ Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_
 To be able to run all the examples, please install the requirements first from the main folder.
 
 ## Encryption Plugins
-The secure XGBoost requires encryption plugins to work. From 2.6, we no longer distributed the plugins with NVFlare package. 
+The secure XGBoost requires encryption plugins to work. From 2.6, we no longer distributed the plugins with NVFlare package.
 Please build the plugins following the instructions in this [README](../../../../integration/xgboost/encryption_plugins/README.md)
 
 > **_NOTE:_** Please make sure to use the correct versions of the required libraries, including CUDA driver and runtime.
 > The 'How to run XGBoost with encryption plugins' section is not needed for running Secure Federated XGBoost in simulator mode.
 
-The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. 
+The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so.
 
-To use libnvflare.so plugin, the [IPCL](https://github.com/intel/pailliercryptolib_python) library installation is needed, 
+To use libnvflare.so plugin, the [IPCL](https://github.com/intel/pailliercryptolib_python) library installation is needed,
 and we recommend install it from source.
 
 ## Key Checkups
@@ -41,10 +54,10 @@ By default, we assume the dataset is downloaded, uncompressed, and stored in `/t
 
 ### Data Split
 To prepare data for further experiments, we perform the following steps:
-1. Split the dataset into training/validation and testing sets. 
-2. Split the training/validation set: 
+1. Split the dataset into training/validation and testing sets.
+2. Split the training/validation set:
     * Into "train" and "valid" for baseline centralized training.
-    * Into "train" and "valid" for each client under horizontal setting. 
+    * Into "train" and "valid" for each client under horizontal setting.
     * Into "train" and "valid" for each client under vertical setting.
 
 Data splits used in this example can be generated with
@@ -58,46 +71,224 @@ This will generate data splits for 3 clients under all experimental settings.
 > assuming that the datasets from different sites have already been joined using Private Set
 > Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
 > combine these datasets accurately, you need to use PSI to match records with the same ID across
-> different sites. For more information on how to perform PSI, please refer to the 
+> different sites. For more information on how to perform PSI, please refer to the
 > [PSI example](../../../../examples/advanced/psi).
 
+### Expected Folder Structure
 
-> **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
-> and will be used by jobs by specifying the path within `config_fed_client`
+After running `prepare_data.sh`, your data will be organized as follows:
+
+```
+/tmp/nvflare/dataset/xgb_dataset/
+├── horizontal_xgb_data/
+│   ├── site-1/
+│   │   ├── train.csv  (all features + labels, subset of rows)
+│   │   └── valid.csv
+│   ├── site-2/
+│   │   ├── train.csv  (all features + labels, different rows)
+│   │   └── valid.csv
+│   └── site-3/
+│       ├── train.csv  (all features + labels, different rows)
+│       └── valid.csv
+└── vertical_xgb_data/
+    ├── site-1/
+    │   ├── train.csv  (subset of features + labels, all rows)
+    │   └── valid.csv
+    ├── site-2/
+    │   ├── train.csv  (different features, no labels, all rows)
+    │   └── valid.csv
+    └── site-3/
+        ├── train.csv  (different features, no labels, all rows)
+        └── valid.csv
+```
+
+**Important:** When using `CSVDataLoader` in your job script, you only need to specify the base folder
+(e.g., `/tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data`). The framework automatically loads
+client-specific data from the corresponding subdirectory (e.g., `site-1/`, `site-2/`) at runtime.
 
 ## Run Baseline and Standalone Experiments
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
-In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process. 
+In this case, we utilize the `mock` plugin to simulate the homomorphic encryption process.
 
-To run all experiments, we provide a script for all settings.
+Run experiments directly with Python:
+```bash
+# Baseline training
+python3 ./train_standalone/train_base.py --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/base_cpu --gpu 0
+
+# Horizontal federated training (non-encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/hori_cpu_non_enc \
+    --vert 0 --gpu 0 --enc 0
+
+# Horizontal federated training (encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/hori_cpu_enc \
+    --vert 0 --gpu 0 --enc 1
+
+# Vertical federated training (non-encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_non_enc \
+    --vert 1 --gpu 0 --enc 0
+
+# Vertical federated training (encrypted)
+python3 ./train_standalone/train_federated.py \
+    --data_train_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data \
+    --out_path /tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_enc \
+    --vert 1 --gpu 0 --enc 1
 ```
-bash run_training_standalone.sh
-```
-This will cover baseline centralized training, federated xgboost run in the same machine
-(server and clients are running in different processes) with and without secure feature.
+
+Modify `--vert` (0=horizontal, 1=vertical), `--enc` (0=non-encrypted, 1=encrypted), and `--gpu` parameters for different configurations.
 
 > **_NOTE:_** In this example, we use the `mock` plugin to simulate the homomorphic encryption process.
 > The actual encryption plugin will be used in the next step.
 
 ## Federated Experiments with NVFlare
-We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.
-The running time of each job depends mainly on the encryption workload. 
 
-Assuming we use libnvflare.so plugin located in `/tmp/nvflare/plugins/libnvflare.so`, to run vertical simulations, we have  
+### What's New with Recipe API
 
+This example now uses the **Recipe API** for simplified job configuration. The Recipe API provides high-level abstractions that reduce boilerplate code while maintaining full functionality.
+
+**Key Benefits:**
+- Simplified job creation with `XGBHorizontalRecipe` and `XGBVerticalRecipe`
+- Automatic configuration of TensorBoard tracking
+- Built-in support for secure training via `secure=True` parameter
+- Cleaner, more maintainable code
+- Separate, focused examples for horizontal and vertical federated learning
+
+**Example Structure:**
+- `job.py` - Horizontal federated XGBoost (with/without HE)
+- `job_vertical.py` - Vertical federated XGBoost (with/without HE)
+
+**Important Note for Secure Training:**
+When using `secure=True` for Homomorphic Encryption, you **must** provide `client_ranks`:
+```python
+# Generate client ranks: maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, num_clients + 1)}
+
+recipe = XGBHorizontalRecipe(..., secure=True, client_ranks=client_ranks)
 ```
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
-NVFLARE_XGB_PLUGIN_NAME=nvflare NVFLARE_XGB_PLUGIN_PATH=/tmp/nvflare/plugins/libnvflare.so python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure
+
+For more details on the Recipe API, see the [Recipe API documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html).
+
+### Running Experiments
+
+We run the federated XGBoost training using NVFlare Simulator via the Recipe API, without and with homomorphic encryption.
+The running time of each job depends mainly on the encryption workload.
+
+#### Vertical Federated Learning
+
+Assuming we use libnvflare.so plugin located in `/tmp/nvflare/plugins/libnvflare.so`, to run vertical simulations:
+
+```bash
+# Without encryption (runs with defaults)
+python job_vertical.py
+
+# With custom parameters
+python job_vertical.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --site_num 3 --round_num 3
+
+# With encryption (secure)
+NVFLARE_XGB_PLUGIN_NAME=nvflare NVFLARE_XGB_PLUGIN_PATH=/tmp/nvflare/plugins/libnvflare.so \
+python job_vertical.py --secure
 ```
 
-To run horizontal simulations, we have
+**Code Example:**
 
-```
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure
+```python
+from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
+from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
+from nvflare.recipe import SimEnv
+
+# Generate client ranks (required for secure training)
+# Maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, 4)}
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for i in range(1, 4):
+    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data")
+    per_site_config[f"site-{i}"] = {"data_loader": dataloader}
+
+# Create vertical XGBoost recipe with secure training
+recipe = XGBVerticalRecipe(
+    name="vertical_secure",
+    min_clients=3,
+    num_rounds=3,
+    label_owner="site-1",
+    secure=True,  # Enable Homomorphic Encryption
+    client_ranks=client_ranks,  # Required when secure=True
+    xgb_params={
+        "max_depth": 3,
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "eval_metric": "auc",
+    },
+    per_site_config=per_site_config,
+)
+
+# Run simulation
+env = SimEnv(num_clients=3)
+run = recipe.execute(env)
+run.simulator_run("/tmp/nvflare/workspace/works/vertical_secure")
 ```
 
-In this case, the secure horizontal job will need two steps: job preparation from above, and secure context preparation following below:
+#### Horizontal Federated Learning
+
+To run horizontal simulations:
+
+```bash
+# Without encryption (runs with defaults)
+python job.py
+
+# With custom parameters
+python job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --site_num 3 --round_num 3
+
+# With encryption (secure) - requires additional setup
+python job.py --secure
+```
+
+**Code Example:**
+
+```python
+from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
+from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
+from nvflare.recipe import SimEnv
+
+# Generate client ranks (required for secure training)
+# Maps each client name to a unique rank (0-indexed)
+client_ranks = {f"site-{i}": i - 1 for i in range(1, 4)}
+
+# Build per-site configuration with data loaders
+per_site_config = {}
+for i in range(1, 4):
+    dataloader = CSVDataLoader(folder="/tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data")
+    per_site_config[f"site-{i}"] = {"data_loader": dataloader}
+
+# Create horizontal XGBoost recipe with secure training
+recipe = XGBHorizontalRecipe(
+    name="horizontal_secure",
+    min_clients=3,
+    num_rounds=3,
+    secure=True,  # Enable Homomorphic Encryption
+    client_ranks=client_ranks,  # Required when secure=True
+    xgb_params={
+        "max_depth": 3,
+        "eta": 0.1,
+        "objective": "binary:logistic",
+        "eval_metric": "auc",
+    },
+    per_site_config=per_site_config,
+)
+
+# Export job (simulator run requires additional context setup for secure horizontal)
+env = SimEnv(num_clients=3)
+run = recipe.execute(env)
+run.export_job("/tmp/nvflare/workspace/jobs/horizontal_secure")
+```
+
+#### Secure Horizontal Training - Additional Setup Required
 
 As secure aggregation is performed on the server-side, to support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
 
@@ -111,16 +302,16 @@ nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t
 ```
 
 > **_NOTE:_** From the running logs, you will see multiple `has_encrypted_data=None` and `Not secure content - ignore` messages.
-> These are expected because under the hood of XGBoost, there are multiple operations 
+> These are expected because under the hood of XGBoost, there are multiple operations
 > relying on the same "broadcast", "all_reduce", "all_gather" MPI calls - some requires
 > encryption (e.g. those related to gh gradient pairs), and others do not (e.g. collecting
-> the total feature slot number from clients). 
-> 
-> In our plugin implementation, we have a logic to recognize whether the payload needs 
-> to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`, 
-> meaning the current message does not need to be taken care of by encryption, and 
+> the total feature slot number from clients).
+>
+> In our plugin implementation, we have a logic to recognize whether the payload needs
+> to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`,
+> meaning the current message does not need to be taken care of by encryption, and
 > will be passed on to XGBoost inner logic directly.
-> 
+>
 > But if you do not see any `has_encrypted_gh=True`, the secure plugin is not functioning properly.
 > Please check the debug logs to find out the reason.
 
@@ -177,7 +368,7 @@ To illustrate this, we first provide a script to perform inference with the mode
 ```
 python train_standalone/eval_secure_vertical.py
 ```
-This evaluation will load models generated by `vert_cpu_enc` training. The output is 
+This evaluation will load models generated by `vert_cpu_enc` training. The output is
 ```
 Validation AUC: 0.8979
 ```
@@ -185,7 +376,7 @@ This is identical to the validation AUC during training. Other training modes (e
 
 Similarly, we can also perform inference with NVFlare using the above model trained by secure vertical federated XGBoost.
 ```
-python xgb_vert_eval_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data 
+python xgb_vert_eval_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data
 ```
 
 We can see the output
