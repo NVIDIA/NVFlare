@@ -240,7 +240,9 @@ class FedAvgRecipe(Recipe):
         # Convert initial_model to dict if needed (e.g., PyTorch nn.Module)
         # Only pass to controller if no persistor is handling the model
         # (persistor already handles initial model via PTModel/TFModel)
-        initial_model_params = None if persistor_id else self._get_initial_model_params()
+        # Note: empty string "" means no persistor, so we need initial_model_params
+        has_persistor = persistor_id != ""
+        initial_model_params = None if has_persistor else self._get_initial_model_params()
 
         # Prepare aggregator for controller - must be ModelAggregator for FLModel-based aggregation
         model_aggregator = self._get_model_aggregator()
