@@ -1,6 +1,6 @@
 # Task Fitting: Federated Protein Embeddings and MLP Training
 
-This example shows how to obtain protein-learned representations in the form of embeddings using an ESM-2 pre-trained model in a federated learning setting, followed by training an MLP classifier to predict subcellular location.
+This example shows how to obtain protein-learned representations in the form of embeddings using an ESM-2 pre-trained model in a federated learning setting, followed by training a Multi-Layer Perceptron (MLP) classifier to predict subcellular location.
 
 ## Interactive Notebook
 
