@@ -107,6 +107,11 @@ class Recipe(ABC):
         self.job = job
 
     def process_env(self, env: ExecEnv):
+        """Process environment-specific configuration.
+
+        Subclasses can override to add environment-specific processing.
+        Script validation is handled by each ExecEnv subclass in deploy().
+        """
         pass
 
     def add_client_input_filter(

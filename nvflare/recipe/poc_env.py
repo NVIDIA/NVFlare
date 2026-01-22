@@ -21,6 +21,7 @@ from pydantic import BaseModel, conint, model_validator
 
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
+from nvflare.recipe.utils import _collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     _clean_poc,
     _start_poc,
@@ -133,6 +134,14 @@ class PocEnv(ExecEnv):
         Returns:
             str: Job ID or deployment result.
         """
+        # Validate scripts exist locally for POC
+        non_local_scripts = _collect_non_local_scripts(job)
+        if non_local_scripts:
+            raise ValueError(
+                f"The following scripts do not exist locally: {non_local_scripts}. "
+                f"For PocEnv, all scripts must be present on the local machine."
+            )
+
         if self._check_poc_running():
             self.stop(clean_poc=True)
 
