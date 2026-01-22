@@ -35,15 +35,16 @@ class _FedAvgValidator(BaseModel):
 
 
 class FedAvgLrRecipe(Recipe):
-    """A recipe for implementing Federated Averaging (FedAvg) for Logistics Regression with Newton Raphson.
+    """A recipe for implementing Federated Averaging (FedAvg) for Logistic Regression with Newton Raphson.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
-    training data. This recipe sets up a complete federated learning workflow with
-    scatter-and-gather communication pattern.
+    training data. This recipe sets up a complete federated learning workflow using
+    the FedAvgLR controller specifically designed for logistic regression.
 
     The recipe configures:
-    - A federated job with initial model (optional)
-    - Weighted aggregator for combining client model updates (or custom aggregator)
+    - A federated job with logistic regression model
+    - FedAvgLR controller for Newton-Raphson based aggregation
     - Script runners for client-side training execution
 
     Args:

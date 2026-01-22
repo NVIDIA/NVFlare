@@ -28,12 +28,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
-    scatter-and-gather communication pattern.
+    memory-efficient InTime aggregation.
 
     The recipe configures:
     - A federated job with initial model (optional)
-    - Scatter-and-gather controller for coordinating training rounds
-    - Weighted aggregator for combining client model updates (or custom aggregator)
+    - FedAvg controller with InTime aggregation for memory efficiency
+    - Optional early stopping and model selection
     - Script runners for client-side training execution
 
     Args:

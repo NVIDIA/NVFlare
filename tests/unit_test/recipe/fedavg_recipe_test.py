@@ -209,6 +209,143 @@ class TestFedAvgRecipeKeyMetricVariants:
         assert model_selector.key_metric == key_metric
 
 
+class TestNumpyFedAvgRecipe:
+    """Test NumpyFedAvgRecipe with new FedAvg features."""
+
+    def test_numpy_recipe_basic_initialization(self, mock_file_system):
+        """Test NumpyFedAvgRecipe basic initialization."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy",
+            initial_model=[[1, 2, 3], [4, 5, 6]],
+            min_clients=2,
+            num_rounds=3,
+            train_script="client.py",
+        )
+
+        assert recipe.name == "test_numpy"
+        assert recipe.min_clients == 2
+        assert recipe.num_rounds == 3
+        assert recipe.job is not None
+
+    def test_numpy_recipe_with_early_stopping(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with early stopping configuration."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_early_stop",
+            initial_model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            stop_cond="accuracy >= 95",
+            patience=3,
+        )
+
+        assert recipe.stop_cond == "accuracy >= 95"
+        assert recipe.patience == 3
+
+    def test_numpy_recipe_with_aggregation_weights(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with per-client aggregation weights."""
+        weights = {"site-1": 2.0, "site-2": 1.0, "site-3": 0.5}
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_weights",
+            initial_model=[1.0, 2.0],
+            min_clients=3,
+            num_rounds=5,
+            train_script="client.py",
+            aggregation_weights=weights,
+        )
+
+        assert recipe.aggregation_weights == weights
+
+    def test_numpy_recipe_with_exclude_vars(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with exclude_vars configuration."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_exclude",
+            initial_model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            num_rounds=5,
+            train_script="client.py",
+            exclude_vars="bias.*",
+        )
+
+        assert recipe.exclude_vars == "bias.*"
+
+    def test_numpy_recipe_with_save_filename(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with custom save filename."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_save",
+            initial_model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            num_rounds=5,
+            train_script="client.py",
+            save_filename="numpy_model.pt",
+        )
+
+        assert recipe.save_filename == "numpy_model.pt"
+
+    def test_numpy_recipe_with_per_site_config(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with per-site configuration."""
+        per_site_config = {
+            "site-1": {"train_args": "--data /path/to/site1"},
+            "site-2": {"train_args": "--data /path/to/site2"},
+        }
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_per_site",
+            initial_model=[1.0, 2.0],
+            min_clients=2,
+            num_rounds=3,
+            train_script="client.py",
+            per_site_config=per_site_config,
+        )
+
+        assert recipe.per_site_config == per_site_config
+
+    def test_numpy_recipe_with_none_initial_model(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with no initial model."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_no_model",
+            initial_model=None,
+            min_clients=2,
+            num_rounds=3,
+            train_script="client.py",
+        )
+
+        # Should still create the recipe without error
+        assert recipe.name == "test_numpy_no_model"
+        assert recipe.job is not None
+
+    def test_numpy_recipe_full_configuration(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with all new features."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_full",
+            initial_model=[[1, 2], [3, 4], [5, 6]],
+            min_clients=3,
+            num_rounds=20,
+            train_script="train.py",
+            train_args="--epochs 10",
+            launch_external_process=True,
+            command="python3 -u",
+            key_metric="f1_score",
+            stop_cond="f1_score >= 0.9",
+            patience=5,
+            save_filename="best_numpy_model.pt",
+            exclude_vars="temp_.*",
+            aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 1.5},
+        )
+
+        assert recipe.name == "test_numpy_full"
+        assert recipe.min_clients == 3
+        assert recipe.num_rounds == 20
+        assert recipe.train_script == "train.py"
+        assert recipe.train_args == "--epochs 10"
+        assert recipe.launch_external_process is True
+        assert recipe.key_metric == "f1_score"
+        assert recipe.stop_cond == "f1_score >= 0.9"
+        assert recipe.patience == 5
+        assert recipe.save_filename == "best_numpy_model.pt"
+        assert recipe.exclude_vars == "temp_.*"
+        assert recipe.aggregation_weights == {"site-1": 1.0, "site-2": 2.0, "site-3": 1.5}
+
+
 class TestFedAvgRecipeEarlyStopping:
     """Test early stopping configuration for FedAvgRecipe."""
 
