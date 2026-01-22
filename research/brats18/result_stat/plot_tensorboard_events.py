@@ -81,9 +81,6 @@ def main():
     num_site = len(sites_fl)
     i = 1
     # add event files
-
-    data = {"Config": [], "Epoch": [], "Dice": []}
-
     for site in sites_fl:
         # clear data for each site
         data = {"Config": [], "Epoch": [], "Dice": []}
