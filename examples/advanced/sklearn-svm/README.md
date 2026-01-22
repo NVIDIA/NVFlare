@@ -1,4 +1,4 @@
-# Federated SVM with Scikit-learn and cuML
+# Federated SVM with Scikit-learn
 
 Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
 
@@ -7,9 +7,6 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/), a widely used open-source machine learning library that supports supervised and unsupervised learning.
 Follow along in this [notebook](./sklearn_svm_cancer.ipynb) for an interactive experience.
-### cuML
-You can also use [cuML](https://docs.rapids.ai/api/cuml/stable/) as backend instead of Scikit-learn.
-Please install cuml following instructions: https://rapids.ai/start.html
 
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
