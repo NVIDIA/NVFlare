@@ -35,6 +35,7 @@ jobs:
           --accept=200,403,429
           --timeout=30
           --verbose
+          --timeout 100
           --no-progress
           '${{ github.workspace }}/**/*.md'
           '${{ github.workspace }}/**/*.html'
