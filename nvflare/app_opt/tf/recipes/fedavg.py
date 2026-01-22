@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -57,8 +57,15 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type.
+            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
             If not provided, the same configuration will be used for all clients.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
@@ -74,6 +81,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             num_rounds=10,
             train_script="client.py",
             train_args="--epochs 5 --batch_size 32"
+        )
+        ```
+
+        Using launch_once=False to restart the external process for each task:
+
+        ```python
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            train_args="--epochs 5 --batch_size 32",
+            launch_external_process=True,
+            launch_once=False,  # Process will restart for each task
+            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
         )
         ```
 
@@ -103,7 +126,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
@@ -123,6 +148,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
             per_site_config=per_site_config,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
         )
 

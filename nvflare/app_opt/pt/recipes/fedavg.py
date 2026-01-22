@@ -57,15 +57,27 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        per_site_config: Per-site configuration for the federated learning job.
-        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
+            site names to configuration dicts. Each config dict can contain optional overrides:
+            train_script, train_args, launch_external_process, command, framework,
+            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
+            If not provided, the same configuration will be used for all clients.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
-
     Example:
         Basic usage with early stopping:
 
@@ -79,6 +91,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             train_args="--epochs 5 --batch_size 32",
             stop_cond="accuracy >= 95",
             patience=3
+        )
+        ```
+
+        Using launch_once=False to restart the external process for each request:
+
+        ```python
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+            train_args="--epochs 5 --batch_size 32",
+            launch_external_process=True,
+            launch_once=False,  # Process restarts for each server request
+            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
         )
         ```
 
@@ -105,7 +133,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         # New FedAvg features
         stop_cond: Optional[str] = None,
@@ -134,6 +164,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
             per_site_config=per_site_config,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             stop_cond=stop_cond,
             patience=patience,
