@@ -44,6 +44,8 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    launch_once: bool = True
+    shutdown_timeout: float = 0.0
     key_metric: str
 
 
@@ -78,6 +80,13 @@ class NumpyFedAvgRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
             key_metric selects the metric used for global model selection by the IntimeModelSelector.
             Defaults to "accuracy".
@@ -118,6 +127,8 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
     ):
         # Validate inputs internally
@@ -134,6 +145,8 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
         )
 
@@ -153,6 +166,8 @@ class NumpyFedAvgRecipe(Recipe):
         self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.launch_once = v.launch_once
+        self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
 
         # Create BaseFedJob
@@ -200,6 +215,8 @@ class NumpyFedAvgRecipe(Recipe):
             framework=FrameworkType.NUMPY,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            launch_once=self.launch_once,
+            shutdown_timeout=self.shutdown_timeout,
         )
         job.to_clients(executor)
 
