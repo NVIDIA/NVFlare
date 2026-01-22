@@ -19,14 +19,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from network import SimpleNetwork
+from model import SimpleNetwork
 
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.app_constant import ModelName
-
-# (2) import nvflare MLflowWriter
-from nvflare.client.tracking import MLflowWriter
+from nvflare.client.tracking import SummaryWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
@@ -91,14 +89,14 @@ def main():
 
         return 100 * correct // total
 
-    # (3) initialize NVFlare client API
+    # (2) initialize NVFlare client API
     flare.init()
-    mlflow_writer = MLflowWriter()
+    summary_writer = SummaryWriter()
 
-    # (4) run continuously when launch_once=true
+    # (3) run continuously when launch_once=true
     while flare.is_running():
 
-        # (5) receive FLModel from NVFlare
+        # (4) receive FLModel from NVFlare
         input_model = flare.receive()
         client_id = flare.get_site_name()
 
@@ -109,11 +107,11 @@ def main():
         # for "evaluate" task (flare.is_evaluate()) we use the received model to do evaluation
         # and send back the evaluation metrics
         # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
-        # (6) performing train task on received model
+        # (5) performing train task on received model
         if flare.is_train():
             print(f"({client_id}) current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")
 
-            # (6.1) loads model from NVFlare
+            # (5.1) loads model from NVFlare
             net.load_state_dict(input_model.params)
 
             criterion = nn.CrossEntropyLoss()
@@ -149,40 +147,38 @@ def main():
 
             print(f"({client_id}) Finished Training")
 
-            # (6.2) evaluation on local trained model to save best model
+            # (5.2) evaluation on local trained model to save best model
             local_accuracy = evaluate(net.state_dict())
             global_step = input_model.current_round * n_loaders + i
-
-            # log metrics to MLflow
-            mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
+            summary_writer.add_scalar(tag="local_accuracy", scalar=local_accuracy, global_step=global_step)
             print(f"({client_id}) Evaluating local trained model. Accuracy on the 10000 test images: {local_accuracy}")
             if local_accuracy > best_accuracy:
                 best_accuracy = local_accuracy
                 torch.save(net.state_dict(), model_path)
 
-            # (6.3) evaluate on received model for model selection
+            # (5.3) evaluate on received model for model selection
             accuracy = evaluate(input_model.params)
             print(
                 f"({client_id}) Evaluating received model for model selection. Accuracy on the 10000 test images: {accuracy}"
             )
 
-            # (6.4) construct trained FL model
+            # (5.4) construct trained FL model
             output_model = flare.FLModel(
                 params=net.cpu().state_dict(),
                 metrics={"accuracy": accuracy},
                 meta={"NUM_STEPS_CURRENT_ROUND": steps},
             )
 
-            # (6.5) send model back to NVFlare
+            # (5.5) send model back to NVFlare
             flare.send(output_model)
 
-        # (7) performing evaluate task on received model
+        # (6) performing evaluate task on received model
         elif flare.is_evaluate():
             accuracy = evaluate(input_model.params)
             print(f"({client_id}) accuracy: {accuracy}")
             flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
 
-        # (8) performing submit_model task to obtain best local model
+        # (7) performing submit_model task to obtain best local model
         elif flare.is_submit_model():
             model_name = input_model.meta["submit_model_name"]
             if model_name == ModelName.BEST_MODEL:
