@@ -21,7 +21,8 @@ import pytest
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.api import FedJob
+from nvflare.job_config.api import FedApp, FedJob
+from nvflare.job_config.fed_app_config import ClientAppConfig
 
 
 class TestFedJob:
@@ -40,7 +41,7 @@ class TestFedJob:
         job = FedJob()
         component = FedAvg()
         with pytest.raises(Exception):
-            job.to(component, None)
+            job.to(component, None)  # type: ignore[arg-type]  # intentionally testing invalid input
 
     def test_add_params_functionality(self):
         """Test that add_params functionality works correctly."""
@@ -89,3 +90,49 @@ class TestFedJob:
             for key, value in client_params.items():
                 assert key in client_config
                 assert client_config[key] == value
+
+
+class TestFedAppAddResource:
+    """Test FedApp._add_resource() method for handling different resource types."""
+
+    def setup_method(self):
+        self.app = FedApp(ClientAppConfig())
+
+    def test_add_resource_existing_file(self):
+        """Test adding an existing file as resource."""
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
+            f.write(b"# test script")
+            temp_path = f.name
+
+        try:
+            self.app._add_resource(temp_path)
+            assert temp_path in self.app.app_config.ext_scripts
+        finally:
+            os.unlink(temp_path)
+
+    def test_add_resource_existing_directory(self):
+        """Test adding an existing directory as resource."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.app._add_resource(temp_dir)
+            assert temp_dir in self.app.app_config.ext_dirs
+
+    def test_add_resource_absolute_path_not_exists(self):
+        """Test adding an absolute path that doesn't exist locally.
+
+        This simulates pre-installed scripts in production environments.
+        The resource should be added without error; validation happens later in process_env().
+        """
+        non_existent_abs_path = "/preinstalled/scripts/remote_train.py"
+        self.app._add_resource(non_existent_abs_path)
+        assert non_existent_abs_path in self.app.app_config.ext_scripts
+
+    def test_add_resource_relative_path_not_exists_raises_error(self):
+        """Test that adding a non-existent relative path raises an error."""
+        non_existent_rel_path = "scripts/does_not_exist.py"
+        with pytest.raises(ValueError, match="it must be either a directory or file"):
+            self.app._add_resource(non_existent_rel_path)
+
+    def test_add_resource_invalid_type_raises_error(self):
+        """Test that adding a non-string resource raises an error."""
+        with pytest.raises(ValueError, match="resource must be a str"):
+            self.app._add_resource(123)  # type: ignore[arg-type]  # intentionally testing invalid input
