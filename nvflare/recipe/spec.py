@@ -107,7 +107,40 @@ class Recipe(ABC):
         self.job = job
 
     def process_env(self, env: ExecEnv):
-        pass
+        """Process environment-specific configuration and validation.
+
+        Validates that script resources are available for the target environment:
+        - For local environments (SimEnv, PocEnv): absolute paths must exist locally
+        - For production environment (ProdEnv): warns about non-local absolute paths
+        """
+        import logging
+        import os
+
+        # Collect all ext_scripts from all apps
+        non_local_scripts = []
+        for app in self.job._deploy_map.values():
+            for script in app.app_config.ext_scripts:
+                if os.path.isabs(script) and not os.path.exists(script):
+                    non_local_scripts.append(script)
+
+        if not non_local_scripts:
+            return
+
+        # Check environment type by class name
+        env_type = type(env).__name__
+
+        if env_type in ("SimEnv", "PocEnv"):
+            raise ValueError(
+                f"The following scripts do not exist locally: {non_local_scripts}. "
+                f"For {env_type}, all scripts must be present on the local machine."
+            )
+        else:
+            # Production environment - log warning
+            logger = logging.getLogger(__name__)
+            for script in non_local_scripts:
+                logger.warning(
+                    f"Script '{script}' not found locally. " f"Assuming it is pre-installed on the production system."
+                )
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None

@@ -248,6 +248,9 @@ class EdgeFedBuffRecipe(Recipe):
         job.configure_simulation(c.task_processor, c.job_timeout, c.num_devices, c.num_workers)
 
     def process_env(self, env: ExecEnv):
+        # Call base class validation for script resources
+        super().process_env(env)
+
         simulation_config = env.get_extra_prop(DEVICE_SIMULATION_ENV_KEY)
         if not simulation_config:
             return
