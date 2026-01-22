@@ -106,7 +106,6 @@ def main():
         n_clusters=n_clusters,
         train_script="client.py",
         per_site_config=per_site_config,
-        key_metric="metrics",
     )
 
     print("Executing recipe in simulation environment...")
