@@ -1,7 +1,7 @@
 {
-  "name": "newton_raphson",
+  "name": "hello-numpy",
   "resource_spec": {},
-  "min_clients" : 4,
+  "min_clients" : 2,
   "deploy_map": {
     "app": [
       "@ALL"
