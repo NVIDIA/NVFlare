@@ -281,7 +281,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                     public_key = cert.public_key()
                     verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
             except:
-                continue  # TODO: shall return False
+                return False
 
             for file in files:
                 if file == signature_file or file == NVFLARE_SUBMITTER_CRT_FILE:
