@@ -21,6 +21,7 @@ from model import create_brats_model
 
 from nvflare.app_common.filters.svt_privacy import SVTPrivacy
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 DEFAULT_NUM_ROUNDS = 600
@@ -94,6 +95,8 @@ def main():
         train_script="client.py",
         train_args=train_args,
         key_metric="val_dice",
+        # Use WEIGHT_DIFF for efficiency and consistency (required for SVTPrivacy filter)
+        params_transfer_type=TransferType.DIFF,
     )
     recipe.job.to_server({"server": {"heart_beat_timeout": DEFAULT_HEARTBEAT_TIMEOUT}})
     # Include client script and model definition

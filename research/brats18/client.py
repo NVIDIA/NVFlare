@@ -251,6 +251,7 @@ def main():
             global_step = input_model.current_round * total_steps + epoch
             summary_writer.add_scalar("train_loss", avg_loss, global_step)
 
+        # Send trained model weights (API will compute diff automatically with TransferType.DIFF)
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
             metrics={"val_dice": global_metric},
