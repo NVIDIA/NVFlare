@@ -245,7 +245,9 @@ def main():
                 optimizer.step()
                 running_loss += loss.item()
 
-            avg_loss = running_loss / max(len(train_loader), 1)
+            if len(train_loader) == 0:
+                raise ValueError("Training data loader is empty. Check dataset preparation and datalist configuration.")
+            avg_loss = running_loss / len(train_loader)
             global_step = input_model.current_round * total_steps + epoch
             summary_writer.add_scalar("train_loss", avg_loss, global_step)
 
