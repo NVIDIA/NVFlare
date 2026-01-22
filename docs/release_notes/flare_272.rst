@@ -71,19 +71,19 @@ Memory Management with Tensor-based Downloader
 
     **Transparent Memory Optimization**
 
-    No code changes required! The TensorDownloader works automatically behind the scenes when enabled, reducing memory usage without any modifications to your training scripts.
+    No code changes required! The TensorDownloader works automatically behind the scenes, reducing memory usage without any modifications to your training scripts.
 
 FLARE 2.7.2 introduces the **TensorDownloader** for PyTorch models, extending the FileDownloader concept introduced in 2.7.0 specifically for tensor data.
 This feature addresses critical memory challenges when working with large language models (LLMs) and other large-scale models in federated learning.
 
 .. important::
 
-    **Transparent to Users**: This optimization is completely transparent to end users. Once enabled, it works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.
+    **Transparent to Users**: This optimization is built into all PyTorch workflows and completely transparent to end users. It works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.
 
 Key Features
 ------------
 
-- **Zero Code Changes Required**: The TensorDecomposer automatically handles tensor downloading when registered. Your existing FL jobs benefit from memory optimization without modification.
+- **Zero Code Changes Required**: Your existing PyTorch FL jobs benefit from memory optimization without any modification.
 
 - **Incremental Tensor Serialization**: Instead of serializing all model parameters at once, tensors are serialized individually using safetensors format, significantly reducing peak memory consumption.
 
@@ -130,7 +130,7 @@ Benefits for LLM Training
 - **Reduced Memory Footprint**: 20-50% reduction critical for large models that approach memory limits
 - **Improved Scalability**: Multiple clients can download at different rates without blocking
 - **Safetensors Format**: Secure and efficient tensor serialization without pickle vulnerabilities
-- **No Migration Required**: Existing jobs automatically benefit when the feature is enabled
+- **No Migration Required**: Existing PyTorch jobs automatically benefit from this optimization
 
 .. admonition:: Learn More
 
