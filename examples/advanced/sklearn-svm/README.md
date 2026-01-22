@@ -59,7 +59,7 @@ The simplest way to run this example is using the Job Recipe API:
 ### Basic Usage
 
 ```bash
-python job.py --n_clients 3 --kernel rbf --backend sklearn --data_path /tmp/nvflare/dataset/cancer.csv
+python job.py --n_clients 3 --kernel rbf --data_path /tmp/nvflare/dataset/cancer.csv
 ```
 
 This will:
@@ -77,7 +77,6 @@ python job.py --help
 Available arguments:
 - `--n_clients`: Number of clients (default: 3)
 - `--kernel`: Kernel type - linear, poly, rbf, or sigmoid (default: rbf)
-- `--backend`: Backend library - sklearn or cuml (default: sklearn)
 - `--data_path`: Path to cancer CSV file (default: /tmp/nvflare/dataset/cancer.csv)
 
 ### Per-Client Data Splits
@@ -101,11 +100,15 @@ Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 - **Unbalanced splits**: Give clients different amounts of data
 - **Separate validation**: Use different validation sets per client
 
-Pass a dict to `train_args` for per-client configuration:
+Use `per_site_config` to pass `train_args` for per-client configuration:
 ```python
-train_args = {
-    "site-1": "--data_path /data/cancer.csv --backend sklearn --train_start 0 --train_end 151 ...",
-    "site-2": "--data_path /data/cancer.csv --backend sklearn --train_start 151 --train_end 303 ...",
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/cancer.csv --train_start 0 --train_end 151 ..."
+    },
+    "site-2": {
+        "train_args": "--data_path /data/cancer.csv --train_start 151 --train_end 303 ..."
+    },
     # ... more sites
 }
 ```
@@ -121,20 +124,19 @@ As an alternative to passing different data range arguments, you can also save t
 # - /data/site3_cancer.csv  (contains rows 303-455)
 
 # Then configure per-client data paths in job.py:
-train_args = {
-    "site-1": "--data_path /data/site1_cancer.csv --backend sklearn",
-    "site-2": "--data_path /data/site2_cancer.csv --backend sklearn",
-    "site-3": "--data_path /data/site3_cancer.csv --backend sklearn",
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/site1_cancer.csv"
+    },
+    "site-2": {
+        "train_args": "--data_path /data/site2_cancer.csv"
+    },
+    "site-3": {
+        "train_args": "--data_path /data/site3_cancer.csv"
+    }
 }
 
 # No need to pass --train_start, --train_end, etc. when using separate files
-```
-
-### Using cuML Backend
-
-For GPU-accelerated SVM training:
-```bash
-python job.py --n_clients 3 --kernel rbf --backend cuml
 ```
 
 ### View Results
