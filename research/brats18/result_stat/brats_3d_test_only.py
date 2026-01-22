@@ -136,6 +136,9 @@ def main():
                 metric_et += metric_score[0][2].item()
                 ct_et += 1
         # compute mean dice over whole validation set
+        # compute mean dice over whole validation set
+        if ct_tc == 0 or ct_wt == 0 or ct_et == 0 or ct == 0:
+            raise ValueError("No valid metrics computed. Check validation dataset and model outputs.")
         metric_tc /= ct_tc
         metric_wt /= ct_wt
         metric_et /= ct_et
