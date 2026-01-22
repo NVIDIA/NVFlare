@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -29,12 +28,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
-    scatter-and-gather communication pattern.
+    memory-efficient InTime aggregation.
 
     The recipe configures:
     - A federated job with initial model (optional)
-    - Scatter-and-gather controller for coordinating training rounds
-    - Weighted aggregator for combining client model updates (or custom aggregator)
+    - FedAvg controller with InTime aggregation for memory efficiency
+    - Optional early stopping and model selection
     - Script runners for client-side training execution
 
     Args:
@@ -55,11 +54,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
-        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard).
-            If not provided, no experiment tracking will be enabled.
-            To enable experiment tracking, either:
-            - Pass an AnalyticsReceiver instance explicitly, OR
-            - Use add_experiment_tracking() from nvflare.recipe.utils after recipe creation
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             train_script, train_args, launch_external_process, command, framework,
@@ -87,55 +81,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         )
         ```
 
-        Enable TensorBoard experiment tracking (Option 1 - pass explicitly):
-
-        ```python
-        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-
-        recipe = FedAvgRecipe(
-            name="my_fedavg_job",
-            initial_model=pretrained_model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="client.py",
-            train_args="--epochs 5 --batch_size 32",
-            analytics_receiver=TBAnalyticsReceiver()
-        )
-        ```
-
-        Enable experiment tracking (Option 2 - add after creation):
-
-        ```python
-        from nvflare.recipe.utils import add_experiment_tracking
-
-        recipe = FedAvgRecipe(...)  # Create recipe first
-        add_experiment_tracking(recipe, "tensorboard")  # Add tracking later
-        # Also supports: "mlflow", "wandb"
-        ```
-
-        Using launch_once=False to restart the external process for each task:
-
-        ```python
-        recipe = FedAvgRecipe(
-            name="my_fedavg_job",
-            initial_model=pretrained_model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="client.py",
-            train_args="--epochs 5 --batch_size 32",
-            launch_external_process=True,
-            launch_once=False,  # Process will restart for each task
-            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
-        )
-        ```
-
     Note:
         By default, this recipe implements the standard FedAvg algorithm where model updates
         are aggregated using weighted averaging based on the number of training
         samples provided by each client.
-
-        Experiment tracking is opt-in. No tracking components are configured by default,
-        avoiding unnecessary dependencies.
 
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
@@ -158,8 +107,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: Optional[Dict[str, Dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -180,7 +128,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             model_persistor=model_persistor,
-            analytics_receiver=analytics_receiver,
             per_site_config=per_site_config,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,

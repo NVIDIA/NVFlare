@@ -25,13 +25,13 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.
 
-    This recipe sets up a complete federated learning workflow with scatter-and-gather
-    communication pattern specifically designed for scikit-learn models.
+    This recipe sets up a complete federated learning workflow with memory-efficient
+    InTime aggregation, specifically designed for scikit-learn models.
 
     The recipe configures:
     - A federated job with initial parameters
-    - Scatter-and-gather controller for coordinating training rounds
-    - Weighted aggregator for combining client model updates (or custom aggregator)
+    - FedAvg controller with InTime aggregation for memory efficiency
+    - Optional early stopping and model selection
     - Script runners for client-side training execution
 
     Args:
