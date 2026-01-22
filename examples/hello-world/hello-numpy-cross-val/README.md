@@ -128,6 +128,7 @@ from nvflare.recipe import SimEnv
 # 1. Create a standard FedAvg recipe
 recipe = NumpyFedAvgRecipe(
     name="hello-numpy-train-cse",
+    initial_model=[0.0] * 10,
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
