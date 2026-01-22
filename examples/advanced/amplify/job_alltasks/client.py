@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from datasets import load_dataset
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
+from utils import load_and_validate_csv
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -36,8 +37,7 @@ import nvflare.client as flare
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune AMPLIFY model for sequence regression")
     # Data paths
-    parser.add_argument("--train_csvs", type=str, nargs="+", required=True, help="List of paths to training CSV files")
-    parser.add_argument("--test_csvs", type=str, nargs="+", required=True, help="List of paths to test CSV files")
+    parser.add_argument("--data_root", type=str, required=True, help="Root directory for training and test data")
     parser.add_argument("--tasks", type=str, nargs="+", required=True, help="List of task names for each regressor")
     parser.add_argument(
         "--output_dir",
@@ -70,6 +70,13 @@ def parse_args():
     )
     # Deterministic training
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
+    # Data sampling (for quick testing)
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Maximum number of samples to use from train/test sets (default: None, use all samples). Useful for quick testing.",
+    )
     return parser.parse_args()
 
 
@@ -88,18 +95,14 @@ def main():
     # Parse command line arguments
     args = parse_args()
 
-    # Validate that we have matching numbers of train and test files
-    if len(args.train_csvs) != len(args.test_csvs):
-        raise ValueError("Number of training CSV files must match number of test CSV files")
-    if len(args.tasks) != len(args.train_csvs):
-        raise ValueError("Number of tasks must match number of training CSV files")
-
-    # Set random seed for deterministic training
-    set_seed(args.seed)
-
     # (2) initializes NVFlare client API
     flare.init()
     client_name = flare.get_site_name()
+
+    print(f"Client {client_name} training on all {len(args.tasks)} tasks: {args.tasks}")
+
+    # Set random seed for deterministic training
+    set_seed(args.seed)
 
     # Start
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,10 +135,25 @@ def main():
     dataloaders_train = []
     dataloaders_test = []
 
-    for train_csv, test_csv in zip(args.train_csvs, args.test_csvs):
-        # Add data files
-        data_files = {"train": train_csv, "test": test_csv}
-        dataset = load_dataset("csv", data_files=data_files)
+    for task in args.tasks:
+        # Convert NVFlare site name (e.g., "site-1") to client file format (e.g., "client1")
+        # NVFlare site names: "site-1", "site-2", etc.
+        # Data file names: "client1_train_data.csv", "client2_train_data.csv", etc.
+        if client_name.startswith("site-"):
+            client_id = client_name.split("-")[1]  # Extract number from "site-N"
+            file_client_name = f"client{client_id}"
+        else:
+            file_client_name = client_name
+        
+        # Construct data paths based on client name and task
+        train_csv = os.path.join(args.data_root, task, f"{file_client_name}_train_data.csv")
+        test_csv = os.path.join(args.data_root, task, "test_data.csv")
+        
+        print(f"  Task {task}:")
+        
+        # Load and validate dataset
+        dataset = load_and_validate_csv(train_csv, test_csv, verbose=False, max_samples=args.max_samples, seed=args.seed)
+        print(f"    Loaded: Train samples={len(dataset['train'])}, Test samples={len(dataset['test'])}")
 
         # Set tokenizer
         dataset.set_transform(

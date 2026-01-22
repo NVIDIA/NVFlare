@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from datasets import load_dataset
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
+from utils import load_and_validate_csv
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -36,8 +37,7 @@ import nvflare.client as flare
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune AMPLIFY model for sequence regression")
     # Data paths
-    parser.add_argument("--train_csv", type=str, required=True, help="Path to training CSV file")
-    parser.add_argument("--test_csv", type=str, required=True, help="Path to test CSV file")
+    parser.add_argument("--data_root", type=str, required=True, help="Root directory for training and test data")
     parser.add_argument(
         "--output_dir",
         type=str,
@@ -69,6 +69,13 @@ def parse_args():
     )
     # Deterministic training
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
+    # Data sampling (for quick testing)
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Maximum number of samples to use from train/test sets (default: None, use all samples). Useful for quick testing.",
+    )
     return parser.parse_args()
 
 
@@ -93,6 +100,13 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
     client_name = flare.get_site_name()
+
+    # Determine data paths based on client name (which matches the task name)
+    task = client_name
+    train_csv = os.path.join(args.data_root, task, "train_data.csv")
+    test_csv = os.path.join(args.data_root, task, "test_data.csv")
+    
+    print(f"Client {client_name} training on task: {task}")
 
     # Start
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -119,9 +133,8 @@ def main():
     # Load AMPLIFY tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.pretrained_model, trust_remote_code=True)
 
-    # Add data files
-    data_files = {"train": args.train_csv, "test": args.test_csv}
-    dataset = load_dataset("csv", data_files=data_files)
+    # Load and validate dataset
+    dataset = load_and_validate_csv(train_csv, test_csv, verbose=True, max_samples=args.max_samples, seed=args.seed)
 
     # Set tokenizer
     dataset.set_transform(
