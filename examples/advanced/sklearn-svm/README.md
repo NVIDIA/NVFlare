@@ -136,6 +136,32 @@ per_site_config = {
 # No need to pass --train_start, --train_end, etc. when using separate files
 ```
 
+### Advanced: Using cuML Backend
+
+The `client.py` script supports an optional `--backend` argument that allows using [NVIDIA cuML](https://github.com/rapidsai/cuml) instead of scikit-learn for GPU-accelerated SVM training. This is an **advanced option** not exposed through `job.py` by default.
+
+**Requirements:**
+- NVIDIA GPU with CUDA support
+- cuML library installed (`pip install cuml`)
+
+**Usage:**
+
+To use cuML, manually add `--backend cuml` to the `train_args` in your `per_site_config`:
+
+```python
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/cancer.csv --train_start 0 --train_end 151 --valid_start 455 --valid_end 569 --backend cuml"
+    },
+    "site-2": {
+        "train_args": "--data_path /data/cancer.csv --train_start 151 --train_end 303 --valid_start 455 --valid_end 569 --backend cuml"
+    },
+    # ... more sites
+}
+```
+
+**Note:** The default backend is `sklearn`. You only need to specify `--backend cuml` if you want GPU acceleration.
+
 ### View Results
 
 You can use TensorBoard to view the training metrics:
