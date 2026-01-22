@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from lit_net import LitNet
+from model import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from torch.utils.data import DataLoader, random_split
 
