@@ -123,7 +123,7 @@ class FedApp:
             self.add_external_script(resource)
         elif os.path.isabs(resource):
             # Absolute path that doesn't exist locally - add_external_script accepts absolute paths
-            # Validation based on ExecEnv will happen in Recipe.process_env()
+            # Validation based on ExecEnv will happen in each env's deploy() method
             self.add_external_script(resource)
         else:
             raise ValueError(f"cannot add resource: invalid resource {resource}: it must be either a directory or file")

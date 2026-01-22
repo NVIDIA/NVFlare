@@ -120,7 +120,7 @@ class TestFedAppAddResource:
         """Test adding an absolute path that doesn't exist locally.
 
         This simulates pre-installed scripts in production environments.
-        The resource should be added without error; validation happens later in process_env().
+        The resource should be added without error; validation happens later in deploy().
         """
         non_existent_abs_path = "/preinstalled/scripts/remote_train.py"
         self.app._add_resource(non_existent_abs_path)
