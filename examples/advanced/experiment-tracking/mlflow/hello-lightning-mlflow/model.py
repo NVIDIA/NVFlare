@@ -22,7 +22,6 @@ from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy
 
 NUM_CLASSES = 10
-criterion = nn.CrossEntropyLoss()
 
 
 class Net(nn.Module):
@@ -50,6 +49,7 @@ class LitNet(LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = Net()
+        self.criterion = nn.CrossEntropyLoss()
         self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         # (optional) pass additional information via self.__fl_meta__
@@ -62,16 +62,16 @@ class LitNet(LightningModule):
     def training_step(self, batch, batch_idx):
         x, labels = batch
         outputs = self(x)
-        loss = criterion(outputs, labels)
+        loss = self.criterion(outputs, labels)
         self.train_acc(outputs, labels)
         self.log("train_loss", loss)
-        self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
+        self.log("train_acc", self.train_acc, on_step=True, on_epoch=True)
         return loss
 
     def evaluate(self, batch, stage=None):
         x, labels = batch
         outputs = self(x)
-        loss = criterion(outputs, labels)
+        loss = self.criterion(outputs, labels)
         self.valid_acc(outputs, labels)
 
         if stage:
