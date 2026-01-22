@@ -538,40 +538,10 @@ Compute federated statistics across distributed data.
 - `examples/advanced/federated-statistics/image_stats <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated-statistics/image_stats>`_
 
 
-Federated Evaluation
-====================
-
-Evaluate a pre-trained model across multiple sites.
-
-PyTorch FedEval
----------------
-
-Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation on their local data.
-
-.. code-block:: python
-
-    from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = FedEvalRecipe(
-        name="eval_job",
-        initial_model=MyModel(checkpoint="pretrained_model.pt"),
-        min_clients=2,
-        eval_script="client.py",
-        eval_args="--batch_size 32",
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-**Examples:**
-
-- `examples/hello-world/hello-lightning-eval <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning-eval>`_
-
-
 Cross-Site Evaluation
 =====================
 
-Evaluate models across all client sites (compare each client's model against all datasets).
+Evaluate models across all client sites.
 
 .. code-block:: python
 

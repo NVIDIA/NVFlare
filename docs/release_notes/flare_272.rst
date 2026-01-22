@@ -76,10 +76,6 @@ Memory Management with Tensor-based Downloader
 FLARE 2.7.2 introduces the **TensorDownloader** for PyTorch models, extending the FileDownloader concept introduced in 2.7.0 specifically for tensor data.
 This feature addresses critical memory challenges when working with large language models (LLMs) and other large-scale models in federated learning.
 
-.. note::
-
-    The Tensor Downloader supports **PyTorch tensors and NumPy arrays**. TensorFlow models currently use traditional serialization.
-
 .. important::
 
     **Transparent to Users**: This optimization is built into all PyTorch workflows and completely transparent to end users. It works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.
@@ -138,9 +134,7 @@ Benefits for LLM Training
 
 .. admonition:: Learn More
 
-    For a complete user guide including configuration examples and how to tune or disable the feature, see :ref:`tensor_downloader`.
-    
-    For details on the underlying FOBS decomposer architecture, see :ref:`decomposer_for_large_object`.
+    For detailed documentation on object downloading and the underlying architecture, see the documentation on :ref:`decomposer_for_large_object`.
 
 Additional Improvements
 =======================
@@ -172,7 +166,7 @@ To provide a cleaner and more focused learning experience, we have consolidated 
 MONAI Integration
 -----------------
 
-- **MONAI-FLARE Wheel Deprecated**: The separate ``nvflare-monai`` wheel package is now deprecated. MONAI integration is now achieved directly through the Client API, simplifying the integration and reducing dependency management overhead. For further information, see the `MONAI Migration Guide <https://github.com/NVIDIA/NVFlare/blob/main/integration/monai/MIGRATION.md>`_.
+- **MONAI-FLARE Wheel Deprecated**: The separate ``nvflare-monai`` wheel package is now deprecated. MONAI integration is now achieved directly through the Client API, simplifying the integration and reducing dependency management overhead.
 
 - **Updated MONAI Examples**: All MONAI examples have been updated to use the Client API pattern, making it easier to integrate MONAI training workflows with FLARE without requiring additional packages.
 
