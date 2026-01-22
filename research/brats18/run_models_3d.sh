@@ -9,5 +9,3 @@ python job.py --n_clients 4 --num_rounds 100 --gpu 0 --threads 4 \
 
 python job.py --n_clients 4 --num_rounds 100 --gpu 0 --threads 4 --enable_dp \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
-
-  
