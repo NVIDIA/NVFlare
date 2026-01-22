@@ -230,7 +230,7 @@ def add_cross_site_evaluation(
             "Ensure you're using a Recipe class that declares its framework (e.g., NumpyFedAvgRecipe, FedAvgRecipe)."
         )
 
-    framework = recipe.framework if hasattr(recipe, "framework") else "unknown"
+    framework = recipe.framework
 
     # Map framework to model locator type
     framework_to_locator = {
