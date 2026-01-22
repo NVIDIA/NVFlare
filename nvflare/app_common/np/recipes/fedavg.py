@@ -149,6 +149,11 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             aggregation_weights=aggregation_weights,
         )
 
+        # Override framework for cross-site evaluation compatibility
+        # Parent class sets self.framework = NUMPY for internal processing,
+        # but external APIs (add_cross_site_evaluation) expect RAW for NumPy recipes
+        self.framework = FrameworkType.RAW
+
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle NumPy-specific model setup."""
         if self._np_initial_model is not None:
