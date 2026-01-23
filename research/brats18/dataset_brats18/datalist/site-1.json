@@ -1,0 +1,934 @@
+{
+    "testing": [],
+    "training": [
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AOD_1/Brats18_CBICA_AOD_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AOD_1/Brats18_CBICA_AOD_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AOD_1/Brats18_CBICA_AOD_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AOD_1/Brats18_CBICA_AOD_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AOD_1/Brats18_CBICA_AOD_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AOO_1/Brats18_CBICA_AOO_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AOO_1/Brats18_CBICA_AOO_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AOO_1/Brats18_CBICA_AOO_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AOO_1/Brats18_CBICA_AOO_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AOO_1/Brats18_CBICA_AOO_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AOP_1/Brats18_CBICA_AOP_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AOP_1/Brats18_CBICA_AOP_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AOP_1/Brats18_CBICA_AOP_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AOP_1/Brats18_CBICA_AOP_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AOP_1/Brats18_CBICA_AOP_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AOZ_1/Brats18_CBICA_AOZ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AOZ_1/Brats18_CBICA_AOZ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AOZ_1/Brats18_CBICA_AOZ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AOZ_1/Brats18_CBICA_AOZ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AOZ_1/Brats18_CBICA_AOZ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_APR_1/Brats18_CBICA_APR_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_APR_1/Brats18_CBICA_APR_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_APR_1/Brats18_CBICA_APR_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_APR_1/Brats18_CBICA_APR_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_APR_1/Brats18_CBICA_APR_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_APY_1/Brats18_CBICA_APY_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_APY_1/Brats18_CBICA_APY_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_APY_1/Brats18_CBICA_APY_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_APY_1/Brats18_CBICA_APY_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_APY_1/Brats18_CBICA_APY_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_APZ_1/Brats18_CBICA_APZ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_APZ_1/Brats18_CBICA_APZ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_APZ_1/Brats18_CBICA_APZ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_APZ_1/Brats18_CBICA_APZ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_APZ_1/Brats18_CBICA_APZ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQA_1/Brats18_CBICA_AQA_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQA_1/Brats18_CBICA_AQA_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQA_1/Brats18_CBICA_AQA_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQA_1/Brats18_CBICA_AQA_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQA_1/Brats18_CBICA_AQA_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQD_1/Brats18_CBICA_AQD_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQD_1/Brats18_CBICA_AQD_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQD_1/Brats18_CBICA_AQD_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQD_1/Brats18_CBICA_AQD_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQD_1/Brats18_CBICA_AQD_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQG_1/Brats18_CBICA_AQG_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQG_1/Brats18_CBICA_AQG_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQG_1/Brats18_CBICA_AQG_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQG_1/Brats18_CBICA_AQG_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQG_1/Brats18_CBICA_AQG_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQN_1/Brats18_CBICA_AQN_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQN_1/Brats18_CBICA_AQN_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQN_1/Brats18_CBICA_AQN_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQN_1/Brats18_CBICA_AQN_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQN_1/Brats18_CBICA_AQN_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQO_1/Brats18_CBICA_AQO_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQO_1/Brats18_CBICA_AQO_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQO_1/Brats18_CBICA_AQO_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQO_1/Brats18_CBICA_AQO_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQO_1/Brats18_CBICA_AQO_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQP_1/Brats18_CBICA_AQP_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQP_1/Brats18_CBICA_AQP_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQP_1/Brats18_CBICA_AQP_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQP_1/Brats18_CBICA_AQP_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQP_1/Brats18_CBICA_AQP_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQQ_1/Brats18_CBICA_AQQ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQQ_1/Brats18_CBICA_AQQ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQQ_1/Brats18_CBICA_AQQ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQQ_1/Brats18_CBICA_AQQ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQQ_1/Brats18_CBICA_AQQ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQR_1/Brats18_CBICA_AQR_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQR_1/Brats18_CBICA_AQR_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQR_1/Brats18_CBICA_AQR_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQR_1/Brats18_CBICA_AQR_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQR_1/Brats18_CBICA_AQR_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQT_1/Brats18_CBICA_AQT_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQT_1/Brats18_CBICA_AQT_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQT_1/Brats18_CBICA_AQT_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQT_1/Brats18_CBICA_AQT_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQT_1/Brats18_CBICA_AQT_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQU_1/Brats18_CBICA_AQU_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQU_1/Brats18_CBICA_AQU_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQU_1/Brats18_CBICA_AQU_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQU_1/Brats18_CBICA_AQU_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQU_1/Brats18_CBICA_AQU_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQV_1/Brats18_CBICA_AQV_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQV_1/Brats18_CBICA_AQV_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQV_1/Brats18_CBICA_AQV_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQV_1/Brats18_CBICA_AQV_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQV_1/Brats18_CBICA_AQV_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQY_1/Brats18_CBICA_AQY_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQY_1/Brats18_CBICA_AQY_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQY_1/Brats18_CBICA_AQY_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQY_1/Brats18_CBICA_AQY_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQY_1/Brats18_CBICA_AQY_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ARF_1/Brats18_CBICA_ARF_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ARF_1/Brats18_CBICA_ARF_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ARF_1/Brats18_CBICA_ARF_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ARF_1/Brats18_CBICA_ARF_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ARF_1/Brats18_CBICA_ARF_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ARW_1/Brats18_CBICA_ARW_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ARW_1/Brats18_CBICA_ARW_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ARW_1/Brats18_CBICA_ARW_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ARW_1/Brats18_CBICA_ARW_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ARW_1/Brats18_CBICA_ARW_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ARZ_1/Brats18_CBICA_ARZ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ARZ_1/Brats18_CBICA_ARZ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ARZ_1/Brats18_CBICA_ARZ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ARZ_1/Brats18_CBICA_ARZ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ARZ_1/Brats18_CBICA_ARZ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASA_1/Brats18_CBICA_ASA_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASA_1/Brats18_CBICA_ASA_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASA_1/Brats18_CBICA_ASA_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASA_1/Brats18_CBICA_ASA_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASA_1/Brats18_CBICA_ASA_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASE_1/Brats18_CBICA_ASE_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASE_1/Brats18_CBICA_ASE_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASE_1/Brats18_CBICA_ASE_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASE_1/Brats18_CBICA_ASE_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASE_1/Brats18_CBICA_ASE_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASG_1/Brats18_CBICA_ASG_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASG_1/Brats18_CBICA_ASG_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASG_1/Brats18_CBICA_ASG_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASG_1/Brats18_CBICA_ASG_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASG_1/Brats18_CBICA_ASG_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASH_1/Brats18_CBICA_ASH_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASH_1/Brats18_CBICA_ASH_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASH_1/Brats18_CBICA_ASH_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASH_1/Brats18_CBICA_ASH_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASH_1/Brats18_CBICA_ASH_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASK_1/Brats18_CBICA_ASK_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASK_1/Brats18_CBICA_ASK_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASK_1/Brats18_CBICA_ASK_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASK_1/Brats18_CBICA_ASK_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASK_1/Brats18_CBICA_ASK_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASN_1/Brats18_CBICA_ASN_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASN_1/Brats18_CBICA_ASN_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASN_1/Brats18_CBICA_ASN_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASN_1/Brats18_CBICA_ASN_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASN_1/Brats18_CBICA_ASN_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASU_1/Brats18_CBICA_ASU_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASU_1/Brats18_CBICA_ASU_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASU_1/Brats18_CBICA_ASU_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASU_1/Brats18_CBICA_ASU_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASU_1/Brats18_CBICA_ASU_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASV_1/Brats18_CBICA_ASV_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASV_1/Brats18_CBICA_ASV_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASV_1/Brats18_CBICA_ASV_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASV_1/Brats18_CBICA_ASV_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASV_1/Brats18_CBICA_ASV_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASW_1/Brats18_CBICA_ASW_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASW_1/Brats18_CBICA_ASW_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASW_1/Brats18_CBICA_ASW_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASW_1/Brats18_CBICA_ASW_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASW_1/Brats18_CBICA_ASW_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASY_1/Brats18_CBICA_ASY_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASY_1/Brats18_CBICA_ASY_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASY_1/Brats18_CBICA_ASY_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASY_1/Brats18_CBICA_ASY_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASY_1/Brats18_CBICA_ASY_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATB_1/Brats18_CBICA_ATB_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATB_1/Brats18_CBICA_ATB_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATB_1/Brats18_CBICA_ATB_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATB_1/Brats18_CBICA_ATB_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATB_1/Brats18_CBICA_ATB_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATD_1/Brats18_CBICA_ATD_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATD_1/Brats18_CBICA_ATD_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATD_1/Brats18_CBICA_ATD_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATD_1/Brats18_CBICA_ATD_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATD_1/Brats18_CBICA_ATD_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATF_1/Brats18_CBICA_ATF_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATF_1/Brats18_CBICA_ATF_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATF_1/Brats18_CBICA_ATF_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATF_1/Brats18_CBICA_ATF_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATF_1/Brats18_CBICA_ATF_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATP_1/Brats18_CBICA_ATP_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATP_1/Brats18_CBICA_ATP_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATP_1/Brats18_CBICA_ATP_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATP_1/Brats18_CBICA_ATP_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATP_1/Brats18_CBICA_ATP_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATV_1/Brats18_CBICA_ATV_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATV_1/Brats18_CBICA_ATV_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATV_1/Brats18_CBICA_ATV_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATV_1/Brats18_CBICA_ATV_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATV_1/Brats18_CBICA_ATV_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AUN_1/Brats18_CBICA_AUN_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AUN_1/Brats18_CBICA_AUN_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AUN_1/Brats18_CBICA_AUN_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AUN_1/Brats18_CBICA_AUN_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AUN_1/Brats18_CBICA_AUN_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AUQ_1/Brats18_CBICA_AUQ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AUQ_1/Brats18_CBICA_AUQ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AUQ_1/Brats18_CBICA_AUQ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AUQ_1/Brats18_CBICA_AUQ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AUQ_1/Brats18_CBICA_AUQ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AUR_1/Brats18_CBICA_AUR_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AUR_1/Brats18_CBICA_AUR_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AUR_1/Brats18_CBICA_AUR_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AUR_1/Brats18_CBICA_AUR_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AUR_1/Brats18_CBICA_AUR_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AVG_1/Brats18_CBICA_AVG_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AVG_1/Brats18_CBICA_AVG_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AVG_1/Brats18_CBICA_AVG_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AVG_1/Brats18_CBICA_AVG_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AVG_1/Brats18_CBICA_AVG_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AVV_1/Brats18_CBICA_AVV_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AVV_1/Brats18_CBICA_AVV_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AVV_1/Brats18_CBICA_AVV_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AVV_1/Brats18_CBICA_AVV_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AVV_1/Brats18_CBICA_AVV_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AWG_1/Brats18_CBICA_AWG_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AWG_1/Brats18_CBICA_AWG_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AWG_1/Brats18_CBICA_AWG_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AWG_1/Brats18_CBICA_AWG_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AWG_1/Brats18_CBICA_AWG_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AWH_1/Brats18_CBICA_AWH_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AWH_1/Brats18_CBICA_AWH_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AWH_1/Brats18_CBICA_AWH_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AWH_1/Brats18_CBICA_AWH_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AWH_1/Brats18_CBICA_AWH_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AWI_1/Brats18_CBICA_AWI_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AWI_1/Brats18_CBICA_AWI_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AWI_1/Brats18_CBICA_AWI_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AWI_1/Brats18_CBICA_AWI_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AWI_1/Brats18_CBICA_AWI_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXL_1/Brats18_CBICA_AXL_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXL_1/Brats18_CBICA_AXL_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXL_1/Brats18_CBICA_AXL_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXL_1/Brats18_CBICA_AXL_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXL_1/Brats18_CBICA_AXL_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXM_1/Brats18_CBICA_AXM_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXM_1/Brats18_CBICA_AXM_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXM_1/Brats18_CBICA_AXM_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXM_1/Brats18_CBICA_AXM_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXM_1/Brats18_CBICA_AXM_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXN_1/Brats18_CBICA_AXN_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXN_1/Brats18_CBICA_AXN_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXN_1/Brats18_CBICA_AXN_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXN_1/Brats18_CBICA_AXN_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXN_1/Brats18_CBICA_AXN_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXO_1/Brats18_CBICA_AXO_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXO_1/Brats18_CBICA_AXO_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXO_1/Brats18_CBICA_AXO_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXO_1/Brats18_CBICA_AXO_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXO_1/Brats18_CBICA_AXO_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXW_1/Brats18_CBICA_AXW_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXW_1/Brats18_CBICA_AXW_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXW_1/Brats18_CBICA_AXW_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXW_1/Brats18_CBICA_AXW_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXW_1/Brats18_CBICA_AXW_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AYA_1/Brats18_CBICA_AYA_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AYA_1/Brats18_CBICA_AYA_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AYA_1/Brats18_CBICA_AYA_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AYA_1/Brats18_CBICA_AYA_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AYA_1/Brats18_CBICA_AYA_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AYI_1/Brats18_CBICA_AYI_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AYI_1/Brats18_CBICA_AYI_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AYI_1/Brats18_CBICA_AYI_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AYI_1/Brats18_CBICA_AYI_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AYI_1/Brats18_CBICA_AYI_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AYU_1/Brats18_CBICA_AYU_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AYU_1/Brats18_CBICA_AYU_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AYU_1/Brats18_CBICA_AYU_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AYU_1/Brats18_CBICA_AYU_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AYU_1/Brats18_CBICA_AYU_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AZD_1/Brats18_CBICA_AZD_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AZD_1/Brats18_CBICA_AZD_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AZD_1/Brats18_CBICA_AZD_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AZD_1/Brats18_CBICA_AZD_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AZD_1/Brats18_CBICA_AZD_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AZH_1/Brats18_CBICA_AZH_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AZH_1/Brats18_CBICA_AZH_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AZH_1/Brats18_CBICA_AZH_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AZH_1/Brats18_CBICA_AZH_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AZH_1/Brats18_CBICA_AZH_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_BFB_1/Brats18_CBICA_BFB_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_BFB_1/Brats18_CBICA_BFB_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_BFB_1/Brats18_CBICA_BFB_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_BFB_1/Brats18_CBICA_BFB_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_BFB_1/Brats18_CBICA_BFB_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_BFP_1/Brats18_CBICA_BFP_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_BFP_1/Brats18_CBICA_BFP_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_BFP_1/Brats18_CBICA_BFP_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_BFP_1/Brats18_CBICA_BFP_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_BFP_1/Brats18_CBICA_BFP_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_BHB_1/Brats18_CBICA_BHB_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_BHB_1/Brats18_CBICA_BHB_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_BHB_1/Brats18_CBICA_BHB_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_BHB_1/Brats18_CBICA_BHB_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_BHB_1/Brats18_CBICA_BHB_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_BHK_1/Brats18_CBICA_BHK_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_BHK_1/Brats18_CBICA_BHK_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_BHK_1/Brats18_CBICA_BHK_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_BHK_1/Brats18_CBICA_BHK_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_BHK_1/Brats18_CBICA_BHK_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_BHM_1/Brats18_CBICA_BHM_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_BHM_1/Brats18_CBICA_BHM_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_BHM_1/Brats18_CBICA_BHM_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_BHM_1/Brats18_CBICA_BHM_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_BHM_1/Brats18_CBICA_BHM_1_seg.nii.gz"
+        }
+    ],
+    "validation": [
+        {
+            "image": [
+                "training/HGG/Brats18_2013_3_1/Brats18_2013_3_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_3_1/Brats18_2013_3_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_3_1/Brats18_2013_3_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_3_1/Brats18_2013_3_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_3_1/Brats18_2013_3_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_5_1/Brats18_2013_5_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_5_1/Brats18_2013_5_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_5_1/Brats18_2013_5_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_5_1/Brats18_2013_5_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_5_1/Brats18_2013_5_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_10_1/Brats18_2013_10_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_10_1/Brats18_2013_10_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_10_1/Brats18_2013_10_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_10_1/Brats18_2013_10_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_10_1/Brats18_2013_10_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_12_1/Brats18_2013_12_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_12_1/Brats18_2013_12_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_12_1/Brats18_2013_12_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_12_1/Brats18_2013_12_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_12_1/Brats18_2013_12_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_14_1/Brats18_2013_14_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_14_1/Brats18_2013_14_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_14_1/Brats18_2013_14_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_14_1/Brats18_2013_14_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_14_1/Brats18_2013_14_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_18_1/Brats18_2013_18_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_18_1/Brats18_2013_18_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_18_1/Brats18_2013_18_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_18_1/Brats18_2013_18_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_18_1/Brats18_2013_18_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_20_1/Brats18_2013_20_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_20_1/Brats18_2013_20_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_20_1/Brats18_2013_20_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_20_1/Brats18_2013_20_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_20_1/Brats18_2013_20_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_2013_22_1/Brats18_2013_22_1_t1ce.nii.gz",
+                "training/HGG/Brats18_2013_22_1/Brats18_2013_22_1_t1.nii.gz",
+                "training/HGG/Brats18_2013_22_1/Brats18_2013_22_1_t2.nii.gz",
+                "training/HGG/Brats18_2013_22_1/Brats18_2013_22_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_2013_22_1/Brats18_2013_22_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AAB_1/Brats18_CBICA_AAB_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AAB_1/Brats18_CBICA_AAB_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AAB_1/Brats18_CBICA_AAB_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AAB_1/Brats18_CBICA_AAB_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AAB_1/Brats18_CBICA_AAB_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ALN_1/Brats18_CBICA_ALN_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ALN_1/Brats18_CBICA_ALN_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ALN_1/Brats18_CBICA_ALN_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ALN_1/Brats18_CBICA_ALN_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ALN_1/Brats18_CBICA_ALN_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AOH_1/Brats18_CBICA_AOH_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AOH_1/Brats18_CBICA_AOH_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AOH_1/Brats18_CBICA_AOH_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AOH_1/Brats18_CBICA_AOH_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AOH_1/Brats18_CBICA_AOH_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQJ_1/Brats18_CBICA_AQJ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQJ_1/Brats18_CBICA_AQJ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQJ_1/Brats18_CBICA_AQJ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQJ_1/Brats18_CBICA_AQJ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQJ_1/Brats18_CBICA_AQJ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AQZ_1/Brats18_CBICA_AQZ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AQZ_1/Brats18_CBICA_AQZ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AQZ_1/Brats18_CBICA_AQZ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AQZ_1/Brats18_CBICA_AQZ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AQZ_1/Brats18_CBICA_AQZ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ASO_1/Brats18_CBICA_ASO_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ASO_1/Brats18_CBICA_ASO_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ASO_1/Brats18_CBICA_ASO_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ASO_1/Brats18_CBICA_ASO_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ASO_1/Brats18_CBICA_ASO_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_ATX_1/Brats18_CBICA_ATX_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_ATX_1/Brats18_CBICA_ATX_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_ATX_1/Brats18_CBICA_ATX_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_ATX_1/Brats18_CBICA_ATX_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_ATX_1/Brats18_CBICA_ATX_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AVJ_1/Brats18_CBICA_AVJ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AVJ_1/Brats18_CBICA_AVJ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AVJ_1/Brats18_CBICA_AVJ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AVJ_1/Brats18_CBICA_AVJ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AVJ_1/Brats18_CBICA_AVJ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXJ_1/Brats18_CBICA_AXJ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXJ_1/Brats18_CBICA_AXJ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXJ_1/Brats18_CBICA_AXJ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXJ_1/Brats18_CBICA_AXJ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXJ_1/Brats18_CBICA_AXJ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AXQ_1/Brats18_CBICA_AXQ_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AXQ_1/Brats18_CBICA_AXQ_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AXQ_1/Brats18_CBICA_AXQ_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AXQ_1/Brats18_CBICA_AXQ_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AXQ_1/Brats18_CBICA_AXQ_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_CBICA_AYW_1/Brats18_CBICA_AYW_1_t1ce.nii.gz",
+                "training/HGG/Brats18_CBICA_AYW_1/Brats18_CBICA_AYW_1_t1.nii.gz",
+                "training/HGG/Brats18_CBICA_AYW_1/Brats18_CBICA_AYW_1_t2.nii.gz",
+                "training/HGG/Brats18_CBICA_AYW_1/Brats18_CBICA_AYW_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_CBICA_AYW_1/Brats18_CBICA_AYW_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA01_150_1/Brats18_TCIA01_150_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA01_150_1/Brats18_TCIA01_150_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA01_150_1/Brats18_TCIA01_150_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA01_150_1/Brats18_TCIA01_150_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA01_150_1/Brats18_TCIA01_150_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA01_378_1/Brats18_TCIA01_378_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA01_378_1/Brats18_TCIA01_378_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA01_378_1/Brats18_TCIA01_378_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA01_378_1/Brats18_TCIA01_378_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA01_378_1/Brats18_TCIA01_378_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA02_117_1/Brats18_TCIA02_117_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA02_117_1/Brats18_TCIA02_117_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA02_117_1/Brats18_TCIA02_117_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA02_117_1/Brats18_TCIA02_117_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA02_117_1/Brats18_TCIA02_117_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA02_226_1/Brats18_TCIA02_226_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA02_226_1/Brats18_TCIA02_226_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA02_226_1/Brats18_TCIA02_226_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA02_226_1/Brats18_TCIA02_226_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA02_226_1/Brats18_TCIA02_226_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA02_368_1/Brats18_TCIA02_368_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA02_368_1/Brats18_TCIA02_368_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA02_368_1/Brats18_TCIA02_368_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA02_368_1/Brats18_TCIA02_368_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA02_368_1/Brats18_TCIA02_368_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA02_605_1/Brats18_TCIA02_605_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA02_605_1/Brats18_TCIA02_605_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA02_605_1/Brats18_TCIA02_605_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA02_605_1/Brats18_TCIA02_605_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA02_605_1/Brats18_TCIA02_605_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA03_296_1/Brats18_TCIA03_296_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA03_296_1/Brats18_TCIA03_296_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA03_296_1/Brats18_TCIA03_296_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA03_296_1/Brats18_TCIA03_296_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA03_296_1/Brats18_TCIA03_296_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA04_343_1/Brats18_TCIA04_343_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA04_343_1/Brats18_TCIA04_343_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA04_343_1/Brats18_TCIA04_343_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA04_343_1/Brats18_TCIA04_343_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA04_343_1/Brats18_TCIA04_343_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA05_444_1/Brats18_TCIA05_444_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA05_444_1/Brats18_TCIA05_444_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA05_444_1/Brats18_TCIA05_444_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA05_444_1/Brats18_TCIA05_444_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA05_444_1/Brats18_TCIA05_444_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA06_211_1/Brats18_TCIA06_211_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA06_211_1/Brats18_TCIA06_211_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA06_211_1/Brats18_TCIA06_211_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA06_211_1/Brats18_TCIA06_211_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA06_211_1/Brats18_TCIA06_211_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA06_603_1/Brats18_TCIA06_603_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA06_603_1/Brats18_TCIA06_603_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA06_603_1/Brats18_TCIA06_603_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA06_603_1/Brats18_TCIA06_603_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA06_603_1/Brats18_TCIA06_603_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/HGG/Brats18_TCIA08_205_1/Brats18_TCIA08_205_1_t1ce.nii.gz",
+                "training/HGG/Brats18_TCIA08_205_1/Brats18_TCIA08_205_1_t1.nii.gz",
+                "training/HGG/Brats18_TCIA08_205_1/Brats18_TCIA08_205_1_t2.nii.gz",
+                "training/HGG/Brats18_TCIA08_205_1/Brats18_TCIA08_205_1_flair.nii.gz"
+            ],
+            "label": "training/HGG/Brats18_TCIA08_205_1/Brats18_TCIA08_205_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_2013_1_1/Brats18_2013_1_1_t1ce.nii.gz",
+                "training/LGG/Brats18_2013_1_1/Brats18_2013_1_1_t1.nii.gz",
+                "training/LGG/Brats18_2013_1_1/Brats18_2013_1_1_t2.nii.gz",
+                "training/LGG/Brats18_2013_1_1/Brats18_2013_1_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_2013_1_1/Brats18_2013_1_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_2013_8_1/Brats18_2013_8_1_t1ce.nii.gz",
+                "training/LGG/Brats18_2013_8_1/Brats18_2013_8_1_t1.nii.gz",
+                "training/LGG/Brats18_2013_8_1/Brats18_2013_8_1_t2.nii.gz",
+                "training/LGG/Brats18_2013_8_1/Brats18_2013_8_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_2013_8_1/Brats18_2013_8_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_2013_15_1/Brats18_2013_15_1_t1ce.nii.gz",
+                "training/LGG/Brats18_2013_15_1/Brats18_2013_15_1_t1.nii.gz",
+                "training/LGG/Brats18_2013_15_1/Brats18_2013_15_1_t2.nii.gz",
+                "training/LGG/Brats18_2013_15_1/Brats18_2013_15_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_2013_15_1/Brats18_2013_15_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_2013_24_1/Brats18_2013_24_1_t1ce.nii.gz",
+                "training/LGG/Brats18_2013_24_1/Brats18_2013_24_1_t1.nii.gz",
+                "training/LGG/Brats18_2013_24_1/Brats18_2013_24_1_t2.nii.gz",
+                "training/LGG/Brats18_2013_24_1/Brats18_2013_24_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_2013_24_1/Brats18_2013_24_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA09_141_1/Brats18_TCIA09_141_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA09_141_1/Brats18_TCIA09_141_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA09_141_1/Brats18_TCIA09_141_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA09_141_1/Brats18_TCIA09_141_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA09_141_1/Brats18_TCIA09_141_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA09_620_1/Brats18_TCIA09_620_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA09_620_1/Brats18_TCIA09_620_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA09_620_1/Brats18_TCIA09_620_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA09_620_1/Brats18_TCIA09_620_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA09_620_1/Brats18_TCIA09_620_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA10_276_1/Brats18_TCIA10_276_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA10_276_1/Brats18_TCIA10_276_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA10_276_1/Brats18_TCIA10_276_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA10_276_1/Brats18_TCIA10_276_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA10_276_1/Brats18_TCIA10_276_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA10_393_1/Brats18_TCIA10_393_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA10_393_1/Brats18_TCIA10_393_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA10_393_1/Brats18_TCIA10_393_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA10_393_1/Brats18_TCIA10_393_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA10_393_1/Brats18_TCIA10_393_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA10_629_1/Brats18_TCIA10_629_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA10_629_1/Brats18_TCIA10_629_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA10_629_1/Brats18_TCIA10_629_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA10_629_1/Brats18_TCIA10_629_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA10_629_1/Brats18_TCIA10_629_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA12_470_1/Brats18_TCIA12_470_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA12_470_1/Brats18_TCIA12_470_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA12_470_1/Brats18_TCIA12_470_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA12_470_1/Brats18_TCIA12_470_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA12_470_1/Brats18_TCIA12_470_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA13_623_1/Brats18_TCIA13_623_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA13_623_1/Brats18_TCIA13_623_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA13_623_1/Brats18_TCIA13_623_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA13_623_1/Brats18_TCIA13_623_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA13_623_1/Brats18_TCIA13_623_1_seg.nii.gz"
+        },
+        {
+            "image": [
+                "training/LGG/Brats18_TCIA13_642_1/Brats18_TCIA13_642_1_t1ce.nii.gz",
+                "training/LGG/Brats18_TCIA13_642_1/Brats18_TCIA13_642_1_t1.nii.gz",
+                "training/LGG/Brats18_TCIA13_642_1/Brats18_TCIA13_642_1_t2.nii.gz",
+                "training/LGG/Brats18_TCIA13_642_1/Brats18_TCIA13_642_1_flair.nii.gz"
+            ],
+            "label": "training/LGG/Brats18_TCIA13_642_1/Brats18_TCIA13_642_1_seg.nii.gz"
+        }
+    ]
+}
