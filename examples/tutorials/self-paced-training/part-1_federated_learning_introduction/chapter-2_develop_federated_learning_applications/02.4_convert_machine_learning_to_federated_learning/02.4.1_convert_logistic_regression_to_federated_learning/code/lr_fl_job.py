@@ -12,58 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.newton_raphson_persistor import NewtonRaphsonModelPersistor
-from src.newton_raphson_workflow import FedAvgNewtonRaphson
-
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.client.config import ExchangeFormat
-from nvflare.job_config.api import FedJob
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
+from nvflare.recipe import SimEnv
 
 if __name__ == "__main__":
     n_clients = 4
     num_rounds = 5
+    data_root = "/tmp/flare/dataset/heart_disease_data"
 
-    # Create FedJob.
-    job = FedJob(name="newton_raphson_fedavg")
-
-    # Send custom model persistor to server.
-    persistor_id = job.to_server(NewtonRaphsonModelPersistor(n_features=13), "persistor")
-
-    # Send custom controller to server
-    controller = FedAvgNewtonRaphson(
-        num_clients=n_clients,
+    # Create FedAvgLrRecipe for Logistic Regression with Newton-Raphson
+    recipe = FedAvgLrRecipe(
+        name="newton_raphson_fedavg",
         num_rounds=num_rounds,
         damping_factor=0.8,
-        persistor_id=persistor_id,
-    )
-    job.to(controller, "server")
-
-    # Send TBAnalyticsReceiver to server for tensorboard streaming.
-    analytics_receiver = TBAnalyticsReceiver()
-    job.to_server(
-        id="receiver",
-        obj=analytics_receiver,
+        num_features=13,
+        train_script="src/newton_raphson_train.py",
+        train_args=f"--data_root {data_root}",
+        launch_external_process=True,
     )
 
-    convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
-
-    # Add clients
-    for i in range(n_clients):
-
-        # Send ConvertToFedEvent to clients for tensorboard streaming.
-        job.to(id="event_to_fed", obj=convert_to_fed_event, target=f"site-{i + 1}")
-
-        runner = ScriptRunner(
-            script="src/newton_raphson_train.py",
-            script_args="--data_root /tmp/flare/dataset/heart_disease_data",
-            launch_external_process=True,
-            framework=FrameworkType.RAW,
-            params_exchange_format=ExchangeFormat.RAW,
-        )
-        job.to(runner, f"site-{i + 1}")
-
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    # Execute the recipe in simulation environment
+    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    run = recipe.execute(env)
+    result_location = run.get_result()
+    print(f"Result location: {result_location}")
