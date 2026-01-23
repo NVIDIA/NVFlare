@@ -1,6 +1,16 @@
-# Federated Learning with Differential Privacy for BraTS18 Segmentation
+# Privacy-preserving Federated Brain Tumour Segmentation
 
-This example demonstrates federated learning for 3D medical image segmentation using the NVIDIA FLARE Job Recipe API.
+This repository contains the reference implementation of the paper [Privacy-preserving Federated Brain Tumour Segmentation](https://arxiv.org/abs/1910.00962) published at MLMI 2019 (International Workshop on Machine Learning in Medical Imaging, held in conjunction with MICCAI 2019).
+
+**Authors:** Wenqi Li, Fausto Milletarì, Daguang Xu, Nicola Rieke, Jonny Hancox, Wentao Zhu, Maximilian Baust, Yan Cheng, Sébastien Ourselin, M. Jorge Cardoso, Andrew Feng  
+
+## Abstract
+
+Due to medical data privacy regulations, it is often infeasible to collect and share patient data in a centralised data lake. This poses challenges for training machine learning algorithms, such as deep convolutional networks, which often require large numbers of diverse training examples. Federated learning sidesteps this difficulty by bringing code to the patient data owners and only sharing intermediate model raining updates among them. Although a high-accuracy model could be achieved by appropriately aggregating these model updates, the model shared could indirectly leak the local training examples. In this paper, we investigate the feasibility of applying differential-privacy techniques to protect the patient data in a federated learning setup. We implement and evaluate practical federated learning systems for brain tumour segmentation on the BraTS dataset. The experimental results show that there is a tradeoff between model performance and privacy protection costs.
+
+![Brain Tumor Segmentation](https://developer.download.nvidia.com/assets/Clara/Images/clara_pt_brain_mri_segmentation_workflow.png)
+
+This implementation uses the NVIDIA FLARE Job Recipe API to reproduce the experiments from the paper.
 
 ## Installation
 
@@ -16,6 +26,8 @@ pip install nvflare
 ```bash
 pip install -r requirements.txt
 ```
+
+This will install MONAI and other required packages for medical image processing and model training.
 
 For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
@@ -33,26 +45,34 @@ brats18/
 └── figs/                          # Result figures
 ```
 
-## Data
+## Background
 
-### BraTS18 Dataset
+### Medical Image Segmentation with MONAI
 
-This example uses the BraTS 2018 dataset for volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs. The model is based on [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
+This example demonstrates how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/) for medical image applications with [MONAI](https://github.com/Project-MONAI/MONAI), a PyTorch-based, open-source framework for deep learning in healthcare imaging.
 
-**Task**: Segment 3 nested subregions of primary brain tumors (gliomas):
+### Brain Tumor Segmentation Task
+
+The application focuses on volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs using the BraTS 2018 dataset. The segmentation model is based on [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
+
+**Segmentation Targets**: 3 nested subregions of primary brain tumors (gliomas):
 - **Enhancing Tumor (ET)**: Areas with hyper-intensity in T1c
-- **Tumor Core (TC)**: The bulk of the tumor (ET + necrotic + non-enhancing parts)
+- **Tumor Core (TC)**: The bulk of the tumor (ET + necrotic + non-enhancing parts)  
 - **Whole Tumor (WT)**: Complete extent (TC + peritumoral edema)
 
-**Input**: 4 aligned MRI scans per patient (T1c, T1, T2, FLAIR)
+**Input Modalities**: 4 aligned MRI scans per patient (T1c, T1, T2, FLAIR)
 
-![Brain Tumor Segmentation](https://developer.download.nvidia.com/assets/Clara/Images/clara_pt_brain_mri_segmentation_workflow.png)
+### Differential Privacy in Federated Learning
 
-### Download Dataset
+The key contribution of this work is applying differential privacy to federated learning for medical imaging. We use the **Sparse Vector Technique (SVT)** [8] to add calibrated noise to model updates, providing formal privacy guarantees while maintaining competitive segmentation accuracy. The implementation uses NVFlare's [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) filter.
 
-Download BraTS 2018 data from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6].
+## Data
 
-Place the data in `./dataset_brats18/dataset`. It should result in a sub-folder `./dataset_brats18/dataset/training`.
+### Download BraTS18 Dataset
+
+Please request access and download the BraTS 2018 training data from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6].
+
+Place the downloaded data in `./dataset_brats18/dataset`. This should create the folder structure `./dataset_brats18/dataset/training` containing 285 patient scans (242 for training, 43 for validation in our splits).
 
 ### Data Splits
 
@@ -115,19 +135,23 @@ The server uses the `FedAvg` workflow, which implements federated averaging, the
 
 The `IntimeModelSelector` tracks validation metrics (`val_dice`) across rounds and saves the best performing global model as `best_FL_global_model.pt`.
 
-### Differential Privacy (Optional)
+### Differential Privacy
 
-When `--enable_dp` is specified, the **SVTPrivacy** filter is applied to client outputs:
+When `--enable_dp` is specified, the **SVTPrivacy** filter implements the Sparse Vector Technique for differential privacy:
 
-- **Method**: Sparse Vector Technique (SVT) [7, 8]
-- **Effect**: Adds Laplace noise and selectively shares only a fraction of weight updates
-- **Parameters** (configurable in `job.py`):
-  - `fraction=0.9`: Share top 90% of weights
-  - `epsilon=0.001`: Privacy budget
-  - `noise_var=1.0`: Noise variance
-  - `gamma=1e-4`: Clipping threshold
+**Mechanism**:
+1. **Sparse Selection**: Select the top k weights with largest absolute values (controlled by `fraction` parameter)
+2. **Noise Addition**: Add Laplace noise calibrated to sensitivity and privacy budget (`epsilon`)
+3. **Clipping**: Apply threshold `gamma` to limit sensitivity of weight updates
+4. **Privacy Guarantee**: The mechanism satisfies (ε, δ)-differential privacy, formally bounding information leakage
 
-**Privacy-Utility Trade-off**: DP provides privacy guarantees but reduces model accuracy and convergence (see Results section).
+**Parameters**:
+- `--dp_fraction=0.9`: Share top 90% of weights by magnitude (reduces communication and limits information exposure)
+- `--dp_epsilon=0.001`: Privacy budget (smaller = stronger privacy, lower accuracy)
+- `--dp_noise_var=1.0`: Laplace noise scale
+- `--dp_gamma=1e-4`: Gradient clipping threshold
+
+*Defaults are the values used in the original paper. Adjust these parameters to explore different privacy-utility trade-offs.See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the full privacy analysis and theoretical guarantees.*
 
 ## Job Recipe
 
@@ -148,27 +172,27 @@ recipe = FedAvgRecipe(
 
 ## Run Job
 
-### Basic Commands
+### Centralized and Federated
 
-**Centralized training** (1 client, all data):
+**Centralized training** (baseline, 1 client with all data):
 ```bash
 python job.py --n_clients 1 --num_rounds 600 --gpu 0 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-**FedAvg** (4 clients on 4 GPUs):
+**Federated learning without privacy** (4 clients on 4 GPUs):
 ```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0,1,2,3 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-**FedAvg** (4 clients on single 48GB GPU):
+**Federated learning without privacy** (4 clients on single 48GB GPU):
 ```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0 --threads 4 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-**FedAvg with Differential Privacy** (4 clients on single 48GB GPU):
+**Privacy-preserving federated learning** (4 clients with SVT differential privacy):
 ```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0 --threads 4 --enable_dp \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
@@ -188,6 +212,13 @@ Use `--workspace` to specify a custom workspace root.
 ```bash
 python job.py --n_clients 4 --num_rounds 100 \
   --learning_rate 5e-5 --aggregation_epochs 2 --cache_dataset 0.5 \
+  --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
+```
+
+**Customize differential privacy parameters:**
+```bash
+python job.py --n_clients 4 --num_rounds 600 --enable_dp \
+  --dp_epsilon 0.01 --dp_fraction 0.8 --dp_noise_var 0.5 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
@@ -231,14 +262,14 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice over 600 r
 
 ![All training curve](./figs/nvflare_brats18.png)
 
-**Key Observations:**
-- FedAvg achieves similar accuracy to centralized training
-- Differential Privacy reduces accuracy and convergence but provides privacy guarantees
-- All methods converge within 600 rounds
+**Key Findings:**
+- **Federated learning matches centralized training**: FedAvg achieves comparable performance (0.8573 vs 0.8558 Dice), demonstrating that FL can effectively train medical imaging models without centralizing data
+- **Privacy with acceptable trade-off**: SVT differential privacy provides formal privacy guarantees with ~4% Dice reduction (0.8573 → 0.8209), making privacy-preserving FL practical for medical applications
+- **Convergence behavior**: All methods converge within 600 rounds, with DP showing slower convergence due to noisy updates
 
 ### Validation Metrics
 
-Accuracy metrics after 600 rounds:
+Quantitative results after 600 rounds of training:
 
 | Configuration | Val Overall Dice | Val TC Dice | Val WT Dice | Val ET Dice |
 |---------------|------------------|-------------|-------------|-------------|
@@ -246,11 +277,12 @@ Accuracy metrics after 600 rounds:
 | brats18_4 (fedavg) | 0.8573 | 0.8687 | 0.9088 | 0.7879 |
 | brats18_4_dp (fedavg+dp) | 0.8209 | 0.8282 | 0.8818 | 0.7454 |
 
-**Key Findings:**
-- **FedAvg vs Centralized**: Minimal difference (0.8573 vs 0.8558) - demonstrates effectiveness of federated learning
-- **DP Impact**: ~4% Dice reduction (0.8573 → 0.8209) - privacy-utility trade-off with the chosen SVTPrivacy parameters
+**Analysis:**
+1. **Federated Learning Effectiveness**: FedAvg achieves 0.8573 Dice compared to 0.8558 for centralized training (0.15% difference), demonstrating that collaborative learning across distributed institutions can match centralized performance without sharing raw medical data.
 
-Different DP settings will have different impacts on performance. Adjust `fraction`, `epsilon`, `noise_var`, and `gamma` in `job.py` to tune the privacy-utility trade-off.
+2. **Privacy-Utility Trade-off**: The SVT differential privacy mechanism provides formal privacy guarantees with a 4.2% accuracy reduction (0.8573 → 0.8209). This demonstrates the feasibility of privacy-preserving federated learning for sensitive medical applications.
+
+**Note**: The results above use the default DP parameters from the paper. You can explore different privacy-utility trade-offs by adjusting `--dp_fraction`, `--dp_epsilon`, `--dp_noise_var`, and `--dp_gamma`. Lower epsilon values provide stronger privacy but typically reduce accuracy.
 
 ## Technical Notes
 
@@ -266,6 +298,21 @@ Different DP settings will have different impacts on performance. Adjust `fracti
 
 - Minimum 12 GB GPU per client
 - For 4 clients on single GPU: Recommend 48 GB GPU
+
+## Citing This Work
+
+If you use this implementation or build upon this work, please cite the original paper:
+
+```bibtex
+@inproceedings{li2019privacy,
+  title={Privacy-preserving federated brain tumour segmentation},
+  author={Li, Wenqi and Milletar{\`\i}, Fausto and Xu, Daguang and Rieke, Nicola and Hancox, Jonny and Zhu, Wentao and Baust, Maximilian and Cheng, Yan and Ourselin, S{\'e}bastien and Cardoso, M Jorge and others},
+  booktitle={International workshop on machine learning in medical imaging},
+  pages={133--141},
+  year={2019},
+  organization={Springer}
+}
+```
 
 ## References
 
