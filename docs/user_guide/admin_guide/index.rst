@@ -10,9 +10,9 @@ Guide for project Admin and Org Admin
 .. toctree::
    :maxdepth: 2
 
-   configurations/configurations.rst
    deployment/index
    nvflare_security
+   configurations/configurations.rst
    monitoring
    diagnostic_commands
 
