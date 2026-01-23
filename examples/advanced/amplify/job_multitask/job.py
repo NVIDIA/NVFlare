@@ -23,7 +23,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from src.filters import ExcludeParamsFilter
 from src.model import AmplifyRegressor
-from nvflare.client.config import ExchangeFormat
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
@@ -91,7 +90,6 @@ def main():
     # Build the initial model (one regressor per task, but each client will only use their own)
     model = AmplifyRegressor(pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes)
 
-
     print(f"Running FedAvg ({args.num_rounds} rounds) for multi-task AMPLIFY fine-tuning")
     print(f"Using {len(TASKS)} clients, one for each task: {TASKS}")
     print(f"Model: {args.pretrained_model}")
@@ -105,8 +103,9 @@ def main():
         num_rounds=args.num_rounds,
         initial_model=model,
         train_script="client.py",
-        train_args=f"--data_root {args.data_root} --n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --batch_size {args.batch_size} --trunk_lr {args.trunk_lr} --regressor_lr {args.regressor_lr}" + (f" --max_samples {args.max_samples}" if args.max_samples else ""),
-        #server_expected_format=ExchangeFormat.PYTORCH,    
+        train_args=f"--data_root {args.data_root} --n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --batch_size {args.batch_size} --trunk_lr {args.trunk_lr} --regressor_lr {args.regressor_lr}"
+        + (f" --max_samples {args.max_samples}" if args.max_samples else ""),
+        # server_expected_format=ExchangeFormat.PYTORCH,
     )
 
     # Add filter to exclude regressor parameters (keep them private to each client)
@@ -118,7 +117,7 @@ def main():
     # Run FL simulation with task names as client names
     env = SimEnv(
         clients=TASKS,  # Explicitly set client names to task names
-        workspace_root=f"/tmp/nvflare/AMPLIFY/multitask",
+        workspace_root="/tmp/nvflare/AMPLIFY/multitask",
         gpu_config=args.sim_gpus,
     )
     run = recipe.execute(env)

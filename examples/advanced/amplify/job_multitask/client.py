@@ -24,7 +24,6 @@ import random
 
 import numpy as np
 import torch
-from datasets import load_dataset
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
@@ -105,7 +104,7 @@ def main():
     task = client_name
     train_csv = os.path.join(args.data_root, task, "train_data.csv")
     test_csv = os.path.join(args.data_root, task, "test_data.csv")
-    
+
     print(f"Client {client_name} training on task: {task}")
 
     # Start

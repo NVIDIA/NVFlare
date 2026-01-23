@@ -33,9 +33,7 @@ TASKS = ["aggregation", "binding", "expression", "immunogenicity", "polyreactivi
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--num_clients", type=int, default=6, help="Number of federated learning clients"
-    )
+    parser.add_argument("--num_clients", type=int, default=6, help="Number of federated learning clients")
     parser.add_argument(
         "--num_rounds",
         type=int,
@@ -118,7 +116,8 @@ def main():
         num_rounds=args.num_rounds,
         initial_model=model,
         train_script="client.py",
-        train_args=f"--data_root {args.data_root} --tasks {' '.join(TASKS)} --n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --batch_size {args.batch_size} --trunk_lr {args.trunk_lr} --regressor_lr {args.regressor_lr}" + (f" --max_samples {args.max_samples}" if args.max_samples else ""),
+        train_args=f"--data_root {args.data_root} --tasks {' '.join(TASKS)} --n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --batch_size {args.batch_size} --trunk_lr {args.trunk_lr} --regressor_lr {args.regressor_lr}"
+        + (f" --max_samples {args.max_samples}" if args.max_samples else ""),
     )
 
     # Add TensorBoard experiment tracking

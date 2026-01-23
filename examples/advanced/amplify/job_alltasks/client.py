@@ -24,7 +24,6 @@ import random
 
 import numpy as np
 import torch
-from datasets import load_dataset
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
@@ -144,15 +143,17 @@ def main():
             file_client_name = f"client{client_id}"
         else:
             file_client_name = client_name
-        
+
         # Construct data paths based on client name and task
         train_csv = os.path.join(args.data_root, task, f"{file_client_name}_train_data.csv")
         test_csv = os.path.join(args.data_root, task, "test_data.csv")
-        
+
         print(f"  Task {task}:")
-        
+
         # Load and validate dataset
-        dataset = load_and_validate_csv(train_csv, test_csv, verbose=False, max_samples=args.max_samples, seed=args.seed)
+        dataset = load_and_validate_csv(
+            train_csv, test_csv, verbose=False, max_samples=args.max_samples, seed=args.seed
+        )
         print(f"    Loaded: Train samples={len(dataset['train'])}, Test samples={len(dataset['test'])}")
 
         # Set tokenizer
