@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from .cyclic import CyclicRecipe
-from .eval import EvalRecipe
 from .fedavg import FedAvgRecipe
+from .fedeval import FedEvalRecipe
 
-__all__ = ["FedAvgRecipe", "CyclicRecipe", "EvalRecipe"]
+__all__ = ["FedAvgRecipe", "CyclicRecipe", "FedEvalRecipe"]

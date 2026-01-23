@@ -17,7 +17,7 @@ import os
 
 from model import LitNet
 
-from nvflare.app_opt.pt.recipes.eval import EvalRecipe
+from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.recipe.sim_env import SimEnv
 
 
@@ -42,7 +42,7 @@ def main():
     # Create recipe with checkpoint
     print(f"Using pre-trained checkpoint: {checkpoint}")
 
-    recipe = EvalRecipe(
+    recipe = FedEvalRecipe(
         min_clients=n_clients,
         initial_model=LitNet(checkpoint=os.path.abspath(checkpoint)),
         eval_script="client.py",

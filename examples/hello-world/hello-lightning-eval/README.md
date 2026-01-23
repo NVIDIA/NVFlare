@@ -1,6 +1,6 @@
 # Hello PyTorch Lightning - Model Evaluation
 
-This example demonstrates how to use NVIDIA FLARE to evaluate a pre-trained PyTorch Lightning model across multiple clients in a federated setting using the `EvalRecipe`.
+This example demonstrates how to use NVIDIA FLARE to evaluate a pre-trained PyTorch Lightning model across multiple clients in a federated setting using the `FedEvalRecipe`.
 
 ## Setup
 
@@ -23,7 +23,7 @@ hello-lightning-eval/
 ├── client.py            # Client evaluation script
 ├── model.py             # Model definition (LitNet with CIFAR-10)
 ├── generate_pretrain.py # Script to generate pre-trained model
-├── job.py               # Job recipe using EvalRecipe
+├── job.py               # Job recipe using FedEvalRecipe
 ├── requirements.txt     # Dependencies
 ├── prepare_data.sh      # Download CIFAR-10 dataset
 └── README.md            # This file
@@ -79,20 +79,19 @@ This will:
 
 ## How It Works
 
-### EvalRecipe
+### FedEvalRecipe
 
-The `EvalRecipe` is a simple recipe for evaluating a pre-trained model across multiple sites:
+The `FedEvalRecipe` is a recipe for federated evaluation of a pre-trained model across multiple sites:
 
 ```python
-from nvflare.app_opt.pt.recipes.eval import EvalRecipe
+from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from model import LitNet
 
-recipe = EvalRecipe(
+recipe = FedEvalRecipe(
     min_clients=n_clients,
-    initial_model=LitNet(),
+    initial_model=LitNet(checkpoint="pretrained_model.pt"),
     eval_script="client.py",
     eval_args=f"--batch_size {batch_size}",
-    source_checkpoint="pretrained_model.pt",  # Loads pre-trained weights
 )
 ```
 
@@ -116,7 +115,7 @@ No training occurs - just evaluation on local data.
 ### What Happens
 
 1. **Server** loads the pre-trained model from `pretrained_model.pt`
-2. **Server** sends the model to all clients using `GlobalModelEval` controller
+2. **Server** sends the model to all clients using `EvalController`
 3. **Each client** evaluates the model on their local CIFAR-10 test set
 4. **Each client** reports metrics (accuracy, loss) back to server
 5. **Server** logs all evaluation results

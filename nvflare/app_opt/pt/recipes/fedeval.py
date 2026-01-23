@@ -35,16 +35,16 @@ class EvalController(ModelController):
             self.info(f"Metrics: {r.metrics}")
 
 
-class EvalRecipe(Recipe):
-    """A recipe for evaluating a PyTorch model across multiple sites.
+class FedEvalRecipe(Recipe):
+    """A recipe for federated evaluation of a PyTorch model across multiple sites.
 
-    This recipe sets up a simple federated evaluation workflow where a global model
+    This recipe sets up a federated evaluation workflow where a global model
     from the server is sent to multiple clients for evaluation. Each client evaluates
     the model on their local data and reports metrics back to the server.
 
     The recipe configures:
     - A federated job with an initial model to evaluate
-    - GlobalModelEval controller for sending server model to clients
+    - EvalController for coordinating federated evaluation across clients
     - Script runners for client-side evaluation execution
 
     Args:
@@ -70,11 +70,12 @@ class EvalRecipe(Recipe):
         Basic usage:
 
         ```python
+        from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
         from model import LitNet
 
-        recipe = EvalRecipe(
+        recipe = FedEvalRecipe(
             name="eval_job",
-            initial_model=LitNet(checkpoint="pretrained_model.pt"),  # Fresh model structure
+            initial_model=LitNet(checkpoint="pretrained_model.pt"),
             min_clients=2,
             eval_script="client.py",
             eval_args="--batch_size 32",
