@@ -98,7 +98,8 @@ class CollectAndAssembleModelAggregator(ModelAggregator):
             self.info(f"Accepted contribution from {contributor_name}")
         else:
             self.info(
-                f"Discarded: contributions already include client {contributor_name} " f"at round {current_round}"
+                f"Discarded: contributions already include client {contributor_name} at round {current_round}"
+            )
             )
 
     def aggregate_model(self) -> FLModel:
