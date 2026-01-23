@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,23 +44,68 @@ class WeightedAggregationHelper(object):
         self.counts = dict()
         self.history = list()
 
+    def _has_inplace_ops(self, tensor):
+        """Check if tensor supports in-place operations (PyTorch tensors)."""
+        return hasattr(tensor, "add_") and hasattr(tensor, "mul_")
+
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-                if self.weigh_by_local_iter:
-                    weighted_value = v * weight
-                else:
-                    weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext
+
                 current_total = self.total.get(k, None)
+
                 if current_total is None:
-                    self.total[k] = weighted_value
+                    # First contribution: initialize accumulator
+                    # For InTime aggregation: result is GC'd after callback, so in-place modification is safe
+                    # This saves memory by reusing the input tensor instead of creating a new one
+                    if self._has_inplace_ops(v):
+                        if self.weigh_by_local_iter:
+                            # Check if float tensor
+                            if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
+                                # Modify in-place and store reference (saves memory)
+                                self.total[k] = v.mul_(weight)
+                            else:
+                                # Integer/bool tensors: store reference without weighting
+                                self.total[k] = v
+                        else:
+                            # No weighting: store reference
+                            self.total[k] = v
+                    else:
+                        # Fallback for non-PyTorch tensors
+                        if self.weigh_by_local_iter:
+                            self.total[k] = v * weight
+                        else:
+                            self.total[k] = v
                     self.counts[k] = weight
                 else:
-                    self.total[k] = current_total + weighted_value
+                    # Subsequent contributions: use in-place operations
+                    if self._has_inplace_ops(v) and self._has_inplace_ops(current_total):
+                        if self.weigh_by_local_iter:
+                            # In-place: self.total[k] += v * weight
+                            # Check if float tensor before using alpha (integer tensors don't support alpha)
+                            if (
+                                hasattr(current_total.dtype, "is_floating_point")
+                                and current_total.dtype.is_floating_point
+                            ):
+                                self.total[k].add_(v, alpha=weight)
+                            else:
+                                # Integer/bool tensors: just add without weighting
+                                # (typically buffers/masks that should be the same across clients)
+                                self.total[k].add_(v)
+                        else:
+                            # In-place: self.total[k] += v
+                            self.total[k].add_(v)
+                    else:
+                        # Fallback for non-PyTorch tensors
+                        if self.weigh_by_local_iter:
+                            self.total[k] = current_total + v * weight
+                        else:
+                            self.total[k] = current_total + v
                     self.counts[k] = self.counts[k] + weight
+
             self.history.append(
                 {
                     "contributor_name": contributor_name,
@@ -72,7 +117,24 @@ class WeightedAggregationHelper(object):
     def get_result(self):
         """Divide weighted sum by sum of weights."""
         with self.lock:
-            aggregated_dict = {k: v * (1.0 / self.counts[k]) for k, v in self.total.items()}
+            aggregated_dict = {}
+            for k, v in self.total.items():
+                if self._has_inplace_ops(v):
+                    # For PyTorch tensors
+                    # Check if float tensor - only divide float tensors by counts
+                    # Integer/bool tensors are summed, not averaged (typically buffers/masks)
+                    if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
+                        # Float tensor: compute weighted average
+                        aggregated_dict[k] = v.div_(self.counts[k])
+                    else:
+                        # Integer/bool tensor: return sum (already accumulated without weighting)
+                        aggregated_dict[k] = v
+                else:
+                    # Fallback for non-PyTorch tensors
+                    aggregated_dict[k] = v * (1.0 / self.counts[k])
+
+            # Note: self.total now contains the final averaged values (for float tensors)
+            # If you need to preserve self.total, clone before div_ above
             self.reset_stats()
             return aggregated_dict
 
