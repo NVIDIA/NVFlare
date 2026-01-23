@@ -59,20 +59,19 @@ class WeightedAggregationHelper(object):
 
                 if current_total is None:
                     # First contribution: initialize accumulator
-                    # For InTime aggregation: result is GC'd after callback, so in-place modification is safe
-                    # This saves memory by reusing the input tensor instead of creating a new one
+                    # We must create a copy to avoid mutating caller's input tensors
                     if self._has_inplace_ops(v):
                         if self.weigh_by_local_iter:
                             # Check if float tensor
                             if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
-                                # Modify in-place and store reference (saves memory)
-                                self.total[k] = v.mul_(weight)
+                                # Float tensor: create weighted copy
+                                self.total[k] = v.mul(weight)
                             else:
-                                # Integer/bool tensors: store reference without weighting
-                                self.total[k] = v
+                                # Integer/bool tensors: clone to avoid aliasing
+                                self.total[k] = v.clone()
                         else:
-                            # No weighting: store reference
-                            self.total[k] = v
+                            # No weighting: clone to avoid aliasing
+                            self.total[k] = v.clone()
                     else:
                         # Fallback for non-PyTorch tensors
                         if self.weigh_by_local_iter:
@@ -124,7 +123,7 @@ class WeightedAggregationHelper(object):
                     # Check if float tensor - only divide float tensors by counts
                     # Integer/bool tensors are summed, not averaged (typically buffers/masks)
                     if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
-                        # Float tensor: compute weighted average
+                        # Float tensor: compute weighted average in-place (safe, v is our internal copy)
                         aggregated_dict[k] = v.div_(self.counts[k])
                     else:
                         # Integer/bool tensor: return sum (already accumulated without weighting)
@@ -133,8 +132,9 @@ class WeightedAggregationHelper(object):
                     # Fallback for non-PyTorch tensors
                     aggregated_dict[k] = v * (1.0 / self.counts[k])
 
-            # Note: self.total now contains the final averaged values (for float tensors)
-            # If you need to preserve self.total, clone before div_ above
+            # Note: We modify self.total in-place above, but it's safe because:
+            # 1. self.total contains our internal copies (not caller's tensors)
+            # 2. We reset self.total immediately after returning
             self.reset_stats()
             return aggregated_dict
 
