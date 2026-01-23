@@ -19,6 +19,8 @@ Utility functions for AMPLIFY federated learning.
 import csv
 import os
 
+import numpy as np
+import torch
 from datasets import Features, Value, load_dataset
 
 
@@ -192,3 +194,83 @@ def load_and_validate_csv(train_csv, test_csv, verbose=True, max_samples=None, s
                 print(f"  Keeping all {len(dataset[split])} samples from {split} (max_samples={max_samples})")
 
     return dataset
+
+
+def evaluate_model(model, dataloader_test, loss_fn, device, regressor_idx=None, task_name=None):
+    """
+    Evaluate model on test data and compute metrics.
+
+    Args:
+        model: The model to evaluate
+        dataloader_test: DataLoader for test data
+        loss_fn: Loss function (e.g., torch.nn.MSELoss())
+        device: Device to run evaluation on (CPU or GPU)
+        regressor_idx (int, optional): Index of regressor to use for multi-head models. Default: None
+        task_name (str, optional): Name of task for logging. Default: None
+
+    Returns:
+        tuple: (mean_test_loss, rmse_test_loss, pearson_corr)
+
+    Raises:
+        ValueError: If dataloader is empty, indicating a data preparation issue
+    """
+    with torch.no_grad():
+        model.eval()
+        test_loss = []
+        all_predictions = []
+        all_labels = []
+
+        for batch in dataloader_test:
+            # Convert to correct dtype and move to GPU
+            input_ids = batch["input_ids"].to(torch.long).to(device)
+            attention_mask = batch["attention_mask"].to(torch.float32).to(device)
+            labels = batch["labels"].to(device)
+
+            # Convert the attention mask to an additive mask
+            attention_mask = torch.where(attention_mask == 1, float(0.0), float("-inf"))
+
+            # Forward pass (with or without regressor_idx)
+            if regressor_idx is not None:
+                output = model(input_ids, attention_mask, regressor_idx=regressor_idx)
+            else:
+                output = model(input_ids, attention_mask)
+
+            loss = loss_fn(output.squeeze(), labels)
+            test_loss.append(loss.item())
+
+            # Store predictions and labels for correlation calculation
+            all_predictions.extend(output.squeeze().cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+        # Check if dataloader was empty
+        if len(test_loss) == 0:
+            task_info = f" for task '{task_name}'" if task_name else ""
+            raise ValueError(
+                f"Empty test dataloader{task_info}. "
+                f"This indicates a data preparation issue. Please check:\n"
+                f"  1. Data files exist and are not empty\n"
+                f"  2. Data paths are correct\n"
+                f"  3. Data preprocessing is not filtering out all samples"
+            )
+
+        mean_test_loss = np.mean(test_loss)
+        rmse_test_loss = np.sqrt(np.mean(test_loss))
+
+        # Calculate Pearson correlation
+        all_predictions = np.array(all_predictions)
+        all_labels = np.array(all_labels)
+        pearson_corr = np.corrcoef(all_predictions, all_labels)[0, 1]
+
+        # Print results
+        if task_name:
+            print(
+                f"\n>>> Task {task_name} - Test MSE loss: {mean_test_loss:.3f} "
+                f"Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
+            )
+        else:
+            print(
+                f"\n>>> Test MSE loss: {mean_test_loss:.3f} "
+                f"Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
+            )
+
+    return mean_test_loss, rmse_test_loss, pearson_corr

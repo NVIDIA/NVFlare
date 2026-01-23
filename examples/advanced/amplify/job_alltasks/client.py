@@ -27,7 +27,7 @@ import torch
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
-from utils import load_and_validate_csv
+from utils import evaluate_model, load_and_validate_csv
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -227,7 +227,7 @@ def main():
         # (5) Evaluate the global model on all test sets
         global_metrics = []
         for regressor_idx, (dataloader_test, task_name) in enumerate(zip(dataloaders_test, args.tasks)):
-            global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate(
+            global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate_model(
                 model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
             )
             global_metrics.append(
@@ -290,7 +290,7 @@ def main():
             # Evaluate the local model after each epoch
             local_metrics = []
             for regressor_idx, (dataloader_test, task_name) in enumerate(zip(dataloaders_test, args.tasks)):
-                local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate(
+                local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate_model(
                     model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
                 )
                 local_metrics.append(
@@ -334,48 +334,6 @@ def main():
     # Save the used hyperparameters and dataset statistics
     with open(os.path.join(run_dir, "hyperparameters.json"), "w") as f:
         json.dump(args.__dict__, f)
-
-
-def evaluate(model, dataloader_test, loss_fn, device, regressor_idx=None, task_name=None):
-    with torch.no_grad():
-        model.eval()
-        test_loss = []
-        all_predictions = []
-        all_labels = []
-        for batch in dataloader_test:
-            # Convert to correct dtype and move to GPU
-            input_ids = batch["input_ids"].to(torch.long).to(device)
-            attention_mask = batch["attention_mask"].to(torch.float32).to(device)
-            labels = batch["labels"].to(device)
-
-            attention_mask = torch.where(attention_mask == 1, float(0.0), float("-inf"))
-            output = model(input_ids, attention_mask, regressor_idx=regressor_idx)
-            loss = loss_fn(output.squeeze(), labels)
-
-            test_loss.append(loss.item())
-
-            # Store predictions and labels for correlation calculation
-            all_predictions.extend(output.squeeze().cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-
-        # Check if dataloader was empty
-        if len(test_loss) == 0:
-            print(f"\n>>> WARNING: Task {task_name} - Empty test dataloader, returning NaN metrics")
-            return float("nan"), float("nan"), float("nan")
-
-        mean_test_loss = np.mean(test_loss)
-        rmse_test_loss = np.sqrt(np.mean(test_loss))
-
-        # Calculate Pearson correlation
-        all_predictions = np.array(all_predictions)
-        all_labels = np.array(all_labels)
-        pearson_corr = np.corrcoef(all_predictions, all_labels)[0, 1]
-
-        print(
-            f"\n>>> Task {task_name} - Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
-        )
-
-    return mean_test_loss, rmse_test_loss, pearson_corr
 
 
 if __name__ == "__main__":
