@@ -76,6 +76,10 @@ Memory Management with Tensor-based Downloader
 FLARE 2.7.2 introduces the **TensorDownloader** for PyTorch models, extending the FileDownloader concept introduced in 2.7.0 specifically for tensor data.
 This feature addresses critical memory challenges when working with large language models (LLMs) and other large-scale models in federated learning.
 
+.. note::
+
+    The Tensor Downloader supports **PyTorch tensors and NumPy arrays**. TensorFlow models currently use traditional serialization.
+
 .. important::
 
     **Transparent to Users**: This optimization is built into all PyTorch workflows and completely transparent to end users. It works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.

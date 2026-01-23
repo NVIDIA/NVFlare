@@ -58,6 +58,15 @@ Key Benefits
 
 - **Reliable Transfer**: Pull-based architecture handles heterogeneous network conditions gracefully
 
+Limitations
+-----------
+
+- **PyTorch and NumPy Only**: The streaming download feature supports PyTorch tensors and NumPy arrays.
+  TensorFlow models are not currently supported and will use traditional serialization.
+
+- **Custom Tensor Types**: Custom tensor types or non-standard model formats may require developing
+  a custom decomposer. See :ref:`decomposer_for_large_object` for guidance.
+
 
 How to Use It (User Perspective)
 ================================
