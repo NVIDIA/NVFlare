@@ -15,9 +15,9 @@ import logging
 
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
-from nvflare.collab.examples.np.algos.client import NPHierarchicalTrainer
-from nvflare.collab.examples.np.algos.strategies.avg_h import NPHierarchicalFedAvg
-from nvflare.collab.examples.np.algos.widgets import MetricReceiver
+from nvflare.collab.examples.np.mains.client import NPHierarchicalTrainer
+from nvflare.collab.examples.np.mains.strategies.avg_h import NPHierarchicalFedAvg
+from nvflare.collab.examples.np.mains.widgets import MetricReceiver
 from nvflare.collab.sim.simulator import Simulator
 
 

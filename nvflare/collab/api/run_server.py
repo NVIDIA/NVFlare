@@ -23,11 +23,11 @@ def run_server(server_app: ServerApp, logger):
     logger.info("initializing server app")
     server_app.initialize(server_ctx)
 
-    if not server_app.algos:
+    if not server_app.mains:
         raise RuntimeError("server app does not have any algos!")
 
     result = None
-    for name, f in server_app.algos:
+    for name, f in server_app.mains:
         if server_ctx.is_aborted():
             break
 

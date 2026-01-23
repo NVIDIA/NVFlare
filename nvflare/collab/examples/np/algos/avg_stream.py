@@ -17,7 +17,7 @@ import uuid
 
 from nvflare.collab import fox
 from nvflare.collab.api.constants import BackendType
-from nvflare.collab.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
+from nvflare.collab.examples.np.mains.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.collab.sys.downloader import Downloader, download_file
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -40,7 +40,7 @@ class NPFedAvgStream:
         self.logger = get_obj_logger(self)
         self._init_model = parse_array_def(initial_model)
 
-    @fox.algo
+    @fox.main
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._init_model
@@ -117,7 +117,7 @@ class NPTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.collab
+    @fox.publish
     def train(self, current_round, weights, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")

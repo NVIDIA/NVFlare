@@ -86,7 +86,7 @@ class SimBackend(Backend):
         kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
 
         # make sure the final kwargs conforms to func interface
-        obj_itf = self.target_app.get_target_object_collab_interface(self.target_obj_name)
+        obj_itf = self.target_app.get_target_object_publish_interface(self.target_obj_name)
         if not obj_itf:
             raise RuntimeError(f"cannot find collab interface for object {self.target_obj_name}")
 

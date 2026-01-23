@@ -20,12 +20,12 @@ import sys
 from types import ModuleType
 from typing import Union
 
-from .dec import _ATTR_PARAM_NAMES, _FLAG_ALGO, _FLAG_COLLAB, _FLAG_SUPPORT_CTX, get_param_names, is_collab
+from .dec import _ATTR_PARAM_NAMES, _FLAG_MAIN, _FLAG_PUBLISH, _FLAG_SUPPORT_CTX, get_param_names, is_publish
 
 
 def _is_algo(func):
-    """Check if a function has the @fox.algo decorator."""
-    return getattr(func, _FLAG_ALGO, False) is True
+    """Check if a function has the @fox.main decorator."""
+    return getattr(func, _FLAG_MAIN, False) is True
 
 
 def get_importable_module_name(module: ModuleType) -> str:
@@ -110,18 +110,18 @@ def get_importable_module_name(module: ModuleType) -> str:
 
 
 class ModuleWrapper:
-    """Wraps a module so its @fox.collab and @fox.algo functions work with Collab.
+    """Wraps a module so its @fox.publish and @fox.main functions work with Collab.
 
     This allows you to use standalone functions instead of class methods:
 
         # my_module.py
         from nvflare.collab import fox
 
-        @fox.collab
+        @fox.publish
         def train(weights=None):
             ...
 
-        @fox.algo
+        @fox.main
         def fed_avg():
             ...
 
@@ -139,7 +139,7 @@ class ModuleWrapper:
     """
 
     def __init__(self, module: Union[ModuleType, str] = None):
-        """Initialize wrapper with a module containing @fox.collab/@fox.algo functions.
+        """Initialize wrapper with a module containing @fox.publish/@fox.main functions.
 
         Args:
             module: A Python module object OR a fully qualified module name string.
@@ -187,7 +187,7 @@ class ModuleWrapper:
             if not callable(func):
                 continue
 
-            if is_collab(func):
+            if is_publish(func):
                 wrapped = self._create_collab_method(name, func)
                 setattr(self, name, wrapped)
             elif _is_algo(func):
@@ -195,7 +195,7 @@ class ModuleWrapper:
                 setattr(self, name, wrapped)
 
     def _create_collab_method(self, name, original_func):
-        """Create a method wrapper for an already-decorated @fox.collab function.
+        """Create a method wrapper for an already-decorated @fox.publish function.
 
         The original function is already decorated, so we just need to make it
         callable as a bound method. We use a simple wrapper that delegates to
@@ -207,7 +207,7 @@ class ModuleWrapper:
             return original_func(*args, **kwargs)
 
         # Copy all the collab-related attributes from the original
-        setattr(method, _FLAG_COLLAB, getattr(original_func, _FLAG_COLLAB, True))
+        setattr(method, _FLAG_PUBLISH, getattr(original_func, _FLAG_PUBLISH, True))
         if hasattr(original_func, _FLAG_SUPPORT_CTX):
             setattr(method, _FLAG_SUPPORT_CTX, getattr(original_func, _FLAG_SUPPORT_CTX))
 
@@ -217,7 +217,7 @@ class ModuleWrapper:
         return method.__get__(self, type(self))
 
     def _create_algo_method(self, name, original_func):
-        """Create a method wrapper for an already-decorated @fox.algo function.
+        """Create a method wrapper for an already-decorated @fox.main function.
 
         The original function is already decorated, so we just need to make it
         callable as a bound method.
@@ -228,7 +228,7 @@ class ModuleWrapper:
             return original_func()
 
         # Copy the algo flag from the original
-        setattr(method, _FLAG_ALGO, True)
+        setattr(method, _FLAG_MAIN, True)
 
         original_params = get_param_names(original_func) or []
         setattr(method, _ATTR_PARAM_NAMES, original_params)

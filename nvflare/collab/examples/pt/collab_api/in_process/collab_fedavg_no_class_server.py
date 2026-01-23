@@ -1,6 +1,6 @@
 """Server-side aggregation logic for Federated Averaging.
 
-This module contains only the @fox.algo decorated functions
+This module contains only the @fox.main decorated functions
 that run on the server.
 """
 
@@ -31,7 +31,7 @@ def weighted_avg(client_results):
     return avg_weights, avg_loss
 
 
-@fox.algo
+@fox.main
 def fed_avg():
     """Federated averaging - runs on server."""
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")

@@ -15,10 +15,10 @@ import inspect
 
 from .constants import CollabMethodArgName
 
-_FLAG_COLLAB = "_fox_is_collab"
+_FLAG_PUBLISH = "_fox_is_collab"
 _FLAG_INIT = "_fox_is_init"
 _FLAG_FINAL = "_fox_is_final"
-_FLAG_ALGO = "_fox_is_algo"
+_FLAG_MAIN = "_fox_is_algo"
 _FLAG_CALL_FILTER = "_fox_is_call_filter"
 _FLAG_IN_CALL_FILTER = "_fox_is_in_call_filter"
 _FLAG_OUT_CALL_FILTER = "_fox_is_out_call_filter"
@@ -47,24 +47,24 @@ def _set_attrs(func, wrapper):
         setattr(wrapper, _FLAG_SUPPORT_CTX, True)
 
 
-def collab(func):
+def publish(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
 
     _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_COLLAB, True)
+    setattr(wrapper, _FLAG_PUBLISH, True)
     return wrapper
 
 
-def is_collab(func):
-    return _has_flag(func, _FLAG_COLLAB)
+def is_publish(func):
+    return _has_flag(func, _FLAG_PUBLISH)
 
 
-def get_object_collab_interface(obj):
+def get_object_publish_interface(obj):
     result = {}
     for name in dir(obj):
         func = getattr(obj, name)
-        if callable(func) and is_collab(func):
+        if callable(func) and is_publish(func):
             result[name] = get_param_names(func)
     return result
 
@@ -95,17 +95,17 @@ def get_object_final_funcs(obj):
     return _get_object_funcs(obj, _FLAG_FINAL, "final")
 
 
-def algo(func):
+def main(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
 
     _set_attrs(func, wrapper)
-    setattr(wrapper, _FLAG_ALGO, True)
+    setattr(wrapper, _FLAG_MAIN, True)
     return wrapper
 
 
-def get_object_algo_funcs(obj):
-    return _get_object_funcs(obj, _FLAG_ALGO, "algo")
+def get_object_main_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_MAIN, "main")
 
 
 def call_filter(func):

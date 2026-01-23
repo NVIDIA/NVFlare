@@ -39,7 +39,7 @@ class SimpleModel(nn.Module):
 # =============================================================================
 
 
-@fox.collab
+@fox.publish
 def train(weights=None):
     """Train a local model - standalone function, not a method."""
     # Setup data
@@ -105,7 +105,7 @@ def weighted_avg(client_results):
 NUM_ROUNDS = 5  # Configuration as module variable
 
 
-@fox.algo
+@fox.main
 def fed_avg():
     """Federated averaging - standalone function, not a method."""
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")

@@ -41,7 +41,7 @@ def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func,
     kwargs = app.apply_incoming_call_filters(target_name, func_name, kwargs, ctx)
 
     # make sure the final kwargs conforms to func interface
-    obj_itf = app.get_target_object_collab_interface(target_obj_name)
+    obj_itf = app.get_target_object_publish_interface(target_obj_name)
     if not obj_itf:
         raise RuntimeError(f"cannot find collab interface for object {target_obj_name}")
 

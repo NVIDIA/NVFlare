@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
-from nvflare.collab.examples.np.algos.swarm import NPSwarm, NPSwarmClient
+from nvflare.collab.examples.np.mains.swarm import NPSwarm, NPSwarmClient
 from nvflare.collab.sys.recipe import CollabRecipe
 
 

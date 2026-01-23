@@ -42,7 +42,7 @@ class _ClientInfo:
         Args:
             collab_interface: collab method interface of the client.
         """
-        self.collab_interface = collab_interface
+        self.publish_interface = collab_interface
 
 
 class CollabController(Controller, CollabAdaptor):
@@ -233,7 +233,7 @@ class CollabController(Controller, CollabAdaptor):
         for c in all_clients:
             info = self.client_info[c.name]
             # assert isinstance(info, _ClientInfo)
-            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal, fl_ctx))
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.publish_interface, abort_signal, fl_ctx))
 
         ws = FlareWorkspace(fl_ctx)
         self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)

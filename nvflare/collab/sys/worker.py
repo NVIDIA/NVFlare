@@ -16,10 +16,10 @@
 
 This module is the internal entry point that CollabExecutor uses when spawning
 subprocess-based training (e.g., with torchrun). Users never interact with
-this directly - they just write normal @fox.collab decorated functions.
+this directly - they just write normal @fox.publish decorated functions.
 
 Architecture:
-    User writes:        train.py with @fox.collab decorated functions
+    User writes:        train.py with @fox.publish decorated functions
 
     CollabExecutor runs:   torchrun --nproc_per_node=4 -m nvflare.fox.sys.worker train
                                                     ↑ this module        ↑ user's module
@@ -33,7 +33,7 @@ Example:
     # User's train.py - completely normal, no worker code needed!
     from nvflare.collab import fox
 
-    @fox.collab
+    @fox.publish
     def train(weights=None):
         import torch.distributed as dist
         dist.init_process_group("nccl")
@@ -129,7 +129,7 @@ class CollabWorker:
     """Internal worker that runs inside subprocess for distributed training.
 
     This class is used internally by the Collab framework. Users do not interact
-    with it directly - they just write normal @fox.collab decorated functions.
+    with it directly - they just write normal @fox.publish decorated functions.
 
     The worker:
     1. Reads connection info from environment variables
@@ -183,7 +183,7 @@ class CollabWorker:
 
         Supports two modes:
         1. Class-based clients (COLLAB_CLIENT_CLASS set): Instantiates the specified class
-        2. Module-level functions: Uses ModuleWrapper to expose @fox.collab functions
+        2. Module-level functions: Uses ModuleWrapper to expose @fox.publish functions
         """
         self.logger.info(f"Loading training module: {self.training_module_name}")
 
@@ -338,7 +338,7 @@ class CollabWorker:
 
         Supports two modes based on client type:
         1. Client API (CollabClientAPI): Run training script top-to-bottom
-        2. Collab API (@fox.collab methods): Wait for RPC calls
+        2. Collab API (@fox.publish methods): Wait for RPC calls
 
         For Client API with DDP:
         - All ranks run the training script
@@ -377,7 +377,7 @@ class CollabWorker:
                 register_available_decomposers()
 
                 # Create CollabClientAPI instance
-                from nvflare.client.in_process.collab_api import CollabClientAPI
+                from nvflare.client.in_process.publish_api import CollabClientAPI
 
                 _client_api = CollabClientAPI()
                 self.training_app = _client_api
@@ -398,7 +398,7 @@ class CollabWorker:
                 self.logger.info("Rank 0: CellNet ready, running training script...")
             else:
                 # Other ranks: create a local CollabClientAPI for DDP sync
-                from nvflare.client.in_process.collab_api import CollabClientAPI
+                from nvflare.client.in_process.publish_api import CollabClientAPI
 
                 _client_api = CollabClientAPI()
                 self.logger.info(f"Rank {self.rank}: running training script (will sync with rank 0)")

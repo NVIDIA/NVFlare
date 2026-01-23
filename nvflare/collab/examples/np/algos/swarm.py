@@ -17,7 +17,7 @@ import threading
 import traceback
 
 from nvflare.collab import fox
-from nvflare.collab.examples.np.algos.utils import parse_array_def, save_np_model
+from nvflare.collab.examples.np.mains.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -30,7 +30,7 @@ class NPSwarm:
         self.waiter = threading.Event()
         self.logger = get_obj_logger(self)
 
-    @fox.algo
+    @fox.main
     def execute(self):
         fox.register_event_handler("all_done", self._all_done)
 
@@ -46,7 +46,7 @@ class NPSwarm:
         self.logger.info(f"[{fox.call_info}]: received {event_type} from client: {fox.caller}: {data}")
         self.all_done(data)
 
-    @fox.collab
+    @fox.publish
     def all_done(self, reason: str):
         self.logger.info(f"[{fox.call_info}]: all done from client: {fox.caller}: {reason}")
         self.waiter.set()
@@ -64,7 +64,7 @@ class NPSwarmClient:
         fox.register_event_handler("final_model", self._accept_final_model)
         fox.register_event_handler("final_model", self._save_final_model)
 
-    @fox.collab
+    @fox.publish
     def train(self, weights, current_round):
         self.logger.info(f"[{fox.call_info}]: train asked by {fox.caller}: {current_round=}")
         return weights + self.delta
@@ -77,7 +77,7 @@ class NPSwarmClient:
             total += v
         return total / len(results)
 
-    @fox.collab
+    @fox.publish
     def swarm_learn(self, num_rounds, model, current_round):
         self.logger.info(f"[{fox.call_info}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model, current_round)
@@ -104,7 +104,7 @@ class NPSwarmClient:
         next_client = fox.clients[next_client_idx]
         next_client(expect_result=False).swarm_learn(num_rounds, new_model, next_round)
 
-    @fox.collab
+    @fox.publish
     def start(self, num_rounds, initial_model):
         self.logger.info(f"[{fox.call_info}]: starting swarm learning")
         self.swarm_learn(num_rounds, initial_model, 0)

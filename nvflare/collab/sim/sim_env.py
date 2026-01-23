@@ -17,7 +17,7 @@
 import os
 from typing import Dict, Optional, Tuple, Union
 
-from nvflare.collab.sim.collab_simulator import CollabSimulator
+from nvflare.collab.sim.publish_simulator import CollabSimulator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 

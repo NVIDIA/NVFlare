@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
-from nvflare.collab.examples.np.algos.client import NPTrainer
-from nvflare.collab.examples.np.algos.strategies.cyclic import NPCyclic
+from nvflare.collab.examples.np.mains.client import NPTrainer
+from nvflare.collab.examples.np.mains.strategies.cyclic import NPCyclic
 from nvflare.collab.sys.recipe import CollabRecipe
 
 

@@ -36,7 +36,7 @@ class PTFedAvgStream:
         self.logger = get_obj_logger(self)
         self._init_model = parse_state_dict(initial_model)
 
-    @fox.algo
+    @fox.main
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._init_model
@@ -100,7 +100,7 @@ class PTTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.collab
+    @fox.publish
     def train(self, current_round, model, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")

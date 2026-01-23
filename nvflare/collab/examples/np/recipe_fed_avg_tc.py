@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
-from nvflare.collab.examples.np.algos.client import NPTrainer
-from nvflare.collab.examples.np.algos.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
-from nvflare.collab.examples.np.algos.widgets import MetricReceiver
+from nvflare.collab.examples.np.mains.client import NPTrainer
+from nvflare.collab.examples.np.mains.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
+from nvflare.collab.examples.np.mains.widgets import MetricReceiver
 from nvflare.collab.sys.recipe import CollabRecipe
 
 

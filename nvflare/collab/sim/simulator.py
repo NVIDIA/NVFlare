@@ -19,7 +19,7 @@ from typing import List, Tuple, Union
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
-from nvflare.collab.api.dec import get_object_collab_interface
+from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.run_server import run_server
 from nvflare.collab.sim.backend import SimBackend
@@ -43,7 +43,7 @@ class AppRunner:
             target_name=target_app.name,
             target_fqn=target_app.fqn,
             backend=backends[""],
-            target_interface=get_object_collab_interface(target_app),
+            target_interface=get_object_publish_interface(target_app),
         )
         collab_objs = target_app.get_collab_objects()
         for name, obj in collab_objs.items():
@@ -52,7 +52,7 @@ class AppRunner:
                 target_name=f"{target_app.name}.{name}",
                 target_fqn="",
                 backend=backends[name],
-                target_interface=get_object_collab_interface(obj),
+                target_interface=get_object_publish_interface(obj),
             )
             app_proxy.add_child(name, p)
         return app_proxy

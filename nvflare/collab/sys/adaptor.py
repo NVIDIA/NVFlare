@@ -33,7 +33,7 @@ class CollabAdaptor:
             collab_obj_ids = []
         self.props = props
         self.resource_dirs = resource_dirs
-        self.collab_obj_ids = collab_obj_ids
+        self.publish_obj_ids = collab_obj_ids
         self.incoming_call_filters = incoming_call_filters
         self.outgoing_call_filters = outgoing_call_filters
         self.incoming_result_filters = incoming_result_filters
@@ -44,8 +44,8 @@ class CollabAdaptor:
         app.set_resource_dirs(self.resource_dirs)
 
         engine = fl_ctx.get_engine()
-        if self.collab_obj_ids:
-            for cid in self.collab_obj_ids:
+        if self.publish_obj_ids:
+            for cid in self.publish_obj_ids:
                 obj = engine.get_component(cid)
                 if not obj:
                     return f"component {cid} does not exist"

@@ -23,12 +23,12 @@ from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 from .constants import BackendType, CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context, set_call_context
 from .dec import (
-    collab,
-    get_object_algo_funcs,
-    get_object_collab_interface,
+    publish,
+    get_object_main_funcs,
+    get_object_publish_interface,
     get_object_final_funcs,
     get_object_init_funcs,
-    is_collab,
+    is_publish,
     supports_context,
 )
 from .filter import CallFilter, FilterChain, ResultFilter
@@ -60,7 +60,7 @@ class App:
         self._resource_dirs = {}
         self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
-        self._collab_interface = {"": get_object_collab_interface(self)}
+        self._collab_interface = {"": get_object_publish_interface(self)}
         self.add_collab_object(name, obj)
 
     def set_resource_dirs(self, resource_dirs: dict[str, str]):
@@ -256,7 +256,7 @@ class App:
 
         setattr(self, name, obj)
         self._collab_objs[name] = obj
-        self._collab_interface[name] = get_object_collab_interface(obj)
+        self._collab_interface[name] = get_object_publish_interface(obj)
         self._add_managed_object(obj)
 
     def get_collab_objects(self):
@@ -310,7 +310,7 @@ class App:
 
     def find_collab_method(self, target_obj, method_name):
         m = self.find_method(target_obj, method_name)
-        if m and is_collab(m):
+        if m and is_publish(m):
             return m
         return None
 
@@ -365,13 +365,13 @@ class App:
     def get_collab_interface(self):
         return self._collab_interface
 
-    def get_target_object_collab_interface(self, target_name: str):
+    def get_target_object_publish_interface(self, target_name: str):
         if not target_name or target_name.lower() == "app":
             return self._collab_interface.get("")
         else:
             return self._collab_interface.get(target_name)
 
-    @collab
+    @publish
     def fire_event(self, event_type: str, data, context: Context):
         result = {}
         for e, handlers in self._event_handlers.items():
@@ -402,8 +402,8 @@ class ServerApp(App):
         if not obj:
             raise ValueError("server object must be specified")
         super().__init__(obj, name)
-        self.algos = get_object_algo_funcs(obj)
-        if not self.algos:
+        self.mains = get_object_main_funcs(obj)
+        if not self.mains:
             raise ValueError("server object must have at least one algo")
 
     def get_children(self):

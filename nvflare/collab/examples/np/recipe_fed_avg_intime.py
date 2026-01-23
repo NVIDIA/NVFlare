@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
-from nvflare.collab.examples.np.algos.client import NPTrainer
-from nvflare.collab.examples.np.algos.filters import AddNoiseToModel, Print
-from nvflare.collab.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
-from nvflare.collab.examples.np.algos.widgets import MetricReceiver
+from nvflare.collab.examples.np.mains.client import NPTrainer
+from nvflare.collab.examples.np.mains.filters import AddNoiseToModel, Print
+from nvflare.collab.examples.np.mains.strategies.avg_intime import NPFedAvgInTime
+from nvflare.collab.examples.np.mains.widgets import MetricReceiver
 from nvflare.collab.sys.recipe import CollabRecipe
 
 

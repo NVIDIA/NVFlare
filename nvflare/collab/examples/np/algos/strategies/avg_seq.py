@@ -14,7 +14,7 @@
 import os
 
 from nvflare.collab import fox
-from nvflare.collab.examples.np.algos.utils import parse_array_def, save_np_model
+from nvflare.collab.examples.np.mains.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -46,7 +46,7 @@ class NPFedAvgSequential:
         self.client_weights = client_weights
         self.logger.info("client_weights: {}".format(client_weights))
 
-    @fox.algo
+    @fox.main
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._initial_model

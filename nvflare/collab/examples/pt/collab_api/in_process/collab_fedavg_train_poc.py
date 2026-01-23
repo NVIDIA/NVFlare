@@ -33,7 +33,7 @@ class SimpleModel(nn.Module):
 
 
 class Trainer:
-    @fox.collab
+    @fox.publish
     def train(self, weights=None):
         # Setup data
         inputs = torch.randn(100, 10)
@@ -102,7 +102,7 @@ class FedAvg:
     def __init__(self, num_rounds=5):
         self.num_rounds = num_rounds
 
-    @fox.algo
+    @fox.main
     def fed_avg(self):
         print(f"Starting FedAvg for {self.num_rounds} rounds")
         global_weights = None

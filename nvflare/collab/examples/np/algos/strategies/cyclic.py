@@ -15,7 +15,7 @@ import os
 import random
 
 from nvflare.collab import fox
-from nvflare.collab.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
+from nvflare.collab.examples.np.mains.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -38,7 +38,7 @@ class NPCyclic:
             self._initial_model = load_np_model(file_name)
             self.logger.info(f"loaded initial model from {file_name}: {self._initial_model}")
 
-    @fox.algo
+    @fox.main
     def execute(self):
         current_model = self._initial_model
         for current_round in range(self.num_rounds):

@@ -15,8 +15,8 @@ import logging
 
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
-from nvflare.collab.examples.np.algos.client import NPTrainer
-from nvflare.collab.examples.np.algos.strategies.cyclic import NPCyclic
+from nvflare.collab.examples.np.mains.client import NPTrainer
+from nvflare.collab.examples.np.mains.strategies.cyclic import NPCyclic
 from nvflare.collab.sim.simulator import Simulator
 
 

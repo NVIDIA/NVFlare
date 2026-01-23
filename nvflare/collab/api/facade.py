@@ -13,10 +13,10 @@
 # limitations under the License.
 from .constants import ContextKey
 from .ctx import get_call_context
-from .dec import algo as dec_algo
+from .dec import main as dec_main
 from .dec import call_filter as dec_call_filter
 from .dec import classproperty
-from .dec import collab as dec_collab
+from .dec import publish as dec_publish
 from .dec import final as dec_final
 from .dec import in_call_filter as dec_in_call_filter
 from .dec import in_result_filter as dec_in_result_filter
@@ -29,10 +29,10 @@ from .proxy_list import ProxyList
 
 class facade:
 
-    collab = dec_collab
+    publish = dec_publish
     init = dec_init
     final = dec_final
-    algo = dec_algo
+    main = dec_main
     call_filter = dec_call_filter
     in_call_filter = dec_in_call_filter
     out_call_filter = dec_out_call_filter

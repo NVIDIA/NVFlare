@@ -119,9 +119,9 @@ class PocEnv(ExecEnv):
             num_clients: Number of clients to use in POC mode. Defaults to 2.
             clients: List of client names. If None, will generate site-1, site-2, etc.
                 If specified, num_clients argument will be ignored.
-            server: Server-side collab object with @fox.algo methods.
+            server: Server-side collab object with @fox.main methods.
                 Usually passed via CollabRecipe.
-            client: Client-side collab object with @fox.collab methods.
+            client: Client-side collab object with @fox.publish methods.
                 Usually passed via CollabRecipe.
             server_objects: Additional server-side collab objects.
             client_objects: Additional client-side collab objects.

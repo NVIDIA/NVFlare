@@ -15,7 +15,7 @@ import threading
 
 from nvflare.collab import fox
 from nvflare.collab.api.constants import ContextKey
-from nvflare.collab.examples.np.algos.utils import parse_array_def
+from nvflare.collab.examples.np.mains.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -37,7 +37,7 @@ class NPFedAvgInTime:
         self.logger = get_obj_logger(self)
         self._init_model = parse_array_def(initial_model)
 
-    @fox.algo
+    @fox.main
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = fox.get_prop(ContextKey.RESULT, self._init_model)

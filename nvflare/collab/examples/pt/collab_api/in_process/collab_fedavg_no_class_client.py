@@ -1,6 +1,6 @@
 """Client-side training logic for Federated Averaging.
 
-This module contains only the @fox.collab decorated functions
+This module contains only the @fox.publish decorated functions
 that run on client sites.
 """
 
@@ -23,7 +23,7 @@ class SimpleModel(nn.Module):
         return self.fc(x)
 
 
-@fox.collab
+@fox.publish
 def train(weights=None):
     """Train a local model - runs on each client site."""
     # Setup data (in real case, load from local dataset)

@@ -254,9 +254,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import fox                       # + Add Collab imports
-from nvflare.collab.sim import SimEnv                # +
-from nvflare.collab.sys.recipe import FoxRecipe      # +
+from nvflare.publish import fox                       # + Add Collab imports
+from nvflare.publish.sim import SimEnv                # +
+from nvflare.publish.sys.recipe import FoxRecipe      # +
 ```
 
 **Changes:**
@@ -327,7 +327,7 @@ def train(client_id, weights=None):               # Standalone function
 
 ```python
 class Trainer:                                    # + Wrap in class
-    @fox.collab                                   # + Collab decorator
+    @fox.publish                                   # + Collab decorator
     def train(self, weights=None):                # - Remove client_id
         # Setup data
         inputs = torch.randn(100, 10)
@@ -344,7 +344,7 @@ class Trainer:                                    # + Wrap in class
 
 **Changes:**
 1. Wrap in `class Trainer`
-2. Replace `@clients.register` with `@fox.collab`
+2. Replace `@clients.register` with `@fox.publish`
 3. Remove `client_id` parameter
 4. Use `fox.site_name` instead of `client_id`
 
@@ -379,7 +379,7 @@ class FedAvg:                                     # + Wrap in class
     def __init__(self, num_rounds=5):             # + Constructor
         self.num_rounds = num_rounds
 
-    @fox.algo                                     # + Add decorator
+    @fox.main                                     # + Add decorator
     def fed_avg(self):
         print(f"Starting FedAvg for {self.num_rounds} rounds")
         global_weights = None
@@ -398,7 +398,7 @@ class FedAvg:                                     # + Wrap in class
 
 **Changes:**
 1. Wrap in `class FedAvg` with constructor
-2. Add `@fox.algo` decorator  
+2. Add `@fox.main` decorator  
 3. Replace `clients.train()` with `fox.clients.train()`
 
 ---
@@ -452,9 +452,9 @@ if __name__ == "__main__":
 |-----------|--------------|-------------------|
 | **Imports** | + threading | + Collab, - threading |
 | **Parallelism** | `ClientGroup` (custom) | `fox.clients` (built-in) |
-| **Training** | `@clients.register` function | `class Trainer` + `@fox.collab` |
+| **Training** | `@clients.register` function | `class Trainer` + `@fox.publish` |
 | **Client ID** | `client_id` parameter | `fox.site_name` (injected) |
-| **Workflow** | `fed_avg()` function | `class FedAvg` + `@fox.algo` |
+| **Workflow** | `fed_avg()` function | `class FedAvg` + `@fox.main` |
 | **Execution** | Direct `fed_avg()` call | Recipe + Environment pattern |
 
 **Key Insight:** Collab's class-based API wraps training and workflow in classes with decorators.
@@ -487,9 +487,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import fox                       # + Add Collab imports
-from nvflare.collab.sim import SimEnv                # +
-from nvflare.collab.sys.recipe import FoxRecipe      # +
+from nvflare.publish import fox                       # + Add Collab imports
+from nvflare.publish.sim import SimEnv                # +
+from nvflare.publish.sys.recipe import FoxRecipe      # +
 ```
 
 **Changes:**
@@ -561,7 +561,7 @@ def train(client_id, weights=None):               # Need client_id param
 ```
 
 ```python
-@fox.collab                                       # + Collab decorator
+@fox.publish                                       # + Collab decorator
 def train(weights=None):                          # - No client_id param
     # Setup data
     inputs = torch.randn(100, 10)
@@ -577,7 +577,7 @@ def train(weights=None):                          # - No client_id param
 ```
 
 **Changes:**
-1. Replace `@clients.register` with `@fox.collab`
+1. Replace `@clients.register` with `@fox.publish`
 2. Remove `client_id` parameter
 3. Use `fox.site_name` instead of `client_id`
 
@@ -610,7 +610,7 @@ def fed_avg():                                    # Standalone function
 ```python
 NUM_ROUNDS = 5
 
-@fox.algo                                         # + Add decorator
+@fox.main                                         # + Add decorator
 def fed_avg():                                    # Same standalone function!
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
     global_weights = None
@@ -628,7 +628,7 @@ def fed_avg():                                    # Same standalone function!
 ```
 
 **Changes:**
-1. Add `@fox.algo` decorator
+1. Add `@fox.main` decorator
 2. Replace `clients.train()` with `fox.clients.train()`
 
 That's it! The workflow logic is **identical**.
@@ -661,7 +661,7 @@ if __name__ == "__main__":
 
 **Changes:**
 1. Replace direct `fed_avg()` call with `FoxRecipe` + `SimEnv`
-2. `FoxRecipe` auto-detects the module containing `@fox.algo` and `@fox.collab`
+2. `FoxRecipe` auto-detects the module containing `@fox.main` and `@fox.publish`
 
 ---
 
@@ -671,15 +671,15 @@ if __name__ == "__main__":
 |-----------|--------------|------------------|
 | **Imports** | + threading | + Collab, - threading |
 | **Parallelism** | `ClientGroup` (custom) | `fox.clients` (built-in) |
-| **Training** | `@clients.register` + `client_id` | `@fox.collab` + `fox.site_name` |
+| **Training** | `@clients.register` + `client_id` | `@fox.publish` + `fox.site_name` |
 | **Workflow** | `clients.train()` | `fox.clients.train()` |
 | **Execution** | Direct `fed_avg()` call | `FoxRecipe().execute()` |
 
 **Key Insight:** The core training and workflow logic are **nearly identical**!
-- Replace `@clients.register` → `@fox.collab`
+- Replace `@clients.register` → `@fox.publish`
 - Replace `client_id` → `fox.site_name`
 - Replace `clients.train()` → `fox.clients.train()`
-- Add `@fox.algo` to the workflow function
+- Add `@fox.main` to the workflow function
 
 The simulation code mirrors Collab so closely that migration is trivial!
 
@@ -690,8 +690,8 @@ The simulation code mirrors Collab so closely that migration is trivial!
 For larger projects, you can split server and client logic into separate files:
 
 ```
-collab_fedavg_no_class_client.py   # @fox.collab train()
-collab_fedavg_no_class_server.py   # @fox.algo fed_avg()
+collab_fedavg_no_class_client.py   # @fox.publish train()
+collab_fedavg_no_class_server.py   # @fox.main fed_avg()
 collab_fedavg_no_class_job.py      # Recipe ties them together
 ```
 

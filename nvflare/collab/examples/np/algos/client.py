@@ -35,7 +35,7 @@ class NPTrainer:
     def init_trainer2(self):
         self.logger.info(f"init_trainer2: client {fox.site_name}: init again")
 
-    @fox.collab
+    @fox.publish
     def train(self, current_round, weights):
         if fox.is_aborted:
             self.logger.debug("training aborted")
@@ -48,7 +48,7 @@ class NPTrainer:
             time.sleep(self.delay)
         return weights + self.delta
 
-    @fox.collab
+    @fox.publish
     def evaluate(self, model):
         self.logger.debug(f"[{fox.call_info}] evaluate")
         return random.random()
@@ -60,7 +60,7 @@ class NPHierarchicalTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.collab
+    @fox.publish
     def train(self, current_round, weights):
         if fox.is_aborted:
             self.logger.debug("training aborted")
@@ -87,7 +87,7 @@ class NPHierarchicalTrainer:
         self.logger.info(f"[{fox.call_info}] local trained round {current_round} {weights} {type(weights)}")
         return weights + self.delta
 
-    @fox.collab
+    @fox.publish
     def evaluate(self, model):
         self.logger.debug(f"[{fox.call_info}] evaluate")
         return random.random()

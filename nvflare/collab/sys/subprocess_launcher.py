@@ -23,7 +23,7 @@ The launcher:
 3. Forwards calls from CollabExecutor to the worker
 4. Manages the subprocess lifecycle
 
-User's training code remains unchanged - they just use @fox.collab as normal.
+User's training code remains unchanged - they just use @fox.publish as normal.
 """
 
 import os
@@ -94,7 +94,7 @@ class SubprocessLauncher:
 
         Args:
             site_name: Name of this site (e.g., site-1)
-            training_module: Python module path containing @fox.collab methods
+            training_module: Python module path containing @fox.publish methods
             parent_cell: CellNet cell of the parent CollabExecutor
             run_cmd: Optional command prefix (e.g., "torchrun --nproc_per_node=4")
                      If None, runs CollabWorker directly.

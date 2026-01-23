@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
-from nvflare.collab.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
+from nvflare.collab.examples.np.mains.avg_stream import NPFedAvgStream, NPTrainer
 from nvflare.collab.sys.recipe import CollabRecipe
 
 

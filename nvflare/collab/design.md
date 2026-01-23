@@ -24,7 +24,7 @@ works in BOTH in-process and subprocess modes**.
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                                   USER CODE LAYER                                    │
 │                                                                                      │
-│   @collab.algo, @collab.collab, @collab.init decorators                                      │
+│   @collab.main, @collab.publish, @collab.init decorators                                      │
 │   User's training logic, aggregation functions                                       │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -59,7 +59,7 @@ works in BOTH in-process and subprocess modes**.
 │        IN-PROCESS EXECUTION           │   │   SUBPROCESS EXECUTION (OPTIONAL)         │
 │        (Default - inprocess=True)     │   │   (For multi-GPU/node - inprocess=False)  │
 │                                       │   │                                           │
-│   @collab.collab methods run directly    │   │   SubprocessLauncher spawns CollabWorker    │
+│   @collab.publish methods run directly    │   │   SubprocessLauncher spawns CollabWorker    │
 │   in CollabExecutor process              │   │   via torchrun or custom launcher        │
 │                                       │   │                                           │
 │   ┌─────────────────────────────┐     │   │   ┌─────────────────────────────────┐     │
@@ -113,7 +113,7 @@ works in BOTH in-process and subprocess modes**.
 ┌─────────────────────────┐         │     ┌─────────────────────────────────┐
 │ IN-PROCESS MODE         │         │     │ SUBPROCESS MODE                 │
 │                         │         │     │                                 │
-│ • @collab.collab runs in   │         │     │ • SubprocessLauncher spawns     │
+│ • @collab.publish runs in   │         │     │ • SubprocessLauncher spawns     │
 │   same process          │         │     │   CollabWorker process             │
 │ • Direct method calls   │         │     │ • Uses launcher_cmd (torchrun)  │
 │ • InProcessWriter for   │         │     │ • CellNet for communication     │
@@ -142,8 +142,8 @@ works in BOTH in-process and subprocess modes**.
 
 | Decorator | Purpose | Location |
 |-----------|---------|----------|
-| `@collab.algo` | Marks server-side orchestration methods | Server module |
-| `@collab.collab` | Marks client-side collaborative methods | Client module |
+| `@collab.main` | Marks server-side orchestration methods | Server module |
+| `@collab.publish` | Marks client-side collaborative methods | Client module |
 | `@collab.init` | Marks one-time initialization methods | Both |
 
 ### Two API Patterns
@@ -152,14 +152,14 @@ Fox supports two distinct API patterns for client-side training:
 
 | Pattern | Description | Use Case |
 |---------|-------------|----------|
-| **Collab API** | Decorator-based (`@collab.collab`) | Simple training, server-driven workflow |
+| **Collab API** | Decorator-based (`@collab.publish`) | Simple training, server-driven workflow |
 | **Client API** | Receive/send pattern (`flare.receive()`, `flare.send()`) | DDP training, client-driven workflow |
 
 ### Collab API Example
 
 ```python
 # Server-side (aggregation)
-@collab.algo
+@collab.main
 def fed_avg(self):
     weights = self.model.state_dict()
     for round in range(self.num_rounds):
@@ -168,7 +168,7 @@ def fed_avg(self):
     return weights
 
 # Client-side (training)
-@collab.collab
+@collab.publish
 def train(self, weights=None):
     model = SimpleModel()
     if weights:
@@ -181,7 +181,7 @@ def train(self, weights=None):
 
 ```python
 # Server-side (server.py)
-@collab.algo
+@collab.main
 def fed_avg(self):
     weights = self.model.state_dict()
     for round in range(self.num_rounds):
@@ -191,7 +191,7 @@ def fed_avg(self):
     collab.clients.stop()  # Signal clients to stop
 
 # Client-side (client.py) - runs top-to-bottom, no decorators
-from nvflare.collab.sys.worker import get_client_api
+from nvflare.publish.sys.worker import get_client_api
 flare = get_client_api()
 flare.init()
 
@@ -219,20 +219,20 @@ Job configuration and orchestration entry point.
 recipe = CollabRecipe(
     job_name="fedavg",
     min_clients=5,
-    server=server_module,      # Module with @collab.algo
-    client=client_module,      # Module with @collab.collab
+    server=server_module,      # Module with @collab.main
+    client=client_module,      # Module with @collab.publish
     inprocess=True,            # or False for subprocess
     run_cmd="torchrun --nproc_per_node=4",
     tracking_type="tensorboard",
 )
 
 # Client API (explicit training_module for subprocess)
-from nvflare.client.in_process.collab_api import CollabClientAPI
+from nvflare.client.in_process.publish_api import CollabClientAPI
 
 recipe = CollabRecipe(
     job_name="fedavg",
     min_clients=2,
-    server=FedAvg(),           # Server with @collab.algo calling execute()/stop()
+    server=FedAvg(),           # Server with @collab.main calling execute()/stop()
     client=CollabClientAPI(),     # Client API bridge
     inprocess=False,
     run_cmd="torchrun --nproc_per_node=2",
@@ -244,8 +244,8 @@ recipe = CollabRecipe(
 
 | Parameter | Description |
 |-----------|-------------|
-| `server` | Server object with `@collab.algo` methods |
-| `client` | Client object with `@collab.collab` methods, or `CollabClientAPI()` |
+| `server` | Server object with `@collab.main` methods |
+| `client` | Client object with `@collab.publish` methods, or `CollabClientAPI()` |
 | `inprocess` | True for in-process, False for subprocess |
 | `run_cmd` | Subprocess launcher command (e.g., `torchrun --nproc_per_node=4`) |
 | `training_module` | Explicit training module path (required for Client API) |
@@ -262,7 +262,7 @@ recipe = CollabRecipe(
 Enables Python modules to be used as Fox client/server objects.
 
 ```python
-# Wraps a module containing @collab.collab or @collab.algo functions
+# Wraps a module containing @collab.publish or @collab.main functions
 wrapper = ModuleWrapper(my_training_module)
 ```
 
@@ -278,8 +278,8 @@ Base class for `ServerApp` and `ClientApp`.
 
 ```
 App
-├── ServerApp  - Wraps server object, discovers @collab.algo methods
-└── ClientApp  - Wraps client object, discovers @collab.collab methods
+├── ServerApp  - Wraps server object, discovers @collab.main methods
+└── ClientApp  - Wraps client object, discovers @collab.publish methods
 ```
 
 #### Proxy & ProxyList (`nvflare/collab/api/proxy.py`)
@@ -378,9 +378,9 @@ class CollabClientAPI:
 │                                                                               │
 │   Server                              Client (Subprocess)                     │
 │   ┌─────────────────────┐             ┌──────────────────────────────────┐   │
-│   │ @collab.algo           │             │         CollabClientAPI             │   │
+│   │ @collab.main           │             │         CollabClientAPI             │   │
 │   │                     │   CellNet   │                                  │   │
-│   │ collab.clients.execute │────────────▶│ @collab.collab execute()            │   │
+│   │ collab.clients.execute │────────────▶│ @collab.publish execute()            │   │
 │   │   (fl_model)        │             │   → puts model in _call_queue    │   │
 │   │                     │             │   → waits on _result_queue       │   │
 │   │                     │             │                                  │   │
@@ -394,7 +394,7 @@ class CollabClientAPI:
 │   │ receives result     │◀────────────│ │     → puts in _result_queue│   │   │
 │   │                     │             │ └────────────────────────────┘   │   │
 │   │                     │             │                                  │   │
-│   │ collab.clients.stop()  │────────────▶│ @collab.collab stop()               │   │
+│   │ collab.clients.stop()  │────────────▶│ @collab.publish stop()               │   │
 │   │                     │             │   → sets _running = False        │   │
 │   └─────────────────────┘             └──────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -408,8 +408,8 @@ class CollabClientAPI:
 | `receive()` | Client | Block until server sends model via `execute()` |
 | `send(model)` | Client | Send result back, unblocking `execute()` |
 | `is_running()` | Client | Returns False after `stop()` is called |
-| `execute()` | Server (`@collab.collab`) | Called by server, bridges to receive/send |
-| `stop()` | Server (`@collab.collab`) | Signal client to exit its loop |
+| `execute()` | Server (`@collab.publish`) | Called by server, bridges to receive/send |
+| `stop()` | Server (`@collab.publish`) | Signal client to exit its loop |
 | `make_client_app()` | Factory | Creates new instance for each client site |
 
 ---
@@ -596,7 +596,7 @@ Runs in the subprocess, connects back to parent. Supports two execution modes:
 
 **Mode 1: Collab API (RPC-based)**
 ```python
-# Worker loads module with @collab.collab methods
+# Worker loads module with @collab.publish methods
 # Parent calls methods via CellNet RPC
 ```
 
@@ -626,7 +626,7 @@ The subprocess layer supports two distinct execution patterns:
 
 #### Pattern 1: Collab API (RPC-based)
 
-Server calls `@collab.collab` methods on the client. Worker waits for RPC calls.
+Server calls `@collab.publish` methods on the client. Worker waits for RPC calls.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────┐
@@ -637,7 +637,7 @@ Server calls `@collab.collab` methods on the client. Worker waits for RPC calls.
 │  │ SubprocessLaunch│    fox_worker     │              CollabWorker                 │  │
 │  │                 │    /call          │                                        │  │
 │  │  call("train")  │──────────────────▶│  Load module                           │  │
-│  │                 │                   │  Find @collab.collab method               │  │
+│  │                 │                   │  Find @collab.publish method               │  │
 │  │                 │                   │  Execute train()                       │  │
 │  │  receives result│◀──────────────────│  Return result                         │  │
 │  └─────────────────┘                   └────────────────────────────────────────┘  │
@@ -688,7 +688,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │                          SubprocessLauncher                                     │ │
 │  │                                                                                 │ │
 │  │  1. Set ENV vars: FOX_PARENT_URL, FOX_PARENT_FQCN, FOX_CLIENT_CLASS, etc.      │ │
-│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.collab.sys.worker my_training   │ │
+│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.publish.sys.worker my_training   │ │
 │  │  3. Wait for ready signal                                                       │ │
 │  │  4. Forward calls via CellNet (fox_worker/call)                                │ │
 │  │                                                                                 │ │
@@ -715,7 +715,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │  │  User's Training Code                                                    │  │  │
 │  │  │                                                                          │  │  │
 │  │  │  # Collab API                      │  # Client API                       │  │  │
-│  │  │  @collab.collab                       │  flare = get_client_api()           │  │  │
+│  │  │  @collab.publish                       │  flare = get_client_api()           │  │  │
 │  │  │  def train(weights):               │  while flare.is_running():          │  │  │
 │  │  │      model = DDP(model)            │      model = flare.receive()        │  │  │
 │  │  │      # training...                 │      # training with DDP...         │  │  │
@@ -749,7 +749,7 @@ auto-detect the execution mode and use the appropriate underlying mechanism.
 
 User Code (same API regardless of execution mode):
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│  from nvflare.collab.tracking import SummaryWriter  # or mlflow, wandb                 │
+│  from nvflare.publish.tracking import SummaryWriter  # or mlflow, wandb                 │
 │  writer = SummaryWriter()                                                            │
 │  writer.add_scalar("loss", 0.5, global_step=100)                                     │
 └─────────────────────────────────────────────────────────────────────────────────────┘
@@ -834,17 +834,17 @@ User Code (same API regardless of execution mode):
 
 ```python
 # TensorBoard (same API as torch.utils.tensorboard)
-from nvflare.collab.tracking import SummaryWriter
+from nvflare.publish.tracking import SummaryWriter
 writer = SummaryWriter()
 writer.add_scalar("train/loss", loss, global_step=step)
 
 # MLflow (same API as mlflow)
-from nvflare.collab.tracking import mlflow
+from nvflare.publish.tracking import mlflow
 mlflow.log_metric("loss", 0.5, step=100)
 mlflow.log_param("lr", 0.001)
 
 # W&B (same API as wandb)
-from nvflare.collab.tracking import wandb
+from nvflare.publish.tracking import wandb
 wandb.init(project="my-project")
 wandb.log({"loss": 0.5, "accuracy": 0.9})
 ```
@@ -993,7 +993,7 @@ nvflare/collab/
 │   ├── call_opt.py        # CallOption
 │   ├── constants.py       # API constants
 │   ├── context.py         # Execution context
-│   ├── dec.py             # Decorators (@collab.algo, @collab.collab)
+│   ├── dec.py             # Decorators (@collab.main, @collab.publish)
 │   ├── group.py           # Group (parallel invocation)
 │   ├── module_wrapper.py  # ModuleWrapper
 │   ├── proxy.py           # Proxy, ProxyList
@@ -1029,7 +1029,7 @@ nvflare/collab/
 │
 └── examples/              # Examples
     └── pt/
-        ├── collab_api/               # Decorator-based (@collab.collab) examples
+        ├── collab_api/               # Decorator-based (@collab.publish) examples
         │   ├── in_process/
         │   │   ├── collab_fedavg_train.py
         │   │   ├── collab_fedavg_no_class.py
@@ -1039,7 +1039,7 @@ nvflare/collab/
         │
         └── client_api/               # Receive/send pattern examples
             └── sub_process/
-                ├── server.py         # @collab.algo server with execute()/stop()
+                ├── server.py         # @collab.main server with execute()/stop()
                 ├── client.py         # Client script using receive()/send()
                 ├── job.py            # CollabRecipe with CollabClientAPI
                 └── sim_distributed_fedavg_train.py  # Standalone DDP simulation
@@ -1059,8 +1059,8 @@ nvflare/collab/
    created by `CollabWorker`. This bridges the gap between the worker's internal state and the
    user's training script.
 
-3. **Module Import Handling**: When Python runs with `-m nvflare.collab.sys.worker`, the module
-   may be pre-imported. The worker explicitly updates `sys.modules['nvflare.collab.sys.worker']._client_api`
+3. **Module Import Handling**: When Python runs with `-m nvflare.publish.sys.worker`, the module
+   may be pre-imported. The worker explicitly updates `sys.modules['nvflare.publish.sys.worker']._client_api`
    to ensure `get_client_api()` returns the correct instance.
 
 4. **DDP Rank Coordination**: In Client API mode with DDP, only rank 0 communicates with the
@@ -1227,7 +1227,7 @@ recipe.execute(env)
 
 ```python
 # client.py - works for single-node and multi-node
-from nvflare.collab.sys.worker import get_client_api
+from nvflare.publish.sys.worker import get_client_api
 import torch.distributed as dist
 
 flare = get_client_api()
@@ -1679,7 +1679,7 @@ personal_model = flare.receive(channel="personal")
 
 ```python
 # server.py
-@collab.algo
+@collab.main
 def personalized_fedavg(self):
     global_weights = self.global_model.state_dict()
     

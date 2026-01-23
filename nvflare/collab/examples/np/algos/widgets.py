@@ -20,7 +20,7 @@ class MetricReceiver:
     def __init__(self):
         self.logger = get_obj_logger(self)
 
-    @fox.collab
+    @fox.publish
     def accept_metric(self, metrics: dict):
         self.logger.info(f"[{fox.callee}] received metric report from {fox.caller}: {metrics}")
 

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
-from nvflare.collab.api.dec import get_object_collab_interface
+from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy_utils import create_proxy_with_children
 from nvflare.collab.api.run_server import run_server
 from nvflare.collab.api.subprocess_backend import SubprocessBackend
@@ -87,7 +87,7 @@ class AppRunner:
         collab_objs = target_app.get_collab_objects()
         for name, obj in collab_objs.items():
             child_specs[name] = {
-                "interface": get_object_collab_interface(obj),
+                "interface": get_object_publish_interface(obj),
                 "backend": backends[name],
             }
 
@@ -97,7 +97,7 @@ class AppRunner:
             target_name=target_app.name,
             target_fqn=target_fqn,
             main_backend=backends[""],
-            main_interface=get_object_collab_interface(target_app),
+            main_interface=get_object_publish_interface(target_app),
             child_specs=child_specs,
         )
 
@@ -193,7 +193,7 @@ class AppRunner:
             num_clients: Number of clients or (height, width) tuple for hierarchy.
             inprocess: If True, execute in-process. If False, use subprocess.
             run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.collab methods (required when inprocess=False).
+            training_module: Python module containing @fox.publish methods (required when inprocess=False).
             subprocess_timeout: Timeout for subprocess operations.
         """
         if not isinstance(server_app, ServerApp):
@@ -520,15 +520,15 @@ class CollabSimulator:
         Args:
             root_dir: Root directory for simulation output.
             experiment_name: Name of the experiment.
-            server: Server object with @fox.algo methods.
-            client: Client object with @fox.collab methods.
+            server: Server object with @fox.main methods.
+            client: Client object with @fox.publish methods.
             server_objects: Additional server collab objects.
             client_objects: Additional client collab objects.
             max_workers: Maximum worker threads.
             num_clients: Number of clients or (height, width) tuple.
             inprocess: If True, execute in-process. If False, use subprocess.
             run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.collab methods
+            training_module: Python module containing @fox.publish methods
                             (required when inprocess=False).
             subprocess_timeout: Timeout for subprocess operations.
         """

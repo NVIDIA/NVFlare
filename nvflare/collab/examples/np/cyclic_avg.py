@@ -16,9 +16,9 @@ import logging
 from nvflare.collab import fox
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
-from nvflare.collab.examples.np.algos.client import NPTrainer
-from nvflare.collab.examples.np.algos.strategies.avg_para import NPFedAvgParallel
-from nvflare.collab.examples.np.algos.strategies.cyclic import NPCyclic
+from nvflare.collab.examples.np.mains.client import NPTrainer
+from nvflare.collab.examples.np.mains.strategies.avg_para import NPFedAvgParallel
+from nvflare.collab.examples.np.mains.strategies.cyclic import NPCyclic
 from nvflare.collab.sim.simulator import Simulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -36,7 +36,7 @@ class Controller:
         self.avg_rounds = avg_rounds
         self.logger = get_obj_logger(self)
 
-    @fox.algo
+    @fox.main
     def run(self):
         self.logger.info("running cyclic ...")
         ctl = NPCyclic(self.initial_model, num_rounds=self.cyclic_rounds)

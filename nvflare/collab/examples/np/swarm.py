@@ -15,7 +15,7 @@ import logging
 
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
-from nvflare.collab.examples.np.algos.swarm import NPSwarm, NPSwarmClient
+from nvflare.collab.examples.np.mains.swarm import NPSwarm, NPSwarmClient
 from nvflare.collab.sim.simulator import Simulator
 
 

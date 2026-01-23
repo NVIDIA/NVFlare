@@ -21,9 +21,9 @@ from nvflare.collab import fox
 from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
-from nvflare.collab.examples.np.algos.utils import add as add_np
-from nvflare.collab.examples.np.algos.utils import div as div_np
-from nvflare.collab.examples.np.algos.utils import parse_state_dict as parse_np
+from nvflare.collab.examples.np.mains.utils import add as add_np
+from nvflare.collab.examples.np.mains.utils import div as div_np
+from nvflare.collab.examples.np.mains.utils import parse_state_dict as parse_np
 from nvflare.collab.examples.pt.utils import add as add_pt
 from nvflare.collab.examples.pt.utils import div as div_pt
 from nvflare.collab.examples.pt.utils import parse_state_dict as parse_pt
@@ -53,7 +53,7 @@ class PTFedAvgMixed:
         self._pt_model = parse_pt(pt_model)
         self._np_model = parse_np(np_model)
 
-    @fox.algo
+    @fox.main
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         pt_model, np_model = self._pt_model, self._np_model
@@ -151,7 +151,7 @@ class PTTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.collab
+    @fox.publish
     def train(self, current_round, pt_model, np_model, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")

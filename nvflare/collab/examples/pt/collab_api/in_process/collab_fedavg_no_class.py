@@ -1,7 +1,7 @@
 """Federated Averaging with Collab - NO CLASSES NEEDED!
 
 This demonstrates using Collab with standalone functions only.
-Just define @fox.algo and @fox.collab functions, then call CollabRecipe()!
+Just define @fox.main and @fox.publish functions, then call CollabRecipe()!
 
 CollabRecipe automatically uses the current module when server/client are not specified.
 """
@@ -34,7 +34,7 @@ class SimpleModel(nn.Module):
 # =============================================================================
 
 
-@fox.collab
+@fox.publish
 def train(weights=None):
     """Train a local model - standalone function, not a method."""
     # Setup data
@@ -100,7 +100,7 @@ def weighted_avg(client_results):
 NUM_ROUNDS = 5  # Configuration as module variable
 
 
-@fox.algo
+@fox.main
 def fed_avg():
     """Federated averaging - standalone function, not a method."""
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
