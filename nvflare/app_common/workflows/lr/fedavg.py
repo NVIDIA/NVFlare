@@ -52,7 +52,7 @@ class FedAvgLR(BaseFedAvg):
             model_name (str, optional): Name of the model file. Defaults to "weights.npy".
             n_features (int, optional): Number of features in the dataset. Defaults to 13.
             aggregator (WeightedAggregationHelper, optional): Helper for weighted aggregation of model updates.
-            persistor (Optional[NPModelPersistor], optional): Custom persistor for model saving and loading. If not provided, a default NewtonRaphsonModelPersistor is used.
+            persistor (Optional[NPModelPersistor], optional): Custom persistor for model saving and loading. If not provided, a default LRModelPersistor is used.
             *args: Additional positional arguments passed to the base class.
             **kwargs: Additional keyword arguments passed to the base class.
 
