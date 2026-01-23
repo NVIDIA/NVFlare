@@ -15,7 +15,6 @@
 Federated BraTS18 segmentation using NVFlare Job Recipe API.
 """
 import argparse
-from pathlib import Path
 
 from model import create_brats_model
 
@@ -38,6 +37,16 @@ def main():
         help="Optional job name to avoid reusing an existing workspace.",
     )
     parser.add_argument("--enable_dp", action="store_true", help="Enable SVT privacy filter.")
+    parser.add_argument(
+        "--dp_fraction", type=float, default=0.9, help="DP: fraction of weights to share (default from paper: 0.9)"
+    )
+    parser.add_argument(
+        "--dp_epsilon", type=float, default=0.001, help="DP: privacy budget (default from paper: 0.001)"
+    )
+    parser.add_argument("--dp_noise_var", type=float, default=1.0, help="DP: noise variance (default from paper: 1.0)")
+    parser.add_argument(
+        "--dp_gamma", type=float, default=1e-4, help="DP: clipping threshold (default from paper: 1e-4)"
+    )
     parser.add_argument("--num_rounds", type=int, default=DEFAULT_NUM_ROUNDS, help="Number of FL rounds.")
     parser.add_argument("--aggregation_epochs", type=int, default=1, help="Local epochs per round.")
     parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -99,19 +108,16 @@ def main():
         params_transfer_type=TransferType.DIFF,
     )
     recipe.job.to_server({"server": {"heart_beat_timeout": DEFAULT_HEARTBEAT_TIMEOUT}})
-    # Include client script and model definition
-    recipe.job.to_clients(str(Path(__file__).resolve().parent / "client.py"))
-    recipe.job.to_clients(str(Path(__file__).resolve().parent / "model.py"))
 
     # Enable TensorBoard tracking
     add_experiment_tracking(recipe, tracking_type="tensorboard")
     if args.enable_dp:
         recipe.add_client_output_filter(
             SVTPrivacy(
-                fraction=0.9,
-                epsilon=0.001,
-                noise_var=1.0,
-                gamma=1e-4,
+                fraction=args.dp_fraction,
+                epsilon=args.dp_epsilon,
+                noise_var=args.dp_noise_var,
+                gamma=args.dp_gamma,
             ),
             tasks=["train"],
         )
