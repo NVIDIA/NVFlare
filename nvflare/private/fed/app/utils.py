@@ -74,6 +74,7 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         download_job_url=server_conf.get("download_job_url", "http://"),
+        timeout=server_conf.get("admin_timeout", 10.0),
     )
     return admin_server
 
@@ -81,11 +82,11 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
 def version_check():
     if sys.version_info >= (3, 13):
         raise RuntimeError(
-            "Python versions 3.13 and above are not yet supported. Please use Python version between 3.8 and 3.12."
+            "Python versions 3.13 and above are not yet supported. Please use Python version between 3.9 and 3.12."
         )
-    if sys.version_info < (3, 8):
+    if sys.version_info < (3, 9):
         raise RuntimeError(
-            "Python versions 3.7 and below are not supported. Please use Python version between 3.8 and 3.12."
+            "Python versions 3.8 and below are not supported. Please use Python version between 3.9 and 3.12."
         )
 
 

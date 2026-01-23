@@ -1,4 +1,0 @@
-nvflare[HE]~=2.5.0rc
-torch
-torchvision
-tensorboard

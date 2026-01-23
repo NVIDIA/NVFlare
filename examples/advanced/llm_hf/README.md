@@ -40,6 +40,147 @@ python ./utils/preprocess_alpaca.py --training_file dataset/alpaca/data/train-00
 python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00000-of-00001-b42a775f407cee45.parquet --validation_file dataset/oasst1/data/validation-00000-of-00001-134b8fd0c89408b6.parquet --output_dir dataset/oasst1
 ```
 
+## Implementation Overview
+
+This implementation uses NVFlare's recipe-based pattern for federated learning with HuggingFace LLMs. Below is an overview of the key components:
+
+### Data
+- **Datasets**: Three public instruction-tuning datasets (Dolly, Alpaca, OASST1)
+- **Format**: JSONL files with `input` and `output` fields for instruction tuning
+- **Preprocessing**: Each dataset is split into `training.jsonl` and `validation.jsonl`
+- **Client Distribution**: Each client gets its own dataset directory (e.g., `dataset/dolly/`, `dataset/alpaca/`)
+
+### Model
+The example supports two model definition files for different training modes:
+
+**`hf_sft_model.py` (Supervised Fine-Tuning)**
+```python
+class CausalLMModel(torch.nn.Module):
+    def __init__(self, model_name_or_path):
+        super(CausalLMModel, self).__init__()
+        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
+```
+
+**`hf_peft_model.py` (Parameter-Efficient Fine-Tuning)**
+```python
+class CausalLMPEFTModel(torch.nn.Module):
+    def __init__(self, model_name_or_path):
+        super(CausalLMPEFTModel, self).__init__()
+        peft_config = LoraConfig(lora_alpha=16, lora_dropout=0.1, r=64, 
+                                 bias="none", task_type="CAUSAL_LM")
+        full_model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
+        self.model = get_peft_model(full_model, peft_config)
+```
+
+### Client-Side Code
+**`client.py`** - Federated client using HuggingFace SFTTrainer with DDP support
+
+Key features:
+- **Multi-GPU Support**: Automatic DDP setup via `torch.distributed`
+- **Rank Management**: Only rank 0 communicates with NVFlare server
+- **Model Synchronization**: Broadcasts global model from rank 0 to all ranks
+- **Federated Training Loop**: Integrates with NVFlare using numbered steps:
+  1. Import nvflare client API
+  2. Initialize NVFlare client API (`flare.init()`)
+  3. Federated training rounds loop (`while flare.is_running()`)
+  4. Receive global model from NVFlare (`flare.receive()`)
+  5. Load global model state dict
+  6. Evaluate global model for server-side model selection
+  7. Train locally using SFTTrainer
+  8. Compose output model parameters
+  9. Construct trained FL model with metrics
+  10. Send model back to NVFlare (`flare.send()`)
+
+**Launch Modes:**
+- Single GPU: `python client.py [args]`
+- Multi-GPU: `python -m torch.distributed.run --nnodes=1 --nproc_per_node=N --master_port=7777 client.py [args]`
+- Multi-node: via `client_wrapper.sh`
+
+### Server-Side Code / Job Recipe
+**`job.py`** - Job configuration using NVFlare's `FedAvgRecipe` pattern
+
+**Recipe-Based Approach:**
+```python
+# Create recipe with FedAvgRecipe
+recipe = FedAvgRecipe(
+    name=job_name,
+    initial_model=initial_model,  # CausalLMModel or CausalLMPEFTModel
+    min_clients=num_clients,
+    num_rounds=args.num_rounds,
+    train_script="client.py",
+    server_expected_format=server_expected_format,  # "pytorch" or "numpy"
+    launch_external_process=True,
+    per_site_config=per_site_config,  # Site-specific configurations
+    key_metric="neg_eval_loss",
+)
+```
+
+**Per-Site Configuration:**
+Each client can have custom configurations for different data paths and multi-GPU setups:
+```python
+per_site_config = {
+    "dolly": {
+        "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
+                      "--data_path_train ./dataset/dolly/training.jsonl "
+                      "--data_path_valid ./dataset/dolly/validation.jsonl ...",
+        "command": "python3 -m torch.distributed.run --nnodes=1 "
+                   "--nproc_per_node=2 --master_port=7777"
+    },
+    "alpaca": {
+        "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
+                      "--data_path_train ./dataset/alpaca/training.jsonl ...",
+        "command": "python3 -m torch.distributed.run --nnodes=1 "
+                   "--nproc_per_node=2 --master_port=8888"
+    }
+}
+```
+
+**Optional Features:**
+- **Quantization**: Add ModelQuantizer and ModelDequantizer filters for communication efficiency
+- **Experiment Tracking**: Enable TensorBoard tracking with `--use_tracking`
+- **Extended Timeouts**: Automatic configuration for long-running LLM training
+
+### Run Job
+The recipe supports multiple execution modes:
+
+**1. Export Only** (generate job config without running):
+```bash
+python job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --job_dir ${PWD}/workspace/jobs/job_config \
+    --export_config
+```
+
+**2. Simulation Mode** (local testing):
+```bash
+python job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --workspace_dir ${PWD}/workspace/simulation \
+    --job_dir ${PWD}/workspace/jobs/simulation
+```
+
+**3. Production Mode** (real deployment):
+```bash
+python job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --startup_kit_location /path/to/startup_kit \
+    --username admin@nvidia.com
+```
+
+**Key Job Arguments:**
+- `--client_ids`: Client/site names (space-separated). Used directly as site names (e.g., `dolly`, `hospital-1`)
+- `--data_path`: Root directory containing client datasets
+- `--train_mode`: `SFT` or `PEFT`
+- `--message_mode`: `numpy` (float32) or `tensor` (bf16)
+- `--quantize_mode`: Optional quantization (`float16`, `blockwise8`, `float4`, `normfloat4`)
+- `--gpu`: GPU assignments, e.g., `"[0,1],[2,3]"` for two clients with 2 GPUs each
+- `--ports`: Master ports for DDP, e.g., `7777 8888`
+- `--num_rounds`: Number of federated learning rounds
+- `--use_tracking`: Enable TensorBoard experiment tracking
+
 ## Adaptation of Centralized Training Script to Federated
 Below, we illustrate how to adapt a standard HuggingFace SFT/PEFT training script to a federated paradigm with NVFlare. 
 
@@ -115,11 +256,11 @@ Also, the basic iterative training script does not support multi-GPU training.
 
 To enhance the iterative training script, we can add scheduler alignment via callback and multi-GPU support with `./utils/hf_sft_peft_iter_callback_multigpu.py`.
 
-Single-GPU experiment can be run with the following command:
+Multi-GPU experiments in central settings can be run with the following command. By default **all available GPUs** will be used:
 ``` 
 python3 ./utils/hf_sft_peft_iter_callback_multigpu.py --output_path ./workspace/dolly_cen_iter_callback_cosine --lr_scheduler cosine_with_restarts 
 ```
-For multi-GPU experiments, we can use the following command:
+You can also control the number of GPUs using the following command:
 ```
 accelerate launch \
     --num_processes 2 \
@@ -144,7 +285,7 @@ receiving and returning the global model, as shown below:
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
-python3 llm_hf_fl_job.py \
+python3 job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
     --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu \
@@ -154,13 +295,13 @@ python3 llm_hf_fl_job.py \
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
-Similarly, 2-GPU training with two clients can be run with the following command:
+Similarly, 2-GPU training with two clients can be run with the following command. **Note** make sure that no other programs run on the specified ports (e.g., JupyterLab):
 ```
-python3 llm_hf_fl_job.py \
+python3 job.py \
        --client_ids dolly oasst1\
        --data_path ${PWD}/dataset \
-       --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu \
-       --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu \
+       --workspace_dir ${PWD}/workspace/dolly_oasst1_fl_multi_gpu \
+       --job_dir ${PWD}/workspace/jobs/dolly_oasst1_fl_multi_gpu \
        --gpu "[0,1],[2,3]" \
        --ports 7777 8888
 ```
@@ -171,10 +312,10 @@ from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enab
 16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
 Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
 ```
 The SFT curves are shown below, magenta for centralized results, others for FL training with quantization. We can see it achieves similar alignment comparing to centralized result with training randomness (similar to previous figure).
 ![sft](./figs/fl_sft_comp.png)
@@ -196,11 +337,11 @@ Note that quantization will generate additional meta data, which can be signific
 In addition, since the model is trained with bf16, instead of first converting to numpy in float32, we can directly communicate with tensor in bf16 to avoid the message size inflation due to the conversion. 
 We can use the following command to run the federated training with direct tensor communication.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
 ```
 Similarly, quantization can be applied to tensor communication as well.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
 In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
 ```
@@ -210,7 +351,7 @@ Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
 ```
-python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
 ```
 
 For comparison, we run the other two sites in centralized training mode:
@@ -235,7 +376,7 @@ Similarly for PEFT, we can run the following command:
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_peft --train_mode PEFT
-python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
 ```
 
 The training loss curves are shown below:
@@ -246,3 +387,6 @@ Alpaca:
 ![peft](./figs/peft_alpaca.png)
 Oasst1:
 ![peft](./figs/peft_oasst1.png)
+
+## Multi-node Training
+The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).

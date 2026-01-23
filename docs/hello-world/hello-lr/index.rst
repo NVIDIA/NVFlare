@@ -13,6 +13,21 @@ for the complete installation instructions, see `Installation <https://nvflare.r
 
     pip install nvflare
 
+
+get the example code from github:
+
+.. code-block:: text
+
+    git clone https://github.com/NVIDIA/NVFlare.git
+
+then navigate to the hello-lr directory:
+
+.. code-block:: text
+
+    git switch <release branch>
+    cd examples/hello-world/hello-lr
+
+
 Install the dependency
 
 .. code-block:: text
@@ -22,17 +37,6 @@ Install the dependency
 
 Code Structure
 --------------
-
-first get the example code from github:
-
-.. code-block:: text
-    git clone https://github.com/NVIDIA/NVFlare.git
-
-then navigate to the hello-lr directory:
-
-.. code-block:: text
-    git switch <release branch>
-    cd examples/hello-world/hello-lr
 
 .. code-block:: text
 
@@ -56,7 +60,9 @@ raw attributes, only 14 of them are actually used.
 
 The authors of the databases have requested:
 
-      ...that any publications resulting from the use of the data include the
+.. code-block:: text
+
+      "...that any publications resulting from the use of the data include the
       names of the principal investigator responsible for the data collection
       at each institution.  They would be:
 
@@ -64,7 +70,8 @@ The authors of the databases have requested:
        2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
        3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
        4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
-	  Robert Detrano, M.D., Ph.D.
+	  Robert Detrano, M.D., Ph.D. "
+
 
 dataset contains samples from 4 sites, split into training and
 testing sets as described below:
@@ -189,7 +196,7 @@ above.
 Client Side
 -----------
 
-On the client side, the local training logic is implemented `client.py <./client.py>`_.
+On the client side, the local training logic is implemented in :github_nvflare_link:`client.py <examples/hello-world/hello-lr/client.py>`.
 
 The implementation is based on the `Client API <https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api>`_. This
 allows user to add minimum `nvflare`-specific codes to turn a typical
@@ -204,7 +211,7 @@ script.
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
   above. This is implemented in the
-  `train_newton_raphson() <./client.py>`_ method. Each client then
+  :github_nvflare_link:`train_newton_raphson() <examples/hello-world/hello-lr/client.py>` method. Each client then
   sends the computed results (always in `FLModel` format) to server for aggregation,
   using `flare.send()`  API.
 
@@ -261,6 +268,7 @@ Running Job
 Execute the following command to launch federated logistic regression. This will run in nvflare's simulation mode.
 
 .. code-block:: text
+
     python job.py
 
 

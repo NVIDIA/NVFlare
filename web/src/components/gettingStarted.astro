@@ -1,7 +1,7 @@
 ---
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 
 const walkthrough = [
   {
@@ -11,7 +11,7 @@ const walkthrough = [
     description:
       "Learn about the core concepts and fundamentals of NVIDIA FLARE to help you get started.",
     button_text: "Read More",
-    link: "https://nvflare.readthedocs.io/en/main/flare_overview.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/flare_overview.html`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%201%20-%20Overview.mp4",
   },
   {
@@ -64,7 +64,7 @@ const km = [
     description:
       "Learn how to formulate a federated machine learning algorithm.",
     button_text: "View Source",
-    link: "https://nvflare.readthedocs.io/en/main/fl_introduction.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/fl_introduction.html`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20KM%20-%20Part%201%20-%20Overview.mp4",
   },
   {

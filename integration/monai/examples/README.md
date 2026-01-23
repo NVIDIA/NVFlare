@@ -1,27 +1,13 @@
 # Examples of MONAI-NVFlare Integration
 
-### [Converting MONAI Code to a Federated Learning Setting](./mednist/README.md)
-A tutorial to show how simple it can be to run an end-to-end classification pipeline with MONAI 
-and deploy it in a federated learning setting using NVFlare.
+### [Converting MONAI Code to Federated Learning](./mednist/README.md)
+Tutorial showing how to run an end-to-end classification pipeline with MONAI and deploy it in federated learning using NVFlare's Client API and Job Recipes.
 
-### [Simulated Federated Learning for 3D spleen CT segmentation](./spleen_ct_segmentation_sim/README.md)
-An example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) 
-to train a medical image analysis model using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
-and a [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html).
+### [Federated Learning for 3D Spleen CT Segmentation](./spleen_ct_segmentation/README.md)
+Example using NVFlare with [MONAI Bundle](https://monai.readthedocs.io/en/latest/mb_specification.html) for federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) training and federated statistics collection using simulation.
 
-This example will also guide you on using MONAI FL with FLARE to 
-collect client data statistics and visualize both global and local 
-intensity histograms using FLARE's [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html).
-
-The example can be extended to use additional FL [algorithms](https://nvflare.readthedocs.io/en/main/example_applications_algorithms.html) 
-available in NVIDIA FLARE.
-
-
-### [Federated Learning with Local Provisioning](./spleen_ct_segmentation_local/README.md)
-FL deployment requires secure provisioning and an admin API to submit jobs. 
-This example runs you through the process and includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629)
-with experiment tracking using [MLflow](https://mlflow.org/) and 
-[homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/) for secure server-side aggregation.
-
-In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)
-file (*project.yml*) to run experiments on a single machine. 
+Features:
+- FedAvgRecipe for simplified job configuration
+- Client API with MonaiAlgo for bundle management
+- FedStatsRecipe for federated statistics
+- TensorBoard and MLflow experiment tracking

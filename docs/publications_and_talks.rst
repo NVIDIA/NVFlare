@@ -7,6 +7,10 @@ Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the `Clara Train SDK <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk>`__.
 
+Publications: 2025
+------------------
+* **2025-09** `Equitable Federated Learning with NCA <https://arxiv.org/abs/2506.21735>`__ (`MICCAI 2025 <https://papers.miccai.org/miccai-2025/0306-Paper2510.html>`__)
+
 Publications: 2024
 ------------------
 * **2024-12** `C-FedRAG: A Confidential Federated Retrieval-Augmented Generation System <https://arxiv.org/abs/2412.13163>`__ (preprint)
@@ -75,7 +79,7 @@ Blogs & Videos: 2023
 
 Blogs & Videos: 2022
 --------------------
-* **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/?ncid=so-nvsh-705336#cid=ix11_so-nvsh_en-us>`__ (NVIDIA Technical Blog)
+* **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/>`__ (NVIDIA Technical Blog)
 * **2022-08** `Using Federated Learning to Bridge Data Silos in Financial Services <https://developer.nvidia.com/blog/using-federated-learning-to-bridge-data-silos-in-financial-services/>`__ (NVIDIA Technical Blog)
 * **2022-06** `Experimenting with Novel Distributed Applications Using NVIDIA Flare 2.1 <https://developer.nvidia.com/blog/experimenting-with-novel-distributed-applications-using-nvidia-flare-2-1/>`__ (NVIDIA Technical Blog)
 * **2022-03** `Flywheel & NVIDIA FLARE Demo <https://youtu.be/v-EKZC4yvY4?si=5U_xZ_WKKb8AkCgT>`__ (`Flywheel <https://flywheel.io/>`__  Video)

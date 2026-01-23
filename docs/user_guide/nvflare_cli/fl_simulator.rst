@@ -11,7 +11,7 @@ The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment,
 and it can allow researchers to test and debug their application without
 provisioning a real project.
 
-The FL jobs run on a server and 
+The FL jobs run on a server and
 multiple clients in the same process but in a similar way to how it would run
 in a real deployment so researchers can more quickly build out new components
 and jobs that can then be directly used in a real production deployment.
@@ -45,7 +45,7 @@ Command Usage
                                 max number of clients
         --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
-    
+
 *****************
 Command examples
 *****************
@@ -53,11 +53,18 @@ Command examples
 Run a single NVFlare app
 ========================
 
-This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 process with the full log output mode. The client names will be site-1, site-2, ... , site-8.:
+The ``hello-numpy`` example uses Recipe API. For Recipe API examples, run the job.py script directly:
 
-.. code-block:: python
+.. code-block:: bash
 
-    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -n 8 -t 1 -l full
+    cd NVFlare/examples/hello-world/hello-numpy
+    python job.py --n_clients 8
+
+For traditional job structures (with meta.json and app/config directories), use the nvflare simulator command:
+
+.. code-block:: bash
+
+    nvflare simulator path/to/traditional-job -w /tmp/nvflare/workspace_folder/ -n 8 -t 1 -l full
 
 .. raw:: html
 
@@ -107,14 +114,14 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:32,301 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-1
     2022-10-17 17:30:32,375 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: assigned task to client site-1: name=train, id=5f504355-2edf-4f6a-9cc5-56181f95f28d
     2022-10-17 17:30:32,375 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: sent task assignment to client
-    2022-10-17 17:30:32,376 - SimulatorServer - INFO - GetTask: Return task: train to client: site-1 (529ce6b4-5d71-4fe5-b6fc-ed9d14d26936) 
+    2022-10-17 17:30:32,376 - SimulatorServer - INFO - GetTask: Return task: train to client: site-1 (529ce6b4-5d71-4fe5-b6fc-ed9d14d26936)
     2022-10-17 17:30:32,376 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07400965690612793 seconds
-    2022-10-17 17:30:32,377 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:32,377 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:32,378 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=5f504355-2edf-4f6a-9cc5-56181f95f28d
     2022-10-17 17:30:32,378 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:32,379 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: Task name: train
     2022-10-17 17:30:32,379 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:32,379 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: Model: 
+    2022-10-17 17:30:32,379 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: Model:
     {'numpy_key': array([[1., 2., 3.],
         [4., 5., 6.],
         [7., 8., 9.]], dtype=float32)}
@@ -139,20 +146,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:32,462 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5f504355-2edf-4f6a-9cc5-56181f95f28d]: result sent to server for task: name=train, id=5f504355-2edf-4f6a-9cc5-56181f95f28d
     2022-10-17 17:30:32,462 - ClientTaskWorker - INFO - Finished one task run for client: site-1
     2022-10-17 17:30:32,462 - SimulatorClientRunner - INFO - Simulate Run client: site-2
-    2022-10-17 17:30:32,462 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1 
+    2022-10-17 17:30:32,462 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1
     E1017 17:30:33.464621867   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:34,956 - ClientRunner - INFO - [identity=site-2, run=simulate_job]: client runner started
     2022-10-17 17:30:34,956 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-2
     2022-10-17 17:30:35,045 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: assigned task to client site-2: name=train, id=3a5cf17a-515e-48a6-87fc-f920b03221e1
     2022-10-17 17:30:35,046 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: sent task assignment to client
-    2022-10-17 17:30:35,046 - SimulatorServer - INFO - GetTask: Return task: train to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b) 
+    2022-10-17 17:30:35,046 - SimulatorServer - INFO - GetTask: Return task: train to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b)
     2022-10-17 17:30:35,047 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.08929610252380371 seconds
-    2022-10-17 17:30:35,048 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:35,048 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:35,049 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=3a5cf17a-515e-48a6-87fc-f920b03221e1
     2022-10-17 17:30:35,049 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:35,049 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: Task name: train
     2022-10-17 17:30:35,049 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:35,050 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: Model: 
+    2022-10-17 17:30:35,050 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: Model:
     {'numpy_key': array([[1., 2., 3.],
         [4., 5., 6.],
         [7., 8., 9.]], dtype=float32)}
@@ -177,19 +184,19 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:35,124 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3a5cf17a-515e-48a6-87fc-f920b03221e1]: result sent to server for task: name=train, id=3a5cf17a-515e-48a6-87fc-f920b03221e1
     2022-10-17 17:30:35,124 - ClientTaskWorker - INFO - Finished one task run for client: site-2
     2022-10-17 17:30:35,124 - SimulatorClientRunner - INFO - Simulate Run client: site-3
-    2022-10-17 17:30:35,125 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2 
+    2022-10-17 17:30:35,125 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2
     2022-10-17 17:30:37,631 - ClientRunner - INFO - [identity=site-3, run=simulate_job]: client runner started
     2022-10-17 17:30:37,631 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-3
     2022-10-17 17:30:37,704 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-3, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: assigned task to client site-3: name=train, id=5b985bfb-6a58-437f-b984-720455c1e20b
     2022-10-17 17:30:37,704 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-3, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: sent task assignment to client
-    2022-10-17 17:30:37,705 - SimulatorServer - INFO - GetTask: Return task: train to client: site-3 (738e9f46-877c-4856-bbd2-674eea8f5f27) 
+    2022-10-17 17:30:37,705 - SimulatorServer - INFO - GetTask: Return task: train to client: site-3 (738e9f46-877c-4856-bbd2-674eea8f5f27)
     2022-10-17 17:30:37,705 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.0725107192993164 seconds
-    2022-10-17 17:30:37,706 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:37,706 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:37,707 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=5b985bfb-6a58-437f-b984-720455c1e20b
     2022-10-17 17:30:37,707 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:37,707 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: Task name: train
     2022-10-17 17:30:37,707 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:37,708 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: Model: 
+    2022-10-17 17:30:37,708 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: Model:
     {'numpy_key': array([[1., 2., 3.],
         [4., 5., 6.],
         [7., 8., 9.]], dtype=float32)}
@@ -214,20 +221,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:37,782 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=5b985bfb-6a58-437f-b984-720455c1e20b]: result sent to server for task: name=train, id=5b985bfb-6a58-437f-b984-720455c1e20b
     2022-10-17 17:30:37,782 - ClientTaskWorker - INFO - Finished one task run for client: site-3
     2022-10-17 17:30:37,783 - SimulatorClientRunner - INFO - Simulate Run client: site-4
-    2022-10-17 17:30:37,783 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-3 
+    2022-10-17 17:30:37,783 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-3
     E1017 17:30:38.785133258   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:40,280 - ClientRunner - INFO - [identity=site-4, run=simulate_job]: client runner started
     2022-10-17 17:30:40,280 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-4
     2022-10-17 17:30:40,351 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-4, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: assigned task to client site-4: name=train, id=8b798d8c-4157-4ee9-b207-3f532784154a
     2022-10-17 17:30:40,351 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-4, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: sent task assignment to client
-    2022-10-17 17:30:40,351 - SimulatorServer - INFO - GetTask: Return task: train to client: site-4 (2e9e56a9-ad05-48d0-bc60-9d322865f33e) 
+    2022-10-17 17:30:40,351 - SimulatorServer - INFO - GetTask: Return task: train to client: site-4 (2e9e56a9-ad05-48d0-bc60-9d322865f33e)
     2022-10-17 17:30:40,351 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07045435905456543 seconds
-    2022-10-17 17:30:40,353 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:40,353 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:40,353 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=8b798d8c-4157-4ee9-b207-3f532784154a
     2022-10-17 17:30:40,354 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:40,354 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: Task name: train
     2022-10-17 17:30:40,354 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:40,354 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: Model: 
+    2022-10-17 17:30:40,354 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: Model:
     {'numpy_key': array([[1., 2., 3.],
         [4., 5., 6.],
         [7., 8., 9.]], dtype=float32)}
@@ -252,20 +259,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:40,427 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=8b798d8c-4157-4ee9-b207-3f532784154a]: result sent to server for task: name=train, id=8b798d8c-4157-4ee9-b207-3f532784154a
     2022-10-17 17:30:40,428 - ClientTaskWorker - INFO - Finished one task run for client: site-4
     2022-10-17 17:30:40,428 - SimulatorClientRunner - INFO - Simulate Run client: site-5
-    2022-10-17 17:30:40,428 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-4 
+    2022-10-17 17:30:40,428 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-4
     E1017 17:30:41.430357472   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:42,925 - ClientRunner - INFO - [identity=site-5, run=simulate_job]: client runner started
     2022-10-17 17:30:42,925 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-5
     2022-10-17 17:30:43,008 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-5, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: assigned task to client site-5: name=train, id=c536b2ff-da85-49ca-a90d-705af6aefbff
     2022-10-17 17:30:43,008 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-5, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: sent task assignment to client
-    2022-10-17 17:30:43,009 - SimulatorServer - INFO - GetTask: Return task: train to client: site-5 (7e822d77-7a7b-4ea4-9e67-b971416e456e) 
+    2022-10-17 17:30:43,009 - SimulatorServer - INFO - GetTask: Return task: train to client: site-5 (7e822d77-7a7b-4ea4-9e67-b971416e456e)
     2022-10-17 17:30:43,009 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.08272647857666016 seconds
-    2022-10-17 17:30:43,010 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:43,010 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:43,011 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=c536b2ff-da85-49ca-a90d-705af6aefbff
     2022-10-17 17:30:43,011 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:43,011 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: Task name: train
     2022-10-17 17:30:43,011 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:43,012 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: Model: 
+    2022-10-17 17:30:43,012 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: Model:
     {'numpy_key': array([[1., 2., 3.],
         [4., 5., 6.],
         [7., 8., 9.]], dtype=float32)}
@@ -290,13 +297,13 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:43,120 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c536b2ff-da85-49ca-a90d-705af6aefbff]: result sent to server for task: name=train, id=c536b2ff-da85-49ca-a90d-705af6aefbff
     2022-10-17 17:30:43,120 - ClientTaskWorker - INFO - Finished one task run for client: site-5
     2022-10-17 17:30:43,121 - SimulatorClientRunner - INFO - Simulate Run client: site-6
-    2022-10-17 17:30:43,121 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-5 
+    2022-10-17 17:30:43,121 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-5
     2022-10-17 17:30:45,272 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: task train exit with status TaskCompletionStatus.OK
     2022-10-17 17:30:45,641 - ClientRunner - INFO - [identity=site-6, run=simulate_job]: client runner started
     2022-10-17 17:30:45,641 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-6
     2022-10-17 17:30:45,714 - ClientTaskWorker - INFO - Finished one task run for client: site-6
     2022-10-17 17:30:45,714 - SimulatorClientRunner - INFO - Simulate Run client: site-7
-    2022-10-17 17:30:45,714 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-6 
+    2022-10-17 17:30:45,714 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-6
     2022-10-17 17:30:45,772 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Start aggregation.
     2022-10-17 17:30:45,773 - DXOAggregator - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: aggregating 5 update(s) at round 0
     2022-10-17 17:30:45,773 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: End aggregation.
@@ -311,14 +318,14 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:48,218 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-7
     2022-10-17 17:30:48,291 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-7, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: assigned task to client site-7: name=train, id=79dcc239-c29b-4424-99e8-0439d0e1d637
     2022-10-17 17:30:48,292 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-7, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: sent task assignment to client
-    2022-10-17 17:30:48,292 - SimulatorServer - INFO - GetTask: Return task: train to client: site-7 (e6127906-5283-45e3-b510-2866ff8a51a4) 
+    2022-10-17 17:30:48,292 - SimulatorServer - INFO - GetTask: Return task: train to client: site-7 (e6127906-5283-45e3-b510-2866ff8a51a4)
     2022-10-17 17:30:48,293 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07365679740905762 seconds
-    2022-10-17 17:30:48,294 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:48,294 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:48,294 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=79dcc239-c29b-4424-99e8-0439d0e1d637
     2022-10-17 17:30:48,295 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:48,295 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: Task name: train
     2022-10-17 17:30:48,295 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:48,295 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: Model: 
+    2022-10-17 17:30:48,295 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: Model:
     {'numpy_key': array([[ 2.,  3.,  4.],
         [ 5.,  6.,  7.],
         [ 8.,  9., 10.]], dtype=float32)}
@@ -343,20 +350,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:48,387 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=79dcc239-c29b-4424-99e8-0439d0e1d637]: result sent to server for task: name=train, id=79dcc239-c29b-4424-99e8-0439d0e1d637
     2022-10-17 17:30:48,387 - ClientTaskWorker - INFO - Finished one task run for client: site-7
     2022-10-17 17:30:48,387 - SimulatorClientRunner - INFO - Simulate Run client: site-8
-    2022-10-17 17:30:48,387 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-7 
+    2022-10-17 17:30:48,387 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-7
     E1017 17:30:49.389404190   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:50,905 - ClientRunner - INFO - [identity=site-8, run=simulate_job]: client runner started
     2022-10-17 17:30:50,905 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-8
     2022-10-17 17:30:50,977 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-8, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: assigned task to client site-8: name=train, id=c6207618-9fa1-47b6-8ac0-3375f6139779
     2022-10-17 17:30:50,978 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-8, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: sent task assignment to client
-    2022-10-17 17:30:50,978 - SimulatorServer - INFO - GetTask: Return task: train to client: site-8 (8fe14500-a6b8-47ad-b50c-aa22f9827830) 
+    2022-10-17 17:30:50,978 - SimulatorServer - INFO - GetTask: Return task: train to client: site-8 (8fe14500-a6b8-47ad-b50c-aa22f9827830)
     2022-10-17 17:30:50,979 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07208514213562012 seconds
-    2022-10-17 17:30:50,980 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:50,980 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:50,980 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=c6207618-9fa1-47b6-8ac0-3375f6139779
     2022-10-17 17:30:50,981 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:50,981 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: Task name: train
     2022-10-17 17:30:50,981 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:50,981 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: Model: 
+    2022-10-17 17:30:50,981 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: Model:
     {'numpy_key': array([[ 2.,  3.,  4.],
         [ 5.,  6.,  7.],
         [ 8.,  9., 10.]], dtype=float32)}
@@ -381,20 +388,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:51,056 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=c6207618-9fa1-47b6-8ac0-3375f6139779]: result sent to server for task: name=train, id=c6207618-9fa1-47b6-8ac0-3375f6139779
     2022-10-17 17:30:51,056 - ClientTaskWorker - INFO - Finished one task run for client: site-8
     2022-10-17 17:30:51,056 - SimulatorClientRunner - INFO - Simulate Run client: site-1
-    2022-10-17 17:30:51,056 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-8 
+    2022-10-17 17:30:51,056 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-8
     E1017 17:30:52.058501552   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:53,551 - ClientRunner - INFO - [identity=site-1, run=simulate_job]: client runner started
     2022-10-17 17:30:53,551 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-1
     2022-10-17 17:30:53,623 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: assigned task to client site-1: name=train, id=a90507df-8de7-457a-b832-9b16c6758880
     2022-10-17 17:30:53,623 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: sent task assignment to client
-    2022-10-17 17:30:53,624 - SimulatorServer - INFO - GetTask: Return task: train to client: site-1 (529ce6b4-5d71-4fe5-b6fc-ed9d14d26936) 
+    2022-10-17 17:30:53,624 - SimulatorServer - INFO - GetTask: Return task: train to client: site-1 (529ce6b4-5d71-4fe5-b6fc-ed9d14d26936)
     2022-10-17 17:30:53,624 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07228612899780273 seconds
-    2022-10-17 17:30:53,625 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:53,625 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:53,626 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=a90507df-8de7-457a-b832-9b16c6758880
     2022-10-17 17:30:53,626 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:53,626 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: Task name: train
     2022-10-17 17:30:53,627 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:53,627 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: Model: 
+    2022-10-17 17:30:53,627 - NPTrainer - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: Model:
     {'numpy_key': array([[ 2.,  3.,  4.],
         [ 5.,  6.,  7.],
         [ 8.,  9., 10.]], dtype=float32)}
@@ -419,20 +426,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:53,700 - ClientRunner - INFO - [identity=site-1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a90507df-8de7-457a-b832-9b16c6758880]: result sent to server for task: name=train, id=a90507df-8de7-457a-b832-9b16c6758880
     2022-10-17 17:30:53,700 - ClientTaskWorker - INFO - Finished one task run for client: site-1
     2022-10-17 17:30:53,700 - SimulatorClientRunner - INFO - Simulate Run client: site-2
-    2022-10-17 17:30:53,701 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1 
+    2022-10-17 17:30:53,701 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1
     E1017 17:30:54.702952317   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:30:56,218 - ClientRunner - INFO - [identity=site-2, run=simulate_job]: client runner started
     2022-10-17 17:30:56,218 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-2
     2022-10-17 17:30:56,282 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: assigned task to client site-2: name=train, id=3df70456-7fbe-471c-a7a4-fac4a97fea04
     2022-10-17 17:30:56,282 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: sent task assignment to client
-    2022-10-17 17:30:56,283 - SimulatorServer - INFO - GetTask: Return task: train to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b) 
+    2022-10-17 17:30:56,283 - SimulatorServer - INFO - GetTask: Return task: train to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b)
     2022-10-17 17:30:56,283 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.06456303596496582 seconds
-    2022-10-17 17:30:56,284 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:56,284 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:56,285 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=3df70456-7fbe-471c-a7a4-fac4a97fea04
     2022-10-17 17:30:56,285 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:56,286 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: Task name: train
     2022-10-17 17:30:56,286 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:56,286 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: Model: 
+    2022-10-17 17:30:56,286 - NPTrainer - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: Model:
     {'numpy_key': array([[ 2.,  3.,  4.],
         [ 5.,  6.,  7.],
         [ 8.,  9., 10.]], dtype=float32)}
@@ -457,19 +464,19 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:56,370 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=3df70456-7fbe-471c-a7a4-fac4a97fea04]: result sent to server for task: name=train, id=3df70456-7fbe-471c-a7a4-fac4a97fea04
     2022-10-17 17:30:56,370 - ClientTaskWorker - INFO - Finished one task run for client: site-2
     2022-10-17 17:30:56,370 - SimulatorClientRunner - INFO - Simulate Run client: site-3
-    2022-10-17 17:30:56,371 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2 
+    2022-10-17 17:30:56,371 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2
     2022-10-17 17:30:58,889 - ClientRunner - INFO - [identity=site-3, run=simulate_job]: client runner started
     2022-10-17 17:30:58,890 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-3
     2022-10-17 17:30:58,981 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-3, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: assigned task to client site-3: name=train, id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2
     2022-10-17 17:30:58,981 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-3, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: sent task assignment to client
-    2022-10-17 17:30:58,982 - SimulatorServer - INFO - GetTask: Return task: train to client: site-3 (738e9f46-877c-4856-bbd2-674eea8f5f27) 
+    2022-10-17 17:30:58,982 - SimulatorServer - INFO - GetTask: Return task: train to client: site-3 (738e9f46-877c-4856-bbd2-674eea8f5f27)
     2022-10-17 17:30:58,982 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.09153056144714355 seconds
-    2022-10-17 17:30:58,984 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:30:58,984 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:30:58,984 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2
     2022-10-17 17:30:58,985 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:30:58,985 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: Task name: train
     2022-10-17 17:30:58,985 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: Incoming data kind: WEIGHTS
-    2022-10-17 17:30:58,985 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: Model: 
+    2022-10-17 17:30:58,985 - NPTrainer - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: Model:
     {'numpy_key': array([[ 2.,  3.,  4.],
         [ 5.,  6.,  7.],
         [ 8.,  9., 10.]], dtype=float32)}
@@ -494,7 +501,7 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:30:59,099 - ClientRunner - INFO - [identity=site-3, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2]: result sent to server for task: name=train, id=a4deeb12-58f3-4489-a884-3a66a5d3f2a2
     2022-10-17 17:30:59,099 - ClientTaskWorker - INFO - Finished one task run for client: site-3
     2022-10-17 17:30:59,100 - SimulatorClientRunner - INFO - Simulate Run client: site-4
-    2022-10-17 17:30:59,100 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-3 
+    2022-10-17 17:30:59,100 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-3
     2022-10-17 17:31:01,290 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: task train exit with status TaskCompletionStatus.OK
     2022-10-17 17:31:01,290 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Start aggregation.
     2022-10-17 17:31:01,291 - DXOAggregator - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: aggregating 5 update(s) at round 1
@@ -509,14 +516,14 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:01,619 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-4
     2022-10-17 17:31:01,689 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-4, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: assigned task to client site-4: name=train, id=acb068a0-93c5-46ff-a631-658366716991
     2022-10-17 17:31:01,690 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-4, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: sent task assignment to client
-    2022-10-17 17:31:01,690 - SimulatorServer - INFO - GetTask: Return task: train to client: site-4 (2e9e56a9-ad05-48d0-bc60-9d322865f33e) 
+    2022-10-17 17:31:01,690 - SimulatorServer - INFO - GetTask: Return task: train to client: site-4 (2e9e56a9-ad05-48d0-bc60-9d322865f33e)
     2022-10-17 17:31:01,690 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.06991314888000488 seconds
-    2022-10-17 17:31:01,691 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:31:01,691 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:31:01,692 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=acb068a0-93c5-46ff-a631-658366716991
     2022-10-17 17:31:01,692 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:31:01,693 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: Task name: train
     2022-10-17 17:31:01,693 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: Incoming data kind: WEIGHTS
-    2022-10-17 17:31:01,693 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: Model: 
+    2022-10-17 17:31:01,693 - NPTrainer - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: Model:
     {'numpy_key': array([[ 3.,  4.,  5.],
         [ 6.,  7.,  8.],
         [ 9., 10., 11.]], dtype=float32)}
@@ -541,20 +548,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:01,766 - ClientRunner - INFO - [identity=site-4, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=acb068a0-93c5-46ff-a631-658366716991]: result sent to server for task: name=train, id=acb068a0-93c5-46ff-a631-658366716991
     2022-10-17 17:31:01,767 - ClientTaskWorker - INFO - Finished one task run for client: site-4
     2022-10-17 17:31:01,767 - SimulatorClientRunner - INFO - Simulate Run client: site-5
-    2022-10-17 17:31:01,767 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-4 
+    2022-10-17 17:31:01,767 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-4
     E1017 17:31:02.769286357   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:31:04,285 - ClientRunner - INFO - [identity=site-5, run=simulate_job]: client runner started
     2022-10-17 17:31:04,286 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-5
     2022-10-17 17:31:04,352 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-5, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: assigned task to client site-5: name=train, id=06119ad9-38af-461b-a8da-4eb9c0735927
     2022-10-17 17:31:04,353 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-5, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: sent task assignment to client
-    2022-10-17 17:31:04,353 - SimulatorServer - INFO - GetTask: Return task: train to client: site-5 (7e822d77-7a7b-4ea4-9e67-b971416e456e) 
+    2022-10-17 17:31:04,353 - SimulatorServer - INFO - GetTask: Return task: train to client: site-5 (7e822d77-7a7b-4ea4-9e67-b971416e456e)
     2022-10-17 17:31:04,354 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.06682419776916504 seconds
-    2022-10-17 17:31:04,355 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:31:04,355 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:31:04,355 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=06119ad9-38af-461b-a8da-4eb9c0735927
     2022-10-17 17:31:04,356 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:31:04,356 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: Task name: train
     2022-10-17 17:31:04,356 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: Incoming data kind: WEIGHTS
-    2022-10-17 17:31:04,356 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: Model: 
+    2022-10-17 17:31:04,356 - NPTrainer - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: Model:
     {'numpy_key': array([[ 3.,  4.,  5.],
         [ 6.,  7.,  8.],
         [ 9., 10., 11.]], dtype=float32)}
@@ -579,20 +586,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:04,431 - ClientRunner - INFO - [identity=site-5, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=06119ad9-38af-461b-a8da-4eb9c0735927]: result sent to server for task: name=train, id=06119ad9-38af-461b-a8da-4eb9c0735927
     2022-10-17 17:31:04,431 - ClientTaskWorker - INFO - Finished one task run for client: site-5
     2022-10-17 17:31:04,431 - SimulatorClientRunner - INFO - Simulate Run client: site-6
-    2022-10-17 17:31:04,432 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-5 
+    2022-10-17 17:31:04,432 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-5
     E1017 17:31:05.433729198   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:31:06,955 - ClientRunner - INFO - [identity=site-6, run=simulate_job]: client runner started
     2022-10-17 17:31:06,955 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-6
     2022-10-17 17:31:07,038 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-6, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: assigned task to client site-6: name=train, id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6
     2022-10-17 17:31:07,038 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-6, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: sent task assignment to client
-    2022-10-17 17:31:07,038 - SimulatorServer - INFO - GetTask: Return task: train to client: site-6 (0b291c05-0495-4936-aba8-69e735f03528) 
+    2022-10-17 17:31:07,038 - SimulatorServer - INFO - GetTask: Return task: train to client: site-6 (0b291c05-0495-4936-aba8-69e735f03528)
     2022-10-17 17:31:07,039 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.0822305679321289 seconds
-    2022-10-17 17:31:07,040 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:31:07,040 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:31:07,041 - ClientRunner - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6
     2022-10-17 17:31:07,041 - ClientRunner - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:31:07,041 - NPTrainer - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: Task name: train
     2022-10-17 17:31:07,041 - NPTrainer - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: Incoming data kind: WEIGHTS
-    2022-10-17 17:31:07,042 - NPTrainer - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: Model: 
+    2022-10-17 17:31:07,042 - NPTrainer - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: Model:
     {'numpy_key': array([[ 3.,  4.,  5.],
         [ 6.,  7.,  8.],
         [ 9., 10., 11.]], dtype=float32)}
@@ -617,20 +624,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:07,132 - ClientRunner - INFO - [identity=site-6, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6]: result sent to server for task: name=train, id=cd6a86a6-4403-42c2-9d3b-efe3bc71e8d6
     2022-10-17 17:31:07,132 - ClientTaskWorker - INFO - Finished one task run for client: site-6
     2022-10-17 17:31:07,133 - SimulatorClientRunner - INFO - Simulate Run client: site-7
-    2022-10-17 17:31:07,133 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-6 
+    2022-10-17 17:31:07,133 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-6
     E1017 17:31:08.135085003   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:31:09,624 - ClientRunner - INFO - [identity=site-7, run=simulate_job]: client runner started
     2022-10-17 17:31:09,624 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-7
     2022-10-17 17:31:09,695 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-7, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: assigned task to client site-7: name=train, id=ef147e4d-3050-44f3-8495-2b2f77f85f17
     2022-10-17 17:31:09,695 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-7, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: sent task assignment to client
-    2022-10-17 17:31:09,696 - SimulatorServer - INFO - GetTask: Return task: train to client: site-7 (e6127906-5283-45e3-b510-2866ff8a51a4) 
+    2022-10-17 17:31:09,696 - SimulatorServer - INFO - GetTask: Return task: train to client: site-7 (e6127906-5283-45e3-b510-2866ff8a51a4)
     2022-10-17 17:31:09,696 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.07119441032409668 seconds
-    2022-10-17 17:31:09,697 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:31:09,697 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:31:09,698 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=ef147e4d-3050-44f3-8495-2b2f77f85f17
     2022-10-17 17:31:09,698 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:31:09,698 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: Task name: train
     2022-10-17 17:31:09,699 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: Incoming data kind: WEIGHTS
-    2022-10-17 17:31:09,699 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: Model: 
+    2022-10-17 17:31:09,699 - NPTrainer - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: Model:
     {'numpy_key': array([[ 3.,  4.,  5.],
         [ 6.,  7.,  8.],
         [ 9., 10., 11.]], dtype=float32)}
@@ -655,19 +662,19 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:09,773 - ClientRunner - INFO - [identity=site-7, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=ef147e4d-3050-44f3-8495-2b2f77f85f17]: result sent to server for task: name=train, id=ef147e4d-3050-44f3-8495-2b2f77f85f17
     2022-10-17 17:31:09,774 - ClientTaskWorker - INFO - Finished one task run for client: site-7
     2022-10-17 17:31:09,774 - SimulatorClientRunner - INFO - Simulate Run client: site-8
-    2022-10-17 17:31:09,774 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-7 
+    2022-10-17 17:31:09,774 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-7
     2022-10-17 17:31:12,288 - ClientRunner - INFO - [identity=site-8, run=simulate_job]: client runner started
     2022-10-17 17:31:12,288 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-8
     2022-10-17 17:31:12,372 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-8, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: assigned task to client site-8: name=train, id=d4bd490d-de62-435f-95ac-451193707b2a
     2022-10-17 17:31:12,372 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-8, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: sent task assignment to client
-    2022-10-17 17:31:12,372 - SimulatorServer - INFO - GetTask: Return task: train to client: site-8 (8fe14500-a6b8-47ad-b50c-aa22f9827830) 
+    2022-10-17 17:31:12,372 - SimulatorServer - INFO - GetTask: Return task: train to client: site-8 (8fe14500-a6b8-47ad-b50c-aa22f9827830)
     2022-10-17 17:31:12,373 - Communicator - INFO - Received from simulator_server server  (859 Bytes). getTask time: 0.08334660530090332 seconds
-    2022-10-17 17:31:12,374 - FederatedClient - INFO - pull_task completed. Task name:train Status:True 
+    2022-10-17 17:31:12,374 - FederatedClient - INFO - pull_task completed. Task name:train Status:True
     2022-10-17 17:31:12,375 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: got task assignment: name=train, id=d4bd490d-de62-435f-95ac-451193707b2a
     2022-10-17 17:31:12,375 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: invoking task executor <class 'nvflare.app_common.np.np_trainer.NPTrainer'>
     2022-10-17 17:31:12,375 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: Task name: train
     2022-10-17 17:31:12,375 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: Incoming data kind: WEIGHTS
-    2022-10-17 17:31:12,376 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: Model: 
+    2022-10-17 17:31:12,376 - NPTrainer - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: Model:
     {'numpy_key': array([[ 3.,  4.,  5.],
         [ 6.,  7.,  8.],
         [ 9., 10., 11.]], dtype=float32)}
@@ -692,7 +699,7 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:12,449 - ClientRunner - INFO - [identity=site-8, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=d4bd490d-de62-435f-95ac-451193707b2a]: result sent to server for task: name=train, id=d4bd490d-de62-435f-95ac-451193707b2a
     2022-10-17 17:31:12,449 - ClientTaskWorker - INFO - Finished one task run for client: site-8
     2022-10-17 17:31:12,449 - SimulatorClientRunner - INFO - Simulate Run client: site-1
-    2022-10-17 17:31:12,450 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-8 
+    2022-10-17 17:31:12,450 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-8
     E1017 17:31:13.451732692   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:31:14,806 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: task train exit with status TaskCompletionStatus.OK
     2022-10-17 17:31:14,807 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Start aggregation.
@@ -709,20 +716,20 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:15,227 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-1, peer_run=simulate_job]: no current workflow - asked client to try again later
     2022-10-17 17:31:15,229 - ClientTaskWorker - INFO - Finished one task run for client: site-1
     2022-10-17 17:31:15,229 - SimulatorClientRunner - INFO - Simulate Run client: site-2
-    2022-10-17 17:31:15,229 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1 
+    2022-10-17 17:31:15,229 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-1
     E1017 17:31:16.231305453   21930 fork_posix.cc:76]           Other threads are currently calling into gRPC, skipping fork() handlers
     2022-10-17 17:31:17,309 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: ABOUT_TO_END_RUN fired
     2022-10-17 17:31:17,729 - ClientRunner - INFO - [identity=site-2, run=simulate_job]: client runner started
     2022-10-17 17:31:17,729 - ClientTaskWorker - INFO - Initialize ClientRunner for client: site-2
     2022-10-17 17:31:17,795 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=site-2, peer_run=simulate_job]: server runner is finalizing - asked client to end the run
-    2022-10-17 17:31:17,795 - SimulatorServer - INFO - GetTask: Return task: __end_run__ to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b) 
+    2022-10-17 17:31:17,795 - SimulatorServer - INFO - GetTask: Return task: __end_run__ to client: site-2 (3d9420db-1aa0-4142-adbb-2d8fc87a8e8b)
     2022-10-17 17:31:17,796 - Communicator - INFO - Received from simulator_server server  (348 Bytes). getTask time: 0.06571817398071289 seconds
-    2022-10-17 17:31:17,797 - FederatedClient - INFO - pull_task completed. Task name:__end_run__ Status:True 
+    2022-10-17 17:31:17,797 - FederatedClient - INFO - pull_task completed. Task name:__end_run__ Status:True
     2022-10-17 17:31:17,797 - ClientRunner - INFO - [identity=site-2, run=simulate_job, peer=simulator_server, peer_run=simulate_job]: server asked to end the run
     2022-10-17 17:31:17,797 - ClientTaskWorker - INFO - Finished one task run for client: site-2
     2022-10-17 17:31:17,797 - ClientTaskWorker - INFO - End the Simulator run.
     2022-10-17 17:31:17,797 - SimulatorClientRunner - INFO - Simulate Run client: site-3
-    2022-10-17 17:31:17,798 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2 
+    2022-10-17 17:31:17,798 - ClientTaskWorker - INFO - Clean up ClientRunner for : site-2
     2022-10-17 17:31:17,798 - FederatedClient - INFO - Shutting down client: site-1
     2022-10-17 17:31:17,798 - FederatedClient - INFO - Shutting down client: site-2
     2022-10-17 17:31:17,798 - FederatedClient - INFO - Shutting down client: site-3
@@ -734,8 +741,8 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
     2022-10-17 17:31:23,330 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: END_RUN fired
     2022-10-17 17:31:23,331 - ServerRunner - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather]: Server runner finished.
     2022-10-17 17:31:26,301 - SimulatorServer - INFO - Server app stopped.
-    
-    
+
+
     2022-10-17 17:31:26,302 - SimulatorServer - INFO - shutting down server
     2022-10-17 17:31:26,302 - SimulatorServer - INFO - canceling sync locks
     2022-10-17 17:31:26,302 - SimulatorServer - INFO - server off
@@ -753,7 +760,7 @@ This command will run the job following the meta.json in the job. The executing 
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
 
 Note that the ``-n`` option is used to specify the number of clients like in the previous section above, but it is checked only if the ``-c`` option is not used.
 The with the ``-n`` option, clients are automatically created up to the number provided after ``-n``, and they are named site-1, site-2, site-3, etc.
@@ -768,7 +775,7 @@ in meta.json to run.
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -t 1
 
 
 .. note::
@@ -879,7 +886,7 @@ If there are multiple GPUs available and you want to make use of them all for th
 ``-gpu`` option for this. The ``-gpu`` option provides the list of GPUs for the simulator to run on. The
 clients list will be distributed among the GPUs.
 
-For example: 
+For example:
 
 .. code-block::shell
 

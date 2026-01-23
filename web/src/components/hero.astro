@@ -3,7 +3,7 @@ import NvidiaLogo from '../images/nvidia_eye.png'
 import NvflareAnimation from '../images/nvflare_graphic_animation.mp4'
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 const base_url = import.meta.env.BASE_URL;
 ---
 <ClickTracker div_id="hero_div" eventLabel="Hero"/>
@@ -41,7 +41,7 @@ const base_url = import.meta.env.BASE_URL;
               </div>
 
               <a
-                href="https://nvflare.readthedocs.io/en/main/whats_new.html"
+                href=`https://nvflare.readthedocs.io/en/${gh_branch}/whats_new.html`
                 class="inline-flex space-x-6">
                 <span
                   class="rounded-full bg-nvidia/20 px-3 py-1 text-sm font-semibold leading-6 text-nvidia ring-1 ring-inset ring-nvidia/10"
@@ -86,7 +86,7 @@ const base_url = import.meta.env.BASE_URL;
             </p>
             <div class="mt-10 mb-10 items-center space-x-1">
               <a
-                href="https://nvflare.readthedocs.io/en/main/index.html"
+                href=`https://nvflare.readthedocs.io/en/${gh_branch}/index.html`
                 class="inline-flex rounded-md bg-nvidia px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
                 >Documentation</a
               >

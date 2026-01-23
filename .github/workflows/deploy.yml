@@ -46,7 +46,7 @@ jobs:
       - name: Build project
         run: npm run build
         env:
-          PUBLIC_GH_BRANCH: ${{ github.ref_name }}
+          VITE_PUBLIC_GH_BRANCH: ${{ github.ref_name }}
         working-directory: ${{ env.site_path }}
 
       - name: Deploy

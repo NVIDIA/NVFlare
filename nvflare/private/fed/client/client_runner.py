@@ -29,7 +29,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -355,7 +355,9 @@ class ClientRunner(TBI):
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_EXECUTION")
-        self.fire_event_with_data(EventType.BEFORE_TASK_EXECUTION, fl_ctx, FLContextKey.TASK_DATA, task.data)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+        self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+        # Task_data is needed in the executor, don't clean it here
 
         try:
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
@@ -411,6 +413,8 @@ class ClientRunner(TBI):
                 fl_ctx=fl_ctx,
                 msg=f"submit result: {ReturnCode.EXECUTION_EXCEPTION}",
             )
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
@@ -651,7 +655,7 @@ class ClientRunner(TBI):
             self.end_run_events_sequence()
             ReliableMessage.shutdown()
             self.engine.shutdown_streamer()
-            FileDownloader.shutdown()
+            DownloadService.shutdown()
 
             with self.task_lock:
                 self.running_tasks = {}
@@ -692,7 +696,7 @@ class ClientRunner(TBI):
                 # sync with server runner before starting
                 time.sleep(0.5)
 
-                self.log_info(fl_ctx, f"syncing to parent {target} ...")
+                self.log_debug(fl_ctx, f"syncing to parent {target} ...")
                 resp = self.engine.send_aux_request(
                     targets=[target],
                     topic=ReservedTopic.SYNC_RUNNER,

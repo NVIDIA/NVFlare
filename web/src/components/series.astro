@@ -1,7 +1,7 @@
 ---
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 
 const series_dli = {
   id: "DLI", // id must not have spaces
@@ -164,25 +164,25 @@ const series_100 = {
           title: "Client API",
           tags: ["docs"],
           description: "The FLARE Client API provides an easy way for users to convert their centralized, local training code into federated learning code.",
-          link: "https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html#client-api"
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/execution_api_type/client_api.html#client-api`
         },
         {
           title: "Model Controller API",
           tags: ["docs"],
           description: "The FLARE ModelController API provides an easy way for users to write and customize FLModel-based controller workflows.",
-          link: "https://nvflare.readthedocs.io/en/main/programming_guide/controllers/model_controller.html#model-controller"
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/controllers/model_controller.html#model-controller`
         },
         {
           title: "Fed Job API",
           tags: ["docs"],
           description: "The FLARE FedJob API allows users to Pythonically define and create job configurations.",
-          link: "https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/fed_job_api.html`,
         },
         {
-          title: "ML/DL to FL",
-          tags: ["beg.", "numpy", "pytorch", "lightning", "tensorflow"],
-          description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+          title: "ML/DL to FL Examples",
+          tags: ["beg.", "numpy", "pytorch", "lightning", "tensorflow", "recipe-api"],
+          description: "Examples for converting Machine Learning code to Federated Learning using the Recipe API. See hello-numpy, hello-pt, hello-tf, and multi-gpu examples.",
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world#examples-by-framework`
         },
         {
           title: "Hello FedAvg",
@@ -228,14 +228,14 @@ const series_100 = {
           tags: ["int.", "tools"],
           description:
             "Operate NVIDIA FLARE with the commands and functionalities of the admin client, which allow you to manage your system.",
-          link: "https://nvflare.readthedocs.io/en/{gh_branch}/user_guide/admin_guide/deployment/operation.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/operation.html`,
         },
         {
           title: "Logging Tutorial",
           tags: ["int.", "log"],
           description:
             "This tutorial covers how to configure logging in FLARE for different use cases and modes.",
-          link: "https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/logging.ipynb",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/logging.ipynb`,
         },
       ]
     },
@@ -249,49 +249,49 @@ const series_100 = {
           tags: ["adv.", "deployment"],
           description:
             "Provides a CLI or UI to collect information of clients and users from different organizations, and generates startup kits with keys and certificates for users to download.",
-          link: "https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/dashboard_api.html`,
         },
         {
           title: "Containerized Deployment with Docker",
           tags: ["beg.", "deployment"],
           description:
             "Run NVIDIA FLARE in a Docker container.",
-          link: "https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/quickstart.html#containerized-deployment-with-docker`,
         },
         {
           title: "Cloud Deployment",
           tags: ["adv.", "deployment"],
           description:
             "Deploy the NVIDIA FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
-          link: https://nvflare.readthedocs.io/en/{gh_branch}/user_guide/admin_guide/deployment/cloud_deployment.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/cloud_deployment.html`,
         },
         {
           title: "Deployment to Kubernetes",
           tags: ["adv.", "deployment"],
           description:
             "Run NVIDIA FLARE inside Amazon Elastic Kubernetes Service (EKS).",
-          link: "https://nvflare.readthedocs.io/en/{gh_branch}/user_guide/admin_guide/deployment/aws_eks.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/aws_eks.html`,
         },
         {
           title: "Helm Chart Deployment",
           tags: ["adv.", "deployment"],
           description:
             "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.",
-          link: "https://nvflare.readthedocs.io/en/main/user_guide/helm_chart.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/helm_chart.html`,
         },
         {
           title: "Secure Provisioning",
           tags: ["adv.", "deployment"],
           description:
             "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
-          link: "https://nvflare.readthedocs.io/en/{gh_branch}/user_guide/admin_guide/deployment/overview.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/overview.html`,
         },
         {
           title: "Preflight Check",
           tags: ["adv.", "deployment"],
           description:
             "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
-          link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/preflight_check.html`,
         },
       ]
     },
@@ -307,18 +307,6 @@ const series_200 = {
       title: "201: FL Algorithms",
       description: "See how FL algorithms can be implemented in a variety of frameworks.",
       cards: [
-        {
-          title: "Step-by-Step CIFAR10 Examples",
-          tags: ["beg.", "algorithm", "pytorch", "dl"],
-          description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
-        },
-        {
-          title: "Step-by-Step HIGGS Examples",
-          tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
-          description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
-        },
         {
           title: "Hello FedAvg",
           tags: ["beg.", "algorithm", "pytorch", "dl"],
@@ -422,7 +410,7 @@ const series_200 = {
           tags: ["docs"],
           description:
             "Privacy preserving algorithms in NVIDIA FLARE are implemented as filters that can be applied as data is sent or received between peers.",
-          link: "https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters",
+          link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/filters.html#filters`,
         },
         {
           title: "Survival Analysis with Federated Kaplan-Meier",

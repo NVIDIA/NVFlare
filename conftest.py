@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,10 @@ try:
     import nbformat
 except Exception:
     nbformat = None
+
+_executed_notebooks = set()
+_passed_notebooks = set()
+_backup_notebooks = set()  # Track notebooks with backup files
 
 
 def pytest_collection_modifyitems(config, items):
@@ -84,11 +89,27 @@ def filter_notebook(notebook_path, kernel_name):
     if cell_skipped:
         nb.cells = filtered_cells
     
-    # Write back if anything changed
+    # Write modified notebook to disk if anything changed
+    # (nbmake reads from disk, so changes must be persisted)
     if cell_skipped or kernel_spec_updated:
+        # Create backup of original notebook before modifying
+        notebook_path = Path(notebook_path)
+        backup_path = notebook_path.with_suffix(notebook_path.suffix + '.backup')
+        
+        if backup_path.exists():
+            # Existing backup found - assume it's the true original
+            print(f"Found existing backup: {backup_path.name}")
+        else:
+            shutil.copy(notebook_path, backup_path)
+            print(f"Created backup: {backup_path.name}")
+        _backup_notebooks.add(notebook_path)
+        
+        # Write modified notebook
         nbformat.write(nb, notebook_path)
         if cell_skipped:
-            print(f"Filtered {len(nb.cells) - len(filtered_cells)} cells from {notebook_path.name}")
+            print(f"Filtered {len(nb.cells)} → {len(filtered_cells)} cells in {notebook_path.name}")
+        if kernel_spec_updated:
+            print(f"Updated kernel spec in {notebook_path.name}")
 
 
 def is_kernel_registered(kernel_name):
@@ -103,6 +124,23 @@ def is_kernel_registered(kernel_name):
     except Exception:
         # If jupyter_client isn't available or fails, assume kernel doesn't exist
         return False
+
+def restore_notebooks():
+    """Restore original notebooks from .backup files"""
+    if not _backup_notebooks:
+        return
+    
+    restored = []
+    for notebook_path in _backup_notebooks:
+        backup_path = notebook_path.with_suffix(Path(notebook_path).suffix + '.backup')
+        if backup_path.exists():
+            shutil.move(backup_path, notebook_path)
+            restored.append(str(notebook_path))
+    
+    if restored:
+        print(f"\n[notebook-restore] Restored {len(restored)} original notebook(s):")
+        for p in restored:
+            print("  -", p)
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -119,8 +157,6 @@ def pytest_addoption(parser):
         help="specify the kernel name",
     )
 
-_executed_notebooks = set()
-_passed_notebooks = set()
 
 def _is_notebook_item(item):
     """Check if item is a notebook, compatible with old and new pytest versions"""
@@ -175,6 +211,9 @@ def _clear_outputs_with_nbconvert(nb_path: Path):
     ], check=False)
 
 def pytest_sessionfinish(session, exitstatus):
+    # First, restore original notebooks (before cleaning outputs)
+    restore_notebooks()
+    
     mode = session.config.getoption("--nbmake-clean")
     if mode == "never":
         return

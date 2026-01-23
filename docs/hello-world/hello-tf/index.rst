@@ -1,3 +1,5 @@
+.. _hello_tf:
+
 Hello TensorFlow
 ================
 
@@ -7,7 +9,7 @@ For detailed documentation, see the `Hello TensorFlow <https://www.tensorflow.or
 
 We recommend using the `NVIDIA TensorFlow docker <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow>`_ for GPU support. If GPU is not required, a Python virtual environment is sufficient.
 
-To run this example with the FLARE API, refer to the `hello_world notebook <../hello_world.ipynb>`_.
+To run this example with the FLARE API, refer to the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
 Run NVIDIA TensorFlow Container
 -------------------------------
@@ -27,16 +29,7 @@ For complete installation instructions, visit `Installation <https://nvflare.rea
 
    pip install nvflare
 
-Install the dependencies:
-
-.. code-block:: bash
-
-   pip install -r requirements.txt
-
-Code Structure
---------------
-
-First, clone the example code from GitHub:
+clone the example code from GitHub:
 
 .. code-block:: bash
 
@@ -47,11 +40,20 @@ Navigate to the hello-tf directory:
 .. code-block:: bash
 
    git switch <release branch>
-   cd examples/hello-world/hello-TF
+   cd examples/hello-world/hello-tf
+
+Install the dependencies:
+
+.. code-block:: bash
+
+   pip install -r requirements.txt
+
+Code Structure
+--------------
 
 .. code-block:: text
 
-   hello-pt
+   hello-tf
    |
    |-- client.py         # client local training script
    |-- model.py          # model definition
@@ -86,7 +88,8 @@ This model is used in federated learning with NVIDIA FLARE, trained across clien
 Client Code
 -----------
 
-The client code ``client.py`` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
+The client code ``client.py`` is responsible for training. The training code closely resembles standard Tensorflow training code, with additional lines to handle data exchange with the server.
+
 .. literalinclude:: ../../../examples/hello-world/hello-tf/client.py
     :language: python
     :linenos:

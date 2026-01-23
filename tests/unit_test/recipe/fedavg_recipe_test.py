@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
 
@@ -71,26 +70,6 @@ class MyAggregator(ModelAggregator):
         # reset the sum and count
         self.sum = {}
         self.count = 0
-
-    def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        """Accept a shareable from a client."""
-        dxo = from_shareable(shareable)
-        if dxo.data_kind == DataKind.WEIGHTS:
-            # Convert to FLModel format for our custom logic
-            model = FLModel(params=dxo.data, params_type=ParamsType.FULL)
-            self.accept_model(model)
-            return True
-        return False
-
-    def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        """Perform aggregation and return result as Shareable."""
-        aggregated_model = self.aggregate_model()
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=aggregated_model.params)
-        return dxo.to_shareable()
-
-    def reset(self, fl_ctx: FLContext):
-        """Reset the aggregator state."""
-        self.reset_stats()
 
 
 class InvalidAggregator:
@@ -141,16 +120,30 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.job.name == expected_name
 
 
+def get_model_selector(recipe):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get("model_selector")
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params):
-        """Test FedAvgRecipe initialization with default aggregator."""
+        """Test FedAvgRecipe initialization with default (built-in) aggregation."""
         recipe = FedAvgRecipe(name="test_fedavg", **base_recipe_params)
 
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.initial_model is None
-        assert isinstance(recipe.aggregator, Aggregator)
+        # When no aggregator is passed, built-in weighted averaging is used
+        assert recipe.aggregator is None
+
+    def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params):
+        key_metric = "val_auc"
+        recipe = FedAvgRecipe(name="test_fedavg_key_metric", key_metric=key_metric, **base_recipe_params)
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
 
     def test_custom_aggregator_initialization(self, mock_file_system, base_recipe_params, custom_aggregator):
         """Test FedAvgRecipe initialization with custom aggregator."""
@@ -160,7 +153,6 @@ class TestFedAvgRecipe:
         assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
         assert isinstance(recipe.aggregator, MyAggregator)
-        assert isinstance(recipe.aggregator, Aggregator)
 
     def test_initial_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
         """Test FedAvgRecipe with initial model."""
@@ -197,3 +189,208 @@ class TestFedAvgRecipe:
             "num_rounds": num_rounds,
         }
         assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)
+
+    def test_launch_once_default(self, mock_file_system, base_recipe_params):
+        """Test that launch_once defaults to True."""
+        recipe = FedAvgRecipe(name="test_launch_once_default", **base_recipe_params)
+
+        assert recipe.launch_once is True
+        assert recipe.shutdown_timeout == 0.0
+
+    @pytest.mark.parametrize(
+        "launch_once,shutdown_timeout",
+        [
+            (True, 0.0),  # Default values
+            (False, 0.0),  # launch_once=False with default timeout
+            (True, 10.0),  # launch_once=True with custom timeout
+            (False, 15.0),  # launch_once=False with custom timeout
+        ],
+    )
+    def test_launch_once_and_shutdown_timeout(
+        self, mock_file_system, base_recipe_params, launch_once, shutdown_timeout
+    ):
+        """Test FedAvgRecipe with various launch_once and shutdown_timeout configurations."""
+        recipe = FedAvgRecipe(
+            name="test_launch_config",
+            launch_external_process=True,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            **base_recipe_params,
+        )
+
+        assert recipe.launch_once == launch_once
+        assert recipe.shutdown_timeout == shutdown_timeout
+        assert recipe.launch_external_process is True
+
+    def test_launch_once_per_site_config(self, mock_file_system, base_recipe_params):
+        """Test per-site configuration with different launch_once settings."""
+        per_site_config = {
+            "site-1": {
+                "launch_once": False,
+                "shutdown_timeout": 15.0,
+            },
+            "site-2": {
+                "launch_once": True,
+                "shutdown_timeout": 5.0,
+            },
+        }
+
+        recipe = FedAvgRecipe(
+            name="test_per_site_launch",
+            launch_external_process=True,
+            launch_once=True,  # Default
+            shutdown_timeout=10.0,  # Default
+            per_site_config=per_site_config,
+            **base_recipe_params,
+        )
+
+        # Check default values are stored
+        assert recipe.launch_once is True
+        assert recipe.shutdown_timeout == 10.0
+        assert recipe.per_site_config == per_site_config
+
+    def test_launch_once_in_process_mode(self, mock_file_system, base_recipe_params):
+        """Test that launch_once and shutdown_timeout can be set even with in-process execution."""
+        recipe = FedAvgRecipe(
+            name="test_in_process",
+            launch_external_process=False,  # In-process mode
+            launch_once=False,
+            shutdown_timeout=10.0,
+            **base_recipe_params,
+        )
+
+        # Values should be stored even though they won't be used in in-process mode
+        assert recipe.launch_once is False
+        assert recipe.shutdown_timeout == 10.0
+        assert recipe.launch_external_process is False
+
+
+class TestFedAvgRecipeEarlyStopping:
+    """Test early stopping configuration for FedAvgRecipe."""
+
+    def test_early_stopping_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with early stopping configuration."""
+        recipe = FedAvgRecipe(
+            name="test_early_stop",
+            stop_cond="accuracy >= 80",
+            patience=5,
+            **base_recipe_params,
+        )
+
+        assert_recipe_basics(recipe, "test_early_stop", base_recipe_params)
+        assert recipe.stop_cond == "accuracy >= 80"
+        assert recipe.patience == 5
+
+    def test_save_filename_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with custom save filename."""
+        recipe = FedAvgRecipe(
+            name="test_save_file",
+            save_filename="best_model.pt",
+            **base_recipe_params,
+        )
+
+        assert recipe.save_filename == "best_model.pt"
+
+    def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with exclude_vars configuration."""
+        recipe = FedAvgRecipe(
+            name="test_exclude",
+            exclude_vars="bn.*|running_mean|running_var",
+            **base_recipe_params,
+        )
+
+        assert recipe.exclude_vars == "bn.*|running_mean|running_var"
+
+    def test_aggregation_weights_configuration(self, mock_file_system, base_recipe_params):
+        """Test FedAvgRecipe with per-client aggregation weights."""
+        weights = {"site-1": 2.0, "site-2": 1.0}
+        recipe = FedAvgRecipe(
+            name="test_weights",
+            aggregation_weights=weights,
+            **base_recipe_params,
+        )
+
+        assert recipe.aggregation_weights == weights
+
+
+class TestFedAvgRecipeValidation:
+    """Test FedAvgRecipe input validation."""
+
+    def test_invalid_aggregator_type_raises_validation_error(self, mock_file_system, base_recipe_params):
+        """Test that invalid aggregator type raises Pydantic validation error."""
+        from pydantic import ValidationError
+
+        invalid_aggregator = InvalidAggregator()
+
+        with pytest.raises(ValidationError, match="should be an instance of Aggregator"):
+            FedAvgRecipe(
+                name="test_invalid_agg",
+                aggregator=invalid_aggregator,  # type: ignore[arg-type]
+                **base_recipe_params,
+            )
+
+
+class TestFedAvgRecipeKeyMetricVariants:
+    """Test key_metric passthrough for NumPy FedAvg recipes."""
+
+    def test_key_metric_passthrough_numpy(self, mock_file_system):
+        key_metric = "val_loss"
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_key_metric",
+            initial_model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            train_script="mock_train_script.py",
+            key_metric=key_metric,
+        )
+
+        model_selector = get_model_selector(recipe)
+        assert isinstance(model_selector, IntimeModelSelector)
+        assert model_selector.key_metric == key_metric
+
+
+class TestFedAvgRecipeInitialModelParams:
+    """Test _get_initial_model_params for base recipe."""
+
+    def test_base_recipe_raises_for_nn_module(self, mock_file_system, base_recipe_params):
+        """Test base recipe raises TypeError for nn.Module (framework-specific type)."""
+        from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+        # Create base recipe with dict (valid)
+        recipe = BaseFedAvgRecipe(
+            name="test_base",
+            initial_model={"w": 1.0},
+            **base_recipe_params,
+        )
+
+        # Manually set to nn.Module to test _get_initial_model_params
+        recipe.initial_model = SimpleTestModel()
+
+        with pytest.raises(TypeError, match="initial_model must be a dict or None"):
+            recipe._get_initial_model_params()
+
+    def test_base_recipe_handles_dict(self, mock_file_system, base_recipe_params):
+        """Test base recipe handles dict correctly."""
+        from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+        model_dict = {"w": 1.0, "b": 2.0}
+        recipe = BaseFedAvgRecipe(
+            name="test_base_dict",
+            initial_model=model_dict,
+            **base_recipe_params,
+        )
+
+        params = recipe._get_initial_model_params()
+        assert params == model_dict
+
+    def test_base_recipe_handles_none(self, mock_file_system, base_recipe_params):
+        """Test base recipe handles None correctly."""
+        from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
+
+        recipe = BaseFedAvgRecipe(
+            name="test_base_none",
+            initial_model=None,
+            **base_recipe_params,
+        )
+
+        params = recipe._get_initial_model_params()
+        assert params is None

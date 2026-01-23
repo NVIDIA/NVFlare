@@ -2,7 +2,7 @@
 import GoogleColab from '../images/google_colab.svg.png'
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
 const base_url = import.meta.env.BASE_URL;
 
 const tutorials = [
@@ -63,49 +63,49 @@ const tutorials = [
     tags: ["beg.", "deployment"],
     description:
       "Run NVIDIA FLARE in a Docker container.",
-    link: "https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/quickstart.html#containerized-deployment-with-docker`,
   },
   {
     title: "Cloud Deployment",
     tags: ["adv.", "deployment"],
     description:
       "Deploy the NVIDIA FLARE dashboard, server, and clients in the cloud. Learn to use the provided scripts for AWS and Azure.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/cloud_deployment.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/cloud_deployment.html`,
   },
   {
     title: "Deployment to Kubernetes",
     tags: ["adv.", "deployment"],
     description:
       "Run NVIDIA FLARE inside Amazon Elastic Kubernetes Service (EKS).",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/aws_eks.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/aws_eks.html`,
   },
   {
     title: "Helm Chart Deployment",
     tags: ["adv.", "deployment"],
     description:
       "Use the provisioning tool's HelmChartBuilder to generate a reference Helm Chart to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/helm_chart.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/helm_chart.html`,
   },
   {
     title: "Secure Provisioning",
     tags: ["adv.", "deployment"],
     description:
       "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/overview.html`,
   },
   {
     title: "Preflight Check",
     tags: ["adv.", "deployment"],
     description:
       "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/preflight_check.html`,
   },
   {
     title: "NVIDIA FLARE Dashboard",
     tags: ["adv.", "deployment"],
     description:
       "Provides a CLI or UI to collect information of clients and users from different organizations, and generates startup kits with keys and certificates for users to download.",
-    link: "https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html",
+    link: `https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/dashboard_api.html`,
   },
   {
     title: "Federated Policies",
@@ -126,34 +126,16 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job-level-authorization/README.md`
   },
   {
-    title: "Federated Learning Hub",
-    tags: ["adv.", "deployment"],
-    description: "Allow hierarchical interaction between several levels of NVIDIA FLARE FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/fl_hub/README.md`
+    title: "Hello NumPy",
+    tags: ["beg.", "algorithm", "client-api", "numpy", "recipe-api"],
+    description: "Simple federated learning example using NumPy and the Recipe API. Shows how to convert NumPy ML code to FL with FedAvg.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-numpy`
   },
   {
-    title: "Getting Started",
-    tags: ["beg.", "algorithm", "client-api", "model-controller", "job-api", "pytorch", "lightning", "sklearn", "tensorflow"],
-    description: "Getting started examples using the Client API, Model Controller API, and Job API for different frameworks.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/getting_started`
-  },
-  {
-    title: "Step-by-Step CIFAR10 Examples",
-    tags: ["beg.", "algorithm", "pytorch", "dl"],
-    description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
-  },
-  {
-    title: "Step-by-Step HIGGS Examples",
-    tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
-    description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
-  },
-  {
-    title: "ML/DL to FL",
-    tags: ["beg.", "algorithm", "client-api", "numpy", "pytorch", "lightning", "tensorflow"],
-    description: "Example for converting Deep Learning (DL) code to Federated Learning (FL) using the Client API. Configurations for numpy, pytorch, lighting, and tensorflow.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/ml-to-fl`
+    title: "Multi-GPU Training",
+    tags: ["int.", "pytorch", "lightning", "tensorflow", "recipe-api"],
+    description: "Multi-GPU federated learning examples for PyTorch, Lightning, and TensorFlow using the Recipe API.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/multi-gpu`
   },
   {
     title: "Hello FedAvg",
@@ -175,14 +157,14 @@ const tutorials = [
   },
   {
     title: "Hello PyTorch",
-    tags: ["beg.", "algorithm", "pytorch", "model-controller", "dl"],
-    description: "Example of an image classifier with FedAvg using PyTorch as the deep learning training framework.",
+    tags: ["beg.", "algorithm", "pytorch", "recipe-api", "client-api", "dl"],
+    description: "Image classifier using PyTorch and FedAvg Recipe. Shows how to convert PyTorch ML code to FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
   },
   {
     title: "Hello TensorFlow",
-    tags: ["beg.", "algorithm", "tensorflow", "model-controller", "dl"],
-    description: "Example of an image classifier with FedAvg using TensorFlow as the deep learning training framework.",
+    tags: ["beg.", "algorithm", "tensorflow", "recipe-api", "client-api", "dl"],
+    description: "MNIST classifier using TensorFlow and FedAvg Recipe. Shows how to convert TensorFlow ML code to FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-tf/README.md`
   },
   {
@@ -263,26 +245,14 @@ const tutorials = [
   {
     title: "Federated Vertical XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Example using Private Set Intersection and XGBoost on vertically split HIGGS data.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/vertical_xgboost/README.md`
+    description: "Vertical federated XGBoost using Private Set Intersection on HIGGS data. Part of consolidated XGBoost examples.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md`
   },
   {
     title: "NVFlare + MONAI integration",
     tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
     description: "Using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/README.md`
-  },
-  {
-    title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
-    tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
-    description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
-  },
-  {
-    title: "Federated Learning for Prostate Segmentation from Multi-source Data",
-    tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
-    description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
   },
   {
     title: "Federated Statistics for Images",
@@ -375,12 +345,6 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job_api/tf`
   },
   {
-    title: "End-to-End Federated XGBoost for Financial Credit Card Detection",
-    tags: ["adv.", "algorithm", "xgboost", "finance"],
-    description: "Show the end-to-end process of feature engineering, pre-processing and training in federated settings. You can use FLARE to perform federated ETL and then training.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance-end-to-end`
-  },
-  {
     title: "Auto-FedRL",
     tags: ["adv.", "algorithm", "research", "pytorch"],
     description: "Efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm.",
@@ -432,16 +396,9 @@ const tutorials = [
     title: "Secure Federated XGBoost with Homomorphic Encryption",
     tags: ["adv.", "algorithm", "xgboost", "he", "highlight"],
     description:
-      "Federated secure training with XGBoost using homomorphic encryption.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+      "Federated secure training with XGBoost using homomorphic encryption for both horizontal and vertical FL.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb_secure/README.md`,
   },
-   {
-      title: "Federated Embedding Model Training",
-      tags: ["adv.", "algorithm", "rag", "embedding"],
-      description:
-        "Embedding tuning tasks, illustrates how to adapt a local training script with SentenceTransformers trainer to NVFlare.",
-      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/rag/README.md`,
-    },
     {
       title: "Object Streaming",
       tags: ["adv.", "streaming"],
@@ -533,7 +490,7 @@ const tag_list = [
         Use the tags to filter by categories or search for keywords.
 
         To read more, visit our
-        <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/index.html">documentation</a> and
+        <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/index.html`>documentation</a> and
         <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples`>GitHub</a>.
       </p>
     </div>

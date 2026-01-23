@@ -225,7 +225,7 @@ and change the app_1 batch_size to 4, app_2 batch_size to 6 for sag_pt_deploy_ma
     -f app_server/config_fed_server.conf num_rounds=2 \
     -f app_1/config_fed_client.conf app_script=train.py app_config="--batch_size 4" \
     -f app_2/config_fed_client.conf app_script=train.py app_config="--batch_size 6" \
-    -sd ../hello-world/step-by-step/cifar10/code/fl
+    -sd /path/to/your/code
 
 .. note::
 

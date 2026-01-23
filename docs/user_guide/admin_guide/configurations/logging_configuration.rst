@@ -17,6 +17,7 @@ Logging Configuration and Features
 **********************************
 
 .. _default_logging_configuration:
+
 Default Logging Configuration
 =============================
 
@@ -259,6 +260,7 @@ The following log file handlers are pre-configured:
 - FLFileHandler with baseFormatter and FLFilter to write fl training and custom logs to ``log_fl.txt``
 
 .. _loggers:
+
 Loggers
 =======
 
@@ -289,11 +291,13 @@ When creating loggers for FLARE code, we provide several developer functions to 
 
 
 .. _modifying_logging_configurations:
+
 ********************************
 Modifying Logging Configurations
 ********************************
 
 .. _log_config_argument:
+
 Log Config Argument
 ===================
 We provide a log config argument (``-l`` or ``log_config`` in simulator mode, and ``config`` in the dynamic logging admin commands for POC and production mode).
@@ -317,13 +321,13 @@ Users can specify a log configuration in the simulator command with the ``-l`` s
 
 .. code-block:: shell
 
-    nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag -l log_config.json
+    nvflare simulator -w /tmp/nvflare/hello-numpy -n 2 -t 2 hello-world/hello-numpy -l log_config.json
 
 Or using the ``log_config`` argument of the Job API simulator run:
 
 .. code-block:: python
 
-    job.simulator_run("/tmp/nvflare/hello-numpy-sag", log_config="log_config.json")
+    job.simulator_run("/tmp/nvflare/hello-numpy", log_config="log_config.json")
 
 POC log configurations
 ======================
@@ -362,6 +366,7 @@ you can change ``log_config.json.default`` to ``log_config.json`` and modify the
 We also recommend using the :ref:`Dynamic Logging Configuration Commands <dynamic_logging_configuration_commands>`.
 
 .. _dynamic_logging_configuration_commands:
+
 **************************************
 Dynamic Logging Configuration Commands
 **************************************

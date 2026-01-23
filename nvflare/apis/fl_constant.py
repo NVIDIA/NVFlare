@@ -73,6 +73,7 @@ class ReservedKey(object):
     WORKSPACE_ROOT = "__workspace_root__"
     APP_ROOT = "__app_root__"
     CLIENT_NAME = "__client_name__"
+    CLIENT_TYPE = "__client_type__"
     TASK_NAME = "__task_name__"
     TASK_DATA = "__task_data__"
     TASK_RESULT = "__task_result__"
@@ -125,6 +126,7 @@ class FLContextKey(object):
     EVENT_SCOPE = ReservedKey.EVENT_SCOPE
     EXCEPTIONS = ReservedKey.EXCEPTIONS
     CLIENT_NAME = ReservedKey.CLIENT_NAME
+    CLIENT_TYPE = ReservedKey.CLIENT_TYPE
     WORKSPACE_ROOT = ReservedKey.WORKSPACE_ROOT
     CURRENT_RUN = ReservedKey.RUN_NUM
     APP_ROOT = ReservedKey.APP_ROOT
@@ -549,6 +551,9 @@ class ConfigVarName:
 
     # SJ and CJ: per-msg timeout for streaming
     STREAMING_PER_REQUEST_TIMEOUT = "streaming_per_request_timeout"
+
+    # SJ and CJ: chunk size for downloading
+    DOWNLOAD_CHUNK_SIZE = "download_chunk_size"
 
     # SJ and CJ: min file size for streaming. If file size is less than this, it will be attached to msg directly.
     MIN_FILE_SIZE_FOR_STREAMING = "min_file_size_for_streaming"

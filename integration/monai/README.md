@@ -1,42 +1,30 @@
 # MONAI Integration
 
 ## Objective
-Integration with [MONAI](https://monai.io/)'s federated learning capabilities.
-
-Add `ClientAlgoExecutor` class to allow using MONAI's `ClientAlgo` class in federated scenarios.
+Integration with [MONAI](https://project-monai.github.io/) for federated learning using NVFlare's Client API and FedAvgRecipe.
 
 ### Goals:
-
-Allow the use of bundles from the MONAI [model zoo](https://github.com/Project-MONAI/model-zoo) or custom configurations with NVFlare.
-
-## Background
-MONAI allows the definition of AI models using the "[bundle](https://docs.monai.io/en/latest/bundle.html)" concept. 
-It allows for easy experimentation and sharing of models that have been developed using MONAI.
-Using the bundle configurations, we can use MONAI's `MonaiAlgo` (the implementation of `ClientAlgo`) to execute a bundle model in a federated scenario using NVFlare.
-
-![Federated Learning Module in MONAI (https://docs.monai.io/en/stable/modules.html#federated-learning)](https://docs.monai.io/en/stable/_images/federated.svg)
+Enable the use of MONAI [bundles](https://monai.readthedocs.io/en/latest/bundle.html) from the MONAI [model zoo](https://github.com/Project-MONAI/model-zoo) or custom configurations with NVFlare using modern Client API patterns.
 
 ## Description
-NVFlare executes the `ClientAlgo` class using the `ClientAlgoExecutor` class provided with this package.
+MONAI allows the definition of AI models using the "bundle" concept for easy experimentation and sharing. This integration shows how to use MONAI bundles in federated learning scenarios using NVFlare's **Client API** and **FedAvgRecipe** for simplified, Pythonic configuration.
 
 ### Examples
 
-For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train
-a medical image analysis model using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
-and [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html),
-see the [examples](./examples/README.md).
+For examples of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) with [MONAI Bundle](https://monai.readthedocs.io/en/latest/mb_specification.html) and federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)), see the [examples](./examples/README.md).
 
 ## Requirements
 
-We recommend following the instructions for setting up a [virtual environment](../../examples/README.md#set-up-a-virtual-environment),
-and using it in [JupyterLab](../../examples/README.md#set-up-jupyterlab-for-notebooks) for running the notebooks the MONAI integration examples.
+Follow the instructions for setting up a [virtual environment](../../examples/README.md#set-up-a-virtual-environment):
 
-Install MONAI-NVFlare integration from [PyPI](https://pypi.org/):
-```
-pip install monai_nvflare
+```bash
+pip install -r examples/spleen_ct_segmentation/requirements.txt
 ```
 
-(Optional) Install MONAI-NVFlare integration from source:
-```
-pip install -e .
-```
+## Migration Note
+
+**Deprecated:** The `monai_nvflare` package and `ClientAlgoExecutor`/`ClientAlgo` classes are deprecated. 
+
+**Use instead:** NVFlare's [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api) with [FedAvgRecipe](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.recipes.fedavg.html) for simpler, more maintainable code.
+
+See the updated examples for the new pattern.

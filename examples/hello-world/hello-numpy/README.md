@@ -7,37 +7,36 @@ This example demonstrates federated learning with NumPy using NVIDIA FLARE's Rec
 For complete installation instructions, visit [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
 ```bash
-pip install nvflare
+  pip install nvflare
+```
+
+Clone the example code from GitHub:
+
+```bash
+  git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+Navigate to the hello-numpy directory:
+
+```bash
+    git switch <release branch>
+    cd examples/hello-world/hello-numpy
 ```
 
 Install the dependencies:
 
 ```bash
-pip install -r requirements.txt
+  pip install -r requirements.txt
 ```
 
 ## Code Structure
 
-First, clone the example code from GitHub:
-
-```bash
-git clone https://github.com/NVIDIA/NVFlare.git
 ```
-
-Navigate to the hello-fedavg-numpy directory:
-
-```bash
-git switch <release branch>
-cd examples/hello-world/hello-fedavg-numpy
-```
-
-```text
-hello-fedavg-numpy
-|
-|-- client.py         # client local training script
-|-- model.py          # model definition
-|-- server.py         # server recipe that defines client and server configurations
-|-- requirements.txt  # dependencies
+    hello-numpy
+    |
+    |-- client.py         # client local training script
+    |-- job.py            # creates the FL recipe and executes it using SimEnv
+    |-- requirements.txt  # dependencies
 ```
 
 ## What This Example Does
@@ -50,8 +49,7 @@ hello-fedavg-numpy
 ## Files
 
 - **`client.py`** - Client-side training script that receives models, trains locally, and sends updates
-- **`model.py`** - Simple NumPy model definition with training and evaluation methods
-- **`server.py`** - Server-side script that creates and runs the federated learning job using the Recipe API
+- **`job.py`** - Script that creates and runs the federated learning job using the Recipe API
 - **`requirements.txt`** - Python dependencies
 
 ## How It Works
@@ -75,43 +73,24 @@ This example uses NVIDIA FLARE's **Recipe API**, which provides a high-level, de
 ### Key Components
 
 - **`NumpyFedAvgRecipe`**: Custom recipe for NumPy models (located in `nvflare.app_common.np.recipes`)
-- **`SimpleNumpyModel`**: Basic NumPy model with trainable weights
 - **`SimEnv`**: Simulation environment for running FL jobs locally
-- **`ScriptRunner`**: Executes client training scripts with proper framework configuration
+
 
 ## Customization
 
 You can modify the example by:
 
-- **Changing the model**: Edit `model.py` to use your own NumPy model
-- **Adjusting training**: Modify the `train_step()` method in `SimpleNumpyModel`
+- **Adjusting training**: Modify the `train()` method in `client.py`
 - **Adding more clients**: Use `--n_clients` parameter
 - **Changing rounds**: Use `--num_rounds` parameter
-- **Adjusting learning rate**: Use `--learning_rate` parameter
 
-## Example Output
-
-```
-Client site-1 initialized
-Client site-2 initialized
-Client site-1, current_round=1
-Received weights: {'numpy_key': array([[1., 2., 3.],
-       [4., 5., 6.],
-       [7., 8., 9.]], dtype=float32)}
-Client site-1 starting training...
-Client site-1 evaluation metrics: {'accuracy': 5.0}
-Client site-1 finished training for round 1
-Sending weights: [[2. 3. 4.]
- [5. 6. 7.]
- [8. 9. 10.]]
-```
 
 ## Run the Experiment
 
 Execute the script using the recipe API to create the job and run it with the simulator:
 
 ```bash
-python server.py
+python job.py
 ```
 
 ## Access the Logs and Results

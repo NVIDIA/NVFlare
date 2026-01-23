@@ -1,3 +1,5 @@
+.. _hello_tabular_stats:
+
 Tabular Data Federated Statistics
 =================================
 
@@ -6,31 +8,32 @@ In this example, we will show how to generate federated statistics for tabular d
 
 NVIDIA FLARE Installation
 -------------------------
-for the complete installation instructions, see `installation <../../installation.html>`_
+for the complete installation instructions, see :doc:`Installation </installation>`
 
 .. code-block:: text
 
     pip install nvflare
 
 
-Install the dependency
-----------------------
-
-first get the example code from github:
-
+get the example code from github:
 
 .. code-block:: text
 
     git clone https://github.com/NVIDIA/NVFlare.git
 
-
 then navigate to the hello-tabular-stats directory:
 
 .. code-block:: text
 
-    cd NVFlare/examples/hello-world/hello-tabular-stats
+    git switch <release branch>
+    cd examples/hello-world/hello-tabular-stats
+
+
+Install the dependency
+----------------------
 
     pip install -r requirements.txt
+
 
 Install Optional Quantile Dependency -- fastdigest
 ------------------------------------------------------------
@@ -74,19 +77,14 @@ Then you can install fastdigest again
 Code Structure
 --------------
 
-navigate to the hello-tabular-stats directory:
-
 .. code-block:: text
-
-    git switch <release branch>
-    cd examples/hello-world/hello-tabular-stats
 
     hello-tabular-stats
     |
     ├── client.py         # client local training script
     ├── job.py            # job recipe that defines client and server configurations
-    ├── prepare_data.py   # utilies to download data
-    ├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
+    ├── prepare_data.py   # utilities to download data
+    ├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to install quantile dependency
     └── requirements.txt  # dependencies
     ├── demo
     │   └── visualization.ipynb # Visualization Notebook
@@ -95,7 +93,7 @@ navigate to the hello-tabular-stats directory:
 Data
 ----
 
-In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
+In this example, we are using the UCI (University of California, Irvine) `adult dataset <https://archive.ics.uci.edu/dataset/2/adult>`_.
 
 The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
 so we assigned the training data and test data into two clients.
@@ -203,9 +201,11 @@ The results are stored in workspace "/tmp/nvflare"
     /tmp/nvflare/simulation/stats_df/server/simulate_job/statistics/adults_stats.json
 
 
-## Visualization
-   with json format, the data can be easily visualized via pandas dataframe and plots.
-   download and copy the output adults_stats.json file to demo directory, then you can run jupyter notebook visualization.ipynb
+Visualization
+-------------
+
+With JSON format, the data can be easily visualized via Pandas DataFrame and plots.
+Download and copy the output ``adults_stats.json`` file to the demo directory, then run the Jupyter notebook ``visualization.ipynb``.
 
 
 

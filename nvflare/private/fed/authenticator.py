@@ -258,6 +258,13 @@ class Authenticator:
                 token = payload.get(CellMessageHeaderKeys.TOKEN)
                 token_signature = payload.get(CellMessageHeaderKeys.TOKEN_SIGNATURE, "NA")
                 ssid = payload.get(CellMessageHeaderKeys.SSID)
+
+                # Extract server's CC info if present (for CCManager validation)
+                server_cc_info = payload.get("_cc_info")
+                if server_cc_info:
+                    shared_fl_ctx.set_prop(key="_cc_info", value=server_cc_info, sticky=False, private=False)
+                    self.logger.debug("Received server CC info in registration response")
+
                 if not token and not abort_signal.triggered:
                     if self.timeout and time.time() - start_time > self.timeout:
                         # timed out

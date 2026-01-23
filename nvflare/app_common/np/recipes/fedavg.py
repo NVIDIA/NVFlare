@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
-from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
@@ -24,6 +23,7 @@ from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -33,7 +33,7 @@ class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    initial_model: list
     min_clients: int
     num_rounds: int
     train_script: str
@@ -44,6 +44,9 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    launch_once: bool = True
+    shutdown_timeout: float = 0.0
+    key_metric: str
 
 
 class NumpyFedAvgRecipe(Recipe):
@@ -62,7 +65,8 @@ class NumpyFedAvgRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
+        initial_model: Initial model (as list or numpy array) to start federated training with.
+            Lists are preferred for JSON serialization compatibility. If None,
             clients will start with their own local models.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
@@ -75,7 +79,17 @@ class NumpyFedAvgRecipe(Recipe):
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        launch_once: Controls the lifecycle of the external process. If True (default), the process
+            is launched once at startup and persists throughout all rounds, handling multiple training
+            requests. If False, a new process is launched and torn down for each individual request
+            from the server (e.g., each train or validate request). Only used if `launch_external_process`
+            is True. Defaults to True.
+        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
+            Only used if `launch_external_process` is True. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
 
     Example:
         ```python
@@ -102,7 +116,7 @@ class NumpyFedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        initial_model: list,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -113,6 +127,9 @@ class NumpyFedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
+        key_metric: str = "accuracy",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -128,6 +145,9 @@ class NumpyFedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            key_metric=key_metric,
         )
 
         self.name = v.name
@@ -140,11 +160,22 @@ class NumpyFedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        # Framework is set internally for proper behavior:
+        # - RAW for external APIs (CSE auto-detection)
+        # - NUMPY for ScriptRunner (correct parameter exchange)
+        self.framework = FrameworkType.RAW
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.launch_once = v.launch_once
+        self.shutdown_timeout = v.shutdown_timeout
+        self.key_metric = v.key_metric
 
-        # Create FedJob
-        job = FedJob(name=self.name)
+        # Create BaseFedJob
+        job = BaseFedJob(
+            name=self.name,
+            min_clients=self.min_clients,
+            key_metric=self.key_metric,
+        )
 
         # Define the controller and send to server
         if self.aggregator is None:
@@ -158,12 +189,10 @@ class NumpyFedAvgRecipe(Recipe):
         shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
         aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
-        # Handle initial model if provided
-        persistor_id = ""
-        if self.initial_model is not None:
-            # Add persistor and initial model directly
-            persistor_id = job.to_server(NPModelPersistor(), id="persistor")
-            job.to(self.initial_model, "server")
+        # Add persistor with initial model
+        persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+        # Note: Unlike PyTorch/TensorFlow, NumPy recipes do NOT set comp_ids["persistor_id"]
+        # because NPModelLocator doesn't use persistor_id (see MODEL_LOCATOR_REGISTRY in recipe/utils.py)
 
         controller = ScatterAndGather(
             min_clients=self.min_clients,
@@ -172,20 +201,22 @@ class NumpyFedAvgRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
-            allow_empty_global_weights=True,  # Allow empty weights if no initial model
         )
         # Send the controller to the server
         job.to_server(controller)
 
-        # Add clients with NUMPY framework
+        # Use FrameworkType.NUMPY for ScriptRunner to ensure correct parameter exchange
+        # (self.framework is RAW for external API compatibility)
         executor = ScriptRunner(
             script=self.train_script,
             script_args=self.train_args,
             launch_external_process=self.launch_external_process,
             command=self.command,
-            framework=FrameworkType.NUMPY,  # Use NUMPY framework instead of PYTORCH
+            framework=FrameworkType.NUMPY,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            launch_once=self.launch_once,
+            shutdown_timeout=self.shutdown_timeout,
         )
         job.to_clients(executor)
 
