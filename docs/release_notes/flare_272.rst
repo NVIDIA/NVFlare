@@ -134,7 +134,9 @@ Benefits for LLM Training
 
 .. admonition:: Learn More
 
-    For detailed documentation on object downloading and the underlying architecture, see the documentation on :ref:`decomposer_for_large_object`.
+    For a complete user guide including configuration examples and how to tune or disable the feature, see :ref:`tensor_downloader`.
+    
+    For details on the underlying FOBS decomposer architecture, see :ref:`decomposer_for_large_object`.
 
 Additional Improvements
 =======================
