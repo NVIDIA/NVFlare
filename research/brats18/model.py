@@ -48,15 +48,3 @@ class BratsSegResNet(SegResNet):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.dropout_prob = dropout_prob
-
-
-def create_brats_model():
-    """Create SegResNet model for BraTS18 segmentation."""
-    return BratsSegResNet(
-        blocks_down=[1, 2, 2, 4],
-        blocks_up=[1, 1, 1],
-        init_filters=16,
-        in_channels=4,
-        out_channels=3,
-        dropout_prob=0.2,
-    )

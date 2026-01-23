@@ -22,7 +22,7 @@ from typing import Sequence, Tuple
 import numpy as np
 import torch
 import torch.optim as optim
-from model import create_brats_model
+from model import BratsSegResNet
 from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SlidingWindowInferer
 from monai.losses import DiceLoss
@@ -208,7 +208,7 @@ def main():
     )
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = create_brats_model().to(device)
+    model = BratsSegResNet().to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-5)
     criterion = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
     criterion_prox = PTFedProxLoss(mu=args.fedproxloss_mu) if args.fedproxloss_mu > 0 else None
