@@ -149,3 +149,4 @@ Create a `CLAUDE.local.md` file (git-ignored) for personal preferences such as:
 - Preferred coding patterns
 - Local environment specifics
 - Custom shortcuts or workflows
+
