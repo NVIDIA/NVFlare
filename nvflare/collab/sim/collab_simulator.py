@@ -493,9 +493,9 @@ class AppRunner:
 
 
 class CollabSimulator:
-    """High-level Fox simulation runner.
+    """High-level Collab simulation runner.
 
-    Provides a simple API to run Fox simulations with server and client objects.
+    Provides a simple API to run Collab simulations with server and client objects.
     Supports both in-process and subprocess execution modes.
     """
 

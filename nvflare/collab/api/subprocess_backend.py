@@ -14,7 +14,7 @@
 
 """Subprocess Backend for forwarding calls to worker subprocesses.
 
-This backend is used when Fox runs in subprocess mode (inprocess=False).
+This backend is used when Collab runs in subprocess mode (inprocess=False).
 It wraps a SubprocessLauncher and forwards calls to the worker process
 via CellNet. This is used by both:
 - AppRunner (simulation path)

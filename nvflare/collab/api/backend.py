@@ -23,7 +23,7 @@ from .gcc import GroupCallContext
 
 
 class Backend(ABC):
-    """A FOX Backend implements remote object calls. This interface defines the required methods that a Backend
+    """A Collab Backend implements remote object calls. This interface defines the required methods that a Backend
     must implement.
     """
 

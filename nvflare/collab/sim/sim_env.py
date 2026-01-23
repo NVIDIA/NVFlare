@@ -21,7 +21,7 @@ from nvflare.collab.sim.publish_simulator import CollabSimulator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 
-WORKSPACE_ROOT = "/tmp/nvflare/fox_simulation"
+WORKSPACE_ROOT = "/tmp/nvflare/collab_simulation"
 
 
 class SimEnv(ExecEnv):
@@ -48,7 +48,7 @@ class SimEnv(ExecEnv):
         subprocess_timeout: float = 300.0,
         extra: dict = None,
     ):
-        """Initialize Fox simulation execution environment.
+        """Initialize Collab simulation execution environment.
 
         Args:
             num_clients: Number of simulated clients, or tuple (min, max) for range.
@@ -133,16 +133,16 @@ class SimEnv(ExecEnv):
         return experiment_name
 
     def get_job_status(self, job_id: str) -> Optional[str]:
-        """Get job status - not fully supported in Fox simulation environment."""
+        """Get job status - not fully supported in Collab simulation environment."""
         print(
-            f"Note: get_status returns None in Fox SimEnv. "
+            f"Note: get_status returns None in Collab SimEnv. "
             f"Logs can be found at {os.path.join(self.workspace_root, job_id)}"
         )
         return None
 
     def abort_job(self, job_id: str) -> None:
-        """Abort job - not supported in Fox simulation environment."""
-        print("Abort is not supported in Fox simulation environment, it will always run to completion.")
+        """Abort job - not supported in Collab simulation environment."""
+        print("Abort is not supported in Collab simulation environment, it will always run to completion.")
 
     def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
         """Get job result workspace path.

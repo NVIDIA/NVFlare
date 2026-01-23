@@ -30,7 +30,7 @@ class NPFedAvgSequential:
 
     @collab.init
     def init(self):
-        self.logger.info("fox init NPFedAvgSequential")
+        self.logger.info("init NPFedAvgSequential")
         weight_config = collab.get_app_prop("client_weight_config", {})
         client_weights = {}
         total = 0

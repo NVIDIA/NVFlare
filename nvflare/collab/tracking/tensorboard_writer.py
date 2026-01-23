@@ -16,14 +16,14 @@
 
 This writer mimics the torch.utils.tensorboard.SummaryWriter API,
 allowing users to change only the import statement when running
-in Fox subprocess mode.
+in Collab subprocess mode.
 
 Original TensorBoard usage:
     from torch.utils.tensorboard import SummaryWriter
     writer = SummaryWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
 
-Fox subprocess usage (same API, different import):
+Collab subprocess usage (same API, different import):
     from nvflare.collab.tracking import TensorBoardWriter
     writer = TensorBoardWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
@@ -62,7 +62,7 @@ class TensorBoardWriter(BaseWriter):
         """Initialize TensorBoardWriter.
 
         Args:
-            log_dir: Ignored in Fox mode (compatibility with SummaryWriter).
+            log_dir: Ignored in Collab mode (compatibility with SummaryWriter).
             **kwargs: Additional arguments (ignored, for compatibility).
         """
         super().__init__()

@@ -50,8 +50,8 @@ def determine_parent_fqcn(client_config: dict, fl_ctx: FLContext) -> str:
     Returns: the FQCN of the parent cell
 
     """
-    fox_mode = fl_ctx.get_prop(FLContextKey.FOX_MODE, False)
-    if fox_mode:
+    collab_mode = fl_ctx.get_prop(FLContextKey.COLLAB_MODE, False)
+    if collab_mode:
         return FQCN.ROOT_SERVER
 
     parent_client_name = determine_parent_name(client_config)

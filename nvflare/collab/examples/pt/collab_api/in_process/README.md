@@ -254,7 +254,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.publish import fox                       # + Add Collab imports
+from nvflare.collab import collab                       # + Add Collab imports
 from nvflare.publish.sim import SimEnv                # +
 from nvflare.publish.sys.recipe import FoxRecipe      # +
 ```
@@ -487,7 +487,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.publish import fox                       # + Add Collab imports
+from nvflare.collab import collab                       # + Add Collab imports
 from nvflare.publish.sim import SimEnv                # +
 from nvflare.publish.sys.recipe import FoxRecipe      # +
 ```

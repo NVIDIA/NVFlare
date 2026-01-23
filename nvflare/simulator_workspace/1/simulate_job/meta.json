@@ -1,0 +1,16 @@
+{
+    "name": "hello-numpy-sag",
+    "resource_spec": {},
+    "min_clients": 2,
+    "deploy_map": {
+        "app": [
+            "@ALL"
+        ]
+    },
+    "job_folder_name": "hello-numpy-sag",
+    "job_clients": [
+        {
+            "name": "1"
+        }
+    ]
+}

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Wrapper to use a module's functions as Fox collab/algo methods."""
+"""Wrapper to use a module's functions as Collab publish/algo methods."""
 
 import importlib
 import os
@@ -42,7 +42,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         An importable module name string
 
     Example:
-        # When running: python nvflare/fox/examples/test.py
+        # When running: python nvflare/collab/examples/test.py
         # module.__name__ = '__main__'
         # Returns: 'nvflare.collab.examples.test'
     """
@@ -61,7 +61,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         )
 
     # Convert file path to module name
-    # e.g., /path/to/nvflare/fox/examples/test.py -> nvflare.collab.examples.test
+    # e.g., /path/to/nvflare/collab/examples/test.py -> nvflare.collab.examples.test
     module_file = os.path.abspath(module_file)
 
     # Remove .py extension

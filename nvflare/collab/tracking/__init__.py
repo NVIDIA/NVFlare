@@ -30,7 +30,7 @@ Example - TensorBoard:
     writer = SummaryWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
 
-    # Fox (same API, works in both modes):
+    # Collab (same API, works in both modes):
     from nvflare.collab.tracking import SummaryWriter
     writer = SummaryWriter()
     writer.add_scalar("loss", 0.5, global_step=100)
@@ -40,7 +40,7 @@ Example - MLflow:
     import mlflow
     mlflow.log_metric("loss", 0.5, step=100)
 
-    # Fox (same API):
+    # Collab (same API):
     from nvflare.collab.tracking import mlflow
     mlflow.log_metric("loss", 0.5, step=100)
 
@@ -50,7 +50,7 @@ Example - W&B:
     wandb.init(project="my-project")
     wandb.log({"loss": 0.5})
 
-    # Fox (same API):
+    # Collab (same API):
     from nvflare.collab.tracking import wandb
     wandb.init(project="my-project")
     wandb.log({"loss": 0.5})

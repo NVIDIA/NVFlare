@@ -1,0 +1,40 @@
+2025-08-08 13:06:00,482 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Initializing ScatterAndGather workflow.
+2025-08-08 13:06:00,484 - NPModelPersistor - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Unable to load model from /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/server/simulate_job/models/server.npy: FileNotFoundError: [Errno 2] No such file or directory: '/Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/server/simulate_job/models/server.npy'. Using default data instead.
+2025-08-08 13:06:00,485 - NPModelPersistor - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Loaded initial model: {'numpy_key': array([[1., 2., 3.],
+       [4., 5., 6.],
+       [7., 8., 9.]], dtype=float32)}
+2025-08-08 13:06:00,486 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Beginning ScatterAndGather training phase.
+2025-08-08 13:06:00,487 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 0 started.
+2025-08-08 13:06:04,384 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_9c32dc98-92e6-4396-b18e-f5542f16a361.npz
+2025-08-08 13:06:04,441 - DXOAggregator - WARNING - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Aggregation_weight missing for 1 and set to default value, 1.0 This kind of message will show 10 times at most.
+2025-08-08 13:06:04,442 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Contribution from 1 ACCEPTED by the aggregator at round 0.
+2025-08-08 13:06:04,562 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start aggregation.
+2025-08-08 13:06:04,562 - DXOAggregator - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - aggregating 1 update(s) at round 0
+2025-08-08 13:06:04,563 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End aggregation.
+2025-08-08 13:06:04,563 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start persist model on server.
+2025-08-08 13:06:04,565 - NPModelPersistor - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/server/simulate_job/models/server.npy
+2025-08-08 13:06:04,565 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End persist model on server.
+2025-08-08 13:06:04,565 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 0 finished.
+2025-08-08 13:06:04,579 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 1 started.
+2025-08-08 13:06:06,490 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_0396a015-8879-40f3-a806-dc9b39a3b3ec.npz
+2025-08-08 13:06:06,511 - DXOAggregator - WARNING - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Aggregation_weight missing for 1 and set to default value, 1.0 This kind of message will show 10 times at most.
+2025-08-08 13:06:06,511 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Contribution from 1 ACCEPTED by the aggregator at round 1.
+2025-08-08 13:06:06,615 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start aggregation.
+2025-08-08 13:06:06,617 - DXOAggregator - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - aggregating 1 update(s) at round 1
+2025-08-08 13:06:06,619 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End aggregation.
+2025-08-08 13:06:06,619 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start persist model on server.
+2025-08-08 13:06:06,622 - NPModelPersistor - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/server/simulate_job/models/server.npy
+2025-08-08 13:06:06,622 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End persist model on server.
+2025-08-08 13:06:06,623 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 1 finished.
+2025-08-08 13:06:06,645 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 2 started.
+2025-08-08 13:06:08,543 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_3dc05db2-a092-471c-af9a-e5a00f561f3c.npz
+2025-08-08 13:06:08,595 - DXOAggregator - WARNING - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Aggregation_weight missing for 1 and set to default value, 1.0 This kind of message will show 10 times at most.
+2025-08-08 13:06:08,595 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather, peer=1, peer_run=simulate_job, peer_rc=OK, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Contribution from 1 ACCEPTED by the aggregator at round 2.
+2025-08-08 13:06:08,678 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start aggregation.
+2025-08-08 13:06:08,679 - DXOAggregator - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - aggregating 1 update(s) at round 2
+2025-08-08 13:06:08,679 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End aggregation.
+2025-08-08 13:06:08,679 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Start persist model on server.
+2025-08-08 13:06:08,684 - NPModelPersistor - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/server/simulate_job/models/server.npy
+2025-08-08 13:06:08,684 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - End persist model on server.
+2025-08-08 13:06:08,685 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Round 2 finished.
+2025-08-08 13:06:08,701 - ScatterAndGather - INFO - [identity=simulator_server, run=simulate_job, wf=scatter_and_gather] - Finished ScatterAndGather Training.

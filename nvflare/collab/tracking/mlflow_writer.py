@@ -15,14 +15,14 @@
 """MLflow-compatible writer for Collab subprocess mode.
 
 This writer mimics the MLflow logging API, allowing users to change
-only the import statement when running in Fox subprocess mode.
+only the import statement when running in Collab subprocess mode.
 
 Original MLflow usage:
     import mlflow
     mlflow.log_metric("loss", 0.5, step=100)
     mlflow.log_param("learning_rate", 0.001)
 
-Fox subprocess usage (same API, different import):
+Collab subprocess usage (same API, different import):
     from nvflare.collab.tracking import mlflow
     mlflow.log_metric("loss", 0.5, step=100)
     mlflow.log_param("learning_rate", 0.001)

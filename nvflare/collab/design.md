@@ -16,7 +16,7 @@ FLARE Collab API, code name Collab (FLARE Collaboration), is NVIDIA FLARE's coll
 
 ## Architecture Layers
 
-The Fox architecture consists of layered components. The **Subprocess Layer is OPTIONAL**
+The Collab architecture consists of layered components. The **Subprocess Layer is OPTIONAL**
 and only used for multi-GPU, multi-node, or custom script execution. The **Tracking Layer
 works in BOTH in-process and subprocess modes**.
 
@@ -91,7 +91,7 @@ works in BOTH in-process and subprocess modes**.
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                               COMMUNICATION LAYER                                    │
 │                                                                                      │
-│   CellNet (Channels: fox/call, fox_worker, fox_metrics)                             │
+│   CellNet (Channels: collab/call, collab_worker, collab_metrics)                             │
 │   FOBS Serialization, TensorDecomposer                                              │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -148,7 +148,7 @@ works in BOTH in-process and subprocess modes**.
 
 ### Two API Patterns
 
-Fox supports two distinct API patterns for client-side training:
+Collab supports two distinct API patterns for client-side training:
 
 | Pattern | Description | Use Case |
 |---------|-------------|----------|
@@ -259,7 +259,7 @@ recipe = CollabRecipe(
 
 #### ModuleWrapper (`nvflare/collab/api/module_wrapper.py`)
 
-Enables Python modules to be used as Fox client/server objects.
+Enables Python modules to be used as Collab client/server objects.
 
 ```python
 # Wraps a module containing @collab.publish or @collab.main functions
@@ -321,7 +321,7 @@ call_opt = CallOption(
 
 #### CollabClientAPI (`nvflare/client/in_process/collab_api.py`)
 
-Implements the standard NVFlare Client API (`APISpec`) using Fox Collab API internally.
+Implements the standard NVFlare Client API (`APISpec`) using Collab API internally.
 **CollabClientAPI is an adapter** that converts the push-based Collab API to the pull-based
 Client API pattern.
 
@@ -540,12 +540,12 @@ CellNet-based backend for distributed execution.
 │  Server (Location A)                     Clients (Different Locations)          │
 │  ┌──────────────────┐                   ┌──────────────────┐                    │
 │  │  CollabController   │      CellNet      │  CollabExecutor     │                    │
-│  │  (Cloud/VM)      │ ════(fox/call)═══▶│  site-1          │  (Site B)          │
+│  │  (Cloud/VM)      │ ════(collab/call)═══▶│  site-1          │  (Site B)          │
 │  │                  │ ◀═══response═════ │  (Hospital)      │                    │
 │  └──────────────────┘                   └──────────────────┘                    │
 │           │                             ┌──────────────────┐                    │
 │           │                             │  CollabExecutor     │                    │
-│           └═══════(fox/call)═══════════▶│  site-2          │  (Site C)          │
+│           └═══════(collab/call)═══════════▶│  site-2          │  (Site C)          │
 │                                         │  (Research Lab)  │                    │
 │                                         └──────────────────┘                    │
 │                                                                                  │
@@ -634,7 +634,7 @@ Server calls `@collab.publish` methods on the client. Worker waits for RPC calls
 │                                                                                     │
 │  CollabExecutor                           Subprocess (torchrun)                        │
 │  ┌─────────────────┐                   ┌────────────────────────────────────────┐  │
-│  │ SubprocessLaunch│    fox_worker     │              CollabWorker                 │  │
+│  │ SubprocessLaunch│    collab_worker     │              CollabWorker                 │  │
 │  │                 │    /call          │                                        │  │
 │  │  call("train")  │──────────────────▶│  Load module                           │  │
 │  │                 │                   │  Find @collab.publish method               │  │
@@ -654,7 +654,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │                                                                                     │
 │  CollabExecutor                           Subprocess (torchrun)                        │
 │  ┌─────────────────┐                   ┌────────────────────────────────────────┐  │
-│  │ SubprocessLaunch│    fox_worker     │              CollabWorker                 │  │
+│  │ SubprocessLaunch│    collab_worker     │              CollabWorker                 │  │
 │  │                 │    /call          │                                        │  │
 │  │                 │                   │  1. Detect client_class=CollabClientAPI   │  │
 │  │                 │                   │  2. Create CollabClientAPI instance       │  │
@@ -690,7 +690,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │  1. Set ENV vars: FOX_PARENT_URL, FOX_PARENT_FQCN, FOX_CLIENT_CLASS, etc.      │ │
 │  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.publish.sys.worker my_training   │ │
 │  │  3. Wait for ready signal                                                       │ │
-│  │  4. Forward calls via CellNet (fox_worker/call)                                │ │
+│  │  4. Forward calls via CellNet (collab_worker/call)                                │ │
 │  │                                                                                 │ │
 │  └────────────────────────────────────────────────────────────────────────────────┘ │
 │                                          │                                           │
@@ -782,7 +782,7 @@ User Code (same API regardless of execution mode):
 │     │                          │               │          │                          ││
 │     │  InProcessWriter         │               │          │  SubprocessWriter        ││
 │     │  → fire_event directly   │               │          │  → CellNet relay         ││
-│     │    to event_manager      │               │          │    (fox_metrics/log)     ││
+│     │    to event_manager      │               │          │    (collab_metrics/log)     ││
 │     └────────────┬─────────────┘               │          └────────────┬─────────────┘│
 │                  │                             │                       │              │
 └──────────────────┼─────────────────────────────┼───────────────────────┼──────────────┘
@@ -857,11 +857,11 @@ wandb.log({"loss": 0.5, "accuracy": 0.9})
 
 | Channel | Topic | Purpose |
 |---------|-------|---------|
-| `fox/call` | `call` | Server ↔ Client method invocation |
-| `fox_worker` | `call` | CollabExecutor ↔ CollabWorker method calls |
-| `fox_worker` | `ready` | Worker signals ready to parent |
-| `fox_worker` | `shutdown` | Graceful worker shutdown |
-| `fox_metrics` | `log` | Metrics from subprocess to executor |
+| `collab/call` | `call` | Server ↔ Client method invocation |
+| `collab_worker` | `call` | CollabExecutor ↔ CollabWorker method calls |
+| `collab_worker` | `ready` | Worker signals ready to parent |
+| `collab_worker` | `shutdown` | Graceful worker shutdown |
+| `collab_metrics` | `log` | Metrics from subprocess to executor |
 
 ### Cell FQCN Hierarchy
 
@@ -887,7 +887,7 @@ site-2                      # Client 2 cell
 
 ### FOBS Serialization
 
-Fox uses FOBS (FLARE Object Serialization) for data transfer:
+Collab uses FOBS (FLARE Object Serialization) for data transfer:
 
 - **TensorDecomposer**: Efficient PyTorch tensor serialization
 - **NumPy arrays**: Native support
@@ -1104,7 +1104,7 @@ code across multi-GPU, HPC, multi-node, and Kubernetes environments.
 
 ### HPC Integration (SLURM, PBS, LSF)
 
-**Goal**: Enable Fox clients to run on HPC clusters with job schedulers.
+**Goal**: Enable Collab clients to run on HPC clusters with job schedulers.
 
 > **Note**: In real federated learning, the server is typically **external** to the HPC cluster
 > (e.g., cloud VM, on-premise server at coordinating institution). The diagram below shows
@@ -1266,7 +1266,7 @@ dist.destroy_process_group()
 
 ### Kubernetes Native Deployment
 
-**Goal**: Deploy Fox clients as Kubernetes-native workloads. Server and clients are
+**Goal**: Deploy Collab clients as Kubernetes-native workloads. Server and clients are
 **distributed across different locations** - this is the essence of federated learning.
 
 ```
@@ -1299,7 +1299,7 @@ dist.destroy_process_group()
 │  │  K8s Cluster         │  │  K8s Cluster         │  │  K8s Cluster         │       │
 │  │                      │  │                      │  │                      │       │
 │  │  ┌────────────────┐  │  │  ┌────────────────┐  │  │  ┌────────────────┐  │       │
-│  │  │ Fox Operator   │  │  │  │ Fox Operator   │  │  │  │ Fox Operator   │  │       │
+│  │  │ Collab Operator   │  │  │  │ Collab Operator   │  │  │  │ Collab Operator   │  │       │
 │  │  └───────┬────────┘  │  │  └───────┬────────┘  │  │  └───────┬────────┘  │       │
 │  │          │           │  │          │           │  │          │           │       │
 │  │          ▼           │  │          ▼           │  │          ▼           │       │

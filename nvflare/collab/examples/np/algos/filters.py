@@ -50,7 +50,7 @@ class Print:
 
     @collab.call_filter
     def print_call(self, func_kwargs: dict):
-        self.logger.info(f"[{collab.call_info}] print_call on fox ctx {id(collab.context)}")
+        self.logger.info(f"[{collab.call_info}] print_call on collab ctx {id(collab.context)}")
         direction = collab.filter_direction
         qual_func_name = collab.qual_func_name
         self.logger.info(
@@ -60,7 +60,7 @@ class Print:
 
     @collab.result_filter
     def print_result(self, result, context):
-        self.logger.info(f"[{collab.call_info}] print_result on  {id(context)} fox ctx {id(collab.context)}")
+        self.logger.info(f"[{collab.call_info}] print_result on  {id(context)} collab ctx {id(collab.context)}")
         direction = collab.filter_direction
         qual_func_name = collab.qual_func_name
         self.logger.info(

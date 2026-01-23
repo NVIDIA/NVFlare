@@ -1,0 +1,44 @@
+2025-08-08 13:06:04,405 - DecomposerRegistrar - WARNING - Duplicate registration for DOT 1: nvflare.app_common.decomposers.numpy_decomposers.NumpyArrayDecomposer
+2025-08-08 13:06:04,406 - DecomposerRegistrar - WARNING - Duplicate registration for DOT 2: nvflare.app_common.decomposers.numpy_decomposers.NumpyArrayDecomposer
+2025-08-08 13:06:04,408 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Task name: train
+2025-08-08 13:06:04,409 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Incoming data kind: WEIGHTS
+2025-08-08 13:06:04,409 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Model: 
+{'numpy_key': array([[1., 2., 3.],
+       [4., 5., 6.],
+       [7., 8., 9.]], dtype=float32)}
+2025-08-08 13:06:04,410 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Current Round: 0
+2025-08-08 13:06:04,410 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Total Rounds: 3
+2025-08-08 13:06:04,410 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Client identity: 1
+2025-08-08 13:06:04,412 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/1/simulate_job/model/best_numpy.npy
+2025-08-08 13:06:04,413 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=aeb2c503-979c-4ca4-a1a9-9e9e8dbbb140] - Model after training: {'numpy_key': array([[ 2.,  3.,  4.],
+       [ 5.,  6.,  7.],
+       [ 8.,  9., 10.]], dtype=float32)}
+2025-08-08 13:06:04,418 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_da01b06f-b460-4d49-825d-15cf3ad6b6af.npz
+2025-08-08 13:06:06,496 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Task name: train
+2025-08-08 13:06:06,496 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Incoming data kind: WEIGHTS
+2025-08-08 13:06:06,497 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Model: 
+{'numpy_key': array([[ 2.,  3.,  4.],
+       [ 5.,  6.,  7.],
+       [ 8.,  9., 10.]], dtype=float32)}
+2025-08-08 13:06:06,497 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Current Round: 1
+2025-08-08 13:06:06,497 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Total Rounds: 3
+2025-08-08 13:06:06,497 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Client identity: 1
+2025-08-08 13:06:06,500 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/1/simulate_job/model/best_numpy.npy
+2025-08-08 13:06:06,500 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=4b45c8f3-d035-485f-8d24-615bbcc8abf6] - Model after training: {'numpy_key': array([[ 3.,  4.,  5.],
+       [ 6.,  7.,  8.],
+       [ 9., 10., 11.]], dtype=float32)}
+2025-08-08 13:06:06,504 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_d4fb772c-4bb8-472c-8cf4-b33aa0597b0b.npz
+2025-08-08 13:06:08,557 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Task name: train
+2025-08-08 13:06:08,558 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Incoming data kind: WEIGHTS
+2025-08-08 13:06:08,558 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Model: 
+{'numpy_key': array([[ 3.,  4.,  5.],
+       [ 6.,  7.,  8.],
+       [ 9., 10., 11.]], dtype=float32)}
+2025-08-08 13:06:08,559 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Current Round: 2
+2025-08-08 13:06:08,559 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Total Rounds: 3
+2025-08-08 13:06:08,559 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Client identity: 1
+2025-08-08 13:06:08,568 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Saved numpy model to: /Users/zhihongz/work/NVFlare/nvflare/simulator_workspace/1/simulate_job/model/best_numpy.npy
+2025-08-08 13:06:08,569 - NPTrainer - INFO - [identity=1, run=simulate_job, peer=simulator_server, peer_run=simulate_job, task_name=train, task_id=f5c620b5-63d0-4d94-a761-e78b1add64bf] - Model after training: {'numpy_key': array([[ 4.,  5.,  6.],
+       [ 7.,  8.,  9.],
+       [10., 11., 12.]], dtype=float32)}
+2025-08-08 13:06:08,575 - NumpyArrayDecomposer - INFO - NP: dumping 1 arrays to file /tmp/nvflare/datums/NumpyArrayDecomposer_eb81b9af-82cc-4fe0-9b08-1345cd6165b8.npz

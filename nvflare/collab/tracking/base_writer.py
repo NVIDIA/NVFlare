@@ -26,7 +26,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 
 
 class BaseWriter(ABC):
-    """Abstract base class for tracking writers in Fox subprocess mode.
+    """Abstract base class for tracking writers in Collab subprocess mode.
 
     Writers are used in the subprocess (CollabWorker) to log metrics during
     training. The metrics are sent via CellNet to CollabExecutor, which then
