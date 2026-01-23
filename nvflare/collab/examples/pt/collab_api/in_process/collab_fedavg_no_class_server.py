@@ -1,12 +1,12 @@
 """Server-side aggregation logic for Federated Averaging.
 
-This module contains only the @fox.main decorated functions
+This module contains only the @collab.main decorated functions
 that run on the server.
 """
 
 import torch
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 
 NUM_ROUNDS = 5  # Configuration as module variable
 
@@ -31,7 +31,7 @@ def weighted_avg(client_results):
     return avg_weights, avg_loss
 
 
-@fox.main
+@collab.main
 def fed_avg():
     """Federated averaging - runs on server."""
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
@@ -41,7 +41,7 @@ def fed_avg():
         print(f"\n=== Round {round_num + 1} ===")
 
         # Call client's train() method on all clients
-        client_results = fox.clients.train(global_weights)
+        client_results = collab.clients.train(global_weights)
 
         # Aggregate results using weighted average
         global_weights, global_loss = weighted_avg(client_results)

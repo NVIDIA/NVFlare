@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.examples.np.mains.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -25,9 +25,9 @@ class NPHierarchicalFedAvg:
         self.name = self.__class__.__name__
         self.logger = get_obj_logger(self)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._initial_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
@@ -35,24 +35,24 @@ class NPHierarchicalFedAvg:
                 self.logger.error(f"training failed in round {i}")
                 break
             score = self._do_eval(current_model)
-            self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
+            self.logger.info(f"[{collab.call_info}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
     def _do_eval(self, model):
-        results = fox.leaf_clients.evaluate(model)
+        results = collab.leaf_clients.evaluate(model)
         total = 0.0
         for n, v in results:
-            self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
+            self.logger.info(f"[{collab.call_info}]: got eval result from client {n}: {v}")
             total += v
         num_results = len(results)
         return total / num_results if num_results > 0 else 0.0
 
     def _do_one_round(self, r, current_model):
         total = 0
-        results = fox.child_clients.train(r, current_model)
+        results = collab.child_clients.train(r, current_model)
         for n, v in results:
-            self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
+            self.logger.info(f"[{collab.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
 
         num_results = len(results)

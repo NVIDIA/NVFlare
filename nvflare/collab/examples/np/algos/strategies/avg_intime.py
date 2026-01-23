@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.constants import ContextKey
 from nvflare.collab.examples.np.mains.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -37,25 +37,25 @@ class NPFedAvgInTime:
         self.logger = get_obj_logger(self)
         self._init_model = parse_array_def(initial_model)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
-        current_model = fox.get_prop(ContextKey.RESULT, self._init_model)
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = collab.get_prop(ContextKey.RESULT, self._init_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
             if current_model is None:
                 self.logger.error(f"training failed at round {i}")
                 break
             score = self._do_eval(current_model)
-            self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
+            self.logger.info(f"[{collab.call_info}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
     def _do_eval(self, model):
-        results = fox.clients.evaluate(model)
+        results = collab.clients.evaluate(model)
         total = 0.0
         for n, v in results:
-            self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
+            self.logger.info(f"[{collab.call_info}]: got eval result from client {n}: {v}")
             total += v
 
         num_results = len(results)
@@ -65,9 +65,9 @@ class NPFedAvgInTime:
         aggr_result = _AggrResult()
 
         # try to get the configured timeout value
-        timeout = fox.get_app_prop("default_timeout", self.timeout)
+        timeout = collab.get_app_prop("default_timeout", self.timeout)
         self.logger.info(f"got timeout: {timeout}")
-        fox.clients(
+        collab.clients(
             timeout=timeout,
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
@@ -77,11 +77,11 @@ class NPFedAvgInTime:
             return None
         else:
             result = aggr_result.total / aggr_result.count
-            self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            self.logger.info(f"[{collab.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
     def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
-        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller} {result}")
+        self.logger.info(f"[{collab.call_info}] got train result from {collab.caller} {result}")
         with aggr_result.lock:
             aggr_result.total += result
             aggr_result.count += 1

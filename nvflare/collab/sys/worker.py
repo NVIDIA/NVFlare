@@ -16,12 +16,12 @@
 
 This module is the internal entry point that CollabExecutor uses when spawning
 subprocess-based training (e.g., with torchrun). Users never interact with
-this directly - they just write normal @fox.publish decorated functions.
+this directly - they just write normal @collab.publish decorated functions.
 
 Architecture:
-    User writes:        train.py with @fox.publish decorated functions
+    User writes:        train.py with @collab.publish decorated functions
 
-    CollabExecutor runs:   torchrun --nproc_per_node=4 -m nvflare.fox.sys.worker train
+    CollabExecutor runs:   torchrun --nproc_per_node=4 -m nvflare.collab.sys.worker train
                                                     ↑ this module        ↑ user's module
 
     Environment vars (set by CollabExecutor, invisible to user):
@@ -31,9 +31,9 @@ Architecture:
 
 Example:
     # User's train.py - completely normal, no worker code needed!
-    from nvflare.collab import fox
+    from nvflare.collab import collab
 
-    @fox.publish
+    @collab.publish
     def train(weights=None):
         import torch.distributed as dist
         dist.init_process_group("nccl")
@@ -129,7 +129,7 @@ class CollabWorker:
     """Internal worker that runs inside subprocess for distributed training.
 
     This class is used internally by the Collab framework. Users do not interact
-    with it directly - they just write normal @fox.publish decorated functions.
+    with it directly - they just write normal @collab.publish decorated functions.
 
     The worker:
     1. Reads connection info from environment variables
@@ -183,7 +183,7 @@ class CollabWorker:
 
         Supports two modes:
         1. Class-based clients (COLLAB_CLIENT_CLASS set): Instantiates the specified class
-        2. Module-level functions: Uses ModuleWrapper to expose @fox.publish functions
+        2. Module-level functions: Uses ModuleWrapper to expose @collab.publish functions
         """
         self.logger.info(f"Loading training module: {self.training_module_name}")
 
@@ -338,7 +338,7 @@ class CollabWorker:
 
         Supports two modes based on client type:
         1. Client API (CollabClientAPI): Run training script top-to-bottom
-        2. Collab API (@fox.publish methods): Wait for RPC calls
+        2. Collab API (@collab.publish methods): Wait for RPC calls
 
         For Client API with DDP:
         - All ranks run the training script
@@ -409,7 +409,7 @@ class CollabWorker:
             # client scripts import it, they get the correct instance.
             import sys
 
-            worker_module_name = "nvflare.fox.sys.worker"
+            worker_module_name = "nvflare.collab.sys.worker"
             worker_module = sys.modules.get(worker_module_name)
             if worker_module:
                 # Update the existing module's _client_api attribute
@@ -499,13 +499,13 @@ def main():
     """Entry point for Collab worker subprocess.
 
     Usage (by CollabExecutor, not directly by users):
-        torchrun --nproc_per_node=4 -m nvflare.fox.sys.worker my_training_module
+        torchrun --nproc_per_node=4 -m nvflare.collab.sys.worker my_training_module
 
     The training module name is passed as a command-line argument.
     Connection details are passed via environment variables.
     """
     if len(sys.argv) < 2:
-        print("Usage: python -m nvflare.fox.sys.worker <training_module>")
+        print("Usage: python -m nvflare.collab.sys.worker <training_module>")
         print()
         print("This module is used internally by CollabExecutor.")
         print("Users should not run this directly.")

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab Simulation Environment using nvflare.fox.sim.Simulator."""
+"""Collab Simulation Environment using nvflare.collab.sim.Simulator."""
 
 import os
 from typing import Dict, Optional, Tuple, Union

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -20,15 +20,15 @@ class MetricReceiver:
     def __init__(self):
         self.logger = get_obj_logger(self)
 
-    @fox.publish
+    @collab.publish
     def accept_metric(self, metrics: dict):
-        self.logger.info(f"[{fox.callee}] received metric report from {fox.caller}: {metrics}")
+        self.logger.info(f"[{collab.callee}] received metric report from {collab.caller}: {metrics}")
 
-    @fox.init
+    @collab.init
     def init(self):
-        fox.register_event_handler("metrics", self._accept_metric)
+        collab.register_event_handler("metrics", self._accept_metric)
         self.logger.info("MetricReceiver initialized!")
 
     def _accept_metric(self, event_type: str, data):
-        self.logger.info(f"[{fox.callee}] received metrics event '{event_type}' from {fox.caller}: {data}")
+        self.logger.info(f"[{collab.callee}] received metrics event '{event_type}' from {collab.caller}: {data}")
         return "OK"

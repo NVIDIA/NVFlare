@@ -20,7 +20,7 @@ class ClientGroup:
     """A group of clients that can execute functions in parallel.
 
     This abstraction hides ThreadPoolExecutor details, providing a simple
-    interface similar to fox.clients in the Collab API.
+    interface similar to collab.clients in the Collab API.
     """
 
     def __init__(self, client_ids, max_workers=None):
@@ -171,7 +171,7 @@ def fed_avg():
         print(f"\n=== Round {round_num + 1} ===")
 
         # Each client trains (in parallel via clients group)
-        # Similar to: fox.clients.train(global_weights)
+        # Similar to: collab.clients.train(global_weights)
         client_results = clients.train(global_weights)
 
         # Aggregate results using weighted average

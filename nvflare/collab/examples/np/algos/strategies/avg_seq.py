@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.examples.np.mains.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -28,41 +28,41 @@ class NPFedAvgSequential:
         self.logger = get_obj_logger(self)
         self.client_weights = None
 
-    @fox.init
+    @collab.init
     def init(self):
         self.logger.info("fox init NPFedAvgSequential")
-        weight_config = fox.get_app_prop("client_weight_config", {})
+        weight_config = collab.get_app_prop("client_weight_config", {})
         client_weights = {}
         total = 0
-        for c in fox.clients:
+        for c in collab.clients:
             w = weight_config.get(c.name, 100)
             client_weights[c.name] = w
             total += w
 
         # normalize weights
-        for c in fox.clients:
+        for c in collab.clients:
             client_weights[c.name] = client_weights[c.name] / total
 
         self.client_weights = client_weights
         self.logger.info("client_weights: {}".format(client_weights))
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._initial_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
 
         # save model to work dir
-        file_name = os.path.join(fox.workspace.get_work_dir(), "model.npy")
+        file_name = os.path.join(collab.workspace.get_work_dir(), "model.npy")
         save_np_model(current_model, file_name)
         self.logger.info(f"FINAL RESULT: {current_model}")
         return current_model
 
     def _do_one_round(self, r, current_model):
         total = 0
-        for c in fox.clients:
+        for c in collab.clients:
             result = c(expect_result=True, timeout=2.0, optional=True, secure=False).train(r, current_model)
-            self.logger.info(f"[{fox.call_info}] round {r}: got result from client {c.name}: {result}")
+            self.logger.info(f"[{collab.call_info}] round {r}: got result from client {c.name}: {result}")
             total += result * self.client_weights[c.name]
         return total

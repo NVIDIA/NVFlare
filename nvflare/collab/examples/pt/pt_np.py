@@ -14,7 +14,7 @@
 import logging
 import threading
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
 from nvflare.collab.examples.np.mains.utils import add as add_np
@@ -48,9 +48,9 @@ class PTFedAvgMixed:
         self._pt_model = parse_pt(pt_model)
         self._np_model = parse_np(np_model)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
         pt_model, np_model = self._pt_model, self._np_model
         for i in range(self.num_rounds):
             pt_model, np_model = self._do_one_round(i, pt_model, np_model)
@@ -63,7 +63,7 @@ class PTFedAvgMixed:
     def _do_one_round(self, r, pt_model, np_model):
         aggr_result = _AggrResult()
 
-        fox.clients(
+        collab.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         ).train(r, pt_model, np_model)
@@ -74,18 +74,18 @@ class PTFedAvgMixed:
             pt_result = aggr_result.pt_total
             div_pt(pt_result, aggr_result.count)
             self.logger.info(
-                f"[{fox.call_info}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
+                f"[{collab.call_info}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
             )
 
             np_result = aggr_result.np_total
             div_np(np_result, aggr_result.count)
             self.logger.info(
-                f"[{fox.call_info}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
+                f"[{collab.call_info}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
             )
             return pt_result, np_result
 
     def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
-        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
+        self.logger.info(f"[{collab.call_info}] got train result from {collab.caller}: {result}")
 
         pt_result, np_result = result
         with aggr_result.lock:
@@ -101,13 +101,13 @@ class PTTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.publish
+    @collab.publish
     def train(self, current_round, pt_model, np_model):
-        if fox.is_aborted:
+        if collab.is_aborted:
             self.logger.debug("training aborted")
             return None, None
 
-        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {pt_model=} {np_model=}")
+        self.logger.debug(f"[{collab.call_info}] training round {current_round}: {pt_model=} {np_model=}")
 
         pt_result = {}
         for k, v in pt_model.items():

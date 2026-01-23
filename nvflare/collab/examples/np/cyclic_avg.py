@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
 from nvflare.collab.examples.np.mains.client import NPTrainer
@@ -36,7 +36,7 @@ class Controller:
         self.avg_rounds = avg_rounds
         self.logger = get_obj_logger(self)
 
-    @fox.main
+    @collab.main
     def run(self):
         self.logger.info("running cyclic ...")
         ctl = NPCyclic(self.initial_model, num_rounds=self.cyclic_rounds)

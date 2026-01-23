@@ -13,7 +13,7 @@
 # limitations under the License.
 import random
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -22,11 +22,11 @@ class AddNoiseToModel:
     def __init__(self):
         self.logger = get_obj_logger(self)
 
-    @fox.call_filter
+    @collab.call_filter
     def add_noise(self, func_kwargs: dict):
-        direction = fox.filter_direction
-        qual_func_name = fox.qual_func_name
-        self.logger.debug(f"[{fox.call_info}] filtering call: {func_kwargs=} {direction=} {qual_func_name=}")
+        direction = collab.filter_direction
+        qual_func_name = collab.qual_func_name
+        self.logger.debug(f"[{collab.call_info}] filtering call: {func_kwargs=} {direction=} {qual_func_name=}")
         weights_key = "weights"
         weights = func_kwargs.get(weights_key)
         if weights is None:
@@ -36,10 +36,10 @@ class AddNoiseToModel:
 
         # add some noise to weights
         noise = random.random()
-        self.logger.debug(f"[{fox.call_info}] adding noise {noise}")
+        self.logger.debug(f"[{collab.call_info}] adding noise {noise}")
         weights += noise
         func_kwargs[weights_key] = weights
-        self.logger.info(f"[{fox.call_info}] weights after adding noise {noise}: {weights}")
+        self.logger.info(f"[{collab.call_info}] weights after adding noise {noise}: {weights}")
         return func_kwargs
 
 
@@ -48,22 +48,22 @@ class Print:
     def __init__(self):
         self.logger = get_obj_logger(self)
 
-    @fox.call_filter
+    @collab.call_filter
     def print_call(self, func_kwargs: dict):
-        self.logger.info(f"[{fox.call_info}] print_call on fox ctx {id(fox.context)}")
-        direction = fox.filter_direction
-        qual_func_name = fox.qual_func_name
+        self.logger.info(f"[{collab.call_info}] print_call on fox ctx {id(collab.context)}")
+        direction = collab.filter_direction
+        qual_func_name = collab.qual_func_name
         self.logger.info(
-            f"[{fox.call_info}] printing call ctx {id(fox.context)}: {func_kwargs=} {direction=} {qual_func_name=}"
+            f"[{collab.call_info}] printing call ctx {id(collab.context)}: {func_kwargs=} {direction=} {qual_func_name=}"
         )
         return func_kwargs
 
-    @fox.result_filter
+    @collab.result_filter
     def print_result(self, result, context):
-        self.logger.info(f"[{fox.call_info}] print_result on  {id(context)} fox ctx {id(fox.context)}")
-        direction = fox.filter_direction
-        qual_func_name = fox.qual_func_name
+        self.logger.info(f"[{collab.call_info}] print_result on  {id(context)} fox ctx {id(collab.context)}")
+        direction = collab.filter_direction
+        qual_func_name = collab.qual_func_name
         self.logger.info(
-            f"[{fox.call_info}] printing result ctx {id(fox.context)}: {result=} {direction=} {qual_func_name=}"
+            f"[{collab.call_info}] printing result ctx {id(collab.context)}: {result=} {direction=} {qual_func_name=}"
         )
         return result

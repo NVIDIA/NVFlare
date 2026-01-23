@@ -13,7 +13,7 @@
 # limitations under the License.
 from typing import Any
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.sys.downloader import Downloader, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -25,13 +25,13 @@ class ModelFilter:
         self.model_arg_name = model_arg_name
         self.logger = get_obj_logger(self)
 
-    @fox.out_call_filter
+    @collab.out_call_filter
     def prepare_weights_for_download(self, func_kwargs: dict):
         arg_value = func_kwargs.get(self.model_arg_name)
         if not arg_value:
             return func_kwargs
 
-        num_receivers = fox.context.target_group_size
+        num_receivers = collab.context.target_group_size
         self.logger.info(f"target group size={num_receivers}")
 
         downloader = Downloader(
@@ -42,7 +42,7 @@ class ModelFilter:
         func_kwargs[self.model_arg_name] = model
         return func_kwargs
 
-    @fox.in_call_filter
+    @collab.in_call_filter
     def download_weights(self, func_kwargs: dict):
         arg_value = func_kwargs.get(self.model_arg_name)
         if not arg_value:
@@ -55,7 +55,7 @@ class ModelFilter:
             func_kwargs[self.model_arg_name] = model
         return func_kwargs
 
-    @fox.out_result_filter
+    @collab.out_result_filter
     def prepare_result_for_download(self, result: Any):
         if not isinstance(result, dict):
             return result
@@ -66,7 +66,7 @@ class ModelFilter:
         )
         return downloader.add_tensors(result, 0)
 
-    @fox.in_result_filter
+    @collab.in_result_filter
     def download_result(self, result: Any):
         err, model = download_tensors(ref=result, per_request_timeout=5.0)
         if err:

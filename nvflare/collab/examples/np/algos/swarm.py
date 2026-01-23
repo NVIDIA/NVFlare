@@ -16,7 +16,7 @@ import random
 import threading
 import traceback
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.examples.np.mains.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -30,25 +30,25 @@ class NPSwarm:
         self.waiter = threading.Event()
         self.logger = get_obj_logger(self)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        fox.register_event_handler("all_done", self._all_done)
+        collab.register_event_handler("all_done", self._all_done)
 
         # randomly pick a client to start
-        start_client_idx = random.randint(0, len(fox.clients) - 1)
-        start_client = fox.clients[start_client_idx]
+        start_client_idx = random.randint(0, len(collab.clients) - 1)
+        start_client = collab.clients[start_client_idx]
         start_client(target="client").start(self.num_rounds, self._initial_model)
-        while not fox.is_aborted:
+        while not collab.is_aborted:
             if self.waiter.wait(timeout=0.5):
                 break
 
     def _all_done(self, event_type: str, data):
-        self.logger.info(f"[{fox.call_info}]: received {event_type} from client: {fox.caller}: {data}")
+        self.logger.info(f"[{collab.call_info}]: received {event_type} from client: {collab.caller}: {data}")
         self.all_done(data)
 
-    @fox.publish
+    @collab.publish
     def all_done(self, reason: str):
-        self.logger.info(f"[{fox.call_info}]: all done from client: {fox.caller}: {reason}")
+        self.logger.info(f"[{collab.call_info}]: all done from client: {collab.caller}: {reason}")
         self.waiter.set()
 
 
@@ -58,39 +58,39 @@ class NPSwarmClient:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.init
+    @collab.init
     def init(self):
         # This example shows that there could be multiple listeners for the same event
-        fox.register_event_handler("final_model", self._accept_final_model)
-        fox.register_event_handler("final_model", self._save_final_model)
+        collab.register_event_handler("final_model", self._accept_final_model)
+        collab.register_event_handler("final_model", self._save_final_model)
 
-    @fox.publish
+    @collab.publish
     def train(self, weights, current_round):
-        self.logger.info(f"[{fox.call_info}]: train asked by {fox.caller}: {current_round=}")
+        self.logger.info(f"[{collab.call_info}]: train asked by {collab.caller}: {current_round=}")
         return weights + self.delta
 
     def sag(self, model, current_round):
-        # results = fox.clients.train(model, current_round)
-        results = fox.other_clients.train(model, current_round)
+        # results = collab.clients.train(model, current_round)
+        results = collab.other_clients.train(model, current_round)
         total = 0
         for n, v in results:
             total += v
         return total / len(results)
 
-    @fox.publish
+    @collab.publish
     def swarm_learn(self, num_rounds, model, current_round):
-        self.logger.info(f"[{fox.call_info}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
+        self.logger.info(f"[{collab.call_info}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model, current_round)
 
-        self.logger.info(f"[{fox.call_info}]: trained model {new_model=}")
+        self.logger.info(f"[{collab.call_info}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            result = fox.clients(expect_result=True).fire_event("final_model", new_model)
+            result = collab.clients(expect_result=True).fire_event("final_model", new_model)
             for n, v in result:
-                self.logger.info(f"[{fox.call_info}] final_model reply from {n}: {v}")
+                self.logger.info(f"[{collab.call_info}] final_model reply from {n}: {v}")
             self.logger.info("notify server all done!")
             try:
-                fox.server(expect_result=False).all_done("OK")
+                collab.server(expect_result=False).all_done("OK")
             except Exception as ex:
                 traceback.print_exc()
                 self.logger.error(f"exception occurred in learning: {type(ex)}")
@@ -99,26 +99,26 @@ class NPSwarmClient:
 
         # determine next client
         next_round = current_round + 1
-        next_client_idx = random.randint(0, len(fox.clients) - 1)
+        next_client_idx = random.randint(0, len(collab.clients) - 1)
         self.logger.debug(f"chose aggr client for round {next_round}: {next_client_idx}")
-        next_client = fox.clients[next_client_idx]
+        next_client = collab.clients[next_client_idx]
         next_client(expect_result=False).swarm_learn(num_rounds, new_model, next_round)
 
-    @fox.publish
+    @collab.publish
     def start(self, num_rounds, initial_model):
-        self.logger.info(f"[{fox.call_info}]: starting swarm learning")
+        self.logger.info(f"[{collab.call_info}]: starting swarm learning")
         self.swarm_learn(num_rounds, initial_model, 0)
 
     def _accept_final_model(self, event_type: str, model):
         # accept the final model
         # write model to disk
-        self.logger.info(f"[{fox.call_info}]: received event '{event_type}' from {fox.caller}: {model}")
+        self.logger.info(f"[{collab.call_info}]: received event '{event_type}' from {collab.caller}: {model}")
         return "received"
 
     def _save_final_model(self, event_type: str, model):
         # accept the final model
         # write model to disk
-        file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
+        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
         save_np_model(model, file_name)
-        self.logger.info(f"[{fox.call_info}]: saved model {model} to {file_name}")
+        self.logger.info(f"[{collab.call_info}]: saved model {model} to {file_name}")
         return "saved"

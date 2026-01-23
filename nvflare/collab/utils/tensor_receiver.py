@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.gcc import GroupCallContext
 from nvflare.collab.sys.downloader import download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -23,7 +23,7 @@ class TensorReceiver:
     To use, the application simply sets the process_resp_cb to an instance of this class when making group call.
 
     Example:
-        fox.clients(
+        collab.clients(
             blocking=False,
             process_resp_cb=TensorReceiver(),
         ).train(...)
@@ -33,7 +33,7 @@ class TensorReceiver:
         self.logger = get_obj_logger(self)
 
     def __call__(self, gcc: GroupCallContext, result):
-        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
+        self.logger.info(f"[{collab.call_info}] got train result from {collab.caller}: {result}")
         model, model_type = result
         if model_type == "ref":
             err, _ = download_tensors(

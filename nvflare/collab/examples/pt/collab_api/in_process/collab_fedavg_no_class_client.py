@@ -1,6 +1,6 @@
 """Client-side training logic for Federated Averaging.
 
-This module contains only the @fox.publish decorated functions
+This module contains only the @collab.publish decorated functions
 that run on client sites.
 """
 
@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 
 
 class SimpleModel(nn.Module):
@@ -23,7 +23,7 @@ class SimpleModel(nn.Module):
         return self.fc(x)
 
 
-@fox.publish
+@collab.publish
 def train(weights=None):
     """Train a local model - runs on each client site."""
     # Setup data (in real case, load from local dataset)
@@ -51,7 +51,7 @@ def train(weights=None):
             loss.backward()
             optimizer.step()
 
-    print(f"  [{fox.site_name}] Loss: {loss.item():.4f}")
+    print(f"  [{collab.site_name}] Loss: {loss.item():.4f}")
 
     # Return updated weights and loss
     return model.state_dict(), loss.item()

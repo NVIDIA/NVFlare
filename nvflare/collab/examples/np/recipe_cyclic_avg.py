@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.examples import export_recipe
 from nvflare.collab.examples.np.mains.client import NPTrainer
 from nvflare.collab.examples.np.mains.strategies.avg_para import NPFedAvgParallel
@@ -36,26 +36,26 @@ class Controller:
         self.avg_rounds = avg_rounds
         self.logger = get_obj_logger(self)
 
-    @fox.main
+    @collab.main
     def run(self):
         self.logger.info("running cyclic ...")
         ctl = NPCyclic(self.initial_model, num_rounds=self.cyclic_rounds)
         result = ctl.execute()
 
-        file_name = os.path.join(fox.workspace.get_work_dir(), "cyclic_model.npy")
+        file_name = os.path.join(collab.workspace.get_work_dir(), "cyclic_model.npy")
         save_np_model(result, file_name)
-        self.logger.info(f"[{fox.call_info}]: saved cyclic model {result} to {file_name}")
+        self.logger.info(f"[{collab.call_info}]: saved cyclic model {result} to {file_name}")
 
         self.logger.info("running fed-avg ...")
         ctl = NPFedAvgParallel(initial_model=result, num_rounds=self.avg_rounds)
         return ctl.execute()
 
-    @fox.final
+    @collab.final
     def save_result(self):
-        final_result = fox.get_result()
-        file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
+        final_result = collab.get_result()
+        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
         save_np_model(final_result, file_name)
-        self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")
+        self.logger.info(f"[{collab.call_info}]: saved final model {final_result} to {file_name}")
 
 
 def main():

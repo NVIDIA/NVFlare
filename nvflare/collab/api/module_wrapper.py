@@ -24,7 +24,7 @@ from .dec import _ATTR_PARAM_NAMES, _FLAG_MAIN, _FLAG_PUBLISH, _FLAG_SUPPORT_CTX
 
 
 def _is_algo(func):
-    """Check if a function has the @fox.main decorator."""
+    """Check if a function has the @collab.main decorator."""
     return getattr(func, _FLAG_MAIN, False) is True
 
 
@@ -44,7 +44,7 @@ def get_importable_module_name(module: ModuleType) -> str:
     Example:
         # When running: python nvflare/fox/examples/test.py
         # module.__name__ = '__main__'
-        # Returns: 'nvflare.fox.examples.test'
+        # Returns: 'nvflare.collab.examples.test'
     """
     module_name = module.__name__
 
@@ -61,7 +61,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         )
 
     # Convert file path to module name
-    # e.g., /path/to/nvflare/fox/examples/test.py -> nvflare.fox.examples.test
+    # e.g., /path/to/nvflare/fox/examples/test.py -> nvflare.collab.examples.test
     module_file = os.path.abspath(module_file)
 
     # Remove .py extension
@@ -96,7 +96,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         )
 
     # Prefer the longest path (most qualified) - this ensures we get
-    # 'nvflare.fox.examples.test' instead of just 'test'
+    # 'nvflare.collab.examples.test' instead of just 'test'
     # Also prioritize paths that start with 'nvflare.' as they're more likely
     # to be the correct package path for this project
     def score_candidate(name):
@@ -110,18 +110,18 @@ def get_importable_module_name(module: ModuleType) -> str:
 
 
 class ModuleWrapper:
-    """Wraps a module so its @fox.publish and @fox.main functions work with Collab.
+    """Wraps a module so its @collab.publish and @collab.main functions work with Collab.
 
     This allows you to use standalone functions instead of class methods:
 
         # my_module.py
-        from nvflare.collab import fox
+        from nvflare.collab import collab
 
-        @fox.publish
+        @collab.publish
         def train(weights=None):
             ...
 
-        @fox.main
+        @collab.main
         def fed_avg():
             ...
 
@@ -139,7 +139,7 @@ class ModuleWrapper:
     """
 
     def __init__(self, module: Union[ModuleType, str] = None):
-        """Initialize wrapper with a module containing @fox.publish/@fox.main functions.
+        """Initialize wrapper with a module containing @collab.publish/@collab.main functions.
 
         Args:
             module: A Python module object OR a fully qualified module name string.
@@ -195,7 +195,7 @@ class ModuleWrapper:
                 setattr(self, name, wrapped)
 
     def _create_collab_method(self, name, original_func):
-        """Create a method wrapper for an already-decorated @fox.publish function.
+        """Create a method wrapper for an already-decorated @collab.publish function.
 
         The original function is already decorated, so we just need to make it
         callable as a bound method. We use a simple wrapper that delegates to
@@ -217,7 +217,7 @@ class ModuleWrapper:
         return method.__get__(self, type(self))
 
     def _create_algo_method(self, name, original_func):
-        """Create a method wrapper for an already-decorated @fox.main function.
+        """Create a method wrapper for an already-decorated @collab.main function.
 
         The original function is already decorated, so we just need to make it
         callable as a bound method.

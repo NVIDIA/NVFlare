@@ -15,7 +15,7 @@ import logging
 
 import torch
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
@@ -36,9 +36,9 @@ class PTFedAvgStream:
         self.logger = get_obj_logger(self)
         self._init_model = parse_state_dict(initial_model)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._init_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
@@ -49,12 +49,12 @@ class PTFedAvgStream:
         return current_model
 
     def _do_one_round(self, r, current_model):
-        grp = fox.clients(
+        grp = collab.clients(
             blocking=False,
             process_resp_cb=TensorReceiver(),
         )
 
-        if fox.backend_type == BackendType.FLARE:
+        if collab.backend_type == BackendType.FLARE:
             downloader = Downloader(
                 num_receivers=grp.size,
                 timeout=5.0,
@@ -90,7 +90,7 @@ class PTFedAvgStream:
         final_result = {}
         for k, v in aggr_result.items():
             final_result[k] = torch.div(v, aggr_count[k])
-        self.logger.info(f"[{fox.call_info}] round {r}: aggr result: {final_result}")
+        self.logger.info(f"[{collab.call_info}] round {r}: aggr result: {final_result}")
         return final_result
 
 
@@ -100,13 +100,13 @@ class PTTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.publish
+    @collab.publish
     def train(self, current_round, model, model_type: str):
-        if fox.is_aborted:
+        if collab.is_aborted:
             self.logger.debug("training aborted")
             return None, "model"
 
-        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {model=}")
+        self.logger.debug(f"[{collab.call_info}] training round {current_round}: {model_type=} {model=}")
         if model_type == "ref":
             err, model = download_tensors(ref=model, per_request_timeout=5.0)
             if err:

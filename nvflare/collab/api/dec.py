@@ -15,18 +15,18 @@ import inspect
 
 from .constants import CollabMethodArgName
 
-_FLAG_PUBLISH = "_fox_is_collab"
-_FLAG_INIT = "_fox_is_init"
-_FLAG_FINAL = "_fox_is_final"
-_FLAG_MAIN = "_fox_is_algo"
-_FLAG_CALL_FILTER = "_fox_is_call_filter"
-_FLAG_IN_CALL_FILTER = "_fox_is_in_call_filter"
-_FLAG_OUT_CALL_FILTER = "_fox_is_out_call_filter"
-_FLAG_RESULT_FILTER = "_fox_is_result_filter"
-_FLAG_IN_RESULT_FILTER = "_fox_is_in_result_filter"
-_FLAG_OUT_RESULT_FILTER = "_fox_is_out_result_filter"
-_FLAG_SUPPORT_CTX = "_fox_supports_ctx"
-_ATTR_PARAM_NAMES = "_fox_param_names"
+_FLAG_PUBLISH = "_collab_is_collab"
+_FLAG_INIT = "_collab_is_init"
+_FLAG_FINAL = "_collab_is_final"
+_FLAG_MAIN = "_collab_is_algo"
+_FLAG_CALL_FILTER = "_collab_is_call_filter"
+_FLAG_IN_CALL_FILTER = "_collab_is_in_call_filter"
+_FLAG_OUT_CALL_FILTER = "_collab_is_out_call_filter"
+_FLAG_RESULT_FILTER = "_collab_is_result_filter"
+_FLAG_IN_RESULT_FILTER = "_collab_is_in_result_filter"
+_FLAG_OUT_RESULT_FILTER = "_collab_is_out_result_filter"
+_FLAG_SUPPORT_CTX = "_collab_supports_ctx"
+_ATTR_PARAM_NAMES = "_collab_param_names"
 
 
 class classproperty:

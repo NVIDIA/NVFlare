@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.sys import PocEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
@@ -39,7 +39,7 @@ class SimpleModel(nn.Module):
 # =============================================================================
 
 
-@fox.publish
+@collab.publish
 def train(weights=None):
     """Train a local model - standalone function, not a method."""
     # Setup data
@@ -67,7 +67,7 @@ def train(weights=None):
             loss.backward()
             optimizer.step()
 
-    print(f"  [{fox.site_name}] Loss: {loss.item():.4f}")
+    print(f"  [{collab.site_name}] Loss: {loss.item():.4f}")
 
     # Return updated weights and loss
     return model.state_dict(), loss.item()
@@ -105,7 +105,7 @@ def weighted_avg(client_results):
 NUM_ROUNDS = 5  # Configuration as module variable
 
 
-@fox.main
+@collab.main
 def fed_avg():
     """Federated averaging - standalone function, not a method."""
     print(f"Starting FedAvg for {NUM_ROUNDS} rounds")
@@ -114,8 +114,8 @@ def fed_avg():
     for round_num in range(NUM_ROUNDS):
         print(f"\n=== Round {round_num + 1} ===")
 
-        # Each client trains (in parallel via fox.clients)
-        client_results = fox.clients.train(global_weights)
+        # Each client trains (in parallel via collab.clients)
+        client_results = collab.clients.train(global_weights)
 
         # Aggregate results using weighted average
         global_weights, global_loss = weighted_avg(client_results)

@@ -16,7 +16,7 @@ import threading
 
 import torch
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
@@ -44,9 +44,9 @@ class PTFedAvgStream:
         self.logger = get_obj_logger(self)
         self._init_model = parse_state_dict(initial_model)
 
-    @fox.main
+    @collab.main
     def execute(self):
-        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{collab.call_info}] Start training for {self.num_rounds} rounds")
         current_model = self._init_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
@@ -62,12 +62,12 @@ class PTFedAvgStream:
         for k, v in current_model.items():
             model2[k] = v + 2.0
 
-        grp = fox.clients(
+        grp = collab.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         )
 
-        if fox.backend_type == BackendType.FLARE:
+        if collab.backend_type == BackendType.FLARE:
             downloader = Downloader(
                 num_receivers=grp.size,
                 timeout=5.0,
@@ -88,11 +88,11 @@ class PTFedAvgStream:
             result = {}
             for k, v in aggr_result.total.items():
                 result[k] = torch.div(v, aggr_result.count)
-            self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            self.logger.info(f"[{collab.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
     def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
-        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
+        self.logger.info(f"[{collab.call_info}] got train result from {collab.caller}: {result}")
 
         model, model_type = result
         if model_type == "ref":
@@ -116,7 +116,7 @@ class PTFedAvgStream:
         return None
 
     def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult):
-        self.logger.info(f"[{fox.call_info}] aggregating received tensor: {td}")
+        self.logger.info(f"[{collab.call_info}] aggregating received tensor: {td}")
         with aggr_result.lock:
             for k, v in td.items():
                 if k not in aggr_result.total:
@@ -132,13 +132,13 @@ class PTTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @fox.publish
+    @collab.publish
     def train(self, current_round, model1, model2, model_type: str):
-        if fox.is_aborted:
+        if collab.is_aborted:
             self.logger.debug("training aborted")
             return None, "model"
 
-        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {model1=} {model2=}")
+        self.logger.debug(f"[{collab.call_info}] training round {current_round}: {model_type=} {model1=} {model2=}")
         if model_type == "ref":
             err, model1 = download_tensors(ref=model1, per_request_timeout=5.0)
             if err:

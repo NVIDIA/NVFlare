@@ -14,7 +14,7 @@
 import os
 import random
 
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.examples.np.mains.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -28,17 +28,17 @@ class NPCyclic:
         self.final_model = None
         self.logger = get_obj_logger(self)
 
-    @fox.init
+    @collab.init
     def check_initial_model(self):
         if isinstance(self._initial_model, str):
             # this is name of the file that contains model data
             # load the model.
-            resource_dir = fox.workspace.get_resource_dir("data")
+            resource_dir = collab.workspace.get_resource_dir("data")
             file_name = os.path.join(resource_dir, self._initial_model)
             self._initial_model = load_np_model(file_name)
             self.logger.info(f"loaded initial model from {file_name}: {self._initial_model}")
 
-    @fox.main
+    @collab.main
     def execute(self):
         current_model = self._initial_model
         for current_round in range(self.num_rounds):
@@ -46,25 +46,25 @@ class NPCyclic:
             if current_model is None:
                 self.logger.error(f"training failed at round {current_round}")
                 break
-        self.logger.info(f"[{fox.call_info}] final result: {current_model}")
+        self.logger.info(f"[{collab.call_info}] final result: {current_model}")
         self.final_model = current_model
         return current_model
 
-    @fox.final
+    @collab.final
     def save_result(self):
-        final_result = fox.get_result()
-        file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
+        final_result = collab.get_result()
+        file_name = os.path.join(collab.workspace.get_work_dir(), "final_model.npy")
         save_np_model(final_result, file_name)
-        self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")
+        self.logger.info(f"[{collab.call_info}]: saved final model {final_result} to {file_name}")
 
     def _do_one_round(self, current_round, current_model):
-        # Note: fox.clients always returns a new copy of all clients!
-        clients = fox.clients
+        # Note: collab.clients always returns a new copy of all clients!
+        clients = collab.clients
         random.shuffle(clients)
         for c in clients:
             current_model = c.train(current_round, current_model)
             if current_model is None:
                 self.logger.error(f"training failed on client {c.name} at round {current_round}")
                 return None
-            self.logger.info(f"[{fox.call_info}] result from {c.name}: {current_model}")
+            self.logger.info(f"[{collab.call_info}] result from {c.name}: {current_model}")
         return current_model

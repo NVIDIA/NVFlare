@@ -314,7 +314,7 @@ class App:
             return m
         return None
 
-    def _fox_init(self, obj, ctx: Context):
+    def _collab_init(self, obj, ctx: Context):
         init_funcs = get_object_init_funcs(obj)
         for name, f in init_funcs:
             self.logger.debug(f"calling init func {name} ...")
@@ -325,13 +325,13 @@ class App:
             f(**kwargs)
 
     def initialize(self, context: Context):
-        self._fox_init(self, context)
+        self._collab_init(self, context)
 
         # initialize target objects
         for obj in self._managed_objects.values():
-            self._fox_init(obj, context)
+            self._collab_init(obj, context)
 
-    def _fox_finalize(self, obj, ctx: Context):
+    def _collab_finalize(self, obj, ctx: Context):
         funcs = get_object_final_funcs(obj)
         for name, f in funcs:
             self.logger.debug(f"calling final func {name} ...")
@@ -342,11 +342,11 @@ class App:
             f(**kwargs)
 
     def finalize(self, context: Context):
-        self._fox_finalize(self, context)
+        self._collab_finalize(self, context)
 
         # finalize target objects
         for obj in self._managed_objects.values():
-            self._fox_finalize(obj, context)
+            self._collab_finalize(obj, context)
 
     def new_context(self, caller: str, callee: str, target_group=None, set_call_ctx=True):
         ctx = Context(self, caller, callee, self._abort_signal, target_group=target_group)

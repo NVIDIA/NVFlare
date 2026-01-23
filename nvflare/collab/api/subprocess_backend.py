@@ -33,11 +33,11 @@ class SubprocessBackend(Backend):
     """Backend that forwards calls to a subprocess worker.
 
     This backend wraps a SubprocessLauncher and delegates calls to the worker
-    subprocess. The worker runs the user's @fox.publish methods in a separate
+    subprocess. The worker runs the user's @collab.publish methods in a separate
     process (e.g., launched via torchrun for multi-GPU training).
 
     Architecture:
-        SubprocessBackend -> SubprocessLauncher -> CellNet -> CollabWorker -> User's @fox.publish
+        SubprocessBackend -> SubprocessLauncher -> CellNet -> CollabWorker -> User's @collab.publish
     """
 
     def __init__(

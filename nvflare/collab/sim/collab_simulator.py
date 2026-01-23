@@ -193,7 +193,7 @@ class AppRunner:
             num_clients: Number of clients or (height, width) tuple for hierarchy.
             inprocess: If True, execute in-process. If False, use subprocess.
             run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.publish methods (required when inprocess=False).
+            training_module: Python module containing @collab.publish methods (required when inprocess=False).
             subprocess_timeout: Timeout for subprocess operations.
         """
         if not isinstance(server_app, ServerApp):
@@ -520,15 +520,15 @@ class CollabSimulator:
         Args:
             root_dir: Root directory for simulation output.
             experiment_name: Name of the experiment.
-            server: Server object with @fox.main methods.
-            client: Client object with @fox.publish methods.
+            server: Server object with @collab.main methods.
+            client: Client object with @collab.publish methods.
             server_objects: Additional server collab objects.
             client_objects: Additional client collab objects.
             max_workers: Maximum worker threads.
             num_clients: Number of clients or (height, width) tuple.
             inprocess: If True, execute in-process. If False, use subprocess.
             run_cmd: Command prefix for subprocess (e.g., "torchrun --nproc_per_node=4").
-            training_module: Python module containing @fox.publish methods
+            training_module: Python module containing @collab.publish methods
                             (required when inprocess=False).
             subprocess_timeout: Timeout for subprocess operations.
         """

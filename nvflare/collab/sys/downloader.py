@@ -18,7 +18,7 @@ from nvflare.app_common.np.np_downloader import add_arrays
 from nvflare.app_common.np.np_downloader import download_arrays as pull_arrays
 from nvflare.app_opt.pt.tensor_downloader import add_tensors
 from nvflare.app_opt.pt.tensor_downloader import download_tensors as pull_tensors
-from nvflare.collab import fox
+from nvflare.collab import collab
 from nvflare.collab.sys.backend import FlareBackend
 from nvflare.fuel.f3.streaming.file_downloader import add_file
 from nvflare.fuel.f3.streaming.file_downloader import download_file as pull_file
@@ -44,7 +44,7 @@ class Downloader(ObjectDownloader):
         num_receivers: int,
         timeout: float,
     ):
-        ctx = fox.context
+        ctx = collab.context
         backend = ctx.backend
         if not isinstance(backend, FlareBackend):
             raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
@@ -82,7 +82,7 @@ class Downloader(ObjectDownloader):
 
 
 def download_file(ref: dict, per_request_timeout: float):
-    ctx = fox.context
+    ctx = collab.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
@@ -101,7 +101,7 @@ def download_file(ref: dict, per_request_timeout: float):
 
 
 def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=None, **cb_kwargs):
-    ctx = fox.context
+    ctx = collab.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be FlareBackend but got {type(backend)}")
@@ -122,7 +122,7 @@ def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=
 
 
 def download_arrays(ref: dict, per_request_timeout: float, arrays_received_cb=None, **cb_kwargs):
-    ctx = fox.context
+    ctx = collab.context
     backend = ctx.backend
     if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be FlareBackend but got {type(backend)}")

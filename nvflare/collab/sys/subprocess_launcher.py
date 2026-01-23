@@ -23,7 +23,7 @@ The launcher:
 3. Forwards calls from CollabExecutor to the worker
 4. Manages the subprocess lifecycle
 
-User's training code remains unchanged - they just use @fox.publish as normal.
+User's training code remains unchanged - they just use @collab.publish as normal.
 """
 
 import os
@@ -94,7 +94,7 @@ class SubprocessLauncher:
 
         Args:
             site_name: Name of this site (e.g., site-1)
-            training_module: Python module path containing @fox.publish methods
+            training_module: Python module path containing @collab.publish methods
             parent_cell: CellNet cell of the parent CollabExecutor
             run_cmd: Optional command prefix (e.g., "torchrun --nproc_per_node=4")
                      If None, runs CollabWorker directly.
@@ -211,8 +211,8 @@ class SubprocessLauncher:
             List of command arguments
 
         The command format depends on whether a run_cmd (launcher) is specified:
-        - Without run_cmd: python -m nvflare.fox.sys.worker <training_module>
-        - With run_cmd:    torchrun [opts] --master-port=X -m nvflare.fox.sys.worker <training_module>
+        - Without run_cmd: python -m nvflare.collab.sys.worker <training_module>
+        - With run_cmd:    torchrun [opts] --master-port=X -m nvflare.collab.sys.worker <training_module>
 
         For torchrun/mpirun style launchers, we use -m directly on the launcher
         since they invoke Python internally. This avoids the invalid command:
@@ -222,7 +222,7 @@ class SubprocessLauncher:
         a unique port (avoids conflicts in simulation mode).
         """
         # Worker module and training module as arguments
-        worker_module = "nvflare.fox.sys.worker"
+        worker_module = "nvflare.collab.sys.worker"
 
         if self.run_cmd:
             # Launcher-based execution (e.g., torchrun, mpirun)

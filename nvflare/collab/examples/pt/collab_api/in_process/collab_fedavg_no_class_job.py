@@ -1,8 +1,8 @@
 """Job Recipe: Federated Averaging with separate server and client modules.
 
 This demonstrates how to use CollabRecipe with separate modules:
-- collab_fedavg_no_class_server.py: Server-side @fox.main
-- collab_fedavg_no_class_client.py: Client-side @fox.publish
+- collab_fedavg_no_class_server.py: Server-side @collab.main
+- collab_fedavg_no_class_client.py: Client-side @collab.publish
 
 CollabRecipe auto-wraps modules with ModuleWrapper!
 """
@@ -18,8 +18,8 @@ if __name__ == "__main__":
     # CollabRecipe auto-wraps modules - no need for explicit ModuleWrapper!
     recipe = CollabRecipe(
         job_name="fedavg_split_modules",
-        server=server_module,  # Has @fox.main fed_avg()
-        client=client_module,  # Has @fox.publish train()
+        server=server_module,  # Has @collab.main fed_avg()
+        client=client_module,  # Has @collab.publish train()
         min_clients=5,
     )
 
