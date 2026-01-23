@@ -100,7 +100,6 @@ class CollectAndAssembleModelAggregator(ModelAggregator):
             self.info(
                 f"Discarded: contributions already include client {contributor_name} at round {current_round}"
             )
-            )
 
     def aggregate_model(self) -> FLModel:
         """Aggregate all accepted models using the Assembler.
