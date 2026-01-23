@@ -97,9 +97,7 @@ class CollectAndAssembleModelAggregator(ModelAggregator):
             collection[contributor_name] = self.assembler.get_model_params(dxo)
             self.info(f"Accepted contribution from {contributor_name}")
         else:
-            self.info(
-                f"Discarded: contributions already include client {contributor_name} at round {current_round}"
-            )
+            self.info(f"Discarded: contributions already include client {contributor_name} at round {current_round}")
 
     def aggregate_model(self) -> FLModel:
         """Aggregate all accepted models using the Assembler.
