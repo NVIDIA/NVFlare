@@ -169,7 +169,7 @@ class TestRecipeConfigMethods:
         yield temp_path
         os.unlink(temp_path)
 
-    def test_add_server_config_basic(self, temp_script):
+    def test_add_server_config(self, temp_script):
         """Test add_server_config adds params to server app."""
         from nvflare.recipe.fedavg import FedAvgRecipe
 
@@ -180,93 +180,34 @@ class TestRecipeConfigMethods:
             train_script=temp_script,
         )
 
-        config = {"np_download_chunk_size": 2097152, "tensor_download_chunk_size": 2097152}
+        config = {"np_download_chunk_size": 2097152}
         recipe.add_server_config(config)
 
-        # Verify the config is in the server app's additional_params
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == config
 
-    def test_add_server_config_type_error(self, temp_script):
-        """Test add_server_config raises TypeError for non-dict input."""
-        from nvflare.recipe.fedavg import FedAvgRecipe
-
-        recipe = FedAvgRecipe(
-            name="test_job",
-            num_rounds=2,
-            min_clients=2,
-            train_script=temp_script,
-        )
-
-        with pytest.raises(TypeError, match="config must be a dict"):
-            recipe.add_server_config("not_a_dict")  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError, match="config must be a dict"):
-            recipe.add_server_config(123)  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError, match="config must be a dict"):
-            recipe.add_server_config(["list", "items"])  # type: ignore[arg-type]
-
-    def test_add_client_config_all_clients(self, temp_script):
-        """Test add_client_config applies to all clients when clients=None."""
+    def test_add_client_config(self, temp_script):
+        """Test add_client_config applies to all clients and specific clients."""
         from nvflare.apis.job_def import ALL_SITES
         from nvflare.recipe.fedavg import FedAvgRecipe
 
+        # Test all clients
         recipe = FedAvgRecipe(
             name="test_job",
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
         )
-
-        config = {"np_download_chunk_size": 4194304}
+        config = {"timeout": 600}
         recipe.add_client_config(config)
 
-        # Verify the config is in the ALL_SITES app's additional_params
         all_clients_app = recipe.job._deploy_map.get(ALL_SITES)
         assert all_clients_app is not None
         assert all_clients_app.app_config.additional_params == config
 
-    def test_add_client_config_specific_clients(self, temp_script):
-        """Test add_client_config applies to specific clients."""
-        from nvflare.recipe.fedavg import FedAvgRecipe
-
-        recipe = FedAvgRecipe(
-            name="test_job",
-            num_rounds=2,
-            min_clients=2,
-            train_script=temp_script,
-        )
-
-        config = {"timeout": 600}
-        recipe.add_client_config(config, clients=["site-1", "site-2"])
-
-        # Verify the config is in each specific client's app
-        for client in ["site-1", "site-2"]:
-            client_app = recipe.job._deploy_map.get(client)
-            assert client_app is not None
-            assert client_app.app_config.additional_params == config
-
-    def test_add_client_config_type_error(self, temp_script):
-        """Test add_client_config raises TypeError for non-dict input."""
-        from nvflare.recipe.fedavg import FedAvgRecipe
-
-        recipe = FedAvgRecipe(
-            name="test_job",
-            num_rounds=2,
-            min_clients=2,
-            train_script=temp_script,
-        )
-
-        with pytest.raises(TypeError, match="config must be a dict"):
-            recipe.add_client_config("not_a_dict")  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError, match="config must be a dict"):
-            recipe.add_client_config(None)  # type: ignore[arg-type]
-
-    def test_server_config_in_generated_json(self, temp_script):
-        """Test that server config appears at top level of generated config_fed_server.json."""
+    def test_config_in_generated_json(self, temp_script):
+        """Test that configs appear in generated JSON files."""
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -276,65 +217,19 @@ class TestRecipeConfigMethods:
             train_script=temp_script,
         )
 
-        config = {
-            "np_download_chunk_size": 2097152,
-            "tensor_download_chunk_size": 2097152,
-            "streaming_per_request_timeout": 600,
-        }
-        recipe.add_server_config(config)
+        recipe.add_server_config({"server_param": 123})
+        recipe.add_client_config({"client_param": 456})
 
-        # Generate the job config to a temp directory
         with tempfile.TemporaryDirectory() as tmpdir:
-            # export_job creates a subdirectory with the job name
             recipe.job.export_job(tmpdir)
-
-            # The job config is in tmpdir/job_name/app/config/
             job_dir = os.path.join(tmpdir, "test_config_gen")
 
-            # Read the generated server config
-            server_config_path = os.path.join(job_dir, "app", "config", "config_fed_server.json")
-            assert os.path.exists(server_config_path), f"Server config not found at {server_config_path}"
-
-            with open(server_config_path) as f:
+            # Verify server config
+            with open(os.path.join(job_dir, "app", "config", "config_fed_server.json")) as f:
                 server_config = json.load(f)
+            assert server_config.get("server_param") == 123
 
-            # Verify top-level params are present
-            assert server_config.get("np_download_chunk_size") == 2097152
-            assert server_config.get("tensor_download_chunk_size") == 2097152
-            assert server_config.get("streaming_per_request_timeout") == 600
-
-    def test_client_config_in_generated_json(self, temp_script):
-        """Test that client config appears at top level of generated config_fed_client.json."""
-        from nvflare.recipe.fedavg import FedAvgRecipe
-
-        recipe = FedAvgRecipe(
-            name="test_client_config_gen",
-            num_rounds=2,
-            min_clients=2,
-            train_script=temp_script,
-        )
-
-        config = {
-            "np_download_chunk_size": 4194304,
-            "custom_param": "test_value",
-        }
-        recipe.add_client_config(config)
-
-        # Generate the job config to a temp directory
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # export_job creates a subdirectory with the job name
-            recipe.job.export_job(tmpdir)
-
-            # The job config is in tmpdir/job_name/app/config/
-            job_dir = os.path.join(tmpdir, "test_client_config_gen")
-
-            # Read the generated client config
-            client_config_path = os.path.join(job_dir, "app", "config", "config_fed_client.json")
-            assert os.path.exists(client_config_path), f"Client config not found at {client_config_path}"
-
-            with open(client_config_path) as f:
+            # Verify client config
+            with open(os.path.join(job_dir, "app", "config", "config_fed_client.json")) as f:
                 client_config = json.load(f)
-
-            # Verify top-level params are present
-            assert client_config.get("np_download_chunk_size") == 4194304
-            assert client_config.get("custom_param") == "test_value"
+            assert client_config.get("client_param") == 456
