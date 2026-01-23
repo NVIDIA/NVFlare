@@ -16,7 +16,7 @@ from typing import Optional
 
 from pydantic import BaseModel, conint
 
-from nvflare.app_common.aggregators import CollectAndAssembleAggregator
+from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -41,9 +41,9 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
 
     The recipe configures:
     - A federated job with initial n_clusters parameter
-    - Scatter-and-gather controller for coordinating training rounds
+    - FedAvg controller for coordinating training rounds
     - Custom KMeansAssembler for mini-batch center aggregation
-    - CollectAndAssembleAggregator for combining client updates
+    - CollectAndAssembleModelAggregator for combining client updates
     - Script runners for client-side training execution
 
     Training Process:
@@ -68,7 +68,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
+            a dict, key_metric selects the metric used for global model selection. Defaults to "metrics"
+            (which corresponds to the homogeneity score sent by the K-Means client).
 
     Example:
         Basic usage with same config for all clients:
@@ -126,7 +127,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
-        key_metric: str = "accuracy",
+        key_metric: str = "metrics",  # Matches client's metric key
     ):
         v = _KMeansValidator(n_clusters=n_clusters)
         self.n_clusters = v.n_clusters
@@ -137,7 +138,9 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         # K-Means uses custom assembler for mini-batch aggregation
         assembler = KMeansAssembler()
         assembler_id = "kmeans_assembler"
-        aggregator = CollectAndAssembleAggregator(assembler_id=assembler_id)
+
+        # Use ModelAggregator adapter for clean integration with FedAvg
+        aggregator = CollectAndAssembleModelAggregator(assembler_id=assembler_id)
 
         # Call the unified FedAvgRecipe with KMeans-specific settings
         super().__init__(
