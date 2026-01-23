@@ -87,32 +87,6 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
 
-Client Memory Note for Large Models
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-TensorDownloader reduces transfer-time memory pressure, and client-side parameter references are
-also released after ``flare.send()`` when ``clear_cache=True`` (default). In CPython, tensors are
-typically reclaimed as soon as their last reference is dropped.
-
-For multi-GB payloads, avoid keeping extra references longer than needed:
-
-.. code-block:: python
-
-    import nvflare.client as flare
-
-    flare.init()
-    while flare.is_running():
-        input_model = flare.receive()
-        output_model = train(input_model)
-        flare.send(output_model)  # clear_cache=True by default
-
-        # Optional: release script-local references promptly.
-        del input_model
-        del output_model
-
-``gc.collect()`` remains a supplemental safeguard for cyclic objects; it is not the primary
-mechanism for releasing tensor memory in this flow.
-
 Example: Using PyTorch FedAvg Recipe
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -122,13 +96,11 @@ Example: Using PyTorch FedAvg Recipe
     from nvflare.recipe import SimEnv
 
     # TensorDownloader is automatically used - no configuration needed
-    # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="my-fedavg-job",
         min_clients=2,
         num_rounds=10,
-        model=MyLargeModel(),  # Even multi-GB models work efficiently
+        initial_model=MyLargeModel(),  # Even multi-GB models work efficiently
         train_script="client.py",
     )
 
@@ -146,11 +118,10 @@ Example: Using PTFedAvg Controller Directly
     job = FedJob(name="pt-fedavg")
 
     # TensorDownloader is automatically enabled
-    # Model can be class instance or dict config
     controller = PTFedAvg(
         num_clients=2,
         num_rounds=10,
-        model=MyLargeModel(),
+        initial_model=MyLargeModel(),
     )
     job.to(controller, "server")
 
@@ -163,47 +134,6 @@ The Tensor Downloader behavior can be configured via chunk size settings in your
 
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads (default: 2097152 = 2MB)
 - ``np_download_chunk_size``: Chunk size for NumPy array downloads (default: 2097152 = 2MB)
-
-Using Recipe API (Recommended)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-For users working with recipes, use the ``add_server_config()`` method:
-
-.. code-block:: python
-
-    from nvflare.recipe.fedavg import FedAvgRecipe
-
-    recipe = FedAvgRecipe(
-        name="my_job",
-        num_rounds=10,
-        min_clients=2,
-        train_script="train.py",
-    )
-
-    # Configure chunk sizes and streaming timeout (server-side only)
-    recipe.add_server_config({
-        "np_download_chunk_size": 2097152,
-        "tensor_download_chunk_size": 2097152,
-        "streaming_per_request_timeout": 600
-    })
-
-Using Job API
-^^^^^^^^^^^^^
-
-For users working directly with the Job API:
-
-.. code-block:: python
-
-    from nvflare import FedJob
-
-    job = FedJob(name="my_job")
-
-    # Add config to server (these are server-side only settings)
-    job.to_server({
-        "np_download_chunk_size": 2097152,
-        "tensor_download_chunk_size": 2097152,
-        "streaming_per_request_timeout": 600
-    })
 
 Tuning for Large Models
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -258,25 +188,7 @@ Disabling the Tensor Downloader
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 If you prefer to disable the streaming download feature and use traditional serialization instead,
-set the chunk sizes to zero.
-
-**Using Recipe API:**
-
-.. code-block:: python
-
-    # Disable streaming (server-side setting)
-    recipe.add_server_config({
-        "np_download_chunk_size": 0,
-        "tensor_download_chunk_size": 0
-    })
-
-**Using Job API:**
-
-.. code-block:: python
-
-    job.to_server({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
-
-**Using config files directly:**
+set the chunk sizes to zero:
 
 .. code-block::
 
@@ -290,6 +202,18 @@ set the chunk sizes to zero.
     task_result_filters = []
     
     # ... rest of configuration
+
+.. warning::
+
+    Disabling the Tensor Downloader may cause memory issues with large models, as the entire
+    model must be serialized into memory before transmission. Only disable this feature if you
+    have a specific reason to do so and have verified your system has sufficient memory.
+
+**When you might want to disable:**
+
+- Debugging serialization issues
+- Using custom serialization that conflicts with the downloader
+- Working with very small models where streaming overhead isn't beneficial
 
 
 How It Works (Advanced Users)
