@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import os
+import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,9 +23,10 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 STREAM_THREAD_POOL_SIZE = 128
 ONE_MB = 1024 * 1024
+MILLION = 1000000
 
 lock = threading.Lock()
-sid_base = int((time.time() + os.getpid()) * 1000000)  # microseconds
+sid_base = int(time.time() * MILLION) + random.randint(0, MILLION) # microseconds + random
 stream_count = 0
 
 log = logging.getLogger(__name__)
