@@ -153,27 +153,14 @@ class Recipe(ABC):
                 self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
-        """Add top-level configuration parameters to client config files.
-
-        These parameters will appear at the top level of config_fed_client.json,
-        alongside format_version, executors, components, etc.
-
-        Common use cases include setting streaming/download parameters:
-            - np_download_chunk_size: Chunk size for NumPy array downloads
-            - tensor_download_chunk_size: Chunk size for PyTorch tensor downloads
-            - streaming_per_request_timeout: Per-request timeout for streaming
+        """Add top-level configuration parameters to config_fed_client.json.
 
         Args:
             config: Dictionary of configuration parameters to add.
-                Example: {"np_download_chunk_size": 2097152, "tensor_download_chunk_size": 2097152}
             clients: Optional list of specific client names. If None, applies to all clients.
 
         Raises:
             TypeError: If config is not a dictionary.
-
-        Example:
-            >>> recipe.add_client_config({"np_download_chunk_size": 2097152})  # All clients
-            >>> recipe.add_client_config({"timeout": 600}, clients=["site-1", "site-2"])
         """
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
@@ -209,29 +196,13 @@ class Recipe(ABC):
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_server_config(self, config: Dict):
-        """Add top-level configuration parameters to server config file.
-
-        These parameters will appear at the top level of config_fed_server.json,
-        alongside format_version, workflows, components, etc.
-
-        Common use cases include setting streaming/download parameters:
-            - np_download_chunk_size: Chunk size for NumPy array downloads
-            - tensor_download_chunk_size: Chunk size for PyTorch tensor downloads
-            - streaming_per_request_timeout: Per-request timeout for streaming
+        """Add top-level configuration parameters to config_fed_server.json.
 
         Args:
             config: Dictionary of configuration parameters to add.
-                Example: {"np_download_chunk_size": 2097152, "streaming_per_request_timeout": 600}
 
         Raises:
             TypeError: If config is not a dictionary.
-
-        Example:
-            >>> recipe.add_server_config({
-            ...     "np_download_chunk_size": 2097152,
-            ...     "tensor_download_chunk_size": 2097152,
-            ...     "streaming_per_request_timeout": 600
-            ... })
         """
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
