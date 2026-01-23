@@ -35,7 +35,7 @@ class LRModelPersistor(NPModelPersistor):
 
     def __init__(self, model_dir="models", model_name="weights.npy", n_features=13):
         """
-        Init function for NewtonRaphsonModelPersistor.
+        Init function for LRModelPersistor.
 
         Args:
             model_dir: sub-folder name to save and load the global model

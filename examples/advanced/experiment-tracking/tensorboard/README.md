@@ -1,92 +1,169 @@
-# Hello PyTorch with Tensorboard Streaming
+# Hello PyTorch with TensorBoard Streaming
 
 Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
-as the deep learning training framework.
+as the deep learning training framework with **TensorBoard experiment tracking**.
 
-This example also highlights the TensorBoard streaming capability from the clients to the server.
+This example demonstrates the **Recipe API** for easily adding TensorBoard streaming to FL training jobs.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-### 1. Install requirements 
+## Overview
+
+This example uses the `FedAvgRecipe` with the `add_experiment_tracking()` utility to easily add TensorBoard streaming:
+
+```python
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe.utils import add_experiment_tracking
+
+# Create training recipe
+recipe = FedAvgRecipe(
+    name="fedavg_tensorboard",
+    min_clients=2,
+    num_rounds=5,
+    initial_model=SimpleNetwork(),
+    train_script="client.py",
+)
+
+# Add TensorBoard tracking with one line!
+add_experiment_tracking(recipe, "tensorboard", tracking_config={"tb_folder": "tb_events"})
+
+# Run
+recipe.run()
+```
+
+## Setup
+
+### 1. Install Requirements
 
 Install additional requirements:
 
-Assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`, run the following command to install the requirements:
-
-```
+```bash
+cd examples/advanced/experiment-tracking/tensorboard
 python -m pip install -r requirements.txt
 ```
 
-### 2. Download data
-Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
+### 2. Download Data
 
-again, we are assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`,
+Pre-download the CIFAR-10 dataset to avoid multiple sites downloading simultaneously:
 
 ```bash
-examples/advanced/experiment-tracking/prepare_data.sh
-```
-### 3. Run the experiment
-
-Use the nvflare job API to run the example:
-
-In ```./jobs/tensorboard-streaming/code```:
-
-```
-python3 fl_job.py
+cd examples/advanced/experiment-tracking
+./prepare_data.sh
 ```
 
+### 3. Run the Experiment
 
-### 4. Access the logs and results
+From the tensorboard directory, run:
 
-You can find the running logs and results inside the simulator's workspace/<server name>/simulate_job
-
-The workspace in fl_job.py is defined as "/tmp/nvflare/jobs/workdir":
-
+```bash
+cd examples/advanced/experiment-tracking/tensorboard
+python3 job.py
 ```
-Therefore, the results will be at: 
+
+### 4. Access the Logs and Results
+
+The simulator workspace is defined in `job.py` as `/tmp/nvflare/jobs/workdir`.
+
+After running, you'll find the TensorBoard event files at:
 
 ```bash
 $ tree /tmp/nvflare/jobs/workdir/server/simulate_job/
 
 /tmp/nvflare/jobs/workdir/server/simulate_job/
 ├── app_server
- <... skip ...>
+│   <... skip ...>
 └── tb_events
     ├── site-1
-    │ └── events.out.tfevents.1744857479.rtx.30497.0
+    │   └── events.out.tfevents.1744857479.rtx.30497.0
     └── site-2
-      └── events.out.tfevents.1744857479.rtx.30497.1
-
+        └── events.out.tfevents.1744857479.rtx.30497.1
 ```
 
-
-### 5. Tensorboard Streaming
-
-On the client side:
-
-```
-from nvflare.client.tracking import SummaryWriter
-```
-Instead of writing to TB files, this actually generates NVIDIA FLARE events of type `analytix_log_stats`.
-The `ConvertToFedEvent` widget will turn the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`,
-which will be delivered to the server side.
-
-On the server side, the `TBAnalyticsReceiver` is configured to process `fed.analytix_log_stats` events,
-which writes the received TB data into appropriate TB files on the server.
+### 5. View TensorBoard Results
 
 To view training metrics that are being streamed to the server, run:
 
-
-```
+```bash
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
 ```
 
-Note: If the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
-For example:
+Then open your browser to `http://localhost:6006` to view the metrics.
 
-```
-ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
+**Note**: If the server is running on a remote machine, use port forwarding:
+```bash
+ssh -L 6006:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/tensorboard_streaming.html).
+---
+
+## How It Works
+
+This example demonstrates **server-side tracking** where all client metrics are centralized.
+
+### Step 1: Logging Metrics (in `client.py`)
+
+Your training script logs metrics using NVFlare's tracking API:
+
+```python
+from nvflare.client.tracking import SummaryWriter
+
+# Create writer
+summary_writer = SummaryWriter()
+
+# Log metrics during training
+summary_writer.add_scalar("train_loss", loss, global_step=epoch)
+summary_writer.add_scalar("train_accuracy", accuracy, global_step=epoch)
+```
+
+This creates a **local event** (`analytix_log_stats`) on the **NVFlare Client** side.
+
+### Step 2: Event Streaming
+
+The `add_experiment_tracking()` utility automatically configures:
+
+1. **`ConvertToFedEvent` widget** (deployed to NVFlare Clients)
+   - Listens for local event: `analytix_log_stats`
+   - Converts it to federated event: `fed.analytix_log_stats`
+   - Sends to server
+
+2. **`TBAnalyticsReceiver`** (deployed to NVFlare Server)
+   - Listens for federated event: `fed.analytix_log_stats`
+   - Writes metrics to TensorBoard files on the server
+
+### Result
+
+All metrics from all clients are aggregated into a **single centralized TensorBoard view** on the server!
+
+---
+
+## Add TensorBoard to Your Own Recipe
+
+Adding TensorBoard to any Recipe is simple:
+
+```python
+from nvflare.recipe.utils import add_experiment_tracking
+
+# After creating your recipe
+add_experiment_tracking(recipe, "tensorboard")
+
+# Optional: customize the folder
+add_experiment_tracking(
+    recipe,
+    "tensorboard",
+    tracking_config={"tb_folder": "my_custom_folder"}
+)
+```
+
+You can also switch to other tracking systems by changing the tracking type:
+- `"tensorboard"` - TensorBoard streaming
+- `"mlflow"` - MLflow tracking
+- `"wandb"` - Weights & Biases tracking
+
+---
+
+## Additional Resources
+
+- [Experiment Tracking Guide](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
+- [TensorBoard Streaming Details](https://nvflare.readthedocs.io/en/main/examples/tensorboard_streaming.html)
+- [Recipe API Documentation](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)

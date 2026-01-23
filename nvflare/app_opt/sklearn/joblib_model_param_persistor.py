@@ -75,7 +75,10 @@ class JoblibModelParamPersistor(ModelPersistor):
             fl_ctx: FLContext
         """
         if model_learnable:
-            if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
+            current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+            num_rounds = fl_ctx.get_prop(AppConstants.NUM_ROUNDS)
+            # Save model only on the last round, or always if NUM_ROUNDS is not set
+            if num_rounds is None or current_round == num_rounds - 1:
                 self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
                 # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
