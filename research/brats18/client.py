@@ -185,7 +185,7 @@ def validate(model, valid_loader, inferer, transform_post, valid_metric, device)
                     metric += metric_score_single
                     ct += 1
         if ct == 0:
-            return 0.0
+            raise ValueError("No valid validation metrics computed. Check validation dataset and data preprocessing.")
         return metric / ct
 
 
