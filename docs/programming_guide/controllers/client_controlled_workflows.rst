@@ -778,7 +778,7 @@ The following SwarmClientController parameters are particularly important for la
 
 **Timeouts and Flow Control:**
 
-- ``learn_task_timeout``: Upper bound for how long the aggregation client waits for a round to finish. **Default: None (uses MAX_TASK_TIMEOUT=3600)**. **Suggested: 3600 to 7200** for large models.
+- ``learn_task_timeout``: Upper bound for how long the aggregation client waits for a round to finish. **Default: None**. **Suggested: 3600 to 7200** for large models.
 - ``learn_task_ack_timeout``: Timeout for acknowledging learn task dispatch. **Default: 10**. **Suggested: 300 or higher** since large model initialization can be slow.
 - ``final_result_ack_timeout``: Timeout for ACKs after broadcasting final results. **Default: 10**. **Suggested: 300 to 600** as final result distribution is often the largest payload.
 - ``request_to_submit_result_msg_timeout``: Timeout for request-to-submit messages. **Default: 5.0**. **Suggested: 10 to 30**.
@@ -856,11 +856,11 @@ Optional NVFlare Global Config
 
 These framework-level settings affect large payload transfers:
 
-- ``streaming_per_request_timeout``: Per-request timeout for streaming downloads. **Default: 300**. **Suggested: 300 to 600** for large models.
+- ``streaming_per_request_timeout``: Per-request timeout for streaming downloads. **Default: 600**. **Suggested: 600 or higher** for large models.
 
 .. code-block::
 
-    streaming_per_request_timeout: 300
+    streaming_per_request_timeout: 600
 
 Recommended Minimal Parameter Set
 ---------------------------------
