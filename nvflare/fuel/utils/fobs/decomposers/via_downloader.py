@@ -59,16 +59,18 @@ class _DecomposeCtx:
         self.target_to_item = {}  # target_id => item_id
         self.target_items = {}  # item_id => item value
         self.last_item_id = 0
+        self.lock = threading.Lock()
 
     def add_item(self, item: Any):
-        target_id = id(item)
-        item_id = self.target_to_item.get(target_id)
-        if not item_id:
-            item_id = f"T{self.last_item_id}"
-            self.last_item_id += 1
-            self.target_items[item_id] = item
-            self.target_to_item[target_id] = item_id
-        return item_id, target_id
+        with self.lock:
+            target_id = id(item)
+            item_id = self.target_to_item.get(target_id)
+            if not item_id:
+                item_id = f"T{self.last_item_id}"
+                self.last_item_id += 1
+                self.target_items[item_id] = item
+                self.target_to_item[target_id] = item_id
+            return item_id, target_id
 
     def get_item_count(self):
         return len(self.target_items)
@@ -222,8 +224,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
+            num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            num_receivers = num if num else 1
+
             downloader = ObjectDownloader(
-                num_receivers=1,
+                num_receivers=num_receivers,
                 cell=cell,
                 timeout=timeout,
             )
