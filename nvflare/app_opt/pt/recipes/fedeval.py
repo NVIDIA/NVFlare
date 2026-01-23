@@ -125,9 +125,7 @@ class FedEvalRecipe(Recipe):
         if not isinstance(self.initial_model, nn.Module):
             raise ValueError(f"initial_model must be nn.Module, got {type(self.initial_model)}")
 
-        persistor = PTFileModelPersistor(
-            model=self.initial_model, source_ckpt_file_full_name=self.source_checkpoint
-        )
+        persistor = PTFileModelPersistor(model=self.initial_model, source_ckpt_file_full_name=self.source_checkpoint)
 
         # Use PTModel to add model and persistor properly
         pt_model = PTModel(model=self.initial_model, persistor=persistor)
