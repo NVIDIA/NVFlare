@@ -33,6 +33,7 @@ jobs:
         workingDirectory: .github/workflows
         args: >-
           --accept=200,403,429
+          --timeout=30
           --verbose
           --no-progress
           '${{ github.workspace }}/**/*.md'
