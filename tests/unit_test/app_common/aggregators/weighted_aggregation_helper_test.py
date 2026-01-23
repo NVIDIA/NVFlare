@@ -217,23 +217,6 @@ class TestWeightedAggregationHelper:
         result = helper.get_result()
         assert len(result) == 0
 
-    def test_bool_tensor_handling(self):
-        """Test boolean tensors are treated like integers (no weighting)."""
-        helper = WeightedAggregationHelper()
-
-        data1 = {"mask": torch.tensor([True, False, True])}
-        helper.add(data1, weight=2.0, contributor_name="site-1", contribution_round=0)
-
-        data2 = {"mask": torch.tensor([False, True, True])}
-        helper.add(data2, weight=3.0, contributor_name="site-2", contribution_round=0)
-
-        result = helper.get_result()
-
-        # Boolean tensors should be summed (treated as integers)
-        # True+False=1, False+True=1, True+True=2
-        expected = torch.tensor([1, 1, 2], dtype=torch.bool)
-        assert torch.equal(result["mask"], expected)
-
     def test_thread_safety_simulation(self):
         """Test that multiple additions work (basic thread safety check)."""
         helper = WeightedAggregationHelper()

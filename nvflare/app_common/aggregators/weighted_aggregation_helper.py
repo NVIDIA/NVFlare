@@ -77,25 +77,21 @@ class WeightedAggregationHelper(object):
                         if self.weigh_by_local_iter:
                             self.total[k] = v * weight
                         else:
-                            self.total[k] = v
+                            self.total[k] = v.copy() if hasattr(v, "copy") else v
                     self.counts[k] = weight
                 else:
                     # Subsequent contributions: use in-place operations
                     if self._has_inplace_ops(v) and self._has_inplace_ops(current_total):
-                        if self.weigh_by_local_iter:
-                            # In-place: self.total[k] += v * weight
-                            # Check if float tensor before using alpha (integer tensors don't support alpha)
-                            if (
-                                hasattr(current_total.dtype, "is_floating_point")
-                                and current_total.dtype.is_floating_point
-                            ):
-                                self.total[k].add_(v, alpha=weight)
-                            else:
-                                # Integer/bool tensors: just add without weighting
-                                # (typically buffers/masks that should be the same across clients)
-                                self.total[k].add_(v)
+                        # Check dtype to determine aggregation method
+                        is_float = (
+                            hasattr(current_total.dtype, "is_floating_point") and current_total.dtype.is_floating_point
+                        )
+
+                        if is_float and self.weigh_by_local_iter:
+                            # Float tensors: weighted accumulation
+                            self.total[k].add_(v, alpha=weight)
                         else:
-                            # In-place: self.total[k] += v
+                            # Integer tensors or no weighting: simple addition
                             self.total[k].add_(v)
                     else:
                         # Fallback for non-PyTorch tensors
@@ -124,7 +120,7 @@ class WeightedAggregationHelper(object):
                     # Integer/bool tensors are summed, not averaged (typically buffers/masks)
                     if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
                         # Float tensor: compute weighted average in-place (safe, v is our internal copy)
-                        aggregated_dict[k] = v.div_(self.counts[k])
+                        aggregated_dict[k] = v.div(self.counts[k])
                     else:
                         # Integer/bool tensor: return sum (already accumulated without weighting)
                         aggregated_dict[k] = v
