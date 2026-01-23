@@ -1,0 +1,13 @@
+# BraTS18 dataset training data (keep datalist JSON files, but ignore the actual data)
+dataset_brats18/dataset/training
+
+# Compressed medical image files
+*.nii.gz
+
+# PyTorch model checkpoints
+*.pt
+*.pth
+
+# Python cache
+__pycache__/
+*.pyc

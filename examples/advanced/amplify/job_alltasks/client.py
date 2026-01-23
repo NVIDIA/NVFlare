@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ import random
 
 import numpy as np
 import torch
-from datasets import load_dataset
 from model import AmplifyRegressor, print_model_info
 from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, DataCollatorWithPadding
+from utils import evaluate_model, load_and_validate_csv
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -36,8 +36,7 @@ import nvflare.client as flare
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune AMPLIFY model for sequence regression")
     # Data paths
-    parser.add_argument("--train_csvs", type=str, nargs="+", required=True, help="List of paths to training CSV files")
-    parser.add_argument("--test_csvs", type=str, nargs="+", required=True, help="List of paths to test CSV files")
+    parser.add_argument("--data_root", type=str, required=True, help="Root directory for training and test data")
     parser.add_argument("--tasks", type=str, nargs="+", required=True, help="List of task names for each regressor")
     parser.add_argument(
         "--output_dir",
@@ -70,6 +69,13 @@ def parse_args():
     )
     # Deterministic training
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic training")
+    # Data sampling (for quick testing)
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Maximum number of samples to use from train/test sets (default: None, use all samples). Useful for quick testing.",
+    )
     return parser.parse_args()
 
 
@@ -88,18 +94,14 @@ def main():
     # Parse command line arguments
     args = parse_args()
 
-    # Validate that we have matching numbers of train and test files
-    if len(args.train_csvs) != len(args.test_csvs):
-        raise ValueError("Number of training CSV files must match number of test CSV files")
-    if len(args.tasks) != len(args.train_csvs):
-        raise ValueError("Number of tasks must match number of training CSV files")
-
-    # Set random seed for deterministic training
-    set_seed(args.seed)
-
     # (2) initializes NVFlare client API
     flare.init()
     client_name = flare.get_site_name()
+
+    print(f"Client {client_name} training on all {len(args.tasks)} tasks: {args.tasks}")
+
+    # Set random seed for deterministic training
+    set_seed(args.seed)
 
     # Start
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,10 +134,27 @@ def main():
     dataloaders_train = []
     dataloaders_test = []
 
-    for train_csv, test_csv in zip(args.train_csvs, args.test_csvs):
-        # Add data files
-        data_files = {"train": train_csv, "test": test_csv}
-        dataset = load_dataset("csv", data_files=data_files)
+    for task in args.tasks:
+        # Convert NVFlare site name (e.g., "site-1") to client file format (e.g., "client1")
+        # NVFlare site names: "site-1", "site-2", etc.
+        # Data file names: "client1_train_data.csv", "client2_train_data.csv", etc.
+        if client_name.startswith("site-"):
+            client_id = client_name.split("-")[1]  # Extract number from "site-N"
+            file_client_name = f"client{client_id}"
+        else:
+            file_client_name = client_name
+
+        # Construct data paths based on client name and task
+        train_csv = os.path.join(args.data_root, task, f"{file_client_name}_train_data.csv")
+        test_csv = os.path.join(args.data_root, task, "test_data.csv")
+
+        print(f"  Task {task}:")
+
+        # Load and validate dataset
+        dataset = load_and_validate_csv(
+            train_csv, test_csv, verbose=False, max_samples=args.max_samples, seed=args.seed
+        )
+        print(f"    Loaded: Train samples={len(dataset['train'])}, Test samples={len(dataset['test'])}")
 
         # Set tokenizer
         dataset.set_transform(
@@ -208,7 +227,7 @@ def main():
         # (5) Evaluate the global model on all test sets
         global_metrics = []
         for regressor_idx, (dataloader_test, task_name) in enumerate(zip(dataloaders_test, args.tasks)):
-            global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate(
+            global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate_model(
                 model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
             )
             global_metrics.append(
@@ -271,7 +290,7 @@ def main():
             # Evaluate the local model after each epoch
             local_metrics = []
             for regressor_idx, (dataloader_test, task_name) in enumerate(zip(dataloaders_test, args.tasks)):
-                local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate(
+                local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate_model(
                     model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
                 )
                 local_metrics.append(
@@ -315,43 +334,6 @@ def main():
     # Save the used hyperparameters and dataset statistics
     with open(os.path.join(run_dir, "hyperparameters.json"), "w") as f:
         json.dump(args.__dict__, f)
-
-
-def evaluate(model, dataloader_test, loss_fn, device, regressor_idx=None, task_name=None):
-    with torch.no_grad():
-        model.eval()
-        test_loss = []
-        all_predictions = []
-        all_labels = []
-        for batch in dataloader_test:
-            # Convert to correct dtype and move to GPU
-            input_ids = batch["input_ids"].to(torch.long).to(device)
-            attention_mask = batch["attention_mask"].to(torch.float32).to(device)
-            labels = batch["labels"].to(torch.long).to(device)
-
-            attention_mask = torch.where(attention_mask == 1, float(0.0), float("-inf"))
-            output = model(input_ids, attention_mask, regressor_idx=regressor_idx)
-            loss = loss_fn(output.squeeze(), labels)
-
-            test_loss.append(loss.item())
-
-            # Store predictions and labels for correlation calculation
-            all_predictions.extend(output.squeeze().cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-
-        mean_test_loss = np.mean(test_loss)
-        rmse_test_loss = np.sqrt(np.mean(test_loss))
-
-        # Calculate Pearson correlation
-        all_predictions = np.array(all_predictions)
-        all_labels = np.array(all_labels)
-        pearson_corr = np.corrcoef(all_predictions, all_labels)[0, 1]
-
-        print(
-            f"\n>>> Task {task_name} - Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
-        )
-
-    return mean_test_loss, rmse_test_loss, pearson_corr
 
 
 if __name__ == "__main__":
