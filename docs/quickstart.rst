@@ -8,6 +8,10 @@ Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hel
 
 Make sure you have completed the :ref:`installation` steps before proceeding.
 
+.. seealso::
+
+    For a complete list of ready-to-use federated learning recipes with code examples, see :ref:`available_recipes`.
+
 Prerequisites
 =============
 

@@ -4,6 +4,10 @@
 Programming Guide
 #################
 
+.. tip::
+
+    Looking for ready-to-use federated learning algorithms? Check out the :ref:`available_recipes` for pre-built recipes including FedAvg, FedProx, SCAFFOLD, XGBoost, and more.
+
 The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`application`.
 In the application, the server configuration defines the components to be used in the controller workflow.
 For example, the server configuration may define the aggregator used to accumulate client task data, a persistor used to
@@ -35,7 +39,10 @@ Please refer to :ref:`application` for more details.
 .. toctree::
    :maxdepth: 1
 
+   user_guide/core_concepts/job
    programming_guide/fed_job_api
+   user_guide/core_concepts/workspace
+   user_guide/core_concepts/application
    programming_guide/workflows_and_controllers
    programming_guide/execution_api_type
    programming_guide/fl_model
@@ -59,6 +66,13 @@ Please refer to :ref:`application` for more details.
    programming_guide/file_streaming.rst
    programming_guide/decomposer_for_large_object
    programming_guide/dashboard_api
+   user_guide/researcher_guide/index
+   user_guide/nvflare_cli/nvflare_cli
+   user_guide/confidential_computing/index
+   user_guide/edge_development/index
+   user_guide/flower_integration/flower_integration
+   user_guide/federated_xgboost/federated_xgboost
+
 
 .. rubric:: Code Structure
 
