@@ -16,7 +16,7 @@ Federated BraTS18 segmentation using NVFlare Job Recipe API.
 """
 import argparse
 
-from model import create_brats_model
+from model import BratsSegResNet
 
 from nvflare.app_common.filters.svt_privacy import SVTPrivacy
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -100,7 +100,7 @@ def main():
         name=recipe_name,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=create_brats_model(),
+        initial_model=BratsSegResNet(),
         train_script="client.py",
         train_args=train_args,
         key_metric="val_dice",
