@@ -10,7 +10,6 @@ Data Scientist Guide
 
    client_api_usage
    job_recipe
+   available_recipes
    flare_api
    poc
-   flower_integration/flower_integration
-   federated_xgboost/federated_xgboost
