@@ -9,8 +9,6 @@ We explore two different scenarios:
 
 ## Documentation
 
-- **[OVERVIEW.md](OVERVIEW.md)** - Complete guide with all information in one place
-- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide for both scenarios
 - **[job_multitask/README.md](job_multitask/README.md)** - Multi-task scenario documentation
 - **[job_alltasks/README.md](job_alltasks/README.md)** - All-tasks scenario documentation
 
@@ -71,7 +69,7 @@ The process involves:
     - Local training: Each data owner/client trains only on their local data.
     - Federated learning: We use the federated averaging algorithm to jointly train a global model on all the clients' data.
 
-To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See the [run_fl_multitask.py](run_fl_multitask.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
+To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See [job_multitask/job.py](job_multitask/job.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
 
 ## 1.1 Data Preparation
 
@@ -231,7 +229,7 @@ To achieve a heterogenous data split, we sample from a Dirchilet distribution wi
 for task in "aggregation" "binding" "expression" "immunogenicity" "polyreactivity" "thermostability" 
 do
     echo "Combing $task CSV data"
-    python src/combine_data.py --input_dir ./FLAb/data/${task} --output_dir ./FLAb/data_fl/${task} --num_clients=6 --alpha=1.0
+    python src/combine_data.py --input_dir ./FLAb/data/${task} --output_dir ./FLAb/data_fl/${task} --num_clients 6 --alpha 1.0
 done
 ```
 
@@ -323,9 +321,9 @@ This command will:
 Again, we can use the plotting code in [figs/plot_training_curves.py](./figs/plot_training_curves.py) to load the generated TensorBoard event files and compare the performance of the three experiments: "local" vs. "fedavg" vs. "fedavg_private_regressors". 
 
 Here's an example of how to use it:
-```
+```bash
 python figs/plot_training_curves.py \
-    --log_dir ~/Data2/amplify_nvflare/alltasks \
+    --log_dir /tmp/nvflare/AMPLIFY/alltasks \
     --output_dir ./figs/tb_figs_pearson_alltasks \
     --tag "Pearson/local_test_expression" \
     --out_metric "Pearson expression"
