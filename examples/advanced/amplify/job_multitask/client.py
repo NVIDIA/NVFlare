@@ -315,6 +315,11 @@ def evaluate(model, dataloader_test, loss_fn, device):
             all_predictions.extend(output.squeeze().cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
+        # Check if dataloader was empty
+        if len(test_loss) == 0:
+            print("\n>>> WARNING: Empty test dataloader, returning NaN metrics")
+            return float("nan"), float("nan"), float("nan")
+
         mean_test_loss = np.mean(test_loss)
         rmse_test_loss = np.sqrt(np.mean(test_loss))
 
