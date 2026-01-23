@@ -213,7 +213,7 @@ class AppRunner:
         server_app.set_backend_type(BackendType.SIMULATION)
         self.server_app = server_app
         self.client_app = client_app
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fox_call")
+        self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="collab_call")
 
         # Subprocess options
         self.inprocess = inprocess

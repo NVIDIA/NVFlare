@@ -20,7 +20,7 @@ from nvflare.collab.sys.recipe import CollabRecipe
 
 
 def main():
-    export_recipe("fox_fedavg_intime", _make_recipe)
+    export_recipe("collab_fedavg_intime", _make_recipe)
 
 
 def _make_recipe(job_name):

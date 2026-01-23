@@ -76,7 +76,7 @@ class CollabController(Controller, CollabAdaptor):
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
         self.cell = None
-        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="fox_call")
+        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
 
     def start_controller(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

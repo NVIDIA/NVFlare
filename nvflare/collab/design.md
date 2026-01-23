@@ -609,13 +609,13 @@ Runs in the subprocess, connects back to parent. Supports two execution modes:
 
 ```python
 # Environment variables set by SubprocessLauncher:
-#   FOX_PARENT_URL, FOX_PARENT_FQCN, FOX_SITE_NAME, FOX_WORKER_ID
-#   FOX_CLIENT_CLASS (determines mode: "CollabClientAPI" or module class)
+#   COLLAB_PARENT_URL, COLLAB_PARENT_FQCN, COLLAB_SITE_NAME, COLLAB_WORKER_ID
+#   COLLAB_CLIENT_CLASS (determines mode: "CollabClientAPI" or module class)
 ```
 
 **Responsibilities:**
 - Connect to parent via CellNet
-- Detect execution mode from `FOX_CLIENT_CLASS`
+- Detect execution mode from `COLLAB_CLIENT_CLASS`
 - For Collab API: Load module, wait for RPC calls
 - For Client API: Instantiate `CollabClientAPI`, run user script
 - Handle DDP rank coordination (only rank 0 communicates)
@@ -687,7 +687,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  ┌────────────────────────────────────────────────────────────────────────────────┐ │
 │  │                          SubprocessLauncher                                     │ │
 │  │                                                                                 │ │
-│  │  1. Set ENV vars: FOX_PARENT_URL, FOX_PARENT_FQCN, FOX_CLIENT_CLASS, etc.      │ │
+│  │  1. Set ENV vars: COLLAB_PARENT_URL, COLLAB_PARENT_FQCN, COLLAB_CLIENT_CLASS, etc.      │ │
 │  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.publish.sys.worker my_training   │ │
 │  │  3. Wait for ready signal                                                       │ │
 │  │  4. Forward calls via CellNet (collab_worker/call)                                │ │
@@ -705,7 +705,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │                              CollabWorker (Rank 0)                                │  │
 │  │                                                                                │  │
 │  │  1. Read ENV vars, connect to parent                                           │  │
-│  │  2. Detect mode from FOX_CLIENT_CLASS                                          │  │
+│  │  2. Detect mode from COLLAB_CLIENT_CLASS                                          │  │
 │  │  3. Signal ready                                                               │  │
 │  │  4. Collab API: Wait for RPC calls                                             │  │
 │  │     Client API: Run user script, handle execute()/stop()                       │  │
@@ -771,7 +771,7 @@ User Code (same API regardless of execution mode):
 │                          ┌─────────────────────────────────────────────────────────┐ │
 │                          │              AutoWriter (Mode Detection)                │ │
 │                          │                                                         │ │
-│                          │  Checks FOX_PARENT_URL env var to detect mode          │ │
+│                          │  Checks COLLAB_PARENT_URL env var to detect mode          │ │
 │                          └──────────────────────┬──────────────────────────────────┘ │
 │                                                 │                                    │
 │                    ┌────────────────────────────┼────────────────────────────┐       │
@@ -1001,7 +1001,7 @@ nvflare/collab/
 │
 ├── sim/                   # Simulation Layer
 │   ├── backend.py         # SimBackend
-│   ├── foxsimulator.py    # CollabSimulator
+│   ├── collab_simulator.py    # CollabSimulator
 │   └── sim_env.py         # SimEnv
 │
 ├── sys/                   # System/Runtime Layer
@@ -1071,11 +1071,11 @@ nvflare/collab/
 
 | Variable | Description |
 |----------|-------------|
-| `FOX_PARENT_URL` | CellNet URL for connecting to parent |
-| `FOX_PARENT_FQCN` | Parent cell's FQCN for message routing |
-| `FOX_SITE_NAME` | Client site name (e.g., `site-1`) |
-| `FOX_WORKER_ID` | Worker ID within the site |
-| `FOX_CLIENT_CLASS` | Client class name (determines execution mode) |
+| `COLLAB_PARENT_URL` | CellNet URL for connecting to parent |
+| `COLLAB_PARENT_FQCN` | Parent cell's FQCN for message routing |
+| `COLLAB_SITE_NAME` | Client site name (e.g., `site-1`) |
+| `COLLAB_WORKER_ID` | Worker ID within the site |
+| `COLLAB_CLIENT_CLASS` | Client class name (determines execution mode) |
 
 ---
 
@@ -1181,7 +1181,7 @@ recipe.execute(env)
 1. **Cross-Node Communication**: Use CellNet with TCP transport for inter-node messaging
 2. **Job Lifecycle**: Handle SLURM job states (PENDING, RUNNING, COMPLETED, FAILED)
 3. **Resource Allocation**: Request GPUs, memory, and time limits per client
-4. **Environment Propagation**: Pass `FOX_*` environment variables through SLURM
+4. **Environment Propagation**: Pass `COLLAB_*` environment variables through SLURM
 
 ---
 

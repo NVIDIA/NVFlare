@@ -255,8 +255,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.publish.sim import SimEnv                # +
-from nvflare.publish.sys.recipe import FoxRecipe      # +
+from nvflare.collab.sim import SimEnv                # +
+from nvflare.collab.sys.recipe import CollabRecipe      # +
 ```
 
 **Changes:**
@@ -424,7 +424,7 @@ if __name__ == "__main__":
     server = FedAvg(num_rounds=5)                 # + Server class
     client = Trainer()                            # + Client class
 
-    recipe = FoxRecipe(                           # + Recipe configuration
+    recipe = CollabRecipe(                           # + Recipe configuration
         job_name="fedavg_train",
         server=server,
         client=client,
@@ -440,7 +440,7 @@ if __name__ == "__main__":
 
 **Changes:**
 1. Create `FedAvg` and `Trainer` class instances
-2. Configure via `FoxRecipe`
+2. Configure via `CollabRecipe`
 3. Create `SimEnv` for execution environment
 4. Execute via `recipe.execute(env)`
 
@@ -488,8 +488,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.publish.sim import SimEnv                # +
-from nvflare.publish.sys.recipe import FoxRecipe      # +
+from nvflare.collab.sim import SimEnv                # +
+from nvflare.collab.sys.recipe import CollabRecipe      # +
 ```
 
 **Changes:**
@@ -528,7 +528,7 @@ class ClientGroup:
 # No custom abstraction at all!
 
 # Collab provides collab.clients automatically.
-# FoxRecipe auto-detects the caller's module.
+# CollabRecipe auto-detects the caller's module.
 
 
 
@@ -651,7 +651,7 @@ if __name__ == "__main__":
 
 ```python
 if __name__ == "__main__":
-    recipe = FoxRecipe(job_name="fedavg", min_clients=5)
+    recipe = CollabRecipe(job_name="fedavg", min_clients=5)
     env = SimEnv(num_clients=5)
     run = recipe.execute(env)
 
@@ -660,8 +660,8 @@ if __name__ == "__main__":
 ```
 
 **Changes:**
-1. Replace direct `fed_avg()` call with `FoxRecipe` + `SimEnv`
-2. `FoxRecipe` auto-detects the module containing `@collab.main` and `@collab.publish`
+1. Replace direct `fed_avg()` call with `CollabRecipe` + `SimEnv`
+2. `CollabRecipe` auto-detects the module containing `@collab.main` and `@collab.publish`
 
 ---
 
@@ -673,7 +673,7 @@ if __name__ == "__main__":
 | **Parallelism** | `ClientGroup` (custom) | `collab.clients` (built-in) |
 | **Training** | `@clients.register` + `client_id` | `@collab.publish` + `collab.site_name` |
 | **Workflow** | `clients.train()` | `collab.clients.train()` |
-| **Execution** | Direct `fed_avg()` call | `FoxRecipe().execute()` |
+| **Execution** | Direct `fed_avg()` call | `CollabRecipe().execute()` |
 
 **Key Insight:** The core training and workflow logic are **nearly identical**!
 - Replace `@clients.register` → `@collab.publish`
@@ -700,7 +700,7 @@ collab_fedavg_no_class_job.py      # Recipe ties them together
 from ... import collab_fedavg_no_class_client as client_module
 from ... import collab_fedavg_no_class_server as server_module
 
-recipe = FoxRecipe(
+recipe = CollabRecipe(
     job_name="fedavg_split",
     server=server_module,   # Auto-wrapped with ModuleWrapper
     client=client_module,   # Auto-wrapped with ModuleWrapper

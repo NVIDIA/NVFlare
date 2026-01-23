@@ -59,7 +59,7 @@ class Controller:
 
 
 def main():
-    export_recipe("fox_cyclic_avg", _make_recipe)
+    export_recipe("collab_cyclic_avg", _make_recipe)
 
 
 def _make_recipe(job_name):

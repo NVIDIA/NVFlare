@@ -23,7 +23,7 @@ from nvflare.collab.sys.recipe import CollabRecipe
 
 
 def main():
-    export_recipe("fox_pt_fedavg_filter", _make_recipe)
+    export_recipe("collab_pt_fedavg_filter", _make_recipe)
 
 
 def _make_recipe(job_name):
