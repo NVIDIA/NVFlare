@@ -518,16 +518,11 @@ Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
         train_args={"batch_size": 32, "epochs": 5},
     )
 
-    # Configure large model parameters if needed
+    # Configure large model parameters if needed (server-side only)
     recipe.add_server_config({
         "np_download_chunk_size": 2097152,
         "tensor_download_chunk_size": 2097152,
         "streaming_per_request_timeout": 600
-    })
-
-    recipe.add_client_config({
-        "np_download_chunk_size": 2097152,
-        "tensor_download_chunk_size": 2097152
     })
 
     # Run in simulation
@@ -698,32 +693,22 @@ These timeout values can be overridden in your job configuration files:
 - **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
 - **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
 
-For **Recipe API users** (recommended), use the ``add_server_config()`` and ``add_client_config()`` methods:
+For **Recipe API users** (recommended), use the ``add_server_config()`` method:
 
 .. code-block:: python
 
-    # Add top-level parameters to server config
+    # Add streaming parameters to server config (server-side only)
     recipe.add_server_config({
         "np_download_chunk_size": 2097152,
         "tensor_download_chunk_size": 2097152,
         "streaming_per_request_timeout": 600
     })
 
-    # Add top-level parameters to client config (all clients)
-    recipe.add_client_config({
-        "np_download_chunk_size": 2097152,
-        "tensor_download_chunk_size": 2097152
-    })
-
-    # Add to specific clients only
-    recipe.add_client_config({"timeout": 600}, clients=["site-1", "site-2"])
-
-For **Job API users**, use ``job.to_server()`` or ``job.to_clients()`` with a dict:
+For **Job API users**, use ``job.to_server()`` with a dict:
 
 .. code-block:: python
 
     job.to_server({"np_download_chunk_size": 2097152, "streaming_per_request_timeout": 600})
-    job.to_clients({"np_download_chunk_size": 2097152})
 
 .. list-table:: Swarm Learning Default Timeouts
    :header-rows: 1
@@ -1027,16 +1012,11 @@ Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site ev
         cross_site_eval_timeout=300,
     )
 
-    # Configure large model parameters if needed
+    # Configure large model parameters if needed (server-side only)
     recipe.add_server_config({
         "np_download_chunk_size": 2097152,
         "tensor_download_chunk_size": 2097152,
         "streaming_per_request_timeout": 600
-    })
-
-    recipe.add_client_config({
-        "np_download_chunk_size": 2097152,
-        "tensor_download_chunk_size": 2097152
     })
 
     # Run in simulation
@@ -1054,7 +1034,8 @@ Using JSON Configuration (Advanced)
 
 For users who need fine-grained control, here is the equivalent JSON configuration.
 
-**config_fed_server.json:**
+Cross Site Evaluation: config_fed_server.json
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: json
 
@@ -1092,7 +1073,8 @@ For users who need fine-grained control, here is the equivalent JSON configurati
     The json_generator component is used to also create a JSON file at the end of the job that
     shows cross-site validation results in human readable format.
 
-**config_fed_client.json:**
+Cross Site Evaluation: config_fed_client.json
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: json
 
