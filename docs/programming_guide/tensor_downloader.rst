@@ -135,6 +135,59 @@ The Tensor Downloader behavior can be configured via chunk size settings in your
 - ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads (default: 2097152 = 2MB)
 - ``np_download_chunk_size``: Chunk size for NumPy array downloads (default: 2097152 = 2MB)
 
+Using Recipe API (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For users working with recipes, use the ``add_server_config()`` and ``add_client_config()`` methods:
+
+.. code-block:: python
+
+    from nvflare.recipe.fedavg import FedAvgRecipe
+
+    recipe = FedAvgRecipe(
+        name="my_job",
+        num_rounds=10,
+        min_clients=2,
+        train_script="train.py",
+    )
+
+    # Configure chunk sizes for server
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    # Configure chunk sizes for all clients
+    recipe.add_client_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152
+    })
+
+Using Job API
+^^^^^^^^^^^^^
+
+For users working directly with the Job API:
+
+.. code-block:: python
+
+    from nvflare import FedJob
+
+    job = FedJob(name="my_job")
+
+    # Add config to server
+    job.to_server({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    # Add config to all clients
+    job.to_clients({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152
+    })
+
 Tuning for Large Models
 ^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -188,7 +241,32 @@ Disabling the Tensor Downloader
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 If you prefer to disable the streaming download feature and use traditional serialization instead,
-set the chunk sizes to zero:
+set the chunk sizes to zero.
+
+**Using Recipe API:**
+
+.. code-block:: python
+
+    # Disable streaming on server
+    recipe.add_server_config({
+        "np_download_chunk_size": 0,
+        "tensor_download_chunk_size": 0
+    })
+
+    # Disable streaming on clients
+    recipe.add_client_config({
+        "np_download_chunk_size": 0,
+        "tensor_download_chunk_size": 0
+    })
+
+**Using Job API:**
+
+.. code-block:: python
+
+    job.to_server({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
+    job.to_clients({"np_download_chunk_size": 0, "tensor_download_chunk_size": 0})
+
+**Using config files directly:**
 
 .. code-block::
 

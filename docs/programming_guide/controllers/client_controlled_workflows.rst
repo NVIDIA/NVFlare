@@ -494,11 +494,78 @@ The aggregation behavior is configured by the following args:
     - ``wait_time_after_min_resps_received`` - how many seconds to wait for potentially more responses after minimum responses are received
     - ``learn_task_timeout`` - how long to wait for the current learn task before timing out the gathering
 
-Example Swarm Learning Configuration
-====================================
+Example Swarm Learning
+======================
 
-Swarm Learning: config_fed_server.json
---------------------------------------
+This section shows how to set up swarm learning using recipes (recommended) and the traditional JSON configuration.
+
+Using Recipes (Recommended)
+---------------------------
+
+Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.recipe.sim_env import SimEnv
+
+    # Create swarm learning recipe
+    recipe = SimpleSwarmLearningRecipe(
+        name="swarm_learning",
+        initial_model=MyModel(),
+        num_rounds=10,
+        train_script="train.py",
+        train_args={"batch_size": 32, "epochs": 5},
+    )
+
+    # Configure large model parameters if needed
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    recipe.add_client_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152
+    })
+
+    # Run in simulation
+    env = SimEnv(num_clients=3)
+    recipe.execute(env)
+
+For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import BaseSwarmLearningRecipe
+    from nvflare.app_common.ccwf.ccwf_job import SwarmServerConfig, SwarmClientConfig
+
+    server_config = SwarmServerConfig(
+        num_rounds=10,
+        start_task_timeout=300,
+        progress_timeout=7200,
+    )
+
+    client_config = SwarmClientConfig(
+        executor=my_executor,
+        aggregator=my_aggregator,
+        persistor=my_persistor,
+        shareable_generator=my_generator,
+    )
+
+    recipe = BaseSwarmLearningRecipe(
+        name="custom_swarm",
+        server_config=server_config,
+        client_config=client_config,
+    )
+
+Using JSON Configuration (Advanced)
+-----------------------------------
+
+For users who need fine-grained control, here is the equivalent JSON configuration.
+
+**config_fed_server.json:**
 
 .. code-block:: json
 
@@ -522,8 +589,7 @@ Swarm Learning: config_fed_server.json
 
     The only required arg is ``num_rounds``.
 
-Swarm Learning: config_fed_client.json
---------------------------------------
+**config_fed_client.json:**
 
 .. code-block:: json
 
@@ -632,7 +698,32 @@ These timeout values can be overridden in your job configuration files:
 - **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
 - **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
 
-For **Job API users**, pass these as keyword arguments when creating the controller or use ``job.add_params()`` for top-level parameters.
+For **Recipe API users** (recommended), use the ``add_server_config()`` and ``add_client_config()`` methods:
+
+.. code-block:: python
+
+    # Add top-level parameters to server config
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    # Add top-level parameters to client config (all clients)
+    recipe.add_client_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152
+    })
+
+    # Add to specific clients only
+    recipe.add_client_config({"timeout": 600}, clients=["site-1", "site-2"])
+
+For **Job API users**, use ``job.to_server()`` or ``job.to_clients()`` with a dict:
+
+.. code-block:: python
+
+    job.to_server({"np_download_chunk_size": 2097152, "streaming_per_request_timeout": 600})
+    job.to_clients({"np_download_chunk_size": 2097152})
 
 .. list-table:: Swarm Learning Default Timeouts
    :header-rows: 1
@@ -909,12 +1000,61 @@ The CSE workflow requires the global model client to have a Model Persistor that
 This method is called to return the names of available global models. The persistor must also implement the ``get_model`` method,
 which is called to get the model from the persistor for other clients to evaluate.
 
-Example Cross Site Evaluation Configuration
-===========================================
-This example shows how to do cross site evaluation after swarm learning is done.
+Example Cross Site Evaluation
+=============================
 
-Cross Site Evaluation: config_fed_server.json
----------------------------------------------
+This section shows how to set up cross-site evaluation using recipes (recommended) and the traditional JSON configuration.
+
+Using Recipes (Recommended)
+---------------------------
+
+**Swarm Learning with Cross-Site Evaluation:**
+
+Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.recipe.sim_env import SimEnv
+
+    # Create swarm learning recipe with cross-site evaluation enabled
+    recipe = SimpleSwarmLearningRecipe(
+        name="swarm_with_cse",
+        initial_model=MyModel(),
+        num_rounds=3,
+        train_script="train.py",
+        do_cross_site_eval=True,
+        cross_site_eval_timeout=300,
+    )
+
+    # Configure large model parameters if needed
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    recipe.add_client_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152
+    })
+
+    # Run in simulation
+    env = SimEnv(num_clients=3)
+    recipe.execute(env)
+
+.. note::
+
+    This recipe uses the CCWF peer-to-peer cross-site evaluation where clients evaluate each other's
+    models directly. For the traditional server-controlled cross-site evaluation, see
+    :ref:`cross_site_model_evaluation`.
+
+Using JSON Configuration (Advanced)
+-----------------------------------
+
+For users who need fine-grained control, here is the equivalent JSON configuration.
+
+**config_fed_server.json:**
 
 .. code-block:: json
 
@@ -952,8 +1092,7 @@ Cross Site Evaluation: config_fed_server.json
     The json_generator component is used to also create a JSON file at the end of the job that
     shows cross-site validation results in human readable format.
 
-Cross Site Evaluation: config_fed_client.json
----------------------------------------------
+**config_fed_client.json:**
 
 .. code-block:: json
 
