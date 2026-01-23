@@ -4,11 +4,24 @@ This example demonstrates how to use the AMPLIFY protein language model from [ch
 
 We explore two different scenarios:
 
-1. Federated multi-task fine-tuning (each client trains their own downstream task)
-2. Federated fine-tuning of all tasks (the clients jointly train all downstream tasks)
+1. Federated multi-task fine-tuning (each client trains their own downstream task) - see [`job_multitask/`](job_multitask/)
+2. Federated fine-tuning of all tasks (the clients jointly train all downstream tasks) - see [`job_alltasks/`](job_alltasks/)
+
+## Documentation
+
+- **[job_multitask/README.md](job_multitask/README.md)** - Multi-task scenario documentation
+- **[job_alltasks/README.md](job_alltasks/README.md)** - All-tasks scenario documentation
 
 # Prerequisites
 First download the data and install the required dependencies.
+
+## Quick Comparison
+
+| Scenario | Directory | Clients | Data Split | Regression Heads | Use Case |
+|----------|-----------|---------|------------|------------------|----------|
+| **Multi-task** | [`job_multitask/`](job_multitask/) | 6 (one per task) | Each client has one task | Private (not shared) | Different organizations own different tasks |
+| **All-tasks (shared)** | [`job_alltasks/`](job_alltasks/) | Configurable (default: 6) | Heterogeneous across clients | Shared (jointly trained) | Joint ownership of all models |
+| **All-tasks (private)** | [`job_alltasks/`](job_alltasks/) | Configurable (default: 6) | Heterogeneous across clients | Private (not shared) | Personalized regressors per client |
 
 ## Dataset
 
@@ -22,18 +35,20 @@ The FLAb repository contains experimental data for six properties of therapeutic
 
 ## Installation
 
-First, we clone the AMPLIFY code and install it as a local pip package following the instructions [here](https://github.com/chandar-lab/AMPLIFY?tab=readme-ov-file#installation-as-a-local-pip-package):
+First, we clone the AMPLIFY code and install it as a local pip package following the instructions [here](https://github.com/chandar-lab/AMPLIFY?tab=readme-ov-file#installation-as-a-local-pip-package). Note, that AMPLIFY was only tested with Python 3.11. Later versions might cause dependency conflicts.
+
 ```bash
 git clone https://github.com/chandar-lab/AMPLIFY
-python3 -m venv env && \
+python3.11 -m venv env && \
 source env/bin/activate && \
 python3 -m pip install --upgrade pip && \
 python3 -m pip install --editable AMPLIFY[dev]
 ```
 
-Furthermore, we install the required dependencies for this example:
+Furthermore, we add the custom source code to the PYTHONPATH and install the required dependencies for this example:
 
 ```bash
+export PYTHONPATH="${PWD}/src"
 pip install -r requirements.txt
 ```
 
@@ -54,7 +69,7 @@ The process involves:
     - Local training: Each data owner/client trains only on their local data.
     - Federated learning: We use the federated averaging algorithm to jointly train a global model on all the clients' data.
 
-To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See the [run_fl_multitask.py](run_fl_multitask.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
+To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See [job_multitask/job.py](job_multitask/job.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
 
 ## 1.1 Data Preparation
 
@@ -62,7 +77,7 @@ The [combine_data.py](src/combine_data.py) script is used to prepare data for se
 
 **Combine the CSV Datasets**
 ```bash
-for task in "aggregation" "binding" "expression" "immunogenicity" "polyreactivity" "tm" 
+for task in "aggregation" "binding" "expression" "immunogenicity" "polyreactivity" "thermostability" 
 do
     echo "Combing $task CSV data"
     python src/combine_data.py --input_dir ./FLAb/data/${task} --output_dir ./FLAb/data_fl/${task}
@@ -73,22 +88,24 @@ This will:
 1. Read all CSV files from the `data` directory for each of the six antibody properties (aggregation, binding, expression, immunogenicity, polyreactivity, and thermostability)
 2. Combine the 'heavy' and 'light' columns with a '|' separator into a 'combined' column
 3. Split the data into training (80%) and test (20%) sets
-5. Save the processed data to the specified output directory
+4. Save the processed data to the specified output directory
 
 ## 1.2 Experiments
 The following experiments use the [120M AMPLIFY](https://huggingface.co/chandar-lab/AMPLIFY_120M) pretrained model from HuggingFace. It was tested using three NVIDIA A100 GPUs with 80 GB memory each.
-With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl_*.py`.
+With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument.
 
 ### 1.2.1 Local Training
-First we run the local training. Here, each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
+First we run the local training. Here, each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data. To speed up the runtime of this example, we randomly sample at most 1000 samples from the train and test sets of each tasks, respectively.
 ```bash
-python run_fl_multitask.py \
+cd job_multitask
+python job.py \
     --num_rounds 1 \
     --local_epochs 600 \
     --pretrained_model "chandar-lab/AMPLIFY_120M" \
     --layer_sizes "128,64,32" \
     --exp_name "local_singletask" \
-    --sim_gpus "0,1,2,0,1,2"
+    --sim_gpus "0,1,2,0,1,2" \
+    --max_samples 1000    
 ```
 
 This command will:
@@ -101,13 +118,15 @@ This command will:
 ### 1.2.2 Federated Learning
 Next, we run the same data setting but using the federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) algorithm. 
 ```bash
-python run_fl_multitask.py \
+cd job_multitask
+python job.py \
     --num_rounds 600 \
     --local_epochs 1 \
     --pretrained_model "chandar-lab/AMPLIFY_120M" \
     --layer_sizes "128,64,32" \
     --exp_name "fedavg_multitask" \
-    --sim_gpus "0,1,2,0,1,2"
+    --sim_gpus "0,1,2,0,1,2" \
+    --max_samples 1000
 ```
 
 This command will:
@@ -116,6 +135,9 @@ This command will:
 3. Each client will train for 1 local epoch per round
 4. Use the 120M parameter AMPLIFY model by default
 5. Configure the regression MLP with layer sizes [128, 64, 32]
+6. Use a random subset of 1000 samples per client for quick testing (remove `--max_samples` to use all data)
+
+> **Note:** The `--max_samples` parameter is useful for quick testing and debugging. It randomly samples a subset of the training and test data. Remove this parameter or set it to a higher value for full training runs.
 
 ### 1.3 Visualize the results
 
@@ -146,7 +168,7 @@ This will generate plots for each task comparing the local and federated trainin
 
 **120M AMPLIFY Multi-task Fine-tuning Results**
 
-We plot the RMSE and Pearson Coefficients for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "Thermostability (tm)". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set. 
+We plot the RMSE and Pearson Coefficients for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "thermostability". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set. 
 
 Pearson Coefficients closer to 1.0 would indicate a direct positive correlation between the ground truth and predicted values. It can be observed that several downstream tasks are challenging for the 120M and only achieve low correlation scores. See the [FLAb paper](https://www.biorxiv.org/content/10.1101/2024.01.13.575504v1) for comparison. However, the FedAvg experiment shows benefits for several downstream tasks.
 
@@ -204,10 +226,10 @@ To achieve a heterogenous data split, we sample from a Dirchilet distribution wi
 
 **Combine & split the CSV Datasets**
 ```bash
-for task in "aggregation" "binding" "expression" "immunogenicity" "polyreactivity" "tm" 
+for task in "aggregation" "binding" "expression" "immunogenicity" "polyreactivity" "thermostability" 
 do
     echo "Combing $task CSV data"
-    python src/combine_data.py --input_dir ./FLAb/data/${task} --output_dir ./FLAb/data_fl/${task} --num_clients=6 --alpha=1.0
+    python src/combine_data.py --input_dir ./FLAb/data/${task} --output_dir ./FLAb/data_fl/${task} --num_clients 6 --alpha 1.0
 done
 ```
 
@@ -219,19 +241,21 @@ Choosing an `alpha=1.0` value will result in a heterogeneous or imbalanced data 
 
 ## 2.2 Experiments for fitting all tasks
 The following experiments use the [120M AMPLIFY](https://huggingface.co/chandar-lab/AMPLIFY_120M) pretrained model from HuggingFace. It was tested using three NVIDIA A100 GPUs with 80 GB memory each.
-With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl_*.py`.
+With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument.
 
 ### 2.2.1 Local Training
 First we run the local training. Here, Each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
 ```bash
-python run_fl_alltasks.py \
+cd job_alltasks
+python job.py \
     --num_clients 6 \
     --num_rounds 1 \
     --local_epochs 600 \
     --pretrained_model "chandar-lab/AMPLIFY_120M" \
     --layer_sizes "128,64,32" \
     --exp_name "local_alltasks" \
-    --sim_gpus "0,1,2,0,1,2"
+    --sim_gpus "0,1,2,0,1,2" \
+    --max_samples 1000
 ```
 
 This command will:
@@ -240,18 +264,23 @@ This command will:
 3. Each client will train for 600 local epochs per round
 4. Use the 120M parameter AMPLIFY model by default
 5. Configure the regression MLP with layer sizes [128, 64, 32]
+6. Use a random subset of 1000 samples per client for quick testing (remove `--max_samples` to use all data)
+
+> **Note:** The `--max_samples` parameter is useful for quick testing and debugging. Remove this parameter for full training runs.
 
 ### 2.2.2 Federated Learning With Sharing the Regressors
 Next, we run the same data setting but using the federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) algorithm. Here, the AMPLIFY trunk and all the downstream tasks regressors will be jointly trained on the clients' data.
 ```bash
-python run_fl_alltasks.py \
+cd job_alltasks
+python job.py \
     --num_clients 6 \
     --num_rounds 300 \
     --local_epochs 2 \
     --pretrained_model "chandar-lab/AMPLIFY_120M" \
     --layer_sizes "128,64,32" \
     --exp_name "fedavg_alltasks" \
-    --sim_gpus "0,1,2,0,1,2"
+    --sim_gpus "0,1,2,0,1,2" \
+    --max_samples 1000
 ```
 
 This command will:
@@ -260,13 +289,15 @@ This command will:
 3. Each client will train for 2 local epochs per round
 4. Use the 120M parameter AMPLIFY model by default
 5. Configure the regression MLP with layer sizes [128, 64, 32]
+6. Use a random subset of 1000 samples per client for quick testing (remove `--max_samples` to use all data)
 
 ### 2.2.3 Federated Learning Without Sharing the Regressors
 
 Next, we again the federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) algorithm, but now we keep the regressors private to each client (as in the above multi-task scenario). The advantage here is that each data owner can train personalized regressors for their local data and still benefit from the jointly fine-tuned AMPLIFY trunk. If the `--private_regressors` argument is used, we simply add the  [ExcludeParamsFilter](src/filters.py) filter that removes the regressor layers from the model state dictionary shared with the server.
 
 ```bash
-python run_fl_alltasks.py \
+cd job_alltasks
+python job.py \
     --num_clients 6 \
     --num_rounds 300 \
     --local_epochs 2 \
@@ -274,7 +305,8 @@ python run_fl_alltasks.py \
     --layer_sizes "128,64,32" \
     --exp_name "fedavg_alltasks_private_regressors" \
     --private_regressors \
-    --sim_gpus "0,1,2,0,1,2"
+    --sim_gpus "0,1,2,0,1,2" \
+    --max_samples 1000
 ```
 This command will:
 1. Run federated learning with 6 clients
@@ -289,9 +321,9 @@ This command will:
 Again, we can use the plotting code in [figs/plot_training_curves.py](./figs/plot_training_curves.py) to load the generated TensorBoard event files and compare the performance of the three experiments: "local" vs. "fedavg" vs. "fedavg_private_regressors". 
 
 Here's an example of how to use it:
-```
+```bash
 python figs/plot_training_curves.py \
-    --log_dir ~/Data2/amplify_nvflare/alltasks \
+    --log_dir /tmp/nvflare/AMPLIFY/alltasks \
     --output_dir ./figs/tb_figs_pearson_alltasks \
     --tag "Pearson/local_test_expression" \
     --out_metric "Pearson expression"
