@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .cyclic import CyclicRecipe
 from .fedavg import FedAvgRecipe
 from .fedopt import FedOptRecipe
 from .scaffold import ScaffoldRecipe
 
-__all__ = ["FedAvgRecipe", "FedOptRecipe", "ScaffoldRecipe"]
+__all__ = ["FedAvgRecipe", "FedOptRecipe", "ScaffoldRecipe", "CyclicRecipe"]
