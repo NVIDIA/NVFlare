@@ -151,7 +151,7 @@ When `--enable_dp` is specified, the **SVTPrivacy** filter implements the Sparse
 - `--dp_noise_var=1.0`: Laplace noise scale
 - `--dp_gamma=1e-4`: Gradient clipping threshold
 
-*Defaults are the values used in the original paper. Adjust these parameters to explore different privacy-utility trade-offs.See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the full privacy analysis and theoretical guarantees.*
+*Defaults are example values. Adjust these parameters to explore different privacy-utility trade-offs.See [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] for the full privacy analysis and theoretical guarantees.*
 
 ## Job Recipe
 
