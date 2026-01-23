@@ -64,8 +64,9 @@ Limitations
 - **PyTorch and NumPy Only**: The streaming download feature supports PyTorch tensors and NumPy arrays.
   TensorFlow models are not currently supported and will use traditional serialization.
 
-- **Custom Tensor Types**: Custom tensor types or non-standard model formats may require developing
-  a custom decomposer. See :ref:`decomposer_for_large_object` for guidance.
+- **Custom Tensor Types**: Custom tensor types or non-standard model formats are not directly supported.
+  Convert your custom tensors to PyTorch tensors (``torch.Tensor``) or NumPy arrays (``numpy.ndarray``)
+  to benefit from the streaming download feature.
 
 
 How to Use It (User Perspective)
@@ -124,20 +125,6 @@ Example: Using PTFedAvg Controller Directly
     )
     job.to(controller, "server")
 
-Verifying It's Working
-----------------------
-
-You can verify the Tensor Downloader is active by checking the logs. When enabled, you'll see
-messages like:
-
-.. code-block:: text
-
-    INFO - Registered TensorDecomposer for torch.Tensor
-    INFO - Using tensor download for model transfer
-
-You should also observe reduced memory usage compared to previous FLARE versions when working
-with large models.
-
 Configuration
 -------------
 
@@ -164,6 +151,7 @@ reduce memory but increase network overhead.
     # Chunk sizes for streaming large models (2MB default)
     np_download_chunk_size = 2097152
     tensor_download_chunk_size = 2097152
+    streaming_per_request_timeout = 600
     
     task_data_filters = []
     task_result_filters = []
@@ -370,40 +358,6 @@ For advanced use cases, you can use the tensor download API directly:
 
     # Load into model
     model.load_state_dict(state_dict)
-
-Extending for Custom Types
---------------------------
-
-To create a similar downloader for custom object types, extend ``ViaDownloaderDecomposer``:
-
-.. code-block:: python
-
-    from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
-
-    class MyCustomDecomposer(ViaDownloaderDecomposer):
-
-        def __init__(self):
-            super().__init__(max_chunk_size=2*1024*1024, prefix="custom_")
-
-        def supported_type(self):
-            return MyCustomType
-
-        def get_download_dot(self) -> int:
-            return MY_CUSTOM_DOT  # Must be unique, range 1-127
-
-        def to_downloadable(self, items: dict, max_chunk_size: int, fobs_ctx: dict):
-            return MyCustomDownloadable(items, max_chunk_size)
-
-        def download(self, from_fqcn, ref_id, per_request_timeout, cell, ...):
-            return my_custom_download(from_fqcn, ref_id, ...)
-
-        def native_decompose(self, target, manager=None) -> bytes:
-            # Serialize single item
-            return my_serialize(target)
-
-        def native_recompose(self, data: bytes, manager=None):
-            # Deserialize single item
-            return my_deserialize(data)
 
 See Also
 ========

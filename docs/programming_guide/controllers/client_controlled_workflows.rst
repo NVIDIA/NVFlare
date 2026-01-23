@@ -618,6 +618,83 @@ Swarm Learning Parameters for Large Models
 When running Swarm Learning with large models (e.g., LLMs), you may need to tune various timeout and chunking parameters
 to accommodate the larger payloads and longer processing times.
 
+Default Timeout Values
+----------------------
+
+The following table lists all default timeout values used in Swarm Learning. Understanding these defaults helps you
+determine which parameters need adjustment for your large model workloads.
+
+**How to Override These Values:**
+
+These timeout values can be overridden in your job configuration files:
+
+- **Client-side parameters**: Set in ``config_fed_client.conf`` (or ``.json``) under the ``SwarmClientController`` executor args.
+- **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
+- **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
+
+For **Job API users**, pass these as keyword arguments when creating the controller or use ``job.add_params()`` for top-level parameters.
+
+.. list-table:: Swarm Learning Default Timeouts
+   :header-rows: 1
+   :widths: 25 10 25 40
+
+   * - Constant Name
+     - Default
+     - Config Parameter
+     - Description
+   * - ``CONFIG_TASK_TIMEOUT``
+     - 300
+     - ``config_task_timeout`` (server)
+     - Time allowed for clients to respond to the configuration task at job start.
+   * - ``START_TASK_TIMEOUT``
+     - 10
+     - ``start_task_timeout`` (server)
+     - Time allowed for the starting client to begin the workflow.
+   * - ``END_WORKFLOW_TIMEOUT``
+     - 2.0
+     - ``end_workflow_timeout`` (server)
+     - Time allowed for ending workflow message acknowledgment.
+   * - ``TASK_CHECK_INTERVAL``
+     - 0.5
+     - ``task_check_interval`` (client)
+     - Interval between task status checks.
+   * - ``JOB_STATUS_CHECK_INTERVAL``
+     - 2.0
+     - ``job_status_check_interval`` (server)
+     - Interval between job status checks by the server.
+   * - ``PER_CLIENT_STATUS_REPORT_TIMEOUT``
+     - 90.0
+     - (internal)
+     - Max time a client can go without reporting status.
+   * - ``WORKFLOW_PROGRESS_TIMEOUT``
+     - 3600.0
+     - ``progress_timeout`` (server)
+     - Max time allowed without any workflow progress.
+   * - ``LEARN_TASK_CHECK_INTERVAL``
+     - 1.0
+     - ``learn_task_check_interval`` (client)
+     - Interval for checking new learning tasks.
+   * - ``LEARN_TASK_ACK_TIMEOUT``
+     - 10
+     - ``learn_task_ack_timeout`` (client)
+     - Time allowed for a client to acknowledge receipt of a learn task.
+   * - ``LEARN_TASK_ABORT_TIMEOUT``
+     - 5.0
+     - ``learn_task_abort_timeout`` (client)
+     - Time allowed for a learning task to abort when requested.
+   * - ``FINAL_RESULT_ACK_TIMEOUT``
+     - 10
+     - ``final_result_ack_timeout`` (client)
+     - Time allowed for clients to acknowledge receipt of final results.
+   * - ``GET_MODEL_TIMEOUT``
+     - 10
+     - ``get_model_timeout`` (client)
+     - Time allowed for retrieving a model from another client.
+   * - ``MAX_TASK_TIMEOUT``
+     - 3600
+     - ``learn_task_timeout`` (client)
+     - Maximum time allowed for any single task to complete.
+
 Client-Side Parameters
 ----------------------
 
@@ -625,15 +702,15 @@ The following SwarmClientController parameters are particularly important for la
 
 **Timeouts and Flow Control:**
 
-- ``learn_task_timeout``: Upper bound for how long the aggregation client waits for a round to finish. **Suggested: 3600 to 7200** for large models.
-- ``learn_task_ack_timeout``: Timeout for acknowledging learn task dispatch. **Suggested: 300 or higher** since large model initialization can be slow.
-- ``final_result_ack_timeout``: Timeout for ACKs after broadcasting final results. **Suggested: 300 to 600** as final result distribution is often the largest payload.
-- ``request_to_submit_result_msg_timeout``: Timeout for request-to-submit messages. **Suggested: 10 to 30**.
-- ``request_to_submit_result_interval``: Retry interval when submit permission is not granted. **Suggested: 2 to 5**.
-- ``request_to_submit_result_max_wait``: Max total wait time for submit permission. **Suggested: 600 to 1200** for large models.
-- ``max_concurrent_submissions``: Maximum concurrent submissions. **Suggested: 1** to reduce memory pressure.
-- ``min_responses_required``: Minimum client results required to begin aggregation. **Suggested: 2** for 3-client runs.
-- ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Suggested: 120 to 300**.
+- ``learn_task_timeout``: Upper bound for how long the aggregation client waits for a round to finish. **Default: None (uses MAX_TASK_TIMEOUT=3600)**. **Suggested: 3600 to 7200** for large models.
+- ``learn_task_ack_timeout``: Timeout for acknowledging learn task dispatch. **Default: 10**. **Suggested: 300 or higher** since large model initialization can be slow.
+- ``final_result_ack_timeout``: Timeout for ACKs after broadcasting final results. **Default: 10**. **Suggested: 300 to 600** as final result distribution is often the largest payload.
+- ``request_to_submit_result_msg_timeout``: Timeout for request-to-submit messages. **Default: 5.0**. **Suggested: 10 to 30**.
+- ``request_to_submit_result_interval``: Retry interval when submit permission is not granted. **Default: 1.0**. **Suggested: 2 to 5**.
+- ``request_to_submit_result_max_wait``: Max total wait time for submit permission. **Default: None**. **Suggested: 600 to 1200** for large models.
+- ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
+- ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
+- ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
 
 **Example client config for large models:**
 
@@ -661,8 +738,8 @@ The following SwarmClientController parameters are particularly important for la
 
 **Download and Chunking Behavior:**
 
-- ``np_download_chunk_size``: Chunk size for numpy array downloads. **Suggested: 2097152 (2MB)**. Value 0 forces native serialization which can spike memory.
-- ``tensor_download_chunk_size``: Chunk size for tensor downloads. **Suggested: 2097152 (2MB)**.
+- ``np_download_chunk_size``: Chunk size for numpy array downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming and uses native serialization which can spike memory.
+- ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming.
 
 .. code-block::
 
@@ -675,8 +752,8 @@ Server-Side Parameters
 **SwarmServerController:**
 
 - ``num_rounds``: Total number of training rounds.
-- ``start_task_timeout``: Timeout for starting the workflow. **Suggested: 300** for large model initialization.
-- ``progress_timeout``: Overall workflow progress timeout. **Suggested: 7200 or higher** for large models.
+- ``start_task_timeout``: Timeout for starting the workflow. **Default: 10 (START_TASK_TIMEOUT)**. **Suggested: 300** for large model initialization.
+- ``progress_timeout``: Overall workflow progress timeout. **Default: 3600.0 (WORKFLOW_PROGRESS_TIMEOUT)**. **Suggested: 7200 or higher** for large models.
 
 **Example server config for large models:**
 
@@ -696,20 +773,18 @@ Server-Side Parameters
 
 **CrossSiteEvalServerController (if enabled):**
 
-- ``eval_task_timeout``: Timeout for evaluation tasks. **Suggested: 1200** for large models.
+- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 300 (CONFIG_TASK_TIMEOUT)**. **Suggested: 1200** for large models.
 
 Optional NVFlare Global Config
 ------------------------------
 
 These framework-level settings affect large payload transfers:
 
-- ``streaming_per_request_timeout``: Per-request timeout for streaming downloads. **Suggested: 30 to 120**.
-- ``download_chunk_size``: Global default download chunk size. **Suggested: 2097152 (2MB) or higher**.
+- ``streaming_per_request_timeout``: Per-request timeout for streaming downloads. **Default: 300**. **Suggested: 300 to 600** for large models.
 
 .. code-block::
 
-    streaming_per_request_timeout: 60
-    download_chunk_size: 2097152
+    streaming_per_request_timeout: 300
 
 Recommended Minimal Parameter Set
 ---------------------------------
@@ -1027,7 +1102,7 @@ Download and Chunking Behavior
 
 For large model transfers during cross-site evaluation, ensure chunking is configured:
 
-- ``np_download_chunk_size``: **Suggested: 2097152 (2MB)**
-- ``tensor_download_chunk_size``: **Suggested: 2097152 (2MB)**
+- ``np_download_chunk_size``: Chunk size for NumPy array downloads. **Suggested: 2097152 (2MB)**
+- ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Suggested: 2097152 (2MB)**
 
 See :ref:`swarm_learning_large_models` for more details on chunking configuration.
