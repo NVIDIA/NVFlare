@@ -50,6 +50,7 @@ class FedEvalRecipe(Recipe):
     Args:
         name: Name of the federated evaluation job. Defaults to "eval".
         initial_model: Model structure to evaluate (nn.Module). Required.
+            required to have a checkpoint attribute.
         min_clients: Minimum number of clients required to start evaluation.
         eval_script: Path to the evaluation script that will be executed on each client.
         eval_args: Command line arguments to pass to the evaluation script. Defaults to "".
@@ -59,8 +60,6 @@ class FedEvalRecipe(Recipe):
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         validation_timeout: Timeout for evaluation task in seconds. Defaults to 6000.
-        participating_clients: List of participating client names. If None, all connected clients
-            will participate. Defaults to None.
         per_site_config: Per-site configuration for the evaluation job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
@@ -95,7 +94,6 @@ class FedEvalRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
-        participating_clients: Optional[list] = None,
         per_site_config: Optional[dict[str, dict]] = None,
     ):
         self.name = name
@@ -107,7 +105,6 @@ class FedEvalRecipe(Recipe):
         self.command = command
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
-        self.participating_clients = participating_clients
         self.per_site_config = per_site_config
         self.source_checkpoint = initial_model.checkpoint
         if self.source_checkpoint is None:
