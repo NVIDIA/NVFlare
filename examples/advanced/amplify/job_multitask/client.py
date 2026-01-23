@@ -303,7 +303,7 @@ def evaluate(model, dataloader_test, loss_fn, device):
             # Convert to correct dtype and move to GPU
             input_ids = batch["input_ids"].to(torch.long).to(device)
             attention_mask = batch["attention_mask"].to(torch.float32).to(device)
-            labels = batch["labels"].to(torch.long).to(device)
+            labels = batch["labels"].to(device)
 
             attention_mask = torch.where(attention_mask == 1, float(0.0), float("-inf"))
             output = model(input_ids, attention_mask)
