@@ -1,146 +1,274 @@
 # Federated Learning with Differential Privacy for BraTS18 Segmentation
 
-Please make sure you set up virtual environment and follows [example root readme](../../README.md).
-This example uses the NVIDIA FLARE Job Recipe API (similar to `examples/hello-world/hello-dp`).
+This example demonstrates federated learning for 3D medical image segmentation using the NVIDIA FLARE Job Recipe API.
 
-## Introduction to MONAI, BraTS and Differential Privacy
-### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/) on medical image applications.
-It uses [MONAI](https://github.com/Project-MONAI/MONAI),
-which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
-### BraTS
-The application shown in this example is volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data.
-It uses a deep network model published by [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
+## Installation
 
-The model is trained to segment 3 nested subregions of primary brain tumors (gliomas): the "enhancing tumor" (ET), the "tumor core" (TC), the "whole tumor" (WT) based on 4 aligned input MRI scans (T1c, T1, T2, FLAIR). 
+### Prerequisites
+Set up a virtual environment and follow the [example root readme](../../README.md).
 
-![](https://developer.download.nvidia.com/assets/Clara/Images/clara_pt_brain_mri_segmentation_workflow.png)
-
-- The ET is described by areas that show hyper intensity in T1c when compared to T1, but also when compared to "healthy" white matter in T1c. 
-- The TC describes the bulk of the tumor, which is what is typically resected. The TC entails the ET, as well as the necrotic (fluid-filled) and the non-enhancing (solid) parts of the tumor. 
-- The WT describes the complete extent of the disease, as it entails the TC and the peritumoral edema (ED), which is typically depicted by hyper-intense signal in FLAIR.
-
-To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
-
-In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients:
-- `site-1.json`, `site-2.json`, `site-3.json`, `site-4.json`: Individual client data splits (60-61 training samples each)
-- `site-All.json`: Combined dataset for centralized training (242 training samples total)
-- All clients share the same validation set (43 samples) for fair comparison
-
-Each client requires at least a 12 GB GPU to run. 
-
-Note that for achieving FL and centralized training curves with a validation score that can be directly compared, we use an identical validation set across all clients and experiments without withholding a standalone testing set. In this case all scores will be computed against the same dataset, and when combining all clients' data we will have the same dataset as the centralized training. In reality though, each site will usually have its own validation set (in which case the validation curves are not directly comparable), and a testing set is usually withheld from the training process.
-
-### Differential Privacy (DP)
-[Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
-This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a Recipe output filter in `job.py`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
-
-## NVIDIA FLARE Installation
-For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
-```
+### Install NVIDIA FLARE
+```bash
 pip install nvflare
 ```
-Install the dependencies:
-```
+
+### Install Dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-## Code Structure
+For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
+
+## Project Structure
+
 ```
 brats18/
-|-- job.py                         # Job Recipe entrypoint
-|-- client.py                      # Client API script (MONAI training)
-|-- model.py                       # Model definition (BratsSegResNet wrapper)
-|-- dataset_brats18/               # Dataset and datalist splits
-|-- result_stat/                   # Evaluation and plotting scripts
+├── job.py                         # Job Recipe entrypoint
+├── client.py                      # Client training script (MONAI + Client API)
+├── model.py                       # Model definition (BratsSegResNet wrapper)
+├── dataset_brats18/               # Dataset and datalist splits
+│   ├── dataset/                   # BraTS18 training data (download required)
+│   └── datalist/                  # Data split JSONs (site-1.json, site-All.json, etc.)
+├── result_stat/                   # Evaluation and plotting scripts
+└── figs/                          # Result figures
 ```
 
-## Prepare dataset paths
-Pass dataset locations to the client script through `job.py` arguments:
-```
-DATASET_ROOT="${PWD}/dataset_brats18/dataset"
-DATALIST_ROOT="${PWD}/dataset_brats18/datalist"
+## Data
+
+### BraTS18 Dataset
+
+This example uses the BraTS 2018 dataset for volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs. The model is based on [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
+
+**Task**: Segment 3 nested subregions of primary brain tumors (gliomas):
+- **Enhancing Tumor (ET)**: Areas with hyper-intensity in T1c
+- **Tumor Core (TC)**: The bulk of the tumor (ET + necrotic + non-enhancing parts)
+- **Whole Tumor (WT)**: Complete extent (TC + peritumoral edema)
+
+**Input**: 4 aligned MRI scans per patient (T1c, T1, T2, FLAIR)
+
+![Brain Tumor Segmentation](https://developer.download.nvidia.com/assets/Clara/Images/clara_pt_brain_mri_segmentation_workflow.png)
+
+### Download Dataset
+
+Download BraTS 2018 data from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6].
+
+Place the data in `./dataset_brats18/dataset`. It should result in a sub-folder `./dataset_brats18/dataset/training`.
+
+### Data Splits
+
+The dataset is split into 4 subsets for federated learning:
+
+| File | Purpose | Training Samples | Validation Samples |
+|------|---------|-----------------|-------------------|
+| `site-1.json` | Client 1 data | 60 | 43 |
+| `site-2.json` | Client 2 data | 61 | 43 |
+| `site-3.json` | Client 3 data | 61 | 43 |
+| `site-4.json` | Client 4 data | 60 | 43 |
+| `site-All.json` | Centralized training | 242 | 43 |
+
+**Note**: All clients use the same validation set (43 samples) for fair comparison. For centralized training with 1 client, `site-All.json` is automatically used to include all training data.
+
+### Prepare Dataset Paths
+
+Set environment variables for dataset locations:
+```bash
+export DATASET_ROOT="${PWD}/dataset_brats18/dataset"
+export DATALIST_ROOT="${PWD}/dataset_brats18/datalist"
 ```
 
-## Run with Recipe API
-This example uses the [Job Recipe API](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/job_recipe.html)
-to run in simulation mode.
+## Client
 
-Run centralized training (1 client, uses all data from `site-All.json`):
+### Model
+
+The model uses MONAI's SegResNet architecture wrapped in a custom `BratsSegResNet` class. The wrapper explicitly stores constructor arguments as attributes, which is required for proper serialization by NVFlare's Job API.
+
+Model architecture (defined in `model.py`):
+- **Input**: 4 MRI channels (T1c, T1, T2, FLAIR)
+- **Architecture**: SegResNet with residual blocks
+- **Output**: 3 segmentation channels (ET, TC, WT)
+- **Parameters**: 16 initial filters, 0.2 dropout
+
+### Client Training Script
+
+The client script (`client.py`) implements:
+
+1. **Data Loading**: Uses MONAI's data loaders with client-specific data splits
+2. **Model Training**: Standard PyTorch training loop with optional FedProx regularization
+3. **Validation**: Computes Dice metrics for each tumor subregion
+4. **Communication**: Uses NVFlare Client API (`flare.receive()` / `flare.send()`)
+5. **Weight Diff**: Automatically handled by the API when `params_transfer_type=TransferType.DIFF`
+
+Training hyperparameters:
+- Learning rate: 1e-4 
+- Optimizer: Adam with weight decay 1e-5
+- Loss: Dice Loss
+- Local epochs per round: 1 
+- ROI size: 224×224×144
+
+## Server
+
+### Aggregation
+
+The server uses the `FedAvg` workflow, which implements federated averaging, the aggregator uses **weighted averaging** based on the number of training steps (`NUM_STEPS_CURRENT_ROUND`).
+
+### Model Selection
+
+The `IntimeModelSelector` tracks validation metrics (`val_dice`) across rounds and saves the best performing global model as `best_FL_global_model.pt`.
+
+### Differential Privacy (Optional)
+
+When `--enable_dp` is specified, the **SVTPrivacy** filter is applied to client outputs:
+
+- **Method**: Sparse Vector Technique (SVT) [7, 8]
+- **Effect**: Adds Laplace noise and selectively shares only a fraction of weight updates
+- **Parameters** (configurable in `job.py`):
+  - `fraction=0.9`: Share top 90% of weights
+  - `epsilon=0.001`: Privacy budget
+  - `noise_var=1.0`: Noise variance
+  - `gamma=1e-4`: Clipping threshold
+
+**Privacy-Utility Trade-off**: DP provides privacy guarantees but reduces model accuracy and convergence (see Results section).
+
+## Job Recipe
+
+The `job.py` file uses the `FedAvgRecipe` to configure the federated learning job:
+
+```python
+recipe = FedAvgRecipe(
+    name=f"brats18_{n_clients}",
+    min_clients=n_clients,
+    num_rounds=num_rounds,
+    initial_model=create_brats_model(),
+    train_script="client.py",
+    train_args="...",
+    key_metric="val_dice",
+    params_transfer_type=TransferType.DIFF,
+)
 ```
+
+## Run Job
+
+### Basic Commands
+
+**Centralized training** (1 client, all data):
+```bash
 python job.py --n_clients 1 --num_rounds 600 --gpu 0 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-Run FedAvg (4 clients on 4 GPUs):
-```
+**FedAvg** (4 clients on 4 GPUs):
+```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0,1,2,3 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-Run FedAvg (4 clients on single GPU):
-```
+**FedAvg** (4 clients on single 48GB GPU):
+```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0 --threads 4 \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-Run FedAvg with DP (4 clients):
-```
+**FedAvg with Differential Privacy** (4 clients on single 48GB GPU):
+```bash
 python job.py --n_clients 4 --num_rounds 600 --gpu 0 --threads 4 --enable_dp \
   --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
 ```
 
-By default, results are stored under `/tmp/nvflare/simulation/<job_name>`.
-The job name follows the format `brats18_{n_clients}` (e.g., `brats18_4`) or `brats18_{n_clients}_dp` with DP enabled (e.g., `brats18_4_dp`).
-Use `--workspace` to change the workspace root and `--threads` to control simulator threads.
+### Workspace and Output
 
-### Testing
+By default, results are stored under `/tmp/nvflare/simulation/<job_name>`:
+- Job names follow the format `brats18_{n_clients}` (e.g., `brats18_4`)
+- With DP enabled: `brats18_{n_clients}_dp` (e.g., `brats18_4_dp`)
+
+Use `--workspace` to specify a custom workspace root.
+
+### Additional Options
+
+**Customize training hyperparameters:**
+```bash
+python job.py --n_clients 4 --num_rounds 100 \
+  --learning_rate 5e-5 --aggregation_epochs 2 --cache_dataset 0.5 \
+  --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
+```
+
+**Use custom job name:**
+```bash
+python job.py --job_name my_experiment --n_clients 4 \
+  --dataset_base_dir "${DATASET_ROOT}" --datalist_json_path "${DATALIST_ROOT}"
+```
+
+## Results
+
+### Model Evaluation
+
 The best global models are stored at:
 ```
 <workspace_root>/<job_name>/server/simulate_job/app_server/best_FL_global_model.pt
 ```
-For example: `/tmp/nvflare/simulation/brats18_1/server/simulate_job/app_server/best_FL_global_model.pt`
 
-Update the testing script paths and run:
-```
+Example: `/tmp/nvflare/simulation/brats18_4/server/simulate_job/app_server/best_FL_global_model.pt`
+
+To evaluate the models:
+```bash
 cd ./result_stat
 bash testing_models_3d.sh
 ```
 
-## Results for Central vs. FedAvg vs. FedAvg with DP 
-In this example, only the global model gets evaluated at each round, and saved as the final model.
-The results below are from experiments with 4 clients. 
-### Validation curve
-We can use tensorboard tool to view the training and validation curves for each setting and each site, e.g.,
-```
+### Training and Validation Curves
+
+View training progress with TensorBoard:
+```bash
 tensorboard --logdir='/tmp/nvflare/simulation'
 ```
 
-We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
-
-We provide a script for plotting the tensorboard records:
+Generate comparison plots:
+```bash
+cd ./result_stat
+python3 plot_tensorboard_events.py
 ```
-python3 ./result_stat/plot_tensorboard_events.py
-```
 
-The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice over 600 rounds (1 local epoch per round):
+
 ![All training curve](./figs/nvflare_brats18.png)
 
-As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific SVTPrivacy parameter settings in `job.py`.
-Different DP settings will have different impacts over the performance.
+**Key Observations:**
+- FedAvg achieves similar accuracy to centralized training
+- Differential Privacy reduces accuracy and convergence but provides privacy guarantees
+- All methods converge within 600 rounds
 
-### Validation score
-The accuracy metrics under each setting are:
+### Validation Metrics
 
-| Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
-| ----------- |------------------|---------------|---------------|---------------|  
-| brats18_1 (central) 	| 	0.8558	         | 	0.8648	      | 0.9070	       | 0.7894	       | 
-| brats18_4 (fedavg)  	| 	0.8573	         | 0.8687	       | 0.9088	       | 0.7879	       | 
-| brats18_4_dp (fedavg+dp) | 	0.8209	    | 0.8282	       | 0.8818	       | 0.7454	       |
+Accuracy metrics after 600 rounds:
 
+| Configuration | Val Overall Dice | Val TC Dice | Val WT Dice | Val ET Dice |
+|---------------|------------------|-------------|-------------|-------------|
+| brats18_1 (central) | 0.8558 | 0.8648 | 0.9070 | 0.7894 |
+| brats18_4 (fedavg) | 0.8573 | 0.8687 | 0.9088 | 0.7879 |
+| brats18_4_dp (fedavg+dp) | 0.8209 | 0.8282 | 0.8818 | 0.7454 |
 
+**Key Findings:**
+- **FedAvg vs Centralized**: Minimal difference (0.8573 vs 0.8558) - demonstrates effectiveness of federated learning
+- **DP Impact**: ~4% Dice reduction (0.8573 → 0.8209) - privacy-utility trade-off with the chosen SVTPrivacy parameters
+
+Different DP settings will have different impacts on performance. Adjust `fraction`, `epsilon`, `noise_var`, and `gamma` in `job.py` to tune the privacy-utility trade-off.
+
+## Technical Notes
+
+### Framework Details
+
+- **Framework**: MONAI + PyTorch + NVIDIA FLARE
+- **FL Algorithm**: FedAvg (Federated Averaging)
+- **Privacy**: SVT (Sparse Vector Technique) Differential Privacy
+- **Communication**: Weight differences (`TransferType.DIFF`) for applying DP
+- **Aggregation**: Weighted averaging based on local training steps
+
+### Hardware Requirements
+
+- Minimum 12 GB GPU per client
+- For 4 clients on single GPU: Recommend 48 GB GPU
 
 ## References
+
 [1] Myronenko A. 3D MRI brain tumor segmentation using autoencoder regularization. InInternational MICCAI Brainlesion Workshop 2018 Sep 16 (pp. 311-320). Springer, Cham.
 
 [2] B. H. Menze, A. Jakab, S. Bauer, J. Kalpathy-Cramer, K. Farahani, J. Kirby, et al. "The Multimodal Brain Tumor Image Segmentation Benchmark (BRATS)", IEEE Transactions on Medical Imaging 34(10), 1993-2024 (2015) DOI: 10.1109/TMI.2014.2377694
