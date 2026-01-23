@@ -233,3 +233,20 @@ class TestRecipeConfigMethods:
             with open(os.path.join(job_dir, "app", "config", "config_fed_client.json")) as f:
                 client_config = json.load(f)
             assert client_config.get("client_param") == 456
+
+    def test_config_type_error(self, temp_script):
+        """Test TypeError is raised for non-dict arguments."""
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+        )
+
+        with pytest.raises(TypeError, match="config must be a dict"):
+            recipe.add_server_config("not_a_dict")  # type: ignore[arg-type]
+
+        with pytest.raises(TypeError, match="config must be a dict"):
+            recipe.add_client_config(123)  # type: ignore[arg-type]
