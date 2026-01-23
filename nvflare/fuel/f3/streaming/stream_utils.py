@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import os
 import random
 import threading
 import time
@@ -26,7 +25,7 @@ ONE_MB = 1024 * 1024
 MILLION = 1000000
 
 lock = threading.Lock()
-sid_base = int(time.time() * MILLION) + random.randint(0, MILLION) # microseconds + random
+sid_base = int(time.time() * MILLION) + random.randint(0, MILLION)  # microseconds + random
 stream_count = 0
 
 log = logging.getLogger(__name__)
