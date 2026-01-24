@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 from typing import Any
 
 from nvflare.apis.client import Client
@@ -28,6 +27,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnab
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -57,6 +57,7 @@ class ScatterAndGather(Controller):
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
+        server_memory_gc_rounds: int = 1,
     ):
         """The controller for ScatterAndGather Workflow.
 
@@ -89,6 +90,8 @@ class ScatterAndGather(Controller):
                 If n is 0 then no persist.
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
+            server_memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+                Set to 0 to disable. Defaults to 1 (every round).
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -139,6 +142,7 @@ class ScatterAndGather(Controller):
         self._train_timeout = train_timeout
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
+        self._server_memory_gc_rounds = server_memory_gc_rounds
         self.ignore_result_error = ignore_result_error
         self.allow_empty_global_weights = allow_empty_global_weights
 
@@ -146,6 +150,11 @@ class ScatterAndGather(Controller):
         self._phase = AppConstants.PHASE_INIT
         self._global_weights = make_model_learnable({}, {})
         self._current_round = None
+
+    def _maybe_cleanup_memory(self):
+        """Perform memory cleanup if configured (every N rounds based on server_memory_gc_rounds)."""
+        if self._server_memory_gc_rounds > 0 and (self._current_round + 1) % self._server_memory_gc_rounds == 0:
+            cleanup_memory()
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing ScatterAndGather workflow for Federated Averaging.")
@@ -304,7 +313,8 @@ class ScatterAndGather(Controller):
                 # Reset aggregator state for next round
                 self.aggregator.reset(fl_ctx)
 
-                gc.collect()
+                # Memory cleanup at end of round (if configured)
+                self._maybe_cleanup_memory()
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")

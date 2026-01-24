@@ -82,6 +82,9 @@ class Scaffold(BaseFedAvg):
 
             self.save_model(self.model)
 
+            # Memory cleanup at end of round (if configured)
+            self._maybe_cleanup_memory()
+
         self.info("Finished FedAvg.")
 
 
