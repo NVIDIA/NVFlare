@@ -14,5 +14,8 @@
 
 from .cyclic import CyclicRecipe
 from .fedavg import FedAvgRecipe
+from .fedavg_he import FedAvgRecipeWithHE
+from .fedopt import FedOptRecipe
+from .scaffold import ScaffoldRecipe
 
-__all__ = ["FedAvgRecipe", "CyclicRecipe"]
+__all__ = ["FedAvgRecipe", "CyclicRecipe", "FedOptRecipe", "ScaffoldRecipe", "FedAvgRecipeWithHE"]
