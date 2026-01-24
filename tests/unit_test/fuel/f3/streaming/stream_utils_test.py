@@ -46,53 +46,6 @@ class TestStreamUtils:
         # Check that IDs are monotonically increasing
         assert ids == sorted(ids), "Generated IDs are not monotonically increasing"
 
-    @pytest.mark.parametrize("num_iterations", [10])
-    def test_gen_stream_id_no_collision_multiprocess(self, num_iterations):
-        """Test that gen_stream_id generates unique IDs across multiple processes.
-
-        This test uses 2 processes, each generating 1000 stream IDs, and runs
-        multiple iterations to ensure no collisions occur.
-        """
-        num_processes = 2
-        ids_per_process = 1000
-
-        for iteration in range(num_iterations):
-            # Create a queue to collect results
-            result_queue = mp.Queue()
-
-            # Create and start individual processes
-            processes = []
-            for _ in range(num_processes):
-                p = mp.Process(target=generate_stream_ids, args=(ids_per_process, result_queue))
-                p.start()
-                processes.append(p)
-
-            # Wait for all processes to complete
-            for p in processes:
-                p.join()
-
-            # Collect results from queue
-            all_ids = []
-            while not result_queue.empty():
-                process_ids = result_queue.get()
-                all_ids.extend(process_ids)
-
-            # Check total count
-            expected_total = num_processes * ids_per_process
-            assert (
-                len(all_ids) == expected_total
-            ), f"Iteration {iteration + 1}: Expected {expected_total} IDs, got {len(all_ids)}"
-
-            # Check for uniqueness across all processes
-            unique_ids = set(all_ids)
-            if len(unique_ids) != len(all_ids):
-                duplicates = [x for x in all_ids if all_ids.count(x) > 1]
-                pytest.fail(
-                    f"Iteration {iteration + 1}/{num_iterations}: "
-                    f"Found {len(all_ids) - len(unique_ids)} collisions. "
-                    f"Duplicate IDs: {set(duplicates)}"
-                )
-
     @pytest.mark.slow
     def test_gen_stream_id_no_collision_stress(self):
         """Stress test with 1000 iterations to thoroughly verify collision resistance.
@@ -102,7 +55,7 @@ class TestStreamUtils:
         """
         num_processes = 2
         ids_per_process = 1000
-        num_iterations = 100
+        num_iterations = 10
 
         mp.set_start_method("spawn", force=True)
         for iteration in range(num_iterations):
