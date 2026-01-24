@@ -97,6 +97,7 @@ class TestStreamUtils:
         num_iterations = 1000
 
         # Use a persistent pool to avoid process creation overhead
+        mp.set_start_method("spawn", force=True)
         with mp.Pool(processes=num_processes) as pool:
             for iteration in range(num_iterations):
                 # Each process generates ids_per_process stream IDs
