@@ -14,8 +14,6 @@
 
 import multiprocessing as mp
 
-import pytest
-
 from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
 
 
