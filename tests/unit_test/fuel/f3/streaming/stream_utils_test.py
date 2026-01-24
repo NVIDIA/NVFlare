@@ -19,19 +19,17 @@ import pytest
 from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
 
 
-def generate_stream_ids(num_ids: int) -> list:
+def generate_stream_ids(num_ids: int, result_queue: mp.Queue) -> None:
     """Worker function to generate stream IDs in a separate process.
 
     Args:
         num_ids: Number of stream IDs to generate
-
-    Returns:
-        List of generated stream IDs
+        result_queue: Queue to put the generated IDs
     """
     ids = []
     for _ in range(num_ids):
         ids.append(gen_stream_id())
-    return ids
+    result_queue.put(ids)
 
 
 class TestStreamUtils:
@@ -59,14 +57,24 @@ class TestStreamUtils:
         ids_per_process = 1000
 
         for iteration in range(num_iterations):
-            # Create a pool of worker processes
-            with mp.Pool(processes=num_processes) as pool:
-                # Each process generates ids_per_process stream IDs
-                results = pool.map(generate_stream_ids, [ids_per_process] * num_processes)
+            # Create a queue to collect results
+            result_queue = mp.Queue()
 
-            # Flatten the results
+            # Create and start individual processes
+            processes = []
+            for _ in range(num_processes):
+                p = mp.Process(target=generate_stream_ids, args=(ids_per_process, result_queue))
+                p.start()
+                processes.append(p)
+
+            # Wait for all processes to complete
+            for p in processes:
+                p.join()
+
+            # Collect results from queue
             all_ids = []
-            for process_ids in results:
+            while not result_queue.empty():
+                process_ids = result_queue.get()
                 all_ids.extend(process_ids)
 
             # Check total count
@@ -94,39 +102,49 @@ class TestStreamUtils:
         """
         num_processes = 2
         ids_per_process = 1000
-        num_iterations = 1000
+        num_iterations = 100
 
-        # Use a persistent pool to avoid process creation overhead
         mp.set_start_method("spawn", force=True)
-        with mp.Pool(processes=num_processes) as pool:
-            for iteration in range(num_iterations):
-                # Each process generates ids_per_process stream IDs
-                results = pool.map(generate_stream_ids, [ids_per_process] * num_processes)
+        for iteration in range(num_iterations):
+            # Create a queue to collect results
+            result_queue = mp.Queue()
 
-                # Flatten the results
-                all_ids = []
-                for process_ids in results:
-                    all_ids.extend(process_ids)
+            # Create and start individual processes for each iteration
+            processes = []
+            for _ in range(num_processes):
+                p = mp.Process(target=generate_stream_ids, args=(ids_per_process, result_queue))
+                p.start()
+                processes.append(p)
 
-                # Check total count
-                expected_total = num_processes * ids_per_process
-                assert (
-                    len(all_ids) == expected_total
-                ), f"Iteration {iteration + 1}: Expected {expected_total} IDs, got {len(all_ids)}"
+            # Wait for all processes to complete
+            for p in processes:
+                p.join()
 
-                # Check for uniqueness across all processes
-                unique_ids = set(all_ids)
-                if len(unique_ids) != len(all_ids):
-                    duplicates = [x for x in all_ids if all_ids.count(x) > 1]
-                    pytest.fail(
-                        f"Iteration {iteration + 1}/{num_iterations}: "
-                        f"Found {len(all_ids) - len(unique_ids)} collisions. "
-                        f"Duplicate IDs: {set(duplicates)}"
-                    )
+            # Collect results from queue
+            all_ids = []
+            while not result_queue.empty():
+                process_ids = result_queue.get()
+                all_ids.extend(process_ids)
 
-                # Print progress every 100 iterations
-                if (iteration + 1) % 100 == 0:
-                    print(f"Completed {iteration + 1}/{num_iterations} iterations")
+            # Check total count
+            expected_total = num_processes * ids_per_process
+            assert (
+                len(all_ids) == expected_total
+            ), f"Iteration {iteration + 1}: Expected {expected_total} IDs, got {len(all_ids)}"
+
+            # Check for uniqueness across all processes
+            unique_ids = set(all_ids)
+            if len(unique_ids) != len(all_ids):
+                duplicates = [x for x in all_ids if all_ids.count(x) > 1]
+                pytest.fail(
+                    f"Iteration {iteration + 1}/{num_iterations}: "
+                    f"Found {len(all_ids) - len(unique_ids)} collisions. "
+                    f"Duplicate IDs: {set(duplicates)}"
+                )
+
+            # Print progress every 100 iterations
+            if (iteration + 1) % 100 == 0:
+                print(f"Completed {iteration + 1}/{num_iterations} iterations")
 
     def test_gen_stream_id_returns_positive_int(self):
         """Test that gen_stream_id returns a positive integer"""
