@@ -67,10 +67,8 @@ class TestWeightedAggregationHelper:
 
         result = helper.get_result()
 
-        # Integer tensors: should be summed (not averaged)
-        # Expected: 10+5, 20+10, 30+15 = [15, 30, 45]
-        expected = torch.tensor([15, 30, 45], dtype=torch.long)
-        assert torch.equal(result["count"], expected)
+        expected = torch.tensor([7.0, 14.0, 21.0])
+        assert torch.allclose(result["count"], expected)
 
     def test_pytorch_mixed_float_int_tensors(self):
         """Test mixed float and integer tensors."""
@@ -92,9 +90,7 @@ class TestWeightedAggregationHelper:
 
         # Float weights: (2*1 + 3*2)/(1+2) = 8/3, (4*1 + 6*2)/(1+2) = 16/3
         assert torch.allclose(result["weights"], torch.tensor([8.0 / 3, 16.0 / 3]))
-
-        # Integer counts: sum only = 15, 30
-        assert torch.equal(result["counts"], torch.tensor([15, 30], dtype=torch.long))
+        assert torch.allclose(result["counts"], torch.tensor([20.0 / 3, 40.0 / 3]))
 
     def test_numpy_single_contribution(self):
         """Test single contribution with NumPy arrays."""

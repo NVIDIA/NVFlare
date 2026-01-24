@@ -44,9 +44,10 @@ class WeightedAggregationHelper(object):
         self.counts = dict()
         self.history = list()
 
-    def _has_inplace_ops(self, tensor):
-        """Check if tensor supports in-place operations (PyTorch tensors)."""
-        return hasattr(tensor, "add_") and hasattr(tensor, "mul_")
+    @staticmethod
+    def _is_pytorch_tensor(tensor):
+        """Check if tensor is a PyTorch tensor with in-place operation support."""
+        return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
@@ -60,38 +61,33 @@ class WeightedAggregationHelper(object):
                 if current_total is None:
                     # First contribution: initialize accumulator
                     # We must create a copy to avoid mutating caller's input tensors
-                    if self._has_inplace_ops(v):
+                    if self._is_pytorch_tensor(v):
                         if self.weigh_by_local_iter:
-                            # Check if float tensor
-                            if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
-                                # Float tensor: create weighted copy
-                                self.total[k] = v.mul(weight)
-                            else:
-                                # Integer/bool tensors: clone to avoid aliasing
-                                self.total[k] = v.clone()
+                            # Weigh by local iter: create weighted copy (multiply by weight)
+                            self.total[k] = v.mul(weight)
                         else:
-                            # No weighting: clone to avoid aliasing
                             self.total[k] = v.clone()
                     else:
                         # Fallback for non-PyTorch tensors
                         if self.weigh_by_local_iter:
+                            # Multiply creates a new array/tensor, no aliasing issue
                             self.total[k] = v * weight
                         else:
-                            self.total[k] = v.copy() if hasattr(v, "copy") else v
+                            # For HE mode: try to copy to avoid aliasing
+                            # But encrypted tensors can't be copied (requires secret key)
+                            try:
+                                self.total[k] = v.copy() if hasattr(v, "copy") else v
+                            except (ValueError, RuntimeError):
+                                # Encrypted tensor copy failed, use reference (safe, immutable)
+                                self.total[k] = v
                     self.counts[k] = weight
                 else:
                     # Subsequent contributions: use in-place operations
-                    if self._has_inplace_ops(v) and self._has_inplace_ops(current_total):
-                        # Check dtype to determine aggregation method
-                        is_float = (
-                            hasattr(current_total.dtype, "is_floating_point") and current_total.dtype.is_floating_point
-                        )
-
-                        if is_float and self.weigh_by_local_iter:
-                            # Float tensors: weighted accumulation
+                    if self._is_pytorch_tensor(v) and self._is_pytorch_tensor(current_total):
+                        if self.weigh_by_local_iter:
+                            # Weigh by local iter: weighted accumulation
                             self.total[k].add_(v, alpha=weight)
                         else:
-                            # Integer tensors or no weighting: simple addition
                             self.total[k].add_(v)
                     else:
                         # Fallback for non-PyTorch tensors
@@ -114,23 +110,13 @@ class WeightedAggregationHelper(object):
         with self.lock:
             aggregated_dict = {}
             for k, v in self.total.items():
-                if self._has_inplace_ops(v):
-                    # For PyTorch tensors
-                    # Check if float tensor - only divide float tensors by counts
-                    # Integer/bool tensors are summed, not averaged (typically buffers/masks)
-                    if hasattr(v.dtype, "is_floating_point") and v.dtype.is_floating_point:
-                        # Float tensor: compute weighted average in-place (safe, v is our internal copy)
-                        aggregated_dict[k] = v.div(self.counts[k])
-                    else:
-                        # Integer/bool tensor: return sum (already accumulated without weighting)
-                        aggregated_dict[k] = v
+                if self._is_pytorch_tensor(v):
+                    # For PyTorch tensors, use in-place division to avoid creating a copy
+                    aggregated_dict[k] = v.div_(self.counts[k])
                 else:
-                    # Fallback for non-PyTorch tensors
+                    # Fallback for non-PyTorch tensors (including encrypted tensors)
                     aggregated_dict[k] = v * (1.0 / self.counts[k])
 
-            # Note: We modify self.total in-place above, but it's safe because:
-            # 1. self.total contains our internal copies (not caller's tensors)
-            # 2. We reset self.total immediately after returning
             self.reset_stats()
             return aggregated_dict
 
