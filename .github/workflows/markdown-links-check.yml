@@ -33,7 +33,6 @@ jobs:
         workingDirectory: .github/workflows
         args: >-
           --accept=200,403,429
-          --timeout=30
           --verbose
           --timeout 100
           --no-progress
