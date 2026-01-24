@@ -53,8 +53,8 @@ class TestWeightedAggregationHelper:
         expected = torch.tensor([8.0 / 3, 16.0 / 3, 24.0 / 3])
         assert torch.allclose(result["w"], expected)
 
-    def test_pytorch_int_tensor_no_weighting(self):
-        """Test integer tensors are not weighted (just summed)."""
+    def test_pytorch_int_tensor_weighting(self):
+        """Test PyTorch integer tensors are weighted the same as float tensors."""
         helper = WeightedAggregationHelper()
 
         # First contribution (integer tensor)
