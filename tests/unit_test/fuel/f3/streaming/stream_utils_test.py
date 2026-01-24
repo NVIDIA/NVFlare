@@ -57,7 +57,6 @@ class TestStreamUtils:
         ids_per_process = 1000
         num_iterations = 10
 
-        mp.set_start_method("spawn", force=True)
         for iteration in range(num_iterations):
             # Create a queue to collect results
             result_queue = mp.Queue()
