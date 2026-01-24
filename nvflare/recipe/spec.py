@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
@@ -107,6 +107,11 @@ class Recipe(ABC):
         self.job = job
 
     def process_env(self, env: ExecEnv):
+        """Process environment-specific configuration.
+
+        Subclasses can override to add environment-specific processing.
+        Script validation is handled by each ExecEnv subclass in deploy().
+        """
         pass
 
     def add_client_input_filter(
@@ -147,6 +152,25 @@ class Recipe(ABC):
             for client in clients:
                 self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
+    def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
+        """Add top-level configuration parameters to config_fed_client.json.
+
+        Args:
+            config: Dictionary of configuration parameters to add.
+            clients: Optional list of specific client names. If None, applies to all clients.
+
+        Raises:
+            TypeError: If config is not a dictionary.
+        """
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a dict, got {type(config).__name__}")
+
+        if clients is None:
+            self.job.to_clients(config)
+        else:
+            for client in clients:
+                self.job.to(obj=config, target=client)
+
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
 
@@ -170,6 +194,20 @@ class Recipe(ABC):
 
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+
+    def add_server_config(self, config: Dict):
+        """Add top-level configuration parameters to config_fed_server.json.
+
+        Args:
+            config: Dictionary of configuration parameters to add.
+
+        Raises:
+            TypeError: If config is not a dictionary.
+        """
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a dict, got {type(config).__name__}")
+
+        self.job.to_server(config)
 
     @staticmethod
     def _get_full_class_name(obj):

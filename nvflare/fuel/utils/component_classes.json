@@ -483,8 +483,11 @@
     "PTClientAPILauncherExecutor": [
         "nvflare.app_opt.pt.client_api_launcher_executor"
     ],
+    "PTFedAvg": [
+        "nvflare.app_opt.pt.fedavg"
+    ],
     "PTFedAvgEarlyStopping": [
-        "nvflare.app_opt.pt.fedavg_early_stopping"
+        "nvflare.app_opt.pt.fedavg"
     ],
     "PTFedOptModelShareableGenerator": [
         "nvflare.app_opt.pt.fedopt"

@@ -13,9 +13,11 @@
 # limitations under the License.
 
 import importlib
-from typing import Optional
+import os
+from typing import List, Optional
 
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 
 TRACKING_REGISTRY = {
@@ -132,7 +134,7 @@ def add_cross_site_evaluation(
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         recipe = NumpyFedAvgRecipe(
-            name="my-job", min_clients=2, num_rounds=3, train_script="client.py"
+            name="my-job", initial_model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
         )
 
         # That's it! Framework auto-detected, validator auto-added
@@ -213,8 +215,9 @@ def add_cross_site_evaluation(
 
     # Idempotency check: prevent multiple calls on the same recipe
     if hasattr(recipe, "_cse_added") and recipe._cse_added:
+        name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
-            f"Cross-site evaluation has already been added to recipe '{recipe.name}'. "
+            f"Cross-site evaluation has already been added to recipe '{name}'. "
             "Calling add_cross_site_evaluation() multiple times would create duplicate "
             "model locators, validators, and controllers, which can cause unexpected behavior. "
             "Please call this function only once per recipe instance."
@@ -369,3 +372,24 @@ def _has_task_executor(job, task_name: str) -> bool:
                         # This could happen if tasks has an unexpected type
                         continue
     return False
+
+
+def _collect_non_local_scripts(job: FedJob) -> List[str]:
+    """Collect scripts that don't exist locally.
+
+    This utility function is used by ExecEnv subclasses to validate script resources
+    before deployment. Scripts are considered "non-local" if they are absolute paths
+    that don't exist on the local machine.
+
+    Args:
+        job: The FedJob to check for non-local scripts.
+
+    Returns:
+        List of absolute script paths that don't exist on the local machine.
+    """
+    non_local_scripts = []
+    for app in job._deploy_map.values():
+        for script in app.app_config.ext_scripts:
+            if os.path.isabs(script) and not os.path.exists(script):
+                non_local_scripts.append(script)
+    return non_local_scripts
