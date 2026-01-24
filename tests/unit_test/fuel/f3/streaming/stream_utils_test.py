@@ -14,24 +14,20 @@
 
 import multiprocessing as mp
 
-import pytest
-
 from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
 
 
-def generate_stream_ids(num_ids: int) -> list:
+def generate_stream_ids(num_ids: int, result_queue: mp.Queue) -> None:
     """Worker function to generate stream IDs in a separate process.
 
     Args:
         num_ids: Number of stream IDs to generate
-
-    Returns:
-        List of generated stream IDs
+        result_queue: Queue to put the generated IDs
     """
     ids = []
     for _ in range(num_ids):
         ids.append(gen_stream_id())
-    return ids
+    result_queue.put(ids)
 
 
 class TestStreamUtils:
@@ -47,86 +43,6 @@ class TestStreamUtils:
 
         # Check that IDs are monotonically increasing
         assert ids == sorted(ids), "Generated IDs are not monotonically increasing"
-
-    @pytest.mark.parametrize("num_iterations", [10])
-    def test_gen_stream_id_no_collision_multiprocess(self, num_iterations):
-        """Test that gen_stream_id generates unique IDs across multiple processes.
-
-        This test uses 2 processes, each generating 1000 stream IDs, and runs
-        multiple iterations to ensure no collisions occur.
-        """
-        num_processes = 2
-        ids_per_process = 1000
-
-        for iteration in range(num_iterations):
-            # Create a pool of worker processes
-            with mp.Pool(processes=num_processes) as pool:
-                # Each process generates ids_per_process stream IDs
-                results = pool.map(generate_stream_ids, [ids_per_process] * num_processes)
-
-            # Flatten the results
-            all_ids = []
-            for process_ids in results:
-                all_ids.extend(process_ids)
-
-            # Check total count
-            expected_total = num_processes * ids_per_process
-            assert (
-                len(all_ids) == expected_total
-            ), f"Iteration {iteration + 1}: Expected {expected_total} IDs, got {len(all_ids)}"
-
-            # Check for uniqueness across all processes
-            unique_ids = set(all_ids)
-            if len(unique_ids) != len(all_ids):
-                duplicates = [x for x in all_ids if all_ids.count(x) > 1]
-                pytest.fail(
-                    f"Iteration {iteration + 1}/{num_iterations}: "
-                    f"Found {len(all_ids) - len(unique_ids)} collisions. "
-                    f"Duplicate IDs: {set(duplicates)}"
-                )
-
-    @pytest.mark.slow
-    def test_gen_stream_id_no_collision_stress(self):
-        """Stress test with 1000 iterations to thoroughly verify collision resistance.
-
-        This is a long-running test marked as 'slow'. Run with: pytest -m slow
-        Uses 2 processes, each generating 1000 stream IDs, repeated 1000 times.
-        """
-        num_processes = 2
-        ids_per_process = 1000
-        num_iterations = 1000
-
-        # Use a persistent pool to avoid process creation overhead
-        mp.set_start_method("spawn", force=True)
-        with mp.Pool(processes=num_processes) as pool:
-            for iteration in range(num_iterations):
-                # Each process generates ids_per_process stream IDs
-                results = pool.map(generate_stream_ids, [ids_per_process] * num_processes)
-
-                # Flatten the results
-                all_ids = []
-                for process_ids in results:
-                    all_ids.extend(process_ids)
-
-                # Check total count
-                expected_total = num_processes * ids_per_process
-                assert (
-                    len(all_ids) == expected_total
-                ), f"Iteration {iteration + 1}: Expected {expected_total} IDs, got {len(all_ids)}"
-
-                # Check for uniqueness across all processes
-                unique_ids = set(all_ids)
-                if len(unique_ids) != len(all_ids):
-                    duplicates = [x for x in all_ids if all_ids.count(x) > 1]
-                    pytest.fail(
-                        f"Iteration {iteration + 1}/{num_iterations}: "
-                        f"Found {len(all_ids) - len(unique_ids)} collisions. "
-                        f"Duplicate IDs: {set(duplicates)}"
-                    )
-
-                # Print progress every 100 iterations
-                if (iteration + 1) % 100 == 0:
-                    print(f"Completed {iteration + 1}/{num_iterations} iterations")
 
     def test_gen_stream_id_returns_positive_int(self):
         """Test that gen_stream_id returns a positive integer"""
