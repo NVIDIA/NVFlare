@@ -48,7 +48,7 @@ class TestStreamUtils:
 
     @pytest.mark.slow
     def test_gen_stream_id_no_collision_stress(self):
-        """Stress test with 1000 iterations to thoroughly verify collision resistance.
+        """Stress test with 10 iterations to thoroughly verify collision resistance.
 
         This is a long-running test marked as 'slow'. Run with: pytest -m slow
         Uses 2 processes, each generating 1000 stream IDs, repeated 1000 times.
