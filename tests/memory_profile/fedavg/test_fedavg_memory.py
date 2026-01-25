@@ -214,14 +214,16 @@ def print_summary(results: list):
 
 
 def run_single_test(gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int):
-    """Run a single test and print result as JSON (for subprocess mode)."""
+    """Run a single test and print result (for subprocess mode or direct run)."""
     result = run_simulation(
         server_memory_gc_rounds=gc_rounds,
         num_rounds=num_rounds,
         num_clients=num_clients,
         model_size_mb=model_size_mb,
     )
-    # Print JSON result marker for parsing
+    # Print nice summary
+    print_summary([result])
+    # Print JSON result marker for subprocess parsing
     print(f"__RESULT_JSON__:{json.dumps(result)}")
 
 
