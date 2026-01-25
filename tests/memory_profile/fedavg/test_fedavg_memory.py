@@ -172,11 +172,14 @@ def run_simulation(
         transfer_time = (model_size_mb * num_clients) / 5  # 5 MB/s estimate
         streaming_timeout = base_timeout + int(transfer_time * 2)
 
-        # cell_wait_timeout defaults to 5.0s - too short for large models
+        # Timeouts for large models with many clients
         cell_timeout = 60 if model_size_mb > 100 else 30
+        task_check_timeout = 30 if num_clients > 4 else 10
+        runner_sync_timeout = 10 if num_clients > 4 else 5
 
         print(f"[Config] streaming_per_request_timeout: {streaming_timeout}s (default: 600s)")
         print(f"[Config] cell_wait_timeout: {cell_timeout}s (default: 5s)")
+        print(f"[Config] task_check_timeout: {task_check_timeout}s (default: 5s)")
 
         recipe.add_server_config({
             "streaming_per_request_timeout": streaming_timeout,
@@ -184,6 +187,8 @@ def run_simulation(
         })
         recipe.add_client_config({
             "cell_wait_timeout": cell_timeout,
+            "task_check_timeout": task_check_timeout,
+            "runner_sync_timeout": runner_sync_timeout,
         })
 
         t3 = time.time()
