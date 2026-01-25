@@ -149,11 +149,22 @@ def run_simulation(
             initial_model=initial_model,
             server_memory_gc_rounds=server_memory_gc_rounds,
         )
+
+        # Calculate timeout based on model size and clients
+        # Assume ~10 MB/s throughput, add 2x buffer, minimum 300s
+        estimated_transfer_time = (model_size_mb * num_clients) / 10  # seconds
+        streaming_timeout = max(300, int(estimated_transfer_time * 2))
+        print(f"[Config] streaming_per_request_timeout: {streaming_timeout}s")
+
+        recipe.add_server_config({
+            "streaming_per_request_timeout": streaming_timeout,
+        })
+
         t3 = time.time()
         print(f"[Timing] Create FedAvgRecipe: {t3 - t2:.2f}s")
 
-        # Stage 4: Create SimEnv
-        env = SimEnv(num_clients=num_clients)
+        # Stage 4: Create SimEnv (num_threads = num_clients for parallel execution)
+        env = SimEnv(num_clients=num_clients, num_threads=num_clients)
         t4 = time.time()
         print(f"[Timing] Create SimEnv: {t4 - t3:.2f}s")
 
