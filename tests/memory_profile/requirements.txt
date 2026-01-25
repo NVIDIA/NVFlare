@@ -1,5 +1,0 @@
-# Requirements for memory profiling tests
-psutil>=5.9.0
-memory_profiler>=0.60.0
-matplotlib>=3.5.0
-
