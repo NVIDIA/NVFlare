@@ -181,15 +181,19 @@ def run_simulation(
         print(f"[Config] cell_wait_timeout: {cell_timeout}s (default: 5s)")
         print(f"[Config] task_check_timeout: {task_check_timeout}s (default: 5s)")
 
-        recipe.add_server_config({
-            "streaming_per_request_timeout": streaming_timeout,
-            "cell_wait_timeout": cell_timeout,
-        })
-        recipe.add_client_config({
-            "cell_wait_timeout": cell_timeout,
-            "task_check_timeout": task_check_timeout,
-            "runner_sync_timeout": runner_sync_timeout,
-        })
+        recipe.add_server_config(
+            {
+                "streaming_per_request_timeout": streaming_timeout,
+                "cell_wait_timeout": cell_timeout,
+            }
+        )
+        recipe.add_client_config(
+            {
+                "cell_wait_timeout": cell_timeout,
+                "task_check_timeout": task_check_timeout,
+                "runner_sync_timeout": runner_sync_timeout,
+            }
+        )
 
         t3 = time.time()
         print(f"[Timing] Create FedAvgRecipe: {t3 - t2:.2f}s")
@@ -261,9 +265,7 @@ def print_summary(results: list):
                 print(f"gc_rounds={r['server_memory_gc_rounds']} vs disabled: {improvement:.1f}% reduction")
 
 
-def run_single_test(
-    gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int, output_json: bool = False
-):
+def run_single_test(gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int, output_json: bool = False):
     """Run a single test and print result.
 
     Args:
@@ -350,9 +352,7 @@ def run_tests_in_subprocess(gc_rounds_list: list, num_rounds: int, num_clients: 
 def main():
     """Run memory profiling tests."""
     parser = argparse.ArgumentParser(description="FedAvg Memory Profiling Test")
-    parser.add_argument(
-        "--single", type=int, metavar="GC_ROUNDS", help="Run single test with specified gc_rounds"
-    )
+    parser.add_argument("--single", type=int, metavar="GC_ROUNDS", help="Run single test with specified gc_rounds")
     parser.add_argument("--json", action="store_true", help="Output JSON (for subprocess mode)")
     parser.add_argument("--num-rounds", type=int, default=10, help="Number of FL rounds (default: 10)")
     parser.add_argument("--num-clients", type=int, default=2, help="Number of clients (default: 2)")
