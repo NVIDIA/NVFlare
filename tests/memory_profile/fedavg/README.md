@@ -11,11 +11,11 @@ RSS is the portion of memory occupied by a process that is held in RAM.
 # Basic test
 python test_fedavg_memory.py
 
-# With memory arena limit (recommended)
+# With memory arena limit (recommended for realistic results)
 MALLOC_ARENA_MAX=4 python test_fedavg_memory.py
 
 # Detailed profiling with memory_profiler
-mprof run test_fedavg_memory.py
+MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
 mprof plot
 ```
 

@@ -43,12 +43,12 @@ python common/test_memory_utils.py
 # Compare memory with different gc_rounds settings
 python fedavg/test_fedavg_memory.py
 
-# With MALLOC_ARENA_MAX set
+# With MALLOC_ARENA_MAX set (recommended for realistic results)
 MALLOC_ARENA_MAX=4 python fedavg/test_fedavg_memory.py
 
 # Detailed profiling with mprof
 cd fedavg
-mprof run test_fedavg_memory.py
+MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
 mprof plot
 ```
 
