@@ -167,10 +167,11 @@ def run_simulation(
         )
 
         # Calculate timeout based on model size and clients
-        # Default is 600s. Add extra time for large payloads: (model_size * clients / 5 MB/s) * 2x
+        # Default is 600s. Add extra time for large payloads: (model_size * clients / 2 MB/s) * 3x
+        # Using 2 MB/s (very conservative) and 3x buffer for serialization/processing overhead
         base_timeout = 600  # NVFlare default
-        transfer_time = (model_size_mb * num_clients) / 5  # 5 MB/s conservative
-        streaming_timeout = base_timeout + int(transfer_time * 2)
+        transfer_time = (model_size_mb * num_clients) / 2  # 2 MB/s very conservative
+        streaming_timeout = base_timeout + int(transfer_time * 3)
         print(f"[Config] streaming_per_request_timeout: {streaming_timeout}s (default: 600s)")
 
         recipe.add_server_config({
