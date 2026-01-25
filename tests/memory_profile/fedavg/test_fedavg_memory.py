@@ -111,8 +111,7 @@ def run_simulation(
     Returns:
         Dictionary with memory statistics.
     """
-    from nvflare.recipe.fedavg import FedAvgRecipe
-    from nvflare.recipe.sim_env import SimEnv
+    import time
 
     print(f"\n{'=' * 60}")
     print(f"Testing: server_memory_gc_rounds={server_memory_gc_rounds}")
@@ -124,13 +123,24 @@ def run_simulation(
     initial_rss = get_rss_mb()
     print(f"Initial RSS: {initial_rss:.1f} MB")
 
-    # Create test model
+    # Stage 1: Import NVFlare modules
+    t0 = time.time()
+    from nvflare.recipe.fedavg import FedAvgRecipe
+    from nvflare.recipe.sim_env import SimEnv
+
+    t1 = time.time()
+    print(f"[Timing] Import NVFlare modules: {t1 - t0:.2f}s")
+
+    # Stage 2: Create test model
     initial_model = create_test_model(model_size_mb)
+    t2 = time.time()
+    print(f"[Timing] Create test model ({model_size_mb}MB): {t2 - t1:.2f}s")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         client_script = create_client_script(tmpdir_path)
 
+        # Stage 3: Create FedAvgRecipe
         recipe = FedAvgRecipe(
             name=f"memory_test_gc_{server_memory_gc_rounds}",
             min_clients=num_clients,
@@ -139,11 +149,20 @@ def run_simulation(
             initial_model=initial_model,
             server_memory_gc_rounds=server_memory_gc_rounds,
         )
+        t3 = time.time()
+        print(f"[Timing] Create FedAvgRecipe: {t3 - t2:.2f}s")
 
+        # Stage 4: Create SimEnv
         env = SimEnv(num_clients=num_clients)
+        t4 = time.time()
+        print(f"[Timing] Create SimEnv: {t4 - t3:.2f}s")
 
-        # Run the simulation
+        # Stage 5: Run the simulation
+        print("[Timing] Starting recipe.execute()...")
         run = recipe.execute(env)
+        t5 = time.time()
+        print(f"[Timing] recipe.execute() completed: {t5 - t4:.2f}s")
+        print(f"[Timing] Total time: {t5 - t0:.2f}s")
 
     # Force GC after run
     gc.collect()
