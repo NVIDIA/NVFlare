@@ -35,8 +35,8 @@ Client (Training Nodes)
 
     export MALLOC_ARENA_MAX=2
 
-**Why:** Clients are GPU-constrained with limited CPU memory. Setting ``MALLOC_ARENA_MAX=2``
-prevents arena explosion and reduces fragmentation.
+**Why:** Clients typically have limited CPU memory. Setting ``MALLOC_ARENA_MAX=2``
+prevents arena explosion and reduces memory fragmentation.
 
 Server (Aggregation Node)
 -------------------------
