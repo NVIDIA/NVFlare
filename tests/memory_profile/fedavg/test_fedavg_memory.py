@@ -47,6 +47,22 @@ def get_rss_mb() -> float:
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
+def get_peak_rss_mb() -> float:
+    """Get peak RSS (max resident set size) in MB.
+
+    Uses resource.getrusage() which tracks the max RSS since process start.
+    In subprocess mode, this gives the peak for that specific test.
+    """
+    import resource
+
+    # ru_maxrss is in KB on Linux, bytes on macOS
+    ru_maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if sys.platform == "darwin":
+        return ru_maxrss / (1024 * 1024)  # bytes to MB
+    else:
+        return ru_maxrss / 1024  # KB to MB
+
+
 def create_test_model(size_mb: int = 100) -> dict:
     """Create a test model of approximately the specified size in MB.
 
@@ -179,13 +195,16 @@ def run_simulation(
     # Force GC after run
     gc.collect()
     final_rss = get_rss_mb()
+    peak_rss = get_peak_rss_mb()
     rss_increase = final_rss - initial_rss
 
     print(f"Final RSS: {final_rss:.1f} MB")
+    print(f"Peak RSS: {peak_rss:.1f} MB")
     print(f"RSS increase: {rss_increase:.1f} MB")
 
     return {
         "server_memory_gc_rounds": server_memory_gc_rounds,
+        "peak_rss_mb": peak_rss,
         "initial_rss_mb": initial_rss,
         "final_rss_mb": final_rss,
         "rss_increase_mb": rss_increase,
@@ -198,19 +217,21 @@ def print_summary(results: list):
     Args:
         results: List of result dictionaries from run_simulation.
     """
-    line_width = 70
+    line_width = 85
     print(f"\n{'=' * line_width}")
     print("SUMMARY")
     print(f"{'=' * line_width}")
-    print(f"{'Setting':<30} {'Initial MB':>12} {'Final MB':>12} {'Increase':>12}")
+    print(f"{'Setting':<25} {'Initial MB':>12} {'Peak MB':>12} {'Final MB':>12} {'Increase':>12}")
     print("-" * line_width)
 
     for r in results:
         gc_setting = r["server_memory_gc_rounds"]
         label = f"gc_rounds={gc_setting}" if gc_setting > 0 else "gc_rounds=0 (disabled)"
+        peak = r.get("peak_rss_mb", r["final_rss_mb"])  # fallback if not present
         print(
-            f"{label:<30} "
+            f"{label:<25} "
             f"{r['initial_rss_mb']:>12.1f} "
+            f"{peak:>12.1f} "
             f"{r['final_rss_mb']:>12.1f} "
             f"{r['rss_increase_mb']:>+12.1f}"
         )
