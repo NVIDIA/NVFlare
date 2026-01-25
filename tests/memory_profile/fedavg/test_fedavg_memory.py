@@ -20,16 +20,21 @@ This script compares memory usage (RSS) with different cleanup settings:
 - server_memory_gc_rounds=5 (every 5 rounds)
 - server_memory_gc_rounds=1 (every round)
 
+Each test runs in a separate subprocess for complete isolation.
+
 Usage:
     python test_fedavg_memory.py
 
     # With memory_profiler for detailed analysis:
-    mprof run test_fedavg_memory.py
-    mprof plot
+    MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
+    mprof plot -o memory_profile.png
 """
 
+import argparse
 import gc
+import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -91,16 +96,14 @@ while flare.is_running():
 
 def run_simulation(
     server_memory_gc_rounds: int,
-    client_script: str,
     num_rounds: int = 10,
     num_clients: int = 2,
-    model_size_mb: int = 100,
+    model_size_mb: int = 50,
 ) -> dict:
     """Run FedAvg simulation with specified memory settings.
 
     Args:
         server_memory_gc_rounds: Cleanup frequency (0=disabled, N=every N rounds).
-        client_script: Path to the client training script.
         num_rounds: Number of FL rounds to run.
         num_clients: Number of simulated clients.
         model_size_mb: Approximate model size in MB.
@@ -124,19 +127,23 @@ def run_simulation(
     # Create test model
     initial_model = create_test_model(model_size_mb)
 
-    recipe = FedAvgRecipe(
-        name=f"memory_test_gc_{server_memory_gc_rounds}",
-        min_clients=num_clients,
-        num_rounds=num_rounds,
-        train_script=client_script,
-        initial_model=initial_model,
-        server_memory_gc_rounds=server_memory_gc_rounds,
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        client_script = create_client_script(tmpdir_path)
 
-    env = SimEnv(num_clients=num_clients)
+        recipe = FedAvgRecipe(
+            name=f"memory_test_gc_{server_memory_gc_rounds}",
+            min_clients=num_clients,
+            num_rounds=num_rounds,
+            train_script=str(client_script),
+            initial_model=initial_model,
+            server_memory_gc_rounds=server_memory_gc_rounds,
+        )
 
-    # Run the simulation
-    run = recipe.execute(env)
+        env = SimEnv(num_clients=num_clients)
+
+        # Run the simulation
+        run = recipe.execute(env)
 
     # Force GC after run
     gc.collect()
@@ -187,59 +194,117 @@ def print_summary(results: list):
                 print(f"gc_rounds={r['server_memory_gc_rounds']} vs disabled: {improvement:.1f}% reduction")
 
 
+def run_single_test(gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int):
+    """Run a single test and print result as JSON (for subprocess mode)."""
+    result = run_simulation(
+        server_memory_gc_rounds=gc_rounds,
+        num_rounds=num_rounds,
+        num_clients=num_clients,
+        model_size_mb=model_size_mb,
+    )
+    # Print JSON result marker for parsing
+    print(f"__RESULT_JSON__:{json.dumps(result)}")
+
+
+def run_tests_in_subprocess(gc_rounds_list: list, num_rounds: int, num_clients: int, model_size_mb: int) -> list:
+    """Run each test in a separate subprocess for complete isolation.
+
+    Args:
+        gc_rounds_list: List of server_memory_gc_rounds values to test.
+        num_rounds: Number of FL rounds per test.
+        num_clients: Number of simulated clients.
+        model_size_mb: Model size in MB.
+
+    Returns:
+        List of result dictionaries.
+    """
+    results = []
+    script_path = os.path.abspath(__file__)
+
+    for gc_rounds in gc_rounds_list:
+        print(f"\n{'=' * 60}")
+        print(f"Starting subprocess for gc_rounds={gc_rounds}")
+        print(f"{'=' * 60}")
+
+        cmd = [
+            sys.executable,
+            script_path,
+            "--single",
+            str(gc_rounds),
+            "--num-rounds",
+            str(num_rounds),
+            "--num-clients",
+            str(num_clients),
+            "--model-size",
+            str(model_size_mb),
+        ]
+
+        # Run subprocess and capture output
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+
+        # Print subprocess output
+        if proc.stdout:
+            for line in proc.stdout.splitlines():
+                if line.startswith("__RESULT_JSON__:"):
+                    # Parse the JSON result
+                    json_str = line.replace("__RESULT_JSON__:", "")
+                    result = json.loads(json_str)
+                    results.append(result)
+                else:
+                    print(line)
+
+        if proc.stderr:
+            # Filter out common warnings
+            for line in proc.stderr.splitlines():
+                if "FutureWarning" not in line and "pynvml" not in line:
+                    print(f"[stderr] {line}", file=sys.stderr)
+
+        if proc.returncode != 0:
+            print(f"[WARNING] Subprocess exited with code {proc.returncode}")
+
+    return results
+
+
 def main():
     """Run memory profiling tests."""
-    print("FedAvg Memory Profiling Test")
-    print(f"MALLOC_ARENA_MAX: {os.environ.get('MALLOC_ARENA_MAX', 'not set')}")
-    print(f"Python: {sys.version}")
+    parser = argparse.ArgumentParser(description="FedAvg Memory Profiling Test")
+    parser.add_argument(
+        "--single", type=int, metavar="GC_ROUNDS", help="Run single test with specified gc_rounds (subprocess mode)"
+    )
+    parser.add_argument("--num-rounds", type=int, default=10, help="Number of FL rounds (default: 10)")
+    parser.add_argument("--num-clients", type=int, default=2, help="Number of clients (default: 2)")
+    parser.add_argument("--model-size", type=int, default=100, help="Model size in MB (default: 100)")
+    args = parser.parse_args()
 
-    # Configuration
-    num_rounds = 10
-    num_clients = 2
-    model_size_mb = 100  # Reasonable size for visible memory effects without long startup
+    if args.single is not None:
+        # Subprocess mode: run single test
+        run_single_test(
+            gc_rounds=args.single,
+            num_rounds=args.num_rounds,
+            num_clients=args.num_clients,
+            model_size_mb=args.model_size,
+        )
+    else:
+        # Main mode: run all tests in subprocesses
+        print("FedAvg Memory Profiling Test")
+        print(f"MALLOC_ARENA_MAX: {os.environ.get('MALLOC_ARENA_MAX', 'not set')}")
+        print(f"Python: {sys.version}")
+        print("\nEach test runs in a separate subprocess for complete isolation.")
 
-    # Create client script once in a temp directory that persists for all tests
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        client_script = str(create_client_script(tmpdir_path))
-        print(f"Client script: {client_script}")
+        # Test configurations
+        gc_rounds_list = [0, 5, 1]
 
-        results = []
-
-        # Test 1: No cleanup (disabled)
-        results.append(
-            run_simulation(
-                server_memory_gc_rounds=0,
-                client_script=client_script,
-                num_rounds=num_rounds,
-                num_clients=num_clients,
-                model_size_mb=model_size_mb,
-            )
+        results = run_tests_in_subprocess(
+            gc_rounds_list=gc_rounds_list,
+            num_rounds=args.num_rounds,
+            num_clients=args.num_clients,
+            model_size_mb=args.model_size,
         )
 
-        # Test 2: Cleanup every 5 rounds (recommended for server)
-        results.append(
-            run_simulation(
-                server_memory_gc_rounds=5,
-                client_script=client_script,
-                num_rounds=num_rounds,
-                num_clients=num_clients,
-                model_size_mb=model_size_mb,
-            )
-        )
-
-        # Test 3: Cleanup every round
-        results.append(
-            run_simulation(
-                server_memory_gc_rounds=1,
-                client_script=client_script,
-                num_rounds=num_rounds,
-                num_clients=num_clients,
-                model_size_mb=model_size_mb,
-            )
-        )
-
-        print_summary(results)
+        if results:
+            print_summary(results)
+        else:
+            print("\n[ERROR] No results collected. Check subprocess output above.")
 
 
 if __name__ == "__main__":
