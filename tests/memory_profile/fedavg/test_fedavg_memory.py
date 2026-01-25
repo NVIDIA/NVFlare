@@ -91,14 +91,16 @@ while flare.is_running():
 
 def run_simulation(
     server_memory_gc_rounds: int,
+    client_script: str,
     num_rounds: int = 10,
     num_clients: int = 2,
-    model_size_mb: int = 50,
+    model_size_mb: int = 100,
 ) -> dict:
     """Run FedAvg simulation with specified memory settings.
 
     Args:
         server_memory_gc_rounds: Cleanup frequency (0=disabled, N=every N rounds).
+        client_script: Path to the client training script.
         num_rounds: Number of FL rounds to run.
         num_clients: Number of simulated clients.
         model_size_mb: Approximate model size in MB.
@@ -122,23 +124,19 @@ def run_simulation(
     # Create test model
     initial_model = create_test_model(model_size_mb)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        client_script = create_client_script(tmpdir_path)
+    recipe = FedAvgRecipe(
+        name=f"memory_test_gc_{server_memory_gc_rounds}",
+        min_clients=num_clients,
+        num_rounds=num_rounds,
+        train_script=client_script,
+        initial_model=initial_model,
+        server_memory_gc_rounds=server_memory_gc_rounds,
+    )
 
-        recipe = FedAvgRecipe(
-            name=f"memory_test_gc_{server_memory_gc_rounds}",
-            min_clients=num_clients,
-            num_rounds=num_rounds,
-            train_script=str(client_script),
-            initial_model=initial_model,
-            server_memory_gc_rounds=server_memory_gc_rounds,
-        )
+    env = SimEnv(num_clients=num_clients)
 
-        env = SimEnv(num_clients=num_clients)
-
-        # Run the simulation
-        run = recipe.execute(env)
+    # Run the simulation
+    run = recipe.execute(env)
 
     # Force GC after run
     gc.collect()
@@ -200,39 +198,48 @@ def main():
     num_clients = 2
     model_size_mb = 100  # Reasonable size for visible memory effects without long startup
 
-    results = []
+    # Create client script once in a temp directory that persists for all tests
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        client_script = str(create_client_script(tmpdir_path))
+        print(f"Client script: {client_script}")
 
-    # Test 1: No cleanup (disabled)
-    results.append(
-        run_simulation(
-            server_memory_gc_rounds=0,
-            num_rounds=num_rounds,
-            num_clients=num_clients,
-            model_size_mb=model_size_mb,
+        results = []
+
+        # Test 1: No cleanup (disabled)
+        results.append(
+            run_simulation(
+                server_memory_gc_rounds=0,
+                client_script=client_script,
+                num_rounds=num_rounds,
+                num_clients=num_clients,
+                model_size_mb=model_size_mb,
+            )
         )
-    )
 
-    # Test 2: Cleanup every 5 rounds (recommended for server)
-    results.append(
-        run_simulation(
-            server_memory_gc_rounds=5,
-            num_rounds=num_rounds,
-            num_clients=num_clients,
-            model_size_mb=model_size_mb,
+        # Test 2: Cleanup every 5 rounds (recommended for server)
+        results.append(
+            run_simulation(
+                server_memory_gc_rounds=5,
+                client_script=client_script,
+                num_rounds=num_rounds,
+                num_clients=num_clients,
+                model_size_mb=model_size_mb,
+            )
         )
-    )
 
-    # Test 3: Cleanup every round
-    results.append(
-        run_simulation(
-            server_memory_gc_rounds=1,
-            num_rounds=num_rounds,
-            num_clients=num_clients,
-            model_size_mb=model_size_mb,
+        # Test 3: Cleanup every round
+        results.append(
+            run_simulation(
+                server_memory_gc_rounds=1,
+                client_script=client_script,
+                num_rounds=num_rounds,
+                num_clients=num_clients,
+                model_size_mb=model_size_mb,
+            )
         )
-    )
 
-    print_summary(results)
+        print_summary(results)
 
 
 if __name__ == "__main__":
