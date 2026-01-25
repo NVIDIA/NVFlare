@@ -38,7 +38,7 @@ Edit `test_fedavg_memory.py` to adjust:
 
 - `num_rounds`: Number of FL rounds (default: 10)
 - `num_clients`: Number of simulated clients (default: 2)
-- `model_size_mb`: Model size in MB (default: 500)
+- `model_size_mb`: Model size in MB (default: 100)
 
 ## Sample Output
 
@@ -47,26 +47,25 @@ FedAvg Memory Profiling Test
 MALLOC_ARENA_MAX: 4
 ============================================================
 Testing: server_memory_gc_rounds=0
-Rounds: 10, Clients: 2, Model: ~500MB
+Rounds: 10, Clients: 2, Model: ~100MB
 ============================================================
 Initial RSS: 150.0 MB (before model creation)
-Final RSS: 2500.0 MB
-RSS increase: +2350.0 MB
+Final RSS: 650.0 MB
+RSS increase: +500.0 MB
 
 ============================================================
 SUMMARY
 ============================================================
 Setting                         Initial MB     Final MB     Increase
 ------------------------------------------------------------------
-gc_rounds=0 (disabled)             150.0       2500.0      +2350.0
-gc_rounds=5                        152.0       1800.0      +1648.0
-gc_rounds=1                        151.0       1200.0      +1049.0
+gc_rounds=0 (disabled)             150.0        650.0       +500.0
+gc_rounds=5                        152.0        480.0       +328.0
+gc_rounds=1                        151.0        350.0       +199.0
 ------------------------------------------------------------------
-gc_rounds=5 vs disabled: 29.9% reduction
-gc_rounds=1 vs disabled: 55.4% reduction
+gc_rounds=5 vs disabled: 34.4% reduction
+gc_rounds=1 vs disabled: 60.2% reduction
 ```
 
-**Note:** Initial RSS is measured before model creation. The 500MB model plus
-NVFlare overhead accounts for the baseline memory. RSS growth beyond that
-indicates memory fragmentation that cleanup helps reduce.
+**Note:** Initial RSS is measured before model creation. RSS growth beyond
+baseline indicates memory fragmentation that cleanup helps reduce.
 
