@@ -49,20 +49,24 @@ MALLOC_ARENA_MAX: 4
 Testing: server_memory_gc_rounds=0
 Rounds: 10, Clients: 2, Model: ~500MB
 ============================================================
-Initial RSS: 200.0 MB
-Final RSS: 1800.0 MB
-RSS increase: +1600.0 MB
+Initial RSS: 150.0 MB (before model creation)
+Final RSS: 2500.0 MB
+RSS increase: +2350.0 MB
 
 ============================================================
 SUMMARY
 ============================================================
 Setting                         Initial MB     Final MB     Increase
 ------------------------------------------------------------------
-gc_rounds=0 (disabled)             200.0       1800.0      +1600.0
-gc_rounds=5                        205.0       1100.0       +895.0
-gc_rounds=1                        202.0        750.0       +548.0
+gc_rounds=0 (disabled)             150.0       2500.0      +2350.0
+gc_rounds=5                        152.0       1800.0      +1648.0
+gc_rounds=1                        151.0       1200.0      +1049.0
 ------------------------------------------------------------------
-gc_rounds=5 vs disabled: 44.1% reduction
-gc_rounds=1 vs disabled: 65.8% reduction
+gc_rounds=5 vs disabled: 29.9% reduction
+gc_rounds=1 vs disabled: 55.4% reduction
 ```
+
+**Note:** Initial RSS is measured before model creation. The 500MB model plus
+NVFlare overhead accounts for the baseline memory. RSS growth beyond that
+indicates memory fragmentation that cleanup helps reduce.
 
