@@ -56,8 +56,6 @@ The FedAvg controller supports automatic memory cleanup via the ``server_memory_
 Configuration
 -------------
 
-**Using Recipe API:**
-
 .. code-block:: python
 
     from nvflare.recipe.fedavg import FedAvgRecipe
@@ -69,20 +67,6 @@ Configuration
         train_script="client.py",
         server_memory_gc_rounds=5,  # Cleanup every 5 rounds
     )
-
-**Using JSON config:**
-
-.. code-block:: json
-
-    {
-      "id": "fedavg",
-      "path": "nvflare.app_common.workflows.fedavg.FedAvg",
-      "args": {
-        "num_clients": 4,
-        "num_rounds": 100,
-        "server_memory_gc_rounds": 5
-      }
-    }
 
 **Values:**
 
