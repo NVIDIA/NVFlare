@@ -8,21 +8,36 @@ RSS is the portion of memory occupied by a process that is held in RAM.
 ## Quick Reference
 
 ```bash
-# Basic test
+# Basic test (each test runs in separate subprocess for isolation)
 python test_fedavg_memory.py
 
 # With memory arena limit (recommended for realistic results)
 MALLOC_ARENA_MAX=4 python test_fedavg_memory.py
 
-# Detailed profiling with memory_profiler
-MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
+# Custom settings
+python test_fedavg_memory.py --num-rounds 20 --model-size 200
+
+# Detailed profiling with memory_profiler (--include-children for subprocesses)
+MALLOC_ARENA_MAX=4 mprof run --include-children python test_fedavg_memory.py
 
 # View the plot (requires GUI display)
 mprof plot
 
 # Or save to file (for headless environments)
 mprof plot -o memory_profile.png
+
+# Run single test directly (for debugging)
+python test_fedavg_memory.py --single 5
 ```
+
+## Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `--single <N>` | Run single test with gc_rounds=N (used by subprocess) |
+| `--num-rounds <N>` | Number of FL rounds (default: 10) |
+| `--num-clients <N>` | Number of clients (default: 2) |
+| `--model-size <N>` | Model size in MB (default: 100) |
 
 ## What It Tests
 

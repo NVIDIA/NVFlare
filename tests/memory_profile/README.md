@@ -40,15 +40,15 @@ python common/test_memory_utils.py
 ### FedAvg Tests
 
 ```bash
-# Compare memory with different gc_rounds settings
+# Compare memory with different gc_rounds settings (each in subprocess)
 python fedavg/test_fedavg_memory.py
 
 # With MALLOC_ARENA_MAX set (recommended for realistic results)
 MALLOC_ARENA_MAX=4 python fedavg/test_fedavg_memory.py
 
-# Detailed profiling with mprof
+# Detailed profiling with mprof (--include-children for subprocesses)
 cd fedavg
-MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
+MALLOC_ARENA_MAX=4 mprof run --include-children python test_fedavg_memory.py
 
 # View the plot (requires GUI display)
 mprof plot
