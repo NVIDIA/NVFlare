@@ -49,7 +49,12 @@ MALLOC_ARENA_MAX=4 python fedavg/test_fedavg_memory.py
 # Detailed profiling with mprof
 cd fedavg
 MALLOC_ARENA_MAX=4 mprof run test_fedavg_memory.py
+
+# View the plot (requires GUI display)
 mprof plot
+
+# Or save to file (for headless environments like SSH)
+mprof plot -o memory_profile.png
 ```
 
 ### Future Algorithm Tests

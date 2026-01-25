@@ -42,7 +42,7 @@ def get_rss_mb() -> float:
     return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
-def create_test_model(size_mb: int = 50) -> dict:
+def create_test_model(size_mb: int = 500) -> dict:
     """Create a test model of approximately the specified size in MB.
 
     Args:
@@ -198,7 +198,7 @@ def main():
     # Configuration
     num_rounds = 10
     num_clients = 2
-    model_size_mb = 50
+    model_size_mb = 500  # Use larger model to see real memory effects
 
     results = []
 
