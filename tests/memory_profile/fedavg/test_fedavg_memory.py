@@ -44,46 +44,48 @@ def get_rss_mb() -> float:
 
 def create_test_model(size_mb: int = 50) -> dict:
     """Create a test model of approximately the specified size in MB.
-    
+
     Args:
         size_mb: Approximate size of the model in MB.
-        
+
     Returns:
         Dictionary representing model parameters.
     """
     # Each float is 8 bytes, so for size_mb MB we need (size_mb * 1024 * 1024) / 8 floats
     floats_per_layer = 100000  # ~0.8 MB per layer
     num_layers = max(1, (size_mb * 1024 * 1024) // (floats_per_layer * 8))
-    
+
     return {f"layer_{i}": [0.0] * floats_per_layer for i in range(num_layers)}
 
 
 def create_client_script(tmpdir: Path) -> Path:
     """Create a minimal client training script.
-    
+
     Args:
         tmpdir: Temporary directory to store the script.
-        
+
     Returns:
         Path to the created script.
     """
     client_script = tmpdir / "client.py"
-    client_script.write_text('''
+    client_script.write_text(
+        """
 import nvflare.client as flare
 
 flare.init()
 
 while flare.is_running():
     input_model = flare.receive()
-    
+
     # Simulate some training (just pass through for memory test)
     output_model = flare.FLModel(
         params=input_model.params,
         params_type=input_model.params_type,
     )
-    
+
     flare.send(output_model)
-''')
+"""
+    )
     return client_script
 
 
@@ -94,13 +96,13 @@ def run_simulation(
     model_size_mb: int = 50,
 ) -> dict:
     """Run FedAvg simulation with specified memory settings.
-    
+
     Args:
         server_memory_gc_rounds: Cleanup frequency (0=disabled, N=every N rounds).
         num_rounds: Number of FL rounds to run.
         num_clients: Number of simulated clients.
         model_size_mb: Approximate model size in MB.
-        
+
     Returns:
         Dictionary with memory statistics.
     """
@@ -134,7 +136,7 @@ def run_simulation(
         )
 
         env = SimEnv(num_clients=num_clients)
-        
+
         # Run the simulation
         run = recipe.execute(env)
 
@@ -156,7 +158,7 @@ def run_simulation(
 
 def print_summary(results: list):
     """Print summary comparison of all test runs.
-    
+
     Args:
         results: List of result dictionaries from run_simulation.
     """
@@ -165,7 +167,7 @@ def print_summary(results: list):
     print(f"{'=' * 60}")
     print(f"{'Setting':<30} {'Initial MB':>12} {'Final MB':>12} {'Increase':>12}")
     print("-" * 66)
-    
+
     for r in results:
         gc_setting = r["server_memory_gc_rounds"]
         label = f"gc_rounds={gc_setting}" if gc_setting > 0 else "gc_rounds=0 (disabled)"
@@ -175,9 +177,9 @@ def print_summary(results: list):
             f"{r['final_rss_mb']:>12.1f} "
             f"{r['rss_increase_mb']:>+12.1f}"
         )
-    
+
     print("-" * 66)
-    
+
     # Calculate improvement
     if len(results) >= 2:
         baseline = results[0]["rss_increase_mb"]
@@ -192,41 +194,46 @@ def main():
     print("FedAvg Memory Profiling Test")
     print(f"MALLOC_ARENA_MAX: {os.environ.get('MALLOC_ARENA_MAX', 'not set')}")
     print(f"Python: {sys.version}")
-    
+
     # Configuration
     num_rounds = 10
     num_clients = 2
     model_size_mb = 50
-    
+
     results = []
-    
+
     # Test 1: No cleanup (disabled)
-    results.append(run_simulation(
-        server_memory_gc_rounds=0,
-        num_rounds=num_rounds,
-        num_clients=num_clients,
-        model_size_mb=model_size_mb,
-    ))
-    
+    results.append(
+        run_simulation(
+            server_memory_gc_rounds=0,
+            num_rounds=num_rounds,
+            num_clients=num_clients,
+            model_size_mb=model_size_mb,
+        )
+    )
+
     # Test 2: Cleanup every 5 rounds (recommended for server)
-    results.append(run_simulation(
-        server_memory_gc_rounds=5,
-        num_rounds=num_rounds,
-        num_clients=num_clients,
-        model_size_mb=model_size_mb,
-    ))
-    
+    results.append(
+        run_simulation(
+            server_memory_gc_rounds=5,
+            num_rounds=num_rounds,
+            num_clients=num_clients,
+            model_size_mb=model_size_mb,
+        )
+    )
+
     # Test 3: Cleanup every round
-    results.append(run_simulation(
-        server_memory_gc_rounds=1,
-        num_rounds=num_rounds,
-        num_clients=num_clients,
-        model_size_mb=model_size_mb,
-    ))
-    
+    results.append(
+        run_simulation(
+            server_memory_gc_rounds=1,
+            num_rounds=num_rounds,
+            num_clients=num_clients,
+            model_size_mb=model_size_mb,
+        )
+    )
+
     print_summary(results)
 
 
 if __name__ == "__main__":
     main()
-

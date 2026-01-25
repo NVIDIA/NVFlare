@@ -34,10 +34,10 @@ def get_rss_mb() -> float:
 
 def allocate_memory(size_mb: int = 100) -> list:
     """Allocate approximately size_mb MB of memory.
-    
+
     Args:
         size_mb: Amount of memory to allocate in MB.
-        
+
     Returns:
         List containing allocated data.
     """
@@ -81,7 +81,7 @@ def test_cleanup_effectiveness():
     print(f"  Memory allocated: {after_alloc_rss - baseline_rss:.1f} MB")
     print(f"  After del only: {after_del_rss - baseline_rss:.1f} MB remaining")
     print(f"  After cleanup: {after_cleanup_rss - baseline_rss:.1f} MB remaining")
-    
+
     recovered = after_del_rss - after_cleanup_rss
     if recovered > 0:
         print(f"  Cleanup recovered: {recovered:.1f} MB")
@@ -103,12 +103,12 @@ def test_repeated_allocations():
     gc.collect()
     initial_rss = get_rss_mb()
     print(f"\nWithout cleanup (simulating {iterations} rounds):")
-    
+
     for i in range(iterations):
         data = allocate_memory(alloc_size_mb)
         del data
         # No cleanup
-    
+
     final_rss_no_cleanup = get_rss_mb()
     print(f"  Initial: {initial_rss:.1f} MB")
     print(f"  Final: {final_rss_no_cleanup:.1f} MB")
@@ -120,25 +120,25 @@ def test_repeated_allocations():
     # Test 2: With cleanup every iteration
     gc.collect()
     initial_rss = get_rss_mb()
-    print(f"\nWith cleanup every round:")
-    
+    print("\nWith cleanup every round:")
+
     for i in range(iterations):
         data = allocate_memory(alloc_size_mb)
         del data
         cleanup_memory()
-    
+
     final_rss_with_cleanup = get_rss_mb()
     print(f"  Initial: {initial_rss:.1f} MB")
     print(f"  Final: {final_rss_with_cleanup:.1f} MB")
     print(f"  Growth: {final_rss_with_cleanup - initial_rss:.1f} MB")
 
     # Comparison
-    print(f"\nComparison:")
+    print("\nComparison:")
     diff = final_rss_no_cleanup - final_rss_with_cleanup
     if diff > 0:
         print(f"  Cleanup reduced final RSS by: {diff:.1f} MB")
     else:
-        print(f"  Results similar (platform may handle memory differently)")
+        print("  Results similar (platform may handle memory differently)")
 
 
 def main():
@@ -149,4 +149,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

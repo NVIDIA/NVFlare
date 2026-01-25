@@ -13,4 +13,3 @@
 # limitations under the License.
 
 """FedAvg memory profiling tests."""
-
