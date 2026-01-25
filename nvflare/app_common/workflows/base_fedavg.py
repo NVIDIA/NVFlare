@@ -75,6 +75,7 @@ class BaseFedAvg(ModelController):
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on server_memory_gc_rounds)."""
         if self.server_memory_gc_rounds > 0 and (self.current_round + 1) % self.server_memory_gc_rounds == 0:
+            self.info(f"Memory cleanup at round {self.current_round + 1}")
             cleanup_memory()
 
     @staticmethod

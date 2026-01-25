@@ -186,11 +186,12 @@ def print_summary(results: list):
     Args:
         results: List of result dictionaries from run_simulation.
     """
-    print(f"\n{'=' * 60}")
+    line_width = 70
+    print(f"\n{'=' * line_width}")
     print("SUMMARY")
-    print(f"{'=' * 60}")
+    print(f"{'=' * line_width}")
     print(f"{'Setting':<30} {'Initial MB':>12} {'Final MB':>12} {'Increase':>12}")
-    print("-" * 66)
+    print("-" * line_width)
 
     for r in results:
         gc_setting = r["server_memory_gc_rounds"]
@@ -202,7 +203,7 @@ def print_summary(results: list):
             f"{r['rss_increase_mb']:>+12.1f}"
         )
 
-    print("-" * 66)
+    print("-" * line_width)
 
     # Calculate improvement
     if len(results) >= 2:
@@ -213,18 +214,30 @@ def print_summary(results: list):
                 print(f"gc_rounds={r['server_memory_gc_rounds']} vs disabled: {improvement:.1f}% reduction")
 
 
-def run_single_test(gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int):
-    """Run a single test and print result (for subprocess mode or direct run)."""
+def run_single_test(
+    gc_rounds: int, num_rounds: int, num_clients: int, model_size_mb: int, output_json: bool = False
+):
+    """Run a single test and print result.
+
+    Args:
+        gc_rounds: server_memory_gc_rounds value.
+        num_rounds: Number of FL rounds.
+        num_clients: Number of clients.
+        model_size_mb: Model size in MB.
+        output_json: If True, output JSON for subprocess parsing. If False, show table.
+    """
     result = run_simulation(
         server_memory_gc_rounds=gc_rounds,
         num_rounds=num_rounds,
         num_clients=num_clients,
         model_size_mb=model_size_mb,
     )
-    # Print nice summary
-    print_summary([result])
-    # Print JSON result marker for subprocess parsing
-    print(f"__RESULT_JSON__:{json.dumps(result)}")
+    if output_json:
+        # JSON output for subprocess parsing
+        print(f"__RESULT_JSON__:{json.dumps(result)}")
+    else:
+        # Nice table format for direct run
+        print_summary([result])
 
 
 def run_tests_in_subprocess(gc_rounds_list: list, num_rounds: int, num_clients: int, model_size_mb: int) -> list:
@@ -252,6 +265,7 @@ def run_tests_in_subprocess(gc_rounds_list: list, num_rounds: int, num_clients: 
             script_path,
             "--single",
             str(gc_rounds),
+            "--json",  # Output JSON for parsing
             "--num-rounds",
             str(num_rounds),
             "--num-clients",
@@ -290,20 +304,22 @@ def main():
     """Run memory profiling tests."""
     parser = argparse.ArgumentParser(description="FedAvg Memory Profiling Test")
     parser.add_argument(
-        "--single", type=int, metavar="GC_ROUNDS", help="Run single test with specified gc_rounds (subprocess mode)"
+        "--single", type=int, metavar="GC_ROUNDS", help="Run single test with specified gc_rounds"
     )
+    parser.add_argument("--json", action="store_true", help="Output JSON (for subprocess mode)")
     parser.add_argument("--num-rounds", type=int, default=10, help="Number of FL rounds (default: 10)")
     parser.add_argument("--num-clients", type=int, default=2, help="Number of clients (default: 2)")
     parser.add_argument("--model-size", type=int, default=100, help="Model size in MB (default: 100)")
     args = parser.parse_args()
 
     if args.single is not None:
-        # Subprocess mode: run single test
+        # Single test mode
         run_single_test(
             gc_rounds=args.single,
             num_rounds=args.num_rounds,
             num_clients=args.num_clients,
             model_size_mb=args.model_size,
+            output_json=args.json,
         )
     else:
         # Main mode: run all tests in subprocesses
