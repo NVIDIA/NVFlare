@@ -2,6 +2,9 @@
 
 Tests for the `nvflare.fuel.utils.memory_utils` module.
 
+These tests measure RSS (Resident Set Size) - the portion of memory occupied by a 
+process that is held in RAM.
+
 ## Quick Reference
 
 ```bash

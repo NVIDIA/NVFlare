@@ -1,7 +1,9 @@
 # FedAvg Memory Profiling
 
-Tests for comparing memory usage with different `server_memory_gc_rounds` settings
-in the FedAvg controller.
+Tests for comparing memory usage (RSS - Resident Set Size) with different 
+`server_memory_gc_rounds` settings in the FedAvg controller.
+
+RSS is the portion of memory occupied by a process that is held in RAM.
 
 ## Quick Reference
 

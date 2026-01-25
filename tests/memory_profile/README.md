@@ -1,7 +1,10 @@
 # Memory Profiling Tests
 
-This directory contains scripts to test and compare memory usage with different
-`server_memory_gc_rounds` settings across various FL algorithms.
+This directory contains scripts to test and compare memory usage (RSS - Resident Set Size)
+with different `server_memory_gc_rounds` settings across various FL algorithms.
+
+RSS is the portion of memory occupied by a process that is held in RAM. It's the key metric
+for monitoring memory usage in long-running federated learning jobs.
 
 ## Directory Structure
 
