@@ -45,7 +45,7 @@ def _get_wheel_path():
     WHEEL_DIR.mkdir(exist_ok=True)
     lock_file = WHEEL_DIR / ".lock"
     path_file = WHEEL_DIR / ".wheel_path"
-    
+
     with open(lock_file, "w") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
@@ -54,13 +54,14 @@ def _get_wheel_path():
                 wheel_path = path_file.read_text().strip()
                 if Path(wheel_path).exists():
                     return wheel_path
-            
+
             # Build wheel
             for old in WHEEL_DIR.glob("*.whl"):
                 old.unlink()
             subprocess.run(
                 [sys.executable, "-m", "pip", "wheel", "--no-deps", "-w", str(WHEEL_DIR), str(NVFLARE_ROOT)],
-                check=True, timeout=300
+                check=True,
+                timeout=300,
             )
             wheel_path = str(next(WHEEL_DIR.glob("*.whl")))
             path_file.write_text(wheel_path)
@@ -119,28 +120,29 @@ def test_example(name, path):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         venv_dir = tmpdir / "venv"
-        
+
         # Create isolated venv
         venv.create(venv_dir, with_pip=True)
         py = str(venv_dir / "bin" / "python")
-        
+
         # Set up environment
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         env["NVFLARE_WORKSPACE_ROOT"] = str(tmpdir / "workspace")  # Unique per test
-        
+
         # Install nvflare from pre-built wheel (avoids parallel build conflicts)
-        subprocess.run([py, "-m", "pip", "install", "-q", WHEEL_PATH],
-                       env=env, check=True, timeout=300)
-        
+        subprocess.run([py, "-m", "pip", "install", "-q", WHEEL_PATH], env=env, check=True, timeout=300)
+
         # Install example requirements (filtering out nvflare to keep local version)
         req_file = path / "requirements.txt"
         if req_file.exists():
-            reqs = [line.strip() for line in req_file.read_text().splitlines()
-                    if line.strip() and not line.startswith("#") and not line.lower().startswith("nvflare")]
+            reqs = [
+                line.strip()
+                for line in req_file.read_text().splitlines()
+                if line.strip() and not line.startswith("#") and not line.lower().startswith("nvflare")
+            ]
             if reqs:
-                subprocess.run([py, "-m", "pip", "install", "-q"] + reqs,
-                               env=env, check=False, timeout=900)
-        
+                subprocess.run([py, "-m", "pip", "install", "-q"] + reqs, env=env, check=False, timeout=900)
+
         # Run data prep scripts
         for script in path.glob("*.py"):
             if script.stem in ("download_data", "prepare_data", "generate_pretrain_models"):
@@ -148,7 +150,7 @@ def test_example(name, path):
         for script in path.glob("*.sh"):
             if script.stem in ("download_data", "prepare_data", "generate_pretrain_models"):
                 subprocess.run(["bash", str(script)], cwd=path, env=env, check=False, timeout=900)
-        
+
         # Run job.py
         result = subprocess.run([py, "job.py"], cwd=path, env=env, timeout=3600)
         assert result.returncode == 0, f"job.py failed: {result.returncode}"

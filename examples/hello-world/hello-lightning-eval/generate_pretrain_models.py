@@ -34,8 +34,10 @@ def define_parser():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
     parser.add_argument(
-        "--output", type=str, default=os.path.join(PRETRAIN_MODEL_DIR, "pretrained_model.pt"),
-        help="Output checkpoint path"
+        "--output",
+        type=str,
+        default=os.path.join(PRETRAIN_MODEL_DIR, "pretrained_model.pt"),
+        help="Output checkpoint path",
     )
 
     return parser.parse_args()
