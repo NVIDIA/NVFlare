@@ -19,6 +19,7 @@ from model import SimpleNetwork
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
+from nvflare.recipe import SimEnv
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
 
@@ -70,4 +71,9 @@ if __name__ == "__main__":
         print(f"Exporting job config...{args.job_configs}/fedavg_mlflow_client")
         recipe.export(args.job_configs)
     else:
-        recipe.run(workspace=args.work_dir, log_config=args.log_config)
+        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir)
+        run = recipe.execute(env)
+        print()
+        print("Result can be found in:", run.get_result())
+        print("Job Status is:", run.get_status())
+        print()
