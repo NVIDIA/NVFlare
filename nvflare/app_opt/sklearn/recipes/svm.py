@@ -16,9 +16,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from nvflare.app_common.aggregators import CollectAndAssembleAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
-from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
+from nvflare.app_opt.sklearn.svm_assembler import SVMModelAggregator
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
@@ -43,9 +42,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
 
     The recipe configures:
     - A federated job with kernel parameter
-    - Scatter-and-gather controller (2 rounds)
-    - Custom SVMAssembler for support vector aggregation
-    - CollectAndAssembleAggregator for combining client updates
+    - FedAvg controller (2 rounds)
+    - SVMModelAggregator for support vector aggregation
     - Script runners for client-side training execution
 
     Training Process:
@@ -105,7 +103,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         ```
 
     Note:
-        This recipe uses a custom SVMAssembler that implements support vector
+        This recipe uses SVMModelAggregator that implements support vector
         aggregation. The training only requires one round since SVM is not an
         iterative algorithm in the federated setting. A second round is included
         for validation purposes.
@@ -129,10 +127,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         # Create SVM-specific persistor
         persistor = JoblibModelParamPersistor(initial_params={"kernel": self.kernel})
 
-        # Create SVM-specific aggregator with assembler
-        assembler = SVMAssembler(kernel=self.kernel)
-        assembler_id = "svm_assembler"
-        aggregator = CollectAndAssembleAggregator(assembler_id=assembler_id)
+        # Create SVM-specific ModelAggregator for support vector aggregation
+        aggregator = SVMModelAggregator(kernel=self.kernel)
 
         # Call the unified FedAvgRecipe with SVM-specific settings
         # Note: SVM only needs 2 rounds (round 0 for training, round 1 for validation)
@@ -151,4 +147,3 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
         )
-        self.job.to_server(assembler, id=assembler_id)
