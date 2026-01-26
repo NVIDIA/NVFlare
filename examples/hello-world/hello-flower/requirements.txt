@@ -1,5 +1,4 @@
 flwr[simulation]>=1.16,<2.0
-nvflare~=2.7.0rc
 torch
 torchvision
 tensorboard

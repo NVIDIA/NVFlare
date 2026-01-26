@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import os
+import sys
 import threading
 import time
 
@@ -43,6 +45,39 @@ def get_num_partitions(fl_ctx: FLContext):
     """Get the number of partitions based on the number of clients."""
     engine = fl_ctx.get_engine()
     return len(engine.get_clients())
+
+
+def _validate_flower_executable(executable_name: str, executable_path: str):
+    """Validate that a Flower executable exists and provide helpful error message if not.
+
+    Args:
+        executable_name: Name of the executable (e.g., "flower-superlink")
+        executable_path: Full path to the executable
+
+    Raises:
+        RuntimeError: If the executable is not found with installation instructions
+    """
+    if not os.path.isfile(executable_path):
+        error_msg = (
+            f"Flower executable '{executable_name}' not found at: {executable_path}\n"
+            f"\n"
+            f"This indicates Flower is not properly installed in your Python environment.\n"
+            f"Please install Flower with simulation support:\n"
+            f"  pip install 'flwr[simulation]>=1.16,<2.0'\n"
+            f"\n"
+            f"If using a virtual environment, ensure it's activated before installation.\n"
+            f"Current Python: {sys.executable}"
+        )
+        raise RuntimeError(error_msg)
+
+    # Check if executable has execute permissions
+    if not os.access(executable_path, os.X_OK):
+        error_msg = (
+            f"Flower executable '{executable_name}' found but not executable: {executable_path}\n"
+            f"Please ensure the file has execute permissions:\n"
+            f"  chmod +x {executable_path}"
+        )
+        raise RuntimeError(error_msg)
 
 
 class FlowerClientApplet(CLIApplet):
@@ -85,8 +120,15 @@ class FlowerClientApplet(CLIApplet):
         --node-config ...
         """
 
+        # Get the full path to flower-supernode from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flower_supernode_path = os.path.join(python_bin_dir, "flower-supernode")
+
+        # Validate that flower-supernode is installed and executable
+        _validate_flower_executable("flower-supernode", flower_supernode_path)
+
         cmd = (
-            f"flower-supernode --insecure --grpc-adapter "
+            f"{flower_supernode_path} --insecure --grpc-adapter "
             f"--superlink {superlink_addr} "
             f"--clientappio-api-address {clientapp_api_addr}"
         )
@@ -206,6 +248,13 @@ class FlowerServerApplet(Applet):
         if self.database:
             db_arg = f"--database {self.database}"
 
+        # Get the full path to flower-superlink from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flower_superlink_path = os.path.join(python_bin_dir, "flower-superlink")
+
+        # Validate that flower-superlink is installed and executable
+        _validate_flower_executable("flower-superlink", flower_superlink_path)
+
         """ Example:
         flower-superlink --insecure --fleet-api-type grpc-adapter
         --serverappio-api-address 127.0.0.1:9091
@@ -213,7 +262,7 @@ class FlowerServerApplet(Applet):
         --exec-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
-            f"flower-superlink --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr}  "
             f"--exec-api-address {exec_api_addr}"
@@ -252,8 +301,15 @@ class FlowerServerApplet(Applet):
         self.run_id = run_id
 
     def _flower_command(self, cmd_name: str, cmd_args=""):
+        # Get the full path to flwr from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flwr_path = os.path.join(python_bin_dir, "flwr")
+
+        # Validate that flwr is installed and executable
+        _validate_flower_executable("flwr", flwr_path)
+
         return (
-            f"flwr {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
+            f"{flwr_path} {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
             f"{cmd_args} {self.flower_app_dir}"
         )
 
