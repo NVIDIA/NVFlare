@@ -65,6 +65,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are
+            a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
+            (which corresponds to the ROC AUC score sent by the SVM client in round 1).
 
     Example:
         Basic usage with same config for all clients:
@@ -120,6 +123,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "AUC",  # Matches client's metric key
     ):
         v = _SVMValidator(kernel=kernel)
         self.kernel = v.kernel
@@ -146,4 +150,5 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             params_transfer_type=TransferType.FULL,
             model_persistor=persistor,
             per_site_config=per_site_config,
+            key_metric=key_metric,
         )

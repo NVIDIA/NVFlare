@@ -1,4 +1,4 @@
-# Federated SVM with Scikit-learn and cuML
+# Federated SVM with Scikit-learn
 
 Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
 
@@ -7,9 +7,6 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/), a widely used open-source machine learning library that supports supervised and unsupervised learning.
 Follow along in this [notebook](./sklearn_svm_cancer.ipynb) for an interactive experience.
-### cuML
-You can also use [cuML](https://docs.rapids.ai/api/cuml/stable/) as backend instead of Scikit-learn.
-Please install cuml following instructions: https://rapids.ai/start.html
 
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
@@ -59,7 +56,7 @@ The simplest way to run this example is using the Job Recipe API:
 ### Basic Usage
 
 ```bash
-python job.py --n_clients 3 --kernel rbf --backend sklearn --data_path /tmp/nvflare/dataset/cancer.csv
+python job.py --n_clients 3 --kernel rbf --data_path /tmp/nvflare/dataset/cancer.csv
 ```
 
 This will:
@@ -77,7 +74,6 @@ python job.py --help
 Available arguments:
 - `--n_clients`: Number of clients (default: 3)
 - `--kernel`: Kernel type - linear, poly, rbf, or sigmoid (default: rbf)
-- `--backend`: Backend library - sklearn or cuml (default: sklearn)
 - `--data_path`: Path to cancer CSV file (default: /tmp/nvflare/dataset/cancer.csv)
 
 ### Per-Client Data Splits
@@ -101,11 +97,15 @@ Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 - **Unbalanced splits**: Give clients different amounts of data
 - **Separate validation**: Use different validation sets per client
 
-Pass a dict to `train_args` for per-client configuration:
+Use `per_site_config` to pass `train_args` for per-client configuration:
 ```python
-train_args = {
-    "site-1": "--data_path /data/cancer.csv --backend sklearn --train_start 0 --train_end 151 ...",
-    "site-2": "--data_path /data/cancer.csv --backend sklearn --train_start 151 --train_end 303 ...",
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/cancer.csv --train_start 0 --train_end 151 ..."
+    },
+    "site-2": {
+        "train_args": "--data_path /data/cancer.csv --train_start 151 --train_end 303 ..."
+    },
     # ... more sites
 }
 ```
@@ -121,21 +121,46 @@ As an alternative to passing different data range arguments, you can also save t
 # - /data/site3_cancer.csv  (contains rows 303-455)
 
 # Then configure per-client data paths in job.py:
-train_args = {
-    "site-1": "--data_path /data/site1_cancer.csv --backend sklearn",
-    "site-2": "--data_path /data/site2_cancer.csv --backend sklearn",
-    "site-3": "--data_path /data/site3_cancer.csv --backend sklearn",
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/site1_cancer.csv"
+    },
+    "site-2": {
+        "train_args": "--data_path /data/site2_cancer.csv"
+    },
+    "site-3": {
+        "train_args": "--data_path /data/site3_cancer.csv"
+    }
 }
 
 # No need to pass --train_start, --train_end, etc. when using separate files
 ```
 
-### Using cuML Backend
+### Advanced: Using cuML Backend
 
-For GPU-accelerated SVM training:
-```bash
-python job.py --n_clients 3 --kernel rbf --backend cuml
+The `client.py` script supports an optional `--backend` argument that allows using [NVIDIA cuML](https://github.com/rapidsai/cuml) instead of scikit-learn for GPU-accelerated SVM training. This is an **advanced option** not exposed through `job.py` by default.
+
+**Requirements:**
+- NVIDIA GPU with CUDA support
+- cuML library installed (`pip install cuml`)
+
+**Usage:**
+
+To use cuML, manually add `--backend cuml` to the `train_args` in your `per_site_config`:
+
+```python
+per_site_config = {
+    "site-1": {
+        "train_args": "--data_path /data/cancer.csv --train_start 0 --train_end 151 --valid_start 455 --valid_end 569 --backend cuml"
+    },
+    "site-2": {
+        "train_args": "--data_path /data/cancer.csv --train_start 151 --train_end 303 --valid_start 455 --valid_end 569 --backend cuml"
+    },
+    # ... more sites
+}
 ```
+
+**Note:** The default backend is `sklearn`. You only need to specify `--backend cuml` if you want GPU acceleration.
 
 ### View Results
 
