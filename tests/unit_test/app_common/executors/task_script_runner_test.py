@@ -35,9 +35,11 @@ class TestTaskScriptRunner(unittest.TestCase):
             shutil.rmtree(build_dir, ignore_errors=True)
 
     def test_app_scripts_and_args(self):
-        script_path = "nvflare/cli.py"
+        script_path = "cli.py"
         script_args = "--batch_size 4"
-        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+        wrapper = TaskScriptRunner(
+            custom_dir=os.path.join(self.nvflare_root, "nvflare"), script_path=script_path, script_args=script_args
+        )
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self.assertEqual(
@@ -45,10 +47,11 @@ class TestTaskScriptRunner(unittest.TestCase):
         )
 
     def test_app_scripts_and_args2(self):
-        # curr_dir = os.getcwd()
-        script_path = "nvflare/cli.py"
+        script_path = "cli.py"
         script_args = "--batch_size 4"
-        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+        wrapper = TaskScriptRunner(
+            custom_dir=os.path.join(self.nvflare_root, "nvflare"), script_path=script_path, script_args=script_args
+        )
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self.assertEqual(
@@ -56,17 +59,15 @@ class TestTaskScriptRunner(unittest.TestCase):
         )
 
     def test_app_scripts_with_sub_dirs1(self):
-        # curr_dir = os.getcwd()
-        script_path = "nvflare/__init__.py"
-        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path)
+        script_path = "__init__.py"
+        wrapper = TaskScriptRunner(custom_dir=os.path.join(self.nvflare_root, "nvflare"), script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self.assertEqual(wrapper.get_sys_argv(), [os.path.join(self.nvflare_root, "nvflare", "__init__.py")])
 
     def test_app_scripts_with_sub_dirs2(self):
-        # curr_dir = os.getcwd()
-        script_path = "nvflare/app_common/executors/__init__.py"
-        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path)
+        script_path = "app_common/executors/__init__.py"
+        wrapper = TaskScriptRunner(custom_dir=os.path.join(self.nvflare_root, "nvflare"), script_path=script_path)
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self.assertEqual(
