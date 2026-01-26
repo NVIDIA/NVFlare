@@ -16,6 +16,9 @@ import argparse
 import json
 import os
 
+import matplotlib
+
+matplotlib.use("Agg")  # Use non-GUI backend to avoid macOS thread issues
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
