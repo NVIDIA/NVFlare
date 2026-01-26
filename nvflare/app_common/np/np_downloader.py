@@ -25,6 +25,20 @@ _TWO_MB = 2 * 1024 * 1024
 
 
 class ArrayDownloadable(CacheableObject):
+    """Downloadable for NumPy arrays using reference-based storage for memory efficiency.
+
+    IMPORTANT: This class stores arrays by reference (not copies) to avoid memory overhead.
+    Do not modify arrays in-place while downloads/serialization are in progress.
+
+    Safe usage patterns (automatically followed by NVFlare workflows):
+    - Client side: flare.send() is synchronous - user code blocks until after serialization
+    - Server side: broadcast_and_wait() blocks - no modifications during broadcast
+    - Model updates: Replace entire params dict (new reference) instead of in-place modification
+
+    Unsafe pattern (avoid in custom code):
+    - Calling add_arrays() then immediately modifying arrays in-place while downloads occur
+
+    """
 
     def __init__(self, arrays: dict[str, np.ndarray], max_chunk_size: int):
         self.size = len(arrays)
@@ -35,6 +49,11 @@ class ArrayDownloadable(CacheableObject):
         return self.size
 
     def produce_item(self, index: int) -> bytes:
+        """Serialize an array by accessing it from the original reference.
+
+        Note: This accesses self.base_obj[key] which is a reference to the original array.
+        This is safe because NVFlare workflows ensure no concurrent modifications during serialization.
+        """
         key = self.keys[index]
         arrays_to_send = {key: self.base_obj[key]}
         stream = BytesIO()

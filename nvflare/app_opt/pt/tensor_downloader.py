@@ -26,6 +26,20 @@ _TWO_MB = 2 * 1024 * 1024
 
 
 class TensorDownloadable(CacheableObject):
+    """Downloadable for PyTorch tensors using reference-based storage for memory efficiency.
+
+    IMPORTANT: This class stores tensors by reference (not copies) to avoid memory overhead.
+    Do not modify tensors in-place while downloads/serialization are in progress.
+
+    Safe usage patterns (automatically followed by NVFlare workflows):
+    - Client side: flare.send() is synchronous - user code blocks until after serialization
+    - Server side: broadcast_and_wait() blocks - no modifications during broadcast
+    - Model updates: Replace entire params dict (new reference) instead of in-place modification
+
+    Unsafe pattern (avoid in custom code):
+    - Calling add_tensors() then immediately modifying tensors in-place while downloads occur
+
+    """
 
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
         self.size = len(tensors)
@@ -36,6 +50,11 @@ class TensorDownloadable(CacheableObject):
         return self.size
 
     def produce_item(self, index: int) -> bytes:
+        """Serialize a tensor by accessing it from the original reference.
+
+        Note: This accesses self.base_obj[key] which is a reference to the original tensor.
+        This is safe because NVFlare workflows ensure no concurrent modifications during serialization.
+        """
         key = self.keys[index]
         tensor_to_send = {key: self.base_obj[key]}
         return save_tensors(tensor_to_send)
