@@ -8,7 +8,7 @@ if [ -f "$DATASET_PATH" ]; then
 else
     mkdir -p "${DATASET_DIR}"
     # Please note that the UCI's website may experience occasional downtime.
-    # overwrite the file if it exists so taht corrupted downloads don't persist
+    # overwrite the file if it exists so that corrupted downloads don't persist
     wget -O "${DATASET_DIR}/higgs.zip" https://archive.ics.uci.edu/static/public/280/higgs.zip
     unzip -o "${DATASET_DIR}/higgs.zip" -d "${DATASET_DIR}"
     gzip -d -f "${DATASET_DIR}/HIGGS.csv.gz"
