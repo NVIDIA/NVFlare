@@ -18,52 +18,8 @@ from sklearn.svm import SVC
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.assembler import Assembler
-from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import AppConstants
-
-
-class SVMModelAggregator(ModelAggregator):
-    """ModelAggregator adapter for federated SVM using SVMAssembler.
-
-    This aggregator wraps SVMAssembler to work with the FedAvg controller
-    (which requires ModelAggregator interface with FLModel objects).
-
-    Args:
-        kernel: Kernel type to use in SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
-            Default is 'rbf'.
-    """
-
-    def __init__(self, kernel: str = "rbf"):
-        super().__init__()
-        self._assembler = SVMAssembler(kernel=kernel)
-        self._client_count = 0
-
-    def accept_model(self, model: FLModel):
-        """Accept support vectors from a client by adding to assembler's collection."""
-        if model.params is None:
-            self.warning("Received model with no params, skipping")
-            return
-
-        # Add to assembler's collection (simulating what CollectAndAssembleAggregator does)
-        client_name = f"client_{self._client_count}"
-        self._assembler.collection[client_name] = {
-            "support_x": model.params.get("support_x"),
-            "support_y": model.params.get("support_y"),
-        }
-        self._client_count += 1
-
-    def aggregate_model(self) -> FLModel:
-        """Aggregate using SVMAssembler and return FLModel."""
-        # Call assembler's assemble method (passing collection as data, fl_ctx from parent)
-        dxo = self._assembler.assemble(data=self._assembler.collection, fl_ctx=self.fl_ctx)
-        return FLModel(params=dxo.data)
-
-    def reset_stats(self):
-        """Reset per-round state."""
-        self._assembler.reset()
-        self._client_count = 0
 
 
 class SVMAssembler(Assembler):
