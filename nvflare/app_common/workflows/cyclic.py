@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 
 from .model_controller import ModelController
 
@@ -37,6 +38,8 @@ class Cyclic(ModelController):
                 every N rounds. Set to 0 to disable. Defaults to 0 (disabled).
         """
         super().__init__(*args, **kwargs)
+
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
 
         self.num_clients = num_clients
         self.num_rounds = num_rounds

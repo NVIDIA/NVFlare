@@ -22,6 +22,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 from .model_controller import ModelController
@@ -64,6 +65,8 @@ class BaseFedAvg(ModelController):
                 Set to 0 to disable. Defaults to 0 (disabled).
         """
         super().__init__(*args, **kwargs)
+
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
 
         self.num_clients = num_clients
         self.num_rounds = num_rounds

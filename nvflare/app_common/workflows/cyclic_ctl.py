@@ -27,6 +27,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 
@@ -117,6 +118,7 @@ class CyclicController(Controller):
         self.shareable_generator = None
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
         self._memory_gc_rounds = memory_gc_rounds
         self._participating_clients = None
         self._last_client = None

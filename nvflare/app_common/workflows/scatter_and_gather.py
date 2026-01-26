@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
-
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.fl_constant import ReturnCode
@@ -28,16 +26,9 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
-
-
-def _check_non_neg_int(data: Any, name: str):
-    if not isinstance(data, int):
-        raise ValueError(f"{name} must be int but got {type(data)}")
-
-    if data < 0:
-        raise ValueError(f"{name} must be greater than or equal to 0.")
 
 
 class ScatterAndGather(Controller):
@@ -105,12 +96,13 @@ class ScatterAndGather(Controller):
         elif min_clients <= 0:
             raise ValueError("min_clients must be greater than 0.")
 
-        _check_non_neg_int(num_rounds, "num_rounds")
-        _check_non_neg_int(start_round, "start_round")
-        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
-        _check_non_neg_int(train_timeout, "train_timeout")
-        _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
-        _check_non_neg_int(snapshot_every_n_rounds, "snapshot_every_n_rounds")
+        check_non_negative_int("num_rounds", num_rounds)
+        check_non_negative_int("start_round", start_round)
+        check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
+        check_non_negative_int("train_timeout", train_timeout)
+        check_non_negative_int("persist_every_n_rounds", persist_every_n_rounds)
+        check_non_negative_int("snapshot_every_n_rounds", snapshot_every_n_rounds)
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
 
         if not isinstance(aggregator_id, str):
             raise TypeError("aggregator_id must be a string but got {}".format(type(aggregator_id)))
