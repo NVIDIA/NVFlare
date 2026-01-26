@@ -18,6 +18,7 @@ This trains a model on CIFAR-10 and saves it to a checkpoint file.
 """
 
 import argparse
+import os
 
 import torch
 from model import CIFAR10DataModule, LitNet
@@ -25,12 +26,17 @@ from pytorch_lightning import Trainer, seed_everything
 
 seed_everything(7)
 
+PRETRAIN_MODEL_DIR = "/tmp/nvflare/pretrain_models"
+
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
-    parser.add_argument("--output", type=str, default="pretrained_model.pt", help="Output checkpoint path")
+    parser.add_argument(
+        "--output", type=str, default=os.path.join(PRETRAIN_MODEL_DIR, "pretrained_model.pt"),
+        help="Output checkpoint path"
+    )
 
     return parser.parse_args()
 
@@ -50,11 +56,11 @@ def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule(batch_size=args.batch_size)
 
-    # Setup trainer
+    # Setup trainer (save logs to /tmp to avoid cluttering repo)
     if torch.cuda.is_available():
-        trainer = Trainer(max_epochs=args.epochs, accelerator="gpu", devices=1)
+        trainer = Trainer(max_epochs=args.epochs, accelerator="gpu", devices=1, default_root_dir=PRETRAIN_MODEL_DIR)
     else:
-        trainer = Trainer(max_epochs=args.epochs, devices=None)
+        trainer = Trainer(max_epochs=args.epochs, accelerator="cpu", default_root_dir=PRETRAIN_MODEL_DIR)
 
     # Train the model
     print("\nStarting training...")
@@ -66,6 +72,7 @@ def main():
 
     # Save the full LitNet state dict (includes model + metrics)
     print(f"\nSaving model to {args.output}...")
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
     torch.save(model.state_dict(), args.output)
 
     print("\n" + "=" * 80)
