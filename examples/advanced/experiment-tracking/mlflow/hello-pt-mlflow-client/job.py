@@ -47,24 +47,19 @@ if __name__ == "__main__":
         train_script="client.py",
     )
 
-    # Add site-specific MLflow tracking for each client
-    for i in range(args.n_clients):
-        site_name = f"site-{i + 1}"
-        tracking_uri = f"file://{args.work_dir}/{site_name}/mlruns"
+    # Add MLflow tracking for all clients
+    # Each client will automatically create its own tracking based on site identity
+    receiver = MLflowReceiver(
+        tracking_uri=None,  # Will auto-configure per site
+        events=[ANALYTIC_EVENT_TYPE],  # Track local events (not federated)
+        kw_args={
+            "experiment_name": "nvflare-fedavg-experiment",
+            "run_name": "nvflare-fedavg-client",
+        },
+    )
 
-        receiver = MLflowReceiver(
-            tracking_uri=tracking_uri,
-            events=[ANALYTIC_EVENT_TYPE],  # Track local events (not federated)
-            kw_args={
-                "experiment_name": "nvflare-fedavg-experiment",
-                "run_name": f"nvflare-fedavg-{site_name}",
-                "experiment_tags": {"mlflow.note.content": f"## **NVFlare FedAvg experiment - {site_name}**"},
-                "run_tags": {"mlflow.note.content": f"## Site-specific tracking for {site_name}.\n"},
-            },
-        )
-
-        # Add receiver to this specific client
-        recipe.job.to(receiver, site_name, id="mlflow_receiver")
+    # Add receiver to all clients
+    recipe.job.to_clients(receiver, id="mlflow_receiver")
 
     # Run or export
     if args.export_config:
