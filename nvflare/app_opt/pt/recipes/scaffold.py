@@ -57,6 +57,8 @@ class ScaffoldRecipe(Recipe):
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client. Defaults to "client.py".
         train_args: Command line arguments to pass to the training script. Defaults to "".
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 0.
     Example:
         ```python
         recipe = ScaffoldRecipe(
@@ -124,7 +126,7 @@ class ScaffoldRecipe(Recipe):
             num_clients=self.min_clients,  # Scaffold controller requires the number of clients to be the same as the min_clients
             num_rounds=self.num_rounds,
             persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
-            server_memory_gc_rounds=self.server_memory_gc_rounds,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)

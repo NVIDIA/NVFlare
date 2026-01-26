@@ -43,6 +43,8 @@ class Scaffold(BaseFedAvg):
         allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
             empty global weights at first round, such that clients start training from scratch without any global info.
             Defaults to False.
+        memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+            Set to 0 to disable. Defaults to 0 (inherited from BaseFedAvg).
     """
 
     def initialize(self, fl_ctx):

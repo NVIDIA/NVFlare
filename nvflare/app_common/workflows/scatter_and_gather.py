@@ -57,7 +57,7 @@ class ScatterAndGather(Controller):
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
-        server_memory_gc_rounds: int = 1,
+        memory_gc_rounds: int = 1,
     ):
         """The controller for ScatterAndGather Workflow.
 
@@ -90,7 +90,7 @@ class ScatterAndGather(Controller):
                 If n is 0 then no persist.
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
-            server_memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+            memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
                 Set to 0 to disable. Defaults to 1 (every round).
 
         Raises:
@@ -142,7 +142,7 @@ class ScatterAndGather(Controller):
         self._train_timeout = train_timeout
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
-        self._server_memory_gc_rounds = server_memory_gc_rounds
+        self._memory_gc_rounds = memory_gc_rounds
         self.ignore_result_error = ignore_result_error
         self.allow_empty_global_weights = allow_empty_global_weights
 
@@ -152,8 +152,8 @@ class ScatterAndGather(Controller):
         self._current_round = None
 
     def _maybe_cleanup_memory(self):
-        """Perform memory cleanup if configured (every N rounds based on server_memory_gc_rounds)."""
-        if self._server_memory_gc_rounds > 0 and (self._current_round + 1) % self._server_memory_gc_rounds == 0:
+        """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self._memory_gc_rounds > 0 and (self._current_round + 1) % self._memory_gc_rounds == 0:
             cleanup_memory()
 
     def start_controller(self, fl_ctx: FLContext) -> None:

@@ -72,6 +72,8 @@ class ScaffoldRecipe(Recipe):
         params_transfer_type: How to transfer the parameters between server and client.
             FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
             Defaults to TransferType.FULL.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 0.
 
     Example:
         ```python
@@ -151,7 +153,7 @@ class ScaffoldRecipe(Recipe):
         controller = Scaffold(
             num_clients=self.min_clients,
             num_rounds=self.num_rounds,
-            server_memory_gc_rounds=self.server_memory_gc_rounds,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to(controller, "server")

@@ -24,7 +24,7 @@ class Cyclic(ModelController):
         num_clients: int = 2,
         num_rounds: int = 5,
         start_round: int = 0,
-        server_memory_gc_rounds: int = 0,
+        memory_gc_rounds: int = 0,
         **kwargs,
     ):
         """The Cyclic ModelController to implement the Cyclic Weight Transfer (CWT) algorithm.
@@ -33,7 +33,7 @@ class Cyclic(ModelController):
             num_clients (int, optional): The number of clients. Defaults to 2.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number. Defaults to 0.
-            server_memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim)
+            memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim)
                 every N rounds. Set to 0 to disable. Defaults to 0 (disabled).
         """
         super().__init__(*args, **kwargs)
@@ -41,12 +41,12 @@ class Cyclic(ModelController):
         self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
-        self.server_memory_gc_rounds = server_memory_gc_rounds
+        self.memory_gc_rounds = memory_gc_rounds
         self.current_round = None
 
     def _maybe_cleanup_memory(self):
-        """Perform memory cleanup if configured (every N rounds based on server_memory_gc_rounds)."""
-        if self.server_memory_gc_rounds > 0 and (self.current_round + 1) % self.server_memory_gc_rounds == 0:
+        """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self.memory_gc_rounds > 0 and (self.current_round + 1) % self.memory_gc_rounds == 0:
             cleanup_memory()
 
     def run(self) -> None:

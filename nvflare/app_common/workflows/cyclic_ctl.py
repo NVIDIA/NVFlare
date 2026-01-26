@@ -52,7 +52,7 @@ class CyclicController(Controller):
         snapshot_every_n_rounds: int = 1,
         order: Union[str, List[str]] = RelayOrder.FIXED,
         allow_early_termination=False,
-        server_memory_gc_rounds: int = 1,
+        memory_gc_rounds: int = 1,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -80,7 +80,7 @@ class CyclicController(Controller):
                 - If a list of strings is provided, it represents a custom order for relay.
 
             allow_early_termination: whether to allow early workflow termination from clients
-            server_memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+            memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
                 Set to 0 to disable. Defaults to 1 (every round).
 
         Raises:
@@ -117,15 +117,15 @@ class CyclicController(Controller):
         self.shareable_generator = None
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
-        self._server_memory_gc_rounds = server_memory_gc_rounds
+        self._memory_gc_rounds = memory_gc_rounds
         self._participating_clients = None
         self._last_client = None
         self._order = order
         self._allow_early_termination = allow_early_termination
 
     def _maybe_cleanup_memory(self):
-        """Perform memory cleanup if configured (every N rounds based on server_memory_gc_rounds)."""
-        if self._server_memory_gc_rounds > 0 and (self._current_round + 1) % self._server_memory_gc_rounds == 0:
+        """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self._memory_gc_rounds > 0 and (self._current_round + 1) % self._memory_gc_rounds == 0:
             cleanup_memory()
 
     def start_controller(self, fl_ctx: FLContext):

@@ -265,7 +265,7 @@ class FedAvgRecipe(Recipe):
             task_name="train",
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
-            server_memory_gc_rounds=self.server_memory_gc_rounds,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         job.to_server(controller)
 
