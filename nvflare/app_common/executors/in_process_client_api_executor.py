@@ -61,8 +61,12 @@ class InProcessClientAPIExecutor(Executor):
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         server_expected_format: str = ExchangeFormat.NUMPY,
+        memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         super(InProcessClientAPIExecutor, self).__init__()
+        self._memory_gc_rounds = memory_gc_rounds
+        self._torch_cuda_empty_cache = torch_cuda_empty_cache
         self._abort = False
         self._client_api = None
         self._result_pull_interval = result_pull_interval
@@ -121,6 +125,12 @@ class InProcessClientAPIExecutor(Executor):
             meta = self._prepare_task_meta(fl_ctx, None)
             self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=self._result_pull_interval)
             self._client_api.init()
+            # Configure memory management if enabled
+            if self._memory_gc_rounds > 0:
+                self._client_api.configure_memory_management(
+                    gc_rounds=self._memory_gc_rounds,
+                    torch_cuda_empty_cache=self._torch_cuda_empty_cache
+                )
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
 
             self._task_fn_thread.start()
