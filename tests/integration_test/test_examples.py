@@ -63,7 +63,10 @@ def _get_wheel_path():
                 check=True,
                 timeout=300,
             )
-            wheel_path = str(next(WHEEL_DIR.glob("*.whl")))
+            wheels = list(WHEEL_DIR.glob("*.whl"))
+            if not wheels:
+                raise RuntimeError(f"No .whl files found in {WHEEL_DIR} after building nvflare wheel")
+            wheel_path = str(wheels[0])
             path_file.write_text(wheel_path)
             return wheel_path
         finally:
