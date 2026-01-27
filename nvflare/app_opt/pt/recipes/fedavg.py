@@ -152,8 +152,17 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         """Override to handle PyTorch-specific model setup."""
         if self.initial_model is not None:
             from nvflare.app_opt.pt.job_config.model import PTModel
+            from nvflare.client.config import ExchangeFormat
 
-            pt_model = PTModel(model=self.initial_model, persistor=self.model_persistor, locator=self._pt_model_locator)
+            # Disable numpy conversion when using tensor format to keep PyTorch tensors
+            allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
+
+            pt_model = PTModel(
+                model=self.initial_model,
+                persistor=self.model_persistor,
+                locator=self._pt_model_locator,
+                allow_numpy_conversion=allow_numpy_conversion,
+            )
             job.comp_ids.update(job.to_server(pt_model))
             return job.comp_ids.get("persistor_id", "")
         return ""
