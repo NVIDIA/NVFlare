@@ -734,3 +734,111 @@ class TestPTFedAvgModelPersistence:
         assert hasattr(controller, "run")
         # The actual registration happens when run() is called, which requires
         # a full FL context. We just verify the method exists.
+
+
+class TestBaseFedAvgMemoryManagement:
+    """Test memory management in BaseFedAvg."""
+
+    def test_memory_gc_rounds_default(self):
+        """Test memory_gc_rounds defaults to 0 (disabled)."""
+        controller = FedAvg()
+        assert controller.memory_gc_rounds == 0
+
+    def test_memory_gc_rounds_custom(self):
+        """Test memory_gc_rounds can be set to custom value."""
+        controller = FedAvg(memory_gc_rounds=5)
+        assert controller.memory_gc_rounds == 5
+
+    def test_maybe_cleanup_memory_disabled(self):
+        """Test _maybe_cleanup_memory does nothing when memory_gc_rounds=0."""
+        from unittest.mock import patch
+
+        controller = FedAvg(memory_gc_rounds=0)
+        controller.current_round = 0
+
+        with patch("nvflare.app_common.workflows.base_fedavg.cleanup_memory") as mock_cleanup:
+            controller._maybe_cleanup_memory()
+            mock_cleanup.assert_not_called()
+
+    def test_maybe_cleanup_memory_called_on_interval(self):
+        """Test _maybe_cleanup_memory calls cleanup at correct intervals."""
+        from unittest.mock import patch
+
+        controller = FedAvg(memory_gc_rounds=5)
+
+        with patch("nvflare.app_common.workflows.base_fedavg.cleanup_memory") as mock_cleanup:
+            # Round 0-3: should not trigger (round+1 not divisible by 5)
+            for r in range(4):
+                controller.current_round = r
+                controller._maybe_cleanup_memory()
+            assert mock_cleanup.call_count == 0
+
+            # Round 4: (4+1) % 5 == 0, should trigger
+            controller.current_round = 4
+            controller._maybe_cleanup_memory()
+            assert mock_cleanup.call_count == 1
+
+            # Round 5-8: should not trigger
+            for r in range(5, 9):
+                controller.current_round = r
+                controller._maybe_cleanup_memory()
+            assert mock_cleanup.call_count == 1
+
+            # Round 9: (9+1) % 5 == 0, should trigger again
+            controller.current_round = 9
+            controller._maybe_cleanup_memory()
+            assert mock_cleanup.call_count == 2
+
+    def test_maybe_cleanup_memory_every_round(self):
+        """Test _maybe_cleanup_memory with memory_gc_rounds=1 (every round)."""
+        from unittest.mock import patch
+
+        controller = FedAvg(memory_gc_rounds=1)
+
+        with patch("nvflare.app_common.workflows.base_fedavg.cleanup_memory") as mock_cleanup:
+            for r in range(5):
+                controller.current_round = r
+                controller._maybe_cleanup_memory()
+            assert mock_cleanup.call_count == 5
+
+    def test_memory_gc_rounds_inherited_by_scaffold(self):
+        """Test Scaffold inherits memory_gc_rounds from BaseFedAvg."""
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(memory_gc_rounds=3)
+        assert controller.memory_gc_rounds == 3
+
+    def test_memory_gc_rounds_in_cyclic(self):
+        """Test Cyclic has memory_gc_rounds parameter."""
+        from nvflare.app_common.workflows.cyclic import Cyclic
+
+        controller = Cyclic(memory_gc_rounds=2)
+        assert controller.memory_gc_rounds == 2
+
+    def test_memory_gc_rounds_in_scatter_and_gather(self):
+        """Test ScatterAndGather has memory_gc_rounds parameter with default=1."""
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        # Default is 1 (every round) for backward compatibility
+        controller = ScatterAndGather()
+        assert controller._memory_gc_rounds == 1
+
+        # Can be customized
+        controller2 = ScatterAndGather(memory_gc_rounds=5)
+        assert controller2._memory_gc_rounds == 5
+
+        # Can be disabled
+        controller3 = ScatterAndGather(memory_gc_rounds=0)
+        assert controller3._memory_gc_rounds == 0
+
+    def test_memory_gc_rounds_in_cyclic_controller(self):
+        """Test CyclicController has memory_gc_rounds parameter with default=1."""
+        from nvflare.app_common.workflows.cyclic_ctl import CyclicController
+
+        # Default is 1 (every round) for backward compatibility
+        controller = CyclicController()
+        assert controller._memory_gc_rounds == 1
+
+        # Can be customized
+        controller2 = CyclicController(memory_gc_rounds=3)
+        assert controller2._memory_gc_rounds == 3
