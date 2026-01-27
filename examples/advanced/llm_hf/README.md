@@ -4,18 +4,16 @@ This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) f
 ## Introduction 
 This example illustrates both supervised fine-tuning (SFT) and parameter-efficient fine-tuning (PEFT) using the [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) from [HuggingFace](https://huggingface.co/) with [PEFT library](https://github.com/huggingface/peft).
 
-We used the [Llama-3.2-1B model](https://huggingface.co/meta-llama/Llama-3.2-1B) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. All other models from HuggingFace can be easily adapted following the same steps.
+We used the [GPT-Neo-1.3B model](https://huggingface.co/EleutherAI/gpt-neo-1.3B) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. All other models from HuggingFace can be easily adapted following the same steps.
 
 For PEFT, we used LoRA method, other PEFT methods (e.g. p-tuning, prompt-tuning) can be easily adapted as well by modifying the configs following [PEFT](https://github.com/huggingface/peft) examples.
 
 We would like to showcase three key points in this example:
 - Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application. This further includes local training with multiple GPUs.
-- Handling large model weights (~6 GB for Llama-3.2-1B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
+- Handling large model weights (~6 GB for GPT-Neo-1.3B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
 - Use NVFlare's filter functionality to enable model quantization and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
 
 We conducted experiments on 48GB RTX 6000 Ada GPUs. 
-
-To use Llama-3.2-1B model, please request access to the model here https://huggingface.co/meta-llama/Llama-3.2-1B and login with an access token using huggingface-cli.
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
@@ -120,14 +118,14 @@ Each client can have custom configurations for different data paths and multi-GP
 ```python
 per_site_config = {
     "dolly": {
-        "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
+        "train_args": "--model_name_or_path EleutherAI/gpt-neo-1.3B "
                       "--data_path_train ./dataset/dolly/training.jsonl "
                       "--data_path_valid ./dataset/dolly/validation.jsonl ...",
         "command": "python3 -m torch.distributed.run --nnodes=1 "
                    "--nproc_per_node=2 --master_port=7777"
     },
     "alpaca": {
-        "train_args": "--model_name_or_path meta-llama/llama-3.2-1b "
+        "train_args": "--model_name_or_path EleutherAI/gpt-neo-1.3B "
                       "--data_path_train ./dataset/alpaca/training.jsonl ...",
         "command": "python3 -m torch.distributed.run --nnodes=1 "
                    "--nproc_per_node=2 --master_port=8888"
@@ -322,7 +320,7 @@ The SFT curves are shown below, magenta for centralized results, others for FL t
 
 These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2, 1/4, and even 1/8, which can significantly reduce the message size, making it crucial for transmitting LLM updates.
 
-For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of Llama-3.2-1B model are reduced to: 
+For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of GPT-Neo-1.3B model are reduced to: 
 
 | Quantization      | Raw Model Size | Quantized Model Size | Quantization Meta Size |
 |-------------------|----------------|----------------------|------------------------|
