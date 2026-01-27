@@ -32,7 +32,7 @@ class PTModel:
     ):
         """PyTorch model wrapper.
 
-        If model is an nn.Module, add a PTFileModelPersistor with the model and a PTModelPersistor.
+        If model is an nn.Module, add a PTFileModelPersistor.
         If model is a dict with 'path' and 'args', it will be lazily instantiated on the server.
 
         Args:
