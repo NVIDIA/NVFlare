@@ -101,7 +101,7 @@ def main():
 
     # Determine train mode and model configuration
     # As LLMs can be large, we don't instantiate the full model here,
-    # instead we provide a configuration dict that NVFlare uses 
+    # instead we provide a configuration dict that NVFlare uses
     # to instantiate the model on the server.
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
@@ -109,7 +109,10 @@ def main():
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
-        initial_model = {"path": "hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": args.model_name_or_path}}
+        initial_model = {
+            "path": "hf_peft_model.CausalLMPEFTModel",
+            "args": {"model_name_or_path": args.model_name_or_path},
+        }
         job_name = "llm_hf_peft"
         output_path = "peft"
     else:

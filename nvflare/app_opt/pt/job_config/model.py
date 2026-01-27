@@ -36,7 +36,7 @@ class PTModel:
         If model is a dict with 'path' and 'args', it will be lazily instantiated on the server.
 
         Args:
-            model (Union[nn.Module, dict]): model object, configuration dict for lazy instantiation. 
+            model (Union[nn.Module, dict]): model object, configuration dict for lazy instantiation.
             If dict, must contain 'path' key with class path and optional 'args' dict.
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
@@ -63,10 +63,8 @@ class PTModel:
         if isinstance(self.model, dict):
             # Validate config has required 'path' key
             if "path" not in self.model:
-                raise ValueError(
-                    f"Model config dict must contain 'path' key. Got: {self.model}"
-                )
-            
+                raise ValueError(f"Model config dict must contain 'path' key. Got: {self.model}")
+
             # Pass the dict config directly to the persistor for lazy instantiation on the server
             # The persistor will instantiate the model during _initialize() at runtime
             persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
@@ -84,7 +82,7 @@ class PTModel:
             locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
             locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
             return {"persistor_id": persistor_id, "locator_id": locator_id}
-        
+
         else:
             raise ValueError(
                 f"Unable to add model to job. Expected nn.Module or dict config but got {type(self.model)}. "
