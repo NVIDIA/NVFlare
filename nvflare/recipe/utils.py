@@ -369,8 +369,10 @@ def _has_task_executor(job, task_name: str) -> bool:
                         # Wildcard executors (["*"]) are typically training scripts that shouldn't
                         # handle cross-site validation tasks
                         if task_name == AppConstants.TASK_VALIDATION:
-                            # Only return True if explicitly configured for validation (not wildcard)
-                            if task_name in executor_def.tasks and "*" not in executor_def.tasks:
+                            # Return True only if validation is explicitly in the task list
+                            # Configurations like ["validate"], ["validate", "*"], or ["validate", "train"]
+                            # all explicitly handle validation
+                            if task_name in executor_def.tasks:
                                 return True
                         else:
                             # For other tasks, wildcard is fine
