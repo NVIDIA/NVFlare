@@ -100,17 +100,16 @@ def main():
     num_threads = args.threads if args.threads else num_clients
 
     # Determine train mode and model configuration
+    # As LLMs can be large, we don't instantiate the full model here,
+    # instead we provide a configuration dict that NVFlare uses 
+    # to instantiate the model on the server.
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
-        from hf_sft_model import CausalLMModel
-
-        initial_model = CausalLMModel(model_name_or_path=args.model_name_or_path)
+        initial_model = {"path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
-        from hf_peft_model import CausalLMPEFTModel
-
-        initial_model = CausalLMPEFTModel(model_name_or_path=args.model_name_or_path)
+        initial_model = {"path": "hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": args.model_name_or_path}}
         job_name = "llm_hf_peft"
         output_path = "peft"
     else:

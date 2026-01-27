@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Union
 
 import torch.nn as nn
 
@@ -24,13 +24,20 @@ from nvflare.job_config.api import validate_object_for_job
 
 
 class PTModel:
-    def __init__(self, model, persistor: Optional[ModelPersistor] = None, locator: Optional[ModelLocator] = None):
+    def __init__(
+        self,
+        model: Union[nn.Module, dict],
+        persistor: Optional[ModelPersistor] = None,
+        locator: Optional[ModelLocator] = None,
+    ):
         """PyTorch model wrapper.
 
-        If model is an nn.Module, add a PTFileModelPersistor with the model and a TFModelPersistor.
+        If model is an nn.Module, add a PTFileModelPersistor with the model and a PTModelPersistor.
+        If model is a dict with 'path' and 'args', it will be lazily instantiated on the server.
 
         Args:
-            model (any): model
+            model (Union[nn.Module, dict]): model object, configuration dict for lazy instantiation. 
+            If dict, must contain 'path' key with class path and optional 'args' dict.
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
         """
@@ -52,14 +59,34 @@ class PTModel:
         Returns:
             dictionary of ids of component added
         """
-        if isinstance(self.model, nn.Module):  # if model, create a PT persistor
+        # Handle dictionary config for lazy instantiation
+        if isinstance(self.model, dict):
+            # Validate config has required 'path' key
+            if "path" not in self.model:
+                raise ValueError(
+                    f"Model config dict must contain 'path' key. Got: {self.model}"
+                )
+            
+            # Pass the dict config directly to the persistor for lazy instantiation on the server
+            # The persistor will instantiate the model during _initialize() at runtime
             persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 
             locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
             locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
             return {"persistor_id": persistor_id, "locator_id": locator_id}
+
+        # Handle nn.Module instance
+        elif isinstance(self.model, nn.Module):
+            persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
+            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+
+            locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
+            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
+            return {"persistor_id": persistor_id, "locator_id": locator_id}
+        
         else:
             raise ValueError(
-                f"Unable to add {self.model} to job with PTFileModelPersistor. Expected nn.Module but got {type(self.model)}."
+                f"Unable to add model to job. Expected nn.Module or dict config but got {type(self.model)}. "
+                f"If using dict config, it must contain 'path' key with optional 'args' dict."
             )

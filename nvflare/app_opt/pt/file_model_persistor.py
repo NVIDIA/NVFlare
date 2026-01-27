@@ -180,6 +180,49 @@ class PTFileModelPersistor(ModelPersistor):
                     fl_ctx=fl_ctx,
                 )
                 return
+        elif isinstance(self.model, dict):
+            # Lazy instantiation from dict config with 'path' and 'args'
+            try:
+                from nvflare.fuel.utils.class_utils import instantiate_class
+                
+                if "path" not in self.model:
+                    self.system_panic(
+                        reason=f"Model config dict must contain 'path' key. Got: {self.model}",
+                        fl_ctx=fl_ctx
+                    )
+                    return
+                
+                self.log_info(
+                    fl_ctx,
+                    f"Instantiating model from config: path={self.model['path']}, args={self.model.get('args', {})}",
+                    fire_event=False,
+                )
+                
+                model_instance = instantiate_class(
+                    class_path=self.model["path"],
+                    init_params=self.model.get("args", None)
+                )
+                
+                if not isinstance(model_instance, torch.nn.Module):
+                    self.system_panic(
+                        reason=f"Instantiated model must be torch.nn.Module but got {type(model_instance)}. Config: {self.model}",
+                        fl_ctx=fl_ctx
+                    )
+                    return
+                
+                self.model = model_instance
+                self.log_info(
+                    fl_ctx,
+                    f"Successfully instantiated model: {type(self.model).__name__}",
+                    fire_event=False,
+                )
+            except Exception as e:
+                self.log_exception(fl_ctx, f"Failed to instantiate model from config {self.model}")
+                self.system_panic(
+                    reason=f"Cannot instantiate model from config: {e}",
+                    fl_ctx=fl_ctx
+                )
+                return
         elif self.model and not isinstance(self.model, torch.nn.Module):
             self.system_panic(
                 reason="expect model to be torch.nn.Module but got {}".format(type(self.model)), fl_ctx=fl_ctx
