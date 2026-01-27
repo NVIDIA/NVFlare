@@ -182,6 +182,11 @@ class PTFileModelPersistor(ModelPersistor):
                 return
         elif isinstance(self.model, dict):
             # Lazy instantiation from dict config with 'path' and 'args'
+            # NOTE: The 'path' can be either:
+            #   1. Fully qualified module path (e.g., "mypackage.mymodule.MyModel")
+            #   2. Relative path assuming job custom directory is in PYTHONPATH
+            #      (e.g., "hf_sft_model.CausalLMModel" resolves to "custom/hf_sft_model.py")
+            #      The job runner automatically adds the job's custom directory to PYTHONPATH
             try:
                 from nvflare.fuel.utils.class_utils import instantiate_class
 

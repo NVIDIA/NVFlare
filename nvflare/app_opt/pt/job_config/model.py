@@ -36,8 +36,11 @@ class PTModel:
         If model is a dict with 'path' and 'args', it will be lazily instantiated on the server.
 
         Args:
-            model (Union[nn.Module, dict]): model object, configuration dict for lazy instantiation.
-            If dict, must contain 'path' key with class path and optional 'args' dict.
+            model (Union[nn.Module, dict]): model object or configuration dict for lazy instantiation.
+                If dict, must contain 'path' key with class path and optional 'args' dict.
+                The 'path' can be:
+                - Fully qualified: "mypackage.mymodule.MyModel"
+                - Relative to job custom directory, e.g., "model.SimpleNetwork"
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
         """
@@ -59,32 +62,24 @@ class PTModel:
         Returns:
             dictionary of ids of component added
         """
-        # Handle dictionary config for lazy instantiation
+        # Validate model type and config
         if isinstance(self.model, dict):
-            # Validate config has required 'path' key
+            # Validate config has required 'path' key for lazy instantiation
             if "path" not in self.model:
                 raise ValueError(f"Model config dict must contain 'path' key. Got: {self.model}")
-
-            # Pass the dict config directly to the persistor for lazy instantiation on the server
-            # The persistor will instantiate the model during _initialize() at runtime
-            persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
-            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
-
-            locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
-            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
-            return {"persistor_id": persistor_id, "locator_id": locator_id}
-
-        # Handle nn.Module instance
-        elif isinstance(self.model, nn.Module):
-            persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
-            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
-
-            locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
-            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
-            return {"persistor_id": persistor_id, "locator_id": locator_id}
-
-        else:
+        elif not isinstance(self.model, nn.Module):
             raise ValueError(
                 f"Unable to add model to job. Expected nn.Module or dict config but got {type(self.model)}. "
                 f"If using dict config, it must contain 'path' key with optional 'args' dict."
             )
+
+        # Create persistor and locator (same logic for both nn.Module and dict config)
+        # For dict config: persistor will lazily instantiate the model during _initialize() at runtime on server
+        # For nn.Module: persistor uses the model directly
+        persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
+        persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+
+        locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
+        locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
+
+        return {"persistor_id": persistor_id, "locator_id": locator_id}
