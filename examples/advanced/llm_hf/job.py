@@ -20,6 +20,7 @@ import argparse
 import os
 from typing import Dict
 
+from nvflare.app_opt.pt import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
@@ -120,8 +121,12 @@ def main():
     message_mode = args.message_mode.lower()
     if message_mode == "tensor":
         server_expected_format = "pytorch"
+        # When using tensor mode, disable numpy conversion in the persistor
+        # to keep tensors as-is (preserves bf16, avoids numpy conversion issues)
+        model_persistor = PTFileModelPersistor(model=initial_model, allow_numpy_conversion=False)
     elif message_mode == "numpy":
         server_expected_format = "numpy"
+        model_persistor = None  # Use default persistor with numpy conversion
     else:
         raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
@@ -176,6 +181,7 @@ def main():
         launch_external_process=True,  # Always use external process for LLM training
         per_site_config=per_site_config,
         key_metric="neg_eval_loss",
+        model_persistor=model_persistor,
     )
 
     # Add client params to reduce timeout failures for longer LLM runs
