@@ -247,9 +247,6 @@ def main():
         disable_tqdm=True,
         max_length=1024,
         save_total_limit=2,
-        # safetensors will remove shared layers, e.g. lm_head.weight
-        # disable for local checkpointing
-        save_safetensors=False,
         seed=0,
         data_seed=0,
         # Multi-GPU specific settings
