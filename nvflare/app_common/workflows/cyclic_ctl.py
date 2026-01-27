@@ -235,7 +235,7 @@ class CyclicController(Controller):
         task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
-        gc.collect()
+        cleanup_memory()
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
