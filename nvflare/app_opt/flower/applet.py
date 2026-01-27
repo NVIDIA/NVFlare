@@ -27,6 +27,11 @@ from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
+# Flower CLI executable names
+FLOWER_SUPERLINK = "flower-superlink"
+FLOWER_SUPERNODE = "flower-supernode"
+FLOWER_CLI = "flwr"
+
 
 def get_partition_id(fl_ctx: FLContext):
     """Get the partition id for the current client based on the sorted list of all client names."""
@@ -51,7 +56,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
     """Validate that a Flower executable exists and provide helpful error message if not.
 
     Args:
-        executable_name: Name of the executable (e.g., "flower-superlink")
+        executable_name: Name of the executable (e.g., FLOWER_SUPERLINK)
         executable_path: Full path to the executable
 
     Raises:
@@ -122,10 +127,10 @@ class FlowerClientApplet(CLIApplet):
 
         # Get the full path to flower-supernode from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
-        flower_supernode_path = os.path.join(python_bin_dir, "flower-supernode")
+        flower_supernode_path = os.path.join(python_bin_dir, FLOWER_SUPERNODE)
 
         # Validate that flower-supernode is installed and executable
-        _validate_flower_executable("flower-supernode", flower_supernode_path)
+        _validate_flower_executable(FLOWER_SUPERNODE, flower_supernode_path)
 
         cmd = (
             f"{flower_supernode_path} --insecure --grpc-adapter "
@@ -250,10 +255,10 @@ class FlowerServerApplet(Applet):
 
         # Get the full path to flower-superlink from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
-        flower_superlink_path = os.path.join(python_bin_dir, "flower-superlink")
+        flower_superlink_path = os.path.join(python_bin_dir, FLOWER_SUPERLINK)
 
         # Validate that flower-superlink is installed and executable
-        _validate_flower_executable("flower-superlink", flower_superlink_path)
+        _validate_flower_executable(FLOWER_SUPERLINK, flower_superlink_path)
 
         """ Example:
         flower-superlink --insecure --fleet-api-type grpc-adapter
@@ -303,10 +308,10 @@ class FlowerServerApplet(Applet):
     def _flower_command(self, cmd_name: str, cmd_args=""):
         # Get the full path to flwr from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
-        flwr_path = os.path.join(python_bin_dir, "flwr")
+        flwr_path = os.path.join(python_bin_dir, FLOWER_CLI)
 
         # Validate that flwr is installed and executable
-        _validate_flower_executable("flwr", flwr_path)
+        _validate_flower_executable(FLOWER_CLI, flwr_path)
 
         return (
             f"{flwr_path} {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "

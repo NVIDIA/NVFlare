@@ -1,1 +1,1 @@
-# nvflare installed from source
+nvflare~=2.7rc

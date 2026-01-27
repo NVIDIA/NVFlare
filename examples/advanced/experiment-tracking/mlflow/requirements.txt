@@ -1,3 +1,4 @@
+nvflare~=2.7rc
 torch
 torchvision
 mlflow
