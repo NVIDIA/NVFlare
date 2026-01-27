@@ -36,13 +36,23 @@ class TestMemoryUtils:
                 cleanup_memory()
                 mock_gc.assert_called_once()
 
-    def test_cleanup_memory_calls_try_malloc_trim(self):
-        """Test that cleanup_memory calls try_malloc_trim."""
+    def test_cleanup_memory_calls_try_malloc_trim_for_glibc(self):
+        """Test that cleanup_memory calls try_malloc_trim for glibc allocator."""
         from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-        with patch("nvflare.fuel.utils.memory_utils.try_malloc_trim") as mock_trim:
-            cleanup_memory()
-            mock_trim.assert_called_once()
+        with patch("nvflare.fuel.utils.memory_utils.get_allocator_type", return_value="glibc"):
+            with patch("nvflare.fuel.utils.memory_utils.try_malloc_trim") as mock_trim:
+                cleanup_memory()
+                mock_trim.assert_called_once()
+
+    def test_cleanup_memory_skips_malloc_trim_for_jemalloc(self):
+        """Test that cleanup_memory skips try_malloc_trim for jemalloc allocator."""
+        from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+        with patch("nvflare.fuel.utils.memory_utils.get_allocator_type", return_value="jemalloc"):
+            with patch("nvflare.fuel.utils.memory_utils.try_malloc_trim") as mock_trim:
+                cleanup_memory()
+                mock_trim.assert_not_called()
 
     def test_cleanup_memory_torch_cuda_empty_cache_false(self):
         """Test that cleanup_memory with torch_cuda_empty_cache=False does not call torch."""
@@ -74,3 +84,40 @@ class TestMemoryUtils:
         # Check cache info
         cache_info = _get_glibc.cache_info()
         assert cache_info.hits >= 1  # Second call should be a cache hit
+
+    def test_get_allocator_type_returns_valid_string(self):
+        """Test that get_allocator_type returns a valid allocator type."""
+        from nvflare.fuel.utils.memory_utils import get_allocator_type
+
+        # Clear cache first
+        get_allocator_type.cache_clear()
+
+        result = get_allocator_type()
+        assert result in ("glibc", "jemalloc", "unknown")
+
+    def test_get_allocator_type_caching(self):
+        """Test that get_allocator_type is cached (only detects once)."""
+        from nvflare.fuel.utils.memory_utils import get_allocator_type
+
+        # Clear the cache first
+        get_allocator_type.cache_clear()
+
+        result1 = get_allocator_type()
+        result2 = get_allocator_type()
+
+        # Should return the same result
+        assert result1 == result2
+
+        # Check cache info - second call should be a cache hit
+        cache_info = get_allocator_type.cache_info()
+        assert cache_info.hits >= 1
+
+    def test_cleanup_memory_allocator_aware(self):
+        """Test that cleanup_memory adapts behavior based on allocator type."""
+        from nvflare.fuel.utils.memory_utils import cleanup_memory, get_allocator_type
+
+        # This should work regardless of allocator type
+        get_allocator_type.cache_clear()
+        cleanup_memory()
+
+        # Verify it completed without error - allocator-specific logic handled internally
