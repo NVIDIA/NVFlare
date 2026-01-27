@@ -141,7 +141,7 @@ def test_example(name, path):
                 if line.strip() and not line.startswith("#") and not line.lower().startswith("nvflare")
             ]
             if reqs:
-                subprocess.run([py, "-m", "pip", "install", "-q"] + reqs, env=env, check=False, timeout=900)
+                subprocess.run([py, "-m", "pip", "install", "-q"] + reqs, env=env, check=True, timeout=900)
 
         # Run data prep scripts
         for script in path.glob("*.py"):
