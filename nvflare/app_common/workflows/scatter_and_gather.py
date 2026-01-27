@@ -347,8 +347,6 @@ class ScatterAndGather(Controller):
         # Cleanup task result
         client_task.result = None
 
-        cleanup_memory()
-
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ) -> None:
