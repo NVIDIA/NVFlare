@@ -14,8 +14,11 @@
 
 from typing import Any, Dict, Optional
 
+import numpy as np
+
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -157,8 +160,17 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle NumPy-specific model setup."""
         if self._np_initial_model is not None:
-            from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+            # Convert numpy array to list for JSON serialization
+            # NPModelPersistor expects a list, not a numpy array
+            if isinstance(self._np_initial_model, np.ndarray):
+                initial_model_list = self._np_initial_model.tolist()
+            elif isinstance(self._np_initial_model, list):
+                initial_model_list = self._np_initial_model
+            else:
+                raise TypeError(
+                    f"initial_model must be a numpy array or list, got {type(self._np_initial_model).__name__}"
+                )
 
-            persistor = NPModelPersistor(initial_model=self._np_initial_model)
+            persistor = NPModelPersistor(initial_model=initial_model_list)
             return job.to_server(persistor, id="persistor")
         return ""

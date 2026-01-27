@@ -16,6 +16,7 @@ import importlib
 import os
 from typing import List, Optional
 
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -364,9 +365,17 @@ def _has_task_executor(job, task_name: str) -> bool:
 
                     try:
                         # Check if this executor handles the task
-                        # Tasks can be ["*"] (all tasks) or specific task names
-                        if "*" in executor_def.tasks or task_name in executor_def.tasks:
-                            return True
+                        # For TASK_VALIDATION, we need a SPECIFIC validator, not just a wildcard executor
+                        # Wildcard executors (["*"]) are typically training scripts that shouldn't
+                        # handle cross-site validation tasks
+                        if task_name == AppConstants.TASK_VALIDATION:
+                            # Only return True if explicitly configured for validation (not wildcard)
+                            if task_name in executor_def.tasks and "*" not in executor_def.tasks:
+                                return True
+                        else:
+                            # For other tasks, wildcard is fine
+                            if "*" in executor_def.tasks or task_name in executor_def.tasks:
+                                return True
                     except (TypeError, AttributeError):
                         # Handle case where tasks is not iterable or comparable
                         # This could happen if tasks has an unexpected type
