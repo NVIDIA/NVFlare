@@ -21,6 +21,8 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 from .model_controller import ModelController
@@ -33,6 +35,7 @@ class BaseFedAvg(ModelController):
         num_clients: int = 3,
         num_rounds: int = 5,
         start_round: int = 0,
+        memory_gc_rounds: int = 0,
         **kwargs,
     ):
         """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
@@ -58,14 +61,27 @@ class BaseFedAvg(ModelController):
             we will remove this argument in next release.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
+            memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+                Set to 0 to disable. Defaults to 0 (disabled).
         """
         super().__init__(*args, **kwargs)
+
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
 
         self.num_clients = num_clients
         self.num_rounds = num_rounds
         self.start_round = start_round
+        self.memory_gc_rounds = memory_gc_rounds
 
         self.current_round = None
+
+    def _maybe_cleanup_memory(self):
+        """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self.current_round is None:
+            return
+        if self.memory_gc_rounds > 0 and (self.current_round + 1) % self.memory_gc_rounds == 0:
+            self.info(f"Memory cleanup at round {self.current_round + 1}")
+            cleanup_memory()
 
     @staticmethod
     def _check_results(results: List[FLModel]):
