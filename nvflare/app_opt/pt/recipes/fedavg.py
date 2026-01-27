@@ -152,7 +152,6 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         """Override to handle PyTorch-specific model setup."""
         if self.initial_model is not None:
             from nvflare.app_opt.pt.job_config.model import PTModel
-            from nvflare.client.config import ExchangeFormat
 
             # Disable numpy conversion when using tensor format to keep PyTorch tensors
             allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
