@@ -56,11 +56,10 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         model_locator_id = job.to_server(NPModelLocator(model_dir=model_dir, model_name=model_name))
 
         # Add cross-site evaluation controller
-        # Disable submit_model task since this recipe only evaluates pre-trained server models
         job.to_server(
             CrossSiteModelEval(
                 model_locator_id=model_locator_id,
-                submit_model_task_name="",  # Disable client model submission
+                submit_model_timeout=submit_model_timeout,
                 validation_timeout=validation_timeout,
             )
         )
