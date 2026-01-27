@@ -56,6 +56,8 @@ class _FedAvgValidator(BaseModel):
     save_filename: str = "FL_global_model.pt"
     exclude_vars: Optional[str] = None
     aggregation_weights: Optional[Dict[str, float]] = None
+    # Memory management
+    server_memory_gc_rounds: int = 0
 
 
 class FedAvgRecipe(Recipe):
@@ -127,6 +129,8 @@ class FedAvgRecipe(Recipe):
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 0.
 
     Note:
         This recipe uses InTime (streaming) aggregation for memory efficiency - each client
@@ -166,6 +170,7 @@ class FedAvgRecipe(Recipe):
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -192,6 +197,7 @@ class FedAvgRecipe(Recipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
         self.name = v.name
@@ -217,6 +223,7 @@ class FedAvgRecipe(Recipe):
         self.save_filename = v.save_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
@@ -260,6 +267,7 @@ class FedAvgRecipe(Recipe):
             task_name="train",
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         job.to_server(controller)
 

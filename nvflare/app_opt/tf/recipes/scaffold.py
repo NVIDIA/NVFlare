@@ -37,6 +37,7 @@ class _ScaffoldValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    server_memory_gc_rounds: int = 0
 
 
 class ScaffoldRecipe(Recipe):
@@ -71,6 +72,8 @@ class ScaffoldRecipe(Recipe):
         params_transfer_type: How to transfer the parameters between server and client.
             FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
             Defaults to TransferType.FULL.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 0.
 
     Example:
         ```python
@@ -110,6 +113,7 @@ class ScaffoldRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
         v = _ScaffoldValidator(
@@ -123,6 +127,7 @@ class ScaffoldRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
         self.name = v.name
@@ -135,6 +140,7 @@ class ScaffoldRecipe(Recipe):
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
@@ -147,6 +153,7 @@ class ScaffoldRecipe(Recipe):
         controller = Scaffold(
             num_clients=self.min_clients,
             num_rounds=self.num_rounds,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to(controller, "server")
