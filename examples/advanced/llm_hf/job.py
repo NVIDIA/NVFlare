@@ -180,6 +180,12 @@ def main():
         key_metric="neg_eval_loss",
     )
 
+    # As we use lazy model instantiation, we need to add the custom model code to server.
+    if train_mode == "sft":
+        recipe.job.to_server("hf_sft_model.py")
+    elif train_mode == "peft":
+        recipe.job.to_server("hf_peft_model.py")
+
     # Add client params to reduce timeout failures for longer LLM runs
     for site_name in client_names:
         client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
