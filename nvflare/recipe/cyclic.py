@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, conint
 
@@ -20,8 +20,7 @@ from nvflare import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -30,8 +29,7 @@ class _CyclicValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    model: Any
-    initial_ckpt: Optional[str] = None
+    initial_model: Any
     num_rounds: int
     min_clients: conint(ge=2)
     train_script: str
@@ -41,7 +39,9 @@ class _CyclicValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     framework: FrameworkType = FrameworkType.NUMPY
-    server_memory_gc_rounds: int = 1
+    # Memory management
+    client_memory_gc_rounds: int = 0
+    torch_cuda_empty_cache: bool = False
 
 
 class CyclicRecipe(Recipe):
@@ -60,13 +60,7 @@ class CyclicRecipe(Recipe):
 
     Args:
         name: Name identifier for the federated learning job. Defaults to "cyclic".
-        model: Starting model object to begin training. Can be:
-            - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
-            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
-            - None: no initial model
-        initial_ckpt: Path to a pre-trained checkpoint file. Can be:
-            - Relative path: file will be bundled into the job's custom/ directory.
-            - Absolute path: treated as a server-side path, used as-is at runtime.
+        initial_model: Starting model object to begin training. Can be None.
         num_rounds: Number of complete training rounds to execute. Defaults to 2.
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.
@@ -78,8 +72,10 @@ class CyclicRecipe(Recipe):
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: Method for transferring model parameters.
             Defaults to TransferType.FULL.
-        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
-            Set to 0 to disable. Defaults to 1 (every round).
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client after sending model.
+            Set to 0 to disable. Defaults to 0.
+        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during client memory cleanup.
+            Only applicable to PyTorch GPU training. Defaults to False.
 
     Raises:
         ValidationError: If min_clients < 2 or other parameter validation fails.
@@ -87,7 +83,7 @@ class CyclicRecipe(Recipe):
     Example:
         >>> recipe = CyclicRecipe(
         ...     name="my_cyclic_job",
-        ...     model=my_model,
+        ...     initial_model=my_model,
         ...     num_rounds=5,
         ...     min_clients=3,
         ...     train_script="client_train.py",
@@ -100,8 +96,7 @@ class CyclicRecipe(Recipe):
         self,
         *,
         name: str = "cyclic",
-        model: Union[Any, Dict[str, Any], None] = None,
-        initial_ckpt: Optional[str] = None,
+        initial_model: Any = None,
         num_rounds: int = 2,
         min_clients: int = 2,
         train_script: str,
@@ -111,13 +106,13 @@ class CyclicRecipe(Recipe):
         framework: FrameworkType = FrameworkType.NUMPY,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _CyclicValidator(
             name=name,
-            model=model,
-            initial_ckpt=initial_ckpt,
+            initial_model=initial_model,
             num_rounds=num_rounds,
             min_clients=min_clients,
             train_script=train_script,
@@ -127,21 +122,14 @@ class CyclicRecipe(Recipe):
             framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
-            server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
         self.name = v.name
-        self.model = v.model
-        self.initial_ckpt = v.initial_ckpt
-
-        # Validate inputs using shared utilities
-        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
-
-        validate_ckpt(self.initial_ckpt)
-        if isinstance(self.model, dict):
-            self.model = recipe_model_to_job_model(self.model)
-
+        self.initial_model = v.initial_model
         self.num_rounds = v.num_rounds
+        self.initial_model = v.initial_model
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.launch_external_process = v.launch_external_process
@@ -149,37 +137,26 @@ class CyclicRecipe(Recipe):
         self.framework = v.framework
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-        self.server_memory_gc_rounds = v.server_memory_gc_rounds
-
-        # Validate that we have at least one model source
-        if self.model is None and self.initial_ckpt is None:
-            raise ValueError(
-                "Must provide either model or initial_ckpt. " "Cannot create a job without a model source."
-            )
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
 
         job = FedJob(name=name, min_clients=v.min_clients)
-
-        # Setup model persistor first - subclasses override for framework-specific handling
-        persistor_id = self._setup_model_and_persistor(job)
-
-        # Use returned persistor_id or default to "persistor"
-        if not persistor_id:
-            persistor_id = "persistor"
-
         # Define the controller workflow and send to server
         controller = CyclicController(
             num_rounds=num_rounds,
             task_assignment_timeout=10,
-            persistor_id=persistor_id,
+            persistor_id="persistor",
             shareable_generator_id="shareable_generator",
             task_name="train",
             task_check_period=0.5,
-            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         job.to(controller, "server")
 
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")
+
+        # Define the initial global model and send to server
+        job.to(self.initial_model, "server")
 
         executor = ScriptRunner(
             script=self.train_script,
@@ -188,31 +165,9 @@ class CyclicRecipe(Recipe):
             framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            torch_cuda_empty_cache=self.torch_cuda_empty_cache,
         )
         job.to_clients(executor)
 
         super().__init__(job)
-
-    def _setup_model_and_persistor(self, job) -> str:
-        """Setup framework-specific model components and persistor.
-
-        Handles PTModel/TFModel wrappers passed by framework-specific subclasses.
-
-        Returns:
-            str: The persistor_id to be used by the controller.
-        """
-        if self.model is None:
-            return ""
-
-        # Check if model is a model wrapper (PTModel, TFModel)
-        if hasattr(self.model, "add_to_fed_job"):
-            # It's a model wrapper - use its add_to_fed_job method
-            result = job.to_server(self.model, id="persistor")
-            return result["persistor_id"]
-
-        # Unknown model type
-        raise TypeError(
-            f"Unsupported model type: {type(self.model).__name__}. "
-            f"Use a framework-specific recipe (PTCyclicRecipe, TFCyclicRecipe, etc.) "
-            f"or wrap your model in PTModel/TFModel."
-        )
