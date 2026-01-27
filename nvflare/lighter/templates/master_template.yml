@@ -566,6 +566,10 @@ sub_start_sh: |
   mkdir -p $DIR/../transfer
   export PYTHONPATH=/local/custom:$PYTHONPATH
   echo "PYTHONPATH is $PYTHONPATH"
+  
+  # Memory management: limit glibc memory arenas to reduce RSS fragmentation
+  # Recommended: MALLOC_ARENA_MAX=2 for clients, MALLOC_ARENA_MAX=4 for servers
+  export MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-4}
 
   while [[ $# -gt 0 ]]
   do
