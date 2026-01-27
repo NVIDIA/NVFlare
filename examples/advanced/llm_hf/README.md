@@ -324,10 +324,10 @@ For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of GP
 
 | Quantization      | Raw Model Size | Quantized Model Size | Quantization Meta Size |
 |-------------------|----------------|----------------------|------------------------|
-| float16           | 5716.26        | 2858.13              | 0.00                   |
-| blockwise8        | 5716.26        | 1429.06              | 1.54                   |
-| float4            | 5716.26        | 714.53               | 89.33                  |
-| normalized float4 | 5716.26        | 714.53               | 89.33                  |
+| float16           | 5411.16        | 2705.58              | 0.00                   |
+| blockwise8        | 5411.16        | 1352.79              | 1.63                   |
+| float4            | 5411.16        | 676.39               | 84.57                  |
+| normalized float4 | 5411.16        | 676.39               | 84.57                  |
 
 Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
 
