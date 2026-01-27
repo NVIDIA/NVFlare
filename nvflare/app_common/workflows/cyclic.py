@@ -49,6 +49,8 @@ class Cyclic(ModelController):
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self.current_round is None:
+            return
         if self.memory_gc_rounds > 0 and (self.current_round + 1) % self.memory_gc_rounds == 0:
             cleanup_memory()
 

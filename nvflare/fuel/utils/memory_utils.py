@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ Usage:
     from nvflare.fuel.utils.memory_utils import cleanup_memory
 
     # At end of each round (client) or every N rounds (server)
-    cleanup_memory(cuda_empty_cache=True)  # True for GPU clients
+    cleanup_memory(torch_cuda_empty_cache=True)  # True for PyTorch GPU clients
 """
 
 import gc
@@ -80,7 +80,7 @@ def try_malloc_trim() -> Optional[int]:
         return None
 
 
-def cleanup_memory(cuda_empty_cache: bool = False) -> None:
+def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
     """Perform memory cleanup to reduce RSS.
 
     This function:
@@ -89,8 +89,8 @@ def cleanup_memory(cuda_empty_cache: bool = False) -> None:
     3. Optionally clears PyTorch CUDA cache
 
     Args:
-        cuda_empty_cache: If True, also call torch.cuda.empty_cache().
-            Only set to True on GPU-enabled clients.
+        torch_cuda_empty_cache: If True, also call torch.cuda.empty_cache().
+            Only applicable to PyTorch GPU clients.
 
     Note:
         Call this at the end of each FL round (client) or every N rounds (server).
@@ -103,8 +103,8 @@ def cleanup_memory(cuda_empty_cache: bool = False) -> None:
     if result is not None:
         logger.debug(f"malloc_trim returned {result}")
 
-    # Step 3: Clear CUDA cache if requested
-    if cuda_empty_cache:
+    # Step 3: Clear PyTorch CUDA cache if requested
+    if torch_cuda_empty_cache:
         try:
             import torch
 

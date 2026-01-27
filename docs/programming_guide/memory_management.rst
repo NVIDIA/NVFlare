@@ -23,6 +23,35 @@ RSS (Resident Set Size) can grow continuously due to:
 
 NVFlare provides utilities and configuration options to manage memory effectively.
 
+Platform Compatibility
+======================
+
+Not all memory management features work on all platforms. The table below summarizes compatibility:
+
++---------------------------+-------------+-------------+-------------+
+| Feature                   | Linux/glibc | Linux/musl  | macOS       |
++===========================+=============+=============+=============+
+| ``gc.collect()``          | ✓           | ✓           | ✓           |
++---------------------------+-------------+-------------+-------------+
+| ``MALLOC_ARENA_MAX``      | ✓           | ✗           | ✗           |
++---------------------------+-------------+-------------+-------------+
+| ``malloc_trim()``         | ✓           | ✗           | ✗           |
++---------------------------+-------------+-------------+-------------+
+| ``torch.cuda.empty_cache``| ✓           | ✓           | ✓           |
++---------------------------+-------------+-------------+-------------+
+
+**Notes:**
+
+- **Linux/glibc**: Standard Linux distributions (Ubuntu, RHEL, Debian, etc.)
+- **Linux/musl**: Alpine Linux and other musl-based distributions
+- **macOS**: ``malloc_trim()`` is silently skipped (safe no-op)
+
+.. warning::
+
+   For maximum memory efficiency, use Linux with glibc. Alpine Linux (musl) and
+   macOS/Windows will still benefit from ``gc.collect()`` but cannot release
+   fragmented heap memory back to the OS.
+
 Environment Variables
 =====================
 
@@ -82,46 +111,42 @@ When enabled, at the end of every N rounds:
 1. Runs Python garbage collection (``gc.collect()``)
 2. Returns free heap pages to OS (``malloc_trim()``, Linux/glibc only)
 
-Client-Side Memory Cleanup
-==========================
+Performance Impact
+------------------
 
-For client-side cleanup, call the utility function in your training script.
+Memory cleanup has minimal overhead in typical federated learning workloads:
 
-Using the Utility Function
---------------------------
++---------------------------+------------------+--------------------------------+
+| Operation                 | Typical Duration | Notes                          |
++===========================+==================+================================+
+| ``gc.collect()``          | 10-500 ms        | Depends on Python object count |
++---------------------------+------------------+--------------------------------+
+| ``malloc_trim()``         | < 1 ms           | Very fast (page table ops)     |
++---------------------------+------------------+--------------------------------+
 
-.. code-block:: python
+**Overhead analysis:**
 
-    import nvflare.client as flare
-    from nvflare.fuel.utils.memory_utils import cleanup_memory
+- **Training round duration**: Typically 30 seconds to 10+ minutes
+- **Cleanup duration**: 10-500 ms total
+- **Overhead per round**: Usually < 1%
 
-    flare.init()
+**With** ``server_memory_gc_rounds=5``:
 
-    while flare.is_running():
-        input_model = flare.receive()
+- Cleanup runs once every 5 rounds
+- Total overhead: < 0.2% of training time
 
-        # ... training code ...
-
-        flare.send(output_model)
-
-        # Memory cleanup after each round
-        cleanup_memory(cuda_empty_cache=True)
-
-**Parameters:**
-
-- ``cuda_empty_cache=True``: Also call ``torch.cuda.empty_cache()`` (for GPU clients)
-- ``cuda_empty_cache=False``: Skip CUDA cache clearing (for CPU-only clients)
+**Recommendation**: The default ``server_memory_gc_rounds=5`` provides good memory
+management with negligible performance impact. Only disable (``=0``) if you've
+measured and confirmed RSS is stable without cleanup.
 
 Recommended Settings
 ====================
 
-+--------+-----------------------------+----------------------+--------------------+
-| Role   | ``server_memory_gc_rounds`` | ``cuda_empty_cache`` | ``MALLOC_ARENA_MAX`` |
-+========+=============================+======================+====================+
-| Server | 5                           | N/A                  | 4                  |
-+--------+-----------------------------+----------------------+--------------------+
-| Client | N/A (future)                | true                 | 2                  |
-+--------+-----------------------------+----------------------+--------------------+
++--------+-----------------------------+--------------------+
+| Role   | ``server_memory_gc_rounds`` | ``MALLOC_ARENA_MAX`` |
++========+=============================+====================+
+| Server | 5                           | 4                  |
++--------+-----------------------------+--------------------+
 
 API Reference
 =============
@@ -133,7 +158,9 @@ cleanup_memory
 
     from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-    cleanup_memory(cuda_empty_cache: bool = False) -> None
+    cleanup_memory(torch_cuda_empty_cache=True)
+
+**Signature:** ``cleanup_memory(torch_cuda_empty_cache: bool = False) -> None``
 
 Performs memory cleanup:
 
@@ -148,7 +175,9 @@ try_malloc_trim
 
     from nvflare.fuel.utils.memory_utils import try_malloc_trim
 
-    result = try_malloc_trim() -> Optional[int]
+    result = try_malloc_trim()
+
+**Signature:** ``try_malloc_trim() -> Optional[int]``
 
 Low-level function to return free heap pages to OS.
 
@@ -167,13 +196,6 @@ High RSS on Server
 1. Check ``MALLOC_ARENA_MAX`` is set
 2. Enable ``server_memory_gc_rounds=5``
 3. Monitor with ``top`` or ``htop``
-
-High RSS on Client
-------------------
-
-1. Check ``MALLOC_ARENA_MAX=2`` is set
-2. Add ``cleanup_memory(cuda_empty_cache=True)`` after ``flare.send()``
-3. Ensure GPU memory is released before next round
 
 OOM Errors
 ----------
