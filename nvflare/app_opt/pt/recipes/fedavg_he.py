@@ -49,6 +49,8 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     encrypt_layers: Optional[Union[List[str], str]] = None
+    client_memory_gc_rounds: int = 0
+    torch_cuda_empty_cache: bool = False
 
 
 class FedAvgRecipeWithHE(Recipe):
@@ -88,6 +90,8 @@ class FedAvgRecipeWithHE(Recipe):
                         if list of variable/layer names, only specified variables are encrypted;
                         if string containing regular expression (e.g. "conv"), only matched variables are
                         being encrypted.
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         ```python
@@ -132,6 +136,8 @@ class FedAvgRecipeWithHE(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         encrypt_layers: Optional[Union[List[str], str]] = None,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
@@ -148,6 +154,8 @@ class FedAvgRecipeWithHE(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             encrypt_layers=encrypt_layers,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
         self.name = v.name
@@ -163,6 +171,8 @@ class FedAvgRecipeWithHE(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
 
         # Create a persistor with HE serialization filter if initial model is provided
         model_persistor = None
@@ -217,6 +227,8 @@ class FedAvgRecipeWithHE(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            torch_cuda_empty_cache=self.torch_cuda_empty_cache,
         )
         job.to_clients(executor)
 

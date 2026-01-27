@@ -35,6 +35,8 @@ class CyclicRecipe(BaseCyclicRecipe):
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         if initial_model is None or isinstance(initial_model, PTModel):
             model_to_pass = initial_model
@@ -52,4 +54,6 @@ class CyclicRecipe(BaseCyclicRecipe):
             framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )

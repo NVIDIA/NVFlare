@@ -64,6 +64,8 @@ class FedEvalRecipe(Recipe):
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
             If not provided, the same configuration will be used for all clients. Defaults to None.
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         Basic usage:
@@ -95,6 +97,8 @@ class FedEvalRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
         per_site_config: Optional[dict[str, dict]] = None,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         self.name = name
         self.initial_model = initial_model
@@ -106,6 +110,8 @@ class FedEvalRecipe(Recipe):
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         self.per_site_config = per_site_config
+        self.client_memory_gc_rounds = client_memory_gc_rounds
+        self.torch_cuda_empty_cache = torch_cuda_empty_cache
         self.source_checkpoint = initial_model.checkpoint
         if self.source_checkpoint is None:
             raise ValueError("initial_model must have a checkpoint attribute")
@@ -152,6 +158,8 @@ class FedEvalRecipe(Recipe):
                     command=cmd,
                     framework=FrameworkType.PYTORCH,
                     server_expected_format=expected_format,
+                    memory_gc_rounds=self.client_memory_gc_rounds,
+                    torch_cuda_empty_cache=self.torch_cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
@@ -162,6 +170,8 @@ class FedEvalRecipe(Recipe):
                 command=self.command,
                 framework=FrameworkType.PYTORCH,
                 server_expected_format=self.server_expected_format,
+                memory_gc_rounds=self.client_memory_gc_rounds,
+                torch_cuda_empty_cache=self.torch_cuda_empty_cache,
             )
             job.to_clients(executor)
 

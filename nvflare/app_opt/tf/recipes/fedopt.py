@@ -39,6 +39,8 @@ class _FedOptValidator(BaseModel):
     params_transfer_type: TransferType = TransferType.FULL
     optimizer_args: dict = None
     lr_scheduler_args: dict = None
+    client_memory_gc_rounds: int = 0
+    torch_cuda_empty_cache: bool = False
 
 
 class FedOptRecipe(Recipe):
@@ -77,6 +79,8 @@ class FedOptRecipe(Recipe):
             Defaults to SGD with learning_rate=1.0 and momentum=0.6.
         lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys
             'path' and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         ```python
@@ -118,6 +122,8 @@ class FedOptRecipe(Recipe):
         params_transfer_type: TransferType = TransferType.FULL,
         optimizer_args: dict = None,
         lr_scheduler_args: dict = None,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -133,6 +139,8 @@ class FedOptRecipe(Recipe):
             params_transfer_type=params_transfer_type,
             optimizer_args=optimizer_args,
             lr_scheduler_args=lr_scheduler_args,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
         self.name = v.name
@@ -147,6 +155,8 @@ class FedOptRecipe(Recipe):
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.optimizer_args = v.optimizer_args
         self.lr_scheduler_args = v.lr_scheduler_args
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
@@ -175,6 +185,8 @@ class FedOptRecipe(Recipe):
             framework=FrameworkType.TENSORFLOW,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            torch_cuda_empty_cache=self.torch_cuda_empty_cache,
         )
         job.to_clients(executor)
 
