@@ -1,4 +1,4 @@
-nvflare[PT]~=2.7.0rc
+nvflare[PT]~=2.7.2rc
 torch
 tensorboard
 scikit-learn
