@@ -51,7 +51,7 @@ RESULT_EOS = 2
 class RxTask:
     """Receiving task for ByteStream"""
 
-    rx_task_map = {}
+    rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
     def __init__(self, sid: int, origin: str, cell: CoreCell):
@@ -94,14 +94,14 @@ class RxTask:
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
         with cls.map_lock:
-            task = cls.rx_task_map.get(sid, None)
+            task = cls.rx_task_map.get((origin, sid), None)
             if not task:
                 if error:
                     log.warning(f"Received error for non-existing stream: SID {sid} from {origin}")
                     return None
 
                 task = RxTask(sid, origin, cell)
-                cls.rx_task_map[sid] = task
+                cls.rx_task_map[(origin, sid)] = task
             else:
                 if error:
                     task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
@@ -195,7 +195,7 @@ class RxTask:
     def stop(self, error: StreamError = None, notify=True):
 
         with RxTask.map_lock:
-            RxTask.rx_task_map.pop(self.sid, None)
+            RxTask.rx_task_map.pop((self.origin, self.sid), None)
 
         if not error:
             return
