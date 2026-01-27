@@ -15,19 +15,28 @@
 """Memory management utilities for federated learning.
 
 This module provides memory cleanup utilities to help manage RSS (Resident Set Size)
-in long-running FL jobs using Python + PyTorch + glibc.
+in long-running FL jobs using Python + PyTorch + glibc/jemalloc.
+
+Allocator Support:
+- glibc: Uses malloc_trim() to return freed pages to OS
+- jemalloc: Relies on auto-decay (MALLOC_CONF), no manual action needed
 
 Best Practices:
 - Client: Set MALLOC_ARENA_MAX=2, cleanup every round
 - Server: Set MALLOC_ARENA_MAX=4, cleanup every 5 rounds
+- jemalloc: Set MALLOC_CONF="dirty_decay_ms:5000,muzzy_decay_ms:5000"
 
 Usage:
-    from nvflare.fuel.utils.memory_utils import cleanup_memory
+    from nvflare.fuel.utils.memory_utils import cleanup_memory, get_allocator_type
+
+    # Check which allocator is in use
+    allocator = get_allocator_type()  # "glibc", "jemalloc", or "unknown"
 
     # At end of each round (client) or every N rounds (server)
     cleanup_memory(torch_cuda_empty_cache=True)  # True for PyTorch GPU clients
 """
 
+import ctypes
 import gc
 import logging
 from ctypes import CDLL, c_size_t
@@ -56,6 +65,37 @@ def _get_glibc() -> Optional[CDLL]:
         return None
 
 
+@lru_cache(maxsize=1)
+def get_allocator_type() -> str:
+    """Detect which memory allocator is in use at runtime.
+
+    Returns:
+        "jemalloc": jemalloc is loaded (recommended for PyTorch)
+        "glibc": Standard glibc malloc is in use
+        "unknown": Could not detect allocator type
+
+    Note:
+        - jemalloc is typically loaded via LD_PRELOAD
+        - Detection is cached after first call
+        - Safe to call frequently (no overhead after first call)
+    """
+    try:
+        # Load the C library that the process is using
+        libc = ctypes.CDLL(None)
+
+        # jemalloc has mallctl function
+        if hasattr(libc, "mallctl"):
+            return "jemalloc"
+
+        # glibc has malloc_trim
+        if hasattr(libc, "malloc_trim"):
+            return "glibc"
+    except Exception:
+        pass
+
+    return "unknown"
+
+
 def try_malloc_trim() -> Optional[int]:
     """Attempt to release free memory back to the OS (glibc only).
 
@@ -81,11 +121,12 @@ def try_malloc_trim() -> Optional[int]:
 
 
 def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
-    """Perform memory cleanup to reduce RSS.
+    """Perform allocator-aware memory cleanup to reduce RSS.
 
     This function:
     1. Runs Python garbage collection (gc.collect)
-    2. Releases free heap pages to OS (malloc_trim, Linux/glibc only)
+    2. For glibc: Releases free heap pages to OS (malloc_trim)
+       For jemalloc: Relies on auto-decay (no manual action needed)
     3. Optionally clears PyTorch CUDA cache
 
     Args:
@@ -94,14 +135,24 @@ def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
 
     Note:
         Call this at the end of each FL round (client) or every N rounds (server).
+        The function automatically detects the allocator type and applies
+        the appropriate cleanup strategy.
     """
-    # Step 1: Python garbage collection
+    # Step 1: Python garbage collection (always)
     gc.collect()
 
-    # Step 2: Return free heap pages to OS (glibc only)
-    result = try_malloc_trim()
-    if result is not None:
-        logger.debug(f"malloc_trim returned {result}")
+    # Step 2: Allocator-specific cleanup
+    allocator = get_allocator_type()
+    if allocator == "glibc":
+        # glibc: manually return freed pages to OS
+        result = try_malloc_trim()
+        if result is not None:
+            logger.debug(f"malloc_trim returned {result}")
+    elif allocator == "jemalloc":
+        # jemalloc: auto-decay handles memory return, no manual action needed
+        # Memory is returned based on MALLOC_CONF settings (dirty_decay_ms, muzzy_decay_ms)
+        logger.debug("jemalloc detected, relying on auto-decay for memory management")
+    # unknown: gc.collect() is the only safe action
 
     # Step 3: Clear PyTorch CUDA cache if requested
     if torch_cuda_empty_cache:

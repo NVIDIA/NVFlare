@@ -63,6 +63,11 @@ class InProcessClientAPI(APISpec):
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
 
+        # Memory management settings
+        self._memory_gc_rounds = 0  # 0 = disabled
+        self._torch_cuda_empty_cache = False
+        self._round_count = 0
+
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
 
@@ -97,6 +102,30 @@ class InProcessClientAPI(APISpec):
 
     def set_meta(self, meta: dict):
         self.meta = meta
+
+    def configure_memory_management(self, gc_rounds: int = 0, torch_cuda_empty_cache: bool = False):
+        """Configure memory management settings.
+
+        Args:
+            gc_rounds: Cleanup every N rounds. 0 = disabled.
+            torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() on cleanup.
+        """
+        self._memory_gc_rounds = gc_rounds
+        self._torch_cuda_empty_cache = torch_cuda_empty_cache
+        if gc_rounds > 0:
+            self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
+
+    def _maybe_cleanup_memory(self):
+        """Perform memory cleanup if configured (every N rounds)."""
+        if self._memory_gc_rounds <= 0:
+            return
+
+        self._round_count += 1
+        if self._round_count % self._memory_gc_rounds == 0:
+            from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+            cleanup_memory(torch_cuda_empty_cache=self._torch_cuda_empty_cache)
+            self.logger.debug(f"Memory cleanup performed at round {self._round_count}")
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
@@ -138,6 +167,9 @@ class InProcessClientAPI(APISpec):
         if clear_cache:
             self.fl_model = None
             self.receive_called = False
+
+        # Perform memory cleanup if configured
+        self._maybe_cleanup_memory()
 
     def system_info(self) -> Dict:
         return self.sys_info
