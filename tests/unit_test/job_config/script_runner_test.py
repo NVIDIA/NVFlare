@@ -215,3 +215,91 @@ class TestScriptRunner:
         assert runner._launch_once is False
         assert runner._shutdown_timeout == 100.0
         assert runner._launcher is custom_launcher
+
+
+class TestScriptRunnerMemoryManagement:
+    """Test cases for ScriptRunner memory management parameters."""
+
+    @pytest.fixture
+    def base_script_runner_params(self):
+        """Base parameters for creating ScriptRunner instances."""
+        return {
+            "script": "train.py",
+            "script_args": "--epochs 10",
+            "framework": FrameworkType.PYTORCH,
+        }
+
+    def test_default_memory_parameters(self, base_script_runner_params):
+        """Test that memory management parameters default to disabled."""
+        runner = ScriptRunner(**base_script_runner_params)
+
+        assert runner._memory_gc_rounds == 0
+        assert runner._torch_cuda_empty_cache is False
+
+    @pytest.mark.parametrize(
+        "memory_gc_rounds,torch_cuda_empty_cache",
+        [
+            (0, False),  # Disabled
+            (1, True),   # Every round with cuda cache
+            (5, False),  # Every 5 rounds without cuda cache
+            (10, True),  # Every 10 rounds with cuda cache
+        ],
+    )
+    def test_memory_parameter_configurations(
+        self, base_script_runner_params, memory_gc_rounds, torch_cuda_empty_cache
+    ):
+        """Test various memory management configurations."""
+        runner = ScriptRunner(
+            memory_gc_rounds=memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            **base_script_runner_params,
+        )
+
+        assert runner._memory_gc_rounds == memory_gc_rounds
+        assert runner._torch_cuda_empty_cache == torch_cuda_empty_cache
+
+    def test_memory_parameters_with_external_process(self, base_script_runner_params):
+        """Test memory parameters with external process mode."""
+        runner = ScriptRunner(
+            launch_external_process=True,
+            memory_gc_rounds=3,
+            torch_cuda_empty_cache=True,
+            **base_script_runner_params,
+        )
+
+        assert runner._memory_gc_rounds == 3
+        assert runner._torch_cuda_empty_cache is True
+        assert runner._launch_external_process is True
+
+    def test_memory_parameters_with_in_process(self, base_script_runner_params):
+        """Test memory parameters with in-process mode."""
+        runner = ScriptRunner(
+            launch_external_process=False,
+            memory_gc_rounds=2,
+            torch_cuda_empty_cache=True,
+            **base_script_runner_params,
+        )
+
+        assert runner._memory_gc_rounds == 2
+        assert runner._torch_cuda_empty_cache is True
+        assert runner._launch_external_process is False
+
+    @pytest.mark.parametrize(
+        "framework",
+        [
+            FrameworkType.PYTORCH,
+            FrameworkType.NUMPY,
+        ],
+    )
+    def test_memory_parameters_with_different_frameworks(self, framework):
+        """Test that memory parameters work with different frameworks."""
+        runner = ScriptRunner(
+            script="train.py",
+            memory_gc_rounds=1,
+            torch_cuda_empty_cache=True,
+            framework=framework,
+        )
+
+        assert runner._memory_gc_rounds == 1
+        assert runner._torch_cuda_empty_cache is True
+        assert runner._framework == framework

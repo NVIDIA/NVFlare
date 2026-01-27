@@ -92,4 +92,76 @@ class TestInProcessClientAPI(unittest.TestCase):
             TOPIC_STOP,
         ]
 
+    def test_memory_management_defaults(self):
+        """Test that memory management is disabled by default."""
+        client_api = InProcessClientAPI(self.task_metadata)
+        assert client_api._memory_gc_rounds == 0
+        assert client_api._torch_cuda_empty_cache is False
+        assert client_api._round_count == 0
+
+    def test_configure_memory_management(self):
+        """Test configure_memory_management method."""
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        
+        client_api.configure_memory_management(gc_rounds=5, torch_cuda_empty_cache=True)
+        
+        assert client_api._memory_gc_rounds == 5
+        assert client_api._torch_cuda_empty_cache is True
+
+    def test_maybe_cleanup_memory_disabled(self):
+        """Test that _maybe_cleanup_memory does nothing when disabled."""
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        
+        # With gc_rounds=0 (disabled), should not increment round count
+        client_api._maybe_cleanup_memory()
+        assert client_api._round_count == 0
+
+    def test_maybe_cleanup_memory_enabled(self):
+        """Test that _maybe_cleanup_memory increments round count when enabled."""
+        from unittest.mock import patch
+        
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        client_api.configure_memory_management(gc_rounds=2, torch_cuda_empty_cache=False)
+        
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            # First round - should not trigger cleanup
+            client_api._maybe_cleanup_memory()
+            assert client_api._round_count == 1
+            mock_cleanup.assert_not_called()
+            
+            # Second round - should trigger cleanup (every 2 rounds)
+            client_api._maybe_cleanup_memory()
+            assert client_api._round_count == 2
+            mock_cleanup.assert_called_once_with(torch_cuda_empty_cache=False)
+            
+            # Third round - should not trigger cleanup
+            mock_cleanup.reset_mock()
+            client_api._maybe_cleanup_memory()
+            assert client_api._round_count == 3
+            mock_cleanup.assert_not_called()
+            
+            # Fourth round - should trigger cleanup
+            client_api._maybe_cleanup_memory()
+            assert client_api._round_count == 4
+            mock_cleanup.assert_called_once()
+
+    def test_maybe_cleanup_memory_every_round(self):
+        """Test cleanup every round (gc_rounds=1)."""
+        from unittest.mock import patch
+        
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+        client_api.configure_memory_management(gc_rounds=1, torch_cuda_empty_cache=True)
+        
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            client_api._maybe_cleanup_memory()
+            mock_cleanup.assert_called_with(torch_cuda_empty_cache=True)
+            
+            mock_cleanup.reset_mock()
+            client_api._maybe_cleanup_memory()
+            mock_cleanup.assert_called_with(torch_cuda_empty_cache=True)
+
     # Add more test methods for other functionalities in the class
