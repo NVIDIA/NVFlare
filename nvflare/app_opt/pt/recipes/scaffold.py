@@ -37,6 +37,7 @@ class _ScaffoldValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    server_memory_gc_rounds: int = 0
 
 
 class ScaffoldRecipe(Recipe):
@@ -56,6 +57,8 @@ class ScaffoldRecipe(Recipe):
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client. Defaults to "client.py".
         train_args: Command line arguments to pass to the training script. Defaults to "".
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 0.
     Example:
         ```python
         recipe = ScaffoldRecipe(
@@ -82,6 +85,7 @@ class ScaffoldRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
         v = _ScaffoldValidator(
@@ -95,6 +99,7 @@ class ScaffoldRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
         self.name = v.name
@@ -107,6 +112,7 @@ class ScaffoldRecipe(Recipe):
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
@@ -120,6 +126,7 @@ class ScaffoldRecipe(Recipe):
             num_clients=self.min_clients,  # Scaffold controller requires the number of clients to be the same as the min_clients
             num_rounds=self.num_rounds,
             persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)
