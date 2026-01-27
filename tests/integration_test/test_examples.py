@@ -160,3 +160,4 @@ if __name__ == "__main__":
     print(f"Discovered {len(EXAMPLES)} examples:")
     for name, path in EXAMPLES:
         print(f"  - {name}")
+
