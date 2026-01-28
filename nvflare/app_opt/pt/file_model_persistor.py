@@ -180,6 +180,50 @@ class PTFileModelPersistor(ModelPersistor):
                     fl_ctx=fl_ctx,
                 )
                 return
+        elif isinstance(self.model, dict):
+            # Lazy instantiation from dict config with 'path' and 'args'
+            # NOTE: The 'path' can be either:
+            #   1. Fully qualified module path (e.g., "mypackage.mymodule.MyModel")
+            #   2. Relative path assuming job custom directory is in PYTHONPATH
+            #      (e.g., "hf_sft_model.CausalLMModel" resolves to "custom/hf_sft_model.py")
+            #      The job runner automatically adds the job's custom directory to PYTHONPATH
+
+            # Validate config before attempting instantiation
+            if "path" not in self.model:
+                self.system_panic(reason=f"Model config dict must contain 'path' key. Got: {self.model}", fl_ctx=fl_ctx)
+                return
+
+            try:
+                from nvflare.fuel.utils.class_utils import instantiate_class
+
+                self.log_info(
+                    fl_ctx,
+                    f"Instantiating model from config: path={self.model['path']}, args={self.model.get('args', {})}",
+                    fire_event=False,
+                )
+
+                model_instance = instantiate_class(
+                    class_path=self.model["path"], init_params=self.model.get("args", None)
+                )
+            except Exception as e:
+                self.log_exception(fl_ctx, f"Failed to instantiate model from config {self.model}")
+                self.system_panic(reason=f"Cannot instantiate model from config: {e}", fl_ctx=fl_ctx)
+                return
+
+            # Validate instantiated model type after successful instantiation
+            if not isinstance(model_instance, torch.nn.Module):
+                self.system_panic(
+                    reason=f"Instantiated model must be torch.nn.Module but got {type(model_instance)}. Config: {self.model}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+
+            self.model = model_instance
+            self.log_info(
+                fl_ctx,
+                f"Successfully instantiated model: {type(self.model).__name__}",
+                fire_event=False,
+            )
         elif self.model and not isinstance(self.model, torch.nn.Module):
             self.system_panic(
                 reason="expect model to be torch.nn.Module but got {}".format(type(self.model)), fl_ctx=fl_ctx

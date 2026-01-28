@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Union
 
 import torch.nn as nn
 
@@ -26,17 +26,22 @@ from nvflare.job_config.api import validate_object_for_job
 class PTModel:
     def __init__(
         self,
-        model,
+        model: Union[nn.Module, dict],
         persistor: Optional[ModelPersistor] = None,
         locator: Optional[ModelLocator] = None,
         allow_numpy_conversion: bool = True,
     ):
         """PyTorch model wrapper.
 
-        If model is an nn.Module, add a PTFileModelPersistor with the model and a TFModelPersistor.
+        If model is an nn.Module, add a PTFileModelPersistor.
+        If model is a dict with 'path' and 'args', it will be lazily instantiated on the server.
 
         Args:
-            model (any): model
+            model (Union[nn.Module, dict]): model object or configuration dict for lazy instantiation.
+                If dict, must contain 'path' key with class path and optional 'args' dict.
+                The 'path' can be:
+                - Fully qualified: "mypackage.mymodule.MyModel"
+                - Relative to job custom directory, e.g., "model.SimpleNetwork"
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
             allow_numpy_conversion (bool): If True, enables conversion between PyTorch tensors and NumPy arrays.
@@ -61,18 +66,28 @@ class PTModel:
         Returns:
             dictionary of ids of component added
         """
-        if isinstance(self.model, nn.Module):  # if model, create a PT persistor
-            persistor = (
-                self.persistor
-                if self.persistor
-                else PTFileModelPersistor(model=self.model, allow_numpy_conversion=self.allow_numpy_conversion)
-            )
-            persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
-
-            locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
-            locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
-            return {"persistor_id": persistor_id, "locator_id": locator_id}
-        else:
+        # Validate model type and config
+        if isinstance(self.model, dict):
+            # Validate config has required 'path' key for lazy instantiation
+            if "path" not in self.model:
+                raise ValueError(f"Model config dict must contain 'path' key. Got: {self.model}")
+        elif not isinstance(self.model, nn.Module):
             raise ValueError(
-                f"Unable to add {self.model} to job with PTFileModelPersistor. Expected nn.Module but got {type(self.model)}."
+                f"Unable to add model to job. Expected nn.Module or dict config but got {type(self.model)}. "
+                f"If using dict config, it must contain 'path' key with optional 'args' dict."
             )
+
+        # Create persistor and locator (same logic for both nn.Module and dict config)
+        # For dict config: persistor will lazily instantiate the model during _initialize() at runtime on server
+        # For nn.Module: persistor uses the model directly
+        persistor = (
+            self.persistor
+            if self.persistor
+            else PTFileModelPersistor(model=self.model, allow_numpy_conversion=self.allow_numpy_conversion)
+        )
+        persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+
+        locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)
+        locator_id = job.add_component(comp_id="locator", obj=locator, ctx=ctx)
+
+        return {"persistor_id": persistor_id, "locator_id": locator_id}
