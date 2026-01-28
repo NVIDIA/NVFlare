@@ -49,7 +49,7 @@ def define_parser():
         default="/tmp/nvflare/jobs/llm_hf/jobdir",
         help="Directory for job export",
     )
-    parser.add_argument("--model_name_or_path", type=str, default="meta-llama/llama-3.2-1b", help="Model name or path")
+    parser.add_argument("--model_name_or_path", type=str, default="EleutherAI/gpt-neo-1.3B", help="Model name or path")
     parser.add_argument("--data_path", type=str, default="", help="Root directory for training and validation data")
     parser.add_argument("--train_mode", type=str, default="SFT", help="Training mode, SFT or PEFT")
     parser.add_argument("--quantize_mode", type=str, default=None, help="Quantization mode, default None")

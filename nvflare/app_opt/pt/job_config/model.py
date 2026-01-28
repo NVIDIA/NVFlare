@@ -29,6 +29,7 @@ class PTModel:
         model: Union[nn.Module, dict],
         persistor: Optional[ModelPersistor] = None,
         locator: Optional[ModelLocator] = None,
+        allow_numpy_conversion: bool = True,
     ):
         """PyTorch model wrapper.
 
@@ -43,6 +44,8 @@ class PTModel:
                 - Relative to job custom directory, e.g., "model.SimpleNetwork"
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
+            allow_numpy_conversion (bool): If True, enables conversion between PyTorch tensors and NumPy arrays.
+                Set to False when using tensor format for message exchange. Defaults to True.
         """
         self.model = model
         if persistor:
@@ -51,6 +54,7 @@ class PTModel:
         if locator:
             validate_object_for_job("locator", locator, ModelLocator)
         self.locator = locator
+        self.allow_numpy_conversion = allow_numpy_conversion
 
     def add_to_fed_job(self, job, ctx):
         """This method is used by Job API.
@@ -76,7 +80,11 @@ class PTModel:
         # Create persistor and locator (same logic for both nn.Module and dict config)
         # For dict config: persistor will lazily instantiate the model during _initialize() at runtime on server
         # For nn.Module: persistor uses the model directly
-        persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
+        persistor = (
+            self.persistor
+            if self.persistor
+            else PTFileModelPersistor(model=self.model, allow_numpy_conversion=self.allow_numpy_conversion)
+        )
         persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 
         locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)

@@ -205,6 +205,9 @@ class FedAvg(BaseFedAvg):
                 # No early stopping: save model every round
                 self.save_model(model)
 
+            # Memory cleanup at end of round (if configured)
+            self._maybe_cleanup_memory()
+
         self.info(center_message("Finished FedAvg."))
 
     def _aggregate_one_result(self, result: FLModel) -> None:
