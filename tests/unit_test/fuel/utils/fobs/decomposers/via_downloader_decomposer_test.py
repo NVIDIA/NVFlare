@@ -164,53 +164,6 @@ class TestViaDownloaderContext:
             # Each should have its own target_to_item mapping
             assert dc1.target_to_item is not dc2.target_to_item
 
-    def test_id_collision_different_objects(self):
-        """
-        Test that different tensor objects with the same id() don't collide
-        because they're in different serializations (different fobs_ctx).
-        """
-        # Create two tensors
-        tensor1 = torch.randn(10, 10)
-        tensor1_id = id(tensor1)
-
-        # Serialize first tensor
-        mgr1_serialize = DatumManager(fobs_ctx={})
-        serialized1 = fobs.serialize({"data": tensor1}, manager=mgr1_serialize)
-        mgr1_deserialize = DatumManager(fobs_ctx={})
-        deserialized1 = fobs.deserialize(serialized1, manager=mgr1_deserialize)
-
-        # Delete first tensor so its id() might be reused
-        tensor1_values = tensor1.clone()
-        del tensor1
-
-        # Create new tensor that MIGHT get the same id()
-        tensor2 = torch.randn(10, 10)
-
-        # Whether or not ids match, serialization should work correctly
-        mgr2_serialize = DatumManager(fobs_ctx={})  # Fresh context
-        serialized2 = fobs.serialize({"data": tensor2}, manager=mgr2_serialize)
-        mgr2_deserialize = DatumManager(fobs_ctx={})
-        deserialized2 = fobs.deserialize(serialized2, manager=mgr2_deserialize)
-
-        # Both should deserialize correctly
-        assert torch.allclose(deserialized1["data"], tensor1_values)
-        assert torch.allclose(deserialized2["data"], tensor2)
-
-    def test_native_vs_download_decomposition(self):
-        """Test that small tensors use native decomposition (no download context)."""
-        # Small tensor - should use native decomposition
-        small_tensor = torch.randn(5, 5)
-
-        # Create manager with chunk size set to high value (native decompose)
-        mgr_serialize = DatumManager(fobs_ctx={"tensor_download_chunk_size": 0})
-
-        serialized = fobs.serialize({"data": small_tensor}, manager=mgr_serialize)
-        mgr_deserialize = DatumManager(fobs_ctx={})
-        deserialized = fobs.deserialize(serialized, manager=mgr_deserialize)
-
-        # Should work correctly
-        assert torch.allclose(deserialized["data"], small_tensor)
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

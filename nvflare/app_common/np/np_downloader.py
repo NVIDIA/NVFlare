@@ -51,8 +51,6 @@ class ArrayDownloadable(CacheableObject):
     In-place operations (+=, [:]=, np.add(..., out=arr)) will corrupt slow clients' models!
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    See TENSOR_DOWNLOAD_BEST_PRACTICES.md for details.
-
     """
 
     def __init__(self, arrays: dict[str, np.ndarray], max_chunk_size: int):

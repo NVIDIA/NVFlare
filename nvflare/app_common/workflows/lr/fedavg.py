@@ -202,8 +202,8 @@ class FedAvgLR(BaseFedAvg):
 
         model.metrics = model_update.metrics
 
-        # IMPORTANT: Create new tensor instead of in-place modification
-        # In-place += would modify tensor while slow clients may still be downloading
+        # IMPORTANT: Create new array instead of in-place modification
+        # In-place += would modify array while slow clients may still be downloading
         # (when min_responses < total_clients)
         model.params[NPConstants.NUMPY_KEY] = (
             model.params[NPConstants.NUMPY_KEY] + model_update.params["newton_raphson_updates"]
