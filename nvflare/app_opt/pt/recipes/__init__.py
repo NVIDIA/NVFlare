@@ -14,9 +14,18 @@
 
 from .cyclic import CyclicRecipe
 from .fedavg import FedAvgRecipe
-from .fedavg_he import FedAvgRecipeWithHE
 from .fedeval import FedEvalRecipe
 from .fedopt import FedOptRecipe
 from .scaffold import ScaffoldRecipe
+
+
+# Lazy import for HE recipe (requires optional tenseal dependency)
+def __getattr__(name):
+    if name == "FedAvgRecipeWithHE":
+        from .fedavg_he import FedAvgRecipeWithHE
+
+        return FedAvgRecipeWithHE
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["FedAvgRecipe", "CyclicRecipe", "FedOptRecipe", "ScaffoldRecipe", "FedAvgRecipeWithHE", "FedEvalRecipe"]

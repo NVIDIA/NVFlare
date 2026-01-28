@@ -381,6 +381,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
         else:
             self.debug("The FLModel data does not contain the current_round information.")
+        if data and data.total_rounds is not None:
+            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=True)
+        else:
+            self.debug("The FLModel data does not contain the total_rounds information.")
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
