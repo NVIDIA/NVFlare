@@ -41,7 +41,7 @@ def main():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="meta-llama/llama-3.2-1b",
+        default="EleutherAI/gpt-neo-1.3B",
     )
     parser.add_argument(
         "--data_path_train",
@@ -56,7 +56,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_centralized/llama-3.2-1b-dolly-sft-iter",
+        default="./workspace_centralized/gpt-neo-1.3b-dolly-sft-iter",
     )
     parser.add_argument(
         "--train_mode",
@@ -146,9 +146,6 @@ def main():
         disable_tqdm=True,
         max_length=1024,
         save_total_limit=2,
-        # safetensors will remove shared layers, e.g. lm_head.weight
-        # disable for local checkpointing
-        save_safetensors=False,
         seed=0,
         data_seed=0,
     )
