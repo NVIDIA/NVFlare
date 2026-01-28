@@ -56,7 +56,7 @@ class TestViaDownloaderContext:
         mgr1 = DatumManager(fobs_ctx={})
 
         # Serialize first message
-        serialized1 = fobs.serialize(obj1, manager=mgr1)
+        fobs.serialize(obj1, manager=mgr1)
 
         # Get the decompose context from first serialization
         ctx1 = mgr1.fobs_ctx
