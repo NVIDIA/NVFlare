@@ -76,6 +76,17 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         super().initialize(fl_ctx)
+
+        # Check for top-level config override for external_pre_init_timeout
+        # This allows jobs to configure timeout via add_client_config()
+        config_timeout = fl_ctx.get_prop("EXTERNAL_PRE_INIT_TIMEOUT")
+        if config_timeout is not None:
+            self.log_info(
+                fl_ctx,
+                f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {config_timeout}s",
+            )
+            self._external_pre_init_timeout = float(config_timeout)
+
         if (
             self._server_expected_format == ExchangeFormat.NUMPY
             and self._params_exchange_format == ExchangeFormat.KERAS_LAYER_WEIGHTS
