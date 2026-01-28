@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import queue
 import threading
@@ -171,20 +172,24 @@ class WandBReceiver(AnalyticsReceiver):
 
         self.log_info(self.fl_ctx, f"Creating WandB process for site {site_name}")
 
-        run_name = self.wandb_args["name"]
-        job_id_tag = self.run_id
-        wand_config = self.wandb_args.get("config", {}).copy()  # Make a copy to avoid mutation
+        # Create site-specific config with deep copy to avoid shared mutable state
+        # (wandb_args may contain nested dicts like "config" and lists like "tags")
+        site_wandb_args = copy.deepcopy(self.wandb_args)
 
-        # Create site-specific config
-        site_wandb_args = self.wandb_args.copy()
+        run_name = self.wandb_args["name"]  # Get from original (immutable string)
+        job_id_tag = self.run_id
+
+        # Modify the deep-copied config (safe - no shared state)
         site_wandb_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
         site_wandb_args["group"] = f"{run_name}-{job_id_tag}"
         site_wandb_args["mode"] = self.mode
-        # Update config in the copy
-        site_wandb_args["config"] = wand_config
-        wand_config["job_id"] = job_id_tag
-        wand_config["client"] = site_name
-        wand_config["run_name"] = run_name
+
+        # Update config section (safe - operating on deep copy)
+        if "config" not in site_wandb_args:
+            site_wandb_args["config"] = {}
+        site_wandb_args["config"]["job_id"] = job_id_tag
+        site_wandb_args["config"]["client"] = site_name
+        site_wandb_args["config"]["run_name"] = run_name
 
         # Validate site-specific config
         _check_wandb_args(site_wandb_args)

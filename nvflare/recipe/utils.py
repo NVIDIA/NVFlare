@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import importlib
 import os
 from typing import List, Optional
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
@@ -110,9 +112,8 @@ def add_experiment_tracking(
     # Add client-side tracking
     if client_side:
         # For client-side tracking, need to configure local events
-        from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-
-        client_config = tracking_config.copy()
+        # Deep copy to avoid shared mutable state (tracking_config may contain nested dicts)
+        client_config = copy.deepcopy(tracking_config)
         # Override events to track local analytics (not federated)
         if "events" not in client_config:
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
