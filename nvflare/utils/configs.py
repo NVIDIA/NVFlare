@@ -22,6 +22,35 @@ from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.fl_context import FLContext
 
 
+def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default: Any = None) -> Any:
+    """Generic function to read from any job config file.
+
+    Args:
+        fl_ctx: FLContext
+        config_file: Name of the config file (e.g., JobConstants.CLIENT_JOB_CONFIG)
+        key: The configuration key to read
+        default: Default value if key is not found or reading fails. Defaults to None.
+
+    Returns:
+        The configuration value if found, otherwise the default value.
+    """
+    try:
+        engine = fl_ctx.get_engine()
+        workspace = engine.get_workspace()
+        config_dir = workspace.get_app_config_dir(fl_ctx.get_job_id())
+        config_file_path = os.path.join(config_dir, config_file)
+
+        if os.path.exists(config_file_path):
+            with open(config_file_path, "r") as f:
+                config_data = json.load(f)
+                return config_data.get(key, default)
+    except Exception:
+        # Silently return default on any error
+        pass
+
+    return default
+
+
 def get_client_config_value(fl_ctx: FLContext, key: str, default: Any = None) -> Any:
     """Read a value from config_fed_client.json.
 
@@ -45,21 +74,7 @@ def get_client_config_value(fl_ctx: FLContext, key: str, default: Any = None) ->
         timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT, default=300.0)
         ```
     """
-    try:
-        engine = fl_ctx.get_engine()
-        workspace = engine.get_workspace()
-        config_dir = workspace.get_app_config_dir(fl_ctx.get_job_id())
-        client_config_file = os.path.join(config_dir, JobConstants.CLIENT_JOB_CONFIG)
-
-        if os.path.exists(client_config_file):
-            with open(client_config_file, "r") as f:
-                config_data = json.load(f)
-                return config_data.get(key, default)
-    except Exception:
-        # Silently return default on any error
-        pass
-
-    return default
+    return get_job_config_value(fl_ctx, JobConstants.CLIENT_JOB_CONFIG, key, default)
 
 
 def get_server_config_value(fl_ctx: FLContext, key: str, default: Any = None) -> Any:
@@ -84,18 +99,4 @@ def get_server_config_value(fl_ctx: FLContext, key: str, default: Any = None) ->
         custom_param = get_server_config_value(fl_ctx, "custom_param", default="default_value")
         ```
     """
-    try:
-        engine = fl_ctx.get_engine()
-        workspace = engine.get_workspace()
-        config_dir = workspace.get_app_config_dir(fl_ctx.get_job_id())
-        server_config_file = os.path.join(config_dir, JobConstants.SERVER_JOB_CONFIG)
-
-        if os.path.exists(server_config_file):
-            with open(server_config_file, "r") as f:
-                config_data = json.load(f)
-                return config_data.get(key, default)
-    except Exception:
-        # Silently return default on any error
-        pass
-
-    return default
+    return get_job_config_value(fl_ctx, JobConstants.SERVER_JOB_CONFIG, key, default)
