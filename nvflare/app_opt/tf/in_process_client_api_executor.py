@@ -37,6 +37,8 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         params_exchange_format=ExchangeFormat.KERAS_LAYER_WEIGHTS,
         server_expected_format=ExchangeFormat.NUMPY,
+        memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         super(TFInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -53,6 +55,8 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
             server_expected_format=server_expected_format,
+            memory_gc_rounds=memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
         if (
