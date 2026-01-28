@@ -210,8 +210,65 @@ are passed via environment variables:
 - ``NVFLARE_CLIENT_MEMORY_GC_ROUNDS``: Cleanup interval
 - ``NVFLARE_TORCH_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
 
+Performance Impact
+==================
+
+.. note::
+
+   The performance numbers below are **estimates** based on typical workloads.
+   Actual impact varies depending on model size, training complexity, hardware,
+   and workflow configuration. We recommend profiling your specific use case
+   to determine optimal settings.
+
+Memory Cleanup Overhead
+-----------------------
+
+The ``cleanup_memory()`` function has minimal overhead:
+
++--------------------------------+------------------+--------------------------------+
+| Operation                      | Typical Duration | Notes                          |
++================================+==================+================================+
+| ``gc.collect()``               | 10-500 ms        | Depends on Python object count |
++--------------------------------+------------------+--------------------------------+
+| ``malloc_trim()`` (glibc)      | < 1 ms           | Very fast (page table ops)     |
++--------------------------------+------------------+--------------------------------+
+| ``torch.cuda.empty_cache()``   | < 50 ms          | Synchronizes CUDA stream       |
++--------------------------------+------------------+--------------------------------+
+
+For GPU-based deep learning workloads where each training round takes seconds to minutes,
+the cleanup overhead is negligible compared to the actual training time.
+
+Memory Savings
+--------------
+
+Memory reduction depends on model size and training patterns:
+
+- **Small models (< 1B params)**: Modest savings, may not be necessary
+- **Medium models (1-10B params)**: Noticeable reduction, prevents gradual growth
+- **Large models (70B+ params)**: Critical for preventing OOM, enables longer training runs
+
+Allocator Configuration Impact
+------------------------------
+
+For optimal memory behavior, consider node-level allocator settings:
+
++---------------------------+-----------------------------------------------------+
+| Setting                   | Impact                                              |
++===========================+=====================================================+
+| ``MALLOC_ARENA_MAX=4``    | Limits glibc memory arenas, reduces fragmentation  |
++---------------------------+-----------------------------------------------------+
+| ``MALLOC_ARENA_MAX=2``    | More aggressive, slightly more lock contention     |
++---------------------------+-----------------------------------------------------+
+| jemalloc + ``MALLOC_CONF``| Automatic background cleanup via decay mechanism   |
++---------------------------+-----------------------------------------------------+
+
+These settings can be configured in ``start.sh`` or container environment variables.
+
 Recommended Settings
 ====================
+
+Default Settings by Role
+------------------------
 
 +--------+-----------------------------+-----------------------------+----------------------+----------------------+
 | Role   | ``server_memory_gc_rounds`` | ``client_memory_gc_rounds`` | ``MALLOC_ARENA_MAX`` | ``cuda_empty_cache`` |
@@ -220,6 +277,53 @@ Recommended Settings
 +--------+-----------------------------+-----------------------------+----------------------+----------------------+
 | Client | N/A                         | 1                           | 2                    | True (for GPU)       |
 +--------+-----------------------------+-----------------------------+----------------------+----------------------+
+
+Best Practices by Scenario
+--------------------------
+
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Scenario                      | ``server_memory_gc_rounds`` | ``client_memory_gc_rounds`` | ``cuda_empty_cache`` | Notes                            |
++===============================+=============================+=============================+======================+==================================+
+| Quick experiments             | 0 (disabled)                | 0 (disabled)                | False                | No overhead, short runs          |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Standard training             | 5                           | 5-10                        | False                | Balance cleanup and overhead     |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Long training (100+ rounds)   | 5                           | 5                           | True                 | Prevent memory growth            |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Large models (10B+ params)    | 1-3                         | 1-3                         | True                 | Aggressive cleanup               |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Memory-constrained edge       | 5                           | 1                           | True                 | Maximum memory efficiency        |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+| Swarm Learning                | N/A                         | 1-3                         | True                 | Clients also perform aggregation |
++-------------------------------+-----------------------------+-----------------------------+----------------------+----------------------------------+
+
+Configuration Guidelines
+------------------------
+
+1. **Start with defaults** (``0``, disabled) for initial development and debugging
+
+2. **Enable for production** with ``gc_rounds=5`` as a reasonable starting point
+
+3. **Monitor memory usage** during pilot runs to determine if more aggressive settings are needed
+
+4. **GPU memory**: Enable ``torch_cuda_empty_cache=True`` when:
+
+   - Running multiple jobs on the same GPU
+   - Model size is close to GPU memory limit
+   - Experiencing CUDA OOM errors
+
+5. **Symmetric configuration**: For balanced memory management, consider matching server and client settings:
+
+   .. code-block:: python
+
+       FedAvg(
+           num_rounds=100,
+           server_memory_gc_rounds=5,   # Server-side
+           client_memory_gc_rounds=5,   # Client-side
+           torch_cuda_empty_cache=True,
+       )
+
+6. **Swarm Learning**: Use more aggressive client settings since clients perform both training AND aggregation
 
 Using jemalloc
 ==============
