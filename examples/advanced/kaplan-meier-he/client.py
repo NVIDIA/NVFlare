@@ -17,8 +17,6 @@ import json
 import os
 
 import matplotlib
-
-matplotlib.use("Agg")  # Use non-GUI backend to avoid macOS thread issues
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -28,6 +26,8 @@ from lifelines.utils import survival_table_from_events
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+
+matplotlib.use("Agg")  # Use non-GUI backend to avoid potential thread issues
 
 
 # Client code
