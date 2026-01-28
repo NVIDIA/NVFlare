@@ -83,16 +83,17 @@ def _register_tensor_decomposer():
 
 class ExProcessClientAPI(APISpec):
     def __init__(self, config_file: str):
+        super().__init__()  # Initialize memory management from base class
+
         self.model_registry = None
         self.logger = get_obj_logger(self)
         self.receive_called = False
         self.config_file = config_file
         self.flare_agent = None
 
-        # Memory management settings (read from environment variables)
+        # Memory management settings (read from environment variables, overrides base defaults)
         self._memory_gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
         self._torch_cuda_empty_cache = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
-        self._round_count = 0
 
         if self._memory_gc_rounds > 0:
             self.logger.info(f"Memory management enabled: cleanup every {self._memory_gc_rounds} round(s)")
@@ -171,18 +172,6 @@ class ExProcessClientAPI(APISpec):
 
         # Perform memory cleanup if configured
         self._maybe_cleanup_memory()
-
-    def _maybe_cleanup_memory(self):
-        """Perform memory cleanup if configured (every N rounds)."""
-        if self._memory_gc_rounds <= 0:
-            return
-
-        self._round_count += 1
-        if self._round_count % self._memory_gc_rounds == 0:
-            from nvflare.fuel.utils.memory_utils import cleanup_memory
-
-            cleanup_memory(torch_cuda_empty_cache=self._torch_cuda_empty_cache)
-            self.logger.debug(f"Memory cleanup performed at round {self._round_count}")
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()
