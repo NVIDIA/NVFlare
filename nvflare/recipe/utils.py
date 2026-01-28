@@ -209,7 +209,6 @@ def add_cross_site_evaluation(
         - **TensorFlow recipes**: Similar to PyTorch, uses the Client API pattern. The client script
           should handle validation tasks via `flare.is_evaluate()` check.
     """
-    from nvflare.app_common.app_constant import AppConstants
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.job_config.script_runner import FrameworkType
@@ -299,10 +298,11 @@ def add_cross_site_evaluation(
         from nvflare.app_common.np.np_validator import NPValidator
 
         # Check if validators are already configured for TASK_VALIDATION
-        # This is more robust than string matching on recipe class names
-        has_validator = _has_task_executor(recipe.job, AppConstants.TASK_VALIDATION)
+        # For NumPy recipes, we need an EXPLICIT validator, not just a wildcard executor
+        # because NumPy training scripts typically don't handle validation tasks
+        has_explicit_validator = _has_explicit_task_executor(recipe.job, AppConstants.TASK_VALIDATION)
 
-        if not has_validator:
+        if not has_explicit_validator:
             # For training recipes (e.g., NumpyFedAvgRecipe), add validator for CSE
             validator = NPValidator()
             recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
@@ -315,6 +315,42 @@ def add_cross_site_evaluation(
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
+
+
+def _has_explicit_task_executor(job, task_name: str) -> bool:
+    """Check if an executor is EXPLICITLY configured for the specified task (excluding wildcards).
+
+    This is used for NumPy recipes where wildcard executors don't actually handle validation.
+
+    Args:
+        job: FedJob instance to check
+        task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
+
+    Returns:
+        True if an executor explicitly lists this task (not via wildcard), False otherwise
+    """
+    # Access _deploy_map (private attribute)
+    if not hasattr(job, "_deploy_map"):
+        return False
+
+    for target, app in job._deploy_map.items():
+        if target == "server":
+            continue
+
+        if hasattr(app, "app_config"):
+            app_config = app.app_config
+            if hasattr(app_config, "executors"):
+                for executor_def in app_config.executors:
+                    if not hasattr(executor_def, "tasks"):
+                        continue
+
+                    try:
+                        # Check if task is EXPLICITLY listed (not just wildcard)
+                        if task_name in executor_def.tasks:
+                            return True
+                    except (TypeError, AttributeError):
+                        continue
+    return False
 
 
 def _has_task_executor(job, task_name: str) -> bool:
@@ -365,19 +401,9 @@ def _has_task_executor(job, task_name: str) -> bool:
 
                     try:
                         # Check if this executor handles the task
-                        # For TASK_VALIDATION, we need a SPECIFIC validator, not just a wildcard executor
-                        # Wildcard executors (["*"]) are typically training scripts that shouldn't
-                        # handle cross-site validation tasks
-                        if task_name == AppConstants.TASK_VALIDATION:
-                            # Return True only if validation is explicitly in the task list
-                            # Configurations like ["validate"], ["validate", "*"], or ["validate", "train"]
-                            # all explicitly handle validation
-                            if task_name in executor_def.tasks:
-                                return True
-                        else:
-                            # For other tasks, wildcard is fine
-                            if "*" in executor_def.tasks or task_name in executor_def.tasks:
-                                return True
+                        # Wildcard executors (["*"]) can handle any task
+                        if "*" in executor_def.tasks or task_name in executor_def.tasks:
+                            return True
                     except (TypeError, AttributeError):
                         # Handle case where tasks is not iterable or comparable
                         # This could happen if tasks has an unexpected type
