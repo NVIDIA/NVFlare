@@ -201,7 +201,13 @@ class FedAvgLR(BaseFedAvg):
             model.meta.update(model_update.meta)
 
         model.metrics = model_update.metrics
-        model.params[NPConstants.NUMPY_KEY] += model_update.params["newton_raphson_updates"]
+
+        # IMPORTANT: Create new tensor instead of in-place modification
+        # In-place += would modify tensor while slow clients may still be downloading
+        # (when min_responses < total_clients)
+        model.params[NPConstants.NUMPY_KEY] = (
+            model.params[NPConstants.NUMPY_KEY] + model_update.params["newton_raphson_updates"]
+        )
 
         return model
 

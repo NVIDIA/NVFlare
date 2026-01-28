@@ -15,24 +15,30 @@
 """
 Tests to validate the safety of reference-based numpy array downloading.
 
-These tests verify that the ArrayDownloadable design is safe under normal NVFlare usage patterns.
+These tests verify that the ArrayDownloadable design is safe under all NVFlare usage patterns.
 
 Key findings:
 1. Arrays are stored by reference (memory efficient - no duplication)
-2. Concurrent reads from the same reference work correctly
-3. Dict replacement (assigning new dict) is safe - downloader keeps old reference
-4. Race condition CAN occur with concurrent in-place modification during serialization
-5. NVFlare usage patterns prevent this race condition:
-   - Client: flare.send() blocks, preventing concurrent user code modifications
-   - Server: broadcast_and_wait() blocks, preventing modifications during broadcast
-   - Updates: FedAvg replaces entire model.params dict (new reference), not in-place
+2. Dict is snapshotted at creation time (shallow copy) - CRITICAL FIX
+3. Concurrent reads from the same reference work correctly
+4. Slow clients get correct (stale) model even with min_responses < total_clients
+5. Dict entry updates are safe due to snapshot (server can update while slow clients download)
 
-The test_modification_during_produce_item demonstrates the race condition that would occur
-with unsafe concurrent in-place modification during np.savez(). The test shows timing-dependent
-data corruption (e.g., capturing 17% vs 84% vs 100% of data depending on when modification hits),
-validating why our blocking patterns are essential.
+Critical fix (dict snapshot):
+- When ArrayDownloadable is created, it makes a shallow copy of the arrays dict
+- This ensures slow clients get the model from their round, not a later round
+- Handles min_responses < total_clients scenario safely (common in production)
+- Arrays themselves are still referenced (not copied) for memory efficiency
 
-Conclusion: The reference-based design is SAFE with current NVFlare workflows.
+Remaining concern:
+- In-place array modification during serialization is still unsafe
+- However, NVFlare workflows don't do this (use dict updates instead)
+
+The test_dict_snapshot_protects_slow_clients validates the critical fix.
+The test_modification_during_produce_item demonstrates the remaining in-place modification concern
+with timing-dependent data corruption (capturing 17% vs 84% vs 100% depending on timing).
+
+Conclusion: The reference-based design with dict snapshot is SAFE for all NVFlare workflows.
 """
 
 import threading
@@ -62,12 +68,12 @@ class TestNumpyDownloaderSafety:
         """Verify that ArrayDownloadable stores arrays by reference, not copy."""
         downloadable = ArrayDownloadable(arrays, max_chunk_size=1024 * 1024)
 
-        # Verify base_obj is the same reference
-        assert downloadable.base_obj is arrays
+        # Dict is snapshotted (shallow copy) - CRITICAL FIX
+        assert downloadable.base_obj is not arrays, "Dict should be snapshotted, not same object"
 
-        # Verify each array is stored by reference (same memory location)
+        # But arrays are still referenced (not copied) - MEMORY EFFICIENT
         for key in arrays:
-            assert downloadable.base_obj[key] is arrays[key]
+            assert downloadable.base_obj[key] is arrays[key], "Arrays should be referenced"
             # Check data pointer to ensure it's truly the same array
             assert (
                 downloadable.base_obj[key].__array_interface__["data"][0] == arrays[key].__array_interface__["data"][0]
@@ -124,35 +130,76 @@ class TestNumpyDownloaderSafety:
                 downloadable.base_obj[key].__array_interface__["data"][0] == arrays[key].__array_interface__["data"][0]
             )
 
-    def test_dict_replacement_is_safe_locally(self, arrays):
-        """Test that replacing the params dict doesn't affect the downloadable's reference."""
+    def test_dict_snapshot_protects_slow_clients(self):
+        """
+        Test the critical fix: dict snapshot ensures slow clients get correct model
+        even when server updates dict before they download (min_responses scenario).
+        """
+        # Original arrays (Round N model)
+        original_arrays = {
+            "layer1": np.ones((100, 100), dtype=np.float32),
+            "layer2": np.ones((50, 50), dtype=np.float32),
+        }
+
+        # Create downloadable (simulates broadcast time)
+        downloadable = ArrayDownloadable(original_arrays, max_chunk_size=1024 * 1024)
+
+        # Verify dict is snapshotted (not same object)
+        assert downloadable.base_obj is not original_arrays, "Dict should be snapshotted"
+
+        # But arrays are still referenced (memory efficient)
+        for key in original_arrays:
+            assert (
+                downloadable.base_obj[key].__array_interface__["data"][0]
+                == original_arrays[key].__array_interface__["data"][0]
+            )
+
+        # Fast clients respond, server updates model (simulates Round N+1)
+        # This happens BEFORE slow clients download
+        original_arrays["layer1"] = np.ones((100, 100), dtype=np.float32) * 2  # New array for Round N+1
+        original_arrays["layer2"] = np.ones((50, 50), dtype=np.float32) * 2
+
+        # Slow clients download - should get Round N model, not Round N+1
+        item0 = downloadable.produce_item(0)  # layer1
+        item1 = downloadable.produce_item(1)  # layer2
+
+        # Deserialize to verify
+        stream0 = BytesIO(item0)
+        with np.load(stream0, allow_pickle=False) as npz0:
+            downloaded0 = npz0["layer1"]
+
+        stream1 = BytesIO(item1)
+        with np.load(stream1, allow_pickle=False) as npz1:
+            downloaded1 = npz1["layer2"]
+
+        # Should get original values (1.0), not updated values (2.0)
+        assert np.allclose(downloaded0, np.ones((100, 100), dtype=np.float32))
+        assert np.allclose(downloaded1, np.ones((50, 50), dtype=np.float32))
+
+        # Original dict should have new values
+        assert np.allclose(original_arrays["layer1"], np.ones((100, 100), dtype=np.float32) * 2)
+        assert np.allclose(original_arrays["layer2"], np.ones((50, 50), dtype=np.float32) * 2)
+
+    def test_dict_is_snapshotted_not_same_object(self):
+        """Test that downloadable creates dict snapshot, not reference to original dict."""
         original_arrays = {
             "layer1.weight": np.random.randn(100, 100).astype(np.float32),
             "layer1.bias": np.random.randn(100).astype(np.float32),
         }
 
-        # Create downloadable with reference to original_arrays
+        # Create downloadable - should snapshot the dict
         downloadable = ArrayDownloadable(original_arrays, max_chunk_size=1024 * 1024)
 
-        # Store original values and data pointers
-        original_values = {k: v.copy() for k, v in original_arrays.items()}
-        original_ptrs = {k: v.__array_interface__["data"][0] for k, v in original_arrays.items()}
+        # Dict should be snapshotted (different object)
+        assert downloadable.base_obj is not original_arrays, "Dict should be snapshotted"
 
-        # Simulate server-side pattern: replace the entire dict
-        new_arrays = {
-            "layer1.weight": np.random.randn(100, 100).astype(np.float32) + 100,
-            "layer1.bias": np.random.randn(100).astype(np.float32) + 100,
-        }
-
-        # The downloadable still has reference to original_arrays
-        assert downloadable.base_obj is original_arrays
-        assert downloadable.base_obj is not new_arrays
-
-        # Verify downloadable can still access original values
+        # But array objects should still be referenced (memory efficient)
         for key in original_arrays:
-            assert np.allclose(downloadable.base_obj[key], original_values[key])
-            assert not np.allclose(downloadable.base_obj[key], new_arrays[key])
-            assert downloadable.base_obj[key].__array_interface__["data"][0] == original_ptrs[key]
+            assert downloadable.base_obj[key] is original_arrays[key], "Arrays should be referenced"
+            assert (
+                downloadable.base_obj[key].__array_interface__["data"][0]
+                == original_arrays[key].__array_interface__["data"][0]
+            )
 
     def test_modification_during_produce_item(self):
         """

@@ -29,22 +29,41 @@ class TensorDownloadable(CacheableObject):
     """Downloadable for PyTorch tensors using reference-based storage for memory efficiency.
 
     IMPORTANT: This class stores tensors by reference (not copies) to avoid memory overhead.
-    Do not modify tensors in-place while downloads/serialization are in progress.
+    The dict of tensors is snapshotted at creation time to ensure slow clients get the correct
+    model even with min_responses < total_clients scenarios.
 
-    Safe usage patterns (automatically followed by NVFlare workflows):
+    Safe patterns:
+    - Dict updates: Replacing dict entries (params["key"] = new_tensor) is safe - slow clients
+      get the snapshotted reference
     - Client side: flare.send() is synchronous - user code blocks until after serialization
-    - Server side: broadcast_and_wait() blocks - no modifications during broadcast
-    - Model updates: Replace entire params dict (new reference) instead of in-place modification
+    - Server side: Dict replacement or entry updates are safe due to snapshot
 
     Unsafe pattern (avoid in custom code):
-    - Calling add_tensors() then immediately modifying tensors in-place while downloads occur
+    - In-place tensor modification: Modifying tensor values while downloads are in progress
+      (e.g., tensor.zero_(), tensor += value) is unsafe as tensors are referenced
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    CRITICAL WARNING for min_responses < total_clients:
+
+    ALWAYS use assignment (=), NEVER use in-place (+=) when updating model.params:
+
+      ✓ SAFE:   model.params["key"] = model.params["key"] + update
+      ✗ UNSAFE: model.params["key"] += update  ← Will corrupt slow clients!
+
+    In-place operations modify tensors while slow clients download, causing corruption.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     """
 
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
-        self.size = len(tensors)
-        self.keys = list(tensors.keys())
-        super().__init__(tensors, max_chunk_size)
+        # Create shallow copy of dict to snapshot tensor references at broadcast time.
+        # This ensures slow clients get the correct model even if server updates the
+        # original dict before they download (min_responses < total_clients scenario).
+        # The tensors themselves are still referenced (not copied) for memory efficiency.
+        tensors_snapshot = {k: v for k, v in tensors.items()}
+        self.size = len(tensors_snapshot)
+        self.keys = list(tensors_snapshot.keys())
+        super().__init__(tensors_snapshot, max_chunk_size)
 
     def get_item_count(self) -> int:
         return self.size

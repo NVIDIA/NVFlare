@@ -15,22 +15,29 @@
 """
 Tests to validate the safety of reference-based tensor downloading.
 
-These tests verify that the TensorDownloadable design is safe under normal NVFlare usage patterns.
+These tests verify that the TensorDownloadable design is safe under all NVFlare usage patterns.
 
 Key findings:
 1. Tensors are stored by reference (memory efficient - no duplication)
-2. Concurrent reads from the same reference work correctly
-3. Dict replacement (assigning new dict) is safe - downloader keeps old reference
-4. Race condition CAN occur with concurrent in-place modification during serialization
-5. NVFlare usage patterns prevent this race condition:
-   - Client: flare.send() blocks, preventing concurrent user code modifications
-   - Server: broadcast_and_wait() blocks, preventing modifications during broadcast
-   - Updates: FedAvg replaces entire model.params dict (new reference), not in-place
+2. Dict is snapshotted at creation time (shallow copy) - CRITICAL FIX
+3. Concurrent reads from the same reference work correctly
+4. Slow clients get correct (stale) model even with min_responses < total_clients
+5. Dict entry updates are safe due to snapshot (server can update while slow clients download)
 
-The test_modification_during_produce_item demonstrates the race condition that would occur
-with unsafe concurrent in-place modification, validating why our blocking patterns are essential.
+Critical fix (dict snapshot):
+- When TensorDownloadable is created, it makes a shallow copy of the tensors dict
+- This ensures slow clients get the model from their round, not a later round
+- Handles min_responses < total_clients scenario safely (common in production)
+- Tensors themselves are still referenced (not copied) for memory efficiency
 
-Conclusion: The reference-based design is SAFE with current NVFlare workflows.
+Remaining concern:
+- In-place tensor modification during serialization is still unsafe
+- However, NVFlare workflows don't do this (use dict updates instead)
+
+The test_dict_snapshot_protects_slow_clients validates the critical fix.
+The test_modification_during_produce_item demonstrates the remaining in-place modification concern.
+
+Conclusion: The reference-based design with dict snapshot is SAFE for all NVFlare workflows.
 """
 
 import threading
@@ -59,13 +66,13 @@ class TestTensorDownloaderSafety:
         """Verify that tensors are stored by reference, not copied."""
         downloadable = TensorDownloadable(tensors, max_chunk_size=1024 * 1024)
 
-        # Check that the same dict reference is stored
-        assert downloadable.base_obj is tensors
-        assert id(downloadable.base_obj) == id(tensors)
+        # Dict is snapshotted (shallow copy) - CRITICAL FIX
+        assert downloadable.base_obj is not tensors, "Dict should be snapshotted, not same object"
+        assert id(downloadable.base_obj) != id(tensors)
 
-        # Check that tensor objects are the same (not cloned)
+        # But tensor objects are still referenced (not cloned) - MEMORY EFFICIENT
         for key in tensors:
-            assert downloadable.base_obj[key] is tensors[key]
+            assert downloadable.base_obj[key] is tensors[key], "Tensors should be referenced"
             assert downloadable.base_obj[key].data_ptr() == tensors[key].data_ptr()
 
     def test_concurrent_produce_items(self, tensors):
@@ -205,36 +212,67 @@ class TestTensorDownloaderSafety:
 class TestReferenceSemanticsSafety:
     """Additional tests for various safety scenarios."""
 
-    def test_dict_replacement_is_safe_locally(self):
-        """Test that replacing the params dict doesn't affect the downloadable's reference."""
+    def test_dict_snapshot_protects_slow_clients(self):
+        """
+        Test the critical fix: dict snapshot ensures slow clients get correct model
+        even when server updates dict before they download (min_responses scenario).
+        """
+        # Original tensors (Round N model)
+        original_tensors = {
+            "layer1": torch.ones(100, 100),
+            "layer2": torch.ones(50, 50),
+        }
+
+        # Create downloadable (simulates broadcast time)
+        downloadable = TensorDownloadable(original_tensors, max_chunk_size=1024 * 1024)
+
+        # Verify dict is snapshotted (not same object)
+        assert downloadable.base_obj is not original_tensors, "Dict should be snapshotted"
+
+        # But tensors are still referenced (memory efficient)
+        for key in original_tensors:
+            assert downloadable.base_obj[key].data_ptr() == original_tensors[key].data_ptr()
+
+        # Fast clients respond, server updates model (simulates Round N+1)
+        # This happens BEFORE slow clients download
+        original_tensors["layer1"] = torch.ones(100, 100) * 2  # New tensor for Round N+1
+        original_tensors["layer2"] = torch.ones(50, 50) * 2
+
+        # Slow clients download - should get Round N model, not Round N+1
+        item0 = downloadable.produce_item(0)  # layer1
+        item1 = downloadable.produce_item(1)  # layer2
+
+        # Deserialize to verify
+        from safetensors.torch import load as load_tensors
+
+        downloaded0 = load_tensors(item0)
+        downloaded1 = load_tensors(item1)
+
+        # Should get original values (1.0), not updated values (2.0)
+        assert torch.allclose(downloaded0["layer1"], torch.ones(100, 100))
+        assert torch.allclose(downloaded1["layer2"], torch.ones(50, 50))
+
+        # Original dict should have new values
+        assert torch.allclose(original_tensors["layer1"], torch.ones(100, 100) * 2)
+        assert torch.allclose(original_tensors["layer2"], torch.ones(50, 50) * 2)
+
+    def test_dict_is_snapshotted_not_same_object(self):
+        """Test that downloadable creates dict snapshot, not reference to original dict."""
         original_tensors = {
             "layer1.weight": torch.randn(100, 100),
             "layer1.bias": torch.randn(100),
         }
 
-        # Create downloadable with reference to original_tensors
+        # Create downloadable - should snapshot the dict
         downloadable = TensorDownloadable(original_tensors, max_chunk_size=1024 * 1024)
 
-        # Store original values and data pointers
-        original_values = {k: v.clone() for k, v in original_tensors.items()}
-        original_ptrs = {k: v.data_ptr() for k, v in original_tensors.items()}
+        # Dict should be snapshotted (different object)
+        assert downloadable.base_obj is not original_tensors, "Dict should be snapshotted"
 
-        # Simulate server-side FedAvg pattern: replace the entire dict
-        # In real code: model.params = new_dict
-        new_tensors = {
-            "layer1.weight": torch.randn(100, 100) + 100,
-            "layer1.bias": torch.randn(100) + 100,
-        }
-
-        # The downloadable still has reference to original_tensors
-        assert downloadable.base_obj is original_tensors
-        assert downloadable.base_obj is not new_tensors
-
-        # Verify downloadable can still access original values
+        # But tensor objects should still be referenced (memory efficient)
         for key in original_tensors:
-            assert torch.allclose(downloadable.base_obj[key], original_values[key])
-            assert not torch.allclose(downloadable.base_obj[key], new_tensors[key])
-            assert downloadable.base_obj[key].data_ptr() == original_ptrs[key]
+            assert downloadable.base_obj[key] is original_tensors[key], "Tensors should be referenced"
+            assert downloadable.base_obj[key].data_ptr() == original_tensors[key].data_ptr()
 
     def test_dict_shallow_copy_vs_reference(self):
         """Demonstrate the difference between shallow copy and reference."""
@@ -305,8 +343,9 @@ class TestReferenceSemanticsSafety:
         # Create downloadable (non-blocking send)
         downloadable = TensorDownloadable(model.params, max_chunk_size=1024 * 1024)
 
-        # Store original reference
+        # Store original reference and tensor references
         original_params = model.params
+        original_tensors = {k: v for k, v in model.params.items()}
 
         # Server continues processing, replaces entire params dict (FedAvg pattern)
         # This is what happens in: model.params = model_update.params
@@ -315,12 +354,13 @@ class TestReferenceSemanticsSafety:
             "layer2": torch.randn(50, 50) + 100,
         }
 
-        # Downloadable still has reference to original dict
-        assert downloadable.base_obj is original_params
+        # Downloadable has snapshot of original dict (not same object)
+        assert downloadable.base_obj is not original_params, "Dict should be snapshotted"
         assert downloadable.base_obj is not model.params
 
-        # Download would get original values, not new values
-        for key in original_params:
+        # But downloadable still references original tensors (memory efficient)
+        for key in original_tensors:
+            assert downloadable.base_obj[key] is original_tensors[key], "Tensors should be referenced"
             assert not torch.allclose(downloadable.base_obj[key], model.params[key])
 
 

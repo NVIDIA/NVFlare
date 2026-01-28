@@ -28,22 +28,42 @@ class ArrayDownloadable(CacheableObject):
     """Downloadable for NumPy arrays using reference-based storage for memory efficiency.
 
     IMPORTANT: This class stores arrays by reference (not copies) to avoid memory overhead.
-    Do not modify arrays in-place while downloads/serialization are in progress.
+    The dict of arrays is snapshotted at creation time to ensure slow clients get the correct
+    model even with min_responses < total_clients scenarios.
 
-    Safe usage patterns (automatically followed by NVFlare workflows):
+    Safe patterns:
+    - Dict updates: Replacing dict entries (params["key"] = new_array) is safe - slow clients
+      get the snapshotted reference
     - Client side: flare.send() is synchronous - user code blocks until after serialization
-    - Server side: broadcast_and_wait() blocks - no modifications during broadcast
-    - Model updates: Replace entire params dict (new reference) instead of in-place modification
+    - Server side: Dict replacement or entry updates are safe due to snapshot
 
     Unsafe pattern (avoid in custom code):
-    - Calling add_arrays() then immediately modifying arrays in-place while downloads occur
+    - In-place array modification: Modifying array values while downloads are in progress
+      (e.g., array[:] = 0, array += value) is unsafe as arrays are referenced
+
+    CRITICAL WARNING for min_responses < total_clients:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    When updating model.params after broadcast, ALWAYS use assignment, NEVER in-place:
+
+    ✓ SAFE:   model.params["key"] = model.params["key"] + update
+    ✗ UNSAFE: model.params["key"] += update
+
+    In-place operations (+=, [:]=, np.add(..., out=arr)) will corrupt slow clients' models!
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    See TENSOR_DOWNLOAD_BEST_PRACTICES.md for details.
 
     """
 
     def __init__(self, arrays: dict[str, np.ndarray], max_chunk_size: int):
-        self.size = len(arrays)
-        self.keys = list(arrays.keys())
-        super().__init__(arrays, max_chunk_size)
+        # Create shallow copy of dict to snapshot array references at broadcast time.
+        # This ensures slow clients get the correct model even if server updates the
+        # original dict before they download (min_responses < total_clients scenario).
+        # The arrays themselves are still referenced (not copied) for memory efficiency.
+        arrays_snapshot = {k: v for k, v in arrays.items()}
+        self.size = len(arrays_snapshot)
+        self.keys = list(arrays_snapshot.keys())
+        super().__init__(arrays_snapshot, max_chunk_size)
 
     def get_item_count(self) -> int:
         return self.size
