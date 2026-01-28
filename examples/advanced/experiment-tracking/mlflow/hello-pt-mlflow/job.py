@@ -69,7 +69,7 @@ if __name__ == "__main__":
         print(f"Exporting job config...{args.job_configs}/fedavg_mlflow")
         recipe.export(args.job_configs)
     else:
-        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir)
+        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
         run = recipe.execute(env)
         print()
         print("Result can be found in:", run.get_result())

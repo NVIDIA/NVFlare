@@ -16,10 +16,9 @@ import argparse
 
 from model import SimpleNetwork
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.recipe import SimEnv
+from nvflare.recipe.utils import add_experiment_tracking
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
 
@@ -38,7 +37,7 @@ def define_parser():
 if __name__ == "__main__":
     args = define_parser()
 
-    # Create FedAvg recipe (without default server-side tracking)
+    # Create FedAvg recipe
     recipe = FedAvgRecipe(
         name="fedavg_mlflow_client",
         min_clients=args.n_clients,
@@ -47,26 +46,28 @@ if __name__ == "__main__":
         train_script="client.py",
     )
 
-    # Add MLflow tracking for all clients
-    # Each client will automatically create its own tracking based on site identity
-    receiver = MLflowReceiver(
-        tracking_uri=None,  # Will auto-configure per site
-        events=[ANALYTIC_EVENT_TYPE],  # Track local events (not federated)
-        kw_args={
-            "experiment_name": "nvflare-fedavg-experiment",
-            "run_name": "nvflare-fedavg-client",
+    # Add MLflow tracking to all clients (client-side only, no server aggregation)
+    # Each client will track its own local metrics independently
+    add_experiment_tracking(
+        recipe,
+        "mlflow",
+        tracking_config={
+            "tracking_uri": None,  # Will auto-configure per site
+            "kw_args": {
+                "experiment_name": "nvflare-fedavg-experiment",
+                "run_name": "nvflare-fedavg-client",
+            },
         },
+        client_side=True,
+        server_side=False,
     )
-
-    # Add receiver to all clients
-    recipe.job.to_clients(receiver, id="mlflow_receiver")
 
     # Run or export
     if args.export_config:
         print(f"Exporting job config...{args.job_configs}/fedavg_mlflow_client")
         recipe.export(args.job_configs)
     else:
-        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir)
+        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
         run = recipe.execute(env)
         print()
         print("Result can be found in:", run.get_result())
