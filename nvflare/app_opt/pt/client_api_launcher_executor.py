@@ -49,6 +49,8 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         params_exchange_format: str = ExchangeFormat.PYTORCH,
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
+        memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -74,6 +76,8 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
             params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
             config_file_name=config_file_name,
+            memory_gc_rounds=memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
     def initialize(self, fl_ctx: FLContext) -> None:
