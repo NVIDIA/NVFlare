@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -23,6 +24,35 @@ CLIENT_API_TYPE_KEY = "CLIENT_API_TYPE"
 
 
 class APISpec(ABC):
+    """Abstract base class for NVFlare Client APIs.
+
+    Provides shared memory management functionality for subclasses.
+    """
+
+    def __init__(self):
+        """Initialize memory management attributes."""
+        self._memory_gc_rounds = 0
+        self._torch_cuda_empty_cache = False
+        self._round_count = 0
+        self._memory_logger = logging.getLogger(self.__class__.__name__)
+
+    def _maybe_cleanup_memory(self):
+        """Perform memory cleanup if configured (every N rounds).
+
+        This method is called after send() to periodically clean up memory.
+        Cleanup is only performed if _memory_gc_rounds > 0 and the current
+        round count is a multiple of _memory_gc_rounds.
+        """
+        if self._memory_gc_rounds <= 0:
+            return
+
+        self._round_count += 1
+        if self._round_count % self._memory_gc_rounds == 0:
+            from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+            cleanup_memory(torch_cuda_empty_cache=self._torch_cuda_empty_cache)
+            self._memory_logger.debug(f"Memory cleanup performed at round {self._round_count}")
+
     @abstractmethod
     def init(self, rank: Optional[str] = None):
         """Initializes NVFlare Client API environment.
