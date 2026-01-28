@@ -19,7 +19,8 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.client.constants import CLIENT_API_CONFIG
+from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
+from nvflare.utils.configs import get_client_config_value
 
 
 class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
@@ -79,7 +80,7 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()
-        config_timeout = fl_ctx.get_prop("EXTERNAL_PRE_INIT_TIMEOUT")
+        config_timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
         if config_timeout is not None:
             self.log_info(
                 fl_ctx,
