@@ -90,13 +90,7 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
         self.config_file = config_file
         self.flare_agent = None
-
-        # Memory management settings (read from environment variables, overrides base defaults)
-        self._memory_gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-        self._torch_cuda_empty_cache = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
-
-        if self._memory_gc_rounds > 0:
-            self.logger.info(f"Memory management enabled: cleanup every {self._memory_gc_rounds} round(s)")
+        # Memory settings will be read from config in init()
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -149,6 +143,20 @@ class ExProcessClientAPI(APISpec):
 
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
             self.flare_agent = flare_agent
+
+            # Read memory management settings from config (with env var override)
+            task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
+            config_gc_rounds = task_exchange.get(ConfigKey.MEMORY_GC_ROUNDS, 0)
+            config_cuda_cache = task_exchange.get(ConfigKey.TORCH_CUDA_EMPTY_CACHE, False)
+
+            # Environment variables override config values
+            self._memory_gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", str(config_gc_rounds)))
+            self._torch_cuda_empty_cache = (
+                os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", str(config_cuda_cache)).lower() == "true"
+            )
+
+            if self._memory_gc_rounds > 0:
+                self.logger.info(f"Memory management enabled: cleanup every {self._memory_gc_rounds} round(s)")
         except Exception as e:
             self.logger.error(f"flare.init failed: {e}")
             raise e

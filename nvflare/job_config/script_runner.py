@@ -240,6 +240,8 @@ class BaseScriptRunner:
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
                     server_expected_format=self._server_expected_format,
+                    memory_gc_rounds=self._memory_gc_rounds,
+                    torch_cuda_empty_cache=self._torch_cuda_empty_cache,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
