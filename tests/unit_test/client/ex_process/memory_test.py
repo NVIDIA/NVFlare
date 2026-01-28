@@ -16,7 +16,7 @@
 
 import os
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestExProcessClientAPIMemory(unittest.TestCase):
@@ -88,7 +88,7 @@ class TestMaybeCleanupMemory(unittest.TestCase):
             should_cleanup = False
         else:
             round_count += 1
-            should_cleanup = (round_count % memory_gc_rounds == 0)
+            should_cleanup = round_count % memory_gc_rounds == 0
 
         assert should_cleanup is False
 
@@ -100,7 +100,7 @@ class TestMaybeCleanupMemory(unittest.TestCase):
         results = []
         for _ in range(5):
             round_count += 1
-            should_cleanup = (round_count % memory_gc_rounds == 0)
+            should_cleanup = round_count % memory_gc_rounds == 0
             results.append(should_cleanup)
 
         # Should cleanup every round
@@ -114,7 +114,7 @@ class TestMaybeCleanupMemory(unittest.TestCase):
         results = []
         for _ in range(9):
             round_count += 1
-            should_cleanup = (round_count % memory_gc_rounds == 0)
+            should_cleanup = round_count % memory_gc_rounds == 0
             results.append(should_cleanup)
 
         # Should cleanup on rounds 3, 6, 9
@@ -124,4 +124,3 @@ class TestMaybeCleanupMemory(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
