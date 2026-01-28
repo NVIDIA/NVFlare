@@ -69,7 +69,6 @@ class WandBReceiver(AnalyticsReceiver):
         self.fl_ctx = None
         self.mode = mode
         self.wandb_args = wandb_args
-        self.metrics_buffer = {}
         self.process_timeout = process_timeout
         self.site_names = []  # Will be populated in initialize()
         self.run_id = None  # Will be set in initialize() for keying module-level dicts
@@ -81,6 +80,7 @@ class WandBReceiver(AnalyticsReceiver):
         cnt = 0
         run = None
         current_step = 0
+        metrics_buffer = {}  # Thread-local buffer, not shared across threads
         try:
             while True:
                 wandb_task: WandBTask = queue.get()
@@ -88,8 +88,8 @@ class WandBReceiver(AnalyticsReceiver):
                 if wandb_task.task_type == "stop":
                     self.log_info(self.fl_ctx, f"received request to stop at {wandb_task.task_owner} for run {run}")
                     # Log the last step's metrics before stopping
-                    if current_step in self.metrics_buffer:
-                        wandb.log(self.metrics_buffer[current_step], current_step)
+                    if current_step in metrics_buffer:
+                        wandb.log(metrics_buffer[current_step], current_step)
                     break
                 elif wandb_task.task_type == "init":
                     self.log_info(self.fl_ctx, f"received request to init at {wandb_task.task_owner}")
@@ -106,20 +106,20 @@ class WandBReceiver(AnalyticsReceiver):
                             continue
 
                         # If we see a new step, log the previous step's metrics
-                        if wandb_task.step > current_step and current_step in self.metrics_buffer:
-                            wandb.log(self.metrics_buffer[current_step], current_step)
-                            del self.metrics_buffer[current_step]
+                        if wandb_task.step > current_step and current_step in metrics_buffer:
+                            wandb.log(metrics_buffer[current_step], current_step)
+                            del metrics_buffer[current_step]
 
                         # Store metrics in buffer for current step
-                        if wandb_task.step not in self.metrics_buffer:
-                            self.metrics_buffer[wandb_task.step] = {}
-                        self.metrics_buffer[wandb_task.step].update(wandb_task.task_data)
+                        if wandb_task.step not in metrics_buffer:
+                            metrics_buffer[wandb_task.step] = {}
+                        metrics_buffer[wandb_task.step].update(wandb_task.task_data)
                         current_step = wandb_task.step
                     else:
                         # Use current step for metrics without a step
-                        if current_step not in self.metrics_buffer:
-                            self.metrics_buffer[current_step] = {}
-                        self.metrics_buffer[current_step].update(wandb_task.task_data)
+                        if current_step not in metrics_buffer:
+                            metrics_buffer[current_step] = {}
+                        metrics_buffer[current_step].update(wandb_task.task_data)
         finally:
             if run:
                 run.finish()
