@@ -1,4 +1,4 @@
-# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: Optional[Dict[str, Dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -179,7 +179,15 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         if self.initial_model is not None:
             from nvflare.app_opt.pt.job_config.model import PTModel
 
-            pt_model = PTModel(model=self.initial_model, persistor=self.model_persistor, locator=self._pt_model_locator)
+            # Disable numpy conversion when using tensor format to keep PyTorch tensors
+            allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
+
+            pt_model = PTModel(
+                model=self.initial_model,
+                persistor=self.model_persistor,
+                locator=self._pt_model_locator,
+                allow_numpy_conversion=allow_numpy_conversion,
+            )
             job.comp_ids.update(job.to_server(pt_model))
             return job.comp_ids.get("persistor_id", "")
         return ""
