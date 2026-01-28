@@ -128,8 +128,7 @@ class InProcessClientAPIExecutor(Executor):
             # Configure memory management if enabled
             if self._memory_gc_rounds > 0:
                 self._client_api.configure_memory_management(
-                    gc_rounds=self._memory_gc_rounds,
-                    torch_cuda_empty_cache=self._torch_cuda_empty_cache
+                    gc_rounds=self._memory_gc_rounds, torch_cuda_empty_cache=self._torch_cuda_empty_cache
                 )
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
 

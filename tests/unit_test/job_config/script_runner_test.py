@@ -240,14 +240,12 @@ class TestScriptRunnerMemoryManagement:
         "memory_gc_rounds,torch_cuda_empty_cache",
         [
             (0, False),  # Disabled
-            (1, True),   # Every round with cuda cache
+            (1, True),  # Every round with cuda cache
             (5, False),  # Every 5 rounds without cuda cache
             (10, True),  # Every 10 rounds with cuda cache
         ],
     )
-    def test_memory_parameter_configurations(
-        self, base_script_runner_params, memory_gc_rounds, torch_cuda_empty_cache
-    ):
+    def test_memory_parameter_configurations(self, base_script_runner_params, memory_gc_rounds, torch_cuda_empty_cache):
         """Test various memory management configurations."""
         runner = ScriptRunner(
             memory_gc_rounds=memory_gc_rounds,
