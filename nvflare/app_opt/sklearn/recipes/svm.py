@@ -44,8 +44,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
     The recipe configures:
     - A federated job with kernel parameter
     - FedAvg controller (2 rounds)
-    - Custom SVMAssembler for support vector aggregation
-    - CollectAndAssembleModelAggregator for combining client updates
+    - CollectAndAssembleModelAggregator with SVMAssembler for support vector aggregation
     - Script runners for client-side training execution
 
     Training Process:
@@ -108,10 +107,10 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         ```
 
     Note:
-        This recipe uses a custom SVMAssembler that implements support vector
-        aggregation. The training only requires one round since SVM is not an
-        iterative algorithm in the federated setting. A second round is included
-        for validation purposes.
+        This recipe uses CollectAndAssembleModelAggregator with SVMAssembler for
+        support vector aggregation. The training only requires one round since SVM
+        is not an iterative algorithm in the federated setting. A second round is
+        included for validation purposes.
     """
 
     def __init__(
@@ -133,11 +132,12 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         # Create SVM-specific persistor
         persistor = JoblibModelParamPersistor(initial_params={"kernel": self.kernel})
 
-        # Create SVM-specific aggregator with assembler
-        assembler = SVMAssembler(kernel=self.kernel)
-        assembler_id = "svm_assembler"
-        # Use ModelAggregator adapter for clean integration with FedAvg
-        aggregator = CollectAndAssembleModelAggregator(assembler_id=assembler_id)
+        # Create SVMAssembler (will be added to job after super().__init__)
+        self._svm_assembler = SVMAssembler(kernel=self.kernel)
+
+        # Create CollectAndAssembleModelAggregator that will use the SVMAssembler
+        # The assembler is fetched lazily at runtime via the assembler_id
+        aggregator = CollectAndAssembleModelAggregator(assembler_id="svm_assembler")
 
         # Call the unified FedAvgRecipe with SVM-specific settings
         # Note: SVM only needs 2 rounds (round 0 for training, round 1 for validation)
@@ -157,4 +157,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             per_site_config=per_site_config,
             key_metric=key_metric,
         )
-        self.job.to_server(assembler, id=assembler_id)
+
+        # Add the SVMAssembler as a component to the job
+        # CollectAndAssembleModelAggregator will fetch it by ID at runtime
+        self.job.to_server(self._svm_assembler, id="svm_assembler")
