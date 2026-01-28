@@ -212,7 +212,7 @@ class WandBReceiver(AnalyticsReceiver):
         if site_key not in _WANDB_PROCESSES:
             self._init_site_process(record_origin)
 
-        q: Optional[Queue] = _WANDB_QUEUES.get(site_key)
+        q: Optional[queue.Queue] = _WANDB_QUEUES.get(site_key)
         if q:
             if data.data_type == AnalyticsDataType.PARAMETER or data.data_type == AnalyticsDataType.METRIC:
                 log_data = {data.tag: data.value}
