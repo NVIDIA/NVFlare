@@ -14,11 +14,12 @@
 
 import argparse
 
-# (1) import nvflare client API
-import nvflare.client as flare
 from monai.fl.client import MonaiAlgo
 from monai.fl.utils.constants import FlStatistics
 from monai.fl.utils.exchange_object import ExchangeObject
+
+# (1) import nvflare client API
+import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
 
