@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import os
+import queue
+import threading
 import time
-from multiprocessing import Process, Queue
 from typing import List, NamedTuple, Optional
 
 import wandb
@@ -25,6 +26,11 @@ from nvflare.apis.fl_constant import ProcessType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+
+# Module-level storage for Process and Queue objects to avoid pickling issues in SimEnv
+# Keyed by (run_id, site_name) tuple
+_WANDB_QUEUES = {}
+_WANDB_PROCESSES = {}
 
 
 class WandBTask(NamedTuple):
@@ -63,10 +69,10 @@ class WandBReceiver(AnalyticsReceiver):
         self.fl_ctx = None
         self.mode = mode
         self.wandb_args = wandb_args
-        self.queues = {}
-        self.processes = {}
         self.metrics_buffer = {}
         self.process_timeout = process_timeout
+        self.site_names = []  # Will be populated in initialize()
+        self.run_id = None  # Will be set in initialize() for keying module-level dicts
 
         # os.environ["WANDB_API_KEY"] = YOUR_KEY_HERE
         os.environ["WANDB_MODE"] = self.mode
@@ -135,11 +141,11 @@ class WandBReceiver(AnalyticsReceiver):
         self.log_info(fl_ctx, f"Initializing WandB tracking for sites: {site_names}")
 
         self.fl_ctx = fl_ctx
+        self.site_names = site_names
+        # Use job_id as unique run_id for keying module-level process/queue storage
+        self.run_id = _get_job_id_tag(fl_ctx)
 
-        run_name = self.wandb_args["name"]
-        job_id_tag = _get_job_id_tag(fl_ctx)
-        wand_config = self.wandb_args.get("config", {})
-
+        # Check login for online mode (but don't create processes yet)
         if self.mode == "online":
             try:
                 wandb.login(timeout=1, verify=True)
@@ -147,26 +153,53 @@ class WandBReceiver(AnalyticsReceiver):
                 self.log_warning(fl_ctx, f"Unsuccessful login: {e}. Using wandb offline mode.")
                 self.mode = "offline"
 
-        for site_name in site_names:
-            self.log_info(fl_ctx, f"initialize WandB run for site {site_name}")
-            self.wandb_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
-            self.wandb_args["group"] = f"{run_name}-{job_id_tag}"
-            self.wandb_args["mode"] = self.mode
-            wand_config["job_id"] = job_id_tag
-            wand_config["client"] = site_name
-            wand_config["run_name"] = run_name
+        # Note: wandb_args validation happens in _init_site_process() after site-specific config is set
 
-            _check_wandb_args(self.wandb_args)
+    def _init_site_process(self, site_name: str):
+        """Lazily initialize process and queue for a specific site.
 
-            q = Queue()
-            wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=self.wandb_args, step=0)
-            q.put(wandb_task)
+        This is called on first use (in save()) to avoid pickling issues in SimEnv.
+        Process and Queue objects are stored in module-level dicts to keep them
+        outside the receiver instance, making the receiver picklable.
+        """
+        site_key = (self.run_id, site_name)
+        if site_key in _WANDB_PROCESSES:
+            return  # Already initialized
 
-            self.queues[site_name] = q
-            p = Process(target=self._process_queue_tasks, args=(q,))
-            self.processes[site_name] = p
-            p.start()
-            time.sleep(0.2)
+        if not self.fl_ctx:
+            raise RuntimeError("WandBReceiver not initialized - call initialize() first")
+
+        self.log_info(self.fl_ctx, f"Creating WandB process for site {site_name}")
+
+        run_name = self.wandb_args["name"]
+        job_id_tag = self.run_id
+        wand_config = self.wandb_args.get("config", {}).copy()  # Make a copy to avoid mutation
+
+        # Create site-specific config
+        site_wandb_args = self.wandb_args.copy()
+        site_wandb_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
+        site_wandb_args["group"] = f"{run_name}-{job_id_tag}"
+        site_wandb_args["mode"] = self.mode
+        # Update config in the copy
+        site_wandb_args["config"] = wand_config
+        wand_config["job_id"] = job_id_tag
+        wand_config["client"] = site_name
+        wand_config["run_name"] = run_name
+
+        # Validate site-specific config
+        _check_wandb_args(site_wandb_args)
+
+        # Create queue and thread, store in module-level dicts
+        # Use threading instead of multiprocessing to avoid pickling issues in SimEnv
+        q = queue.Queue()
+        wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=site_wandb_args, step=0)
+        q.put(wandb_task)
+
+        _WANDB_QUEUES[site_key] = q
+        t = threading.Thread(target=self._process_queue_tasks, args=(q,), daemon=True)
+        _WANDB_PROCESSES[site_key] = t
+        t.start()
+        time.sleep(0.2)
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
@@ -174,7 +207,12 @@ class WandBReceiver(AnalyticsReceiver):
         if not data:
             return
 
-        q: Optional[Queue] = self.get_task_queue(record_origin)
+        # Lazily initialize the site's process on first use
+        site_key = (self.run_id, record_origin)
+        if site_key not in _WANDB_PROCESSES:
+            self._init_site_process(record_origin)
+
+        q: Optional[Queue] = _WANDB_QUEUES.get(site_key)
         if q:
             if data.data_type == AnalyticsDataType.PARAMETER or data.data_type == AnalyticsDataType.METRIC:
                 log_data = {data.tag: data.value}
@@ -188,15 +226,20 @@ class WandBReceiver(AnalyticsReceiver):
         Args:
             fl_ctx (FLContext): the FLContext
         """
-        for site in self.processes:
-            self.log_info(fl_ctx, f"inform {site} to stop")
-            q: Optional[Queue] = self.get_task_queue(site)
-            q.put(WandBTask(task_owner=site, task_type="stop", task_data={}, step=0))
+        # Iterate over all threads for this run_id
+        site_keys_to_finalize = [key for key in _WANDB_PROCESSES.keys() if key[0] == self.run_id]
 
-        for site in self.processes:
-            p = self.processes[site]
-            p.join(self.process_timeout)
-            p.terminate()
+        for site_key in site_keys_to_finalize:
+            site_name = site_key[1]
+            self.log_info(fl_ctx, f"inform {site_name} to stop")
+            q = _WANDB_QUEUES.get(site_key)
+            if q:
+                q.put(WandBTask(task_owner=site_name, task_type="stop", task_data={}, step=0))
 
-    def get_task_queue(self, record_origin):
-        return self.queues.get(record_origin, None)
+        for site_key in site_keys_to_finalize:
+            t = _WANDB_PROCESSES.get(site_key)
+            if t and t.is_alive():
+                t.join(self.process_timeout)
+            # Clean up from module-level dicts
+            _WANDB_PROCESSES.pop(site_key, None)
+            _WANDB_QUEUES.pop(site_key, None)

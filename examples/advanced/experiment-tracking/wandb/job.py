@@ -100,7 +100,14 @@ def main():
         print(f"job exported to {export_dir}")
         recipe.export(export_dir)
     else:
-        recipe.run(workspace="/tmp/nvflare/jobs/workdir")
+        from nvflare.recipe import SimEnv
+
+        env = SimEnv(num_clients=args.n_clients, workspace_root="/tmp/nvflare/jobs/workdir")
+        run = recipe.execute(env)
+        print()
+        print("Result:", run.get_result())
+        print("Status:", run.get_status())
+        print()
 
 
 if __name__ == "__main__":
