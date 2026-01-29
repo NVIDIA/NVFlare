@@ -27,8 +27,8 @@ class _StateKey:
 
 class CacheableObject(Downloadable):
     """This class provides cache capability for managing chunks generated during streaming.
-    When the object is to be sent to multiple sites, each chunk is generated only once and cached for other
-    sites. Once all sites received the chunk, it's removed from the cache.
+    When the object is to be sent to multiple receivers, each chunk is generated only once and cached for other
+    receivers. Once all receivers received the chunk, it's removed from the cache.
 
     """
 
@@ -77,7 +77,7 @@ class CacheableObject(Downloadable):
         self.logger.info(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
 
     def downloaded_to_all(self):
-        self.logger.info(f"object has been downloaded to all {self.num_receivers} sites - clear cache")
+        self.logger.info(f"object has been downloaded to all {self.num_receivers} receivers - clear cache")
         self.clear_cache()
 
     def transaction_done(self, transaction_id: str, status: str):
@@ -114,7 +114,7 @@ class CacheableObject(Downloadable):
                 data, num_received = self.cache[i]
                 num_received += 1
                 if num_received >= self.num_receivers:
-                    self.logger.debug(f"item {i} was received by {num_received} sites - clear cache")
+                    self.logger.debug(f"item {i} was received by {num_received} receivers - clear cache")
                     self.cache[i] = (None, num_received)
                 else:
                     self.cache[i] = (data, num_received)
