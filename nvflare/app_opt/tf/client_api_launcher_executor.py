@@ -76,7 +76,6 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         super().initialize(fl_ctx)
-
         if (
             self._server_expected_format == ExchangeFormat.NUMPY
             and self._params_exchange_format == ExchangeFormat.KERAS_LAYER_WEIGHTS
