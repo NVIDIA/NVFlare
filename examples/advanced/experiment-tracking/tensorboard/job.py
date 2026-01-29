@@ -15,6 +15,7 @@
 from model import SimpleNetwork
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 if __name__ == "__main__":
@@ -31,4 +32,9 @@ if __name__ == "__main__":
     add_experiment_tracking(recipe, "tensorboard", tracking_config={"tb_folder": "tb_events"})
 
     # Run in simulator
-    recipe.run(workspace="/tmp/nvflare/jobs/workdir")
+    env = SimEnv(num_clients=2, workspace_root="/tmp/nvflare/jobs/workdir")
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in:", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()

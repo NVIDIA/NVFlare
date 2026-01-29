@@ -29,7 +29,7 @@ from nvflare.app_common.app_constant import ModelName
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def define_parser():
