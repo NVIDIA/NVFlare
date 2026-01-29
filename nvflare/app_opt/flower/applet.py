@@ -89,6 +89,18 @@ class FlowerClientApplet(CLIApplet):
     def __init__(self, extra_env: dict = None):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self, stop_method="term")
+
+        # Ensure PATH includes the venv bin directory so Flower's internal
+        # subprocesses (flower-superexec, etc.) can find executables
+        python_bin_dir = os.path.dirname(sys.executable)
+        if extra_env is None:
+            extra_env = {}
+
+        # Add venv bin directory to PATH
+        current_path = os.environ.get("PATH", "")
+        if python_bin_dir not in current_path:
+            extra_env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
         self.extra_env = extra_env
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
@@ -260,6 +272,13 @@ class FlowerServerApplet(Applet):
         # Validate that flower-superlink is installed and executable
         _validate_flower_executable(FLOWER_SUPERLINK, flower_superlink_path)
 
+        # Ensure PATH includes venv bin directory for Flower's internal subprocesses
+        # (flower-superlink internally spawns flower-superexec which needs to be in PATH)
+        current_path = os.environ.get("PATH", "")
+        env = {}
+        if python_bin_dir not in current_path:
+            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
         """ Example:
         flower-superlink --insecure --fleet-api-type grpc-adapter
         --serverappio-api-address 127.0.0.1:9091
@@ -275,6 +294,7 @@ class FlowerServerApplet(Applet):
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
+            env=env if env else None,  # Pass env with PATH fix
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",
             stop_method=StopMethod.TERMINATE,
@@ -320,7 +340,15 @@ class FlowerServerApplet(Applet):
 
     def _run_flower_command(self, command: str):
         self.logger.debug(f"running flower command: {command}")
-        cmd_desc = CommandDescriptor(cmd=command)
+
+        # Ensure PATH includes venv bin directory
+        python_bin_dir = os.path.dirname(sys.executable)
+        current_path = os.environ.get("PATH", "")
+        env = {}
+        if python_bin_dir not in current_path:
+            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
+        cmd_desc = CommandDescriptor(cmd=command, env=env if env else None)
         reply = run_command(cmd_desc)
         if not isinstance(reply, str):
             raise RuntimeError(f"failed to run command '{command}': expect reply to be str but got {type(reply)}")
