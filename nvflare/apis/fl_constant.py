@@ -298,6 +298,7 @@ class ServerCommandKey(object):
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
     REASON = "reason"
+    MIN_GET_TASK_TIMEOUT = "min_get_task_timeout"
 
 
 class FedEventHeader(object):
