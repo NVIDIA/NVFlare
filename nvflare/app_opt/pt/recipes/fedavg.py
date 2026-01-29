@@ -78,6 +78,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+        server_memory_gc_rounds: Run memory cleanup every N rounds on server. Defaults to 0 (disabled).
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
+
     Example:
         Basic usage with early stopping:
 
@@ -143,6 +147,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        # Memory management
+        server_memory_gc_rounds: int = 0,
+        client_memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -172,6 +180,9 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

@@ -49,6 +49,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
         server_expected_format: str = ExchangeFormat.NUMPY,
+        memory_gc_rounds: int = 0,
+        torch_cuda_empty_cache: bool = False,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -106,6 +108,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._params_exchange_format = params_exchange_format
         self._params_transfer_type = params_transfer_type
         self._config_file_name = config_file_name
+        self._memory_gc_rounds = memory_gc_rounds
+        self._torch_cuda_empty_cache = torch_cuda_empty_cache
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -126,6 +130,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ConfigKey.ARG: pipe_export_args,
             },
             ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
+            ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
+            ConfigKey.TORCH_CUDA_EMPTY_CACHE: self._torch_cuda_empty_cache,
         }
 
         config_data = {
