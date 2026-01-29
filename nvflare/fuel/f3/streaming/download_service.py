@@ -57,27 +57,27 @@ a small subset of the large dict; etc.).
 bytes to a temp file; putting the received small dict to the end result; etc.).
 
 One issue with object downloading is object life cycle management. Since the large objects to be downloaded are usually
-temporary, you need to remove them when they are downloaded by all sites. But the problem is that you don't know how
-quickly each site can finish downloading these large objects. When a transaction contains multiple objects to be
+temporary, you need to remove them when they are downloaded by all receivers. But the problem is that you don't know how
+quickly each receiver can finish downloading these large objects. When a transaction contains multiple objects to be
 downloaded, it's even harder to know it.
 
 There are two ways to handle this issue: object downloaded callback, and transaction timeout.
 
 You can implement the downloaded_to_one method for the Downloadable object. This method is called when the object is
-downloaded to one site.
+downloaded to one receiver.
 
 You can also implement the downloaded_to_all method for the Downloadable object. This method is called when the object 
-is downloaded to all sites.
+is downloaded to all receivers.
 
-Note that the downloaded_to_all method only works if you know how many sites the object will be downloaded to!
+Note that the downloaded_to_all method only works if you know how many receivers the object will be downloaded to!
 
 You can always implement the transaction_done method for the Downloadable object. This method is called when the
 transaction is done for some reason (normal completion or timeout).
 
 Transaction timeout is the amount of time after the last downloading activity on any object in the
-transaction from any site. For example, suppose you want to send 2 large files to 3 sites, each time a download
-request is received on any file from any of the 3 sites, the last activity time of the transaction is updated to now.
-If no downloading activity is received from any site on any objects in the transaction for the specified timeout,
+transaction from any receiver. For example, suppose you want to send 2 large files to 3 receivers, each time a download
+request is received on any file from any of the 3 receivers, the last activity time of the transaction is updated to now.
+If no downloading activity is received from any receiver on any objects in the transaction for the specified timeout,
 the transaction is considered "timed out", and the transaction_done method is called for each Downloadable object 
 added to the transaction.
 
@@ -109,19 +109,19 @@ class Downloadable(ABC):
         """Produce a small object to be sent (on object sender side).
 
         Args:
-            state: current state of downloading, received from the downloading site
-            requester: the FQCN of the site that is downloading
+            state: current state of downloading, received from the downloading receiver
+            requester: the FQCN of the receiver that is downloading
 
         Returns: a tuple of (return code, a small object to be sent, new state to be sent).
 
         """
         pass
 
-    def downloaded_to_one(self, to_site: str, status: str):
-        """Called when an object is downloaded to a site.
+    def downloaded_to_one(self, to_receiver: str, status: str):
+        """Called when an object is downloaded to a receiver.
 
         Args:
-            to_site: name of the site that the object has been completely downloaded to.
+            to_receiver: name of the receiver that the object has been completely downloaded to.
             status: the download status: DownloadStatus.SUCCESS or DownloadStatus.FAILED.
 
         Returns: None
@@ -130,7 +130,7 @@ class Downloadable(ABC):
         pass
 
     def downloaded_to_all(self):
-        """Called when the object is fully downloaded to all sites."""
+        """Called when the object is fully downloaded to all receivers."""
         pass
 
     def transaction_done(self, transaction_id: str, status: str):
@@ -168,20 +168,20 @@ class _Ref:
             self.rid = "R" + str(uuid.uuid4())
         self.tx = tx
         self.obj = obj
-        self.num_sites_done = 0
+        self.num_receivers_done = 0
 
     def mark_active(self):
         self.tx.mark_active()
 
-    def obj_downloaded(self, to_site: str, status: str):
-        self.num_sites_done += 1
+    def obj_downloaded(self, to_receiver: str, status: str):
+        self.num_receivers_done += 1
 
         assert isinstance(self.obj, Downloadable)
-        self.obj.downloaded_to_one(to_site, status)
+        self.obj.downloaded_to_one(to_receiver, status)
 
         assert isinstance(self.tx, _Transaction)
-        if 0 < self.tx.num_receivers <= self.num_sites_done:
-            # this object is done for all sites
+        if 0 < self.tx.num_receivers <= self.num_receivers_done:
+            # this object is done for all receivers
             self.obj.downloaded_to_all()
 
 
@@ -278,7 +278,7 @@ class _Transaction:
 
         for ref in self.refs:
             assert isinstance(ref, _Ref)
-            if ref.num_sites_done < self.num_receivers:
+            if ref.num_receivers_done < self.num_receivers:
                 return False
         return True
 
@@ -296,7 +296,7 @@ class _Transaction:
 class TransactionInfo:
     """This structure contains public info of a transaction:
     timeout value of the transaction;
-    number of sites that objects in the transaction will be downloaded to. 0 means unknown.
+    number of receivers that objects in the transaction will be downloaded to. 0 means unknown.
     objects that are added to the transaction.
     """
 
