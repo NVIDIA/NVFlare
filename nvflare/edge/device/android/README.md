@@ -21,6 +21,7 @@ Before you begin, ensure you have the following installed:
 - **Python**: 3.10+ (for ExecuTorch build scripts)
 - **Git**: For repository management
 - **CMake**: For building native components
+- **Xcode Command Line Tools** (macOS only): Required for build tools like `make`
 
 ### Quick Installation
 ```bash
@@ -28,9 +29,21 @@ Before you begin, ensure you have the following installed:
 brew install openjdk@17
 brew install cmake
 
-# Android SDK/NDK via Android Studio SDK Manager
-# Or download from: https://developer.android.com/studio
+# Install Xcode Command Line Tools (macOS only)
+xcode-select --install
 ```
+
+Install Android SDK/NDK via Android Studio SDK Manager
+or download from: https://developer.android.com/studio
+
+After installing Android Studio, install NDK
+1. Open **Android Studio**
+2. Go to **Tools → SDK Manager** (or **Android Studio → Settings → Appearance & Behavior → System Settings → Android SDK** on newer versions)
+3. Click the **SDK Tools** tab
+4. Check the box for **NDK (Side by side)**
+5. Optionally, click **Show Package Details** to select version **29.0.13599879** specifically
+6. Click **Apply** or **OK** to install
+
 
 ## 🚀 Quick Start
 
@@ -152,6 +165,21 @@ sdk.dir=/Users/yourusername/Library/Android/sdk
 ## 🐛 Troubleshooting
 
 ### Common Issues
+
+**CMake Error: "Unable to find a build program corresponding to Unix Makefiles" (macOS)**
+- This occurs when Xcode Command Line Tools are not installed
+- Solution:
+  ```bash
+  xcode-select --install
+  ```
+- Verify installation:
+  ```bash
+  which make  # Should output: /usr/bin/make
+  ```
+- If already installed but still having issues, try resetting:
+  ```bash
+  sudo xcode-select --reset
+  ```
 
 **Build fails with missing classes**
 - Ensure the SDK has been copied to the app's source directory (Step 4)
