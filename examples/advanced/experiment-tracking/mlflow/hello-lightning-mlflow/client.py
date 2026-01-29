@@ -99,6 +99,14 @@ def main():
         print("--- train new model ---")
         trainer.fit(model, datamodule=cifar10_dm)
 
+        # test local model
+        print("--- test new model ---")
+        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
+
+        # get predictions
+        print("--- prediction with new best model ---")
+        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
+
 
 if __name__ == "__main__":
     main()
