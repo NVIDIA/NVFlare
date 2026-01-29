@@ -16,3 +16,7 @@ from nvflare.apis.fl_constant import FLMetaKey
 
 SYS_ATTRS = (FLMetaKey.JOB_ID, FLMetaKey.SITE_NAME)
 CLIENT_API_CONFIG = "client_api_config.json"
+
+# Configuration key for overriding external_pre_init_timeout in ClientAPILauncherExecutor
+# Jobs can set this via add_client_config() to allow more time for heavy library imports
+EXTERNAL_PRE_INIT_TIMEOUT = "EXTERNAL_PRE_INIT_TIMEOUT"
