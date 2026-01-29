@@ -31,3 +31,7 @@ http://localhost:3000
 
 # Ignore https://download.01.org/intel-s in docs/user_guide/confidential_computing/hashicorp_vault_trustee_kbs_deployment.rst
 https://download.01.org/intel-s
+
+# MICCAI server could be unresponsive
+https://papers.miccai.org/miccai-2025/0306-Paper2510.html
+
