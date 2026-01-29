@@ -33,12 +33,10 @@ brew install cmake
 xcode-select --install
 ```
 
-Install Android SDK/NDK via Android Studio SDK Manager
-or download from: https://developer.android.com/studio
+Install [Android Studio](https://developer.android.com/studio) and the NDK via Android Studio SDK Manager:
 
-After installing Android Studio, install NDK
 1. Open **Android Studio**
-2. Go to **Tools → SDK Manager** (or **Android Studio → Settings → Appearance & Behavior → System Settings → Android SDK** on newer versions)
+2. Go to **Tools → SDK Manager**
 3. Click the **SDK Tools** tab
 4. Check the box for **NDK (Side by side)**
 5. Optionally, click **Show Package Details** to select version **29.0.13599879** specifically
@@ -143,6 +141,18 @@ nvflare/edge/device/android/
 │   └── models/                  # Model definitions
 └── README.md                    # This file
 ```
+
+Once you open this project folder in Android Studio, you should be able to emulate the App running on a [Android Virtual Device](https://developer.android.com/studio/run/managing-avds).
+
+![Android Studio Screenshot - AVD](resources/android_studio_avd.png)
+
+Next, you connect to the proxy server IP shown when running start_rp.sh (see [Start the NVFlare System](../../../examples/advanced/edge/README.md#start-the-nvflare-system)) and click on **Start Training**.
+
+![Android Studio Screenshot - Start Training](resources/android_studio_start_training.png)
+
+Once you submitted the training job as described in [Run with the real device](../../../examples/advanced/edge/README.md#run-with-the-real-device), you will see the training for subsequent FL rounds proceeding on your Android Virtual Device:
+
+![Android Studio Screenshot - FL Rounds](resources/android_studio_rounds.png)
 
 ## 🔧 Configuration
 
