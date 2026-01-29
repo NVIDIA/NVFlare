@@ -34,7 +34,7 @@ jobs:
         args: >-
           --accept=200,403,429
           --verbose
-          --timeout 200
+          --timeout=200
           --no-progress
           '${{ github.workspace }}/**/*.md'
           '${{ github.workspace }}/**/*.html'
