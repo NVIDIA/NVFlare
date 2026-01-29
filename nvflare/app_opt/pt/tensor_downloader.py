@@ -26,16 +26,54 @@ _TWO_MB = 2 * 1024 * 1024
 
 
 class TensorDownloadable(CacheableObject):
+    """Downloadable for PyTorch tensors using reference-based storage for memory efficiency.
+
+    IMPORTANT: This class stores tensors by reference (not copies) to avoid memory overhead.
+    The dict of tensors is snapshotted at creation time to ensure slow clients get the correct
+    model even with min_responses < total_clients scenarios.
+
+    Safe patterns:
+    - Dict updates: Replacing dict entries (params["key"] = new_tensor) is safe - slow clients
+      get the snapshotted reference
+    - Client side: flare.send() is synchronous - user code blocks until after serialization
+    - Server side: Dict replacement or entry updates are safe due to snapshot
+
+    Unsafe pattern (avoid in custom code):
+    - In-place tensor modification: Modifying tensor values while downloads are in progress
+      (e.g., tensor.zero_(), tensor += value) is unsafe as tensors are referenced
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    CRITICAL WARNING for min_responses < total_clients:
+
+    ALWAYS use assignment (=), NEVER use in-place (+=) when updating model.params:
+
+      ✓ SAFE:   model.params["key"] = model.params["key"] + update
+      ✗ UNSAFE: model.params["key"] += update  ← Will corrupt slow clients!
+
+    In-place operations modify tensors while slow clients download, causing corruption.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    """
 
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
-        self.size = len(tensors)
-        self.keys = list(tensors.keys())
-        super().__init__(tensors, max_chunk_size)
+        # Create shallow copy of dict to snapshot tensor references at broadcast time.
+        # This ensures slow clients get the correct model even if server updates the
+        # original dict before they download (min_responses < total_clients scenario).
+        # The tensors themselves are still referenced (not copied) for memory efficiency.
+        tensors_snapshot = {k: v for k, v in tensors.items()}
+        self.size = len(tensors_snapshot)
+        self.keys = list(tensors_snapshot.keys())
+        super().__init__(tensors_snapshot, max_chunk_size)
 
     def get_item_count(self) -> int:
         return self.size
 
     def produce_item(self, index: int) -> bytes:
+        """Serialize a tensor by accessing it from the original reference.
+
+        Note: This accesses self.base_obj[key] which is a reference to the original tensor.
+        This is safe because NVFlare workflows ensure no concurrent modifications during serialization.
+        """
         key = self.keys[index]
         tensor_to_send = {key: self.base_obj[key]}
         return save_tensors(tensor_to_send)
