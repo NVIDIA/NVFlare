@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import argparse
+import os
 
+import filelock
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -41,10 +43,13 @@ def main(target_epsilon, max_grad_norm):
     batch_size = 32
     epochs = 1
 
-    trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    # Add file lock to prevent multiple simultaneous downloads
+    lock_file = os.path.join(DATASET_PATH, "cifar10.lock")
+    with filelock.FileLock(lock_file):
+        trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
+        testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
 
-    testset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=False, download=True, transform=transform)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
 
     net = Net()
