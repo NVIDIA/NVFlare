@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import os
+import sys
 import threading
 import time
 
@@ -24,6 +26,11 @@ from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
+
+# Flower CLI executable names
+FLOWER_SUPERLINK = "flower-superlink"
+FLOWER_SUPERNODE = "flower-supernode"
+FLOWER_CLI = "flwr"
 
 
 def get_partition_id(fl_ctx: FLContext):
@@ -45,10 +52,55 @@ def get_num_partitions(fl_ctx: FLContext):
     return len(engine.get_clients())
 
 
+def _validate_flower_executable(executable_name: str, executable_path: str):
+    """Validate that a Flower executable exists and provide helpful error message if not.
+
+    Args:
+        executable_name: Name of the executable (e.g., FLOWER_SUPERLINK)
+        executable_path: Full path to the executable
+
+    Raises:
+        RuntimeError: If the executable is not found with installation instructions
+    """
+    if not os.path.isfile(executable_path):
+        error_msg = (
+            f"Flower executable '{executable_name}' not found at: {executable_path}\n"
+            f"\n"
+            f"This indicates Flower is not properly installed in your Python environment.\n"
+            f"Please install Flower with simulation support:\n"
+            f"  pip install 'flwr[simulation]>=1.16,<2.0'\n"
+            f"\n"
+            f"If using a virtual environment, ensure it's activated before installation.\n"
+            f"Current Python: {sys.executable}"
+        )
+        raise RuntimeError(error_msg)
+
+    # Check if executable has execute permissions
+    if not os.access(executable_path, os.X_OK):
+        error_msg = (
+            f"Flower executable '{executable_name}' found but not executable: {executable_path}\n"
+            f"Please ensure the file has execute permissions:\n"
+            f"  chmod +x {executable_path}"
+        )
+        raise RuntimeError(error_msg)
+
+
 class FlowerClientApplet(CLIApplet):
     def __init__(self, extra_env: dict = None):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self, stop_method="term")
+
+        # Ensure PATH includes the venv bin directory so Flower's internal
+        # subprocesses (flower-superexec, etc.) can find executables
+        python_bin_dir = os.path.dirname(sys.executable)
+        if extra_env is None:
+            extra_env = {}
+
+        # Add venv bin directory to PATH
+        current_path = os.environ.get("PATH", "")
+        if python_bin_dir not in current_path:
+            extra_env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
         self.extra_env = extra_env
 
     def get_command(self, ctx: dict) -> CommandDescriptor:
@@ -85,8 +137,15 @@ class FlowerClientApplet(CLIApplet):
         --node-config ...
         """
 
+        # Get the full path to flower-supernode from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flower_supernode_path = os.path.join(python_bin_dir, FLOWER_SUPERNODE)
+
+        # Validate that flower-supernode is installed and executable
+        _validate_flower_executable(FLOWER_SUPERNODE, flower_supernode_path)
+
         cmd = (
-            f"flower-supernode --insecure --grpc-adapter "
+            f"{flower_supernode_path} --insecure --grpc-adapter "
             f"--superlink {superlink_addr} "
             f"--clientappio-api-address {clientapp_api_addr}"
         )
@@ -206,6 +265,20 @@ class FlowerServerApplet(Applet):
         if self.database:
             db_arg = f"--database {self.database}"
 
+        # Get the full path to flower-superlink from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flower_superlink_path = os.path.join(python_bin_dir, FLOWER_SUPERLINK)
+
+        # Validate that flower-superlink is installed and executable
+        _validate_flower_executable(FLOWER_SUPERLINK, flower_superlink_path)
+
+        # Ensure PATH includes venv bin directory for Flower's internal subprocesses
+        # (flower-superlink internally spawns flower-superexec which needs to be in PATH)
+        current_path = os.environ.get("PATH", "")
+        env = {}
+        if python_bin_dir not in current_path:
+            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
         """ Example:
         flower-superlink --insecure --fleet-api-type grpc-adapter
         --serverappio-api-address 127.0.0.1:9091
@@ -213,7 +286,7 @@ class FlowerServerApplet(Applet):
         --exec-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
-            f"flower-superlink --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr}  "
             f"--exec-api-address {exec_api_addr}"
@@ -221,6 +294,7 @@ class FlowerServerApplet(Applet):
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
+            env=env if env else None,  # Pass env with PATH fix
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",
             stop_method=StopMethod.TERMINATE,
@@ -252,14 +326,29 @@ class FlowerServerApplet(Applet):
         self.run_id = run_id
 
     def _flower_command(self, cmd_name: str, cmd_args=""):
+        # Get the full path to flwr from the current Python environment
+        python_bin_dir = os.path.dirname(sys.executable)
+        flwr_path = os.path.join(python_bin_dir, FLOWER_CLI)
+
+        # Validate that flwr is installed and executable
+        _validate_flower_executable(FLOWER_CLI, flwr_path)
+
         return (
-            f"flwr {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
+            f"{flwr_path} {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
             f"{cmd_args} {self.flower_app_dir}"
         )
 
     def _run_flower_command(self, command: str):
         self.logger.debug(f"running flower command: {command}")
-        cmd_desc = CommandDescriptor(cmd=command)
+
+        # Ensure PATH includes venv bin directory
+        python_bin_dir = os.path.dirname(sys.executable)
+        current_path = os.environ.get("PATH", "")
+        env = {}
+        if python_bin_dir not in current_path:
+            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
+        cmd_desc = CommandDescriptor(cmd=command, env=env if env else None)
         reply = run_command(cmd_desc)
         if not isinstance(reply, str):
             raise RuntimeError(f"failed to run command '{command}': expect reply to be str but got {type(reply)}")
