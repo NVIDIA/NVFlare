@@ -29,6 +29,7 @@ CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"  # will be used for all CIFAR-10 expe
 def load_cifar10_data():
     # load data
     # Add file lock to prevent multiple simultaneous downloads
+    os.makedirs(CIFAR10_ROOT, exist_ok=True)
     lock_file = os.path.join(CIFAR10_ROOT, "cifar10.lock")
     with filelock.FileLock(lock_file):
         train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)

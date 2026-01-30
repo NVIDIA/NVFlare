@@ -44,6 +44,7 @@ def main(target_epsilon, max_grad_norm):
     epochs = 1
 
     # Add file lock to prevent multiple simultaneous downloads
+    os.makedirs(DATASET_PATH, exist_ok=True)
     lock_file = os.path.join(DATASET_PATH, "cifar10.lock")
     with filelock.FileLock(lock_file):
         trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
