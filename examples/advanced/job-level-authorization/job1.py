@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ def main():
         initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         train_script="client.py",
     )
-    
+
     print("Submitting job with name: 'hello-numpy' (ALLOWED by site_a)")
     print(f"Using startup kit at: {args.startup_kit_location}")
     print(f"Authenticating as: {args.username}")
