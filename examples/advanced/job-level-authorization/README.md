@@ -60,19 +60,19 @@ nvflare poc start
 Here, we treat the created POC environment as a production environemnt running in the background.
 You can submit jobs programmatically using the Job API with `ProdEnv`. Two example scripts are provided:
 
-**job1_prod.py** - Submits a job named "hello-numpy" (**ALLOWED by site_a**):
+**job1.py** - Submits a job named "hello-numpy" (**ALLOWED by site_a**):
 ```
 python job1.py
 ```
 
-**job2_prod.py** - Submits a job named "FL Demo Job2" (**BLOCKED by site_a**):
+**job2.py** - Submits a job named "FL Demo Job2" (**BLOCKED by site_a**):
 ```
 python job2.py
 ```
 
 Both scripts use `ProdEnv` to connect to the production deployment and submit jobs via the Flare API. The jobs demonstrate how site_a's `CustomSecurityHandler` enforces authorization based on job name:
 - Job 1 with name "hello-numpy" will be accepted by both site_a and site_b
-- Job 2 with name "FL Demo Job2" will be rejected by site_a but accepted by site_b
+- Job 2 with name "FL-Demo-Job2" will be rejected by site_a but accepted by site_b
 
 You can customize the startup kit location and username using command-line arguments:
 ```
@@ -83,10 +83,23 @@ python job1_prod.py --startup_kit_location /path/to/startup_kit --username user@
 
 ### Site
 * `server1`: NVFlare server
-* `site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL Demo Job2" to run. Any other named jobs will be able to deploy and run on site_a.
+* `site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL-Demo-Job2" to run. Any other named jobs will be able to deploy and run on site_a.
 * `site_b`: Site_b does not have the extra security handling codes. It allows any job to be deployed and run.
 
 ### Jobs
 
-* job1: The job is called `hello-numpy`. site_a will allow this job to run.
-* job2: The job is called `FL Demo Job1`. site_a will block this job to run.
+* Job 1: The job is called `hello-numpy`. site_a will allow this job to run.
+* Job 2: The job is called `FL-Demo-Job2`. site_a will block this job to run.
+
+### Output
+
+For job1, you will see the successful compeletion with training on both clients (site_a & site_b)
+
+For Job 2, you will see an output like this in the POC log messages
+
+```
+2026-01-30 12:41:51,006 - site_security - ERROR - Authorization failed. Reason: Job 'FL-Demo-Job2' BLOCKED by site_a's CustomSecurityHandler - not authorized to execute: check_resources
+2026-01-30 12:41:51,008 - ServerEngine - ERROR - Client reply error: Job 'FL-Demo-Job2' BLOCKED by site_a's CustomSecurityHandler - not authorized to execute: check_resources
+```
+Only site_b will execute the training run.
+
