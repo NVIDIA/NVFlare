@@ -30,21 +30,16 @@ def define_parser():
         "--startup_kit_location",
         type=str,
         default="/tmp/nvflare/poc/job-level-authorization/prod_00/super@a.org",
-        help="Path to the admin startup kit directory"
+        help="Path to the admin startup kit directory",
     )
-    parser.add_argument(
-        "--username",
-        type=str,
-        default="super@a.org",
-        help="Username for authentication"
-    )
+    parser.add_argument("--username", type=str, default="super@a.org", help="Username for authentication")
 
     return parser.parse_args()
 
 
 def main():
     args = define_parser()
-    
+
     # Create recipe with job name "FL-Demo-Job2" - this is BLOCKED by site_a
     recipe = NumpyFedAvgRecipe(
         name="FL-Demo-Job2",  # This name is BLOCKED by site_a's security handler
@@ -54,16 +49,13 @@ def main():
         train_script="client.py",
     )
     
-    print(f"Submitting job with name: 'FL-Demo-Job2' (BLOCKED by site_a)")
+    print("Submitting job with name: 'FL-Demo-Job2' (BLOCKED by site_a)")
     print(f"Using startup kit at: {args.startup_kit_location}")
     print(f"Authenticating as: {args.username}")
 
     # Use ProdEnv to submit to the production environment
-    env = ProdEnv(
-        startup_kit_location=args.startup_kit_location,
-        username=args.username
-    )
-    
+    env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+
     print("Submitting job to production environment...")
     run = recipe.execute(env)
     print()

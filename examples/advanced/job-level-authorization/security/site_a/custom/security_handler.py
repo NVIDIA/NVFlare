@@ -35,7 +35,10 @@ class CustomSecurityHandler(FLComponent):
             job_meta = security_items.get(FLContextKey.JOB_META)
             job_name = job_meta.get(JobMetaKey.JOB_NAME)
             if job_name == "FL-Demo-Job2":
-                return False, f"Job '{job_name}' BLOCKED by site_a's CustomSecurityHandler - not authorized to execute: {command}"
+                return (
+                    False,
+                    f"Job '{job_name}' BLOCKED by site_a's CustomSecurityHandler - not authorized to execute: {command}",
+                )
             else:
                 return True, ""
         else:
