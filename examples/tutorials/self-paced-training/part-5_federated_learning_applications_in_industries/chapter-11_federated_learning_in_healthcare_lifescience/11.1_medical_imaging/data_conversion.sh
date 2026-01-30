@@ -6,6 +6,13 @@ source_folder=/tmp/nvflare/datasets/MSD/Raw/Task05_Prostate
 find ${source_folder}/imagesTr -mindepth 1 -maxdepth 1 -type f | while read case; do
   case=$(basename "${case}")
   case="${case%.*.*}"
+  
+  # Skip the ._prostate_04 case
+  if [ "${case}" = "._prostate_04" ]; then
+    echo "Skipping ${case}"
+    continue
+  fi
+  
   echo ${case}
 
   img_path=${source_folder}/imagesTr/${case}.nii.gz
