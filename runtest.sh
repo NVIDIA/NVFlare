@@ -388,7 +388,7 @@ do
 
         -p|--dependencies)
             dependencies=true
-	    cmd=" "
+            cmd=" "
         ;;
 
         -r|--test-report)
