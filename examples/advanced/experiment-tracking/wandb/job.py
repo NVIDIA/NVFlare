@@ -16,9 +16,7 @@ import argparse
 
 from model import Net
 
-from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.tracking.wandb.wandb_receiver import WandBReceiver
 from nvflare.recipe.utils import add_experiment_tracking
 
 
@@ -75,24 +73,16 @@ def main():
         },
     }
 
-    # Add server-side tracking (enabled by default unless disabled)
-    if not args.disable_server_tracking:
-        add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
-
-    # Add client-side tracking if requested
-    if args.streamed_to_clients:
-        import copy
-
-        for i in range(args.n_clients):
-            site_name = f"site-{i + 1}"
-
-            # Client-side receivers listen to local events (not federated)
-            # Use deepcopy to avoid shared mutable state
-            client_config = copy.deepcopy(wandb_config)
-            client_config["events"] = [ANALYTIC_EVENT_TYPE]
-
-            receiver = WandBReceiver(**client_config)
-            recipe.job.to(receiver, site_name, id="wandb_receiver")
+    # Add experiment tracking
+    # - server_side: Aggregates metrics from all clients to a single WandB run (default)
+    # - client_side: Each client tracks its own local metrics to separate WandB runs
+    add_experiment_tracking(
+        recipe,
+        "wandb",
+        tracking_config=wandb_config,
+        client_side=args.streamed_to_clients,
+        server_side=not args.disable_server_tracking,
+    )
 
     # Run or export
     if args.export_config:
@@ -100,7 +90,14 @@ def main():
         print(f"job exported to {export_dir}")
         recipe.export(export_dir)
     else:
-        recipe.run(workspace="/tmp/nvflare/jobs/workdir")
+        from nvflare.recipe import SimEnv
+
+        env = SimEnv(num_clients=args.n_clients, workspace_root="/tmp/nvflare/jobs/workdir")
+        run = recipe.execute(env)
+        print()
+        print("Result:", run.get_result())
+        print("Status:", run.get_status())
+        print()
 
 
 if __name__ == "__main__":

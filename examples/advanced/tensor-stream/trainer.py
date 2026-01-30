@@ -19,7 +19,7 @@ from trl import SFTConfig, SFTTrainer
 
 def get_dataset() -> any:
     """Load and return the dataset."""
-    return load_dataset("imdb")
+    return load_dataset("stanfordnlp/imdb")
 
 
 def preprocess(example: any, tokenizer: any) -> any:
