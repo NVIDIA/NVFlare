@@ -116,11 +116,15 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # This allows jobs to configure timeout via add_client_config()
         config_timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
         if config_timeout is not None:
+            timeout_value = float(config_timeout)
+            if timeout_value <= 0:
+                self.log_error(fl_ctx, f"Invalid EXTERNAL_PRE_INIT_TIMEOUT: {timeout_value}s (must be positive)")
+                raise ValueError(f"EXTERNAL_PRE_INIT_TIMEOUT must be positive, got {timeout_value}")
             self.log_info(
                 fl_ctx,
-                f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {config_timeout}s",
+                f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {timeout_value}s",
             )
-            self._external_pre_init_timeout = float(config_timeout)
+            self._external_pre_init_timeout = timeout_value
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
