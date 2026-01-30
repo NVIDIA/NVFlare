@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
+import filelock
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -38,8 +41,11 @@ class CIFAR10DataModule(LightningDataModule):
         self.batch_size = batch_size
 
     def prepare_data(self):
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+        # Add file lock to prevent multiple simultaneous downloads
+        lock_file = os.path.join(self.data_dir, "cifar10.lock")
+        with filelock.FileLock(lock_file):
+            torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
+            torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
 
     def setup(self, stage: str):
         # Assign train/val datasets for use in dataloaders

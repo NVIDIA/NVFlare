@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 
+import filelock
 import torch
 from network import SimpleNetwork
 from torch import nn
@@ -45,7 +47,10 @@ def main():
     sys_info = flare.system_info()
     site_name = sys_info["site_name"]
 
-    train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)
+    # Add file lock to prevent multiple simultaneous downloads
+    lock_file = os.path.join(DATASET_PATH, "cifar10.lock")
+    with filelock.FileLock(lock_file):
+        train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     n_loaders = len(train_loader)
 
