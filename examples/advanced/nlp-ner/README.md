@@ -20,16 +20,21 @@ pip install -r ./requirements.txt
 
 ## Download and Preprocess Data 
 
-The raw data can be accessed from [official page](https://www.ncbi.nlm.nih.gov/CBBresearch/Dogan/DISEASE/). 
-In this example, we use the preprocessed csv-files from the reference repo above, which can be downloaded [here](https://drive.google.com/drive/folders/13wROtEAnMgWpLMIGHB5CY1BQ1Xe2XqhG). Please download three files `train.csv`, `dev.csv`, and `test.csv`.
-In the following, we assume the downloaded files are placed in a folder `DATASET_ROOT`, and we default to `/tmp/nvflare/data/nlp_ner`
+The dataset is automatically downloaded from the [official NCBI website](https://www.ncbi.nlm.nih.gov/CBBresearch/Dogan/DISEASE/) and prepared using the following command:
 
-We then use the preprocessed data to generate random splits for both 4-client and 2-client experiments. 
-Please modify the `DATASET_ROOT` below to point to folder containing the four downloaded csv-files.
 ```commandline
 DATASET_ROOT=/tmp/nvflare/data/nlp_ner
 bash prepare_data.sh $DATASET_ROOT
 ```
+
+This script will:
+1. Create the data directory if it doesn't exist
+2. Download the NCBI Disease corpus directly from NCBI (NCBItrainset, NCBIdevelopset, and NCBItestset)
+3. Parse the PubTator format and convert it to CSV format with `text` and `labels` columns
+4. Split documents into sentences for training
+5. Generate random splits for both 4-client and 2-client federated learning experiments
+
+**Note:** The dataset downloaded directly from NCBI contains ~5,200 training sentences (from 592 PubMed abstracts). This is the official source and provides high-quality data for federated learning NER tasks. The data format is fully compatible with the training code.
 The expected output is
 ```
 4-client
