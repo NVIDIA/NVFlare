@@ -18,7 +18,6 @@ import os
 from typing import List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -331,64 +330,15 @@ def add_cross_site_evaluation(
     )
     recipe.job.to_server(eval_controller)
 
-    # Auto-add validators for NumPy recipes (if not already configured)
-    if framework == FrameworkType.RAW:
-        from nvflare.app_common.np.np_validator import NPValidator
-
-        # Check if validators are already configured for TASK_VALIDATION
-        # For NumPy recipes, we need an EXPLICIT validator, not just a wildcard executor
-        # because NumPy training scripts typically don't handle validation tasks
-        has_explicit_validator = _has_explicit_task_executor(recipe.job, AppConstants.TASK_VALIDATION)
-
-        if not has_explicit_validator:
-            # For training recipes (e.g., NumpyFedAvgRecipe), add validator for CSE
-            validator = NPValidator()
-            recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
-
-    # Note: TensorFlow and PyTorch use Client API pattern (flare.is_evaluate()) by default.
-    # Validators are not auto-added for these frameworks as they typically handle validation
-    # in the training script itself. However, TFValidator is available for users who prefer
-    # a component-based approach (similar to NumPy's NPValidator) - it must be manually added
-    # to the job using recipe.job.to_clients(validator, tasks=["validate"])
+    # Let recipe handle framework-specific validator setup if needed
+    # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
+    # PyTorch/TensorFlow recipes use Client API pattern (flare.is_evaluate()) and handle
+    # validation in the training script itself, so no validator component is needed
+    if hasattr(recipe, "add_cse_validator_if_needed"):
+        recipe.add_cse_validator_if_needed()
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
-
-
-def _has_explicit_task_executor(job, task_name: str) -> bool:
-    """Check if an executor is EXPLICITLY configured for the specified task (excluding wildcards).
-
-    This is used for NumPy recipes where wildcard executors don't actually handle validation.
-
-    Args:
-        job: FedJob instance to check
-        task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
-
-    Returns:
-        True if an executor explicitly lists this task (not via wildcard), False otherwise
-    """
-    # Access _deploy_map (private attribute)
-    if not hasattr(job, "_deploy_map"):
-        return False
-
-    for target, app in job._deploy_map.items():
-        if target == "server":
-            continue
-
-        if hasattr(app, "app_config"):
-            app_config = app.app_config
-            if hasattr(app_config, "executors"):
-                for executor_def in app_config.executors:
-                    if not hasattr(executor_def, "tasks"):
-                        continue
-
-                    try:
-                        # Check if task is EXPLICITLY listed (not just wildcard)
-                        if task_name in executor_def.tasks:
-                            return True
-                    except (TypeError, AttributeError):
-                        continue
-    return False
 
 
 def _has_task_executor(job, task_name: str) -> bool:
