@@ -48,19 +48,19 @@ class FileDownloadable(Downloadable):
         Args:
             file_name: name of the file to be downloaded.
             chunk_size: size of each chunk
-            file_downloaded_cb: if specified, the callback to be called when the file is downloaded to a site.
+            file_downloaded_cb: if specified, the callback to be called when the file is downloaded to a receiver.
             cb_kwargs: kwargs passed to the CB.
 
         Notes: The file_downloaded_cb will be called as follows:
 
-            file_downloaded_cb(to_site, status, file_name, **cb_kwargs)
+            file_downloaded_cb(to_receiver, status, file_name, **cb_kwargs)
 
-        where: to_site is the name of the site that the file is just downloaded to;
+        where: to_receiver is the name of the receiver that the file is just downloaded to;
         status is a value of DownloadStatus as defined in nvflare.fuel.f3.streaming.download_service;
         file_name is the name of the file downloaded.
 
-        The file_downloaded_cb is also called after it's downloaded to all sites. In this case, the value of
-        "to_site" is empty, and the value of "status" is also empty.
+        The file_downloaded_cb is also called after it's downloaded to all receivers. In this case, the value of
+        "to_receiver" is empty, and the value of "status" is also empty.
 
         """
         super().__init__(file_name)
@@ -103,9 +103,9 @@ class FileDownloadable(Downloadable):
         self.logger.debug(f"{received_bytes=}; sending {len(chunk)} bytes")
         return ProduceRC.OK, chunk, {_StateKey.RECEIVED_BYTES: received_bytes + len(chunk)}
 
-    def downloaded_to_one(self, to_site: str, status: str):
+    def downloaded_to_one(self, to_receiver: str, status: str):
         if self.file_downloaded_cb:
-            self.file_downloaded_cb(to_site, status, self.name, **self.cb_kwargs)
+            self.file_downloaded_cb(to_receiver, status, self.name, **self.cb_kwargs)
 
     def downloaded_to_all(self):
         if self.file_downloaded_cb:
@@ -134,7 +134,7 @@ def add_file(
 
     The file_downloaded_cb must follow this signature:
 
-        cb(to_site: str, status: str, file_name: str, **cb_kwargs)
+        cb(to_receiver: str, status: str, file_name: str, **cb_kwargs)
 
     """
     obj = FileDownloadable(file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
