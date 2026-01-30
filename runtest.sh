@@ -38,9 +38,10 @@ function install_deps {
       python3 -m pip install -e .[dev]
     fi;
     echo "dependencies installed"
-    # Reset the marker after successful install (timestamp and run count)
-    echo "$(date +%s)" > "$DEPS_MARKER"
-    echo "0" >> "$DEPS_MARKER"
+    # Reset the marker after successful install (atomic write)
+    local tmp_marker="${DEPS_MARKER}.tmp.$$"
+    printf "%s\n%s\n" "$(date +%s)" "0" > "$tmp_marker"
+    mv "$tmp_marker" "$DEPS_MARKER"
 }
 
 function should_install_deps {
@@ -55,8 +56,12 @@ function should_install_deps {
     
     # Read marker file (line 1 = timestamp, line 2 = run count)
     local install_timestamp run_count
-    install_timestamp=$(sed -n '1p' "$DEPS_MARKER" 2>/dev/null || echo "0")
-    run_count=$(sed -n '2p' "$DEPS_MARKER" 2>/dev/null || echo "0")
+    install_timestamp=$(sed -n '1p' "$DEPS_MARKER" 2>/dev/null)
+    run_count=$(sed -n '2p' "$DEPS_MARKER" 2>/dev/null)
+    
+    # Validate numeric values, default to 0 if empty or malformed
+    [[ ! "$install_timestamp" =~ ^[0-9]+$ ]] && install_timestamp=0
+    [[ ! "$run_count" =~ ^[0-9]+$ ]] && run_count=0
     
     # Check age (days since last install)
     local now marker_age_days
@@ -74,10 +79,11 @@ function should_install_deps {
         return 0
     fi
     
-    # Deps are cached and valid - increment run count (preserve timestamp)
+    # Deps are cached and valid - increment run count (atomic write)
     echo "Dependencies cached (${run_count}/${DEPS_MAX_RUNS} runs, ${marker_age_days}/${DEPS_MAX_AGE_DAYS} days) - skipping install"
-    echo "$install_timestamp" > "$DEPS_MARKER"
-    echo $((run_count + 1)) >> "$DEPS_MARKER"
+    local tmp_marker="${DEPS_MARKER}.tmp.$$"
+    printf "%s\n%s\n" "$install_timestamp" "$((run_count + 1))" > "$tmp_marker"
+    mv "$tmp_marker" "$DEPS_MARKER"
     return 1
 }
 
@@ -124,7 +130,7 @@ function print_error_msg() {
 
 function print_style_fail_msg() {
     echo "${red}Check failed!${noColor}"
-    echo "Please run auto style fixes: ${green}./runtests.sh -f {noColor}"
+    echo "Please run auto style fixes: ${green}./runtest.sh -f${noColor}"
 }
 function report_status() {
     status="$1"
@@ -258,11 +264,29 @@ function get_current_kernel() {
     echo ""
 }
 
+function validate_kernel() {
+    local kernel_name="$1"
+    if ! command -v jupyter >/dev/null 2>&1; then
+        echo "${red}Error: jupyter not found. Install with: pip install jupyter${noColor}"
+        return 1
+    fi
+    if ! jupyter kernelspec list 2>/dev/null | awk '{print $1}' | grep -qx "$kernel_name"; then
+        echo "${red}Error: kernel '$kernel_name' not found${noColor}"
+        echo "Available kernels:"
+        jupyter kernelspec list 2>/dev/null | tail -n +2
+        return 1
+    fi
+    return 0
+}
+
 function notebook_test() {
     echo "${separator}${blue}notebook-test${noColor}"
 
     local kernel_opt=""
     if [[ -n "$nb_kernel" ]]; then
+        if ! validate_kernel "$nb_kernel"; then
+            exit 1
+        fi
         kernel_opt="--kernel=$nb_kernel"
         echo "Using kernel: $nb_kernel"
     else
@@ -293,7 +317,7 @@ export PYTHONPATH=${WORK_DIR}:${PYTHONPATH} && echo "PYTHONPATH is ${PYTHONPATH}
 function help() {
     echo "Add description of the script functions here."
     echo
-    echo "Syntax: runtests.sh  [-h|--help]
+    echo "Syntax: runtest.sh  [-h|--help]
                                [-l|--check-license]
                                [-s|--check-format]
                                [-f|--fix-format]
@@ -323,7 +347,7 @@ function help() {
     echo ""
     echo "Notebook test options (used with -n):"
     echo "         --timeout=SECONDS        : timeout per notebook (default: 1200)"
-    echo "         --kernel=NAME            : Jupyter kernel name (default: current venv/conda env)"
+    echo "         --kernel=NAME            : Jupyter kernel name (must be valid, see: jupyter kernelspec list)"
     echo "         --nb-clean=MODE          : clean outputs: always, on-success, never (default: on-success)"
     echo ""
     echo "Examples:"
