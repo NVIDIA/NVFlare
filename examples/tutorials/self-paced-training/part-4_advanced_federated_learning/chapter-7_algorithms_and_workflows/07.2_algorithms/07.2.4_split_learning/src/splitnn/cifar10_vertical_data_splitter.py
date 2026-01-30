@@ -22,7 +22,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
-CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
+CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def load_cifar10_data():

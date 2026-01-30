@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 import torch
 from network import SimpleNetwork
 from torch import nn
@@ -24,7 +22,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/tmp/nvflare/data/cifar10"
 
 
 def main():
@@ -46,7 +44,7 @@ def main():
     sys_info = flare.system_info()
     site_name = sys_info["site_name"]
 
-    train_dataset = CIFAR10(root=os.path.join(DATASET_PATH, site_name), transform=transforms, download=True, train=True)
+    train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     n_loaders = len(train_loader)
 

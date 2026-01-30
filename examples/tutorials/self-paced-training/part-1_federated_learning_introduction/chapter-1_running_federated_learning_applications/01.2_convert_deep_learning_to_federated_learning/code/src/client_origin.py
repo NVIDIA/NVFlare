@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-import os
-
 import torch
 from network import SimpleNetwork
 from torch import nn
@@ -23,7 +20,7 @@ from torch.utils.data.dataloader import DataLoader
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/tmp/nvflare/data/cifar10"
 
 
 def main():
@@ -41,9 +38,7 @@ def main():
         ]
     )
 
-    data_path = os.path.join(DATASET_PATH, "site-1")
-
-    train_dataset = CIFAR10(root=data_path, transform=transforms, download=True, train=True)
+    train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     n_loaders = len(train_loader)
