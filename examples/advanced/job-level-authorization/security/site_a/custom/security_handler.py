@@ -33,7 +33,7 @@ class CustomSecurityHandler(FLComponent):
         if command in ["check_resources"]:
             security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)
             job_meta = security_items.get(FLContextKey.JOB_META)
-            if job_meta.get(JobMetaKey.JOB_NAME) == "FL Demo Job1":
+            if job_meta.get(JobMetaKey.JOB_NAME) == "FL Demo Job2":
                 return False, f"Not authorized to execute: {command}"
             else:
                 return True, ""

@@ -16,7 +16,7 @@ source nvflare-env/bin/activate
 ```
 2. Install NVFlare
 ```
-pip install nvflare
+pip install -r requirements.txt
 ```
 3. The example is part of the NVFlare source code. The source code can be obtained like this,
 ```
@@ -39,6 +39,13 @@ All the startup kits will be generated in this folder,
 /tmp/nvflare/poc/job-level-authorization/prod_00
 ```
 
+**Important**: The `setup.sh` script performs the following operations:
+1. Removes the workspace folder (if it exists) and regenerates the POC environment
+2. Prepares the POC deployment with the specified configuration
+3. **Overwrites site_a's security settings** by copying the custom security handler from `security/site_a/*` to `/tmp/nvflare/poc/job-level-authorization/prod_00/site_a/local`
+
+This custom security configuration installs the `CustomSecurityHandler` that enforces job-level authorization on site_a, blocking jobs named "FL Demo Job2" while allowing all other jobs.
+
 Note that the "workspace" folder is removed every time `setup.sh` is run. Please do not save customized files in this folder.
 
 ### Starting NVFlare
@@ -48,30 +55,35 @@ This script will start up the server and 2 clients,
 nvflare poc start
 ```
 
-### Logging with Admin Console
+### Submitting Jobs to ProdEnv
 
-For example, to login as the `super@a.org` user:
+Here, we treat the created POC environment as a production environemnt running in the background.
+You can submit jobs programmatically using the Job API with `ProdEnv`. Two example scripts are provided:
 
+**job1_prod.py** - Submits a job named "hello-numpy" (**ALLOWED by site_a**):
 ```
-cd /tmp/nvflare/poc/job-level-authorization/prod_00/super@a.org
-./startup/fl_admin.sh
+python job1.py
 ```
 
-At the prompt, enter the user email `super@a.org`
-
-The setup.sh has copied the jobs folder to the workspace folder.
-So jobs can be submitted like this, type the following command in the admin console:
-
+**job2_prod.py** - Submits a job named "FL Demo Job2" (**BLOCKED by site_a**):
 ```
-submit_job ../../job1
-submit_job ../../job2
+python job2.py
+```
+
+Both scripts use `ProdEnv` to connect to the production deployment and submit jobs via the Flare API. The jobs demonstrate how site_a's `CustomSecurityHandler` enforces authorization based on job name:
+- Job 1 with name "hello-numpy" will be accepted by both site_a and site_b
+- Job 2 with name "FL Demo Job2" will be rejected by site_a but accepted by site_b
+
+You can customize the startup kit location and username using command-line arguments:
+```
+python job1_prod.py --startup_kit_location /path/to/startup_kit --username user@example.com
 ```
 
 ## Participants
 
 ### Site
 * `server1`: NVFlare server
-* `site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL Demo Job1" to run. Any other named jobs will be able to deploy and run on site_a.
+* `site_a`: Site_a has a CustomSecurityHandler set up which does not allow the job "FL Demo Job2" to run. Any other named jobs will be able to deploy and run on site_a.
 * `site_b`: Site_b does not have the extra security handling codes. It allows any job to be deployed and run.
 
 ### Jobs
