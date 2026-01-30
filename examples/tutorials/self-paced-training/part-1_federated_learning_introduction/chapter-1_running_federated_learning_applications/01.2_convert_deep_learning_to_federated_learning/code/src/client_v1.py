@@ -48,6 +48,7 @@ def main():
     site_name = sys_info["site_name"]
 
     # Add file lock to prevent multiple simultaneous downloads
+    os.makedirs(DATASET_PATH, exist_ok=True)
     lock_file = os.path.join(DATASET_PATH, "cifar10.lock")
     with filelock.FileLock(lock_file):
         train_dataset = CIFAR10(root=DATASET_PATH, transform=transforms, download=True, train=True)

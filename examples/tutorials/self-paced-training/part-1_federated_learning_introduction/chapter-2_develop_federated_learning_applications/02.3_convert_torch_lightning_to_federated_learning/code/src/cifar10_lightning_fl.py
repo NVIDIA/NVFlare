@@ -42,6 +42,7 @@ class CIFAR10DataModule(LightningDataModule):
 
     def prepare_data(self):
         # Add file lock to prevent multiple simultaneous downloads
+        os.makedirs(self.data_dir, exist_ok=True)
         lock_file = os.path.join(self.data_dir, "cifar10.lock")
         with filelock.FileLock(lock_file):
             torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
