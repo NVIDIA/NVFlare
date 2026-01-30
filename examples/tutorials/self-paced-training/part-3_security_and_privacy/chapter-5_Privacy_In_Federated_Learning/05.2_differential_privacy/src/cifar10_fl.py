@@ -29,7 +29,7 @@ import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
 # (optional) set a fix place so we don't need to download everytime
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/tmp/nvflare/data/cifar10"
 # If available, we use GPU to speed things up.
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Running on device {DEVICE}")

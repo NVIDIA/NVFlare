@@ -25,7 +25,7 @@ import nvflare.client.lightning as flare
 seed_everything(7)
 
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/tmp/nvflare/data/cifar10"
 BATCH_SIZE = 4
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
