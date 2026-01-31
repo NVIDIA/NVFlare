@@ -121,8 +121,9 @@ class PTFileModelPersistor(ModelPersistor):
 
         self.default_train_conf = None
 
-        if source_ckpt_file_full_name and not os.path.exists(source_ckpt_file_full_name):
-            raise ValueError(f"specified source checkpoint model file {source_ckpt_file_full_name} does not exist")
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
+        # Existence is validated at runtime in load_model() when the job executes.
 
     def _initialize(self, fl_ctx: FLContext):
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
