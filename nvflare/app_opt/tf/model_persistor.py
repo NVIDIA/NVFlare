@@ -80,7 +80,7 @@ class TFModelPersistor(ModelPersistor):
                     try:
                         # Try loading as full model first
                         self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
-                    except (OSError, IOError) as e:
+                    except Exception as e:
                         # Fall back to loading weights only if file format suggests weights-only
                         self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
                         if self.model is not None:
@@ -103,7 +103,19 @@ class TFModelPersistor(ModelPersistor):
                 raise FileNotFoundError(f"Source checkpoint file not found: {self.source_ckpt_file_full_name}")
         elif os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
-            self.model.load_weights(self._model_save_path)
+            if self.model is not None:
+                self.model.load_weights(self._model_save_path)
+            else:
+                raise ValueError(
+                    f"Cannot load weights from {self._model_save_path} without a model. " "Provide a model instance."
+                )
+
+        # Ensure model exists before proceeding
+        if self.model is None:
+            raise ValueError(
+                "No model available. Provide either a model instance, source_ckpt_file_full_name with a full model, "
+                "or a previously saved model."
+            )
 
         # build model if not built yet
         if not self.model.built:

@@ -88,8 +88,14 @@ class JoblibModelParamPersistor(ModelPersistor):
 
         # Priority 3: Use initial params
         if model is None:
-            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
-            model = self.initial_params
+            if self.initial_params is not None:
+                self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
+                model = self.initial_params
+            else:
+                raise ValueError(
+                    "No model parameters available. Provide either source_ckpt_file_full_name, "
+                    "a previously saved model, or initial_params."
+                )
 
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 

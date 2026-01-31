@@ -142,10 +142,12 @@ class TestDetectFrameworkFromModel:
         except ImportError:
             pytest.skip("NumPy not installed")
 
-    def test_list_detected_as_numpy(self):
-        """Python list should be detected as NUMPY."""
+    def test_list_not_detected_as_framework(self):
+        """Python list should NOT auto-detect as any framework (ambiguous)."""
         model = [1, 2, 3]
-        assert detect_framework_from_model(model) == FrameworkType.NUMPY
+        # Plain list is ambiguous - could be used with any framework
+        # User should explicitly specify framework when using plain lists
+        assert detect_framework_from_model(model) is None
 
     def test_unknown_type_returns_none(self):
         """Unknown type should return None."""

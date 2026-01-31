@@ -20,6 +20,23 @@ import pytest
 class TestTFModelPersistorInit:
     """Tests for TFModelPersistor initialization with source_ckpt_file_full_name."""
 
+    def test_init_without_model_and_ckpt_allowed(self):
+        """Init without model or source_ckpt should be allowed at init time."""
+        try:
+            from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+
+            # This should not raise - error only happens at load_model time
+            persistor = TFModelPersistor(model=None)
+
+            assert persistor.model is None
+            assert persistor.source_ckpt_file_full_name is None
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+
+class TestTFModelPersistorLoadModel:
+    """Tests for TFModelPersistor initialization with source_ckpt_file_full_name."""
+
     def test_init_without_source_ckpt(self):
         """Init without source_ckpt should work."""
         try:

@@ -47,3 +47,30 @@ class TestJoblibModelParamPersistorInit:
 
         assert persistor.initial_params is None
         assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.joblib"
+
+
+class TestJoblibModelParamPersistorLoadModel:
+    """Tests for JoblibModelParamPersistor load_model behavior."""
+
+    def test_load_model_no_params_raises_error(self, tmp_path):
+        """load_model should raise ValueError when no params are available."""
+        import pytest
+
+        from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+
+        # Create persistor with no initial_params and no source_ckpt
+        persistor = JoblibModelParamPersistor(initial_params=None)
+
+        # Manually set up save_path (normally done in _initialize)
+        persistor.log_dir = str(tmp_path)
+        persistor.save_path = str(tmp_path / "model_param.joblib")
+
+        # Mock FLContext
+        class MockFLContext:
+            pass
+
+        fl_ctx = MockFLContext()
+
+        # load_model should raise ValueError when no params are available
+        with pytest.raises(ValueError, match="No model parameters available"):
+            persistor.load_model(fl_ctx)

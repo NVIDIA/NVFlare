@@ -114,11 +114,11 @@ def detect_framework_from_model(model: Any) -> Optional[FrameworkType]:
     except ImportError:
         pass
 
-    # Check for NumPy second
+    # Check for NumPy second (only np.ndarray, not plain list)
     try:
         import numpy as np
 
-        if isinstance(model, (np.ndarray, list)):
+        if isinstance(model, np.ndarray):
             return FrameworkType.NUMPY
     except ImportError:
         pass
