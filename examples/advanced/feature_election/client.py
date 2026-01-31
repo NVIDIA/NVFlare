@@ -153,24 +153,22 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         site_name = fl_ctx.get_identity_name()
 
         try:
-            # Standard NVFlare naming: "site-1", "site-2", etc.
             if site_name.startswith("site-"):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
-                # Fallback: Extract the first integer found in the string
                 match = re.search(r"\d+", site_name)
-                client_id = int(match.group()) - 1 if match else 0
+                if match:
+                    client_id = int(match.group()) - 1
+                else:
+                    client_id = 0
 
             # Validate range
             if not (0 <= client_id < self.num_clients):
                 raise ValueError(
-                    f"Client ID {client_id} derived from '{site_name}' is "
-                    f"out of range [0, {self.num_clients - 1}]"
-                )
+                    f"Extracted client_id {client_id} from '{site_name}' is out of range [0, {self.num_clients - 1}]")
 
         except (ValueError, IndexError) as e:
-            logger.error(f"Failed to parse client ID from site name '{site_name}': {e}")
-            # Depending on your requirements, you might want to re-raise or default to 0
+            logger.error(f"Failed to parse client_id from '{site_name}': {e}. Defaulting to client_id=0")
             client_id = 0
 
         # Load data using the parsed ID
