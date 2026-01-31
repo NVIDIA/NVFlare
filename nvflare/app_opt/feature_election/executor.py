@@ -194,7 +194,7 @@ class FeatureElectionExecutor(Executor):
                     # Initialize model structure if needed
                     if not self._model_initialized:
                         # Quick fit to establish coef_ shape, then overwrite
-                        self.model.fit(X_tr[:10], self.y_train[:10])
+                        self.model.fit(X_tr[:min(10, len(self.y_train))], self.y_train[:min(10, len(self.y_train))])
                         self._model_initialized = True
                     # Set aggregated weights
                     self.model.coef_ = np.array([p["weight_0"]])
