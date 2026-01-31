@@ -63,7 +63,7 @@ class BaseScriptRunner:
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -175,7 +175,7 @@ class BaseScriptRunner:
         self._executor = executor
         self._launcher = launcher
         self._memory_gc_rounds = memory_gc_rounds
-        self._torch_cuda_empty_cache = torch_cuda_empty_cache
+        self._cuda_empty_cache = cuda_empty_cache
 
     def _create_cell_pipe(self):
         ct = self._pipe_connect_type
@@ -235,7 +235,7 @@ class BaseScriptRunner:
                     params_transfer_type=self._params_transfer_type,
                     server_expected_format=self._server_expected_format,
                     memory_gc_rounds=self._memory_gc_rounds,
-                    torch_cuda_empty_cache=self._torch_cuda_empty_cache,
+                    cuda_empty_cache=self._cuda_empty_cache,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -271,7 +271,7 @@ class BaseScriptRunner:
                     params_transfer_type=self._params_transfer_type,
                     server_expected_format=self._server_expected_format,
                     memory_gc_rounds=self._memory_gc_rounds,
-                    torch_cuda_empty_cache=self._torch_cuda_empty_cache,
+                    cuda_empty_cache=self._cuda_empty_cache,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -318,7 +318,7 @@ class ScriptRunner(BaseScriptRunner):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -352,5 +352,5 @@ class ScriptRunner(BaseScriptRunner):
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
             memory_gc_rounds=memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            cuda_empty_cache=cuda_empty_cache,
         )

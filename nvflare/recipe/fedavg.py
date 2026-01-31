@@ -61,7 +61,7 @@ class _FedAvgValidator(BaseModel):
     # Memory management
     server_memory_gc_rounds: int = 0
     client_memory_gc_rounds: int = 0
-    torch_cuda_empty_cache: bool = False
+    cuda_empty_cache: bool = False
 
 
 class FedAvgRecipe(Recipe):
@@ -140,7 +140,7 @@ class FedAvgRecipe(Recipe):
             Set to 0 to disable. Defaults to 0.
         client_memory_gc_rounds: Run memory cleanup every N rounds on client after sending model.
             Set to 0 to disable. Defaults to 0.
-        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during client memory cleanup.
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during client memory cleanup.
             Only applicable to PyTorch GPU training. Defaults to False.
 
     Note:
@@ -184,7 +184,7 @@ class FedAvgRecipe(Recipe):
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -214,7 +214,7 @@ class FedAvgRecipe(Recipe):
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -251,7 +251,7 @@ class FedAvgRecipe(Recipe):
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
-        self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Validate that we have at least one model source
         # Note: Subclasses (e.g., sklearn) that manage models differently should pass
@@ -340,7 +340,7 @@ class FedAvgRecipe(Recipe):
                     launch_once=launch_once,
                     shutdown_timeout=shutdown_timeout,
                     memory_gc_rounds=self.client_memory_gc_rounds,
-                    torch_cuda_empty_cache=self.torch_cuda_empty_cache,
+                    cuda_empty_cache=self.cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
@@ -355,7 +355,7 @@ class FedAvgRecipe(Recipe):
                 launch_once=self.launch_once,
                 shutdown_timeout=self.shutdown_timeout,
                 memory_gc_rounds=self.client_memory_gc_rounds,
-                torch_cuda_empty_cache=self.torch_cuda_empty_cache,
+                cuda_empty_cache=self.cuda_empty_cache,
             )
             job.to_clients(executor)
 

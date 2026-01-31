@@ -100,15 +100,15 @@ class InProcessClientAPI(APISpec):
     def set_meta(self, meta: dict):
         self.meta = meta
 
-    def configure_memory_management(self, gc_rounds: int = 0, torch_cuda_empty_cache: bool = False):
+    def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.
 
         Args:
             gc_rounds: Cleanup every N rounds. 0 = disabled.
-            torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() on cleanup.
+            cuda_empty_cache: If True, call torch.cuda.empty_cache() on cleanup.
         """
         self._memory_gc_rounds = gc_rounds
-        self._torch_cuda_empty_cache = torch_cuda_empty_cache
+        self._cuda_empty_cache = cuda_empty_cache
         if gc_rounds > 0:
             self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
 

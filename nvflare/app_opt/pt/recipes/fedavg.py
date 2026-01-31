@@ -80,7 +80,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         server_memory_gc_rounds: Run memory cleanup every N rounds on server. Defaults to 0 (disabled).
         client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
-        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         Basic usage with early stopping:
@@ -150,7 +150,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Memory management
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -182,7 +182,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

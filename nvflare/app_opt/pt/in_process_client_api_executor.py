@@ -39,7 +39,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         params_exchange_format=ExchangeFormat.PYTORCH,
         server_expected_format=ExchangeFormat.NUMPY,
         memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         super(PTInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -57,7 +57,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             log_pull_interval=log_pull_interval,
             server_expected_format=server_expected_format,
             memory_gc_rounds=memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            cuda_empty_cache=cuda_empty_cache,
         )
         fobs.register(TensorDecomposer)
         if (
