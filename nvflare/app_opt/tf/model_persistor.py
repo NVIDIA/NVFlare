@@ -80,8 +80,9 @@ class TFModelPersistor(ModelPersistor):
                     try:
                         # Try loading as full model first
                         self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
-                    except Exception:
-                        # Fall back to loading weights only
+                    except (OSError, IOError) as e:
+                        # Fall back to loading weights only if file format suggests weights-only
+                        self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
                         if self.model is not None:
                             self.model.load_weights(self.source_ckpt_file_full_name)
                         else:
