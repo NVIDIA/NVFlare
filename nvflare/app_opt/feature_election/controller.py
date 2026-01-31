@@ -285,8 +285,8 @@ class FeatureElectionController(Controller):
             task_data = Shareable()
             task_data["request_type"] = "train"
             if self.global_weights:
-                task_data["params"] = self.global_weights
-
+                task_data["params"] = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in
+                                       self.global_weights.items()}
             results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx, timeout=self.train_timeout)
 
             # Aggregate Weights (FedAvg)
