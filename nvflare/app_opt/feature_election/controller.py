@@ -417,7 +417,6 @@ class FeatureElectionController(Controller):
                 selected_diff = np.zeros_like(diff_mask)
                 selected_diff[np.where(diff_mask)[0][indices]] = True
                 return intersection | selected_diff
-                return intersection | selected_diff
 
         return intersection
 
