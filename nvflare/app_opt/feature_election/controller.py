@@ -412,13 +412,15 @@ class FeatureElectionController(Controller):
 
         for i, (m, s) in enumerate(zip(masks, scores)):
             valid = m.astype(bool)
-            if np.any(valid):
-                min_s, max_s = np.min(s[valid]), np.max(s[valid])
-                if max_s > min_s:
-                    norm_s = np.where(valid, (s - min_s) / (max_s - min_s), 0.0)
-                else:
-                    norm_s = np.where(valid, 0.5, 0.0)
-                agg_scores += norm_s * effective_weights[i]
+            if not np.any(valid):
+                logger.warning(f"Client {i} has no selected features, skipping")
+                continue
+            min_s, max_s = np.min(s[valid]), np.max(s[valid])
+            if max_s > min_s:
+                norm_s = np.where(valid, (s - min_s) / (max_s - min_s), 0.0)
+            else:
+                norm_s = np.where(valid, 0.5, 0.0)
+            agg_scores += norm_s * effective_weights[i]
 
         # Select top features from (Union - Intersection) based on freedom_degree
         n_add = int(np.ceil(np.sum(diff_mask) * self.freedom_degree))
