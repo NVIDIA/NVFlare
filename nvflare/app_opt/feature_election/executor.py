@@ -197,7 +197,7 @@ class FeatureElectionExecutor(Executor):
                         self.model.fit(X_tr[:10], self.y_train[:10])
                         self._model_initialized = True
                     # Set aggregated weights
-                    self.model.coef_ = np.array(p["weight_0"])
+                    self.model.coef_ = np.array([p["weight_0"]])
                     self.model.intercept_ = np.array(p["weight_1"])
 
             # Train with warm_start=True continues from current weights
