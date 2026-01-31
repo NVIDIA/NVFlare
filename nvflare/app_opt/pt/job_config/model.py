@@ -24,7 +24,13 @@ from nvflare.job_config.api import validate_object_for_job
 
 
 class PTModel:
-    def __init__(self, model, persistor: Optional[ModelPersistor] = None, locator: Optional[ModelLocator] = None):
+    def __init__(
+        self,
+        model,
+        persistor: Optional[ModelPersistor] = None,
+        locator: Optional[ModelLocator] = None,
+        allow_numpy_conversion: bool = True,
+    ):
         """PyTorch model wrapper.
 
         If model is an nn.Module, add a PTFileModelPersistor with the model and a TFModelPersistor.
@@ -33,6 +39,8 @@ class PTModel:
             model (any): model
             persistor (optional, ModelPersistor): how to persist the model.
             locator (optional, ModelLocator): how to locate the model.
+            allow_numpy_conversion (bool): If True, enables conversion between PyTorch tensors and NumPy arrays.
+                Set to False when using tensor format for message exchange. Defaults to True.
         """
         self.model = model
         if persistor:
@@ -41,6 +49,7 @@ class PTModel:
         if locator:
             validate_object_for_job("locator", locator, ModelLocator)
         self.locator = locator
+        self.allow_numpy_conversion = allow_numpy_conversion
 
     def add_to_fed_job(self, job, ctx):
         """This method is used by Job API.
@@ -53,7 +62,11 @@ class PTModel:
             dictionary of ids of component added
         """
         if isinstance(self.model, nn.Module):  # if model, create a PT persistor
-            persistor = self.persistor if self.persistor else PTFileModelPersistor(model=self.model)
+            persistor = (
+                self.persistor
+                if self.persistor
+                else PTFileModelPersistor(model=self.model, allow_numpy_conversion=self.allow_numpy_conversion)
+            )
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 
             locator = self.locator if self.locator else PTFileModelLocator(pt_persistor_id=persistor_id)

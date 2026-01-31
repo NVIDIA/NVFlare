@@ -1,1 +1,1 @@
-nvflare~=2.7.0rc
+nvflare~=2.7.2rc

@@ -22,6 +22,10 @@ from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
+# BioNeMo requires heavy imports (PyTorch, NeMo, Megatron) which can take longer than
+# the default 300s timeout on systems with slow I/O or resource contention
+BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
+
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
@@ -72,6 +76,9 @@ def main(args):
     # Add decomposer register to server and clients
     recipe.job.to_server(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
     recipe.job.to_clients(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
+
+    # Add BioNeMo-specific timeout configuration to client config to override its default timeout
+    recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})
 
     # Run simulation
     env = SimEnv(

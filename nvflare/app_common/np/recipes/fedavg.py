@@ -14,6 +14,7 @@
 
 from typing import Optional
 
+import numpy as np
 from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
@@ -189,8 +190,17 @@ class NumpyFedAvgRecipe(Recipe):
         shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
         aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
+        # Convert numpy array to list for JSON serialization (from 2.7 fix)
+        # NPModelPersistor expects a list, not a numpy array
+        if isinstance(self.initial_model, np.ndarray):
+            initial_model_list = self.initial_model.tolist()
+        elif isinstance(self.initial_model, list):
+            initial_model_list = self.initial_model
+        else:
+            raise TypeError(f"initial_model must be a numpy array or list, got {type(self.initial_model).__name__}")
+
         # Add persistor with initial model
-        persistor_id = job.to_server(NPModelPersistor(initial_model=self.initial_model), id="persistor")
+        persistor_id = job.to_server(NPModelPersistor(initial_model=initial_model_list), id="persistor")
         # Note: Unlike PyTorch/TensorFlow, NumPy recipes do NOT set comp_ids["persistor_id"]
         # because NPModelLocator doesn't use persistor_id (see MODEL_LOCATOR_REGISTRY in recipe/utils.py)
 
@@ -221,3 +231,42 @@ class NumpyFedAvgRecipe(Recipe):
         job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    def add_cse_validator_if_needed(self):
+        """Add NPValidator for cross-site evaluation if not already configured.
+
+        NumPy recipes need specialized NPValidator because:
+        - NumPy training scripts typically only handle training tasks
+        - Wildcard executors (tasks=["*"]) don't actually implement validation
+        - Cross-site evaluation requires dedicated validation component
+
+        This method checks if a dedicated validator is already configured.
+        If only wildcard executors exist, adds NPValidator.
+        """
+        from nvflare.app_common.app_constant import AppConstants
+        from nvflare.app_common.np.np_validator import NPValidator
+
+        # Check if validation task is explicitly configured (not just via wildcard)
+        has_explicit_validator = False
+        if hasattr(self.job, "_deploy_map"):
+            for target, app in self.job._deploy_map.items():
+                if target == "server":
+                    continue
+
+                if hasattr(app, "app_config") and hasattr(app.app_config, "executors"):
+                    for executor_def in app.app_config.executors:
+                        if hasattr(executor_def, "tasks"):
+                            try:
+                                # Check if validation is explicitly listed (not just wildcard)
+                                if AppConstants.TASK_VALIDATION in executor_def.tasks:
+                                    has_explicit_validator = True
+                                    break
+                            except (TypeError, AttributeError):
+                                continue
+                if has_explicit_validator:
+                    break
+
+        if not has_explicit_validator:
+            # No explicit validator found - add NPValidator for cross-site evaluation
+            validator = NPValidator()
+            self.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])

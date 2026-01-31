@@ -20,13 +20,18 @@ from model import LitNet
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.recipe.sim_env import SimEnv
 
+PRETRAIN_MODEL_DIR = "/tmp/nvflare/pretrain_models"
+
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=24)
     parser.add_argument(
-        "--checkpoint", type=str, default="pretrained_model.pt", help="Path to pre-trained model checkpoint"
+        "--checkpoint",
+        type=str,
+        default=os.path.join(PRETRAIN_MODEL_DIR, "pretrained_model.pt"),
+        help="Path to pre-trained model checkpoint",
     )
 
     return parser.parse_args()
