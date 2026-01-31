@@ -82,16 +82,30 @@ class FeatureElectionExecutor(Executor):
         Set data for the executor.
         X_val and y_val are optional; if not provided, training data is used for evaluation.
         """
-        self.X_train = X_train
-        self.y_train = y_train
-        self.X_val = X_val if X_val is not None else X_train
-        self.y_val = y_val if y_val is not None else y_train
-        
+        # Validate that feature_names matches X_train dimensions to prevent misalignment
         if feature_names is not None:
             if len(feature_names) != X_train.shape[1]:
                 raise ValueError(
-                    f"Length of feature_names ({len(feature_names)}) must match number of features in X_train ({X_train.shape[1]})"
+                    f"Length of feature_names ({len(feature_names)}) must match "
+                    f"number of features in X_train ({X_train.shape[1]})."
                 )
+
+        self.X_train = X_train
+        self.y_train = y_train
+
+        # If X_val is provided, ensure it has the same feature count as X_train
+        if X_val is not None:
+            if X_val.shape[1] != X_train.shape[1]:
+                raise ValueError(
+                    f"X_val feature count ({X_val.shape[1]}) does not match "
+                    f"X_train feature count ({X_train.shape[1]})."
+                )
+            self.X_val = X_val
+            self.y_val = y_val
+        else:
+            self.X_val = X_train
+            self.y_val = y_train
+
         self.feature_names = feature_names
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
