@@ -199,7 +199,13 @@ def _split_non_iid(
         for i, prop in enumerate(proportions):
             client_indices[i].extend(idx_k[start : start + prop])
             start += prop
-
+    # Check that no client ended up with an empty dataset
+    for i, indices in enumerate(client_indices):
+        if len(indices) == 0:
+            raise ValueError(
+                f"Client {i} received 0 samples due to extreme Dirichlet split (alpha={alpha}). "
+                "Increase alpha or the total sample count."
+            )
     return [df.iloc[indices].copy() for indices in client_indices]
 
 
