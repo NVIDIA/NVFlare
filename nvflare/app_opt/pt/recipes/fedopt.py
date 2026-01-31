@@ -44,6 +44,7 @@ class _FedOptValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     device: Optional[str] = None
+    server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     torch_cuda_empty_cache: bool = False
 
@@ -81,6 +82,8 @@ class FedOptRecipe(Recipe):
             - config_type: Type of configuration, typically "dict"
         device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
             Defaults to None; will default to cuda if available and no device is specified.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 1 (every round).
         client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
         torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
@@ -127,6 +130,7 @@ class FedOptRecipe(Recipe):
         source_model: str = "model",
         optimizer_args: Optional[dict] = None,
         lr_scheduler_args: Optional[dict] = None,
+        server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         torch_cuda_empty_cache: bool = False,
     ):
@@ -143,6 +147,7 @@ class FedOptRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             device=device,
+            server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             torch_cuda_empty_cache=torch_cuda_empty_cache,
         )
@@ -161,6 +166,7 @@ class FedOptRecipe(Recipe):
         self.source_model = source_model
         self.optimizer_args = optimizer_args
         self.lr_scheduler_args = lr_scheduler_args
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
 
@@ -217,6 +223,7 @@ class FedOptRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id="persistor",
             shareable_generator_id=shareable_generator_id,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)
