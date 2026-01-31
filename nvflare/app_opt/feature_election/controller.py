@@ -412,8 +412,11 @@ class FeatureElectionController(Controller):
         if n_add > 0:
             diff_scores = agg_scores[diff_mask]
             n_add = min(n_add, len(diff_scores))
+            if n_add <= 0:
+                return intersection
+            diff_scores = agg_scores[diff_mask]
+            n_add = min(n_add, len(diff_scores))
             if n_add > 0:
-                indices = np.argpartition(diff_scores, -n_add)[-n_add:]
                 selected_diff = np.zeros_like(diff_mask)
                 selected_diff[np.where(diff_mask)[0][indices]] = True
                 return intersection | selected_diff
