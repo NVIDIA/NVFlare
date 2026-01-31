@@ -26,12 +26,35 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, model: tf.keras.Model, save_name="tf_model.weights.h5", filter_id: str = None):
+    def __init__(
+        self,
+        model: tf.keras.Model = None,
+        save_name="tf_model.weights.h5",
+        filter_id: str = None,
+        source_ckpt_file_full_name: str = None,
+    ):
+        """Persist TensorFlow/Keras model to/from file system.
+
+        This persistor supports loading from a source checkpoint file, which is useful
+        for pre-trained models. The checkpoint path may be a server-side path that
+        doesn't exist on the job submission machine.
+
+        Args:
+            model: TensorFlow/Keras model. Can be None if source_ckpt_file_full_name
+                points to a full model file (not just weights).
+            save_name: Filename for saving model weights. Defaults to "tf_model.weights.h5".
+            filter_id: Optional filter component ID for model serialization.
+            source_ckpt_file_full_name: Full path to source checkpoint file.
+                This path may not exist locally (server-side path).
+        """
         super().__init__(
             filter_id=filter_id,
         )
         self.save_name = save_name
         self.model = model
+        self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
 
     def _initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
@@ -48,8 +71,36 @@ class TFModelPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
-
-        if os.path.exists(self._model_save_path):
+        # Priority: source_ckpt_file_full_name > previously saved model > model weights
+        if self.source_ckpt_file_full_name:
+            if os.path.exists(self.source_ckpt_file_full_name):
+                self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+                # Check if it's a full model file or just weights
+                if self.source_ckpt_file_full_name.endswith((".h5", ".keras")):
+                    try:
+                        # Try loading as full model first
+                        self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+                    except Exception:
+                        # Fall back to loading weights only
+                        if self.model is not None:
+                            self.model.load_weights(self.source_ckpt_file_full_name)
+                        else:
+                            raise ValueError(
+                                f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
+                                "Provide a model instance or use a full model file."
+                            )
+                elif os.path.isdir(self.source_ckpt_file_full_name):
+                    # SavedModel directory
+                    self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+                else:
+                    # Assume weights file
+                    if self.model is not None:
+                        self.model.load_weights(self.source_ckpt_file_full_name)
+                    else:
+                        raise ValueError(f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.")
+            else:
+                raise FileNotFoundError(f"Source checkpoint file not found: {self.source_ckpt_file_full_name}")
+        elif os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
             self.model.load_weights(self._model_save_path)
 
