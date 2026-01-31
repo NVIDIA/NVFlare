@@ -74,9 +74,12 @@ def main():
         name="spleen_bundle_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
+        # Model can be specified as class instance or dict config:
         initial_model=FLUNet(
             spatial_dims=3,
             in_channels=1,
+            # Alternative: initial_model={"path": "network.FLUNet", "args": {...}},
+            # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
             out_channels=2,
             channels=[16, 32, 64, 128, 256],
             strides=[2, 2, 2, 2],

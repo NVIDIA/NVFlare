@@ -63,7 +63,10 @@ recipe = FedAvgRecipe(
     name=job_name,
     min_clients=n_clients,
     num_rounds=50,
+    # Model can be specified as class instance or dict config:
     initial_model=ProteinMLP(input_dim=embedding_dimensions, num_classes=len(CLASS_LABELS)),
+    # Alternative: initial_model={"path": "model.ProteinMLP", "args": {...}},
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="client.py",
     train_args=script_args,
 )

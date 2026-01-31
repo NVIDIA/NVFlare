@@ -302,6 +302,8 @@ recipe = FedAvgRecipe(
     train_script="path/to/client.py",
     min_clients=8,
     num_rounds=50,
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     initial_model=initial_model,
     aggregator=custom_aggregator  # Pass your custom aggregator here
 )

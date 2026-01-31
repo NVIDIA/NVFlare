@@ -34,9 +34,15 @@ class NPModelLocator(ModelLocator):
         located on server. This NPModelLocator finds and extracts "server" model that is saved during training.
 
         Args:
-            model_dir (str): Directory to look for models in. Defaults to "model"
-            model_name (Union[str, Dict[str, str]]). Name of the model. Defaults to "server.npy", or a list of
-                model names and locations
+            model_dir (str): Directory to look for models in. Defaults to "models".
+                Only used when model_name contains relative paths.
+            model_name (Union[str, Dict[str, str]]): Name or path of the model(s).
+                Defaults to "server.npy".
+                - If a string, treated as filename for the "server" model
+                - If a dict, maps model identifiers to filenames/paths
+                - Paths can be:
+                  - Relative: resolved as ``<run_dir>/<model_dir>/<model_name>``
+                  - Absolute: used directly (e.g., "/path/to/pretrained.npy")
         """
         super().__init__()
 
@@ -67,11 +73,19 @@ class NPModelLocator(ModelLocator):
 
         if model_name in list(self.model_name.keys()):
             try:
-                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-                run_dir = engine.get_workspace().get_run_dir(job_id)
-                model_path = os.path.join(run_dir, self.model_dir)
+                model_file = self.model_name[model_name]
 
-                model_load_path = os.path.join(model_path, self.model_name[model_name])
+                # Check if the path is absolute or relative
+                if os.path.isabs(model_file):
+                    # Absolute path - use directly
+                    model_load_path = model_file
+                else:
+                    # Relative path - resolve relative to run_dir/model_dir
+                    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                    run_dir = engine.get_workspace().get_run_dir(job_id)
+                    model_path = os.path.join(run_dir, self.model_dir)
+                    model_load_path = os.path.join(model_path, model_file)
+
                 np_data = None
                 try:
                     np_data = np.load(model_load_path, allow_pickle=False)

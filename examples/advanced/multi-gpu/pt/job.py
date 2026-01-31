@@ -44,9 +44,12 @@ def main():
     if args.use_tracking:
         train_args = "--use_tracking"
 
+    # Model can be specified as class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="pt_ddp",
         initial_model=initial_model,
+        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script=train_script,

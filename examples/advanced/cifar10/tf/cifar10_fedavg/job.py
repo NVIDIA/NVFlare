@@ -49,12 +49,16 @@ def main():
         raise ValueError("Alpha must be greater than 0 for federated settings")
 
     # Create initial model
+    # Model can be specified as class instance or dict config:
     initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
+    # Alternative: initial_model = {"path": "networks.tf_net.ModerateTFNet", "args": {"input_shape": [None, 32, 32, 3]}}
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.h5"
 
     # Create FedAvg recipe
     recipe = FedAvgRecipe(
         name=job_name,
         initial_model=initial_model,
+        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),

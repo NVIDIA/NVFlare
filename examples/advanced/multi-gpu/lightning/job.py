@@ -49,9 +49,12 @@ def main():
 
     command = "python3 -u"
 
+    # Model can be specified as class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="lightning_ddp",
         initial_model=initial_model,
+        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=train_script,

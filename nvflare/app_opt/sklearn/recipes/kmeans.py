@@ -14,7 +14,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, conint
+from pydantic import BaseModel, conint, field_validator
 
 from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
@@ -22,6 +22,7 @@ from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
+from nvflare.recipe.model_config import validate_checkpoint_path
 
 
 # Internal — not part of the public API
@@ -30,6 +31,16 @@ class _KMeansValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     n_clusters: conint(gt=0)
+    initial_ckpt: Optional[str] = None
+
+    @field_validator("initial_ckpt")
+    @classmethod
+    def validate_initial_ckpt(cls, v):
+        if v is not None:
+            from nvflare.fuel.utils.constants import FrameworkType
+
+            validate_checkpoint_path(v, FrameworkType.RAW, has_model=True)
+        return v
 
 
 class KMeansFedAvgRecipe(FedAvgRecipe):
@@ -59,6 +70,9 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 5.
         n_clusters: Number of clusters for K-Means. Defaults to 3.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.joblib).
+            The file may not exist locally as it could be on the server.
+            Used to resume training from previously saved cluster centers.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
@@ -122,6 +136,7 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         min_clients: int,
         num_rounds: int = 5,
         n_clusters: int = 3,
+        initial_ckpt: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
@@ -129,11 +144,15 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
     ):
-        v = _KMeansValidator(n_clusters=n_clusters)
+        v = _KMeansValidator(n_clusters=n_clusters, initial_ckpt=initial_ckpt)
         self.n_clusters = v.n_clusters
+        self.initial_ckpt = v.initial_ckpt
 
         # Create KMeans-specific persistor
-        persistor = JoblibModelParamPersistor(initial_params={"n_clusters": n_clusters})
+        persistor = JoblibModelParamPersistor(
+            initial_params={"n_clusters": n_clusters},
+            source_ckpt_file_full_name=initial_ckpt,
+        )
 
         # K-Means uses custom assembler for mini-batch aggregation
         assembler = KMeansAssembler()

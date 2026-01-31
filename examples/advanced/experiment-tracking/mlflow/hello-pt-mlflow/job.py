@@ -45,7 +45,10 @@ if __name__ == "__main__":
         name="fedavg_mlflow",
         min_clients=args.n_clients,
         num_rounds=5,
+        # Model can be specified as class instance or dict config:
         initial_model=SimpleNetwork(),
+        # Alternative: initial_model={"path": "model.SimpleNetwork", "args": {}},
+        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script="client.py",
     )
 

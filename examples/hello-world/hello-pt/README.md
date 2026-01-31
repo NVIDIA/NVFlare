@@ -123,19 +123,42 @@ With the Recipe API, **there is no need to write custom server code**. The feder
 ## Job Recipe Code
 
 The `FedAvgRecipe` combines the client training script [`client.py`](client.py) with the built-in federated averaging algorithm:
-```
-    recipe = FedAvgRecipe(
-        name="hello-pt",
-        min_clients=n_clients,
-        num_rounds=num_rounds,
-        initial_model=SimpleNetwork(),
-        train_script="client.py",
-        train_args=f"--batch_size {batch_size}",
-    )
+```python
+recipe = FedAvgRecipe(
+    name="hello-pt",
+    min_clients=n_clients,
+    num_rounds=num_rounds,
+    initial_model=SimpleNetwork(),
+    train_script="client.py",
+    train_args=f"--batch_size {batch_size}",
+)
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
-    recipe.execute(env=env)
+env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+recipe.execute(env=env)
 ```
+
+### Model Input Options
+
+The `initial_model` parameter accepts two formats:
+
+1. **Class instance** (shown above): `initial_model=SimpleNetwork()` - Convenient and Pythonic
+2. **Dict config**: `initial_model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
+
+> **Note:** Class instances are converted to configuration files before job submission. For large models, use dict config to avoid unnecessary instantiation overhead.
+
+### Pre-trained Checkpoint
+
+To resume training from pre-trained weights, use the `initial_ckpt` parameter:
+
+```python
+recipe = FedAvgRecipe(
+    initial_model=SimpleNetwork(),
+    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path, must exist on server
+    ...
+)
+```
+
+> **Note:** The checkpoint path must be absolute and point to where the file exists on the server (not necessarily on your local machine).
 
 To include cross-site evaluation after training, use the `--cross_site_eval` flag (see command below). This adds the `CrossSiteModelEval` controller to evaluate trained models across all client sites.
 

@@ -46,6 +46,8 @@ def main():
         name="hello-tensor-stream",
         min_clients=n_clients,
         num_rounds=num_rounds,
+        # Model can be specified as class instance or dict config
+        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
         initial_model=model,
         server_expected_format=ExchangeFormat.PYTORCH,
         train_script="client.py",
