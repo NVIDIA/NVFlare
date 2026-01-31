@@ -414,11 +414,9 @@ class FeatureElectionController(Controller):
             if np.any(valid):
                 min_s, max_s = np.min(s[valid]), np.max(s[valid])
                 if max_s > min_s:
-                    # Normal case: normalize to [0, 1]
                     norm_s = np.where(valid, (s - min_s) / (max_s - min_s), 0.0)
                 else:
-                    # All scores are equal: use uniform scores of 0.5 for consistency
-                    norm_s = np.full_like(s, 0.5)
+                    norm_s = np.where(valid, 0.5, 0.0)
                 agg_scores += norm_s * effective_weights[i]
 
         # Select top features from (Union - Intersection) based on freedom_degree
