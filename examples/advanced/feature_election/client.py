@@ -165,7 +165,8 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
             # Validate range
             if not (0 <= client_id < self.num_clients):
                 raise ValueError(
-                    f"Extracted client_id {client_id} from '{site_name}' is out of range [0, {self.num_clients - 1}]")
+                    f"Extracted client_id {client_id} from '{site_name}' is out of range [0, {self.num_clients - 1}]"
+                )
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse client_id from '{site_name}': {e}. Defaulting to client_id=0")
