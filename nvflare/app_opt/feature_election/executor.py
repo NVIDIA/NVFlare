@@ -202,8 +202,11 @@ class FeatureElectionExecutor(Executor):
                         # Quick fit to establish coef_ shape, then overwrite
                         self.model.fit(X_tr[: min(10, len(self.y_train))], self.y_train[: min(10, len(self.y_train))])
                         self._model_initialized = True
-                    # Set aggregated weights
-                    self.model.coef_ = np.array([p["weight_0"]])
+                    # Set aggregated weights - handle both binary and multi-class
+                    coef = np.array(p["weight_0"])
+                    if coef.ndim == 1:
+                        coef = coef.reshape(1, -1)  # Binary: (n_features,) -> (1, n_features)
+                    self.model.coef_ = coef
                     self.model.intercept_ = np.array(p["weight_1"])
 
             # Train with warm_start=True continues from current weights
