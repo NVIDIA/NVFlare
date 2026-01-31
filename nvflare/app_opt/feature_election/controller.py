@@ -380,7 +380,7 @@ class FeatureElectionController(Controller):
         union = np.any(masks, axis=0)
 
         # Handle edge cases
-        if self.freedom_degree <= 0.05:
+        if self.freedom_degree <= 0.01:
             return intersection
         if self.freedom_degree >= 0.99:
             return union
