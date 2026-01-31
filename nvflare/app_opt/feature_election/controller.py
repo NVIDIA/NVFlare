@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
+import os
 from typing import Dict
 
 import numpy as np
@@ -74,7 +76,19 @@ class FeatureElectionController(Controller):
     def start_controller(self, fl_ctx: FLContext) -> None:
         logger.info("Initializing FeatureElectionController (Base Controller Mode)")
 
-    def stop_controller(self, fl_ctx: FLContext) -> None:
+    def stop_controller(self, fl_ctx: FLContext):
+        # Save results
+        workspace = fl_ctx.get_engine().get_workspace()
+        run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
+        results = {
+            "global_mask": self.global_feature_mask.tolist() if self.global_feature_mask is not None else None,
+            "freedom_degree": self.freedom_degree,
+            "num_features_selected": (
+                int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0
+            ),
+        }
+        with open(os.path.join(run_dir, "feature_election_results.json"), "w") as f:
+            json.dump(results, f, indent=2)
         logger.info("Stopping Feature Election Controller")
 
     def process_result_of_unknown_task(
