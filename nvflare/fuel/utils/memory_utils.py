@@ -33,7 +33,7 @@ Usage:
     allocator = get_allocator_type()  # "glibc", "jemalloc", or "unknown"
 
     # At end of each round (client) or every N rounds (server)
-    cleanup_memory(torch_cuda_empty_cache=True)  # True for PyTorch GPU clients
+    cleanup_memory(cuda_empty_cache=True)  # True for PyTorch GPU clients
 """
 
 import ctypes
@@ -120,7 +120,7 @@ def try_malloc_trim() -> Optional[int]:
         return None
 
 
-def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
+def cleanup_memory(cuda_empty_cache: bool = False) -> None:
     """Perform allocator-aware memory cleanup to reduce RSS.
 
     This function:
@@ -130,7 +130,7 @@ def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
     3. Optionally clears PyTorch CUDA cache
 
     Args:
-        torch_cuda_empty_cache: If True, also call torch.cuda.empty_cache().
+        cuda_empty_cache: If True, also call torch.cuda.empty_cache().
             Only applicable to PyTorch GPU clients.
 
     Note:
@@ -155,7 +155,7 @@ def cleanup_memory(torch_cuda_empty_cache: bool = False) -> None:
     # unknown: gc.collect() is the only safe action
 
     # Step 3: Clear PyTorch CUDA cache if requested
-    if torch_cuda_empty_cache:
+    if cuda_empty_cache:
         try:
             import torch
 

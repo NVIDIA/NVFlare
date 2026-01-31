@@ -160,7 +160,7 @@ Client-Side Memory Cleanup
 ==========================
 
 The FedAvg recipe and ScriptRunner support automatic memory cleanup on clients via
-``client_memory_gc_rounds`` and ``torch_cuda_empty_cache`` parameters.
+``client_memory_gc_rounds`` and ``cuda_empty_cache`` parameters.
 
 Configuration
 -------------
@@ -180,13 +180,13 @@ Configuration
         
         # Client-side cleanup
         client_memory_gc_rounds=1,   # Cleanup every round
-        torch_cuda_empty_cache=True, # Clear GPU cache
+        cuda_empty_cache=True, # Clear GPU cache
     )
 
 **Parameters:**
 
 - ``client_memory_gc_rounds``: Run cleanup every N rounds on client (0 = disabled)
-- ``torch_cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
+- ``cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
 
 What It Does
 ------------
@@ -208,47 +208,10 @@ For external process execution (``launch_external_process=True``), memory settin
 are passed via environment variables:
 
 - ``NVFLARE_CLIENT_MEMORY_GC_ROUNDS``: Cleanup interval
-- ``NVFLARE_TORCH_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
+- ``NVFLARE_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
 
-Performance Impact
-==================
-
-.. note::
-
-   The performance numbers below are **estimates** based on typical workloads.
-   Actual impact varies depending on model size, training complexity, hardware,
-   and workflow configuration. We recommend profiling your specific use case
-   to determine optimal settings.
-
-Memory Cleanup Overhead
------------------------
-
-The ``cleanup_memory()`` function has minimal overhead:
-
-+--------------------------------+------------------+--------------------------------+
-| Operation                      | Typical Duration | Notes                          |
-+================================+==================+================================+
-| ``gc.collect()``               | 10-500 ms        | Depends on Python object count |
-+--------------------------------+------------------+--------------------------------+
-| ``malloc_trim()`` (glibc)      | < 1 ms           | Very fast (page table ops)     |
-+--------------------------------+------------------+--------------------------------+
-| ``torch.cuda.empty_cache()``   | < 50 ms          | Synchronizes CUDA stream       |
-+--------------------------------+------------------+--------------------------------+
-
-For GPU-based deep learning workloads where each training round takes seconds to minutes,
-the cleanup overhead is negligible compared to the actual training time.
-
-Memory Savings
---------------
-
-Memory reduction depends on model size and training patterns:
-
-- **Small models (< 1B params)**: Modest savings, may not be necessary
-- **Medium models (1-10B params)**: Noticeable reduction, prevents gradual growth
-- **Large models (70B+ params)**: Critical for preventing OOM, enables longer training runs
-
-Allocator Configuration Impact
-------------------------------
+Allocator Configuration
+=======================
 
 For optimal memory behavior, consider node-level allocator settings:
 
@@ -306,7 +269,7 @@ Configuration Guidelines
 
 3. **Monitor memory usage** during pilot runs to determine if more aggressive settings are needed
 
-4. **GPU memory**: Enable ``torch_cuda_empty_cache=True`` when:
+4. **GPU memory**: Enable ``cuda_empty_cache=True`` when:
 
    - Running multiple jobs on the same GPU
    - Model size is close to GPU memory limit
@@ -320,7 +283,7 @@ Configuration Guidelines
            num_rounds=100,
            server_memory_gc_rounds=5,   # Server-side
            client_memory_gc_rounds=5,   # Client-side
-           torch_cuda_empty_cache=True,
+           cuda_empty_cache=True,
        )
 
 6. **Swarm Learning**: Use more aggressive client settings since clients perform both training AND aggregation
@@ -370,9 +333,9 @@ cleanup_memory
 
     from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-    cleanup_memory(torch_cuda_empty_cache=True)
+    cleanup_memory(cuda_empty_cache=True)
 
-**Signature:** ``cleanup_memory(torch_cuda_empty_cache: bool = False) -> None``
+**Signature:** ``cleanup_memory(cuda_empty_cache: bool = False) -> None``
 
 Performs allocator-aware memory cleanup:
 
@@ -429,7 +392,7 @@ High RSS on Client
 
 1. Check ``MALLOC_ARENA_MAX=2`` is set
 2. Enable ``client_memory_gc_rounds=1``
-3. Enable ``torch_cuda_empty_cache=True`` for GPU
+3. Enable ``cuda_empty_cache=True`` for GPU
 4. Consider using jemalloc
 
 OOM Errors

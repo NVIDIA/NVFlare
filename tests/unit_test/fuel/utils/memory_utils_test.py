@@ -54,19 +54,19 @@ class TestMemoryUtils:
                 cleanup_memory()
                 mock_trim.assert_not_called()
 
-    def test_cleanup_memory_torch_cuda_empty_cache_false(self):
-        """Test that cleanup_memory with torch_cuda_empty_cache=False does not call torch."""
+    def test_cleanup_memory_cuda_empty_cache_false(self):
+        """Test that cleanup_memory with cuda_empty_cache=False does not call torch."""
         from nvflare.fuel.utils.memory_utils import cleanup_memory
 
         # This should not raise and should not try to import torch
-        cleanup_memory(torch_cuda_empty_cache=False)
+        cleanup_memory(cuda_empty_cache=False)
 
-    def test_cleanup_memory_torch_cuda_empty_cache_true(self):
-        """Test that cleanup_memory handles torch_cuda_empty_cache=True gracefully."""
+    def test_cleanup_memory_cuda_empty_cache_true(self):
+        """Test that cleanup_memory handles cuda_empty_cache=True gracefully."""
         from nvflare.fuel.utils.memory_utils import cleanup_memory
 
         # This should not raise even if torch is not installed or CUDA unavailable
-        cleanup_memory(torch_cuda_empty_cache=True)
+        cleanup_memory(cuda_empty_cache=True)
 
     def test_get_glibc_caching(self):
         """Test that _get_glibc is cached (only loads once)."""

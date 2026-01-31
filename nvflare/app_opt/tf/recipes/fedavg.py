@@ -133,7 +133,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Memory management
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        cuda_empty_cache: bool = False,
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -157,7 +157,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

@@ -38,18 +38,18 @@ class TestInProcessClientAPIExecutorMemory:
         executor = InProcessClientAPIExecutor(**base_executor_params)
 
         assert executor._memory_gc_rounds == 0
-        assert executor._torch_cuda_empty_cache is False
+        assert executor._cuda_empty_cache is False
 
     def test_memory_parameters_enabled(self, base_executor_params):
         """Test memory parameters can be enabled."""
         executor = InProcessClientAPIExecutor(
             memory_gc_rounds=5,
-            torch_cuda_empty_cache=True,
+            cuda_empty_cache=True,
             **base_executor_params,
         )
 
         assert executor._memory_gc_rounds == 5
-        assert executor._torch_cuda_empty_cache is True
+        assert executor._cuda_empty_cache is True
 
     @pytest.mark.parametrize(
         "gc_rounds,cuda_empty",
@@ -65,12 +65,12 @@ class TestInProcessClientAPIExecutorMemory:
         """Test various memory parameter combinations."""
         executor = InProcessClientAPIExecutor(
             memory_gc_rounds=gc_rounds,
-            torch_cuda_empty_cache=cuda_empty,
+            cuda_empty_cache=cuda_empty,
             **base_executor_params,
         )
 
         assert executor._memory_gc_rounds == gc_rounds
-        assert executor._torch_cuda_empty_cache == cuda_empty
+        assert executor._cuda_empty_cache == cuda_empty
 
     def test_memory_parameters_with_other_options(self, base_executor_params):
         """Test that memory parameters work with other executor options."""
@@ -79,12 +79,12 @@ class TestInProcessClientAPIExecutorMemory:
             result_pull_interval=1.0,
             train_with_evaluation=True,
             memory_gc_rounds=2,
-            torch_cuda_empty_cache=True,
+            cuda_empty_cache=True,
             **base_executor_params,
         )
 
         assert executor._memory_gc_rounds == 2
-        assert executor._torch_cuda_empty_cache is True
+        assert executor._cuda_empty_cache is True
         assert executor._task_wait_time == 30.0
         assert executor._result_pull_interval == 1.0
         assert executor._train_with_evaluation is True
