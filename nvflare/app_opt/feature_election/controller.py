@@ -407,21 +407,18 @@ class FeatureElectionController(Controller):
                     norm_s = np.full_like(s, 0.5)
                 agg_scores += norm_s * effective_weights[i]
 
-        # Select top features based on freedom_degree
+        # Select top features from (Union - Intersection) based on freedom_degree
         n_add = int(np.ceil(np.sum(diff_mask) * self.freedom_degree))
         if n_add > 0:
-            diff_scores = agg_scores[diff_mask]
-            n_add = min(n_add, len(diff_scores))
-            if n_add <= 0:
-                return intersection
-            diff_scores = agg_scores[diff_mask]
-            n_add = min(n_add, len(diff_scores))
-            if n_add > 0:
-                selected_diff = np.zeros_like(diff_mask)
-                selected_diff[np.where(diff_mask)[0][indices]] = True
-                return intersection | selected_diff
-
-        return intersection
+            diff_indices = np.where(diff_mask)[0]
+            diff_scores = agg_scores[diff_indices]
+            top_indices = diff_indices[np.argsort(diff_scores)[-n_add:]]
+            selected_diff = np.zeros_like(diff_mask)
+            selected_diff[top_indices] = True
+            return intersection | selected_diff
+        # No features to add
+        else:
+            return intersection
 
     def _calculate_next_fd(self, first_step: bool) -> float:
         """Hill-climbing to find optimal freedom degree"""
