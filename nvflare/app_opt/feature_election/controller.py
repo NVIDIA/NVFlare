@@ -223,7 +223,7 @@ class FeatureElectionController(Controller):
                     break
 
                 # Evaluate current freedom_degree
-                mask = self._aggregate_selections(self.cached_client_selections)
+                mask = self.aggregate_selections(self.cached_client_selections)
 
                 task_data = Shareable()
                 task_data["request_type"] = "tuning_eval"
@@ -256,7 +256,7 @@ class FeatureElectionController(Controller):
                 logger.warning("No tuning results, keeping initial freedom_degree")
 
         # 2. Generate Final Mask
-        final_mask = self._aggregate_selections(self.cached_client_selections)
+        final_mask = self.aggregate_selections(self.cached_client_selections)
         self.global_feature_mask = final_mask
         n_sel = np.sum(final_mask)
         logger.info(
@@ -350,7 +350,7 @@ class FeatureElectionController(Controller):
                 logger.debug(f"Extracted {np.sum(contrib['selected_features'])} features from {key}")
         return client_data
 
-    def _aggregate_selections(self, client_selections: Dict[str, Dict]) -> np.ndarray:
+    def aggregate_selections(self, client_selections: Dict[str, Dict]) -> np.ndarray:
         """
         Aggregate feature selections from all clients.
 

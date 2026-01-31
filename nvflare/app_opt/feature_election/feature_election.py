@@ -299,7 +299,7 @@ class FeatureElection:
             }
 
         # Simulate Controller Aggregation
-        self.global_mask = controller._aggregate_selections(client_selections)
+        self.global_mask = controller.aggregate_selections(client_selections)
 
         # Build Stats
         masks = np.array([sel["selected_features"] for sel in client_selections.values()])
