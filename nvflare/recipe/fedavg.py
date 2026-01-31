@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
 
@@ -21,8 +21,9 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.base_fed_job import BaseFedJob
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -32,6 +33,7 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     initial_model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -77,10 +79,13 @@ class FedAvgRecipe(Recipe):
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
         initial_model: Initial model to start federated training with. Can be:
-            - dict: model parameters as dict
+            - Model instance (nn.Module, tf.keras.Model, etc.)
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
             For framework-specific types (nn.Module, tf.keras.Model), use the
             corresponding framework recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe).
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -145,7 +150,8 @@ class FedAvgRecipe(Recipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -176,6 +182,7 @@ class FedAvgRecipe(Recipe):
         v = _FedAvgValidator(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -202,6 +209,7 @@ class FedAvgRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
+        self.initial_ckpt = v.initial_ckpt
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -225,13 +233,12 @@ class FedAvgRecipe(Recipe):
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
-        # Validate RAW framework requirements
-        if self.framework == FrameworkType.RAW:
-            if self.initial_model is None and self.model_persistor is None:
-                raise ValueError(
-                    "RAW framework requires either initial_model (dict or ModelPersistor) or model_persistor. "
-                    "Consider using framework-specific wrappers (e.g., SklearnFedAvgRecipe) for convenience."
-                )
+        # Validate that we have at least one model source
+        if self.initial_model is None and self.model_persistor is None and self.initial_ckpt is None:
+            raise ValueError(
+                "Must provide either initial_model, initial_ckpt, or model_persistor. "
+                "Cannot create a job without a model source."
+            )
 
         # Create BaseFedJob - all frameworks use it for consistency
         job = BaseFedJob(
@@ -383,6 +390,9 @@ class FedAvgRecipe(Recipe):
 
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
         """Setup framework-specific model components and persistor.
+
+        Base implementation handles custom persistor. Framework-specific subclasses
+        should override this to use PTModel/TFModel for their model types.
 
         Returns:
             str: The persistor_id to be used by the controller.

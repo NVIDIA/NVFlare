@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Dict, Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
@@ -41,6 +41,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         model_params: Model hyperparameters as a dictionary. For SGDClassifier, can include:
             n_classes, learning_rate, eta0, loss, penalty, fit_intercept, etc.
             Can also include initial weights if needed.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.joblib, .pkl).
+            The file may not exist locally as it could be on the server.
+            Used to load initial model parameters.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         aggregator: Custom aggregator for combining client updates. If None,
@@ -120,19 +123,23 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         model_params: Optional[dict] = None,
+        initial_ckpt: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: Optional[Dict[str, dict]] = None,
         key_metric: str = "accuracy",
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):
-        # Create sklearn-specific persistor
-        persistor = JoblibModelParamPersistor(initial_params=model_params or {})
+        # Create sklearn-specific persistor with checkpoint support
+        persistor = JoblibModelParamPersistor(
+            initial_params=model_params or {},
+            source_ckpt_file_full_name=initial_ckpt,
+        )
 
         # Call the unified FedAvgRecipe with sklearn-specific settings
         super().__init__(
