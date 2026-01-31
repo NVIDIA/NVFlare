@@ -160,18 +160,18 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                 # Try to extract any number from site name
                 match = re.search(r"\d+", site_name)
                 if match:
+            if site_name.startswith("site-"):
+                client_id = int(site_name.split("-")[1]) - 1
+            else:
+                match = re.search(r"\d+", site_name)
+                if match:
                     client_id = int(match.group()) - 1
                 else:
                     client_id = 0
-
-            # Validate client_id is within range
+            
+            # Validate range
             if not (0 <= client_id < self.num_clients):
-                logger.warning(
-                    f"client_id {client_id} from '{site_name}' out of range [0, {self.num_clients}), defaulting to 0")
-                client_id = 0
-
-        except (ValueError, IndexError):
-            client_id = 0
+                raise ValueError(f"Client ID {client_id} from '{site_name}' out of range [0, {self.num_clients-1}]")
             
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
             client_id=client_id,
