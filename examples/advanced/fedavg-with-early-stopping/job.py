@@ -14,30 +14,27 @@
 
 from model import Net
 
-from nvflare import FedJob
-from nvflare.app_opt.pt.fedavg import PTFedAvgEarlyStopping
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 5
     train_script = "client.py"
 
-    job = FedJob(name="fedavg_with_early_stopping")
-
-    # Define the controller workflow and send to server
-    controller = PTFedAvgEarlyStopping(
-        num_clients=n_clients,
+    # Use FedAvgRecipe (Recipe API) instead of direct FedJob
+    # Recipe properly handles initial_model serialization via PTModel
+    recipe = FedAvgRecipe(
+        name="fedavg_with_early_stopping",
+        min_clients=n_clients,
         num_rounds=num_rounds,
         stop_cond="accuracy >= 40",
         initial_model=Net(),
+        train_script=train_script,
     )
-    job.to(controller, "server")
 
-    # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(script=train_script, script_args="")
-        job.to(executor, f"site-{i}")
-
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    # Use SimEnv for execution
+    env = SimEnv(num_clients=n_clients, workspace_root="/tmp/nvflare/jobs/workdir")
+    run = recipe.execute(env)
+    print("Result can be found in:", run.get_result())
+    print("Job Status:", run.get_status())
