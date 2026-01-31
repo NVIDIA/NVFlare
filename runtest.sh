@@ -282,13 +282,14 @@ function validate_kernel() {
 function notebook_test() {
     echo "${separator}${blue}notebook-test${noColor}"
 
-    local kernel_opt=""
-    if [[ -n "$nb_kernel" ]]; then
-        if ! validate_kernel "$nb_kernel"; then
+    # Auto-detect kernel at runtime if not specified (allows jupyter to be installed after script load)
+    local kernel="${nb_kernel:-$(get_current_kernel)}"
+
+    if [[ -n "$kernel" ]]; then
+        if ! validate_kernel "$kernel"; then
             exit 1
         fi
-        kernel_opt="--kernel=$nb_kernel"
-        echo "Using kernel: $nb_kernel"
+        echo "Using kernel: $kernel"
     else
         echo "No kernel specified, using notebook's default kernel"
     fi
@@ -298,8 +299,8 @@ function notebook_test() {
     # Build and print the exact command for debugging
     local cmd
     cmd=(python3 -m pytest --nbmake --nbmake-timeout="$nb_timeout" --nbmake-clean="$nb_clean")
-    if [[ -n "$kernel_opt" ]]; then
-        cmd+=("$kernel_opt")
+    if [[ -n "$kernel" ]]; then
+        cmd+=("--kernel=$kernel")
     fi
     cmd+=("$@")
     if [[ "$verbose_flag" == "true" ]]; then
@@ -366,7 +367,7 @@ fresh_deps=false
 # notebook test defaults
 nb_timeout=1200
 nb_clean="on-success"
-nb_kernel=$(get_current_kernel)
+nb_kernel=""  # Auto-detected at runtime if not specified via --kernel=
 
 # parse arguments
 cmd=""
