@@ -114,7 +114,6 @@ class FeatureElection:
                         "args": {
                             "fs_method": self.fs_method,
                             "eval_metric": "f1",
-                            "quick_eval": True,
                             "task_name": "feature_election",
                         },
                     },
