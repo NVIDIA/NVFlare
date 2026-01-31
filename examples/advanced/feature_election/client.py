@@ -152,27 +152,28 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         # Extract client ID from site name
         site_name = fl_ctx.get_identity_name()
 
-        # Parse client_id from site name (e.g., "site-1" -> 0)
         try:
+            # Standard NVFlare naming: "site-1", "site-2", etc.
             if site_name.startswith("site-"):
                 client_id = int(site_name.split("-")[1]) - 1
             else:
-                # Try to extract any number from site name
+                # Fallback: Extract the first integer found in the string
                 match = re.search(r"\d+", site_name)
-                if match:
-            if site_name.startswith("site-"):
-                client_id = int(site_name.split("-")[1]) - 1
-            else:
-                match = re.search(r"\d+", site_name)
-                if match:
-                    client_id = int(match.group()) - 1
-                else:
-                    client_id = 0
-            
+                client_id = int(match.group()) - 1 if match else 0
+
             # Validate range
             if not (0 <= client_id < self.num_clients):
-                raise ValueError(f"Client ID {client_id} from '{site_name}' out of range [0, {self.num_clients-1}]")
-            
+                raise ValueError(
+                    f"Client ID {client_id} derived from '{site_name}' is "
+                    f"out of range [0, {self.num_clients - 1}]"
+                )
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse client ID from site name '{site_name}': {e}")
+            # Depending on your requirements, you might want to re-raise or default to 0
+            client_id = 0
+
+        # Load data using the parsed ID
         X_train, y_train, X_val, y_val, feature_names = load_client_data(
             client_id=client_id,
             num_clients=self.num_clients,
@@ -187,7 +188,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         self.set_data(X_train, y_train, X_val, y_val, feature_names)
         self._data_loaded = True
 
-        logger.info(f"Loaded synthetic data for {site_name} (client_id={client_id})")
+        logger.info(f"Successfully loaded synthetic data for {site_name} (client_id={client_id})")
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
         """Override execute to ensure data is loaded before processing."""
