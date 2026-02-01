@@ -29,13 +29,18 @@ def should_ignore_result_error(
     - False (Strict): Never ignore errors, always panic.
     - True (Resilient): Always ignore errors, never panic.
 
+    Note: This function can be safely called multiple times for the same client error.
+    The failed_clients set uses idempotent add() operations, so duplicate calls for
+    the same client will not affect the remaining count calculation.
+
     Args:
         ignore_result_error: The error handling mode.
             - None: Dynamic mode - ignore if min_responses still reachable.
             - False: Strict mode - always panic on error.
             - True: Resilient mode - always ignore errors.
         client_name: Name of the client with the error.
-        failed_clients: Set of client names that have already failed (will be updated).
+        failed_clients: Set of client names that have already failed (will be updated
+            in dynamic mode only).
         num_targets: Total number of target clients for the current task.
         min_responses: Minimum number of responses required.
 
