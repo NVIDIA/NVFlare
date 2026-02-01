@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 import random
 from abc import ABC, abstractmethod
-from typing import Callable, List, Union
+from typing import Callable, List, Optional, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorMethod, Task, TaskOperatorKey
@@ -29,6 +28,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.error_handling_utils import get_error_handling_message, should_ignore_result_error
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
@@ -39,7 +39,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
     def __init__(
         self,
         persistor_id: str = AppConstants.DEFAULT_PERSISTOR_ID,
-        ignore_result_error: bool = False,
+        ignore_result_error: Optional[bool] = None,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
     ):
@@ -47,8 +47,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         Args:
             persistor_id (str, optional): ID of the persistor component. Defaults to AppConstants.DEFAULT_PERSISTOR_ID ("persistor").
-            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
-                Defaults to False.
+            ignore_result_error (bool or None, optional): How to handle client result errors.
+                - None: Dynamic mode (default) - ignore errors if min_responses still reachable, panic otherwise.
+                - False: Strict mode - panic on any client error.
+                - True: Resilient mode - always ignore client errors.
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
                 empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
@@ -72,6 +74,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # model related
         self._results = []
+
+        # Task context for dynamic ignore_result_error mode (when ignore_result_error=None).
+        # These are reset per send_model() call to track error tolerance for the current task.
+        self._current_min_responses = 0  # Minimum successful responses needed for this task
+        self._current_num_targets = 0  # Total number of clients targeted for this task
+        self._current_failed_clients = set()  # Set of client names that returned errors in this task
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -138,6 +146,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         check_non_negative_int("wait_time_after_min_received", wait_time_after_min_received)
         if not blocking and not isinstance(callback, Callable):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
+
+        # Store task context for dynamic ignore_result_error mode
+        num_targets = len(targets) if targets else len(self.engine.get_clients())
+        self._current_min_responses = min_responses if min_responses > 0 else num_targets
+        self._current_num_targets = num_targets
+        self._current_failed_clients = set()
 
         self.set_fl_context(data)
 
@@ -218,14 +232,20 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         result = client_task.result
         client_name = client_task.client.name
 
-        # Turn result into FLModel
-        result_model = FLModelUtils.from_shareable(result)
-        result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
-        result_model.meta["client_name"] = client_name
-
+        # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
         self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
+
+        # Now try to convert result to FLModel
+        try:
+            result_model = FLModelUtils.from_shareable(result)
+            result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
+            result_model.meta["client_name"] = client_name
+        except Exception as e:
+            self.warning(f"Failed to convert result from {client_name} to FLModel: {e}")
+            client_task.result = None
+            return
 
         callback = client_task.task.get_prop(AppConstants.TASK_PROP_CALLBACK)
         if callback:
@@ -238,8 +258,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # Cleanup task result
         client_task.result = None
-
-        gc.collect()
+        # Note: Memory cleanup (gc.collect + malloc_trim) is handled by subclasses
+        # via _maybe_cleanup_memory() based on memory_gc_rounds setting
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
@@ -258,15 +278,27 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # Raise panic if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
-            if self._ignore_result_error:
-                self.warning(
-                    f"Ignore the train result from {client_name} at round {current_round}. Train result error code: {rc}",
-                )
+            should_ignore = should_ignore_result_error(
+                ignore_result_error=self._ignore_result_error,
+                client_name=client_name,
+                failed_clients=self._current_failed_clients,
+                num_targets=self._current_num_targets,
+                min_responses=self._current_min_responses,
+            )
+            msg = get_error_handling_message(
+                ignore_result_error=self._ignore_result_error,
+                client_name=client_name,
+                error_code=rc,
+                current_round=current_round,
+                controller_name=self.__class__.__name__,
+                failed_clients=self._current_failed_clients,
+                num_targets=self._current_num_targets,
+                min_responses=self._current_min_responses,
+            )
+            if should_ignore:
+                self.warning(msg)
             else:
-                self.panic(
-                    f"Result from {client_name} is bad, error code: {rc}. "
-                    f"{self.__class__.__name__} exiting at round {current_round}."
-                )
+                self.panic(msg)
                 return
 
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)

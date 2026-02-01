@@ -25,6 +25,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnab
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.error_handling_utils import get_error_handling_message, should_ignore_result_error
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
@@ -43,7 +44,7 @@ class ScatterAndGather(Controller):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
-        ignore_result_error: bool = False,
+        ignore_result_error: bool = None,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
@@ -71,8 +72,10 @@ class ScatterAndGather(Controller):
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
-            ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
-                Defaults to False.
+            ignore_result_error (bool or None, optional): How to handle client result errors.
+                - None: Dynamic mode (default) - ignore errors if min_clients still reachable, panic otherwise.
+                - False: Strict mode - panic on any client error.
+                - True: Resilient mode - always ignore client errors.
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
                 empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
@@ -142,6 +145,10 @@ class ScatterAndGather(Controller):
         self._phase = AppConstants.PHASE_INIT
         self._global_weights = make_model_learnable({}, {})
         self._current_round = None
+
+        # Track failed clients for dynamic ignore_result_error mode
+        self._current_failed_clients = set()
+        self._current_num_targets = 0
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
@@ -253,6 +260,10 @@ class ScatterAndGather(Controller):
                     result_received_cb=self._process_train_result,
                 )
 
+                # Reset tracking for dynamic ignore_result_error mode
+                self._current_failed_clients = set()
+                self._current_num_targets = len(self._engine.get_clients())
+
                 self.broadcast_and_wait(
                     task=train_task,
                     min_responses=self._min_clients,
@@ -362,19 +373,28 @@ class ScatterAndGather(Controller):
 
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
-            if self.ignore_result_error:
-                self.log_warning(
-                    fl_ctx,
-                    f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
-                )
-                return False
+            should_ignore = should_ignore_result_error(
+                ignore_result_error=self.ignore_result_error,
+                client_name=client_name,
+                failed_clients=self._current_failed_clients,
+                num_targets=self._current_num_targets,
+                min_responses=self._min_clients,
+            )
+            msg = get_error_handling_message(
+                ignore_result_error=self.ignore_result_error,
+                client_name=client_name,
+                error_code=rc,
+                current_round=self._current_round,
+                controller_name=self.__class__.__name__,
+                failed_clients=self._current_failed_clients,
+                num_targets=self._current_num_targets,
+                min_responses=self._min_clients,
+            )
+            if should_ignore:
+                self.log_warning(fl_ctx, msg)
             else:
-                self.system_panic(
-                    f"Result from {client_name} is bad, error code: {rc}. "
-                    f"{self.__class__.__name__} exiting at round {self._current_round}.",
-                    fl_ctx=fl_ctx,
-                )
-                return False
+                self.system_panic(msg, fl_ctx=fl_ctx)
+            return False
 
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
