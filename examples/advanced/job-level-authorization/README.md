@@ -58,7 +58,7 @@ nvflare poc start
 ### Submitting Jobs to ProdEnv
 
 Here, we treat the created POC environment as a production environemnt running in the background.
-You can submit jobs programmatically using the Job API with `ProdEnv`. Two example scripts are provided:
+You can submit jobs programmatically using the Recipe API with `ProdEnv`. Two example scripts are provided:
 
 **job1.py** - Submits a job named "hello-numpy" (**ALLOWED by site_a**):
 ```
