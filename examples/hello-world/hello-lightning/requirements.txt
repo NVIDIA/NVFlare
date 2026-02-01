@@ -1,4 +1,4 @@
-nvflare~=2.7.0rc
+nvflare~=2.7.2rc
 torch
 torchvision
 jsonargparse[signatures]>=4.17.0

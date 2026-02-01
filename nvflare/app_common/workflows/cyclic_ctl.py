@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 import random
 from typing import List, Union
 
@@ -27,6 +26,8 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 
@@ -52,6 +53,7 @@ class CyclicController(Controller):
         snapshot_every_n_rounds: int = 1,
         order: Union[str, List[str]] = RelayOrder.FIXED,
         allow_early_termination=False,
+        memory_gc_rounds: int = 1,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -79,6 +81,8 @@ class CyclicController(Controller):
                 - If a list of strings is provided, it represents a custom order for relay.
 
             allow_early_termination: whether to allow early workflow termination from clients
+            memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
+                Set to 0 to disable. Defaults to 1 (every round).
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -114,10 +118,19 @@ class CyclicController(Controller):
         self.shareable_generator = None
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
+        check_non_negative_int("memory_gc_rounds", memory_gc_rounds)
+        self._memory_gc_rounds = memory_gc_rounds
         self._participating_clients = None
         self._last_client = None
         self._order = order
         self._allow_early_termination = allow_early_termination
+
+    def _maybe_cleanup_memory(self):
+        """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
+        if self._current_round is None:
+            return
+        if self._memory_gc_rounds > 0 and (self._current_round + 1) % self._memory_gc_rounds == 0:
+            cleanup_memory()
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
@@ -222,8 +235,6 @@ class CyclicController(Controller):
         task.data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
         task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
-        gc.collect()
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             self.log_debug(fl_ctx, "Cyclic starting.")
@@ -280,7 +291,9 @@ class CyclicController(Controller):
                     self._engine.persist_components(fl_ctx, completed=False)
 
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                gc.collect()
+
+                # Memory cleanup at end of round (if configured)
+                self._maybe_cleanup_memory()
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except Exception as e:

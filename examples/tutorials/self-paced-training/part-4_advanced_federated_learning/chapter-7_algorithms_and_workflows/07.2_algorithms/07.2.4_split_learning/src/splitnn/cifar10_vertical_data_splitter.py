@@ -15,6 +15,7 @@
 import json
 import os
 
+import filelock
 import numpy as np
 import torchvision.datasets as datasets
 
@@ -22,12 +23,16 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
-CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
+CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def load_cifar10_data():
     # load data
-    train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
+    # Add file lock to prevent multiple simultaneous downloads
+    os.makedirs(CIFAR10_ROOT, exist_ok=True)
+    lock_file = os.path.join(CIFAR10_ROOT, "cifar10.lock")
+    with filelock.FileLock(lock_file):
+        train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
 
     # only training label is needed for doing split
     train_label = np.array(train_dataset.targets)

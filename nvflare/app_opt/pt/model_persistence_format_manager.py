@@ -93,7 +93,11 @@ class PTModelPersistenceFormatManager(object):
             is_processed = processed_vars.get(k, False)
             if not is_processed and self._allow_numpy_conversion:
                 # convert to numpy
-                weights[k] = v.cpu().numpy()
+                # BFloat16 is not supported by numpy, convert to float32 first
+                if v.dtype == torch.bfloat16:
+                    weights[k] = v.cpu().to(torch.float32).numpy()
+                else:
+                    weights[k] = v.cpu().numpy()
             else:
                 weights[k] = v
 
