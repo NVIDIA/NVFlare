@@ -51,3 +51,4 @@ class FOBSContextKey:
     ABORT_SIGNAL = "abort_signal"
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
     SEC_CREDS = "sec_creds"
+    NUM_RECEIVERS = "num_receivers"

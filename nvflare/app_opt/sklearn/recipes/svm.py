@@ -16,7 +16,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from nvflare.app_common.aggregators import CollectAndAssembleAggregator
+from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
 from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -43,9 +43,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
 
     The recipe configures:
     - A federated job with kernel parameter
-    - Scatter-and-gather controller (2 rounds)
-    - Custom SVMAssembler for support vector aggregation
-    - CollectAndAssembleAggregator for combining client updates
+    - FedAvg controller (2 rounds)
+    - CollectAndAssembleModelAggregator with SVMAssembler for support vector aggregation
     - Script runners for client-side training execution
 
     Training Process:
@@ -67,6 +66,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients.
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are
+            a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
+            (which corresponds to the ROC AUC score sent by the SVM client in round 1).
 
     Example:
         Basic usage with same config for all clients:
@@ -105,10 +107,10 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         ```
 
     Note:
-        This recipe uses a custom SVMAssembler that implements support vector
-        aggregation. The training only requires one round since SVM is not an
-        iterative algorithm in the federated setting. A second round is included
-        for validation purposes.
+        This recipe uses CollectAndAssembleModelAggregator with SVMAssembler for
+        support vector aggregation. The training only requires one round since SVM
+        is not an iterative algorithm in the federated setting. A second round is
+        included for validation purposes.
     """
 
     def __init__(
@@ -122,6 +124,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
+        key_metric: str = "AUC",  # Matches client's metric key
     ):
         v = _SVMValidator(kernel=kernel)
         self.kernel = v.kernel
@@ -129,10 +132,12 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         # Create SVM-specific persistor
         persistor = JoblibModelParamPersistor(initial_params={"kernel": self.kernel})
 
-        # Create SVM-specific aggregator with assembler
-        assembler = SVMAssembler(kernel=self.kernel)
-        assembler_id = "svm_assembler"
-        aggregator = CollectAndAssembleAggregator(assembler_id=assembler_id)
+        # Create SVMAssembler (will be added to job after super().__init__)
+        self._svm_assembler = SVMAssembler(kernel=self.kernel)
+
+        # Create CollectAndAssembleModelAggregator that will use the SVMAssembler
+        # The assembler is fetched lazily at runtime via the assembler_id
+        aggregator = CollectAndAssembleModelAggregator(assembler_id="svm_assembler")
 
         # Call the unified FedAvgRecipe with SVM-specific settings
         # Note: SVM only needs 2 rounds (round 0 for training, round 1 for validation)
@@ -150,5 +155,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             params_transfer_type=TransferType.FULL,
             model_persistor=persistor,
             per_site_config=per_site_config,
+            key_metric=key_metric,
         )
-        self.job.to_server(assembler, id=assembler_id)
+
+        # Add the SVMAssembler as a component to the job
+        # CollectAndAssembleModelAggregator will fetch it by ID at runtime
+        self.job.to_server(self._svm_assembler, id="svm_assembler")

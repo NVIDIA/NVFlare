@@ -20,8 +20,9 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
-from nvflare.client.constants import CLIENT_API_CONFIG
+from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
+from nvflare.utils.configs import get_client_config_value
 
 
 class ClientAPILauncherExecutor(LauncherExecutor):
@@ -110,6 +111,20 @@ class ClientAPILauncherExecutor(LauncherExecutor):
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
         super().initialize(fl_ctx)
+
+        # Check for top-level config override for external_pre_init_timeout
+        # This allows jobs to configure timeout via add_client_config()
+        config_timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
+        if config_timeout is not None:
+            timeout_value = float(config_timeout)
+            if timeout_value <= 0:
+                self.log_error(fl_ctx, f"Invalid EXTERNAL_PRE_INIT_TIMEOUT: {timeout_value}s (must be positive)")
+                raise ValueError(f"EXTERNAL_PRE_INIT_TIMEOUT must be positive, got {timeout_value}")
+            self.log_info(
+                fl_ctx,
+                f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {timeout_value}s",
+            )
+            self._external_pre_init_timeout = timeout_value
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)

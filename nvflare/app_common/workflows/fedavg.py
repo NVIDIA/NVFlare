@@ -125,6 +125,9 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
 
+        # Set NUM_ROUNDS in FL context for persistor and other components
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+
         # Load initial model - prefer initial_model if provided, else use persistor
         if self.initial_model is not None:
             if isinstance(self.initial_model, FLModel):
@@ -202,6 +205,9 @@ class FedAvg(BaseFedAvg):
                 # No early stopping: save model every round
                 self.save_model(model)
 
+            # Memory cleanup at end of round (if configured)
+            self._maybe_cleanup_memory()
+
         self.info(center_message("Finished FedAvg."))
 
     def _aggregate_one_result(self, result: FLModel) -> None:
@@ -228,7 +234,10 @@ class FedAvg(BaseFedAvg):
             else:
                 aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)
+            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
+            # Handle None case (e.g., first round of some algorithms like K-Means)
+            if n_iter is None:
+                n_iter = 1.0
             weight = aggregation_weight * float(n_iter)
 
             self._aggr_helper.add(

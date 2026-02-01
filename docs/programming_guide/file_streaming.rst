@@ -227,9 +227,9 @@ The data owner first prepares files to be shared with other recipients using the
 
           Returns: reference id for the file.
 
-          The file_downloaded_cb must follow this signature:
+      The file_downloaded_cb must follow this signature:
 
-              cb(ref_id: str, to_site: str, status: str, file_name: str, **cb_kwargs)
+          cb(ref_id: str, to_receiver: str, status: str, file_name: str, **cb_kwargs)
           """
 
 First, you call the `new_transaction` method to get a transaction id. A transaction can include one or more files to be downloaded. The arguments are self-explanatory. The cell is for messaging with the recipients. You can get it from a `FLContext` object as follows:

@@ -17,6 +17,7 @@ import argparse
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
@@ -68,4 +69,9 @@ if __name__ == "__main__":
         print(f"Exporting job config...{args.job_configs}/fedavg_lightning_mlflow")
         recipe.export(args.job_configs)
     else:
-        recipe.run(workspace=args.work_dir, log_config=args.log_config)
+        env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
+        run = recipe.execute(env)
+        print()
+        print("Result can be found in:", run.get_result())
+        print("Job Status is:", run.get_status())
+        print()

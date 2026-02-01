@@ -494,11 +494,73 @@ The aggregation behavior is configured by the following args:
     - ``wait_time_after_min_resps_received`` - how many seconds to wait for potentially more responses after minimum responses are received
     - ``learn_task_timeout`` - how long to wait for the current learn task before timing out the gathering
 
-Example Swarm Learning Configuration
-====================================
+Example Swarm Learning
+======================
 
-Swarm Learning: config_fed_server.json
---------------------------------------
+This section shows how to set up swarm learning using recipes (recommended) and the traditional JSON configuration.
+
+Using Recipes (Recommended)
+---------------------------
+
+Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.recipe.sim_env import SimEnv
+
+    # Create swarm learning recipe
+    recipe = SimpleSwarmLearningRecipe(
+        name="swarm_learning",
+        initial_model=MyModel(),
+        num_rounds=10,
+        train_script="train.py",
+        train_args={"batch_size": 32, "epochs": 5},
+    )
+
+    # Configure large model parameters if needed (server-side only)
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    # Run in simulation
+    env = SimEnv(num_clients=3)
+    recipe.execute(env)
+
+For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import BaseSwarmLearningRecipe
+    from nvflare.app_common.ccwf.ccwf_job import SwarmServerConfig, SwarmClientConfig
+
+    server_config = SwarmServerConfig(
+        num_rounds=10,
+        start_task_timeout=300,
+        progress_timeout=7200,
+    )
+
+    client_config = SwarmClientConfig(
+        executor=my_executor,
+        aggregator=my_aggregator,
+        persistor=my_persistor,
+        shareable_generator=my_generator,
+    )
+
+    recipe = BaseSwarmLearningRecipe(
+        name="custom_swarm",
+        server_config=server_config,
+        client_config=client_config,
+    )
+
+Using JSON Configuration (Advanced)
+-----------------------------------
+
+For users who need fine-grained control, here is the equivalent JSON configuration.
+
+**config_fed_server.json:**
 
 .. code-block:: json
 
@@ -522,8 +584,7 @@ Swarm Learning: config_fed_server.json
 
     The only required arg is ``num_rounds``.
 
-Swarm Learning: config_fed_client.json
---------------------------------------
+**config_fed_client.json:**
 
 .. code-block:: json
 
@@ -609,6 +670,208 @@ Swarm Learning: config_fed_client.json
 .. note::
 
     Client assigned tasks contain model data. You can apply task_data_filters if privacy is a concern (the OUT filter for the sending client, and IN filters for the receiving client).
+
+.. _swarm_learning_large_models:
+
+Swarm Learning Parameters for Large Models
+==========================================
+
+When running Swarm Learning with large models (e.g., LLMs), you may need to tune various timeout and chunking parameters
+to accommodate the larger payloads and longer processing times.
+
+Default Timeout Values
+----------------------
+
+The following table lists all default timeout values used in Swarm Learning. Understanding these defaults helps you
+determine which parameters need adjustment for your large model workloads.
+
+**How to Override These Values:**
+
+These timeout values can be overridden in your job configuration files:
+
+- **Client-side parameters**: Set in ``config_fed_client.conf`` (or ``.json``) under the ``SwarmClientController`` executor args.
+- **Server-side parameters**: Set in ``config_fed_server.conf`` (or ``.json``) under the ``SwarmServerController`` workflow args.
+- **Global streaming parameters**: Set at the top level of your config files (e.g., ``np_download_chunk_size``, ``tensor_download_chunk_size``).
+
+For **Recipe API users** (recommended), use the ``add_server_config()`` method:
+
+.. code-block:: python
+
+    # Add streaming parameters to server config (server-side only)
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+For **Job API users**, use ``job.to_server()`` with a dict:
+
+.. code-block:: python
+
+    job.to_server({"np_download_chunk_size": 2097152, "streaming_per_request_timeout": 600})
+
+.. list-table:: Swarm Learning Default Timeouts
+   :header-rows: 1
+   :widths: 25 10 25 40
+
+   * - Constant Name
+     - Default
+     - Config Parameter
+     - Description
+   * - ``CONFIG_TASK_TIMEOUT``
+     - 300
+     - ``config_task_timeout`` (server)
+     - Time allowed for clients to respond to the configuration task at job start.
+   * - ``START_TASK_TIMEOUT``
+     - 10
+     - ``start_task_timeout`` (server)
+     - Time allowed for the starting client to begin the workflow.
+   * - ``END_WORKFLOW_TIMEOUT``
+     - 2.0
+     - ``end_workflow_timeout`` (server)
+     - Time allowed for ending workflow message acknowledgment.
+   * - ``TASK_CHECK_INTERVAL``
+     - 0.5
+     - ``task_check_interval`` (client)
+     - Interval between task status checks.
+   * - ``JOB_STATUS_CHECK_INTERVAL``
+     - 2.0
+     - ``job_status_check_interval`` (server)
+     - Interval between job status checks by the server.
+   * - ``PER_CLIENT_STATUS_REPORT_TIMEOUT``
+     - 90.0
+     - (internal)
+     - Max time a client can go without reporting status.
+   * - ``WORKFLOW_PROGRESS_TIMEOUT``
+     - 3600.0
+     - ``progress_timeout`` (server)
+     - Max time allowed without any workflow progress.
+   * - ``LEARN_TASK_CHECK_INTERVAL``
+     - 1.0
+     - ``learn_task_check_interval`` (client)
+     - Interval for checking new learning tasks.
+   * - ``LEARN_TASK_ACK_TIMEOUT``
+     - 10
+     - ``learn_task_ack_timeout`` (client)
+     - Time allowed for a client to acknowledge receipt of a learn task.
+   * - ``LEARN_TASK_ABORT_TIMEOUT``
+     - 5.0
+     - ``learn_task_abort_timeout`` (client)
+     - Time allowed for a learning task to abort when requested.
+   * - ``FINAL_RESULT_ACK_TIMEOUT``
+     - 10
+     - ``final_result_ack_timeout`` (client)
+     - Time allowed for clients to acknowledge receipt of final results.
+   * - ``GET_MODEL_TIMEOUT``
+     - 10
+     - ``get_model_timeout`` (client)
+     - Time allowed for retrieving a model from another client.
+   * - ``MAX_TASK_TIMEOUT``
+     - 3600
+     - ``learn_task_timeout`` (client)
+     - Maximum time allowed for any single task to complete.
+
+Client-Side Parameters
+----------------------
+
+The following SwarmClientController parameters are particularly important for large models:
+
+**Timeouts and Flow Control:**
+
+- ``learn_task_timeout``: Upper bound for how long the aggregation client waits for a round to finish. **Default: None**. **Suggested: 3600 to 7200** for large models.
+- ``learn_task_ack_timeout``: Timeout for acknowledging learn task dispatch. **Default: 10**. **Suggested: 300 or higher** since large model initialization can be slow.
+- ``final_result_ack_timeout``: Timeout for ACKs after broadcasting final results. **Default: 10**. **Suggested: 300 to 600** as final result distribution is often the largest payload.
+- ``request_to_submit_result_msg_timeout``: Timeout for request-to-submit messages. **Default: 5.0**. **Suggested: 10 to 30**.
+- ``request_to_submit_result_interval``: Retry interval when submit permission is not granted. **Default: 1.0**. **Suggested: 2 to 5**.
+- ``request_to_submit_result_max_wait``: Max total wait time for submit permission. **Default: None**. **Suggested: 600 to 1200** for large models.
+- ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
+- ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
+- ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
+
+**Example client config for large models:**
+
+.. code-block::
+
+    executors = [
+      {
+        tasks = ["swarm_*"]
+        executor {
+          path = "nvflare.app_common.ccwf.SwarmClientController"
+          args {
+            learn_task_timeout = 3600
+            learn_task_ack_timeout = 300
+            final_result_ack_timeout = 300
+            request_to_submit_result_msg_timeout = 10.0
+            request_to_submit_result_interval = 2.0
+            request_to_submit_result_max_wait = 600.0
+            max_concurrent_submissions = 1
+            min_responses_required = 2
+            wait_time_after_min_resps_received = 120
+          }
+        }
+      }
+    ]
+
+**Download and Chunking Behavior:**
+
+- ``np_download_chunk_size``: Chunk size for numpy array downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming and uses native serialization which can spike memory.
+- ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Default: 2097152 (2MB)**. Value 0 disables streaming.
+
+.. code-block::
+
+    np_download_chunk_size = 2097152
+    tensor_download_chunk_size = 2097152
+
+Server-Side Parameters
+----------------------
+
+**SwarmServerController:**
+
+- ``num_rounds``: Total number of training rounds.
+- ``start_task_timeout``: Timeout for starting the workflow. **Default: 10 (START_TASK_TIMEOUT)**. **Suggested: 300** for large model initialization.
+- ``progress_timeout``: Overall workflow progress timeout. **Default: 3600.0 (WORKFLOW_PROGRESS_TIMEOUT)**. **Suggested: 7200 or higher** for large models.
+
+**Example server config for large models:**
+
+.. code-block::
+
+    workflows = [
+      {
+        id = "swarm_controller"
+        path = "nvflare.app_common.ccwf.SwarmServerController"
+        args {
+          num_rounds = 25
+          start_task_timeout = 300
+          progress_timeout = 7200
+        }
+      }
+    ]
+
+**CrossSiteEvalServerController (if enabled):**
+
+- ``eval_task_timeout``: Timeout for evaluation tasks. **Default: 300 (CONFIG_TASK_TIMEOUT)**. **Suggested: 1200** for large models.
+
+Optional NVFlare Global Config
+------------------------------
+
+These framework-level settings affect large payload transfers:
+
+- ``streaming_per_request_timeout``: Per-request timeout for streaming downloads. **Default: 600**. **Suggested: 600 or higher** for large models.
+
+.. code-block::
+
+    streaming_per_request_timeout: 600
+
+Recommended Minimal Parameter Set
+---------------------------------
+
+If you only adjust a few parameters for large models, start with:
+
+1. ``learn_task_timeout`` - Ensures rounds have enough time to complete
+2. ``final_result_ack_timeout`` - Allows time for large result distribution
+3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
+4. ``progress_timeout`` - Prevents premature workflow termination
+5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
 
 .. _ccwf_cross_site_evaluation:
 
@@ -722,12 +985,57 @@ The CSE workflow requires the global model client to have a Model Persistor that
 This method is called to return the names of available global models. The persistor must also implement the ``get_model`` method,
 which is called to get the model from the persistor for other clients to evaluate.
 
-Example Cross Site Evaluation Configuration
-===========================================
-This example shows how to do cross site evaluation after swarm learning is done.
+Example Cross Site Evaluation
+=============================
+
+This section shows how to set up cross-site evaluation using recipes (recommended) and the traditional JSON configuration.
+
+Using Recipes (Recommended)
+---------------------------
+
+**Swarm Learning with Cross-Site Evaluation:**
+
+Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
+
+.. code-block:: python
+
+    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.recipe.sim_env import SimEnv
+
+    # Create swarm learning recipe with cross-site evaluation enabled
+    recipe = SimpleSwarmLearningRecipe(
+        name="swarm_with_cse",
+        initial_model=MyModel(),
+        num_rounds=3,
+        train_script="train.py",
+        do_cross_site_eval=True,
+        cross_site_eval_timeout=300,
+    )
+
+    # Configure large model parameters if needed (server-side only)
+    recipe.add_server_config({
+        "np_download_chunk_size": 2097152,
+        "tensor_download_chunk_size": 2097152,
+        "streaming_per_request_timeout": 600
+    })
+
+    # Run in simulation
+    env = SimEnv(num_clients=3)
+    recipe.execute(env)
+
+.. note::
+
+    This recipe uses the CCWF peer-to-peer cross-site evaluation where clients evaluate each other's
+    models directly. For the traditional server-controlled cross-site evaluation, see
+    :ref:`cross_site_model_evaluation`.
+
+Using JSON Configuration (Advanced)
+-----------------------------------
+
+For users who need fine-grained control, here is the equivalent JSON configuration.
 
 Cross Site Evaluation: config_fed_server.json
----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: json
 
@@ -766,7 +1074,7 @@ Cross Site Evaluation: config_fed_server.json
     shows cross-site validation results in human readable format.
 
 Cross Site Evaluation: config_fed_client.json
----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: json
 
@@ -857,3 +1165,65 @@ Cross Site Evaluation: config_fed_client.json
 .. note::
 
     The response to the ``ask_for_model`` task contains model data. You can apply ``task_result_filters`` if privacy is a concern (the OUT filter for the responding client, and IN filters for the requesting client).
+
+Cross Site Evaluation Parameters for Large Models
+=================================================
+
+When running Cross Site Evaluation with large models, you may need to adjust timeout parameters to accommodate larger model transfers and longer evaluation times.
+
+Server-Side Parameters
+----------------------
+
+**CrossSiteEvalServerController:**
+
+- ``eval_task_timeout``: Max time allowed for the evaluation of a model by clients. **Suggested: 1200 or higher** for large models, as evaluation can be expensive.
+- ``configure_task_timeout``: Timeout for configuration task. **Suggested: 300** for large model initialization.
+- ``progress_timeout``: Overall workflow progress timeout. **Suggested: 7200 or higher** for large models.
+
+**Example server config for large models:**
+
+.. code-block:: json
+
+    {
+      "id": "cross_site_eval",
+      "path": "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+      "args": {
+        "eval_task_timeout": 1200,
+        "configure_task_timeout": 300,
+        "progress_timeout": 7200
+      }
+    }
+
+Client-Side Parameters
+----------------------
+
+**CrossSiteEvalClientController:**
+
+- ``get_model_timeout``: Timeout for requesting a model from another client. **Suggested: 600 or higher** for large models.
+
+**Example client config for large models:**
+
+.. code-block:: json
+
+    {
+      "tasks": ["cse_*"],
+      "executor": {
+        "path": "nvflare.app_common.ccwf.CrossSiteEvalClientController",
+        "args": {
+          "submit_model_task_name": "submit_model",
+          "validation_task_name": "validate",
+          "persistor_id": "persistor",
+          "get_model_timeout": 600
+        }
+      }
+    }
+
+Download and Chunking Behavior
+------------------------------
+
+For large model transfers during cross-site evaluation, ensure chunking is configured:
+
+- ``np_download_chunk_size``: Chunk size for NumPy array downloads. **Suggested: 2097152 (2MB)**
+- ``tensor_download_chunk_size``: Chunk size for PyTorch tensor downloads. **Suggested: 2097152 (2MB)**
+
+See :ref:`swarm_learning_large_models` for more details on chunking configuration.

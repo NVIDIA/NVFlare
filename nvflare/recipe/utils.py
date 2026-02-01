@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import importlib
-from typing import Optional
+import os
+from typing import List, Optional
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 
 TRACKING_REGISTRY = {
@@ -55,19 +59,40 @@ MODEL_LOCATOR_REGISTRY = {
 }
 
 
-def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: Optional[dict] = None):
+def add_experiment_tracking(
+    recipe: Recipe,
+    tracking_type: str,
+    tracking_config: Optional[dict] = None,
+    client_side: bool = False,
+    server_side: bool = True,
+):
     """Add experiment tracking to a recipe.
 
-    Adds a tracking receiver to the server to collect and log metrics from clients during training.
+    Adds tracking receivers to the server and/or clients to collect and log metrics during training.
 
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
         tracking_config: Optional configuration dict for the tracking receiver.
+        client_side: If True, add tracking to all clients (each client tracks locally).
+        server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+
+    Examples:
+        # Server-side tracking (default - federated metrics)
+        add_experiment_tracking(recipe, "mlflow", {"tracking_uri": "..."})
+
+        # Client-side tracking only (each client tracks independently)
+        add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=False)
+
+        # Both server and client tracking
+        add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
     """
     tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
+
+    if not server_side and not client_side:
+        raise ValueError("At least one of server_side or client_side must be True")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:
@@ -77,8 +102,23 @@ def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config:
 
     module = importlib.import_module(TRACKING_REGISTRY[tracking_type]["receiver_module"])
     receiver_class = getattr(module, TRACKING_REGISTRY[tracking_type]["receiver_class"])
-    receiver = receiver_class(**tracking_config)
-    recipe.job.to_server(receiver, "receiver")
+
+    # Add server-side tracking
+    if server_side:
+        receiver = receiver_class(**tracking_config)
+        recipe.job.to_server(receiver, "receiver")
+
+    # Add client-side tracking
+    if client_side:
+        # For client-side tracking, need to configure local events
+        # Deep copy to avoid shared mutable state (tracking_config may contain nested dicts)
+        client_config = copy.deepcopy(tracking_config)
+        # Override events to track local analytics (not federated)
+        if "events" not in client_config:
+            client_config["events"] = [ANALYTIC_EVENT_TYPE]
+
+        client_receiver = receiver_class(**client_config)
+        recipe.job.to_clients(client_receiver, id="client_receiver")
 
 
 def add_cross_site_evaluation(
@@ -206,15 +246,15 @@ def add_cross_site_evaluation(
         - **TensorFlow recipes**: Similar to PyTorch, uses the Client API pattern. The client script
           should handle validation tasks via `flare.is_evaluate()` check.
     """
-    from nvflare.app_common.app_constant import AppConstants
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.job_config.script_runner import FrameworkType
 
     # Idempotency check: prevent multiple calls on the same recipe
     if hasattr(recipe, "_cse_added") and recipe._cse_added:
+        name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
-            f"Cross-site evaluation has already been added to recipe '{recipe.name}'. "
+            f"Cross-site evaluation has already been added to recipe '{name}'. "
             "Calling add_cross_site_evaluation() multiple times would create duplicate "
             "model locators, validators, and controllers, which can cause unexpected behavior. "
             "Please call this function only once per recipe instance."
@@ -290,24 +330,12 @@ def add_cross_site_evaluation(
     )
     recipe.job.to_server(eval_controller)
 
-    # Auto-add validators for NumPy recipes (if not already configured)
-    if framework == FrameworkType.RAW:
-        from nvflare.app_common.np.np_validator import NPValidator
-
-        # Check if validators are already configured for TASK_VALIDATION
-        # This is more robust than string matching on recipe class names
-        has_validator = _has_task_executor(recipe.job, AppConstants.TASK_VALIDATION)
-
-        if not has_validator:
-            # For training recipes (e.g., NumpyFedAvgRecipe), add validator for CSE
-            validator = NPValidator()
-            recipe.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
-
-    # Note: TensorFlow and PyTorch use Client API pattern (flare.is_evaluate()) by default.
-    # Validators are not auto-added for these frameworks as they typically handle validation
-    # in the training script itself. However, TFValidator is available for users who prefer
-    # a component-based approach (similar to NumPy's NPValidator) - it must be manually added
-    # to the job using recipe.job.to_clients(validator, tasks=["validate"])
+    # Let recipe handle framework-specific validator setup if needed
+    # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
+    # PyTorch/TensorFlow recipes use Client API pattern (flare.is_evaluate()) and handle
+    # validation in the training script itself, so no validator component is needed
+    if hasattr(recipe, "add_cse_validator_if_needed"):
+        recipe.add_cse_validator_if_needed()
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
@@ -361,7 +389,7 @@ def _has_task_executor(job, task_name: str) -> bool:
 
                     try:
                         # Check if this executor handles the task
-                        # Tasks can be ["*"] (all tasks) or specific task names
+                        # Wildcard executors (["*"]) can handle any task
                         if "*" in executor_def.tasks or task_name in executor_def.tasks:
                             return True
                     except (TypeError, AttributeError):
@@ -369,3 +397,24 @@ def _has_task_executor(job, task_name: str) -> bool:
                         # This could happen if tasks has an unexpected type
                         continue
     return False
+
+
+def _collect_non_local_scripts(job: FedJob) -> List[str]:
+    """Collect scripts that don't exist locally.
+
+    This utility function is used by ExecEnv subclasses to validate script resources
+    before deployment. Scripts are considered "non-local" if they are absolute paths
+    that don't exist on the local machine.
+
+    Args:
+        job: The FedJob to check for non-local scripts.
+
+    Returns:
+        List of absolute script paths that don't exist on the local machine.
+    """
+    non_local_scripts = []
+    for app in job._deploy_map.values():
+        for script in app.app_config.ext_scripts:
+            if os.path.isabs(script) and not os.path.exists(script):
+                non_local_scripts.append(script)
+    return non_local_scripts
