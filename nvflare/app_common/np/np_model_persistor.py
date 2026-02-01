@@ -20,9 +20,9 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
+from .utils import load_numpy_model
 
 
 def _get_run_dir(fl_ctx: FLContext):
@@ -83,48 +83,16 @@ class NPModelPersistor(ModelPersistor):
             return np.array(self.initial_model, dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        data = None
+        run_dir = _get_run_dir(fl_ctx)
+        model_path = os.path.join(run_dir, self.model_dir, self.model_name)
 
-        # Priority 1: Load from source checkpoint if provided
-        if self.source_ckpt_file_full_name:
-            if os.path.exists(self.source_ckpt_file_full_name):
-                try:
-                    self.log_info(
-                        fl_ctx,
-                        f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}",
-                        fire_event=False,
-                    )
-                    data = np.load(self.source_ckpt_file_full_name)
-                except Exception as e:
-                    self.log_warning(
-                        fl_ctx,
-                        f"Failed to load from source checkpoint {self.source_ckpt_file_full_name}: "
-                        f"{secure_format_exception(e)}. Trying other sources.",
-                    )
-            else:
-                self.log_warning(
-                    fl_ctx,
-                    f"Source checkpoint not found: {self.source_ckpt_file_full_name}. Trying other sources.",
-                )
-
-        # Priority 2: Load from previously saved model
-        if data is None:
-            run_dir = _get_run_dir(fl_ctx)
-            model_path = os.path.join(run_dir, self.model_dir, self.model_name)
-            try:
-                data = np.load(model_path)
-                self.log_info(fl_ctx, f"Loaded model from {model_path}", fire_event=False)
-            except Exception as e:
-                self.log_info(
-                    fl_ctx,
-                    f"Unable to load model from {model_path}: {secure_format_exception(e)}. "
-                    "Using initial model instead.",
-                    fire_event=False,
-                )
-
-        # Priority 3: Use initial model or default
-        if data is None:
-            data = self._get_initial_model_as_numpy().copy()
+        data = load_numpy_model(
+            fl_ctx=fl_ctx,
+            logger=self,
+            source_ckpt_file_full_name=self.source_ckpt_file_full_name,
+            model_file_path=model_path,
+            get_fallback_data=lambda: self._get_initial_model_as_numpy().copy(),
+        )
 
         model_learnable = make_model_learnable(weights={NPConstants.NUMPY_KEY: data}, meta_props={})
 
