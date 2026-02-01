@@ -1,4 +1,4 @@
-nvflare>=2.5.0
+nvflare~=2.7.2rc
 pandas
 scikit-learn
 joblib
