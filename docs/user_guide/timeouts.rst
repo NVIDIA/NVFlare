@@ -1429,6 +1429,30 @@ the streaming behavior (tensor_stream/server.py, client.py):
        tensor_send_timeout=60.0,  # Per-tensor timeout
    )
 
+.. warning::
+
+   **Critical Timeout Relationship for Tensor Streaming**
+   
+   When using tensor streaming, you **must** ensure that ``get_task_timeout`` is set and is 
+   greater than or equal to ``wait_send_task_data_all_clients_timeout``. If ``get_task_timeout`` 
+   is not set, it defaults to the communicator's timeout, which may be shorter than the tensor 
+   streaming timeout.
+   
+   **Problem**: If streaming timeout > communicator timeout and no ``get_task_timeout`` is set, 
+   some clients may receive weights while others are still waiting. The server may not send the 
+   task in time, causing a timeout that restarts the tensor streaming process. This can result 
+   in clients receiving empty tensors and job failure.
+   
+   **Solution**: Always set ``get_task_timeout`` when using tensor streaming:
+   
+   .. code-block:: python
+   
+      # Ensure get_task_timeout >= wait_send_task_data_all_clients_timeout
+      recipe.job.to({
+          "get_task_timeout": 600,  # Must be >= streaming timeout
+      }, site_name)
+
+
 Streaming Download Timeouts
 ---------------------------
 
@@ -2019,8 +2043,11 @@ Hierarchical Relationships
    │  ├── chunk_timeout (5s per chunk)                               │
    │  └── entry_timeout (60s per entry)                              │
    │                                                                 │
-   │  Tensor Streaming                                               │
-   │  └── tensor_send_timeout (30s)                                  │
+   │  Tensor Streaming (CRITICAL RELATIONSHIP)                       │
+   │  ├── tensor_send_timeout (30s)                                  │
+   │  ├── wait_send_task_data_all_clients_timeout (300s)             │
+   │  └── get_task_timeout >= wait_send_task_data_all_clients_timeout│
+   │      (REQUIRED to prevent task fetch timeout during streaming)  │
    └─────────────────────────────────────────────────────────────────┘
 
 
@@ -2774,6 +2801,23 @@ Notes and Best Practices
 - ``task_result_timeout`` must be **less than or equal to** ``task.timeout``
 - ``per_msg_timeout`` should be **less than or equal to** ``tx_timeout`` for retries to work
 - ``agent_heartbeat_interval`` must be **less than** ``agent_connection_timeout``
+- **IMPORTANT**: When using tensor streaming, ``get_task_timeout`` must be **greater than or equal to** 
+  ``wait_send_task_data_all_clients_timeout`` to prevent task fetch timeouts while waiting for all 
+  clients to receive tensors
+
+**Tensor Streaming Timeout Warning:**
+
+When tensor streaming is enabled, if ``get_task_timeout`` is not explicitly set, it defaults to the 
+communicator's timeout. If the streaming timeout (``wait_send_task_data_all_clients_timeout``) exceeds 
+the communicator timeout, clients may timeout while waiting for other clients to receive weights. This 
+can cause the tensor streaming process to restart and clients may receive empty tensors, causing the 
+job to fail.
+
+**Recommended relationship for tensor streaming:**
+
+.. code-block:: text
+
+   get_task_timeout >= wait_send_task_data_all_clients_timeout >= tensor_send_timeout * num_clients
 
 **Hierarchy:**
 
