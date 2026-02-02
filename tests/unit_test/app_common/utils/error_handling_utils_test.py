@@ -270,8 +270,6 @@ class TestAcceptTrainResultErrorHandling:
 
     def test_normal_task_with_ok_result_sets_context(self):
         """Test that normal task with OK result sets the result in context and returns True."""
-        from unittest.mock import MagicMock, patch
-
         from nvflare.apis.fl_constant import ReturnCode
         from nvflare.app_common.app_constant import AppConstants
         from nvflare.app_common.workflows.fedavg import FedAvg
@@ -291,8 +289,6 @@ class TestAcceptTrainResultErrorHandling:
 
     def test_normal_task_with_error_and_ignore_does_not_set_context(self):
         """Test that normal task with error when should_ignore=True returns False without setting context."""
-        from unittest.mock import MagicMock, patch
-
         from nvflare.apis.fl_constant import ReturnCode
         from nvflare.app_common.workflows.fedavg import FedAvg
 
@@ -368,7 +364,7 @@ class TestAcceptTrainResultErrorHandling:
 
     def test_unknown_task_uses_empty_tracking_context(self):
         """Test that unknown tasks use empty tracking context to avoid stale data."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from nvflare.apis.fl_constant import ReturnCode
         from nvflare.app_common.workflows.fedavg import FedAvg
