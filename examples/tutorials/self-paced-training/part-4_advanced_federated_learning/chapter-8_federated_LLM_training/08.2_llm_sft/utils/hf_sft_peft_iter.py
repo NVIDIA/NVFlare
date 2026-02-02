@@ -128,8 +128,6 @@ def main():
         lr_scheduler_type="constant",
         disable_tqdm=True,
         max_length=1024,
-        # safetensors has some issues in saving lm_head.weight, disable it for now
-        save_safetensors=False,
     )
 
     # Trainer

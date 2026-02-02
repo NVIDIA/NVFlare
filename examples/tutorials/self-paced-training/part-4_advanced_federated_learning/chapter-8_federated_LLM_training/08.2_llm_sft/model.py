@@ -19,8 +19,10 @@ from transformers import AutoModelForCausalLM
 class CausalLMModel(torch.nn.Module):
     def __init__(self, model_name_or_path):
         super(CausalLMModel, self).__init__()
+        # Load model in float32 to ensure compatibility with the persistor
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
+            torch_dtype=torch.float32,
         )
 
     def forward(self, input_id):
