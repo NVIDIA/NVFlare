@@ -107,7 +107,12 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        accuracy = correct / total if total > 0 else 0.0
+        if total == 0:
+            raise ValueError(
+                f"No data processed during evaluation for site {client_name}. "
+                "This indicates a data preparation or loading issue."
+            )
+        accuracy = correct / total
         print(f"site={client_name}, Global model accuracy before training: {accuracy:.4f}")
 
         # Train the model
