@@ -995,10 +995,6 @@ class WFCommServer(FLComponent, WFCommSpec):
                     # Clean up download transactions for this task
                     try:
                         msg_root_id = exit_task.msg_root_id
-                        cleanup_msg = "Cleaning up download transactions for task {} (msg_root_id={})".format(
-                            exit_task.name, msg_root_id
-                        )
-                        self.log_debug(fl_ctx, cleanup_msg)
                         delete_msg_root(msg_root_id)
                         self.log_debug(
                             fl_ctx,
