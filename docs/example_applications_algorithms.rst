@@ -107,7 +107,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 10.  Natural Language Processing (NLP)
 ======================================
 
-  * :github_nvflare_link:`NLP-NER (Github) <examples/advanced/nlp-ner/README.md>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
+  * :github_nvflare_link:`NLP-NER (Github) <examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 11. Federated Large Language Model (LLM)
 ========================================
