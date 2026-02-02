@@ -29,7 +29,7 @@ We are using `nvflare provision` to provision a hierarchical NVFlare system for 
 ***Note: if starting from scratch, please first run `nvflare provision -e` to create a project yaml, update the settings, then run the following.***
 
 ```commandline
-nvflare provision -p project.yml
+nvflare provision -s -p project.yml
 ```
 
 Note that in this example, we specify `depth: 1, width: 2` and `clients: 2`, indicating a hierarchy with a topology as following:
@@ -125,7 +125,7 @@ If you have more real devices you can adjust the number.
 #### Start the Mobile App
 To run on the real device, app developers need to integrate their applications with our edge device SDK (Android/iOS).
 
-You can get an example app from "nvflare/edge/device"
+You can get an example app from [nvflare/edge/device](../../../nvflare/edge/device/), which includes SDK implementations and example apps for both Android ([android](../../../nvflare/edge/device/android/)) and iOS ([ios](../../../nvflare/edge/device/ios/)) platforms.
 
 It can be installed on your device and started.
 
