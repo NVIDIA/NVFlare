@@ -417,3 +417,120 @@ class TestAcceptTrainResultErrorHandling:
         assert accepted is True
         # OK result should still be set in context
         fl_ctx.set_prop.assert_called_once_with(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+
+
+class TestScatterAndGatherUnknownTaskHandling:
+    """Test ScatterAndGather's handling of unknown/late task results."""
+
+    def _create_mock_result(self, return_code):
+        """Helper to create a mock Shareable result."""
+        from unittest.mock import MagicMock
+
+        result = MagicMock()
+        result.get_return_code.return_value = return_code
+        result.get_header.return_value = 1  # current_round
+        return result
+
+    def _create_mock_fl_ctx(self):
+        """Helper to create a mock FLContext."""
+        from unittest.mock import MagicMock
+
+        fl_ctx = MagicMock()
+        return fl_ctx
+
+    def _create_mock_aggregator(self):
+        """Helper to create a mock aggregator."""
+        from unittest.mock import MagicMock
+
+        aggregator = MagicMock()
+        aggregator.accept.return_value = True
+        return aggregator
+
+    def test_unknown_task_forces_ignore_error_mode(self):
+        """Test that unknown tasks force ignore_result_error=True regardless of controller setting."""
+        from unittest.mock import MagicMock
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        # Controller set to panic mode (False)
+        controller = ScatterAndGather(min_clients=3, ignore_result_error=False)
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._min_clients = 3
+        controller._current_round = 1
+        controller.log_warning = MagicMock()
+        controller.system_panic = MagicMock()
+        controller.aggregator = self._create_mock_aggregator()
+        controller.fire_event = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        # With is_unknown_task=True, should warn (not panic) even though ignore_result_error=False
+        accepted = controller._accept_train_result(
+            client_name="site-1", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        assert accepted is False
+        # Should warn (because unknown task forces ignore_result_error=True)
+        controller.log_warning.assert_called_once()
+        controller.system_panic.assert_not_called()
+
+    def test_unknown_task_uses_empty_tracking_context(self):
+        """Test that unknown tasks use empty tracking context to avoid stale data."""
+        from unittest.mock import MagicMock
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        controller = ScatterAndGather(min_clients=3, ignore_result_error=None)
+        # Stale tracking data from previous task
+        controller._current_failed_clients = {"site-1", "site-2"}
+        controller._current_num_targets = 3
+        controller._min_clients = 3
+        controller._current_round = 1
+        controller.log_warning = MagicMock()
+        controller.system_panic = MagicMock()
+        controller.aggregator = self._create_mock_aggregator()
+        controller.fire_event = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        # With is_unknown_task=True, should use empty/zero context
+        # which means ignore_result_error=True (set in the method)
+        accepted = controller._accept_train_result(
+            client_name="site-3", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        assert accepted is False
+        # Should warn (because unknown task forces ignore_result_error=True)
+        controller.log_warning.assert_called_once()
+        controller.system_panic.assert_not_called()
+
+    def test_unknown_task_with_ok_result_accepted(self):
+        """Test that unknown tasks with OK result are accepted."""
+        from unittest.mock import MagicMock
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        controller = ScatterAndGather(min_clients=3)
+        controller._current_failed_clients = {"site-1"}
+        controller._current_num_targets = 3
+        controller._min_clients = 3
+        controller._current_round = 1
+        controller.aggregator = self._create_mock_aggregator()
+        controller.fire_event = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.OK)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(
+            client_name="site-2", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        # OK result should be accepted and sent to aggregator
+        assert accepted is True
+        controller.aggregator.accept.assert_called_once_with(result, fl_ctx)
