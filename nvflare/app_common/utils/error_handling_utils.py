@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Set
+from typing import Any, Optional, Set
 
 
 def should_ignore_result_error(
@@ -64,8 +64,8 @@ def should_ignore_result_error(
 def get_error_handling_message(
     ignore_result_error: Optional[bool],
     client_name: str,
-    error_code: str,
-    current_round: int,
+    error_code: Any,
+    current_round: Optional[int],
     controller_name: str,
     failed_clients: Set[str],
     num_targets: int,
@@ -76,8 +76,8 @@ def get_error_handling_message(
     Args:
         ignore_result_error: The error handling mode (None, False, or True).
         client_name: Name of the client with the error.
-        error_code: The return code from the client result.
-        current_round: Current training round.
+        error_code: The return code from the client result (ReturnCode constant or None).
+        current_round: Current training round (may be None if not set in result).
         controller_name: Name of the controller class.
         failed_clients: Set of client names that have failed.
         num_targets: Total number of target clients.

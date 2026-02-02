@@ -247,3 +247,175 @@ class TestIgnoreResultErrorIntegration:
 
         controller_false = ScatterAndGather(ignore_result_error=False)
         assert controller_false.ignore_result_error is False
+
+
+class TestAcceptTrainResultErrorHandling:
+    """Test _accept_train_result error handling behavior in BaseModelController."""
+
+    def _create_mock_result(self, return_code):
+        """Create a mock Shareable result with given return code."""
+        from nvflare.apis.shareable import Shareable
+
+        result = Shareable()
+        result.set_return_code(return_code)
+        return result
+
+    def _create_mock_fl_ctx(self):
+        """Create a mock FLContext."""
+        from unittest.mock import MagicMock
+
+        fl_ctx = MagicMock()
+        fl_ctx.set_prop = MagicMock()
+        return fl_ctx
+
+    def test_normal_task_with_ok_result_sets_context(self):
+        """Test that normal task with OK result sets the result in context and returns True."""
+        from unittest.mock import MagicMock, patch
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.app_constant import AppConstants
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        controller = FedAvg()
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._current_min_responses = 3
+
+        result = self._create_mock_result(ReturnCode.OK)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(client_name="site-1", result=result, fl_ctx=fl_ctx)
+
+        assert accepted is True
+        fl_ctx.set_prop.assert_called_once_with(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+
+    def test_normal_task_with_error_and_ignore_does_not_set_context(self):
+        """Test that normal task with error when should_ignore=True returns False without setting context."""
+        from unittest.mock import MagicMock, patch
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        controller = FedAvg(ignore_result_error=True)  # Always ignore
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._current_min_responses = 3
+        controller.warning = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(client_name="site-1", result=result, fl_ctx=fl_ctx)
+
+        assert accepted is False
+        # Should NOT set the errored result in context
+        fl_ctx.set_prop.assert_not_called()
+        # Should log a warning
+        controller.warning.assert_called_once()
+
+    def test_normal_task_with_error_and_panic_does_not_set_context(self):
+        """Test that normal task with error when should_ignore=False returns False and panics."""
+        from unittest.mock import MagicMock
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        controller = FedAvg(ignore_result_error=False)  # Always panic
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._current_min_responses = 3
+        controller.panic = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(client_name="site-1", result=result, fl_ctx=fl_ctx)
+
+        assert accepted is False
+        # Should NOT set the errored result in context
+        fl_ctx.set_prop.assert_not_called()
+        # Should panic
+        controller.panic.assert_called_once()
+
+    def test_unknown_task_always_ignores_errors(self):
+        """Test that unknown/late tasks always ignore errors and return False regardless of controller setting."""
+        from unittest.mock import MagicMock
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        # Even with ignore_result_error=False (strict mode), unknown tasks should ignore
+        controller = FedAvg(ignore_result_error=False)
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._current_min_responses = 3
+        controller.warning = MagicMock()
+        controller.panic = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(
+            client_name="site-1", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        assert accepted is False
+        # Should warn, NOT panic (because is_unknown_task=True forces ignore)
+        controller.warning.assert_called_once()
+        controller.panic.assert_not_called()
+        # Should NOT set the errored result in context
+        fl_ctx.set_prop.assert_not_called()
+
+    def test_unknown_task_uses_empty_tracking_context(self):
+        """Test that unknown tasks use empty tracking context to avoid stale data."""
+        from unittest.mock import MagicMock, patch
+
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        controller = FedAvg(ignore_result_error=None)  # Dynamic mode
+        # Stale tracking data from previous task
+        controller._current_failed_clients = {"site-1", "site-2"}
+        controller._current_num_targets = 3
+        controller._current_min_responses = 3
+        controller.warning = MagicMock()
+        controller.panic = MagicMock()
+
+        result = self._create_mock_result(ReturnCode.EXECUTION_EXCEPTION)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        # With is_unknown_task=True, should use empty/zero context
+        # which means ignore_result_error=True (set in the method)
+        accepted = controller._accept_train_result(
+            client_name="site-3", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        assert accepted is False
+        # Should warn (because unknown task forces ignore_result_error=True)
+        controller.warning.assert_called_once()
+        controller.panic.assert_not_called()
+
+        # Verify stale _current_failed_clients was NOT modified
+        assert "site-3" not in controller._current_failed_clients
+
+    def test_unknown_task_with_ok_result_sets_context(self):
+        """Test that unknown task with OK result returns True and sets result in context."""
+        from nvflare.apis.fl_constant import ReturnCode
+        from nvflare.app_common.app_constant import AppConstants
+        from nvflare.app_common.workflows.fedavg import FedAvg
+
+        controller = FedAvg()
+        controller._current_failed_clients = set()
+        controller._current_num_targets = 5
+        controller._current_min_responses = 3
+
+        result = self._create_mock_result(ReturnCode.OK)
+        fl_ctx = self._create_mock_fl_ctx()
+
+        accepted = controller._accept_train_result(
+            client_name="site-1", result=result, fl_ctx=fl_ctx, is_unknown_task=True
+        )
+
+        assert accepted is True
+        # OK result should still be set in context
+        fl_ctx.set_prop.assert_called_once_with(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)

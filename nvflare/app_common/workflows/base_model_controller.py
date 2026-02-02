@@ -234,8 +234,13 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
-        self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+        accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
         self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
+
+        # If result was rejected (error ignored or panic), skip further processing
+        if not accepted:
+            client_task.result = None
+            return
 
         # Now try to convert result to FLModel
         try:
@@ -265,43 +270,70 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> None:
         if task_name == AppConstants.TASK_TRAIN:
-            self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
-            self.info(f"Result of unknown task {task_name} sent to aggregator.")
+            accepted = self._accept_train_result(
+                client_name=client.name, result=result, fl_ctx=fl_ctx, is_unknown_task=True
+            )
+            if accepted:
+                self.info(f"Result of unknown task {task_name} sent to aggregator.")
         else:
             self.error("Ignoring result from unknown task.")
 
-    def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext):
+    def _accept_train_result(
+        self, client_name: str, result: Shareable, fl_ctx: FLContext, is_unknown_task: bool = False
+    ) -> bool:
+        """Accept or reject a training result based on error handling policy.
+
+        Args:
+            client_name: Name of the client that sent the result.
+            result: The Shareable result from the client.
+            fl_ctx: The FLContext.
+            is_unknown_task: Whether this result is from an unknown/late task.
+
+        Returns:
+            True if the result was accepted, False if it was rejected (error ignored or panic triggered).
+        """
         self.fl_ctx = fl_ctx
         rc = result.get_return_code()
 
         current_round = result.get_header(AppConstants.CURRENT_ROUND, None)
 
+        # For unknown/late tasks, always ignore errors (no valid tolerance context)
+        # For normal tasks, use the configured ignore_result_error setting
+        ignore_result_error = True if is_unknown_task else self._ignore_result_error
+
+        # Use empty set for unknown tasks since we don't have valid tracking context
+        failed_clients = set() if is_unknown_task else self._current_failed_clients
+        num_targets = 0 if is_unknown_task else self._current_num_targets
+        min_responses = 0 if is_unknown_task else self._current_min_responses
+
         # Raise panic if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             should_ignore = should_ignore_result_error(
-                ignore_result_error=self._ignore_result_error,
+                ignore_result_error=ignore_result_error,
                 client_name=client_name,
-                failed_clients=self._current_failed_clients,
-                num_targets=self._current_num_targets,
-                min_responses=self._current_min_responses,
+                failed_clients=failed_clients,
+                num_targets=num_targets,
+                min_responses=min_responses,
             )
             msg = get_error_handling_message(
-                ignore_result_error=self._ignore_result_error,
+                ignore_result_error=ignore_result_error,
                 client_name=client_name,
                 error_code=rc,
                 current_round=current_round,
                 controller_name=self.__class__.__name__,
-                failed_clients=self._current_failed_clients,
-                num_targets=self._current_num_targets,
-                min_responses=self._current_min_responses,
+                failed_clients=failed_clients,
+                num_targets=num_targets,
+                min_responses=min_responses,
             )
             if should_ignore:
                 self.warning(msg)
+                return False  # Result rejected - error ignored
             else:
                 self.panic(msg)
-                return
+                return False  # Result rejected - panic triggered
 
         self.fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
+        return True  # Result accepted
 
     @abstractmethod
     def run(self):
