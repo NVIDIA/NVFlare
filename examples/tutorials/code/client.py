@@ -15,6 +15,7 @@
     client side training scripts
 """
 
+import argparse
 import os
 
 import torch
@@ -28,13 +29,42 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
 
-DATASET_PATH = "/tmp/nvflare/data"
-
 
 def main():
-    batch_size = 16
-    epochs = 2
-    lr = 0.01
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="CIFAR10 Federated Learning Client")
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default="/tmp/nvflare/data",
+        help="Path to dataset directory (default: /tmp/nvflare/data)",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=16,
+        help="Batch size for training (default: 16)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=2,
+        help="Number of local training epochs (default: 2)",
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.01,
+        help="Learning rate (default: 0.01)",
+    )
+    args = parser.parse_args()
+
+    # Use parsed arguments
+    batch_size = args.batch_size
+    epochs = args.epochs
+    lr = args.lr
+    dataset_path = args.dataset_path
+    
     model = SimpleNetwork()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     loss = nn.CrossEntropyLoss()
@@ -51,7 +81,7 @@ def main():
     client_name = sys_info["site_name"]
 
     train_dataset = CIFAR10(
-        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
+        root=os.path.join(dataset_path, client_name), transform=transforms, download=True, train=True
     )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
