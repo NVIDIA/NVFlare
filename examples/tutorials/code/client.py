@@ -64,7 +64,7 @@ def main():
     epochs = args.epochs
     lr = args.lr
     dataset_path = args.dataset_path
-    
+
     model = SimpleNetwork()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     loss = nn.CrossEntropyLoss()
@@ -106,7 +106,7 @@ def main():
                 _, predicted = torch.max(predictions.data, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
-        
+
         accuracy = correct / total if total > 0 else 0.0
         print(f"site={client_name}, Global model accuracy before training: {accuracy:.4f}")
 
@@ -128,7 +128,9 @@ def main():
                 if i % 3000 == 0:
                     print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
                     global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=float(running_loss), global_step=global_step)
+                    summary_writer.add_scalar(
+                        tag="loss_for_each_batch", scalar=float(running_loss), global_step=global_step
+                    )
                     running_loss = 0.0
 
         print(f"Finished Training for {client_name}")
