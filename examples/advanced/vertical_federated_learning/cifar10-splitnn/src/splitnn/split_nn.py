@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from pt.networks.cifar10_nets import ModerateCNN
+from pt.src.model import ModerateCNN
 
 
 class SplitNN(ModerateCNN):

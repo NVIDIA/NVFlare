@@ -16,7 +16,7 @@ import json
 import os
 
 import numpy as np
-from pt.utils.cifar10_data_utils import get_site_class_summary, load_cifar10_data
+from pt.src.data.cifar10_data_utils import get_site_class_summary, load_cifar10_data
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
