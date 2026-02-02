@@ -134,8 +134,8 @@ class XGBBaggingRecipe(Recipe):
                 },
             )
 
-            env = SimEnv()
-            env.run(recipe)
+            env = SimEnv(num_clients=3)
+            run = recipe.execute(env)
     """
 
     def __init__(

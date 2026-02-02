@@ -122,8 +122,12 @@ def main():
     )
 
     # Run simulation
-    env = SimEnv()
-    env.run(recipe, work_dir=f"/tmp/nvflare/workspace/works/{job_name}")
+    env = SimEnv(num_clients=args.site_num)
+    run = recipe.execute(env)
+    print()
+    print("Job Status:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
 
 
 if __name__ == "__main__":

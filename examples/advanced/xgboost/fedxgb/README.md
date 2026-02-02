@@ -189,8 +189,8 @@ recipe = XGBHorizontalRecipe(
 )
 
 # Run simulation
-env = SimEnv()
-env.run(recipe)
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 > **_NOTE:_** "histogram_v2" implements a fault-tolerant XGBoost training by using
@@ -267,8 +267,8 @@ recipe = XGBBaggingRecipe(
 )
 
 # Run
-env = SimEnv()
-env.run(recipe)
+env = SimEnv(num_clients=5)
+run = recipe.execute(env)
 ```
 The resulting validation AUC curves are shown below:
 
@@ -353,8 +353,8 @@ for site_id in range(1, 3):
     per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
 
 # Run simulation
-env = SimEnv()
-env.run(recipe)
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 **Key Points**:

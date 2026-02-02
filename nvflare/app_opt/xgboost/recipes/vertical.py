@@ -128,8 +128,8 @@ class XGBVerticalRecipe(Recipe):
             )
 
             # Step 3: Run
-            env = SimEnv()
-            env.run(recipe)
+            env = SimEnv(num_clients=2)
+            run = recipe.execute(env)
 
     Note:
         - **PSI must be run first** to compute sample intersection across clients

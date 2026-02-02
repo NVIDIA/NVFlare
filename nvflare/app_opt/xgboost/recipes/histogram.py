@@ -98,8 +98,8 @@ class XGBHorizontalRecipe(Recipe):
             )
 
             # Run simulation
-            env = SimEnv()
-            env.run(recipe)
+            env = SimEnv(num_clients=2)
+            run = recipe.execute(env)
 
     Note:
         - Data loaders must be configured via per_site_config parameter.
