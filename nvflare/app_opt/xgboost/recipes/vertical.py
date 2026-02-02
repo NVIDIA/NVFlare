@@ -159,7 +159,6 @@ class XGBVerticalRecipe(Recipe):
         xgb_params: Optional[dict] = None,
         data_loader_id: str = "dataloader",
         metrics_writer_id: str = "metrics_writer",
-        data_loader: Optional["XGBDataLoader"] = None,
         in_process: bool = True,
         model_file_name: str = "test.model.json",
         per_site_config: Optional[dict[str, dict]] = None,
@@ -205,22 +204,13 @@ class XGBVerticalRecipe(Recipe):
         self.metrics_writer_id = v.metrics_writer_id
         self.in_process = v.in_process
         self.model_file_name = v.model_file_name
-        self.data_loader = data_loader
         self.per_site_config = per_site_config
 
-        # Validate data loader configuration
-        if data_loader is not None and per_site_config is not None:
+        # Validate per_site_config is provided
+        if per_site_config is None:
             raise ValueError(
-                "Cannot specify both 'data_loader' and 'per_site_config'. "
-                "Use 'data_loader' for common config across all clients, "
-                "or 'per_site_config' for site-specific configs."
-            )
-
-        if data_loader is None and per_site_config is None:
-            raise ValueError(
-                "Must provide either 'data_loader' or 'per_site_config'. "
-                "Use 'data_loader=CSVDataLoader(...)' for common config, "
-                'or \'per_site_config={"site-1": {"data_loader": ...}}\' for site-specific configs.'
+                "per_site_config is required for XGBVerticalRecipe. "
+                "Each site must specify a 'data_loader' in the config dictionary."
             )
 
         # Configure the job
@@ -257,55 +247,33 @@ class XGBVerticalRecipe(Recipe):
 
         # Add executor and components
 
-        # Add all components per site to avoid @ALL overwriting site-specific components
-        if self.data_loader is not None:
-            # Common data loader - use to_clients for all components
+        # Add all components per site (executor, metrics, event converter, data loader)
+        for site_name, site_config in self.per_site_config.items():
+            data_loader = site_config.get("data_loader")
+            if data_loader is None:
+                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+
+            # Add executor
             executor = FedXGBHistogramExecutor(
                 data_loader_id=self.data_loader_id,
                 metrics_writer_id=self.metrics_writer_id,
-                in_process=True if self.secure else self.in_process,  # Secure training requires in_process
+                in_process=True if self.secure else self.in_process,
                 model_file_name=self.model_file_name,
             )
-            job.to_clients(executor, id="xgb_hist_executor", tasks=["config", "start"])
+            job.to(executor, site_name, id="xgb_hist_executor", tasks=["config", "start"])
 
+            # Add metrics writer
             metrics_writer = TBWriter(event_type="analytix_log_stats")
-            job.to_clients(metrics_writer, id=self.metrics_writer_id)
+            job.to(metrics_writer, site_name, id=self.metrics_writer_id)
 
+            # Add event converter
             event_to_fed = ConvertToFedEvent(
                 events_to_convert=["analytix_log_stats"],
                 fed_event_prefix="fed.",
             )
-            job.to_clients(event_to_fed, id="event_to_fed")
+            job.to(event_to_fed, site_name, id="event_to_fed")
 
-            job.to_clients(self.data_loader, id=self.data_loader_id)
-        elif self.per_site_config is not None:
-            # Site-specific configuration - add all components per site
-            for site_name, site_config in self.per_site_config.items():
-                data_loader = site_config.get("data_loader")
-                if data_loader is None:
-                    raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
-
-                # Add executor
-                executor = FedXGBHistogramExecutor(
-                    data_loader_id=self.data_loader_id,
-                    metrics_writer_id=self.metrics_writer_id,
-                    in_process=True if self.secure else self.in_process,
-                    model_file_name=self.model_file_name,
-                )
-                job.to(executor, site_name, id="xgb_hist_executor", tasks=["config", "start"])
-
-                # Add metrics writer
-                metrics_writer = TBWriter(event_type="analytix_log_stats")
-                job.to(metrics_writer, site_name, id=self.metrics_writer_id)
-
-                # Add event converter
-                event_to_fed = ConvertToFedEvent(
-                    events_to_convert=["analytix_log_stats"],
-                    fed_event_prefix="fed.",
-                )
-                job.to(event_to_fed, site_name, id="event_to_fed")
-
-                # Add data loader
-                job.to(data_loader, site_name, id=self.data_loader_id)
+            # Add data loader
+            job.to(data_loader, site_name, id=self.data_loader_id)
 
         return job
