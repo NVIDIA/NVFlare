@@ -85,6 +85,24 @@ def main():
     )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
+    # Validate train_loader is not empty
+    if len(train_loader) == 0:
+        raise ValueError(
+            f"Empty train_loader for site {client_name}. " "This indicates a data preparation or loading issue."
+        )
+
+    # Create test dataset and loader for evaluation
+    test_dataset = CIFAR10(
+        root=os.path.join(dataset_path, client_name), transform=transforms, download=True, train=False
+    )
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    # Validate test_loader is not empty
+    if len(test_loader) == 0:
+        raise ValueError(
+            f"Empty test_loader for site {client_name}. " "This indicates a data preparation or loading issue."
+        )
+
     summary_writer = SummaryWriter()
     while flare.is_running():
         input_model = flare.receive()
@@ -93,12 +111,12 @@ def main():
         model.load_state_dict(input_model.params)
         model.to(device)
 
-        # Evaluate the global model before local training
+        # Evaluate the global model on test set before local training
         model.eval()
         correct = 0
         total = 0
         with torch.no_grad():
-            for i, batch in enumerate(train_loader):
+            for i, batch in enumerate(test_loader):
                 if i >= 10:  # Only evaluate on first 10 batches for speed
                     break
                 images, labels = batch[0].to(device), batch[1].to(device)
@@ -107,13 +125,8 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        if total == 0:
-            raise ValueError(
-                f"No data processed during evaluation for site {client_name}. "
-                "This indicates a data preparation or loading issue."
-            )
         accuracy = correct / total
-        print(f"site={client_name}, Global model accuracy before training: {accuracy:.4f}")
+        print(f"site={client_name}, Global model test accuracy before training: {accuracy:.4f}")
 
         # Train the model
         model.train()
@@ -144,7 +157,7 @@ def main():
 
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
-            metrics={"accuracy": accuracy},
+            metrics={"accuracy": accuracy},  # Global model test accuracy before training
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
         print(f"site: {client_name}, sending model to server.")
