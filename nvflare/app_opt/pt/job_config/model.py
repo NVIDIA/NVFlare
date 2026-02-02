@@ -126,9 +126,9 @@ class PTModel:
         if self.persistor:
             return self.persistor
 
-        # For dict config, pass class path as string (resolved at runtime)
+        # For dict config, pass full dict with path and args (resolved at runtime via instantiate_class)
         persistor_kwargs = {
-            "model": self.model_class_path,
+            "model": self.model,  # Pass full dict {"path": "...", "args": {...}}
             "allow_numpy_conversion": self.allow_numpy_conversion,
         }
 

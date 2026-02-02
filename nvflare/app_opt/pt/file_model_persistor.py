@@ -16,7 +16,7 @@ import json
 import os
 import re
 from collections import OrderedDict
-from typing import Dict
+from typing import Any, Dict, Optional, Union
 
 import torch
 
@@ -36,12 +36,12 @@ from nvflare.fuel.utils import fobs
 class PTFileModelPersistor(ModelPersistor):
     def __init__(
         self,
-        exclude_vars=None,
-        model=None,
-        global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
-        best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
-        source_ckpt_file_full_name=None,
-        filter_id: str = None,
+        exclude_vars: Optional[str] = None,
+        model: Optional[Union[torch.nn.Module, str, Dict[str, Any]]] = None,
+        global_model_file_name: str = DefaultCheckpointFileName.GLOBAL_MODEL,
+        best_global_model_file_name: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        source_ckpt_file_full_name: Optional[str] = None,
+        filter_id: Optional[str] = None,
         load_weights_only: bool = False,
         allow_numpy_conversion: bool = True,
     ):
@@ -89,7 +89,11 @@ class PTFileModelPersistor(ModelPersistor):
 
         Args:
             exclude_vars (str, optional): regex expression specifying weight vars to be excluded from training. Defaults to None.
-            model (str, optional): torch model object or component id of the model object. Defaults to None.
+            model: Model input. Can be one of:
+                - torch.nn.Module: Direct model instance
+                - str: Component ID of a model registered in config
+                - dict: {"path": "fully.qualified.Class", "args": {...}} for dynamic instantiation
+                Defaults to None.
             global_model_file_name (str, optional): file name for saving global model. Defaults to DefaultCheckpointFileName.GLOBAL_MODEL.
             best_global_model_file_name (str, optional): file name for saving best global model. Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
             source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
@@ -165,7 +169,31 @@ class PTFileModelPersistor(ModelPersistor):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        if isinstance(self.model, str):
+        if isinstance(self.model, dict):
+            # Dict config: {"path": "module.Class", "args": {...}}
+            # Dynamically instantiate the model class
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
+            if not class_path:
+                self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
+                return
+            try:
+                self.model = instantiate_class(class_path, class_args)
+            except Exception as e:
+                self.system_panic(
+                    reason=f"Failed to instantiate model class '{class_path}': {e}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+            if not isinstance(self.model, torch.nn.Module):
+                self.system_panic(
+                    reason=f"expect model class '{class_path}' to be torch.nn.Module but got {type(self.model)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+        elif isinstance(self.model, str):
             # treat it as model component ID
             model_component_id = self.model
             engine = fl_ctx.get_engine()
