@@ -60,42 +60,27 @@ class WeightedAggregationHelper(object):
 
                 if current_total is None:
                     # First contribution: initialize accumulator
-                    # We must create a copy to avoid mutating caller's input tensors
-                    if self._is_pytorch_tensor(v):
-                        if self.weigh_by_local_iter:
-                            # Weigh by local iter: create weighted copy (multiply by weight)
-                            self.total[k] = v.mul(weight)
-                        else:
-                            self.total[k] = v.clone()
-                    else:
-                        # Fallback for non-PyTorch tensors
-                        if self.weigh_by_local_iter:
-                            # Multiply creates a new array/tensor, no aliasing issue
-                            self.total[k] = v * weight
-                        else:
-                            # For HE mode: try to copy to avoid aliasing
-                            # But encrypted tensors can't be copied (requires secret key)
-                            try:
-                                self.total[k] = v.copy() if hasattr(v, "copy") else v
-                            except (ValueError, RuntimeError):
-                                # Encrypted tensor copy failed, use reference (safe, immutable)
-                                self.total[k] = v
+                    # Note: When weigh_by_local_iter=False, we store a reference (not a copy) to save memory.
+                    # This is safe because no controller accesses client tensor data after aggregation.
+                    # Controllers only access metadata (.params_type, .meta, .metrics), never .params.
+                    # When weigh_by_local_iter=True, multiplication creates a new tensor/array anyway.
+                    self.total[k] = v * weight if self.weigh_by_local_iter else v
                     self.counts[k] = weight
                 else:
-                    # Subsequent contributions: use in-place operations
-                    if self._is_pytorch_tensor(v) and self._is_pytorch_tensor(current_total):
-                        if self.weigh_by_local_iter:
-                            # Weigh by local iter: weighted accumulation
+                    # Subsequent contributions: use in-place operations for PyTorch tensors
+                    if self.weigh_by_local_iter:
+                        # Weighted accumulation
+                        if self._is_pytorch_tensor(v) and self._is_pytorch_tensor(current_total):
                             self.total[k].add_(v, alpha=weight)
                         else:
-                            self.total[k].add_(v)
-                    else:
-                        # Fallback for non-PyTorch tensors
-                        if self.weigh_by_local_iter:
                             self.total[k] = current_total + v * weight
+                    else:
+                        # Unweighted accumulation
+                        if self._is_pytorch_tensor(v) and self._is_pytorch_tensor(current_total):
+                            self.total[k].add_(v)
                         else:
                             self.total[k] = current_total + v
-                    self.counts[k] = self.counts[k] + weight
+                    self.counts[k] += weight
 
             self.history.append(
                 {
@@ -111,10 +96,8 @@ class WeightedAggregationHelper(object):
             aggregated_dict = {}
             for k, v in self.total.items():
                 if self._is_pytorch_tensor(v):
-                    # For PyTorch tensors, use in-place division to avoid creating a copy
                     aggregated_dict[k] = v.div_(self.counts[k])
                 else:
-                    # Fallback for non-PyTorch tensors (including encrypted tensors)
                     aggregated_dict[k] = v * (1.0 / self.counts[k])
 
             self.reset_stats()

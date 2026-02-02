@@ -491,6 +491,32 @@ class WFCommServer(FLComponent, WFCommSpec):
             self._tasks.append(task)
             self.log_info(fl_ctx, "scheduled task {}".format(task.name))
 
+    def _create_broadcast_snapshot(self, task: Task) -> Task:
+        """Create a snapshot of task data to protect against in-place modifications.
+
+        This ensures that when broadcasting to multiple clients, concurrent modifications
+        to any data (e.g., during InTime aggregation) don't corrupt ongoing downloads.
+
+        Creates one snapshot per broadcast that is shared by all clients, rather than
+        N separate copies (one per client).
+
+        Args:
+            task: The task to snapshot
+
+        Returns:
+            A new task with snapshotted data
+        """
+        import copy
+
+        # Create shallow copy of task structure
+        snapshot_task = copy.copy(task)
+
+        # Deep copy the task data (Shareable) - this copies everything recursively
+        # This protects against any in-place modifications to numpy arrays, torch tensors, etc.
+        snapshot_task.data = copy.deepcopy(task.data)
+
+        return snapshot_task
+
     def broadcast(
         self,
         task: Task,
@@ -527,10 +553,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                 "min_responses ({}) must be less than length of targets ({}).".format(min_responses, len(targets))
             )
 
+        # Create snapshot to protect against concurrent in-place modifications
+        snapshot_task = self._create_broadcast_snapshot(task)
+
         manager = BcastTaskManager(
-            task=task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
+            task=snapshot_task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
         )
-        self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
+        self._schedule_task(task=snapshot_task, fl_ctx=fl_ctx, manager=manager, targets=targets)
+        return snapshot_task  # Return snapshot so broadcast_and_wait can wait on correct task
 
     def broadcast_and_wait(
         self,
@@ -559,14 +589,15 @@ class WFCommServer(FLComponent, WFCommSpec):
             abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs
                 this method to return. Defaults to None.
         """
-        self.broadcast(
+        snapshot_task = self.broadcast(
             task=task,
             fl_ctx=fl_ctx,
             targets=targets,
             min_responses=min_responses,
             wait_time_after_min_received=wait_time_after_min_received,
         )
-        self.wait_for_task(task, abort_signal)
+        # Wait on snapshot_task (the one that was actually scheduled), not the original task
+        self.wait_for_task(snapshot_task, abort_signal)
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
         """Schedule a broadcast task.  This is a non-blocking call.
@@ -583,8 +614,12 @@ class WFCommServer(FLComponent, WFCommSpec):
                 or None (all clients). Defaults to None.
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
+
+        # Create snapshot to protect against concurrent in-place modifications
+        snapshot_task = self._create_broadcast_snapshot(task)
+
         manager = BcastForeverTaskManager()
-        self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
+        self._schedule_task(task=snapshot_task, fl_ctx=fl_ctx, manager=manager, targets=targets)
 
     def send(
         self,
@@ -957,10 +992,28 @@ class WFCommServer(FLComponent, WFCommSpec):
                         fl_ctx, "task {} exit with status {}".format(exit_task.name, exit_task.completion_status)
                     )
 
+                    # Clean up download transactions for this task
+                    try:
+                        msg_root_id = exit_task.msg_root_id
+                        cleanup_msg = "Cleaning up download transactions for task {} (msg_root_id={})".format(
+                            exit_task.name, msg_root_id
+                        )
+                        self.log_debug(fl_ctx, cleanup_msg)
+                        delete_msg_root(msg_root_id)
+                        self.log_debug(
+                            fl_ctx,
+                            f"Cleaned up download transactions for task {exit_task.name} (msg_root_id={msg_root_id})",
+                        )
+                    except Exception as e:
+                        self.log_exception(
+                            fl_ctx,
+                            "error cleaning up download transactions for task {}: {}".format(
+                                exit_task.name, secure_format_exception(e)
+                            ),
+                        )
+
                     if exit_task.task_done_cb is not None:
                         try:
-                            msg_root_id = exit_task.msg_root_id
-                            delete_msg_root(msg_root_id)
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
                         except Exception as e:
                             self.log_exception(
