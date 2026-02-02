@@ -505,13 +505,23 @@ class WFCommServer(FLComponent, WFCommSpec):
             task: The task to snapshot
 
         Returns:
-            A new task with deep copied data
+            A new task with deep copied data, or original task if deepcopy fails (with warning)
         """
         import copy
 
         snapshot_task = copy.copy(task)
-        snapshot_task.data = copy.deepcopy(task.data)
-        return snapshot_task
+        try:
+            snapshot_task.data = copy.deepcopy(task.data)
+            return snapshot_task
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to create broadcast snapshot - broadcasting without protection (data corruption risk!). "
+                f"task.data contains objects that cannot be deep copied: {type(e).__name__}: {e}. "
+                f"Standard data types (PyTorch tensors, NumPy arrays, primitives) support deepcopy. "
+                f"If using custom objects in Shareable, ensure they implement __deepcopy__."
+            )
+            # Return original task - no snapshot protection
+            return task
 
     def broadcast(
         self,
@@ -520,7 +530,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         targets: Union[List[Client], List[str], None] = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
-    ):
+    ) -> Task:
         """Schedule a broadcast task.  This is a non-blocking call.
 
         The task is scheduled into a task list.
@@ -537,9 +547,15 @@ class WFCommServer(FLComponent, WFCommSpec):
                 submission.  0 means no grace period.
               Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
 
+        Returns:
+            Task: The snapshot task that was scheduled (use this with wait_for_task or broadcast_and_wait)
+
         Raises:
             ValueError: min_responses is greater than the length of targets since this condition will make the task,
                 if allowed to be scheduled, never exit.
+
+        Note:
+            If task.data cannot be deep copied, a warning is logged and the original task is returned (no snapshot protection)
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         _check_positive_int("min_responses", min_responses)
