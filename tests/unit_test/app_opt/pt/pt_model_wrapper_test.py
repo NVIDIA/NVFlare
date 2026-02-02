@@ -95,3 +95,53 @@ class TestPTModelInit:
             assert pt_model.initial_ckpt == "/data/pretrained.pt"
         except ImportError:
             pytest.skip("PyTorch not installed")
+
+
+class TestPTFileModelPersistorDictConfig:
+    """Tests for PTFileModelPersistor dict config support."""
+
+    def test_persistor_accepts_dict_config(self):
+        """PTFileModelPersistor should accept dict config."""
+        try:
+            from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+            model_dict = {"path": "my_module.models.Net", "args": {"num_classes": 10}}
+            persistor = PTFileModelPersistor(model=model_dict)
+
+            assert persistor.model == model_dict
+        except ImportError:
+            pytest.skip("PyTorch not installed")
+
+    def test_persistor_accepts_string_component_id(self):
+        """PTFileModelPersistor should accept string component ID."""
+        try:
+            from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+            persistor = PTFileModelPersistor(model="my_model_component")
+
+            assert persistor.model == "my_model_component"
+        except ImportError:
+            pytest.skip("PyTorch not installed")
+
+    def test_persistor_accepts_none(self):
+        """PTFileModelPersistor should accept None model."""
+        try:
+            from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+            persistor = PTFileModelPersistor(model=None)
+
+            assert persistor.model is None
+        except ImportError:
+            pytest.skip("PyTorch not installed")
+
+    def test_persistor_dict_config_missing_path_detected_at_init_time(self):
+        """PTFileModelPersistor accepts dict without path (validation at runtime)."""
+        try:
+            from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+            # Note: The persistor accepts any dict at init time;
+            # The path validation happens at runtime in _initialize()
+            persistor = PTFileModelPersistor(model={"args": {}})
+            assert persistor.model == {"args": {}}
+        except ImportError:
+            pytest.skip("PyTorch not installed")

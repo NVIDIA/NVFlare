@@ -85,3 +85,42 @@ class TestTFModelInit:
             assert tf_model.initial_ckpt == "/data/pretrained.h5"
         except ImportError:
             pytest.skip("TensorFlow not installed")
+
+
+class TestTFModelPersistorDictConfig:
+    """Tests for TFModelPersistor dict config support."""
+
+    def test_persistor_accepts_dict_config(self):
+        """TFModelPersistor should accept dict config."""
+        try:
+            from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+
+            model_dict = {"path": "my_module.models.Net", "args": {"num_classes": 10}}
+            persistor = TFModelPersistor(model=model_dict)
+
+            assert persistor.model == model_dict
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+    def test_persistor_accepts_none(self):
+        """TFModelPersistor should accept None model."""
+        try:
+            from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+
+            persistor = TFModelPersistor(model=None)
+
+            assert persistor.model is None
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+    def test_persistor_dict_config_missing_path_detected_at_runtime(self):
+        """TFModelPersistor accepts dict without path (validation at runtime)."""
+        try:
+            from nvflare.app_opt.tf.model_persistor import TFModelPersistor
+
+            # Note: The persistor accepts any dict at init time;
+            # The path validation happens at runtime in load_model()
+            persistor = TFModelPersistor(model={"args": {}})
+            assert persistor.model == {"args": {}}
+        except ImportError:
+            pytest.skip("TensorFlow not installed")

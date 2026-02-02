@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import Any, Dict, Optional
 
 from joblib import dump, load
 
@@ -27,18 +28,23 @@ from nvflare.app_common.app_constant import AppConstants
 class JoblibModelParamPersistor(ModelPersistor):
     def __init__(
         self,
-        initial_params=None,
-        save_name="model_param.joblib",
-        source_ckpt_file_full_name: str = None,
+        initial_params: Optional[Dict[str, Any]] = None,
+        save_name: str = "model_param.joblib",
+        source_ckpt_file_full_name: Optional[str] = None,
     ):
         """Persist global model parameters from a dict to a joblib file.
 
         Note that this contains the necessary information to build
         a certain model but may not be directly loadable.
 
+        Unlike PTFileModelPersistor, this persistor does NOT instantiate model classes.
+        It only stores and transmits parameter values (e.g., hyperparameters, weights).
+        The sklearn model class is instantiated on the client side using these params.
+
         Args:
-            initial_params: Initial parameters dict. Used as fallback if no
-                checkpoint or previously saved model is available.
+            initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
+                These are parameter VALUES, not a class path configuration.
+                Used as fallback if no checkpoint or previously saved model is available.
             save_name: Filename for saving model params. Defaults to "model_param.joblib".
             source_ckpt_file_full_name: Full path to source checkpoint file.
                 This path may not exist locally (server-side path). If provided

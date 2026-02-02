@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Dict
+from typing import Any, Dict, Optional, Union
 
 import tensorflow as tf
 
@@ -28,10 +28,10 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 class TFModelPersistor(ModelPersistor):
     def __init__(
         self,
-        model: tf.keras.Model = None,
-        save_name="tf_model.weights.h5",
-        filter_id: str = None,
-        source_ckpt_file_full_name: str = None,
+        model: Optional[Union[tf.keras.Model, Dict[str, Any]]] = None,
+        save_name: str = "tf_model.weights.h5",
+        filter_id: Optional[str] = None,
+        source_ckpt_file_full_name: Optional[str] = None,
     ):
         """Persist TensorFlow/Keras model to/from file system.
 
@@ -40,8 +40,10 @@ class TFModelPersistor(ModelPersistor):
         doesn't exist on the job submission machine.
 
         Args:
-            model: TensorFlow/Keras model. Can be None if source_ckpt_file_full_name
-                points to a full model file (not just weights).
+            model: Model input. Can be one of:
+                - tf.keras.Model: Direct model instance
+                - dict: {"path": "fully.qualified.Class", "args": {...}} for dynamic instantiation
+                - None: If source_ckpt_file_full_name points to a full model file
             save_name: Filename for saving model weights. Defaults to "tf_model.weights.h5".
             filter_id: Optional filter component ID for model serialization.
             source_ckpt_file_full_name: Full path to source checkpoint file.
@@ -71,6 +73,21 @@ class TFModelPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
+        # Handle dict config: {"path": "module.Class", "args": {...}}
+        if isinstance(self.model, dict):
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
+            if not class_path:
+                raise ValueError("Dict model config must have 'path' key with class path")
+            try:
+                self.model = instantiate_class(class_path, class_args)
+            except Exception as e:
+                raise ValueError(f"Failed to instantiate model class '{class_path}': {e}")
+            if not isinstance(self.model, tf.keras.Model):
+                raise TypeError(f"Expected model class '{class_path}' to be tf.keras.Model but got {type(self.model)}")
+
         # Priority: source_ckpt_file_full_name > previously saved model > model weights
         if self.source_ckpt_file_full_name:
             if os.path.exists(self.source_ckpt_file_full_name):

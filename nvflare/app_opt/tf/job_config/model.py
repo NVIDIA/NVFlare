@@ -103,9 +103,8 @@ class TFModel:
 
     def _create_persistor_for_dict_config(self) -> ModelPersistor:
         """Create persistor for dict config model."""
-        # For dict config, we can't instantiate the model here
-        # The persistor will need to handle class path resolution at runtime
-        persistor_kwargs = {"model": None}
+        # For dict config, pass full dict with path and args (resolved at runtime via instantiate_class)
+        persistor_kwargs = {"model": self.model}  # Pass full dict {"path": "...", "args": {...}}
 
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
