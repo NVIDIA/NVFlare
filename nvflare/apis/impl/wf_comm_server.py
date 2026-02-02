@@ -492,29 +492,25 @@ class WFCommServer(FLComponent, WFCommSpec):
             self.log_info(fl_ctx, "scheduled task {}".format(task.name))
 
     def _create_broadcast_snapshot(self, task: Task) -> Task:
-        """Create a snapshot of task data to protect against in-place modifications.
+        """Create a snapshot of task data to protect against concurrent in-place modifications.
 
-        This ensures that when broadcasting to multiple clients, concurrent modifications
-        to any data (e.g., during InTime aggregation) don't corrupt ongoing downloads.
+        Critical for TensorStreamer/NumpyDownloader scenarios where min_responses < total_clients:
+        - Without snapshot: In-place aggregation corrupts data while slow clients download
+        - With snapshot: All clients download from immutable copy (one copy per broadcast)
 
-        Creates one snapshot per broadcast that is shared by all clients, rather than
-        N separate copies (one per client).
+        Note: Only needed for broadcast (concurrent downloads). Sequential send/relay don't need
+        this as they dispatch one client at a time. Without streaming, FOBS creates copies automatically.
 
         Args:
             task: The task to snapshot
 
         Returns:
-            A new task with snapshotted data
+            A new task with deep copied data
         """
         import copy
 
-        # Create shallow copy of task structure
         snapshot_task = copy.copy(task)
-
-        # Deep copy the task data (Shareable) - this copies everything recursively
-        # This protects against any in-place modifications to numpy arrays, torch tensors, etc.
         snapshot_task.data = copy.deepcopy(task.data)
-
         return snapshot_task
 
     def broadcast(
@@ -554,13 +550,15 @@ class WFCommServer(FLComponent, WFCommSpec):
             )
 
         # Create snapshot to protect against concurrent in-place modifications
+        # Broadcast sends to multiple clients CONCURRENTLY, so controller can modify
+        # data while downloads are in progress, causing corruption
         snapshot_task = self._create_broadcast_snapshot(task)
 
         manager = BcastTaskManager(
             task=snapshot_task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
         )
         self._schedule_task(task=snapshot_task, fl_ctx=fl_ctx, manager=manager, targets=targets)
-        return snapshot_task  # Return snapshot so broadcast_and_wait can wait on correct task
+        return snapshot_task
 
     def broadcast_and_wait(
         self,
@@ -596,7 +594,6 @@ class WFCommServer(FLComponent, WFCommSpec):
             min_responses=min_responses,
             wait_time_after_min_received=wait_time_after_min_received,
         )
-        # Wait on snapshot_task (the one that was actually scheduled), not the original task
         self.wait_for_task(snapshot_task, abort_signal)
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
@@ -995,11 +992,12 @@ class WFCommServer(FLComponent, WFCommSpec):
                     # Clean up download transactions for this task
                     try:
                         msg_root_id = exit_task.msg_root_id
-                        delete_msg_root(msg_root_id)
-                        self.log_debug(
-                            fl_ctx,
-                            f"Cleaned up download transactions for task {exit_task.name} (msg_root_id={msg_root_id})",
-                        )
+                        if msg_root_id:
+                            delete_msg_root(msg_root_id)
+                            self.log_debug(
+                                fl_ctx,
+                                f"Cleaned up download transactions for task {exit_task.name} (msg_root_id={msg_root_id})",
+                            )
                     except Exception as e:
                         self.log_exception(
                             fl_ctx,
