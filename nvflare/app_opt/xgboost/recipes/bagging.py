@@ -18,7 +18,6 @@ from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggregator
-from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
 from nvflare.job_config.api import FedJob
@@ -158,7 +157,6 @@ class XGBBaggingRecipe(Recipe):
         lr_mode: str = "uniform",
         save_name: str = "xgboost_model.json",
         data_loader_id: str = "dataloader",
-        data_loader: Optional["XGBDataLoader"] = None,
         per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Set default num_rounds based on training_mode if not specified
@@ -203,22 +201,13 @@ class XGBBaggingRecipe(Recipe):
         self.lr_mode = v.lr_mode
         self.save_name = v.save_name
         self.data_loader_id = v.data_loader_id
-        self.data_loader = data_loader
         self.per_site_config = per_site_config
 
-        # Validate data loader configuration
-        if data_loader is not None and per_site_config is not None:
+        # Validate per_site_config is provided
+        if per_site_config is None:
             raise ValueError(
-                "Cannot specify both 'data_loader' and 'per_site_config'. "
-                "Use 'data_loader' for common config across all clients, "
-                "or 'per_site_config' for site-specific configs."
-            )
-
-        if data_loader is None and per_site_config is None:
-            raise ValueError(
-                "Must provide either 'data_loader' or 'per_site_config'. "
-                "Use 'data_loader=CSVDataLoader(...)' for common config, "
-                'or \'per_site_config={"site-1": {"data_loader": ...}}\' for site-specific configs.'
+                "per_site_config is required for XGBBaggingRecipe. "
+                "Each site must specify a 'data_loader' in the config dictionary."
             )
 
         # Configure the job
@@ -256,11 +245,19 @@ class XGBBaggingRecipe(Recipe):
         aggregator = XGBBaggingAggregator()
         job.to_server(aggregator, id="aggregator")
 
-        # Add executors and data loaders
+        # Add executors and data loaders per site
+        from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
-        if self.data_loader is not None:
-            # Common data loader for all clients
-            # Create default executor for all clients
+        # Site-specific executors and data loaders
+        for site_name, site_config in self.per_site_config.items():
+            data_loader = site_config.get("data_loader")
+            if data_loader is None:
+                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+
+            # Get lr_scale from config, default to 1.0
+            lr_scale = site_config.get("lr_scale", 1.0)
+
+            # Create executor for this site
             executor = FedXGBTreeExecutor(
                 data_loader_id=self.data_loader_id,
                 training_mode=self.training_mode,
@@ -276,41 +273,10 @@ class XGBBaggingRecipe(Recipe):
                 tree_method=self.tree_method,
                 use_gpus=self.use_gpus,
                 nthread=self.nthread,
-                lr_scale=1.0,
+                lr_scale=lr_scale,
                 lr_mode=self.lr_mode,
             )
-            job.to_clients(executor, id="xgb_tree_executor")
-            job.to_clients(self.data_loader, id=self.data_loader_id)
-        elif self.per_site_config is not None:
-            # Site-specific executors and data loaders
-            for site_name, site_config in self.per_site_config.items():
-                data_loader = site_config.get("data_loader")
-                if data_loader is None:
-                    raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
-
-                # Get lr_scale from config, default to 1.0
-                lr_scale = site_config.get("lr_scale", 1.0)
-
-                # Create executor for this site
-                executor = FedXGBTreeExecutor(
-                    data_loader_id=self.data_loader_id,
-                    training_mode=self.training_mode,
-                    num_client_bagging=self.num_client_bagging,
-                    num_local_parallel_tree=self.num_local_parallel_tree,
-                    local_subsample=self.local_subsample,
-                    local_model_path="model.json",
-                    global_model_path="model_global.json",
-                    learning_rate=self.learning_rate,
-                    objective=self.objective,
-                    max_depth=self.max_depth,
-                    eval_metric=self.eval_metric,
-                    tree_method=self.tree_method,
-                    use_gpus=self.use_gpus,
-                    nthread=self.nthread,
-                    lr_scale=lr_scale,
-                    lr_mode=self.lr_mode,
-                )
-                job.to(executor, site_name, id="xgb_tree_executor")
-                job.to(data_loader, site_name, id=self.data_loader_id)
+            job.to(executor, site_name, id="xgb_tree_executor")
+            job.to(data_loader, site_name, id=self.data_loader_id)
 
         return job
