@@ -69,9 +69,17 @@ class XGBHorizontalRecipe(Recipe):
             tree_method='hist', nthread=16.
         data_loader_id (str, optional): ID of the data loader component. Default is 'dataloader'.
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
+        data_loader (XGBDataLoader, optional): Default data loader applied to all clients.
+            Use this when all clients can share the same data loader configuration.
+            Cannot be used together with per_site_config.
         per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            Use this when each client needs different data loader configuration.
+            Cannot be used together with data_loader.
             Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
+
+        Note:
+            Either data_loader OR per_site_config must be provided (but not both)
 
     Example:
         .. code-block:: python
@@ -119,6 +127,7 @@ class XGBHorizontalRecipe(Recipe):
         xgb_params: Optional[dict] = None,
         data_loader_id: str = "dataloader",
         metrics_writer_id: str = "metrics_writer",
+        data_loader: Optional["XGBDataLoader"] = None,
         per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Set default XGBoost params if not provided
@@ -156,7 +165,23 @@ class XGBHorizontalRecipe(Recipe):
         self.xgb_params = v.xgb_params
         self.data_loader_id = v.data_loader_id
         self.metrics_writer_id = v.metrics_writer_id
+        self.data_loader = data_loader
         self.per_site_config = per_site_config
+
+        # Validate data loader configuration
+        if data_loader is not None and per_site_config is not None:
+            raise ValueError(
+                "Cannot specify both 'data_loader' and 'per_site_config'. "
+                "Use 'data_loader' for common config across all clients, "
+                "or 'per_site_config' for site-specific configs."
+            )
+
+        if data_loader is None and per_site_config is None:
+            raise ValueError(
+                "Must provide either 'data_loader' or 'per_site_config'. "
+                "Use 'data_loader=CSVDataLoader(...)' for common config, "
+                'or \'per_site_config={"site-1": {"data_loader": ...}}\' for site-specific configs.'
+            )
 
         # Configure the job
         self.job = self.configure()
@@ -217,8 +242,12 @@ class XGBHorizontalRecipe(Recipe):
         )
         job.to_clients(event_to_fed, id="event_to_fed")
 
-        # Add per-site data loaders if configured
-        if self.per_site_config:
+        # Add data loaders
+        if self.data_loader:
+            # Common data loader for all clients
+            job.to_clients(self.data_loader, id=self.data_loader_id)
+        elif self.per_site_config:
+            # Site-specific data loaders
             for site_name, site_config in self.per_site_config.items():
                 data_loader = site_config.get("data_loader")
                 if data_loader is None:

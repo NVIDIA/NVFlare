@@ -199,7 +199,23 @@ class XGBVerticalRecipe(Recipe):
         self.metrics_writer_id = v.metrics_writer_id
         self.in_process = v.in_process
         self.model_file_name = v.model_file_name
+        self.data_loader = data_loader
         self.per_site_config = per_site_config
+
+        # Validate data loader configuration
+        if data_loader is not None and per_site_config is not None:
+            raise ValueError(
+                "Cannot specify both 'data_loader' and 'per_site_config'. "
+                "Use 'data_loader' for common config across all clients, "
+                "or 'per_site_config' for site-specific configs."
+            )
+
+        if data_loader is None and per_site_config is None:
+            raise ValueError(
+                "Must provide either 'data_loader' or 'per_site_config'. "
+                "Use 'data_loader=CSVDataLoader(...)' for common config, "
+                'or \'per_site_config={"site-1": {"data_loader": ...}}\' for site-specific configs.'
+            )
 
         # Configure the job
         self.job = self.configure()
@@ -259,8 +275,12 @@ class XGBVerticalRecipe(Recipe):
         )
         job.to_clients(event_to_fed, id="event_to_fed")
 
-        # Add per-site data loaders if configured
-        if self.per_site_config:
+        # Add data loaders
+        if self.data_loader:
+            # Common data loader for all clients
+            job.to_clients(self.data_loader, id=self.data_loader_id)
+        elif self.per_site_config:
+            # Site-specific data loaders
             for site_name, site_config in self.per_site_config.items():
                 data_loader = site_config.get("data_loader")
                 if data_loader is None:

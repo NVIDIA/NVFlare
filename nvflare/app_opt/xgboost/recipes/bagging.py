@@ -157,6 +157,7 @@ class XGBBaggingRecipe(Recipe):
         lr_mode: str = "uniform",
         save_name: str = "xgboost_model.json",
         data_loader_id: str = "dataloader",
+        data_loader: Optional["XGBDataLoader"] = None,
         per_site_config: Optional[dict[str, dict]] = None,
     ):
         # Set default num_rounds based on training_mode if not specified
@@ -201,7 +202,23 @@ class XGBBaggingRecipe(Recipe):
         self.lr_mode = v.lr_mode
         self.save_name = v.save_name
         self.data_loader_id = v.data_loader_id
+        self.data_loader = data_loader
         self.per_site_config = per_site_config
+
+        # Validate data loader configuration
+        if data_loader is not None and per_site_config is not None:
+            raise ValueError(
+                "Cannot specify both 'data_loader' and 'per_site_config'. "
+                "Use 'data_loader' for common config across all clients, "
+                "or 'per_site_config' for site-specific configs."
+            )
+
+        if data_loader is None and per_site_config is None:
+            raise ValueError(
+                "Must provide either 'data_loader' or 'per_site_config'. "
+                "Use 'data_loader=CSVDataLoader(...)' for common config, "
+                'or \'per_site_config={"site-1": {"data_loader": ...}}\' for site-specific configs.'
+            )
 
         # Configure the job
         self.job = self.configure()
@@ -238,10 +255,34 @@ class XGBBaggingRecipe(Recipe):
         aggregator = XGBBaggingAggregator()
         job.to_server(aggregator, id="aggregator")
 
-        # Add per-site executors and data loaders if configured
+        # Add executors and data loaders
         from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
-        if self.per_site_config:
+        if self.data_loader:
+            # Common data loader for all clients
+            # Create default executor for all clients
+            executor = FedXGBTreeExecutor(
+                data_loader_id=self.data_loader_id,
+                training_mode=self.training_mode,
+                num_client_bagging=self.num_client_bagging,
+                num_local_parallel_tree=self.num_local_parallel_tree,
+                local_subsample=self.local_subsample,
+                local_model_path="model.json",
+                global_model_path="model_global.json",
+                learning_rate=self.learning_rate,
+                objective=self.objective,
+                max_depth=self.max_depth,
+                eval_metric=self.eval_metric,
+                tree_method=self.tree_method,
+                use_gpus=self.use_gpus,
+                nthread=self.nthread,
+                lr_scale=1.0,
+                lr_mode=self.lr_mode,
+            )
+            job.to_clients(executor, id="xgb_tree_executor")
+            job.to_clients(self.data_loader, id=self.data_loader_id)
+        elif self.per_site_config:
+            # Site-specific executors and data loaders
             for site_name, site_config in self.per_site_config.items():
                 data_loader = site_config.get("data_loader")
                 if data_loader is None:
