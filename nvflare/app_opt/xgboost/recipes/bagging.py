@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggregator
+from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
 from nvflare.job_config.api import FedJob
@@ -256,9 +257,8 @@ class XGBBaggingRecipe(Recipe):
         job.to_server(aggregator, id="aggregator")
 
         # Add executors and data loaders
-        from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
-        if self.data_loader:
+        if self.data_loader is not None:
             # Common data loader for all clients
             # Create default executor for all clients
             executor = FedXGBTreeExecutor(
@@ -281,7 +281,7 @@ class XGBBaggingRecipe(Recipe):
             )
             job.to_clients(executor, id="xgb_tree_executor")
             job.to_clients(self.data_loader, id=self.data_loader_id)
-        elif self.per_site_config:
+        elif self.per_site_config is not None:
             # Site-specific executors and data loaders
             for site_name, site_config in self.per_site_config.items():
                 data_loader = site_config.get("data_loader")

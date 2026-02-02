@@ -188,8 +188,9 @@ recipe = XGBHorizontalRecipe(
     per_site_config=per_site_config,
 )
 
-# Run simulation
-env = SimEnv(num_clients=2)
+# Run simulation with explicit client list (required when using per_site_config)
+clients = list(per_site_config.keys())
+env = SimEnv(clients=clients)
 run = recipe.execute(env)
 ```
 
@@ -266,8 +267,9 @@ recipe = XGBBaggingRecipe(
     per_site_config=per_site_config,
 )
 
-# Run
-env = SimEnv(num_clients=5)
+# Run with explicit client list (required when using per_site_config)
+clients = list(per_site_config.keys())
+env = SimEnv(clients=clients)
 run = recipe.execute(env)
 ```
 The resulting validation AUC curves are shown below:
@@ -352,8 +354,9 @@ for site_id in range(1, 3):
     )
     per_site_config[f"site-{site_id}"] = {"data_loader": data_loader}
 
-# Run simulation
-env = SimEnv(num_clients=2)
+# Run simulation with explicit client list (required when using per_site_config)
+clients = list(per_site_config.keys())
+env = SimEnv(clients=clients)
 run = recipe.execute(env)
 ```
 

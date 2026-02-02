@@ -93,8 +93,9 @@ def main():
         per_site_config=per_site_config,
     )
 
-    # Run simulation
-    env = SimEnv(num_clients=args.site_num)
+    # Run simulation with explicit client list (required when using per_site_config)
+    clients = list(per_site_config.keys())
+    env = SimEnv(clients=clients)
     run = recipe.execute(env)
     print()
     print("Job Status:", run.get_status())

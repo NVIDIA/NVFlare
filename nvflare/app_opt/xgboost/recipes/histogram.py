@@ -16,12 +16,18 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
+from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 
 
 # Internal — not part of the public API
 class _XGBHistogramValidator(BaseModel):
+
     # Allow custom types in validation. Required by Pydantic v2.
     model_config = {"arbitrary_types_allowed": True}
 
@@ -193,9 +199,6 @@ class XGBHorizontalRecipe(Recipe):
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
         # Configure controller and executor (histogram-based V2)
-        from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
-        from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-
         controller_kwargs = {
             "num_rounds": self.num_rounds,
             "data_split_mode": 0,  # 0 = horizontal
@@ -212,7 +215,11 @@ class XGBHorizontalRecipe(Recipe):
         controller = XGBFedController(**controller_kwargs)
         job.to_server(controller, id="xgb_controller")
 
-        # Add executor to all clients
+        # Add TensorBoard receiver to server
+        tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
+        job.to_server(tb_receiver, id="tb_receiver")
+
+        # Prepare common client components
         executor_params = {
             "data_loader_id": self.data_loader_id,
             "metrics_writer_id": self.metrics_writer_id,
@@ -220,38 +227,45 @@ class XGBHorizontalRecipe(Recipe):
         if self.secure:
             executor_params["in_process"] = True
 
-        executor = FedXGBHistogramExecutor(**executor_params)
-        job.to_clients(executor, id="xgb_executor")
+        # Add executor, metrics, and data loaders per site to avoid @ALL overwriting site-specific components
+        if self.data_loader is not None:
+            # Common data loader - use to_clients which works when clients aren't pre-specified
+            executor = FedXGBHistogramExecutor(**executor_params)
+            job.to_clients(executor, id="xgb_executor")
 
-        # Add TensorBoard receiver to server
-        from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+            metrics_writer = TBWriter(event_type="analytix_log_stats")
+            job.to_clients(metrics_writer, id=self.metrics_writer_id)
 
-        tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
-        job.to_server(tb_receiver, id="tb_receiver")
+            event_to_fed = ConvertToFedEvent(
+                events_to_convert=["analytix_log_stats"],
+                fed_event_prefix="fed.",
+            )
+            job.to_clients(event_to_fed, id="event_to_fed")
 
-        # Add TensorBoard writer and event converter to all clients
-        from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-        from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
-
-        metrics_writer = TBWriter(event_type="analytix_log_stats")
-        job.to_clients(metrics_writer, id=self.metrics_writer_id)
-
-        event_to_fed = ConvertToFedEvent(
-            events_to_convert=["analytix_log_stats"],
-            fed_event_prefix="fed.",
-        )
-        job.to_clients(event_to_fed, id="event_to_fed")
-
-        # Add data loaders
-        if self.data_loader:
-            # Common data loader for all clients
             job.to_clients(self.data_loader, id=self.data_loader_id)
-        elif self.per_site_config:
-            # Site-specific data loaders
+        elif self.per_site_config is not None:
+            # Site-specific configuration - add all components per site
             for site_name, site_config in self.per_site_config.items():
                 data_loader = site_config.get("data_loader")
                 if data_loader is None:
                     raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+
+                # Add executor
+                executor = FedXGBHistogramExecutor(**executor_params)
+                job.to(executor, site_name, id="xgb_executor")
+
+                # Add metrics writer
+                metrics_writer = TBWriter(event_type="analytix_log_stats")
+                job.to(metrics_writer, site_name, id=self.metrics_writer_id)
+
+                # Add event converter
+                event_to_fed = ConvertToFedEvent(
+                    events_to_convert=["analytix_log_stats"],
+                    fed_event_prefix="fed.",
+                )
+                job.to(event_to_fed, site_name, id="event_to_fed")
+
+                # Add data loader
                 job.to(data_loader, site_name, id=self.data_loader_id)
 
         return job
