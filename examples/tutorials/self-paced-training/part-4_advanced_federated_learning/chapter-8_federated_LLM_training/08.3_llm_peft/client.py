@@ -22,7 +22,7 @@ import random
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -42,7 +42,7 @@ def main():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="meta-llama/llama-3.2-1b",
+        default="EleutherAI/gpt-neo-1.3B",
     )
     parser.add_argument(
         "--data_path_train",
@@ -57,7 +57,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_federated/llama-3.2-1b-dolly-sft",
+        default="./workspace_federated/gpt-neo-1.3B-dolly-sft",
     )
     parser.add_argument(
         "--train_mode",

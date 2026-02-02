@@ -20,7 +20,7 @@ import random
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from transformers import AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
@@ -38,7 +38,7 @@ def main():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="meta-llama/llama-3.2-1b",
+        default="EleutherAI/gpt-neo-1.3B",
     )
     parser.add_argument(
         "--data_path_train",
@@ -53,7 +53,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_centralized/llama-3.2-1b-dolly-sft",
+        default="./workspace_centralized/gpt-neo-1.3B-dolly-sft",
     )
     parser.add_argument(
         "--train_mode",
