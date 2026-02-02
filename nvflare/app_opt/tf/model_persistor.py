@@ -80,13 +80,22 @@ class TFModelPersistor(ModelPersistor):
             class_path = self.model.get("path")
             class_args = self.model.get("args", {})
             if not class_path:
-                raise ValueError("Dict model config must have 'path' key with class path")
+                self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
+                return None
             try:
                 self.model = instantiate_class(class_path, class_args)
             except Exception as e:
-                raise ValueError(f"Failed to instantiate model class '{class_path}': {e}")
+                self.system_panic(
+                    reason=f"Failed to instantiate model class '{class_path}': {e}",
+                    fl_ctx=fl_ctx,
+                )
+                return None
             if not isinstance(self.model, tf.keras.Model):
-                raise TypeError(f"Expected model class '{class_path}' to be tf.keras.Model but got {type(self.model)}")
+                self.system_panic(
+                    reason=f"Expected model class '{class_path}' to be tf.keras.Model but got {type(self.model)}",
+                    fl_ctx=fl_ctx,
+                )
+                return None
 
         # Priority: source_ckpt_file_full_name > previously saved model > model weights
         if self.source_ckpt_file_full_name:
@@ -103,10 +112,12 @@ class TFModelPersistor(ModelPersistor):
                         if self.model is not None:
                             self.model.load_weights(self.source_ckpt_file_full_name)
                         else:
-                            raise ValueError(
-                                f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
-                                "Provide a model instance or use a full model file."
+                            self.system_panic(
+                                reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
+                                "Provide a model instance or use a full model file.",
+                                fl_ctx=fl_ctx,
                             )
+                            return None
                 elif os.path.isdir(self.source_ckpt_file_full_name):
                     # SavedModel directory
                     self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
@@ -115,31 +126,45 @@ class TFModelPersistor(ModelPersistor):
                     if self.model is not None:
                         self.model.load_weights(self.source_ckpt_file_full_name)
                     else:
-                        raise ValueError(f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.")
+                        self.system_panic(
+                            reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.",
+                            fl_ctx=fl_ctx,
+                        )
+                        return None
             else:
-                raise FileNotFoundError(f"Source checkpoint file not found: {self.source_ckpt_file_full_name}")
+                self.system_panic(
+                    reason=f"Source checkpoint file not found: {self.source_ckpt_file_full_name}", fl_ctx=fl_ctx
+                )
+                return None
         elif os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
             if self.model is not None:
                 self.model.load_weights(self._model_save_path)
             else:
-                raise ValueError(
-                    f"Cannot load weights from {self._model_save_path} without a model. " "Provide a model instance."
+                self.system_panic(
+                    reason=f"Cannot load weights from {self._model_save_path} without a model. Provide a model instance.",
+                    fl_ctx=fl_ctx,
                 )
+                return None
 
         # Ensure model exists before proceeding
         if self.model is None:
-            raise ValueError(
-                "No model available. Provide either a model instance, source_ckpt_file_full_name with a full model, "
-                "or a previously saved model."
+            self.system_panic(
+                reason="No model available. Provide either a model instance, source_ckpt_file_full_name with a full model, "
+                "or a previously saved model.",
+                fl_ctx=fl_ctx,
             )
+            return None
 
         # build model if not built yet
         if not self.model.built:
             if hasattr(self.model, "_input_shape"):
                 self.model.build(input_shape=self.model._input_shape)
             else:
-                raise AttributeError("To use delayed model build, you need to set model._input_shape")
+                self.system_panic(
+                    reason="To use delayed model build, you need to set model._input_shape", fl_ctx=fl_ctx
+                )
+                return None
 
         # get flat model parameters
         layer_weights_dict = {layer.name: layer.get_weights() for layer in self.model.layers}
