@@ -132,8 +132,9 @@ class XGBVerticalRecipe(Recipe):
                 },
             )
 
-            # Step 3: Run
-            env = SimEnv(num_clients=2)
+            # Step 3: Run with explicit client list
+            clients = list(per_site_config.keys())
+            env = SimEnv(clients=clients)
             run = recipe.execute(env)
 
     Note:

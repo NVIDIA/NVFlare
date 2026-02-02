@@ -75,17 +75,9 @@ class XGBHorizontalRecipe(Recipe):
             tree_method='hist', nthread=16.
         data_loader_id (str, optional): ID of the data loader component. Default is 'dataloader'.
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
-        data_loader (XGBDataLoader, optional): Default data loader applied to all clients.
-            Use this when all clients can share the same data loader configuration.
-            Cannot be used together with per_site_config.
-        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
+        per_site_config (dict): Per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
-            Use this when each client needs different data loader configuration.
-            Cannot be used together with data_loader.
             Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
-
-        Note:
-            Either data_loader OR per_site_config must be provided (but not both)
 
     Example:
         .. code-block:: python
@@ -94,7 +86,13 @@ class XGBHorizontalRecipe(Recipe):
             from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
             from nvflare.recipe import SimEnv
 
-            # Create recipe with per-site data loaders
+            # Build per-site configuration with data loaders
+            per_site_config = {
+                "site-1": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
+                "site-2": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
+            }
+
+            # Create recipe
             recipe = XGBHorizontalRecipe(
                 name="xgb_higgs_horizontal",
                 min_clients=2,
@@ -105,14 +103,12 @@ class XGBHorizontalRecipe(Recipe):
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
-                per_site_config={
-                    "site-1": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
-                    "site-2": {"data_loader": CSVDataLoader(folder="/tmp/data/horizontal_xgb_data")},
-                },
+                per_site_config=per_site_config,
             )
 
-            # Run simulation
-            env = SimEnv(num_clients=2)
+            # Run simulation with explicit client list
+            clients = list(per_site_config.keys())
+            env = SimEnv(clients=clients)
             run = recipe.execute(env)
 
     Note:
