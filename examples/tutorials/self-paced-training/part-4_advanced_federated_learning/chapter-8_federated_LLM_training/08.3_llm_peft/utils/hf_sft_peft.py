@@ -107,7 +107,7 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
+        # Don't wrap the model here - let SFTTrainer handle it
     model.config.pretraining_tp = 1
 
     # Training arguments

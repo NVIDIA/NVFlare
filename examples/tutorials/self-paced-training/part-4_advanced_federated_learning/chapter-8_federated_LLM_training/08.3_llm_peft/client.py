@@ -119,7 +119,7 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
+        # Don't wrap the model here - let SFTTrainer handle it
     model.config.pretraining_tp = 1
 
     # Training arguments
@@ -140,8 +140,6 @@ def main():
         disable_tqdm=True,
         max_length=1024,
         save_total_limit=2,
-        # safetensors has some issues in saving lm_head.weight, disable it for now
-        save_safetensors=False,
     )
 
     # Trainer
