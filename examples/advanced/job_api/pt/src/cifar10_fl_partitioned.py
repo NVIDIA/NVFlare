@@ -125,7 +125,7 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        return 100 * correct // total
+        return 100 * correct / total
 
     # (3) run continuously when launch_once=true
     while flare.is_running():

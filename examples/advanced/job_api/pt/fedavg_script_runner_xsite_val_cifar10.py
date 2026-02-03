@@ -187,7 +187,7 @@ if __name__ == "__main__":
         submit_model_timeout=600,
         validation_timeout=6000,
         cleanup_models=False,
-        validation_task_name="validate",
+        validation_task_name="evaluate",
         submit_model_task_name="submit_model",
     )
     job.to_server(xsite_eval_controller)
