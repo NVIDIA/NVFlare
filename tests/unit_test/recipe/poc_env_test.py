@@ -127,7 +127,9 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 def test_stop_poc(mock_rmtree, mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    mock_is_running.return_value = False  # POC stops successfully
+    # Mock is_poc_running to return True initially (POC is running),
+    # then False (POC stops successfully after _stop_poc is called)
+    mock_is_running.side_effect = [True, False]
 
     env = PocEnv()
     env.stop(clean_poc=True)
