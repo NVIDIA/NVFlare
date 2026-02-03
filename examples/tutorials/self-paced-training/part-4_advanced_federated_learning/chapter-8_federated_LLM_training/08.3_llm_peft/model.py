@@ -28,8 +28,10 @@ class CausalLMPEFTModel(torch.nn.Module):
             bias="none",
             task_type="CAUSAL_LM",
         )
+        # Load model in float32 to ensure compatibility with the persistor
         full_model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
+            torch_dtype=torch.float32,
         )
         self.model = get_peft_model(full_model, peft_config)
 
