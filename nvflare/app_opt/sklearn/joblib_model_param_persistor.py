@@ -79,13 +79,14 @@ class JoblibModelParamPersistor(ModelPersistor):
 
         # Priority 1: Load from source checkpoint if provided
         if self.source_ckpt_file_full_name:
-            if os.path.exists(self.source_ckpt_file_full_name):
-                self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
-                model = load(self.source_ckpt_file_full_name)
-            else:
-                self.logger.warning(
-                    f"Source checkpoint not found: {self.source_ckpt_file_full_name}. Trying other sources."
+            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+            if not os.path.exists(self.source_ckpt_file_full_name):
+                raise ValueError(
+                    f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    "Check that the checkpoint exists at runtime."
                 )
+            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+            model = load(self.source_ckpt_file_full_name)
 
         # Priority 2: Load from previously saved model
         if model is None and os.path.exists(self.save_path):

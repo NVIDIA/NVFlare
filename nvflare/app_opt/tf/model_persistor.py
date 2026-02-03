@@ -99,43 +99,46 @@ class TFModelPersistor(ModelPersistor):
 
         # Priority: source_ckpt_file_full_name > previously saved model > model weights
         if self.source_ckpt_file_full_name:
-            if os.path.exists(self.source_ckpt_file_full_name):
-                self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
-                # Check if it's a full model file or just weights
-                if self.source_ckpt_file_full_name.endswith((".h5", ".keras")):
-                    try:
-                        # Try loading as full model first
-                        self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
-                    except Exception as e:
-                        # Fall back to loading weights only if file format suggests weights-only
-                        self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
-                        if self.model is not None:
-                            self.model.load_weights(self.source_ckpt_file_full_name)
-                        else:
-                            self.system_panic(
-                                reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
-                                "Provide a model instance or use a full model file.",
-                                fl_ctx=fl_ctx,
-                            )
-                            return None
-                elif os.path.isdir(self.source_ckpt_file_full_name):
-                    # SavedModel directory
+            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+            if not os.path.exists(self.source_ckpt_file_full_name):
+                self.system_panic(
+                    reason=f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    "Check that the checkpoint exists at runtime.",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+
+            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+            # Check if it's a full model file or just weights
+            if self.source_ckpt_file_full_name.endswith((".h5", ".keras")):
+                try:
+                    # Try loading as full model first
                     self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
-                else:
-                    # Assume weights file
+                except Exception as e:
+                    # Fall back to loading weights only if file format suggests weights-only
+                    self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
                     if self.model is not None:
                         self.model.load_weights(self.source_ckpt_file_full_name)
                     else:
                         self.system_panic(
-                            reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.",
+                            reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
+                            "Provide a model instance or use a full model file.",
                             fl_ctx=fl_ctx,
                         )
                         return None
+            elif os.path.isdir(self.source_ckpt_file_full_name):
+                # SavedModel directory
+                self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
             else:
-                self.system_panic(
-                    reason=f"Source checkpoint file not found: {self.source_ckpt_file_full_name}", fl_ctx=fl_ctx
-                )
-                return None
+                # Assume weights file
+                if self.model is not None:
+                    self.model.load_weights(self.source_ckpt_file_full_name)
+                else:
+                    self.system_panic(
+                        reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.",
+                        fl_ctx=fl_ctx,
+                    )
+                    return None
         elif os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
             if self.model is not None:

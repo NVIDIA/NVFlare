@@ -229,6 +229,14 @@ class PTFileModelPersistor(ModelPersistor):
         """
         src_file_name = None
         if self.source_ckpt_file_full_name:
+            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+            if not os.path.exists(self.source_ckpt_file_full_name):
+                self.system_panic(
+                    reason=f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    "Check that the checkpoint exists at runtime.",
+                    fl_ctx=fl_ctx,
+                )
+                return None
             src_file_name = self.source_ckpt_file_full_name
         elif self.ckpt_preload_path:
             src_file_name = self.ckpt_preload_path

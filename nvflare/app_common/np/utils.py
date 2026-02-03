@@ -52,25 +52,24 @@ def load_numpy_model(
 
     # Priority 1: Load from source checkpoint (absolute path) if provided
     if source_ckpt_file_full_name:
-        if os.path.exists(source_ckpt_file_full_name):
-            try:
-                logger.log_info(
-                    fl_ctx,
-                    f"Loading model from source checkpoint: {source_ckpt_file_full_name}",
-                    fire_event=False,
-                )
-                data = np.load(source_ckpt_file_full_name)
-            except Exception as e:
-                logger.log_warning(
-                    fl_ctx,
-                    f"Failed to load from source checkpoint {source_ckpt_file_full_name}: "
-                    f"{secure_format_exception(e)}. Trying other sources.",
-                )
-        else:
-            logger.log_warning(
-                fl_ctx,
-                f"Source checkpoint not found: {source_ckpt_file_full_name}. Trying other sources.",
+        # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+        if not os.path.exists(source_ckpt_file_full_name):
+            raise ValueError(
+                f"Source checkpoint not found: {source_ckpt_file_full_name}. "
+                "Check that the checkpoint exists at runtime."
             )
+        try:
+            logger.log_info(
+                fl_ctx,
+                f"Loading model from source checkpoint: {source_ckpt_file_full_name}",
+                fire_event=False,
+            )
+            data = np.load(source_ckpt_file_full_name)
+        except Exception as e:
+            # If loading fails after file exists, this is a real error - raise it
+            raise ValueError(
+                f"Failed to load from source checkpoint {source_ckpt_file_full_name}: " f"{secure_format_exception(e)}"
+            ) from e
 
     # Priority 2: Load from model file path
     if data is None:
