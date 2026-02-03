@@ -21,6 +21,7 @@ Before you begin, ensure you have the following installed:
 - **Python**: 3.10+ (for ExecuTorch build scripts)
 - **Git**: For repository management
 - **CMake**: For building native components
+- **Xcode Command Line Tools** (macOS only): Required for build tools like `make`
 
 ### Quick Installation
 ```bash
@@ -28,9 +29,19 @@ Before you begin, ensure you have the following installed:
 brew install openjdk@17
 brew install cmake
 
-# Android SDK/NDK via Android Studio SDK Manager
-# Or download from: https://developer.android.com/studio
+# Install Xcode Command Line Tools (macOS only)
+xcode-select --install
 ```
+
+Install [Android Studio](https://developer.android.com/studio) and the NDK via Android Studio SDK Manager:
+
+1. Open **Android Studio**
+2. Go to **Tools → SDK Manager**
+3. Click the **SDK Tools** tab
+4. Check the box for **NDK (Side by side)**
+5. Optionally, click **Show Package Details** to select version **29.0.13599879** specifically
+6. Click **Apply** or **OK** to install
+
 
 ## 🚀 Quick Start
 
@@ -131,6 +142,18 @@ nvflare/edge/device/android/
 └── README.md                    # This file
 ```
 
+Once you open this project folder in Android Studio, you should be able to emulate the App running on a [Android Virtual Device](https://developer.android.com/studio/run/managing-avds).
+
+![Android Studio Screenshot - AVD](resources/android_studio_avd.png)
+
+Next, you connect to the proxy server IP shown when running start_rp.sh (see [Start the NVFlare System](../../../examples/advanced/edge/README.md#start-the-nvflare-system)) and click on **Start Training**.
+
+![Android Studio Screenshot - Start Training](resources/android_studio_start_training.png)
+
+Once you submitted the training job as described in [Run with the real device](../../../examples/advanced/edge/README.md#run-with-the-real-device), you will see the training for subsequent FL rounds proceeding on your Android Virtual Device:
+
+![Android Studio Screenshot - FL Rounds](resources/android_studio_rounds.png)
+
 ## 🔧 Configuration
 
 ### Build Configuration
@@ -152,6 +175,21 @@ sdk.dir=/Users/yourusername/Library/Android/sdk
 ## 🐛 Troubleshooting
 
 ### Common Issues
+
+**CMake Error: "Unable to find a build program corresponding to Unix Makefiles" (macOS)**
+- This occurs when Xcode Command Line Tools are not installed
+- Solution:
+  ```bash
+  xcode-select --install
+  ```
+- Verify installation:
+  ```bash
+  which make  # Should output: /usr/bin/make
+  ```
+- If already installed but still having issues, try resetting:
+  ```bash
+  sudo xcode-select --reset
+  ```
 
 **Build fails with missing classes**
 - Ensure the SDK has been copied to the app's source directory (Step 4)

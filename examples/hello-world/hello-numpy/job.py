@@ -29,6 +29,12 @@ def define_parser():
     parser.add_argument("--update_type", type=str, default="full", choices=["full", "diff"])
     parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--log_config",
+        type=str,
+        default=None,
+        help="Log config mode ('concise', 'full', 'verbose'), filepath to a log config json file, or level (info, debug, error, etc.)",
+    )
 
     return parser.parse_args()
 
@@ -57,7 +63,7 @@ def main():
         recipe.export(job_dir)
         print(f"Job config exported to {job_dir}")
     else:
-        env = SimEnv(num_clients=n_clients)
+        env = SimEnv(num_clients=n_clients, log_config=args.log_config)
         run = recipe.execute(env)
         print()
         print("Result can be found in :", run.get_result())
