@@ -15,6 +15,7 @@
 from src.network import SimpleNetwork
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -24,6 +25,10 @@ if __name__ == "__main__":
     train_script = "src/client.py"
 
     job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+
+    # Add TensorBoard analytics receiver to server
+    receiver = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
+    job.to_server(receiver)
 
     # Add clients
     for i in range(n_clients):
