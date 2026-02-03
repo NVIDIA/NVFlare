@@ -58,53 +58,30 @@ def base_recipe_params():
 
 
 class TestBaseCyclicRecipe:
-    """Test cases for base CyclicRecipe class."""
+    """Test cases for base CyclicRecipe class.
 
-    def test_basic_initialization_with_dict(self, mock_file_system, base_recipe_params):
-        """Test CyclicRecipe basic initialization with dict config."""
-        model_config = {"path": "my_module.models.SimpleNet", "args": {"input_size": 10}}
-        recipe = BaseCyclicRecipe(name="test_cyclic", initial_model=model_config, **base_recipe_params)
-
-        assert recipe.name == "test_cyclic"
-        assert recipe.train_script == "mock_train_script.py"
-        assert recipe.num_rounds == 5
-        assert recipe.job is not None
-
-    def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params):
-        """Test that initial_ckpt parameter is accepted with dict config."""
-        model_config = {"path": "my_module.models.SimpleNet"}
-        recipe = BaseCyclicRecipe(
-            name="test_cyclic_ckpt",
-            initial_model=model_config,
-            initial_ckpt="/abs/path/to/model.pt",
-            **base_recipe_params,
-        )
-
-        assert recipe.initial_ckpt == "/abs/path/to/model.pt"
-        assert recipe.initial_model == model_config
-
-    def test_dict_model_config_accepted(self, mock_file_system, base_recipe_params):
-        """Test that dict model config is accepted."""
-        model_config = {
-            "path": "my_module.models.SimpleNet",
-            "args": {"input_size": 10},
-        }
-        recipe = BaseCyclicRecipe(
-            name="test_cyclic_dict",
-            initial_model=model_config,
-            **base_recipe_params,
-        )
-
-        assert recipe.initial_model == model_config
+    Note: Base CyclicRecipe doesn't directly support nn.Module or dict config.
+    Use framework-specific recipes (PTCyclicRecipe, TFCyclicRecipe) for those.
+    """
 
     def test_initial_ckpt_must_be_absolute(self, base_recipe_params):
         """Test that relative paths are rejected (without mock to allow validation)."""
-        model_config = {"path": "my_module.models.SimpleNet"}
+        # Use None model to avoid needing model wrapper
         with pytest.raises(ValueError, match="must be an absolute path"):
             BaseCyclicRecipe(
                 name="test_relative",
-                initial_model=model_config,
+                initial_model=None,
                 initial_ckpt="relative/path/model.pt",
+                **base_recipe_params,
+            )
+
+    def test_requires_model_or_checkpoint(self, base_recipe_params):
+        """Test that at least initial_model or initial_ckpt must be provided."""
+        with pytest.raises(ValueError, match="Must provide either initial_model or initial_ckpt"):
+            BaseCyclicRecipe(
+                name="test_no_model",
+                initial_model=None,
+                initial_ckpt=None,
                 **base_recipe_params,
             )
 

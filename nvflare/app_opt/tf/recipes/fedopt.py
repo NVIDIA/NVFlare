@@ -184,7 +184,7 @@ class FedOptRecipe(Recipe):
             controller_kwargs["optimizer_args"] = self.optimizer_args
         if self.lr_scheduler_args is not None:
             controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
-        
+
         controller = FedOpt(**controller_kwargs)
 
         # Send the controller to the server

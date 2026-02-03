@@ -452,17 +452,17 @@ class TestFedAvgRecipeInitialCkpt:
         assert recipe.initial_ckpt == "/abs/path/to/model.pt"
         assert recipe.initial_model == simple_model
 
-    def test_initial_ckpt_with_none_model(self, mock_file_system, base_recipe_params):
-        """Test that initial_ckpt with None model is accepted (valid for TF, not for PT)."""
-        # Base recipe accepts this - framework-specific recipes enforce their requirements
-        recipe = FedAvgRecipe(
-            name="test_ckpt_no_model",
-            initial_model=None,
-            initial_ckpt="/abs/path/to/model.pt",
-            **base_recipe_params,
-        )
-        assert recipe.initial_ckpt == "/abs/path/to/model.pt"
-        assert recipe.initial_model is None
+    def test_initial_ckpt_with_none_model_not_allowed_for_pt(self, mock_file_system, base_recipe_params):
+        """Test that PT FedAvg rejects initial_ckpt with None model (PT needs architecture)."""
+        # PyTorch requires model architecture even when loading from checkpoint
+        # TensorFlow can load full models, but PT cannot
+        with pytest.raises(ValueError, match="Must provide either initial_model"):
+            FedAvgRecipe(
+                name="test_ckpt_no_model",
+                initial_model=None,
+                initial_ckpt="/abs/path/to/model.pt",
+                **base_recipe_params,
+            )
 
     def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
         """Test that relative paths are rejected (without mock to allow validation)."""
