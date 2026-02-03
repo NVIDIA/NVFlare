@@ -5,7 +5,7 @@ ARG NVF_BRANCH=main
 
 RUN python3 -m pip install -U pip
 RUN python3 -m pip install -U setuptools
-RUN python3 -m pip install nvflare~=2.5.0rc
+RUN python3 -m pip install nvflare~=2.7.0rc
 
 WORKDIR /workspace/
 RUN git clone https://github.com/NVIDIA/NVFlare.git --branch ${NVF_BRANCH} --single-branch NVFlare
