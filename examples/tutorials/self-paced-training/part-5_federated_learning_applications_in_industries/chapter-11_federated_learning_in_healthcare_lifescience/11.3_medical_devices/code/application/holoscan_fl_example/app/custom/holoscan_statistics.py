@@ -116,7 +116,7 @@ class HoloscanExampleStatistics(Statistics):
 
         df = self.data[dataset_name]
         feature: Series = df[feature_name]
-        flattened = feature.ravel()
+        flattened = feature.values.ravel()
         flattened = flattened[flattened != np.array(None)]
         buckets = get_std_histogram_buckets(flattened, num_of_bins, BinRange(global_min_value, global_max_value))
         return Histogram(HistogramType.STANDARD, buckets)
