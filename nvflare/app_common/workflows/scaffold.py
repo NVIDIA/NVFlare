@@ -38,8 +38,10 @@ class Scaffold(BaseFedAvg):
         num_clients (int, optional): The number of clients. Defaults to 3.
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
-        ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
-            Defaults to False.
+        ignore_result_error (bool or None, optional): How to handle client result errors.
+            - None: Dynamic mode (default) - ignore errors if min_responses still reachable, panic otherwise.
+            - False: Strict mode - panic on any client error.
+            - True: Resilient mode - always ignore client errors.
         allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
             empty global weights at first round, such that clients start training from scratch without any global info.
             Defaults to False.

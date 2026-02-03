@@ -185,9 +185,19 @@ class PocEnv(ExecEnv):
     def stop(self, clean_poc: bool = False):
         """Try to stop and clean existing POC.
 
+        This method is idempotent - safe to call multiple times.
+
         Args:
             clean_poc (bool, optional): Whether to clean the POC workspace. Defaults to False.
         """
+        # Check if already stopped (idempotent)
+        if not self._check_poc_running():
+            # POC already stopped or workspace doesn't exist
+            if clean_poc and os.path.exists(self.poc_workspace):
+                print(f"Removing POC workspace: {self.poc_workspace}")
+                shutil.rmtree(self.poc_workspace, ignore_errors=True)
+            return
+
         project_config, service_config = setup_service_config(self.poc_workspace)
 
         try:
