@@ -29,7 +29,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
-    train_script = "src/train_eval_submit.py"
+    train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = FedJob(name="cse_pt")
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
             script=train_script,
             script_args="",
         )
-        job.to(executor, f"site-{i + 1}")
+        job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

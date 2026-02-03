@@ -24,7 +24,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3
-    train_script = "src/train_eval_submit.py"
+    train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = CCWFJob(name="cifar10_swarm")
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
