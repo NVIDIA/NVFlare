@@ -39,8 +39,8 @@ class _FedOptValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    optimizer_args: dict = None
-    lr_scheduler_args: dict = None
+    optimizer_args: Optional[dict] = None
+    lr_scheduler_args: Optional[dict] = None
     server_memory_gc_rounds: int = 0
 
 
@@ -127,8 +127,8 @@ class FedOptRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        optimizer_args: dict = None,
-        lr_scheduler_args: dict = None,
+        optimizer_args: Optional[dict] = None,
+        lr_scheduler_args: Optional[dict] = None,
         server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
@@ -173,13 +173,19 @@ class FedOptRecipe(Recipe):
         )
 
         # Add FedOpt controller to server
-        controller = FedOpt(
-            num_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            optimizer_args=self.optimizer_args,
-            lr_scheduler_args=self.lr_scheduler_args,
-            memory_gc_rounds=self.server_memory_gc_rounds,
-        )
+        # Only pass optimizer_args and lr_scheduler_args if provided (not None)
+        # Otherwise let FedOpt use its defaults
+        controller_kwargs = {
+            "num_clients": self.min_clients,
+            "num_rounds": self.num_rounds,
+            "memory_gc_rounds": self.server_memory_gc_rounds,
+        }
+        if self.optimizer_args is not None:
+            controller_kwargs["optimizer_args"] = self.optimizer_args
+        if self.lr_scheduler_args is not None:
+            controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
+        
+        controller = FedOpt(**controller_kwargs)
 
         # Send the controller to the server
         job.to(controller, "server")
