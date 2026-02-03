@@ -49,6 +49,7 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     encrypt_layers: Optional[Union[List[str], str]] = None
+    server_memory_gc_rounds: int = 1
 
 
 class FedAvgRecipeWithHE(Recipe):
@@ -88,6 +89,8 @@ class FedAvgRecipeWithHE(Recipe):
                         if list of variable/layer names, only specified variables are encrypted;
                         if string containing regular expression (e.g. "conv"), only matched variables are
                         being encrypted.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 1 (every round).
 
     Example:
         ```python
@@ -132,6 +135,7 @@ class FedAvgRecipeWithHE(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         encrypt_layers: Optional[Union[List[str], str]] = None,
+        server_memory_gc_rounds: int = 1,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
@@ -148,6 +152,7 @@ class FedAvgRecipeWithHE(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             encrypt_layers=encrypt_layers,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
         self.name = v.name
@@ -163,6 +168,7 @@ class FedAvgRecipeWithHE(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Create a persistor with HE serialization filter if initial model is provided
         model_persistor = None
@@ -204,6 +210,7 @@ class FedAvgRecipeWithHE(Recipe):
             aggregator_id=aggregator_id,
             persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
             shareable_generator_id=shareable_generator_id,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)
