@@ -16,6 +16,7 @@ import json
 import os
 
 import numpy as np
+from filelock import FileLock
 from src.net import Net
 
 from nvflare import FedJob
@@ -37,7 +38,13 @@ def load_cifar10_labels():
 
     dataset_path = "/tmp/nvflare/data/cifar10"
     transform = transforms.Compose([transforms.ToTensor()])
-    trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+    
+    # Use file lock to prevent race condition when downloading dataset
+    os.makedirs(dataset_path, exist_ok=True)
+    lock_file = os.path.join(dataset_path, "download.lock")
+    with FileLock(lock_file):
+        trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+    
     labels = np.array([label for _, label in trainset])
     return labels
 
