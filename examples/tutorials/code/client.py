@@ -146,7 +146,7 @@ def main():
 
             # Calculate average loss for the epoch
             avg_loss = running_loss / len(train_loader)
-            print(f"site={client_name}, Epoch: {epoch+1}/{epochs}, Average Loss: {avg_loss:.4f}")
+            print(f"site={client_name}, Epoch: {epoch + 1}/{epochs}, Average Loss: {avg_loss:.4f}")
             global_step = input_model.current_round * epochs + epoch
             summary_writer.add_scalar(tag="loss_per_epoch", scalar=float(avg_loss), global_step=global_step)
 
