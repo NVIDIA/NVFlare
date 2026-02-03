@@ -54,7 +54,7 @@ class DataSequence(torch.utils.data.Dataset):
             texts_raw = texts_batch_raw[batch_idx]
             labels_raw = labels_batch_raw[batch_idx]
             # Encode texts with tokenizer
-            texts_encoded = tokenizer.encode_plus(
+            texts_encoded = tokenizer(
                 texts_raw,
                 padding="max_length",
                 max_length=max_length,
