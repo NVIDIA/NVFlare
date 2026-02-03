@@ -15,7 +15,6 @@
 import argparse
 import csv
 import os
-import os
 
 
 def parse_args(prog_name: str):
