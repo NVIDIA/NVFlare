@@ -27,7 +27,7 @@ def parse_args(prog_name: str):
         type=str,
         nargs="?",
         default="/tmp/nvflare/df_stats/data",
-        help="destination directory to download the data to",
+        help="destination directory where to download the data to",
     )
     return _parser, _parser.parse_args()
 
@@ -58,14 +58,13 @@ def prepare_data(data_root_dir: str):
 
         with open(dest, "w") as f:
             writer = csv.writer(f)
-        try:
             r = requests.get(url, allow_redirects=True, timeout=30)
             r.raise_for_status()
-        except requests.RequestException as e:
-            print(f"Error downloading data from {url}: {e}")
-            raise
-        
-        for line in r.iter_lines():
+            for line in r.iter_lines():
+                if line:
+                    writer.writerow(line.decode("utf-8").split(","))
+                else:
+                    print("skip empty line\n")
     print("\ndone with prepare data")
 
 
