@@ -16,6 +16,7 @@
 from src.net import Net
 
 from nvflare import FedJob
+from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
@@ -35,7 +36,9 @@ if __name__ == "__main__":
 
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
     persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")
-    aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind="WEIGHTS"), id="aggregator")
+    aggregator_id = job.to_server(
+        InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator"
+    )
     controller = ScatterAndGather(
         min_clients=n_clients,
         num_rounds=num_rounds,
@@ -53,7 +56,7 @@ if __name__ == "__main__":
         submit_model_timeout=600,
         validation_timeout=6000,
         cleanup_models=False,
-        validation_task_name="validate",
+        validation_task_name="evaluate",
         submit_model_task_name="submit_model",
     )
 

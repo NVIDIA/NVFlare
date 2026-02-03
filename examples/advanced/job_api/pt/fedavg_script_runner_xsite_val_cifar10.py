@@ -20,6 +20,7 @@ from filelock import FileLock
 from src.net import Net
 
 from nvflare import FedJob
+from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
@@ -169,7 +170,9 @@ if __name__ == "__main__":
     persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")
 
     # Set up aggregator for federated averaging
-    aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind="WEIGHTS"), id="aggregator")
+    aggregator_id = job.to_server(
+        InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS), id="aggregator"
+    )
 
     # Define the ScatterAndGather controller workflow for training
     train_controller = ScatterAndGather(
