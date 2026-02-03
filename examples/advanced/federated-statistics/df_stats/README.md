@@ -13,7 +13,7 @@ In this example, we are using UCI (University of California, Irvine) [adult data
 The original dataset already contains "training" and "test" datasets. Here we simply assume that the "training" and "test" datasets belong to different clients.
 So we assigned the training data and test data to two clients.
  
-Now we use the data utility to download the UCI dataset into separate client directories under /tmp/nvflare/data/
+Now we use the data utility to download the UCI dataset into separate client directories under /tmp/nvflare/df_stats/data/
 
 Please note that the UCI's website may experience occasional downtime.
 
