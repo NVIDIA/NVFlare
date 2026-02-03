@@ -124,6 +124,8 @@ def main():
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
+            if total == 0:
+                raise ValueError("Test loader is empty - cannot compute accuracy. Check data preparation.")
             accuracy = 100.0 * correct / total
             print(f"Accuracy of the network on the 10000 test images: {accuracy} %")
             return accuracy
