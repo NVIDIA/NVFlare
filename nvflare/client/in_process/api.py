@@ -44,6 +44,8 @@ class InProcessClientAPI(APISpec):
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
         """
+        super().__init__()  # Initialize memory management from base class
+
         self.data_bus = DataBus()
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
         self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
@@ -98,6 +100,18 @@ class InProcessClientAPI(APISpec):
     def set_meta(self, meta: dict):
         self.meta = meta
 
+    def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
+        """Configure memory management settings.
+
+        Args:
+            gc_rounds: Cleanup every N rounds. 0 = disabled.
+            cuda_empty_cache: If True, call torch.cuda.empty_cache() on cleanup.
+        """
+        self._memory_gc_rounds = gc_rounds
+        self._cuda_empty_cache = cuda_empty_cache
+        if gc_rounds > 0:
+            self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
+
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
@@ -138,6 +152,9 @@ class InProcessClientAPI(APISpec):
         if clear_cache:
             self.fl_model = None
             self.receive_called = False
+
+        # Perform memory cleanup if configured
+        self._maybe_cleanup_memory()
 
     def system_info(self) -> Dict:
         return self.sys_info

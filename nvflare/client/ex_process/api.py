@@ -83,11 +83,14 @@ def _register_tensor_decomposer():
 
 class ExProcessClientAPI(APISpec):
     def __init__(self, config_file: str):
+        super().__init__()  # Initialize memory management from base class
+
         self.model_registry = None
         self.logger = get_obj_logger(self)
         self.receive_called = False
         self.config_file = config_file
         self.flare_agent = None
+        # Memory settings will be read from config in init()
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -140,6 +143,20 @@ class ExProcessClientAPI(APISpec):
 
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
             self.flare_agent = flare_agent
+
+            # Read memory management settings from config (with env var override)
+            task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
+            config_gc_rounds = task_exchange.get(ConfigKey.MEMORY_GC_ROUNDS, 0)
+            config_cuda_cache = task_exchange.get(ConfigKey.CUDA_EMPTY_CACHE, False)
+
+            # Environment variables override config values
+            self._memory_gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", str(config_gc_rounds)))
+            self._cuda_empty_cache = (
+                os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", str(config_cuda_cache)).lower() == "true"
+            )
+
+            if self._memory_gc_rounds > 0:
+                self.logger.info(f"Memory management enabled: cleanup every {self._memory_gc_rounds} round(s)")
         except Exception as e:
             self.logger.error(f"flare.init failed: {e}")
             raise e
@@ -160,6 +177,9 @@ class ExProcessClientAPI(APISpec):
         model_registry.submit_model(model=model)
         if clear_cache:
             self.clear()
+
+        # Perform memory cleanup if configured
+        self._maybe_cleanup_memory()
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()

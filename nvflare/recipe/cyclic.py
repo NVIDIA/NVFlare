@@ -39,6 +39,10 @@ class _CyclicValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     framework: FrameworkType = FrameworkType.NUMPY
+    # Memory management
+    server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class CyclicRecipe(Recipe):
@@ -69,6 +73,12 @@ class CyclicRecipe(Recipe):
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: Method for transferring model parameters.
             Defaults to TransferType.FULL.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 1 (every round).
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client after sending model.
+            Set to 0 to disable. Defaults to 0.
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during client memory cleanup.
+            Only applicable to PyTorch GPU training. Defaults to False.
 
     Raises:
         ValidationError: If min_clients < 2 or other parameter validation fails.
@@ -99,6 +109,9 @@ class CyclicRecipe(Recipe):
         framework: FrameworkType = FrameworkType.NUMPY,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _CyclicValidator(
@@ -113,6 +126,9 @@ class CyclicRecipe(Recipe):
             framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -126,6 +142,9 @@ class CyclicRecipe(Recipe):
         self.framework = v.framework
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         job = FedJob(name=name, min_clients=v.min_clients)
         # Define the controller workflow and send to server
@@ -136,6 +155,7 @@ class CyclicRecipe(Recipe):
             shareable_generator_id="shareable_generator",
             task_name="train",
             task_check_period=0.5,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         job.to(controller, "server")
 
@@ -152,6 +172,8 @@ class CyclicRecipe(Recipe):
             framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 
