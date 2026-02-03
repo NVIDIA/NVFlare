@@ -50,7 +50,7 @@ def prepare_data(data_root_dir: str):
         dest = os.path.join(client_data_dir, "data.csv")
         if os.path.exists(dest):
             print(f"\nremove existing data at {dest}")
-            shutil.rmtree(dest, ignore_errors=True)
+            os.remove(dest)
 
         print(f"\ndownload to {dest}")
         url = client_data_urls[client]
