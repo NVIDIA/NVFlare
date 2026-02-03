@@ -124,8 +124,9 @@ def main():
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
 
-            print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-            return 100 * correct // total
+            accuracy = 100.0 * correct / total
+            print(f"Accuracy of the network on the 10000 test images: {accuracy} %")
+            return accuracy
 
         # (6) evaluate on received model for model selection
         accuracy = evaluate(input_model.params)
