@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import argparse
+import os
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+from filelock import FileLock
 from net import Net
 
 # (1) import nvflare client API
@@ -53,9 +55,15 @@ def main():
     model_path = args.model_path
 
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+
+    # Use file lock to prevent race condition when multiple sites download simultaneously
+    os.makedirs(dataset_path, exist_ok=True)
+    lock_file = os.path.join(dataset_path, "download.lock")
+    with FileLock(lock_file):
+        trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+        testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
+
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     net = Net()
@@ -95,13 +103,13 @@ def main():
         input_model = flare.receive()
         client_id = flare.get_site_name()
 
-        # Based on different "task" we will do different things
-        # for "train" task (flare.is_train()) we use the received model to do training and/or evaluation
-        # and send back updated model and/or evaluation metrics, if the "train_with_evaluation" is specified as True
-        # in the config_fed_client we will need to do evaluation and include the evaluation metrics
-        # for "evaluate" task (flare.is_evaluate()) we use the received model to do evaluation
-        # and send back the evaluation metrics
-        # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
+        # Based on different "task" we will do different things:
+        # - for "train" task (flare.is_train()): use the received model to do training and/or evaluation,
+        #   then send back updated model and/or evaluation metrics
+        # - for "evaluate" task (flare.is_evaluate()): use the received model to do evaluation,
+        #   then send back the evaluation metrics
+        # - for "submit_model" task (flare.is_submit_model()): send back the local model
+
         # (5) performing train task on received model
         if flare.is_train():
             print(f"({client_id}) current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")
@@ -166,11 +174,14 @@ def main():
 
         # (6) performing evaluate task on received model
         elif flare.is_evaluate():
+            print(f"({client_id}) Performing cross-site validation")
             accuracy = evaluate(input_model.params)
+            print(f"({client_id}) Cross-site validation accuracy: {accuracy}")
             flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
 
         # (7) performing submit_model task to obtain best local model
         elif flare.is_submit_model():
+            print(f"({client_id}) Submitting best local model")
             model_name = input_model.meta["submit_model_name"]
             if model_name == ModelName.BEST_MODEL:
                 try:

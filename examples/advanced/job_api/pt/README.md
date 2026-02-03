@@ -41,12 +41,12 @@ Implementation of [cyclic weight transfer](https://arxiv.org/abs/1709.05929) usi
 ```commandline
 python cyclic_cc_script_runner_cifar10.py
 ```
-### 5. [Federated averaging using model learning](./fedavg_model_learner_xsite_val_cifar10.py)
-Implementation of [FedAvg](https://arxiv.org/abs/1602.05629) using the [model learner class](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/model_learner.html),
+### 5. [Federated averaging with cross-site validation](./fedavg_script_runner_xsite_val_cifar10.py)
+Implementation of [FedAvg](https://arxiv.org/abs/1602.05629) using the [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type/client_api.html),
 followed by [cross site validation](https://nvflare.readthedocs.io/en/main/programming_guide/controllers/cross_site_model_evaluation.html)
-for federated model evaluation.
+for federated model evaluation with heterogeneous data partitioning.
 ```commandline
-python fedavg_model_learner_xsite_val_cifar10.py
+python fedavg_script_runner_xsite_val_cifar10.py
 ```
 
 > [!NOTE]
