@@ -27,7 +27,6 @@ import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 
 class TestPTRecipeComponentConfig(unittest.TestCase):
@@ -37,48 +36,54 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.checkpoint_path = "/workspace/pretrained_model.pt"
-        
+
         # Create dummy train script
         self.train_script = os.path.join(self.temp_dir, "train.py")
-        with open(self.train_script, 'w') as f:
+        with open(self.train_script, "w") as f:
             f.write("# Dummy train script\n")
 
     def tearDown(self):
         """Clean up test artifacts."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _verify_persistor_config(self, config_path, expected_model_path, expected_ckpt_path):
         """Verify persistor component has correct model dict and checkpoint."""
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
-        
+
         # Find persistor component
         persistor = None
-        for comp in config.get('components', []):
-            if comp['id'] == 'persistor':
+        for comp in config.get("components", []):
+            if comp["id"] == "persistor":
                 persistor = comp
                 break
-        
+
         self.assertIsNotNone(persistor, "Persistor component not found in config")
-        
+
         # Verify it's PT persistor
-        self.assertIn('PTFileModelPersistor', persistor['path'], 
-                     f"Expected PTFileModelPersistor, got {persistor['path']}")
-        
+        self.assertIn(
+            "PTFileModelPersistor", persistor["path"], f"Expected PTFileModelPersistor, got {persistor['path']}"
+        )
+
         # Verify model is dict config
-        model = persistor['args'].get('model')
+        model = persistor["args"].get("model")
         self.assertIsInstance(model, dict, "Model should be dict config")
-        self.assertEqual(model.get('path'), expected_model_path, 
-                        f"Model path mismatch. Expected: {expected_model_path}, Got: {model.get('path')}")
-        
+        self.assertEqual(
+            model.get("path"),
+            expected_model_path,
+            f"Model path mismatch. Expected: {expected_model_path}, Got: {model.get('path')}",
+        )
+
         # Verify checkpoint path
-        ckpt_path = persistor['args'].get('source_ckpt_file_full_name')
-        self.assertEqual(ckpt_path, expected_ckpt_path,
-                        f"Checkpoint path mismatch. Expected: {expected_ckpt_path}, Got: {ckpt_path}")
-        
-        print(f"    ✓ Persistor config verified:")
+        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
+        self.assertEqual(
+            ckpt_path, expected_ckpt_path, f"Checkpoint path mismatch. Expected: {expected_ckpt_path}, Got: {ckpt_path}"
+        )
+
+        print("    ✓ Persistor config verified:")
         print(f"      - model: {model}")
         print(f"      - checkpoint: {ckpt_path}")
 
@@ -86,7 +91,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
         """Test PT FedAvg generates correct config with dict model and checkpoint."""
         print("\n  Testing PT FedAvg...")
         from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-        
+
         recipe = FedAvgRecipe(
             name="test-pt-fedavg",
             min_clients=2,
@@ -95,24 +100,23 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-pt-fedavg", 
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-pt-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleNetwork", self.checkpoint_path)
 
     def test_pt_fedopt(self):
         """Test PT FedOpt generates correct config.
-        
+
         Note: FedOpt uses different architecture - it adds model dict via job.to_server(),
         and persistor references it by ID string "model". The dict config is validated
         at runtime by PTFileModelPersistor's model instantiation logic.
         """
         print("\n  Testing PT FedOpt...")
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
-        
+
         recipe = FedOptRecipe(
             name="test-pt-fedopt",
             min_clients=2,
@@ -121,41 +125,40 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export2")
         recipe.export(job_dir=job_dir)
-        
-        server_config_path = os.path.join(job_dir, "test-pt-fedopt",
-                                         "app/config/config_fed_server.json")
-        
+
+        server_config_path = os.path.join(job_dir, "test-pt-fedopt", "app/config/config_fed_server.json")
+
         # FedOpt architecture: persistor has component ID reference to model
-        with open(server_config_path, 'r') as f:
+        with open(server_config_path, "r") as f:
             config = json.load(f)
-        
+
         # Verify persistor configuration
-        persistor = next((c for c in config['components'] if c['id'] == 'persistor'), None)
+        persistor = next((c for c in config["components"] if c["id"] == "persistor"), None)
         self.assertIsNotNone(persistor, "Persistor component not found")
-        
+
         # FedOpt persistor.model is a string reference to component ID
         # The actual dict config is passed via job.to_server() and resolved at runtime
-        model_ref = persistor['args']['model']
+        model_ref = persistor["args"]["model"]
         self.assertIsInstance(model_ref, str, "FedOpt persistor.model should be string reference")
         self.assertEqual(model_ref, "model", "Expected component ID reference")
-        
+
         # Verify checkpoint path
-        ckpt_path = persistor['args']['source_ckpt_file_full_name']
+        ckpt_path = persistor["args"]["source_ckpt_file_full_name"]
         self.assertEqual(ckpt_path, self.checkpoint_path)
-        
-        print(f"    ✓ FedOpt config verified (uses component reference architecture):")
+
+        print("    ✓ FedOpt config verified (uses component reference architecture):")
         print(f"      - persistor.model: '{model_ref}' (component ID)")
         print(f"      - checkpoint: {ckpt_path}")
-        print(f"      - Note: Dict config passed to component 'model' at runtime")
+        print("      - Note: Dict config passed to component 'model' at runtime")
 
     def test_pt_cyclic(self):
         """Test PT Cyclic generates correct config."""
         print("\n  Testing PT Cyclic...")
         from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe
-        
+
         recipe = CyclicRecipe(
             name="test-pt-cyclic",
             min_clients=2,
@@ -164,19 +167,18 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export3")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-pt-cyclic",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-pt-cyclic", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleNetwork", self.checkpoint_path)
 
     def test_pt_scaffold(self):
         """Test PT Scaffold generates correct config."""
         print("\n  Testing PT Scaffold...")
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
-        
+
         recipe = ScaffoldRecipe(
             name="test-pt-scaffold",
             min_clients=2,
@@ -185,23 +187,22 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export4")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-pt-scaffold",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-pt-scaffold", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleNetwork", self.checkpoint_path)
 
     def test_pt_fedavg_he(self):
         """Test PT FedAvg with HE supports checkpoint.
-        
+
         Note: FedAvg HE does NOT support dict model config yet - it still requires nn.Module.
         Only testing checkpoint support here.
         """
         print("\n  Testing PT FedAvg with HE (checkpoint only, no dict config)...")
         print("    ⚠ Note: FedAvg HE doesn't support dict config yet")
-        
+
         # Skip this test - FedAvg HE uses BaseFedJob which doesn't support dict config
         # It would need to be updated similarly to other recipes
         self.skipTest("FedAvg HE doesn't support dict config (uses BaseFedJob)")
@@ -213,53 +214,52 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         try:
-            import tensorflow
+            import tensorflow  # noqa: F401
+
             self.tf_available = True
         except ImportError:
             self.tf_available = False
-            
+
         self.temp_dir = tempfile.mkdtemp()
         self.checkpoint_path = "/workspace/pretrained_model"
-        
+
         # Create dummy train script
         self.train_script = os.path.join(self.temp_dir, "train.py")
-        with open(self.train_script, 'w') as f:
+        with open(self.train_script, "w") as f:
             f.write("# Dummy train script\n")
 
     def tearDown(self):
         """Clean up test artifacts."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _verify_persistor_config(self, config_path, expected_model_path, expected_ckpt_path):
         """Verify TF persistor component has correct model dict and checkpoint."""
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
-        
+
         # Find persistor component
         persistor = None
-        for comp in config.get('components', []):
-            if comp['id'] == 'persistor':
+        for comp in config.get("components", []):
+            if comp["id"] == "persistor":
                 persistor = comp
                 break
-        
+
         self.assertIsNotNone(persistor, "Persistor component not found")
-        self.assertIn('TFModelPersistor', persistor['path'],
-                     f"Expected TFModelPersistor, got {persistor['path']}")
-        
+        self.assertIn("TFModelPersistor", persistor["path"], f"Expected TFModelPersistor, got {persistor['path']}")
+
         # Verify model is dict config
-        model = persistor['args'].get('model')
+        model = persistor["args"].get("model")
         self.assertIsInstance(model, dict, "Model should be dict config")
-        self.assertEqual(model.get('path'), expected_model_path,
-                        f"Model path mismatch")
-        
+        self.assertEqual(model.get("path"), expected_model_path, "Model path mismatch")
+
         # Verify checkpoint path
-        ckpt_path = persistor['args'].get('source_ckpt_file_full_name')
-        self.assertEqual(ckpt_path, expected_ckpt_path,
-                        f"Checkpoint path mismatch")
-        
-        print(f"    ✓ Persistor config verified:")
+        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
+        self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+
+        print("    ✓ Persistor config verified:")
         print(f"      - model: {model}")
         print(f"      - checkpoint: {ckpt_path}")
 
@@ -267,10 +267,10 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
         """Test TF FedAvg generates correct config."""
         if not self.tf_available:
             self.skipTest("TensorFlow not installed")
-        
+
         print("\n  Testing TF FedAvg...")
         from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
-        
+
         recipe = FedAvgRecipe(
             name="test-tf-fedavg",
             min_clients=2,
@@ -279,22 +279,21 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-tf-fedavg",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-tf-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleModel", self.checkpoint_path)
 
     def test_tf_fedopt(self):
         """Test TF FedOpt generates correct config."""
         if not self.tf_available:
             self.skipTest("TensorFlow not installed")
-        
+
         print("\n  Testing TF FedOpt...")
         from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
-        
+
         recipe = FedOptRecipe(
             name="test-tf-fedopt",
             min_clients=2,
@@ -303,22 +302,21 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export2")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-tf-fedopt",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-tf-fedopt", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleModel", self.checkpoint_path)
 
     def test_tf_cyclic(self):
         """Test TF Cyclic generates correct config."""
         if not self.tf_available:
             self.skipTest("TensorFlow not installed")
-        
+
         print("\n  Testing TF Cyclic...")
         from nvflare.app_opt.tf.recipes.cyclic import CyclicRecipe
-        
+
         recipe = CyclicRecipe(
             name="test-tf-cyclic",
             min_clients=2,
@@ -327,22 +325,21 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export3")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-tf-cyclic",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-tf-cyclic", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleModel", self.checkpoint_path)
 
     def test_tf_scaffold(self):
         """Test TF Scaffold generates correct config."""
         if not self.tf_available:
             self.skipTest("TensorFlow not installed")
-        
+
         print("\n  Testing TF Scaffold...")
         from nvflare.app_opt.tf.recipes.scaffold import ScaffoldRecipe
-        
+
         recipe = ScaffoldRecipe(
             name="test-tf-scaffold",
             min_clients=2,
@@ -351,12 +348,11 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export4")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-tf-scaffold",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-tf-scaffold", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, "model.SimpleModel", self.checkpoint_path)
 
 
@@ -367,47 +363,46 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.checkpoint_path = "/workspace/checkpoint.npy"
-        
+
         # Create dummy train script
         self.train_script = os.path.join(self.temp_dir, "train.py")
-        with open(self.train_script, 'w') as f:
+        with open(self.train_script, "w") as f:
             f.write("# Dummy train script\n")
 
     def tearDown(self):
         """Clean up test artifacts."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _verify_persistor_config(self, config_path, expected_ckpt_path):
         """Verify NumPy persistor component has correct checkpoint."""
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
-        
+
         # Find persistor component
         persistor = None
-        for comp in config.get('components', []):
-            if comp['id'] == 'persistor':
+        for comp in config.get("components", []):
+            if comp["id"] == "persistor":
                 persistor = comp
                 break
-        
+
         self.assertIsNotNone(persistor, "Persistor component not found")
-        self.assertIn('NPModelPersistor', persistor['path'],
-                     f"Expected NPModelPersistor, got {persistor['path']}")
-        
+        self.assertIn("NPModelPersistor", persistor["path"], f"Expected NPModelPersistor, got {persistor['path']}")
+
         # Verify checkpoint path
-        ckpt_path = persistor['args'].get('source_ckpt_file_full_name')
-        self.assertEqual(ckpt_path, expected_ckpt_path,
-                        f"Checkpoint path mismatch")
-        
-        print(f"    ✓ Persistor config verified:")
+        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
+        self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+
+        print("    ✓ Persistor config verified:")
         print(f"      - checkpoint: {ckpt_path}")
 
     def test_numpy_fedavg(self):
         """Test NumPy FedAvg generates correct config with checkpoint."""
         print("\n  Testing NumPy FedAvg...")
         from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
-        
+
         recipe = NumpyFedAvgRecipe(
             name="test-np-fedavg",
             min_clients=2,
@@ -416,12 +411,11 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-np-fedavg",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-np-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, self.checkpoint_path)
 
 
@@ -432,47 +426,45 @@ class TestSklearnRecipeComponentConfig(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.checkpoint_path = "/workspace/checkpoint.pkl"
-        
+
         # Create dummy train script
         self.train_script = os.path.join(self.temp_dir, "train.py")
-        with open(self.train_script, 'w') as f:
+        with open(self.train_script, "w") as f:
             f.write("# Dummy train script\n")
 
     def tearDown(self):
         """Clean up test artifacts."""
         import shutil
+
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
     def _verify_persistor_config(self, config_path, expected_initial_params, expected_ckpt_path):
         """Verify Sklearn persistor component has correct config."""
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = json.load(f)
-        
+
         # Find persistor component
         persistor = None
-        for comp in config.get('components', []):
-            if comp['id'] == 'persistor':
+        for comp in config.get("components", []):
+            if comp["id"] == "persistor":
                 persistor = comp
                 break
-        
+
         self.assertIsNotNone(persistor, "Persistor component not found")
-        self.assertIn('joblib', persistor['path'].lower(),
-                     f"Expected Joblib persistor, got {persistor['path']}")
-        
+        self.assertIn("joblib", persistor["path"].lower(), f"Expected Joblib persistor, got {persistor['path']}")
+
         # Verify initial_params (Sklearn uses initial_params in persistor, not model_params)
-        initial_params = persistor['args'].get('initial_params')
+        initial_params = persistor["args"].get("initial_params")
         if expected_initial_params:
             self.assertIsNotNone(initial_params, "initial_params should be set")
-            self.assertEqual(initial_params, expected_initial_params,
-                           f"initial_params mismatch")
-        
+            self.assertEqual(initial_params, expected_initial_params, "initial_params mismatch")
+
         # Verify checkpoint path
-        ckpt_path = persistor['args'].get('source_ckpt_file_full_name')
-        self.assertEqual(ckpt_path, expected_ckpt_path,
-                        f"Checkpoint path mismatch")
-        
-        print(f"    ✓ Persistor config verified:")
+        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
+        self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+
+        print("    ✓ Persistor config verified:")
         print(f"      - initial_params: {initial_params}")
         print(f"      - checkpoint: {ckpt_path}")
 
@@ -480,9 +472,9 @@ class TestSklearnRecipeComponentConfig(unittest.TestCase):
         """Test Sklearn FedAvg generates correct config with checkpoint."""
         print("\n  Testing Sklearn FedAvg...")
         from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
-        
+
         model_params = {"n_estimators": 10}
-        
+
         recipe = SklearnFedAvgRecipe(
             name="test-sklearn-fedavg",
             min_clients=2,
@@ -491,12 +483,11 @@ class TestSklearnRecipeComponentConfig(unittest.TestCase):
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
-        
+
         job_dir = os.path.join(self.temp_dir, "export")
         recipe.export(job_dir=job_dir)
-        
-        server_config = os.path.join(job_dir, "test-sklearn-fedavg",
-                                     "app/config/config_fed_server.json")
+
+        server_config = os.path.join(job_dir, "test-sklearn-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
 
 
