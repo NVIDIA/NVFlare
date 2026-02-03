@@ -436,6 +436,10 @@ class TestScatterAndGatherUnknownTaskHandling:
         from unittest.mock import MagicMock
 
         fl_ctx = MagicMock()
+        fl_ctx.get_peer_context.return_value = None  # Required for log_info to work properly
+        fl_ctx.get_identity_name.return_value = "test_identity"
+        fl_ctx.get_job_id.return_value = "test_job"
+        fl_ctx.get_prop.return_value = None
         return fl_ctx
 
     def _create_mock_aggregator(self):
