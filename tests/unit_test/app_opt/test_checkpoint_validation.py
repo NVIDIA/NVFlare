@@ -68,8 +68,7 @@ class TestCheckpointValidation(unittest.TestCase):
         self.assertIn(self.nonexistent_path, str(context.exception))
         self.assertIn("Check that the checkpoint exists at runtime", str(context.exception))
 
-    @patch("tensorflow.keras.models.load_model")
-    def test_tf_persistor_fails_fast_on_missing_checkpoint(self, mock_load):
+    def test_tf_persistor_fails_fast_on_missing_checkpoint(self):
         """Test TFModelPersistor fails when checkpoint doesn't exist."""
         try:
             from nvflare.app_opt.tf.model_persistor import TFModelPersistor
@@ -85,7 +84,6 @@ class TestCheckpointValidation(unittest.TestCase):
             persistor.log_dir = tmpdir
 
             # load_model should call system_panic, which we need to verify
-            # For now, just check that it attempts to validate the file
             with patch.object(persistor, "system_panic") as mock_panic:
                 persistor.load_model(self.fl_ctx)
 
