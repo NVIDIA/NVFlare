@@ -58,7 +58,8 @@ def prepare_data(data_root_dir: str):
 
         with open(dest, "w") as f:
             writer = csv.writer(f)
-            r = requests.get(url, allow_redirects=True)
+        r = requests.get(url, allow_redirects=True, timeout=30)
+        r.raise_for_status()
             for line in r.iter_lines():
                 if line:
                     writer.writerow(line.decode("utf-8").split(","))
