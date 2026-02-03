@@ -1,7 +1,0 @@
-{
-  "ignorePatterns": [
-    {
-      "pattern": "catalog.ngc.nvidia.com"
-    }
-  ]
-}
