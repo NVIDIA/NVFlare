@@ -26,7 +26,7 @@ def parse_args(prog_name: str):
         type=str,
         nargs="?",
         default="/tmp/nvflare/df_stats/data",
-        help="destination directory where the data to download to",
+        help="destination directory to download the data to",
     )
     return _parser, _parser.parse_args()
 
