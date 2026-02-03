@@ -1,6 +1,7 @@
+nvflare
 numpy
 monai[itk]
-pandas
+pandas~=2.3
 kaleido
 matplotlib
 jupyter

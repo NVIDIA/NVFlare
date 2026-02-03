@@ -1,5 +1,6 @@
+nvflare
 numpy
-pandas
+pandas~=2.3
 matplotlib
 jupyterlab
 tdigest
