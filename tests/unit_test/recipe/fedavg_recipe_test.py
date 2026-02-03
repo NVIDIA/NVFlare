@@ -418,6 +418,24 @@ class TestFedAvgRecipeValidation:
                 **base_recipe_params,
             )
 
+    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'path' key"):
+            FedAvgRecipe(
+                name="test_invalid_dict",
+                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                **base_recipe_params,
+            )
+
+    def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config with non-string 'path' raises error."""
+        with pytest.raises(ValueError, match="'path' must be a string"):
+            FedAvgRecipe(
+                name="test_invalid_path_type",
+                initial_model={"path": 123, "args": {}},  # Path is not string
+                **base_recipe_params,
+            )
+
 
 class TestFedAvgRecipeInitialCkpt:
     """Test initial_ckpt parameter for FedAvgRecipe."""
