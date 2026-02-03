@@ -456,7 +456,7 @@ class TestFedAvgRecipeInitialCkpt:
         """Test that PT FedAvg rejects initial_ckpt with None model (PT needs architecture)."""
         # PyTorch requires model architecture even when loading from checkpoint
         # TensorFlow can load full models, but PT cannot
-        with pytest.raises(ValueError, match="Must provide either initial_model"):
+        with pytest.raises(ValueError, match="Unable to add None to job"):
             FedAvgRecipe(
                 name="test_ckpt_no_model",
                 initial_model=None,

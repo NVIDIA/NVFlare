@@ -64,15 +64,17 @@ class TestBaseCyclicRecipe:
     Use framework-specific recipes (PTCyclicRecipe, TFCyclicRecipe) for those.
     """
 
-    def test_initial_ckpt_must_be_absolute(self, base_recipe_params):
-        """Test that relative paths are rejected (without mock to allow validation)."""
-        # Use None model to avoid needing model wrapper
+    def test_initial_ckpt_must_be_absolute(self, mock_file_system):
+        """Test that relative paths are rejected."""
+        # Use absolute path for train_script to avoid resource validation error
         with pytest.raises(ValueError, match="must be an absolute path"):
             BaseCyclicRecipe(
                 name="test_relative",
                 initial_model=None,
                 initial_ckpt="relative/path/model.pt",
-                **base_recipe_params,
+                train_script="/abs/train.py",
+                min_clients=2,
+                num_rounds=2,
             )
 
     def test_requires_model_or_checkpoint(self, base_recipe_params):
