@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, conint
@@ -135,8 +136,6 @@ class CyclicRecipe(Recipe):
 
         # Validate initial_ckpt is absolute path if provided
         if self.initial_ckpt is not None:
-            import os
-
             if not os.path.isabs(self.initial_ckpt):
                 raise ValueError(
                     f"initial_ckpt must be an absolute path, got: {self.initial_ckpt}. "
