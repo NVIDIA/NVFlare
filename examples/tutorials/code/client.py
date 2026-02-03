@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-client side training scripts
+    client side training scripts
 """
 
 import argparse
