@@ -43,7 +43,10 @@ class Run:
         Returns:
             Optional[str]: The result workspace path if job completed, None if still running or stopped early.
         """
-        return self.exec_env.get_job_result(self.job_id, timeout=timeout)
+        try:
+            return self.exec_env.get_job_result(self.job_id, timeout=timeout)
+        finally:
+            self.exec_env.stop()
 
     def abort(self):
         """Abort the running job."""
