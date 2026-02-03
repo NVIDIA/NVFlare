@@ -43,6 +43,13 @@ Note that to use ContainerRetriever, the container must be given a name and adde
 ContainerRetriever.add_container("model", model_dict)
 ```
 
+## Dependencies
+Install the following Python packages.  You also need to have access to Hugging Face EleutherAI/gpt-neo-1.3B.
+
+```commandline
+pip install transformers huggingface_hub accelerate
+```
+
 ## Simple Examples
 First, we demonstrate how to use the Streamer directly without Retriever:
 ```commandline
