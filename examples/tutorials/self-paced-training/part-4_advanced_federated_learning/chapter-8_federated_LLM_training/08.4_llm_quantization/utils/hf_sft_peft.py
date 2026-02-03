@@ -20,7 +20,7 @@ import random
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from transformers import AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
@@ -107,7 +107,7 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
+        # Don't wrap the model here - let SFTTrainer handle it
     model.config.pretraining_tp = 1
 
     # Training arguments
