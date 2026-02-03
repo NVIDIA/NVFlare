@@ -66,6 +66,8 @@ Please refer to :ref:`application` for more details.
    programming_guide/file_streaming.rst
    programming_guide/decomposer_for_large_object
    programming_guide/dashboard_api
+   programming_guide/developer_testing
+   programming_guide/notebook_testing
    user_guide/researcher_guide/index
    user_guide/nvflare_cli/nvflare_cli
    user_guide/confidential_computing/index
