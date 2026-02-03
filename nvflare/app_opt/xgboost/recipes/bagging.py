@@ -134,8 +134,8 @@ class XGBBaggingRecipe(Recipe):
                 },
             )
 
-            env = SimEnv()
-            env.run(recipe)
+            env = SimEnv(num_clients=3)
+            run = recipe.execute(env)
     """
 
     def __init__(
@@ -203,6 +203,13 @@ class XGBBaggingRecipe(Recipe):
         self.data_loader_id = v.data_loader_id
         self.per_site_config = per_site_config
 
+        # Validate per_site_config is provided
+        if per_site_config is None:
+            raise ValueError(
+                "per_site_config is required for XGBBaggingRecipe. "
+                "Each site must specify a 'data_loader' in the config dictionary."
+            )
+
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
@@ -238,38 +245,38 @@ class XGBBaggingRecipe(Recipe):
         aggregator = XGBBaggingAggregator()
         job.to_server(aggregator, id="aggregator")
 
-        # Add per-site executors and data loaders if configured
+        # Add executors and data loaders per site
         from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
-        if self.per_site_config:
-            for site_name, site_config in self.per_site_config.items():
-                data_loader = site_config.get("data_loader")
-                if data_loader is None:
-                    raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
+        # Site-specific executors and data loaders
+        for site_name, site_config in self.per_site_config.items():
+            data_loader = site_config.get("data_loader")
+            if data_loader is None:
+                raise ValueError(f"per_site_config for '{site_name}' must include 'data_loader' key")
 
-                # Get lr_scale from config, default to 1.0
-                lr_scale = site_config.get("lr_scale", 1.0)
+            # Get lr_scale from config, default to 1.0
+            lr_scale = site_config.get("lr_scale", 1.0)
 
-                # Create executor for this site
-                executor = FedXGBTreeExecutor(
-                    data_loader_id=self.data_loader_id,
-                    training_mode=self.training_mode,
-                    num_client_bagging=self.num_client_bagging,
-                    num_local_parallel_tree=self.num_local_parallel_tree,
-                    local_subsample=self.local_subsample,
-                    local_model_path="model.json",
-                    global_model_path="model_global.json",
-                    learning_rate=self.learning_rate,
-                    objective=self.objective,
-                    max_depth=self.max_depth,
-                    eval_metric=self.eval_metric,
-                    tree_method=self.tree_method,
-                    use_gpus=self.use_gpus,
-                    nthread=self.nthread,
-                    lr_scale=lr_scale,
-                    lr_mode=self.lr_mode,
-                )
-                job.to(executor, site_name, id="xgb_tree_executor")
-                job.to(data_loader, site_name, id=self.data_loader_id)
+            # Create executor for this site
+            executor = FedXGBTreeExecutor(
+                data_loader_id=self.data_loader_id,
+                training_mode=self.training_mode,
+                num_client_bagging=self.num_client_bagging,
+                num_local_parallel_tree=self.num_local_parallel_tree,
+                local_subsample=self.local_subsample,
+                local_model_path="model.json",
+                global_model_path="model_global.json",
+                learning_rate=self.learning_rate,
+                objective=self.objective,
+                max_depth=self.max_depth,
+                eval_metric=self.eval_metric,
+                tree_method=self.tree_method,
+                use_gpus=self.use_gpus,
+                nthread=self.nthread,
+                lr_scale=lr_scale,
+                lr_mode=self.lr_mode,
+            )
+            job.to(executor, site_name, id="xgb_tree_executor")
+            job.to(data_loader, site_name, id=self.data_loader_id)
 
         return job
