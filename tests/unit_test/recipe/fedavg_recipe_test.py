@@ -453,18 +453,19 @@ class TestFedAvgRecipeInitialCkpt:
         assert recipe.initial_model == simple_model
 
     def test_initial_ckpt_with_none_model(self, mock_file_system, base_recipe_params):
-        """Test that initial_ckpt with None model raises error for PyTorch (needs architecture)."""
-        # PyTorch requires model architecture with checkpoint
-        with pytest.raises(ValueError, match="requires initial_model"):
-            FedAvgRecipe(
-                name="test_ckpt_no_model",
-                initial_model=None,
-                initial_ckpt="/abs/path/to/model.pt",
-                **base_recipe_params,
-            )
+        """Test that initial_ckpt with None model is accepted (valid for TF, not for PT)."""
+        # Base recipe accepts this - framework-specific recipes enforce their requirements
+        recipe = FedAvgRecipe(
+            name="test_ckpt_no_model",
+            initial_model=None,
+            initial_ckpt="/abs/path/to/model.pt",
+            **base_recipe_params,
+        )
+        assert recipe.initial_ckpt == "/abs/path/to/model.pt"
+        assert recipe.initial_model is None
 
-    def test_initial_ckpt_must_be_absolute_path(self, mock_file_system, base_recipe_params, simple_model):
-        """Test that relative paths are rejected."""
+    def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
+        """Test that relative paths are rejected (without mock to allow validation)."""
         with pytest.raises(ValueError, match="must be an absolute path"):
             FedAvgRecipe(
                 name="test_relative_path",
