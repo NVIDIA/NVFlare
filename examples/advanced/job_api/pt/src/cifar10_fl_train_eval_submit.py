@@ -91,7 +91,7 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        return 100 * correct // total
+        return 100.0 * correct / total
 
     # (2) initialize NVFlare client API
     flare.init()
