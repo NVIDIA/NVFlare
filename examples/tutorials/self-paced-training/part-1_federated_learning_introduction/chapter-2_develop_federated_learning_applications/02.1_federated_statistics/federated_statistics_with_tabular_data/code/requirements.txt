@@ -1,4 +1,4 @@
-nvflare
+nvflare~=2.7.2rc
 numpy
 pandas~=2.3
 matplotlib
