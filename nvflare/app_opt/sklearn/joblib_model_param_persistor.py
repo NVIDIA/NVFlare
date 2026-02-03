@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import Any, Dict, Optional
 
 from joblib import dump, load
 
@@ -25,15 +26,36 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class JoblibModelParamPersistor(ModelPersistor):
-    def __init__(self, initial_params, save_name="model_param.joblib"):
-        """
-        Persist global model parameters from a dict to a joblib file
+    def __init__(
+        self,
+        initial_params: Optional[Dict[str, Any]] = None,
+        save_name: str = "model_param.joblib",
+        source_ckpt_file_full_name: Optional[str] = None,
+    ):
+        """Persist global model parameters from a dict to a joblib file.
+
         Note that this contains the necessary information to build
-        a certain model but may not be directly loadable
+        a certain model but may not be directly loadable.
+
+        Unlike PTFileModelPersistor, this persistor does NOT instantiate model classes.
+        It only stores and transmits parameter values (e.g., hyperparameters, weights).
+        The sklearn model class is instantiated on the client side using these params.
+
+        Args:
+            initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
+                These are parameter VALUES, not a class path configuration.
+                Used as fallback if no checkpoint or previously saved model is available.
+            save_name: Filename for saving model params. Defaults to "model_param.joblib".
+            source_ckpt_file_full_name: Full path to source checkpoint file.
+                This path may not exist locally (server-side path). If provided
+                and exists at runtime, it takes priority over initial_params.
         """
         super().__init__()
         self.initial_params = initial_params
         self.save_name = save_name
+        self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
@@ -53,12 +75,35 @@ class JoblibModelParamPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
-        if os.path.exists(self.save_path):
+        model = None
+
+        # Priority 1: Load from source checkpoint if provided
+        if self.source_ckpt_file_full_name:
+            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+            if not os.path.exists(self.source_ckpt_file_full_name):
+                raise ValueError(
+                    f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    "Check that the checkpoint exists at runtime."
+                )
+            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+            model = load(self.source_ckpt_file_full_name)
+
+        # Priority 2: Load from previously saved model
+        if model is None and os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             model = load(self.save_path)
-        else:
-            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
-            model = self.initial_params
+
+        # Priority 3: Use initial params
+        if model is None:
+            if self.initial_params is not None:
+                self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
+                model = self.initial_params
+            else:
+                raise ValueError(
+                    "No model parameters available. Provide either source_ckpt_file_full_name, "
+                    "a previously saved model, or initial_params."
+                )
+
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
         return model_learnable
