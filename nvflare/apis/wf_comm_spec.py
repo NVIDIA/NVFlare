@@ -64,6 +64,10 @@ class WFCommSpec(ABC):
             wait_time_after_min_received: how long (secs) to wait after the min_responses is received.
               If == 0, end the task immediately after the min responses are received;
 
+        Note:
+            Server-side implementation creates immutable snapshot of task.data to prevent data corruption.
+            Raises RuntimeError if task.data contains non-serializable objects.
+
         """
         raise NotImplementedError
 

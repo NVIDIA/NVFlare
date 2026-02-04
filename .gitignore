@@ -170,3 +170,6 @@ __pycache__
 .pyc
 
 docs/apidocs/
+
+# dependency marker
+.deps_marker

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, conint
 
@@ -20,7 +20,8 @@ from nvflare import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -30,6 +31,7 @@ class _CyclicValidator(BaseModel):
 
     name: str
     initial_model: Any
+    initial_ckpt: Optional[str] = None
     num_rounds: int
     min_clients: conint(ge=2)
     train_script: str
@@ -58,7 +60,12 @@ class CyclicRecipe(Recipe):
 
     Args:
         name: Name identifier for the federated learning job. Defaults to "cyclic".
-        initial_model: Starting model object to begin training. Can be None.
+        initial_model: Starting model object to begin training. Can be:
+            - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
         num_rounds: Number of complete training rounds to execute. Defaults to 2.
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.
@@ -92,7 +99,8 @@ class CyclicRecipe(Recipe):
         self,
         *,
         name: str = "cyclic",
-        initial_model: Any = None,
+        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         num_rounds: int = 2,
         min_clients: int = 2,
         train_script: str,
@@ -108,6 +116,7 @@ class CyclicRecipe(Recipe):
         v = _CyclicValidator(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             num_rounds=num_rounds,
             min_clients=min_clients,
             train_script=train_script,
@@ -122,8 +131,15 @@ class CyclicRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+
+        validate_initial_ckpt(self.initial_ckpt)
+        validate_dict_model_config(self.initial_model)
+
         self.num_rounds = v.num_rounds
-        self.initial_model = v.initial_model
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.launch_external_process = v.launch_external_process
@@ -133,12 +149,26 @@ class CyclicRecipe(Recipe):
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
+        # Validate that we have at least one model source
+        if self.initial_model is None and self.initial_ckpt is None:
+            raise ValueError(
+                "Must provide either initial_model or initial_ckpt. " "Cannot create a job without a model source."
+            )
+
         job = FedJob(name=name, min_clients=v.min_clients)
+
+        # Setup model persistor first - subclasses override for framework-specific handling
+        persistor_id = self._setup_model_and_persistor(job)
+
+        # Use returned persistor_id or default to "persistor"
+        if not persistor_id:
+            persistor_id = "persistor"
+
         # Define the controller workflow and send to server
         controller = CyclicController(
             num_rounds=num_rounds,
             task_assignment_timeout=10,
-            persistor_id="persistor",
+            persistor_id=persistor_id,
             shareable_generator_id="shareable_generator",
             task_name="train",
             task_check_period=0.5,
@@ -148,9 +178,6 @@ class CyclicRecipe(Recipe):
 
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")
-
-        # Define the initial global model and send to server
-        job.to(self.initial_model, "server")
 
         executor = ScriptRunner(
             script=self.train_script,
@@ -163,3 +190,29 @@ class CyclicRecipe(Recipe):
         job.to_clients(executor)
 
         super().__init__(job)
+
+    def _setup_model_and_persistor(self, job) -> str:
+        """Setup framework-specific model components and persistor.
+
+        Handles PTModel/TFModel wrappers passed by framework-specific subclasses.
+
+        Returns:
+            str: The persistor_id to be used by the controller.
+        """
+        if self.initial_model is None:
+            return ""
+
+        # Check if initial_model is a model wrapper (PTModel, TFModel)
+        if hasattr(self.initial_model, "add_to_fed_job"):
+            # It's a model wrapper - use its add_to_fed_job method
+            result = job.to_server(self.initial_model, id="persistor")
+            if isinstance(result, dict):
+                return result.get("persistor_id", "persistor")
+            return result if result else "persistor"
+
+        # Unknown model type
+        raise TypeError(
+            f"Unsupported initial_model type: {type(self.initial_model).__name__}. "
+            f"Use a framework-specific recipe (PTCyclicRecipe, TFCyclicRecipe, etc.) "
+            f"or wrap your model in PTModel/TFModel."
+        )
