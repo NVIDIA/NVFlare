@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -49,7 +49,7 @@ class CyclicRecipe(BaseCyclicRecipe):
         self,
         *,
         name: str = "cyclic",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         num_rounds: int = 2,
         min_clients: int = 2,

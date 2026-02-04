@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional
+from typing import Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -130,7 +130,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        per_site_config: Optional[Dict[str, dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,

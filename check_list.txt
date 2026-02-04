@@ -1,0 +1,259 @@
+================================================================================
+RECIPE INTERFACE IMPLEMENTATION STATUS - COMPREHENSIVE CHECKLIST
+================================================================================
+Generated: 2026-01-30
+
+Legend:
+  ✅ = Implemented (initial_ckpt + dict config support where applicable)
+  ⏸️ = Deferred (future work)
+  N/A = Not applicable (no model input or external management)
+  PR1 = Core implementation (ModelConfig, Persistors, Wrappers)
+  PR2 = Standard training recipes
+  PR3 = Special patterns + remaining recipes
+
+================================================================================
+PR1: CORE IMPLEMENTATION
+================================================================================
+
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/recipe/model_config.py                          | ✅ PR1 | ModelConfig dataclass
+nvflare/recipe/model_config_handler.py                  | ✅ PR1 | Composition handler
+
+PERSISTORS:
+nvflare/app_opt/pt/file_model_persistor.py              | ✅ PR1 | source_ckpt_file_full_name
+nvflare/app_opt/tf/model_persistor.py                   | ✅ PR1 | source_ckpt_file_full_name
+nvflare/app_common/np/np_model_persistor.py             | ✅ PR1 | source_ckpt_file_full_name
+nvflare/app_common/ccwf/comps/np_file_model_persistor.py| ✅ PR1 | Absolute path support
+nvflare/app_opt/sklearn/joblib_model_param_persistor.py | ✅ PR1 | source_ckpt_file_full_name
+
+MODEL WRAPPERS:
+nvflare/app_opt/pt/job_config/model.py (PTModel)        | ✅ PR1 | Dict config + initial_ckpt
+nvflare/app_opt/tf/job_config/model.py (TFModel)        | ✅ PR1 | Dict config + initial_ckpt
+
+================================================================================
+PR2: STANDARD TRAINING RECIPES
+================================================================================
+
+BASE/UNIFIED RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/recipe/fedavg.py (FedAvgRecipe)                 | ✅ PR2 | Base, uses ModelConfigHandler
+nvflare/recipe/cyclic.py (CyclicRecipe)                 | ✅ PR2 | Base, uses ModelConfigHandler
+
+PYTORCH RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/pt/recipes/fedavg.py (FedAvgRecipe)     | ✅ PR2 | Extends unified
+nvflare/app_opt/pt/recipes/fedopt.py (FedOptRecipe)     | ✅ PR2 | Standalone with handler
+nvflare/app_opt/pt/recipes/scaffold.py (ScaffoldRecipe) | ✅ PR2 | Standalone with handler
+nvflare/app_opt/pt/recipes/cyclic.py (CyclicRecipe)     | ✅ PR2 | Extends unified
+nvflare/app_opt/pt/recipes/fedavg_he.py (FedAvgHERecipe)| ✅ PR2 | HE variant
+
+TENSORFLOW RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/tf/recipes/fedavg.py (FedAvgRecipe)     | ✅ PR2 | Extends unified
+nvflare/app_opt/tf/recipes/fedopt.py (FedOptRecipe)     | ✅ PR2 | Standalone with handler
+nvflare/app_opt/tf/recipes/scaffold.py (ScaffoldRecipe) | ✅ PR2 | Standalone with handler
+nvflare/app_opt/tf/recipes/cyclic.py (CyclicRecipe)     | ✅ PR2 | Extends unified
+
+SKLEARN RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/sklearn/recipes/fedavg.py (SklearnFedAvgRecipe) | ✅ PR2 | Extends unified
+
+NUMPY RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_common/np/recipes/fedavg.py (NumpyFedAvgRecipe)     | ✅ PR2 | Extends unified
+
+================================================================================
+PR3: SPECIAL PATTERNS + REMAINING RECIPES
+================================================================================
+
+SKLEARN PARAMETER-BASED (no initial_model, uses hyperparameters):
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/sklearn/recipes/kmeans.py (KMeansFedAvgRecipe)  | ✅ PR3 | initial_ckpt via persistor
+nvflare/app_opt/sklearn/recipes/svm.py (SVMFedAvgRecipe)        | ✅ PR3 | initial_ckpt via persistor
+
+SWARM LEARNING (CCWF pattern):
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/pt/recipes/swarm.py (SimpleSwarmLearningRecipe) | ✅ PR3 | New location, implementation
+nvflare/app_common/ccwf/recipes/swarm.py                        | ✅ PR3 | Backward compat re-export
+
+EDGE RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/edge/tools/edge_fed_buff_recipe.py (EdgeFedBuffRecipe)  | ✅ PR3 | Dict config + initial_ckpt
+nvflare/edge/tools/et_fed_buff_recipe.py (ETFedBuffRecipe)      | ✅ PR3 | Passes to parent
+
+EVALUATION RECIPES:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/pt/recipes/fedeval.py (FedEvalRecipe)           | ✅ PR3 | initial_ckpt REQUIRED
+nvflare/app_common/np/recipes/cross_site_eval.py (NumpyCrossSiteEvalRecipe) | ✅ PR3 | initial_ckpt support
+nvflare/app_opt/tf/recipes/fedeval.py (TFEvalRecipe)            | ⏸️ DEFERRED | Create when needed
+nvflare/app_common/np/recipes/fedeval.py (NPEvalRecipe)         | ⏸️ DEFERRED | Create when needed
+
+NUMPY LR RECIPE:
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_common/np/recipes/lr/fedavg.py (FedAvgLrRecipe)     | ✅ PR3 | initial_ckpt support
+
+================================================================================
+DEFERRED / FUTURE WORK
+================================================================================
+
+XGBOOST RECIPES (file-based, requires executor chain changes):
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/xgboost/recipes/histogram.py (XGBHorizontalRecipe) | ⏸️ DEFERRED | Has pre-trained via custom_dir
+nvflare/app_opt/xgboost/recipes/vertical.py (XGBVerticalRecipe)    | ⏸️ DEFERRED | Has pre-trained via custom_dir
+nvflare/app_opt/xgboost/recipes/bagging.py (XGBBaggingRecipe)      | ⏸️ DEFERRED | Has pre-trained via custom_dir
+
+CROSS-SITE EVALUATION (standalone recipes, not yet implemented):
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+PTCrossSiteEvalRecipe                                   | ⏸️ DEFERRED | Would use CrossSiteModelEval
+TFCrossSiteEvalRecipe                                   | ⏸️ DEFERRED | Would use CrossSiteModelEval
+
+================================================================================
+NOT APPLICABLE (no model input or externally managed)
+================================================================================
+
+File                                                    | Status | Notes
+--------------------------------------------------------|--------|------------------
+nvflare/app_opt/flower/recipe.py (FlowerRecipe)         | N/A    | Flower manages models internally
+nvflare/recipe/fedstats.py (FedStatsRecipe)             | N/A    | Statistics only, no model
+nvflare/app_common/psi/recipes/dh_psi.py (DhPSIRecipe)  | N/A    | PSI protocol, no model
+
+================================================================================
+SUMMARY
+================================================================================
+
+Category                         | Total | Done | Deferred | N/A
+---------------------------------|-------|------|----------|-----
+PR1 Core (files)                 |   9   |  9   |    0     |  0
+PR2 Standard Training Recipes    |  12   | 12   |    0     |  0
+PR3 Sklearn KMeans/SVM           |   2   |  2   |    0     |  0
+PR3 Swarm Learning               |   2   |  2   |    0     |  0
+PR3 Edge FedBuff                 |   2   |  2   |    0     |  0
+PR3 Evaluation (FedEval, CrossSite)|  4  |  2   |    2     |  0
+PR3 NumPy LR                     |   1   |  1   |    0     |  0
+XGBoost (Deferred)               |   3   |  0   |    3     |  0
+CrossSite Standalone (Deferred)  |   2   |  0   |    2     |  0
+N/A Recipes                      |   3   |  -   |    -     |  3
+---------------------------------|-------|------|----------|-----
+TOTAL                            |  40   | 30   |    7     |  3
+
+PR3 Evaluation Details:
+  - FedEvalRecipe (PT)            ✅ Done - initial_ckpt REQUIRED
+  - NumpyCrossSiteEvalRecipe      ✅ Done - initial_ckpt support
+  - TFEvalRecipe                  ⏸️ Deferred - create when needed
+  - NPEvalRecipe                  ⏸️ Deferred - create when needed
+
+Implementation Rate: 30/37 applicable = 81.1%
+
+================================================================================
+TESTING STATUS
+================================================================================
+
+Unit Tests:
+[✅] tests/unit_test/recipe/model_config_test.py          - PR1
+[✅] tests/unit_test/recipe/model_config_handler_test.py  - PR1
+[✅] tests/unit_test/recipe/pt_persistor_test.py          - PR1
+[✅] tests/unit_test/recipe/tf_persistor_test.py          - PR1
+[✅] tests/unit_test/recipe/pt_model_wrapper_test.py      - PR1
+[✅] tests/unit_test/recipe/tf_model_wrapper_test.py      - PR1
+[✅] tests/unit_test/recipe/fedavg_recipe_test.py         - PR2 (incl dict config job export)
+[✅] tests/unit_test/recipe/cyclic_recipe_test.py         - PR2
+[✅] tests/unit_test/recipe/fedopt_recipe_test.py         - PR2
+[✅] tests/unit_test/recipe/scaffold_recipe_test.py       - PR2
+[✅] tests/unit_test/recipe/sklearn_recipe_test.py        - PR2/PR3
+[✅] tests/unit_test/recipe/swarm_recipe_test.py          - PR3
+[✅] tests/unit_test/recipe/edge_recipe_test.py           - PR3
+[✅] tests/unit_test/recipe/eval_recipe_test.py           - PR3
+[✅] tests/unit_test/recipe/numpy_lr_recipe_test.py       - PR3
+
+Integration Tests:
+[✅] tests/integration_test/recipe_system_test.py         - Dict config simulation
+
+================================================================================
+DOCUMENTATION STATUS
+================================================================================
+
+RST Documentation (13 files):                              | Status
+----------------------------------------------------------|--------
+docs/user_guide/data_scientist_guide/job_recipe.rst       | ✅ Done
+docs/user_guide/data_scientist_guide/available_recipes.rst| ✅ Done
+docs/examples/hello_numpy.rst                              | ✅ Done
+docs/hello-world/hello-pt/index.rst                        | ✅ Done
+docs/hello-world/hello-tf/index.rst                        | ✅ Done
+docs/hello-world/hello-lightning/index.rst                 | ✅ Done
+docs/hello-world/hello-dp/index.rst                        | ✅ Done
+docs/programming_guide/controllers/client_controlled_workflows.rst | ✅ Done
+docs/programming_guide/execution_api_type/client_api.rst   | ✅ Done
+docs/programming_guide/fed_job_api.rst                     | ✅ Done
+docs/programming_guide/tensor_downloader.rst               | ✅ Done
+docs/user_guide/nvflare_cli/poc_command.rst                | ✅ Done
+docs/user_guide/data_scientist_guide/client_api_usage.rst  | ✅ Done
+
+Hello-World Examples (18 files):                           | Status
+----------------------------------------------------------|--------
+hello-pt: job.py, README.md                                | ✅ Done
+hello-tf: job.py, README.md                                | ✅ Done
+hello-numpy: job.py, README.md                             | ✅ Done
+hello-lightning: job.py                                    | ✅ Done
+hello-cyclic: job.py, README.md                            | ✅ Done
+hello-dp: job.py, README.md                                | ✅ Done
+hello-lightning-eval: job.py, README.md                    | ✅ Done
+hello-numpy-cross-val: job.py, README.md                   | ✅ Done
+hello-lr: job.py, README.md                                | ✅ Done
+hello-flower: N/A (external model management)
+hello-tabular-stats: N/A (no model)
+
+Advanced Examples (42 files):                              | Status
+----------------------------------------------------------|--------
+experiment-tracking/tensorboard: job.py, README.md         | ✅ Done
+experiment-tracking/wandb: job.py, README.md               | ✅ Done
+experiment-tracking/mlflow/hello-pt-mlflow: job.py, README.md        | ✅ Done
+experiment-tracking/mlflow/hello-pt-mlflow-client: job.py, README.md | ✅ Done
+experiment-tracking/mlflow/hello-lightning-mlflow: job.py, README.md | ✅ Done
+experiment-tracking/README.md                              | ✅ Done
+cifar10/pt/cifar10-sim (5 variants): job.py                | ✅ Done
+cifar10/pt/cifar10-sim/README.md                           | ✅ Done
+cifar10/pt/cifar10-real-world (2 variants): job.py         | ✅ Done
+cifar10/pt/cifar10-real-world/cifar10_fedavg_he/README.md  | ✅ Done
+cifar10/tf (4 variants): job.py                            | ✅ Done
+monai/mednist: job.py                                      | ✅ Done
+monai/spleen_ct_segmentation/job_fedavg: job.py            | ✅ Done
+gnn/protein: job.py                                        | ✅ Done
+gnn/finance: job.py                                        | ✅ Done
+multi-gpu/pt: job.py                                       | ✅ Done
+multi-gpu/tf: job.py                                       | ✅ Done
+multi-gpu/lightning: job.py                                | ✅ Done
+llm_hf: job.py, README.md                                  | ✅ Done
+bionemo/task_fitting/job_fedavg: job.py, README.md         | ✅ Done
+amplify/job_multitask: job.py, README.md                   | ✅ Done
+amplify/job_alltasks: job.py, README.md                    | ✅ Done
+tensor-stream: job.py                                      | ✅ Done
+edge/README.md                                             | ✅ Done
+monitoring/jobs/README.md                                  | ✅ Done
+
+Tutorial Notebooks (3 files):                              | Status
+----------------------------------------------------------|--------
+examples/tutorials/job_recipe.ipynb                        | ✅ Done
+examples/hello-world/hello_world.ipynb                     | ✅ Done
+examples/hello-world/hello-pt/hello-pt.ipynb               | ✅ Done
+
+DOCUMENTATION SUMMARY:
+- RST files: 13 updated
+- Hello-world examples: 18 files updated
+- Advanced examples: 42 files updated
+- Tutorial notebooks: 3 updated
+- Total: 76 documentation files updated
+
+================================================================================

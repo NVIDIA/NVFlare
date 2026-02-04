@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -130,7 +130,7 @@ class FedAvgRecipeWithHE(Recipe):
         self,
         *,
         name: str = "fedavg_he",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,

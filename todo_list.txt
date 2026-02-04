@@ -1,0 +1,574 @@
+================================================================================
+RECIPE MODEL INTERFACE CHANGES - TODO LIST
+================================================================================
+
+Goal: Support both model class instantiation and dictionary-based model 
+configuration, plus `initial_ckpt` for pre-trained checkpoints that may 
+only exist on the server.
+
+Design Principles:
+- COMPOSITION ONLY (NO inheritance for new functionality)
+- Each recipe that needs ModelConfig creates its own handler instance
+- Consistent interface across all training recipes
+- Flexible validation (error on hard requirements, warn on soft guidance)
+- Checkpoint path validation without existence check
+
+================================================================================
+PR STRUCTURE (3 PRs per branch, 6 total)
+================================================================================
+
+Each PR is created for both 2.7 and main branches:
+
+PR 1: CORE IMPLEMENTATION
+-------------------------
+Content: Phase 1-3 (ModelConfig, Persistors, Model Wrappers)
+Status:
+  - 2.7 branch: PR #4082 (2.7_recipe_interface_part1) ✅ CREATED
+  - main branch: PR (recipe_interface) ✅ CREATED
+
+PR 2: STANDARD TRAINING RECIPES
+-------------------------------
+Content: Phase 4.1-4.5 (standard training recipes only)
+Status:
+  - 2.7 branch: TBD
+  - main branch: TBD
+
+Standard training recipes (same pattern: add initial_ckpt, use ModelConfigHandler):
+  - Phase 4.1: Base recipes (fedavg.py, cyclic.py) ✅ DONE
+  - Phase 4.2: PT Recipes (fedavg, fedopt, scaffold, cyclic, fedavg_he) ✅ DONE
+  - Phase 4.3: TF Recipes (fedavg, fedopt, scaffold, cyclic) ✅ DONE
+  - Phase 4.4: Sklearn FedAvg Recipe ✅ DONE
+  - Phase 4.5: NumPy FedAvg Recipe ✅ DONE
+
+PR 3: SPECIAL PATTERNS + ALL REMAINING
+--------------------------------------
+Content: Phase 4B (all special cases) + Phase 7 (docs)
+Status:
+  - 2.7 branch: TBD
+  - main branch: TBD
+
+Special patterns requiring custom handling:
+  - 4B.1: Sklearn KMeans/SVM (parameter-based, no initial_model)
+  - 4B.2: Swarm Learning (CCWF pattern)
+  - 4B.3: Edge FedBuff recipes (DeviceModel wrapper)
+  - 4B.4: Evaluation recipes (FedEval, CrossSiteEval)
+  - 4B.5: XGBoost recipes (file-based models)
+  - 4B.6: NumPy LR Recipe (LRModelPersistor)
+  - 4B.7: Flower Recipe (Flower-specific handling)
+  - Phase 7: Documentation updates
+
+================================================================================
+PHASE 1: CORE IMPLEMENTATION (1-2 days) - PR 1
+================================================================================
+
+1.1 Create ModelConfig Dataclass
+--------------------------------
+[ ] Create `nvflare/recipe/model_config.py`
+    - ModelConfig dataclass with fields:
+      - model: Union[Any, Dict, None]
+      - initial_ckpt: Optional[str]
+      - model_class_path: Optional[str] (extracted from dict or derived)
+      - model_args: Optional[Dict]
+    - _validate_checkpoint_path() function
+      - Type check (must be str)
+      - Absolute path check
+      - Warn on unknown extension (don't error)
+    - Framework auto-detection from model type
+
+1.2 Create ModelConfigHandler (Composition - Standalone Class)
+--------------------------------------------------------------
+[ ] Create `nvflare/recipe/model_config_handler.py`
+    - ModelConfigHandler is a STANDALONE class (not inherited)
+    - Each recipe creates its OWN instance of this handler
+    - Methods:
+      - __init__(model, initial_ckpt, framework) - takes inputs, validates
+      - parse_model_input() - normalize model object or dict
+      - get_model_config_dict() - export for JSON config
+      - create_persistor() - create appropriate persistor for framework
+      - setup_model_components(job) - add model/persistor to job
+    - Framework-specific persistor selection logic
+
+    Usage in any recipe (composition pattern):
+    ```python
+    class SomeRecipe(Recipe):
+        def __init__(self, initial_model, initial_ckpt, framework, ...):
+            # Composition: create handler instance
+            handler = ModelConfigHandler(
+                model=initial_model,
+                initial_ckpt=initial_ckpt,
+                framework=framework
+            )
+            
+            # Use handler to setup model
+            persistor_id = handler.setup_model_components(job)
+    ```
+
+================================================================================
+PHASE 2: PERSISTOR CHANGES (1 day) - PR 1
+================================================================================
+
+2.1 PyTorch Persistor
+---------------------
+[ ] nvflare/app_opt/pt/file_model_persistor.py
+    - Current: Has source_ckpt_file_full_name, validates existence at init
+    - Change: Remove existence check at init (line 124-125)
+    - Keep runtime check in load_model()
+
+2.2 TensorFlow Persistor
+------------------------
+[ ] nvflare/app_opt/tf/model_persistor.py
+    - Current: No checkpoint support
+    - Change: Add source_ckpt_file_full_name parameter
+    - Add checkpoint loading logic in load_model()
+
+2.3 NumPy Persistors
+--------------------
+[ ] nvflare/app_common/np/np_model_persistor.py
+    - Current: Uses initial_model (list)
+    - Change: Add source_ckpt_file_full_name parameter
+    - Load from .npy file if provided
+
+[ ] nvflare/app_common/ccwf/comps/np_file_model_persistor.py
+    - Current: Uses relative initial_model_file_name
+    - Change: Add absolute path support
+
+2.4 Sklearn Persistor
+---------------------
+[ ] nvflare/app_opt/sklearn/joblib_model_param_persistor.py
+    - Current: Uses initial_params (dict)
+    - Change: Add source_ckpt_file_full_name parameter
+    - Load from .joblib/.pkl file if provided
+
+================================================================================
+PHASE 3: MODEL WRAPPER CHANGES (0.5 day) - PR 1
+================================================================================
+
+3.1 PyTorch Model Wrapper
+-------------------------
+[ ] nvflare/app_opt/pt/job_config/model.py (PTModel class)
+    - Handle dict model input
+    - Add initial_ckpt parameter
+    - Update add_to_fed_job() to handle new inputs
+
+3.2 TensorFlow Model Wrapper
+----------------------------
+[ ] nvflare/app_opt/tf/job_config/model.py (TFModel class)
+    - Handle dict model input
+    - Add initial_ckpt parameter
+    - Update add_to_fed_job() to handle new inputs
+
+================================================================================
+PHASE 4: RECIPE UPDATES - EACH ADDS ITS OWN HANDLER (1-2 days) - PR 2
+================================================================================
+
+REQUIREMENT: Every recipe with model input MUST support ALL THREE input types:
+  1. Class instance (e.g., Net())           - backward compatible
+  2. Dict config ({"path": "...", "args": {...}}) - new
+  3. initial_ckpt (absolute path string)    - new
+
+Each recipe explicitly creates its own ModelConfigHandler instance.
+NO reliance on parent class inheritance for the new functionality.
+
+4.1 Unified/Base Recipes ✅ DONE
+--------------------------------
+[x] nvflare/recipe/fedavg.py
+    - Added initial_ckpt: Optional[str] = None
+    - Created ModelConfigHandler instance (composition)
+
+[x] nvflare/recipe/cyclic.py
+    - Added initial_ckpt: Optional[str] = None
+    - Created ModelConfigHandler instance (composition)
+
+4.2 PyTorch Recipes ✅ DONE
+---------------------------
+[x] nvflare/app_opt/pt/recipes/fedavg.py
+[x] nvflare/app_opt/pt/recipes/fedopt.py
+[x] nvflare/app_opt/pt/recipes/scaffold.py
+[x] nvflare/app_opt/pt/recipes/cyclic.py
+[x] nvflare/app_opt/pt/recipes/fedavg_he.py
+
+4.3 TensorFlow Recipes ✅ DONE
+------------------------------
+[x] nvflare/app_opt/tf/recipes/fedavg.py
+[x] nvflare/app_opt/tf/recipes/fedopt.py
+[x] nvflare/app_opt/tf/recipes/scaffold.py
+[x] nvflare/app_opt/tf/recipes/cyclic.py
+
+4.4 Sklearn FedAvg Recipe ✅ DONE
+---------------------------------
+[x] nvflare/app_opt/sklearn/recipes/fedavg.py
+    - Added initial_ckpt support via persistor
+
+(SVM/KMeans moved to PR3 - special patterns)
+
+4.5 NumPy FedAvg Recipe ✅ DONE
+-------------------------------
+[x] nvflare/app_common/np/recipes/fedavg.py
+    - Added initial_ckpt support via persistor
+
+(Swarm, Edge, Evaluation recipes moved to PR3 - special patterns)
+
+================================================================================
+PHASE 4B: SPECIAL CASES - NON-STANDARD PATTERNS - PR 3
+================================================================================
+
+These recipes need special handling (don't follow standard persistor pattern):
+
+4B.1 Sklearn Parameter-Based Recipes ✅ DONE
+--------------------------------------------
+These use hyperparameters instead of model objects (no initial_model):
+
+[x] nvflare/app_opt/sklearn/recipes/kmeans.py
+    - Added initial_ckpt with validation
+    - Passed to JoblibModelParamPersistor as source_ckpt_file_full_name
+
+[x] nvflare/app_opt/sklearn/recipes/svm.py
+    - Added initial_ckpt with validation
+    - Passed to JoblibModelParamPersistor as source_ckpt_file_full_name
+
+4B.2 Swarm Learning Recipe ✅ DONE
+-----------------------------------
+[x] nvflare/app_common/ccwf/recipes/swarm.py (original location, backward compatible)
+    - Added initial_ckpt: Optional[str] = None parameter
+    - Added validation via _SwarmValidator
+    - Passed source_ckpt_file_full_name to PTFileModelPersistor
+    - Full backward compatibility - existing imports continue to work
+
+[x] nvflare/app_opt/pt/recipes/swarm.py (convenience re-export)
+    - Re-exports SimpleSwarmLearningRecipe from original location
+    - Allows: from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    - Added to PT recipes __init__.py exports
+
+4B.3 Edge Recipes ✅ DONE
+--------------------------
+[x] nvflare/edge/tools/edge_fed_buff_recipe.py
+    - Added initial_ckpt: Optional[str] = None parameter
+    - Added _EdgeFedBuffValidator for checkpoint validation
+    - Changed model to accept Union[Any, Dict] (dict config support)
+    - Uses ModelConfigHandler for persistor creation
+
+[x] nvflare/edge/tools/et_fed_buff_recipe.py
+    - Added initial_ckpt: Optional[str] = None parameter
+    - Passes initial_ckpt to parent EdgeFedBuffRecipe
+
+4B.4 Evaluation Recipes ✅ PARTIALLY DONE
+-----------------------------------------
+COMPLETED:
+[x] nvflare/app_opt/pt/recipes/fedeval.py (FedEvalRecipe)
+    - Added initial_ckpt as REQUIRED parameter
+    - Added dict model config support
+    - Removed .checkpoint attribute requirement
+
+[ ] nvflare/app_opt/tf/recipes/fedeval.py (TFEvalRecipe) - DEFERRED
+    - Create when needed for parity with PT
+    - Would use TFModelPersistor with source_ckpt_file_full_name
+
+[ ] nvflare/app_common/np/recipes/fedeval.py (NPEvalRecipe) - DEFERRED
+    - Create when needed for parity with PT
+    - Would use NPModelPersistor with source_ckpt_file_full_name
+
+[x] nvflare/app_common/np/recipes/cross_site_eval.py (NumpyCrossSiteEvalRecipe)
+    - Added initial_ckpt parameter
+    - NPModelLocator updated to support absolute paths
+
+[x] Persistor get_model_inventory() updates for CrossSiteEval
+    - PTFileModelPersistor.get_model_inventory() includes source_ckpt_file_full_name
+    - TFModelPersistor.get_model_inventory() includes source_ckpt_file_full_name
+
+DEFERRED (Future Work):
+
+Server-side CrossSiteEval recipes (standalone):
+[ ] PTCrossSiteEvalRecipe - standalone cross-site eval recipe for PyTorch
+    - Currently no dedicated recipe; users must use training recipe + add_cross_site_evaluation()
+    - Would use CrossSiteModelEval controller (evaluates MULTIPLE models, creates matrix)
+    - Different from FedEvalRecipe which uses EvalController (ONE model to all clients)
+
+[ ] TFCrossSiteEvalRecipe - standalone cross-site eval recipe for TensorFlow
+    - Same gap as PyTorch
+    - Would need TFFileModelLocator with source_ckpt support (already done in persistor)
+
+Client-side CrossSiteEval support:
+[ ] Client-side validators for CrossSiteEval
+    - NumPy: NPValidator exists and is auto-added by add_cross_site_evaluation()
+    - PyTorch: Uses Client API pattern (flare.is_evaluate()) - no component needed
+    - TensorFlow: TFValidator exists but not auto-added; requires manual configuration
+    - Need consistent auto-configuration across all frameworks
+
+[ ] Client model submission for CrossSiteEval
+    - Clients submit their best models via "submit_model" task
+    - Currently handled by client scripts checking for submit_model task
+    - No recipe-level abstraction for client-side model submission
+
+Note: FedEvalRecipe vs CrossSiteEvalRecipe distinction:
+- FedEvalRecipe (EvalController): Sends ONE model to all clients for evaluation
+- CrossSiteEvalRecipe (CrossSiteModelEval): Evaluates MULTIPLE models (server + client submitted)
+  across all clients, creating an evaluation matrix
+
+4B.5 XGBoost Recipes ⏸️ DEFERRED
+---------------------------------
+XGBoost already supports pre-trained models via file placement in custom_dir.
+Adding initial_ckpt would require changes across executor + runner chain.
+Defer until needed.
+
+4B.6 NumPy LR Recipe ✅ DONE
+--------------------
+[x] nvflare/app_common/np/recipes/lr/fedavg.py (FedAvgLrRecipe)
+    - Added initial_ckpt to LRModelPersistor
+    - Added initial_ckpt to FedAvgLrRecipe with validation
+
+4B.7 Flower Recipe - N/A (EXTERNALLY MANAGED)
+----------------------------------------------
+[-] nvflare/app_opt/flower/recipe.py (FlowerRecipe)
+    - N/A: Flower handles models internally via flower_content directory
+    - No initial_model parameter exists - model defined in Flower code
+    - No initial_ckpt needed - Flower manages its own checkpoints
+    - NVFlare acts as infrastructure bridge only
+
+================================================================================
+PHASE 5: NO CHANGES REQUIRED
+================================================================================
+
+These recipes don't take model input or use different paradigms:
+
+- FedStatsRecipe              (statistics computation, no model)
+- DhPSIRecipe                 (Private Set Intersection, no model)
+
+================================================================================
+PHASE 6: TESTING AND VALIDATION (1 day) - PR 2 & PR 3
+================================================================================
+
+6.1 Unit Tests
+--------------
+[ ] Test ModelConfig validation logic
+    - Type validation
+    - Absolute path validation
+    - Extension warning (not error)
+[ ] Test ModelConfigHandler with different frameworks
+[ ] Test persistor changes
+
+6.2 Integration Tests - All Three Input Types
+----------------------------------------------
+For EACH recipe that accepts model input, test:
+
+[ ] Test with class instance (backward compatibility)
+    - FedAvgRecipe(initial_model=Net(), ...)
+    - Verify model state_dict is extracted correctly
+
+[ ] Test with dict config (new)
+    - FedAvgRecipe(initial_model={"path": "...", "args": {...}}, ...)
+    - Verify config is exported to JSON correctly
+    - Verify no instantiation happens at job creation time
+
+[ ] Test with initial_ckpt only (new)
+    - FedAvgRecipe(initial_ckpt="/abs/path/model.pt", ...)
+    - Verify path validation (absolute path required)
+    - Verify no file existence check at job creation
+
+[ ] Test with class instance + initial_ckpt (new)
+    - FedAvgRecipe(initial_model=Net(), initial_ckpt="/abs/path/model.pt", ...)
+    - Verify checkpoint takes precedence for loading
+    - Verify model used for architecture reference
+
+[ ] Test framework-specific recipes
+    - PT: FedAvgRecipe, FedOptRecipe, ScaffoldRecipe, CyclicRecipe
+    - TF: FedAvgRecipe, FedOptRecipe, ScaffoldRecipe, CyclicRecipe
+    - NumPy: NumpyFedAvgRecipe
+    - Edge: EdgeFedBuffRecipe
+
+[ ] Test evaluation recipes with checkpoint
+    - FedEvalRecipe with initial_ckpt
+    - NumpyCrossSiteEvalRecipe with initial_ckpt (single file)
+    - NumpyCrossSiteEvalRecipe with model_dir (existing behavior)
+
+6.3 Backward Compatibility
+--------------------------
+[ ] Verify existing model object code still works
+[ ] Test all existing examples continue to work
+[ ] Verify no breaking changes to API
+
+================================================================================
+PHASE 7: DOCUMENTATION AND EXAMPLES (1 day) - PR 2 & PR 3
+================================================================================
+
+7.1 Update Documentation
+------------------------
+[ ] Add ModelConfig/ModelConfigHandler documentation
+[ ] Update recipe API documentation
+[ ] Document initial_ckpt parameter
+[ ] Add migration guide
+
+7.2 Update Examples
+-------------------
+[ ] Create new examples using dict model config
+[ ] Create new examples using initial_ckpt
+[ ] Keep existing examples for backward compatibility
+
+================================================================================
+VALIDATION LOGIC SUMMARY
+================================================================================
+
+Hard Requirements (raise error):
+- initial_ckpt must be str type
+- initial_ckpt must be absolute path
+- PyTorch: initial_ckpt requires initial_model (class or dict) for architecture
+  (raise error if initial_ckpt provided without initial_model for PT)
+
+Soft Guidance (warning only, proceed):
+- Unknown file extension for framework
+- No extension (directory-based model)
+
+Framework-Specific Behavior:
+- PYTORCH:    initial_ckpt REQUIRES initial_model (for architecture)
+- TENSORFLOW: initial_ckpt can work alone (Keras saves full model)
+- NUMPY:      initial_ckpt can work alone (.npy is just data)
+- RAW:        initial_ckpt can work alone (depends on format)
+
+Known Extensions by Framework:
+- PYTORCH:    .pt, .pth, .ckpt, .bin, .safetensors, .onnx, .mar
+- TENSORFLOW: .h5, .keras, .pb, .ckpt, .tflite, .weights.h5, .onnx
+- NUMPY:      .npy, .npz
+- RAW:        .npy, .npz, .pkl, .joblib, .json, .onnx, .safetensors
+
+================================================================================
+USER-FACING API (After Implementation)
+================================================================================
+
+# Option 1: Instantiated model (existing behavior - backward compatible)
+recipe = FedAvgRecipe(
+    initial_model=Net(),
+    ...
+)
+
+# Option 2: Dictionary config (new)
+recipe = FedAvgRecipe(
+    initial_model={
+        "path": "my_module.models.Net",
+        "args": {"num_classes": 10, "hidden_dim": 256}
+    },
+    ...
+)
+
+# Option 3: Checkpoint path only (TensorFlow/Keras ONLY)
+# Works because Keras .h5 / SavedModel contains full model (arch + weights)
+recipe = FedAvgRecipe(
+    initial_ckpt="/path/to/server/model.h5",  # or SavedModel directory
+    framework=FrameworkType.TENSORFLOW,
+    ...
+)
+
+# Option 4: Model class + checkpoint (PyTorch - REQUIRED for ckpt)
+# PyTorch .pt/.pth only contains state_dict, needs model class for architecture
+recipe = FedAvgRecipe(
+    initial_model=Net(),  # Required for architecture
+    initial_ckpt="/path/to/server/pretrained_model.pt",
+    framework=FrameworkType.PYTORCH,
+    ...
+)
+
+# Option 5: Dict config + checkpoint (PyTorch alternative)
+# Class path provides architecture, ckpt provides weights
+recipe = FedAvgRecipe(
+    initial_model={"path": "my_module.Net", "args": {"num_classes": 10}},
+    initial_ckpt="/path/to/server/pretrained_model.pt",
+    framework=FrameworkType.PYTORCH,
+    ...
+)
+
+================================================================================
+FILE COUNT SUMMARY
+================================================================================
+
+Category                      | Count
+------------------------------|-------
+New files                     | 2 (model_config.py, model_config_handler.py)
+Persistor files               | 5
+Model wrapper files           | 2
+Recipe files                  | 20 (including eval recipes, svm.py, kmeans.py)
+------------------------------|-------
+TOTAL FILES TO CREATE/MODIFY  | 29
+
+================================================================================
+AGGRESSIVE 2-3 DAY SCHEDULE
+================================================================================
+
+DAY 1 (Morning): Core Infrastructure
+-------------------------------------
+[x] model_config.py              (1 hour) DONE
+    - ModelConfig dataclass
+    - _validate_checkpoint_path()
+    
+[x] model_config_handler.py      (2 hours) DONE
+    - ModelConfigHandler class
+    - parse_model_input()
+    - create_persistor() for each framework
+    - setup_model_components()
+
+[x] Unit tests for core          (1 hour) DONE
+    - tests/unit_test/recipe/model_config_test.py
+    - tests/unit_test/recipe/model_config_handler_test.py
+    - Note: pytest has numpy segfault on this system (env issue)
+
+DAY 1 (Afternoon): All Persistors
+---------------------------------
+[x] PT file_model_persistor.py   (30 min) - remove existence check DONE
+[x] TF model_persistor.py        (45 min) - add source_ckpt support DONE
+[x] NP np_model_persistor.py     (30 min) - add source_ckpt support DONE
+[x] NP np_file_model_persistor.py (30 min) - add abs path support DONE
+[x] Sklearn joblib_persistor.py  (30 min) - add source_ckpt support DONE
+[x] Model wrappers (PT, TF)      (45 min) - dict + ckpt support DONE
+
+DAY 2 (Morning): Base + PT Recipes
+----------------------------------
+[ ] recipe/fedavg.py             (45 min) - unified base
+[ ] recipe/cyclic.py             (30 min)
+[ ] pt/recipes/fedavg.py         (30 min)
+[ ] pt/recipes/fedopt.py         (30 min)
+[ ] pt/recipes/scaffold.py       (30 min)
+[ ] pt/recipes/cyclic.py         (20 min)
+[ ] pt/recipes/fedavg_he.py      (30 min)
+
+DAY 2 (Afternoon): TF + Other Recipes
+-------------------------------------
+[ ] tf/recipes/fedavg.py         (30 min)
+[ ] tf/recipes/fedopt.py         (30 min)
+[ ] tf/recipes/scaffold.py       (30 min)
+[ ] tf/recipes/cyclic.py         (20 min)
+[ ] sklearn/recipes/fedavg.py    (30 min)
+[ ] sklearn/recipes/svm.py       (15 min) - verify
+[ ] sklearn/recipes/kmeans.py    (15 min) - verify
+[ ] np/recipes/fedavg.py         (30 min)
+
+DAY 3 (Morning): Remaining Recipes + Eval
+-----------------------------------------
+[ ] swarm.py                     (30 min)
+[ ] edge_fed_buff_recipe.py      (30 min)
+[ ] et_fed_buff_recipe.py        (15 min) - verify
+[ ] pt/recipes/fedeval.py        (30 min)
+[ ] np/cross_site_eval.py        (30 min)
+
+DAY 3 (Afternoon): Testing + Polish
+-----------------------------------
+[ ] Integration tests - all 3 input types per framework (2 hours)
+[ ] Fix any issues found          (1 hour)
+[ ] Basic docstrings              (30 min)
+[ ] Final review + commit         (30 min)
+
+================================================================================
+TIME-SAVING STRATEGIES
+================================================================================
+
+1. COPY-PASTE PATTERN: After doing first recipe, copy pattern to others
+   - Handler instantiation is same across all recipes
+   - Just change framework type
+
+2. BATCH SIMILAR FILES: Do all PT recipes together, all TF together
+   - Same imports, same patterns
+
+3. MINIMAL TESTS FIRST: 
+   - 1 unit test per core function
+   - 1 integration test per framework (PT, TF, NP)
+   - Expand later if time
+
+4. SKIP FULL DOCS: Just update docstrings, full docs can be follow-up
+
+================================================================================

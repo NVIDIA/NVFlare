@@ -152,6 +152,25 @@ class TestPTFedOptRecipe:
                 **base_recipe_params,
             )
 
+    def test_dict_config_instantiates_model(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that dict config is instantiated to nn.Module before registration."""
+        from unittest.mock import patch
+
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        with patch("nvflare.app_opt.pt.recipes.fedopt.instantiate_class") as mock_instantiate:
+            mock_instantiate.return_value = simple_model
+
+            recipe = FedOptRecipe(
+                name="test_dict_instantiation",
+                initial_model={"path": "mymodule.MyModel", "args": {"input_size": 10}},
+                **base_recipe_params,
+            )
+
+            # Verify instantiate_class was called with correct arguments
+            mock_instantiate.assert_called_once_with("mymodule.MyModel", {"input_size": 10})
+            assert recipe.job is not None
+
 
 class TestTFFedOptRecipe:
     """Test cases for TensorFlow FedOptRecipe."""

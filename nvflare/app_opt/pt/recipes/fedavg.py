@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -99,7 +99,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -113,7 +113,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -122,7 +122,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         patience: Optional[int] = None,
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
     ):
         # Store PyTorch-specific model_locator before calling parent

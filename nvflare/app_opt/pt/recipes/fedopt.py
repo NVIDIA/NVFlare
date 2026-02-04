@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -120,7 +120,7 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -194,8 +194,21 @@ class FedOptRecipe(Recipe):
             min_clients=self.min_clients,
         )
 
+        # Handle dict config: instantiate model before registering as component
+        # PTFileModelPersistor expects component ID to resolve to nn.Module, not dict
+        model_to_register = self.initial_model
+        if isinstance(self.initial_model, dict):
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.initial_model.get("path")
+            class_args = self.initial_model.get("args", {})
+            try:
+                model_to_register = instantiate_class(class_path, class_args)
+            except Exception as e:
+                raise RuntimeError(f"Failed to instantiate model from dict config: {e}")
+
         # Add initial model as a separate component
-        job.to_server(self.initial_model, id=self.source_model)
+        job.to_server(model_to_register, id=self.source_model)
 
         # Add the persisted model to the job with checkpoint support
         persistor = PTFileModelPersistor(

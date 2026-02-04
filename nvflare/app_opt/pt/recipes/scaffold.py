@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -84,7 +84,7 @@ class ScaffoldRecipe(Recipe):
         self,
         *,
         name: str = "scaffold",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
