@@ -26,7 +26,6 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl.py"
 
     job = CCWFJob(name="cifar10_cyclic")
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Add TensorBoard analytics receiver to capture streamed metrics
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))

@@ -42,7 +42,6 @@ if __name__ == "__main__":
     job.to(PTModel(Net()), "server")
 
     job.to(IntimeModelSelector(key_metric="accuracy"), "server")
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Add TensorBoard analytics receiver to capture streamed metrics
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
@@ -55,8 +54,7 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, target=f"site-{i+1}")
-    # job.to_clients(executor)
+        job.to(executor, target=f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir/pt", gpu="0")

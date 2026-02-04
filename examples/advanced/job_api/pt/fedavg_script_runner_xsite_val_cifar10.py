@@ -215,7 +215,7 @@ if __name__ == "__main__":
             script=train_script,
             script_args=f"--data_split_path {data_split_root}",  # Pass data split path to clients
         )
-        job.to(executor, f"site-{i}")
+        job.to(executor, f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir/pt_xsite_val", gpu="0")

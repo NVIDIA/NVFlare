@@ -24,7 +24,6 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl_lightning.py"
 
     job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Add TensorBoard analytics receiver to capture streamed metrics
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
@@ -34,7 +33,7 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir/pt_lightning", gpu="0")

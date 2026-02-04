@@ -27,8 +27,8 @@ from torch.utils.data import Subset
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
 from nvflare.app_common.app_constant import ModelName
+from nvflare.client.tracking import SummaryWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
@@ -194,7 +194,9 @@ def main():
             print(
                 f"({client_id}) Evaluating received model for model selection. Accuracy on the 10000 test images: {accuracy}"
             )
-            summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
+            summary_writer.add_scalar(
+                tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round
+            )
 
             # (5.4) construct trained FL model
             output_model = flare.FLModel(
