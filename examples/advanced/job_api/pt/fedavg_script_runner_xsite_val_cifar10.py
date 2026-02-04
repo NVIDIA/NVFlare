@@ -29,6 +29,7 @@ from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEva
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -213,7 +214,10 @@ if __name__ == "__main__":
             script=train_script,
             script_args=f"--data_split_path {data_split_root}",  # Pass data split path to clients
         )
-        job.to(executor, f"site-{i}")
+        target = f"site-{i + 1}"
+        # Executor must handle train, evaluate, and submit_model tasks for cross-site validation
+        job.to(executor, target, tasks=["train", "evaluate", "submit_model"])
+        job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
