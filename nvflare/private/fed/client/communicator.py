@@ -401,6 +401,20 @@ class Communicator:
 
             task_name = task_data.get_header(ServerCommandKey.TASK_NAME)
             self.logger.debug(f"received task from parent {parent_fqcn}: {task_name=}")
+
+            # Check if server requires a minimum get_task_timeout (e.g., for tensor streaming)
+            min_timeout = task_data.get_header(ServerCommandKey.MIN_GET_TASK_TIMEOUT)
+            if min_timeout is not None:
+                with self._state_lock:
+                    if min_timeout > self.timeout:
+                        old_timeout = self.timeout
+                        self.timeout = min_timeout
+                        # Only log when actually adjusting timeout
+                        self.logger.info(
+                            f"Server requires get_task_timeout >= {min_timeout}s (likely for tensor streaming). "
+                            f"Automatically adjusting from {old_timeout}s to {min_timeout}s."
+                        )
+
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
