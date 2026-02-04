@@ -171,6 +171,7 @@ class TestRecipeConfigMethods:
 
     def test_add_server_config(self, temp_script):
         """Test add_server_config adds params to server app."""
+        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -178,6 +179,8 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,  # NUMPY can load from ckpt without model
         )
 
         config = {"np_download_chunk_size": 2097152}
@@ -190,6 +193,7 @@ class TestRecipeConfigMethods:
     def test_add_client_config(self, temp_script):
         """Test add_client_config applies to all clients and specific clients."""
         from nvflare.apis.job_def import ALL_SITES
+        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         # Test all clients
@@ -198,6 +202,8 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
         )
         config = {"timeout": 600}
         recipe.add_client_config(config)
@@ -208,6 +214,7 @@ class TestRecipeConfigMethods:
 
     def test_config_in_generated_json(self, temp_script):
         """Test that configs appear in generated JSON files."""
+        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -215,6 +222,8 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
         )
 
         recipe.add_server_config({"server_param": 123})
@@ -236,6 +245,7 @@ class TestRecipeConfigMethods:
 
     def test_config_type_error(self, temp_script):
         """Test TypeError is raised for non-dict arguments."""
+        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -243,6 +253,8 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
         )
 
         with pytest.raises(TypeError, match="config must be a dict"):
