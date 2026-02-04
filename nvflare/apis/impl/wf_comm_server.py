@@ -279,7 +279,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 original_task = getattr(task, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = task.completion_status
-                    if hasattr(task, "exception"):
+                    if getattr(task, "exception", None) is not None:
                         original_task.exception = task.exception
 
             # remember the task name and data to be sent to the client
@@ -309,7 +309,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 original_task = getattr(task, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = task.completion_status
-                    if hasattr(task, "exception"):
+                    if getattr(task, "exception", None) is not None:
                         original_task.exception = task.exception
 
             if not can_send_task:
@@ -454,7 +454,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 original_task = getattr(task, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = task.completion_status
-                    if hasattr(task, "exception"):
+                    if getattr(task, "exception", None) is not None:
                         original_task.exception = task.exception
 
             client_task.result_received_time = time.time()
@@ -828,13 +828,13 @@ class WFCommServer(FLComponent, WFCommSpec):
         snapshot_task = getattr(task, "_snapshot_task", None)
         if snapshot_task is not None:
             snapshot_task.completion_status = completion_status
-            if hasattr(task, "exception"):
+            if getattr(task, "exception", None) is not None:
                 snapshot_task.exception = task.exception
         # If this is a snapshot, also sync to original task
         original_task = getattr(task, "_original_task", None)
         if original_task is not None:
             original_task.completion_status = completion_status
-            if hasattr(task, "exception"):
+            if getattr(task, "exception", None) is not None:
                 original_task.exception = task.exception
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
@@ -852,8 +852,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                 original_task = getattr(t, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = completion_status
-                    if hasattr(t, "exception"):
+                    if getattr(t, "exception", None) is not None:
                         original_task.exception = t.exception
+                # If this is an original task with a broadcast snapshot, also sync to the snapshot
+                snapshot_task = getattr(t, "_snapshot_task", None)
+                if snapshot_task is not None:
+                    snapshot_task.completion_status = completion_status
+                    if getattr(t, "exception", None) is not None:
+                        snapshot_task.exception = t.exception
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
@@ -1128,13 +1134,13 @@ class WFCommServer(FLComponent, WFCommSpec):
                     original_task = getattr(exit_task, "_original_task", None)
                     if original_task is not None:
                         original_task.completion_status = exit_task.completion_status
-                        # Sync props to copy new keys (e.g., _TASK_KEY_DONE) added during execution.
+                        # Sync props on task exit to copy new keys (e.g., _TASK_KEY_DONE) added during execution.
                         # Note: If props deepcopy failed and fell back to shallow copy, nested mutable
                         # objects are already shared - update() doesn't make this worse, it just
                         # ensures new top-level keys are synced back to original task.
                         if original_task.props is not None and exit_task.props:
                             original_task.props.update(exit_task.props)
-                        if hasattr(exit_task, "exception"):
+                        if getattr(exit_task, "exception", None) is not None:
                             original_task.exception = exit_task.exception
                         # Clean up circular references to allow garbage collection
                         original_task._snapshot_task = None
