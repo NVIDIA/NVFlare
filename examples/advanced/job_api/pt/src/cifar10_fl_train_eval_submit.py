@@ -91,8 +91,6 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        if total == 0:
-            raise ValueError("Test loader is empty - cannot compute accuracy. Check data preparation.")
         return 100.0 * correct / total
 
     # (2) initialize NVFlare client API
