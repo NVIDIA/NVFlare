@@ -575,8 +575,11 @@ class WFCommServer(FLComponent, WFCommSpec):
             if not hasattr(task, "_snapshot_task") or task._snapshot_task is None:
                 task._snapshot_task = snapshot_task
 
-            # Mark original task as used AFTER deepcopy succeeds
-            # This ensures task remains reusable if deepcopy fails (caller can retry)
+            # Mark original task as used AFTER deepcopy succeeds.
+            # This ensures task remains reusable if deepcopy fails (caller can retry).
+            # Note: The original task is NOT added to _tasks (only the snapshot is scheduled),
+            # but setting schedule_time ensures ValueError if caller tries to reuse this
+            # task object in another send/broadcast/relay call.
             if task.schedule_time is None:
                 task.schedule_time = time.time()
             return snapshot_task
@@ -809,12 +812,17 @@ class WFCommServer(FLComponent, WFCommSpec):
     ):
         """Cancel the specified task.
 
-        Change the task completion_status, which will inform task monitor to clean up this task
+        Change the task completion_status, which will inform task monitor to clean up this task.
 
         note::
 
             We only mark the task as completed and leave it to the task monitor to clean up.
-            This is to avoid potential deadlock of task_lock.
+            This avoids potential deadlock: cancel_task may be called from callbacks that
+            already hold locks, and acquiring _task_lock here could cause deadlock.
+
+            The cancelled task is NOT immediately removed from _tasks, but it will NOT be
+            dispatched to clients because process_task_request checks completion_status and
+            skips tasks that are already completed/cancelled (see _do_process_task_request).
 
         Args:
             task (Task): the task to be cancelled
