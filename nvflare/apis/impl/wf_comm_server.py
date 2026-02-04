@@ -538,18 +538,20 @@ class WFCommServer(FLComponent, WFCommSpec):
         snapshot_task.client_tasks = task.client_tasks
         snapshot_task.last_client_task_map = task.last_client_task_map
 
-        # Store bidirectional references between original and snapshot tasks
-        # - snapshot._original_task: for syncing completion_status back
-        # - task._snapshot_task: for cancel_task to find the scheduled snapshot
-        # IMPORTANT: Only set if not already set - don't overwrite reference to already-scheduled snapshot
-        # This prevents the bug where a failed second broadcast attempt would overwrite the reference
-        # to the first (actually scheduled) snapshot, causing cancel_task to miss it.
-        snapshot_task._original_task = task
-        if not hasattr(task, "_snapshot_task") or task._snapshot_task is None:
-            task._snapshot_task = snapshot_task
-
         try:
             snapshot_task.data = copy.deepcopy(task.data)
+
+            # Store bidirectional references AFTER deepcopy succeeds
+            # If deepcopy fails, we don't want stale references that would cause
+            # cancel_task to target a failed snapshot instead of a successful retry
+            # - snapshot._original_task: for syncing completion_status back
+            # - task._snapshot_task: for cancel_task to find the scheduled snapshot
+            # IMPORTANT: Only set task._snapshot_task if not already set - don't overwrite
+            # reference to already-scheduled snapshot from a previous successful broadcast
+            snapshot_task._original_task = task
+            if not hasattr(task, "_snapshot_task") or task._snapshot_task is None:
+                task._snapshot_task = snapshot_task
+
             # Mark original task as used AFTER deepcopy succeeds
             # This ensures task remains reusable if deepcopy fails (caller can retry)
             if task.schedule_time is None:
