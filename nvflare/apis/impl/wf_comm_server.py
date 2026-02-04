@@ -1122,6 +1122,10 @@ class WFCommServer(FLComponent, WFCommSpec):
                     original_task = getattr(exit_task, "_original_task", None)
                     if original_task is not None:
                         original_task.completion_status = exit_task.completion_status
+                        # Sync props to copy new keys (e.g., _TASK_KEY_DONE) added during execution.
+                        # Note: If props deepcopy failed and fell back to shallow copy, nested mutable
+                        # objects are already shared - update() doesn't make this worse, it just
+                        # ensures new top-level keys are synced back to original task.
                         if original_task.props is not None and exit_task.props:
                             original_task.props.update(exit_task.props)
                         if hasattr(exit_task, "exception"):
