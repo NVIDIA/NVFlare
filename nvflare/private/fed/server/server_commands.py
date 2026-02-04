@@ -182,6 +182,11 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
 
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
 
+        # If tensor streaming is active, communicate the minimum required get_task_timeout to client
+        min_get_task_timeout = fl_ctx.get_prop(ServerCommandKey.MIN_GET_TASK_TIMEOUT)
+        if min_get_task_timeout is not None:
+            shareable.set_header(key=ServerCommandKey.MIN_GET_TASK_TIMEOUT, value=min_get_task_timeout)
+
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_peer_context(shared_fl_ctx)
 
