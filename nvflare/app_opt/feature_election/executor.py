@@ -216,7 +216,8 @@ class FeatureElectionExecutor(Executor):
                         # Quick fit to establish coef_ shape, then overwrite
                         self.model.fit(X_tr[: min(10, len(self.y_train))], self.y_train[: min(10, len(self.y_train))])
                         self._model_initialized = True
-                    # Set aggregated weights - handle both binary and multi-class
+                    # Set aggregated weights - handles both binary and multi-class:
+                    # Binary: coef_ shape (1, n_features), Multi-class: (n_classes, n_features)
                     coef = np.array(p["weight_0"])
                     if coef.ndim == 1:
                         coef = coef.reshape(1, -1)  # Binary: (n_features,) -> (1, n_features)
@@ -228,7 +229,8 @@ class FeatureElectionExecutor(Executor):
             self._model_initialized = True
 
             resp = make_reply(ReturnCode.OK)
-            resp["params"] = {"weight_0": self.model.coef_[0].tolist(), "weight_1": self.model.intercept_.tolist()}
+            # Send full coef_ to support both binary and multi-class classification
+            resp["params"] = {"weight_0": self.model.coef_.tolist(), "weight_1": self.model.intercept_.tolist()}
             resp["num_samples"] = len(self.X_train)
             return resp
         except Exception as e:
@@ -242,11 +244,13 @@ class FeatureElectionExecutor(Executor):
         X_scaled = scaler.fit_transform(self.X_train)
 
         if self.fs_method == "lasso":
+            # Intentional use of Lasso for feature selection
             s = Lasso(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
             return scores > 1e-6, scores
 
         elif self.fs_method == "elastic_net":
+            # Intentional use of Elastic Net for feature selection
             s = ElasticNet(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
             return scores > 1e-6, scores
