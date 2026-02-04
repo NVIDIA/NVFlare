@@ -42,6 +42,8 @@ if __name__ == "__main__":
 
     job.to(IntimeModelSelector(key_metric="accuracy"), "server")
 
+    # Add TensorBoard analytics receiver to each client for local events
+
     # Note: We can optionally replace the above code with the FedAvgJob, which is a pattern to simplify FedAvg job creations
     # job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 

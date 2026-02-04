@@ -168,6 +168,9 @@ if __name__ == "__main__":
 
     job = FedJob(name="cifar10_fedavg_xsite_val")
 
+    # Add TensorBoard receiver on server (for external process mode)
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
+
     # Set up model persistor and shareable generator
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
     persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")
@@ -200,7 +203,7 @@ if __name__ == "__main__":
         submit_model_timeout=600,
         validation_timeout=6000,
         cleanup_models=False,
-        validation_task_name="evaluate",
+        validation_task_name="validate",  # Must match executor's evaluate_task_name default
         submit_model_task_name="submit_model",
     )
     job.to_server(xsite_eval_controller)
@@ -208,15 +211,17 @@ if __name__ == "__main__":
     # Add validation JSON generator for cross-site evaluation results
     job.to_server(ValidationJsonGenerator())
 
-    # Add clients with ScriptRunner
+    # Add clients with ScriptRunner (use external process for cross-site validation)
     for i in range(n_clients):
         executor = ScriptRunner(
             script=train_script,
             script_args=f"--data_split_path {data_split_root}",  # Pass data split path to clients
+            launch_external_process=True,  # Required for cross-site validation
         )
         target = f"site-{i + 1}"
-        # Executor must handle train, evaluate, and submit_model tasks for cross-site validation
-        job.to(executor, target, tasks=["train", "evaluate", "submit_model"])
+        # Executor must handle train, validate, and submit_model tasks for cross-site validation
+        job.to(executor, target, tasks=["train", "validate", "submit_model"])
+        # Add local TB receiver for each client
         job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
