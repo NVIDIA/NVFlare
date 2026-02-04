@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 # Add deterministic seed for reproducibility illustration
 import random
@@ -20,7 +21,7 @@ import random
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from transformers import AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
@@ -113,8 +114,14 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
     model.config.pretraining_tp = 1
+
+    # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
+    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps)) * 3
+    warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
+
+    # Set TensorBoard logging directory via environment variable (replacing deprecated logging_dir)
+    os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
     # Training arguments
     train_args = SFTConfig(
@@ -131,7 +138,7 @@ def main():
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,  # Using warmup_steps instead of deprecated warmup_ratio
         # use cosine_with_restarts scheduler to check the iterative behavior
         lr_scheduler_type=args.lr_scheduler,
         lr_scheduler_kwargs={"num_cycles": 2},

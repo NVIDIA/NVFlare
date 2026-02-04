@@ -22,7 +22,7 @@ import shutil
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -121,8 +121,14 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
     model.config.pretraining_tp = 1
+
+    # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
+    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps)) * 1
+    warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
+
+    # Set TensorBoard logging directory via environment variable (replacing deprecated logging_dir)
+    os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
     # Training arguments
     train_args = SFTConfig(
@@ -139,7 +145,7 @@ def main():
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,  # Using warmup_steps instead of deprecated warmup_ratio
         # use cosine_with_restarts scheduler to check the iterative behavior
         lr_scheduler_type=args.lr_scheduler,
         lr_scheduler_kwargs={"num_cycles": 2},
@@ -164,9 +170,10 @@ def main():
     # weights for each round - to show the weights are loaded correctly
     initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
     if train_mode:
-        params = get_peft_model_state_dict(model)
+        # After SFTTrainer initialization, trainer.model is now a PeftModel
+        params = get_peft_model_state_dict(trainer.model)
     else:
-        params = model.state_dict()
+        params = trainer.model.state_dict()
     torch.save(params, initial_model_path)
 
     # Train iteratively by using "resume" functionality
