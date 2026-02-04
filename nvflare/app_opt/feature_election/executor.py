@@ -37,6 +37,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+LASSO_ELASTIC_NET_ZERO_THRESHOLD: float = 1e-6
+
 
 class FeatureElectionExecutor(Executor):
     def __init__(
@@ -247,13 +249,13 @@ class FeatureElectionExecutor(Executor):
             # Intentional use of Lasso for feature selection
             s = Lasso(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
-            return scores > 1e-6, scores
+            return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores
 
         elif self.fs_method == "elastic_net":
             # Intentional use of Elastic Net for feature selection
             s = ElasticNet(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
-            return scores > 1e-6, scores
+            return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores
 
         elif self.fs_method == "mutual_info":
             scores = mutual_info_classif(self.X_train, self.y_train, random_state=42)
