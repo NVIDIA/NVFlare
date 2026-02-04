@@ -60,10 +60,10 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial model to start federated training with. Can be:
+        initial_model: Initial model to start federated training with (REQUIRED). Can be:
             - nn.Module instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
-            - None: no initial model
+            Note: FedOpt requires a model for the server-side optimizer to work.
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
             Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
@@ -193,6 +193,16 @@ class FedOptRecipe(Recipe):
             name=self.name,
             min_clients=self.min_clients,
         )
+
+        # FedOpt requires a model (either initial_model or initial_ckpt must be provided)
+        # The PTFedOptModelShareableGenerator needs source_model to exist
+        if self.initial_model is None:
+            raise ValueError(
+                "FedOpt requires initial_model. Provide either:\n"
+                "  - nn.Module instance\n"
+                "  - Dict config: {'path': 'module.ClassName', 'args': {...}}\n"
+                "Note: initial_ckpt alone is not sufficient for PyTorch (model architecture needed)."
+            )
 
         # Handle dict config: instantiate model before registering as component
         # PTFileModelPersistor expects component ID to resolve to nn.Module, not dict

@@ -110,21 +110,36 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
     def test_pt_fedopt(self):
         """Test PT FedOpt generates correct config.
 
-        Note: FedOpt uses different architecture - it adds model dict via job.to_server(),
-        and persistor references it by ID string "model". The dict config is validated
-        at runtime by PTFileModelPersistor's model instantiation logic.
+        Note: FedOpt uses different architecture - it adds model via job.to_server(),
+        and persistor references it by ID string "model".
         """
         print("\n  Testing PT FedOpt...")
+        from unittest.mock import patch
+
+        import torch.nn as nn
+
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        recipe = FedOptRecipe(
-            name="test-pt-fedopt",
-            min_clients=2,
-            num_rounds=2,
-            initial_model={"path": "model.SimpleNetwork"},
-            initial_ckpt=self.checkpoint_path,
-            train_script=self.train_script,
-        )
+        # Create a simple model for testing
+        class SimpleModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc = nn.Linear(10, 5)
+
+        simple_model = SimpleModel()
+
+        # Mock instantiate_class to avoid needing real model.SimpleNetwork
+        with patch("nvflare.fuel.utils.class_utils.instantiate_class") as mock_instantiate:
+            mock_instantiate.return_value = simple_model
+
+            recipe = FedOptRecipe(
+                name="test-pt-fedopt",
+                min_clients=2,
+                num_rounds=2,
+                initial_model={"path": "model.SimpleNetwork"},
+                initial_ckpt=self.checkpoint_path,
+                train_script=self.train_script,
+            )
 
         job_dir = os.path.join(self.temp_dir, "export2")
         recipe.export(job_dir=job_dir)

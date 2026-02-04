@@ -85,21 +85,28 @@ class TestPTFedOptRecipe:
 
         assert recipe.initial_ckpt == "/abs/path/to/model.pt"
 
-    def test_dict_model_config_accepted(self, mock_file_system, base_recipe_params):
+    def test_dict_model_config_accepted(self, mock_file_system, base_recipe_params, simple_model):
         """Test that dict model config is accepted."""
+        from unittest.mock import patch
+
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
         model_config = {
             "path": "my_module.models.SimpleNet",
             "args": {"input_size": 10},
         }
-        recipe = FedOptRecipe(
-            name="test_fedopt_dict",
-            initial_model=model_config,
-            **base_recipe_params,
-        )
 
-        assert recipe.initial_model == model_config
+        # Mock instantiate_class since my_module.models.SimpleNet doesn't exist
+        with patch("nvflare.fuel.utils.class_utils.instantiate_class") as mock_instantiate:
+            mock_instantiate.return_value = simple_model
+
+            recipe = FedOptRecipe(
+                name="test_fedopt_dict",
+                initial_model=model_config,
+                **base_recipe_params,
+            )
+
+            assert recipe.initial_model == model_config
 
     def test_with_optimizer_args(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedOptRecipe with optimizer arguments."""
@@ -158,7 +165,8 @@ class TestPTFedOptRecipe:
 
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with patch("nvflare.app_opt.pt.recipes.fedopt.instantiate_class") as mock_instantiate:
+        # Patch at the location where it's imported and used
+        with patch("nvflare.fuel.utils.class_utils.instantiate_class") as mock_instantiate:
             mock_instantiate.return_value = simple_model
 
             recipe = FedOptRecipe(
@@ -170,6 +178,17 @@ class TestPTFedOptRecipe:
             # Verify instantiate_class was called with correct arguments
             mock_instantiate.assert_called_once_with("mymodule.MyModel", {"input_size": 10})
             assert recipe.job is not None
+
+    def test_initial_model_none_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that initial_model=None raises ValueError."""
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        with pytest.raises(ValueError, match="FedOpt requires initial_model"):
+            FedOptRecipe(
+                name="test_no_model",
+                initial_model=None,
+                **base_recipe_params,
+            )
 
 
 class TestTFFedOptRecipe:
