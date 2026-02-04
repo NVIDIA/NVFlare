@@ -505,7 +505,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             task: The task to snapshot
 
         Returns:
-            A new task with deep copied data and independent mutable containers
+            A new task with deep copied data but shared client tracking containers
 
         Raises:
             RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
@@ -516,12 +516,22 @@ class WFCommServer(FLComponent, WFCommSpec):
         # Shallow copy task structure
         snapshot_task = copy.copy(task)
 
-        # Create independent mutable containers to avoid shared state with original task
-        # This prevents modifications to snapshot_task from affecting the original task
+        # Create independent props and lock to avoid issues
         snapshot_task.props = task.props.copy() if task.props else {}
-        snapshot_task.client_tasks = []
-        snapshot_task.last_client_task_map = {}
         snapshot_task.cb_lock = threading.RLock()
+
+        # IMPORTANT: Share client_tasks and last_client_task_map with original task
+        # This ensures client task tracking is visible on the original task object,
+        # which is what callers expect to query after broadcast completes.
+        # Only task.data needs to be isolated (to prevent corruption during concurrent downloads).
+        snapshot_task.client_tasks = task.client_tasks
+        snapshot_task.last_client_task_map = task.last_client_task_map
+
+        # Store bidirectional references between original and snapshot tasks
+        # - snapshot._original_task: for syncing completion_status back
+        # - task._snapshot_task: for cancel_task to find the scheduled snapshot
+        snapshot_task._original_task = task
+        task._snapshot_task = snapshot_task
 
         try:
             snapshot_task.data = copy.deepcopy(task.data)
@@ -769,6 +779,11 @@ class WFCommServer(FLComponent, WFCommSpec):
             fl_ctx (Optional[FLContext], optional): FLContext associated with this cancellation. Defaults to None.
         """
         task.completion_status = completion_status
+        # If this is an original task with a broadcast snapshot, also cancel the snapshot
+        # (the snapshot is what's actually scheduled in _tasks)
+        snapshot_task = getattr(task, "_snapshot_task", None)
+        if snapshot_task is not None:
+            snapshot_task.completion_status = completion_status
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancel all standing tasks in this controller.
@@ -1049,6 +1064,15 @@ class WFCommServer(FLComponent, WFCommSpec):
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
+
+                    # Sync state back to original task if this is a broadcast snapshot
+                    # This ensures callers who hold reference to original task see the final state
+                    original_task = getattr(exit_task, "_original_task", None)
+                    if original_task is not None:
+                        original_task.completion_status = exit_task.completion_status
+                        original_task.props.update(exit_task.props)
+                        if hasattr(exit_task, "exception"):
+                            original_task.exception = exit_task.exception
 
     def _get_task_dead_clients(self, task: Task):
         """
