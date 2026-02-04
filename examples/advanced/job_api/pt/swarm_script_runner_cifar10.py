@@ -24,7 +24,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3
-    train_script = "src/cifar10_fl.py"
+    train_script = "src/cifar10_fl_partitioned.py"
 
     job = CCWFJob(name="cifar10_swarm")
 
