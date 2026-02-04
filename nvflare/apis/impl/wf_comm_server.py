@@ -275,6 +275,10 @@ class WFCommServer(FLComponent, WFCommSpec):
 
             if task.completion_status is not None:
                 can_send_task = False
+                # Sync completion_status to original task if this is a broadcast snapshot
+                original_task = getattr(task, "_original_task", None)
+                if original_task is not None:
+                    original_task.completion_status = task.completion_status
 
             # remember the task name and data to be sent to the client
             # since task.data could be reset by the after_task_sent_cb
@@ -435,6 +439,13 @@ class WFCommServer(FLComponent, WFCommSpec):
             else:
                 self.log_debug(fl_ctx, "no result_received_cb")
 
+            # Sync completion_status to original task if this is a broadcast snapshot
+            # (callback may have set completion_status)
+            if task.completion_status is not None:
+                original_task = getattr(task, "_original_task", None)
+                if original_task is not None:
+                    original_task.completion_status = task.completion_status
+
             client_task.result_received_time = time.time()
 
     def _schedule_task(
@@ -530,8 +541,17 @@ class WFCommServer(FLComponent, WFCommSpec):
         # Store bidirectional references between original and snapshot tasks
         # - snapshot._original_task: for syncing completion_status back
         # - task._snapshot_task: for cancel_task to find the scheduled snapshot
+        # IMPORTANT: Only set if not already set - don't overwrite reference to already-scheduled snapshot
+        # This prevents the bug where a failed second broadcast attempt would overwrite the reference
+        # to the first (actually scheduled) snapshot, causing cancel_task to miss it.
         snapshot_task._original_task = task
-        task._snapshot_task = snapshot_task
+        if not hasattr(task, "_snapshot_task") or task._snapshot_task is None:
+            task._snapshot_task = snapshot_task
+
+        # Mark original task as used to prevent reuse (schedule_time check in _schedule_task)
+        # This ensures ValueError is raised if someone tries to reuse the original task object
+        if task.schedule_time is None:
+            task.schedule_time = time.time()
 
         try:
             snapshot_task.data = copy.deepcopy(task.data)
@@ -796,6 +816,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             for t in self._tasks:
                 t.completion_status = completion_status
+                # If this is a broadcast snapshot, also sync status to original task
+                original_task = getattr(t, "_original_task", None)
+                if original_task is not None:
+                    original_task.completion_status = completion_status
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
