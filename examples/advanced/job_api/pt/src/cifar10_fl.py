@@ -90,14 +90,8 @@ def main():
 
                 # print statistics
                 running_loss += loss.item()
-                if i % 2000 == 1999:  # print every 2000 mini-batches
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                    global_step = input_model.current_round * steps + epoch * len(trainloader) + i
-
-                    summary_writer.add_scalar(
-                        tag="loss_for_each_batch", scalar=running_loss, global_step=global_step
-                    )
-                    running_loss = 0.0
+                global_step = input_model.current_round * steps + epoch * len(trainloader) + i
+                summary_writer.add_scalar(tag="train_loss", scalar=loss.item(), global_step=global_step)
 
         print("Finished Training")
 

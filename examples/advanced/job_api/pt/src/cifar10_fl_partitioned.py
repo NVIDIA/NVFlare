@@ -27,6 +27,7 @@ from torch.utils.data import Subset
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
 from nvflare.app_common.app_constant import ModelName
 
 # (optional) set a fix place so we don't need to download everytime
@@ -76,6 +77,7 @@ def main():
 
     # (2) initialize NVFlare client API
     flare.init()
+    summary_writer = SummaryWriter()
 
     client_id = flare.get_site_name()
 
@@ -175,9 +177,8 @@ def main():
 
                     # print statistics
                     running_loss += loss.item()
-                    if i % 2000 == 1999:  # print every 2000 mini-batches
-                        print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                        running_loss = 0.0
+                    global_step = input_model.current_round * steps + epoch * len(trainloader) + i
+                    summary_writer.add_scalar(tag="train_loss", scalar=loss.item(), global_step=global_step)
 
             print(f"({client_id}) Finished Training")
 
@@ -193,6 +194,7 @@ def main():
             print(
                 f"({client_id}) Evaluating received model for model selection. Accuracy on the 10000 test images: {accuracy}"
             )
+            summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
 
             # (5.4) construct trained FL model
             output_model = flare.FLModel(
@@ -225,6 +227,8 @@ def main():
                     raise ValueError("Unable to load best model") from e
             else:
                 raise ValueError(f"Unknown model_type: {model_name}")
+
+    summary_writer.flush()
 
 
 if __name__ == "__main__":
