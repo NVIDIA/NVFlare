@@ -153,7 +153,7 @@ def define_parser():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="meta-llama/llama-3.2-1b",
+        default="EleutherAI/gpt-neo-1.3B",
         help="model name or path",
     )
     parser.add_argument(

@@ -20,9 +20,9 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
+from .utils import load_numpy_model
 
 
 def _get_run_dir(fl_ctx: FLContext):
@@ -34,17 +34,21 @@ def _get_run_dir(fl_ctx: FLContext):
 
 
 class NPModelPersistor(ModelPersistor):
-    def __init__(self, model_dir="models", model_name="server.npy", initial_model: Optional[list] = None):
+    def __init__(
+        self,
+        model_dir="models",
+        model_name="server.npy",
+        initial_model: Optional[list] = None,
+        source_ckpt_file_full_name: Optional[str] = None,
+    ):
         """Model persistor for numpy arrays.
 
         Note:
-            This persistor first tries to load a previously saved numpy array from
-            ``<run_dir>/<model_dir>/<model_name>``.
-
-            If the file cannot be loaded (e.g. does not exist on the first run),
-            it falls back to an "initial model" provided via ``initial_model``.
-            If ``initial_model`` is not provided, a small built-in default array
-            (``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``) is used.
+            This persistor loads model data in the following priority:
+            1. source_ckpt_file_full_name (if provided and exists)
+            2. Previously saved numpy array from ``<run_dir>/<model_dir>/<model_name>``
+            3. initial_model (if provided)
+            4. Default array ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``
 
         Args:
             model_dir (str, optional): model directory. Defaults to "models".
@@ -53,6 +57,9 @@ class NPModelPersistor(ModelPersistor):
                 This is only used when a previously saved model cannot be loaded.
                 It will be converted to numpy array when ``load_model`` is called.
                 Defaults to None.
+            source_ckpt_file_full_name (str, optional): Full path to source checkpoint file.
+                This path may not exist locally (server-side path). If provided and exists
+                at runtime, it takes priority over other loading methods.
         """
         super().__init__()
 
@@ -61,6 +68,9 @@ class NPModelPersistor(ModelPersistor):
         # Keep as list for JSON serialization during job config generation.
         # Conversion to numpy happens in load_model().
         self.initial_model = initial_model
+        self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
 
     def _get_initial_model_as_numpy(self) -> np.ndarray:
         """Return the fallback initial model as a numpy array.
@@ -75,16 +85,14 @@ class NPModelPersistor(ModelPersistor):
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
         model_path = os.path.join(run_dir, self.model_dir, self.model_name)
-        try:
-            # try loading previous model
-            data = np.load(model_path)
-        except Exception as e:
-            self.log_info(
-                fl_ctx,
-                f"Unable to load model from {model_path}: {secure_format_exception(e)}. Using default data instead.",
-                fire_event=False,
-            )
-            data = self._get_initial_model_as_numpy().copy()
+
+        data = load_numpy_model(
+            fl_ctx=fl_ctx,
+            logger=self,
+            source_ckpt_file_full_name=self.source_ckpt_file_full_name,
+            model_file_path=model_path,
+            get_fallback_data=lambda: self._get_initial_model_as_numpy().copy(),
+        )
 
         model_learnable = make_model_learnable(weights={NPConstants.NUMPY_KEY: data}, meta_props={})
 

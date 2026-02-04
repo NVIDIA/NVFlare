@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -25,7 +25,8 @@ from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -35,6 +36,7 @@ class _FedOptValidator(BaseModel):
 
     name: str
     initial_model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -58,8 +60,13 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        initial_model: Initial model to start federated training with (REQUIRED). Can be:
+            - nn.Module instance
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            Note: FedOpt requires a model for the server-side optimizer to work.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -113,7 +120,8 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Any = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -132,6 +140,7 @@ class FedOptRecipe(Recipe):
         v = _FedOptValidator(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -146,6 +155,14 @@ class FedOptRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+
+        validate_initial_ckpt(self.initial_ckpt)
+        validate_dict_model_config(self.initial_model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -177,11 +194,37 @@ class FedOptRecipe(Recipe):
             min_clients=self.min_clients,
         )
 
-        # Add initial model as a separate component
-        job.to_server(self.initial_model, id=self.source_model)
+        # FedOpt requires a model (either initial_model or initial_ckpt must be provided)
+        # The PTFedOptModelShareableGenerator needs source_model to exist
+        if self.initial_model is None:
+            raise ValueError(
+                "FedOpt requires initial_model. Provide either:\n"
+                "  - nn.Module instance\n"
+                "  - Dict config: {'path': 'module.ClassName', 'args': {...}}\n"
+                "Note: initial_ckpt alone is not sufficient for PyTorch (model architecture needed)."
+            )
 
-        # Add the persisted model to the job
-        persistor = PTFileModelPersistor(model=self.source_model)
+        # Handle dict config: instantiate model before registering as component
+        # PTFileModelPersistor expects component ID to resolve to nn.Module, not dict
+        model_to_register = self.initial_model
+        if isinstance(self.initial_model, dict):
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.initial_model.get("path")
+            class_args = self.initial_model.get("args", {})
+            try:
+                model_to_register = instantiate_class(class_path, class_args)
+            except Exception as e:
+                raise RuntimeError(f"Failed to instantiate model from dict config: {e}")
+
+        # Add initial model as a separate component
+        job.to_server(model_to_register, id=self.source_model)
+
+        # Add the persisted model to the job with checkpoint support
+        persistor = PTFileModelPersistor(
+            model=self.source_model,
+            source_ckpt_file_full_name=self.initial_ckpt,
+        )
         persistor_id = job.to_server(persistor, id="persistor")
 
         locator = PTFileModelLocator(pt_persistor_id=persistor_id)

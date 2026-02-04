@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 
@@ -20,7 +20,7 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
@@ -43,6 +43,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         initial_model: Initial model (as list or numpy array) to start federated training with.
             Lists are preferred for JSON serialization compatibility. If None,
             clients will start with their own local models.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.npy, .npz).
+            The file may not exist locally as it could be on the server.
+            Used to load initial model parameters.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -100,7 +103,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        initial_model: Union[Any, Dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -122,13 +126,15 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
     ):
-        # Store initial_model for NumPy-specific setup
+        # Store initial_model and initial_ckpt for NumPy-specific setup
         self._np_initial_model = initial_model
+        self._np_initial_ckpt = initial_ckpt
 
         # Call the unified FedAvgRecipe with NumPy-specific settings
         super().__init__(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -159,19 +165,24 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle NumPy-specific model setup."""
-        if self._np_initial_model is not None:
+        if self._np_initial_model is not None or self._np_initial_ckpt is not None:
             # Convert numpy array to list for JSON serialization
             # NPModelPersistor expects a list, not a numpy array
-            if isinstance(self._np_initial_model, np.ndarray):
-                initial_model_list = self._np_initial_model.tolist()
-            elif isinstance(self._np_initial_model, list):
-                initial_model_list = self._np_initial_model
-            else:
-                raise TypeError(
-                    f"initial_model must be a numpy array or list, got {type(self._np_initial_model).__name__}"
-                )
+            initial_model_list = None
+            if self._np_initial_model is not None:
+                if isinstance(self._np_initial_model, np.ndarray):
+                    initial_model_list = self._np_initial_model.tolist()
+                elif isinstance(self._np_initial_model, list):
+                    initial_model_list = self._np_initial_model
+                else:
+                    raise TypeError(
+                        f"initial_model must be a numpy array or list, got {type(self._np_initial_model).__name__}"
+                    )
 
-            persistor = NPModelPersistor(initial_model=initial_model_list)
+            persistor = NPModelPersistor(
+                initial_model=initial_model_list,
+                source_ckpt_file_full_name=self._np_initial_ckpt,
+            )
             return job.to_server(persistor, id="persistor")
         return ""
 

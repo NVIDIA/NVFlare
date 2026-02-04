@@ -107,7 +107,7 @@ class StreamingController(Controller):
 
     @staticmethod
     def _get_test_model():
-        model_name = "meta-llama/llama-3.2-1b"
+        model_name = "EleutherAI/gpt-neo-1.3B"
         # load model to dict
         model = AutoModelForCausalLM.from_pretrained(
             model_name,

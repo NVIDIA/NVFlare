@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
 from nvflare.app_opt.tf.fedopt_ctl import FedOpt
 from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -29,6 +30,7 @@ class _FedOptValidator(BaseModel):
 
     name: str = "fedopt"
     initial_model: Any = None
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int = 2
     train_script: str
@@ -37,8 +39,8 @@ class _FedOptValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-    optimizer_args: dict = None
-    lr_scheduler_args: dict = None
+    optimizer_args: Optional[dict] = None
+    lr_scheduler_args: Optional[dict] = None
     server_memory_gc_rounds: int = 0
 
 
@@ -60,8 +62,13 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial TensorFlow model to start federated training with. If None,
-            clients will start with their own local models.
+        initial_model: Initial TensorFlow model to start federated training with. Can be:
+            - tf.keras.Model instance
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
+            The file may not exist locally as it could be on the server.
+            Note: TensorFlow can load full models from .h5/SavedModel without initial_model.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -110,7 +117,8 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Any = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -119,14 +127,15 @@ class FedOptRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        optimizer_args: dict = None,
-        lr_scheduler_args: dict = None,
+        optimizer_args: Optional[dict] = None,
+        lr_scheduler_args: Optional[dict] = None,
         server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -142,6 +151,14 @@ class FedOptRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+
+        validate_initial_ckpt(self.initial_ckpt)
+        validate_dict_model_config(self.initial_model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -154,21 +171,28 @@ class FedOptRecipe(Recipe):
         self.lr_scheduler_args = v.lr_scheduler_args
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
-        # Create BaseFedJob with initial model
+        # Create BaseFedJob
         job = BaseFedJob(
             initial_model=self.initial_model,
+            initial_ckpt=self.initial_ckpt,
             name=self.name,
             min_clients=self.min_clients,
         )
 
         # Add FedOpt controller to server
-        controller = FedOpt(
-            num_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            optimizer_args=self.optimizer_args,
-            lr_scheduler_args=self.lr_scheduler_args,
-            memory_gc_rounds=self.server_memory_gc_rounds,
-        )
+        # Only pass optimizer_args and lr_scheduler_args if provided (not None)
+        # Otherwise let FedOpt use its defaults
+        controller_kwargs = {
+            "num_clients": self.min_clients,
+            "num_rounds": self.num_rounds,
+            "memory_gc_rounds": self.server_memory_gc_rounds,
+        }
+        if self.optimizer_args is not None:
+            controller_kwargs["optimizer_args"] = self.optimizer_args
+        if self.lr_scheduler_args is not None:
+            controller_kwargs["lr_scheduler_args"] = self.lr_scheduler_args
+
+        controller = FedOpt(**controller_kwargs)
 
         # Send the controller to the server
         job.to(controller, "server")
