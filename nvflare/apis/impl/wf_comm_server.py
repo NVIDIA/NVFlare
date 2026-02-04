@@ -275,10 +275,12 @@ class WFCommServer(FLComponent, WFCommSpec):
 
             if task.completion_status is not None:
                 can_send_task = False
-                # Sync completion_status to original task if this is a broadcast snapshot
+                # Sync completion_status and exception to original task if this is a broadcast snapshot
                 original_task = getattr(task, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = task.completion_status
+                    if hasattr(task, "exception"):
+                        original_task.exception = task.exception
 
             # remember the task name and data to be sent to the client
             # since task.data could be reset by the after_task_sent_cb
@@ -439,12 +441,14 @@ class WFCommServer(FLComponent, WFCommSpec):
             else:
                 self.log_debug(fl_ctx, "no result_received_cb")
 
-            # Sync completion_status to original task if this is a broadcast snapshot
-            # (callback may have set completion_status)
+            # Sync completion_status and exception to original task if this is a broadcast snapshot
+            # (callback may have set completion_status or exception)
             if task.completion_status is not None:
                 original_task = getattr(task, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = task.completion_status
+                    if hasattr(task, "exception"):
+                        original_task.exception = task.exception
 
             client_task.result_received_time = time.time()
 
