@@ -56,7 +56,10 @@ def main():
     print(f"rows_total: {rows_total}, cols_total: {cols_total}")
 
     if os.path.exists(args.out_path):
-        shutil.rmtree(args.out_path)
+        raise ValueError(
+            f"Output path '{args.out_path}' already exists. "
+            f"Please remove it manually or specify a different output path."
+        )
 
     os.makedirs(args.out_path, exist_ok=True)
 
