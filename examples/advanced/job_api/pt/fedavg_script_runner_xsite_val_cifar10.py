@@ -215,7 +215,8 @@ if __name__ == "__main__":
             script_args=f"--data_split_path {data_split_root}",  # Pass data split path to clients
         )
         target = f"site-{i + 1}"
-        job.to(executor, target)
+        # Executor must handle train, evaluate, and submit_model tasks for cross-site validation
+        job.to(executor, target, tasks=["train", "evaluate", "submit_model"])
         job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
