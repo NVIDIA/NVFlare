@@ -304,6 +304,13 @@ class WFCommServer(FLComponent, WFCommSpec):
             if task.completion_status is not None:
                 # NOTE: the CB could cancel the task
                 can_send_task = False
+                # Sync completion_status and exception to original task if this is a broadcast snapshot
+                # (after_task_sent_cb may have set completion_status or exception)
+                original_task = getattr(task, "_original_task", None)
+                if original_task is not None:
+                    original_task.completion_status = task.completion_status
+                    if hasattr(task, "exception"):
+                        original_task.exception = task.exception
 
             if not can_send_task:
                 return self._try_again()
@@ -531,8 +538,20 @@ class WFCommServer(FLComponent, WFCommSpec):
         # Shallow copy task structure
         snapshot_task = copy.copy(task)
 
-        # Create independent props and lock to avoid issues
-        snapshot_task.props = task.props.copy() if task.props else {}
+        # Create independent props dict - try deepcopy first to fully isolate nested structures,
+        # fall back to shallow copy if props contains non-picklable objects (e.g., TaskManager with locks)
+        if task.props:
+            try:
+                snapshot_task.props = copy.deepcopy(task.props)
+            except Exception:
+                # Fall back to shallow copy - callbacks should not modify nested mutable objects
+                self.logger.warning(
+                    "props contains non-picklable objects, using shallow copy. "
+                    "Avoid modifying nested mutable objects in props during broadcast."
+                )
+                snapshot_task.props = task.props.copy()
+        else:
+            snapshot_task.props = {}
         snapshot_task.cb_lock = threading.RLock()
 
         # IMPORTANT: Share client_tasks and last_client_task_map with original task
@@ -809,6 +828,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         snapshot_task = getattr(task, "_snapshot_task", None)
         if snapshot_task is not None:
             snapshot_task.completion_status = completion_status
+        # If this is a snapshot, also sync to original task
+        original_task = getattr(task, "_original_task", None)
+        if original_task is not None:
+            original_task.completion_status = completion_status
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancel all standing tasks in this controller.
@@ -1099,9 +1122,13 @@ class WFCommServer(FLComponent, WFCommSpec):
                     original_task = getattr(exit_task, "_original_task", None)
                     if original_task is not None:
                         original_task.completion_status = exit_task.completion_status
-                        original_task.props.update(exit_task.props)
+                        if original_task.props is not None and exit_task.props:
+                            original_task.props.update(exit_task.props)
                         if hasattr(exit_task, "exception"):
                             original_task.exception = exit_task.exception
+                        # Clean up circular references to allow garbage collection
+                        original_task._snapshot_task = None
+                        exit_task._original_task = None
 
     def _get_task_dead_clients(self, task: Task):
         """
