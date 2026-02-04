@@ -294,9 +294,11 @@ class WFCommServer(FLComponent, WFCommSpec):
                         self.log_error(
                             fl_ctx,
                             f"Failed to deep copy task.data for broadcast: {type(e).__name__}: {e}. "
-                            f"Data may be corrupted if modified during concurrent downloads.",
+                            f"Cannot proceed - data corruption risk.",
                         )
-
+                        task.completion_status = TaskCompletionStatus.ERROR
+                        task.exception = e
+                        can_send_task = False
             task_data = getattr(task, "_broadcast_data", None) or task.data
             operator = task.operator
 
