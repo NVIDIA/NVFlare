@@ -17,6 +17,7 @@ from src.net import Net
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 
 # from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.api import FedJob
@@ -52,8 +53,9 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, target=f"site-{i}")
-    # job.to_clients(executor)
+        target = f"site-{i + 1}"
+        job.to(executor, target=target)
+        job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target=target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt", gpu="0")

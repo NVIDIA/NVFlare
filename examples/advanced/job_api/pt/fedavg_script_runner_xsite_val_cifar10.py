@@ -225,4 +225,4 @@ if __name__ == "__main__":
         job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_xsite_val", gpu="0")
