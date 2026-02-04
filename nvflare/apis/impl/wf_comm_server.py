@@ -279,11 +279,24 @@ class WFCommServer(FLComponent, WFCommSpec):
             # remember the task name and data to be sent to the client
             # since task.data could be reset by the after_task_sent_cb
             task_name = task.name
-            # Use _broadcast_data if available (deep copied for broadcast to protect against
-            # concurrent in-place modifications), otherwise use task.data directly.
-            # Note: before_task_sent_cb modifications to task.data won't be reflected in
-            # _broadcast_data - this is by design since per-client data modification is
-            # incompatible with broadcast's shared data model.
+
+            # For broadcast tasks, create a protected copy of task.data after before_task_sent_cb runs.
+            # This protects against data corruption from concurrent in-place modifications.
+            # The copy is created once for the first client, then reused for all subsequent clients.
+            if not hasattr(task, "_broadcast_data"):
+                manager = task.props.get(_TASK_KEY_MANAGER)
+                if isinstance(manager, (BcastTaskManager, BcastForeverTaskManager)):
+                    import copy
+
+                    try:
+                        task._broadcast_data = copy.deepcopy(task.data)
+                    except Exception as e:
+                        self.log_error(
+                            fl_ctx,
+                            f"Failed to deep copy task.data for broadcast: {type(e).__name__}: {e}. "
+                            f"Data may be corrupted if modified during concurrent downloads.",
+                        )
+
             task_data = getattr(task, "_broadcast_data", None) or task.data
             operator = task.operator
 
@@ -509,6 +522,15 @@ class WFCommServer(FLComponent, WFCommSpec):
         The task is scheduled into a task list.
         Clients can request tasks and controller will dispatch the task to eligible clients.
 
+        Note:
+            task.data is deep copied after before_task_sent_cb runs for the first client to protect
+            against data corruption from concurrent in-place modifications. This copy is then reused
+            for all subsequent clients. As a result:
+            - Modifications to task.data in before_task_sent_cb ARE captured (for the first client)
+            - Modifications to task.data AFTER the first send (e.g., in-place aggregation) are NOT
+              sent to clients - they receive the protected copy
+            - Per-client data customization in before_task_sent_cb is NOT supported for broadcast
+
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
@@ -523,10 +545,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         Raises:
             ValueError: min_responses is greater than the length of targets since this condition will make the task,
                 if allowed to be scheduled, never exit.
-            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
-        import copy
-
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         _check_positive_int("min_responses", min_responses)
         _check_positive_int("wait_time_after_min_received", wait_time_after_min_received)
@@ -534,18 +553,6 @@ class WFCommServer(FLComponent, WFCommSpec):
             raise ValueError(
                 "min_responses ({}) must be less than length of targets ({}).".format(min_responses, len(targets))
             )
-
-        # Deep copy task.data to _broadcast_data to protect against concurrent in-place modifications
-        # Broadcast sends to multiple clients CONCURRENTLY, so if controller modifies
-        # task.data (e.g., in-place aggregation) while clients are downloading, it causes corruption
-        # We store the copy in _broadcast_data so controller can still modify task.data freely
-        try:
-            task._broadcast_data = copy.deepcopy(task.data)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to deep copy task.data for broadcast: {type(e).__name__}: {e}. "
-                f"This is required to prevent data corruption when min_responses < total clients."
-            ) from e
 
         manager = BcastTaskManager(
             task=task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
@@ -596,29 +603,21 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         This broadcast will not end.
 
-        Note: Deep copies task.data to protect against data corruption.
+        Note:
+            task.data is deep copied after before_task_sent_cb runs for the first client to protect
+            against data corruption from concurrent in-place modifications. This copy is then reused
+            for all subsequent clients. As a result:
+            - Modifications to task.data in before_task_sent_cb ARE captured (for the first client)
+            - Modifications to task.data AFTER the first send are NOT sent to clients
+            - Per-client data customization in before_task_sent_cb is NOT supported for broadcast
 
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
             targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
                 or None (all clients). Defaults to None.
-
-        Raises:
-            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
-        import copy
-
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
-
-        # Deep copy task.data to _broadcast_data to protect against concurrent in-place modifications
-        try:
-            task._broadcast_data = copy.deepcopy(task.data)
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to deep copy task.data for broadcast_forever: {type(e).__name__}: {e}. "
-                f"This is required to prevent data corruption."
-            ) from e
 
         manager = BcastForeverTaskManager()
         self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
@@ -1023,6 +1022,10 @@ class WFCommServer(FLComponent, WFCommSpec):
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
+
+                    # Clean up broadcast data copy to free memory (important for large models)
+                    if hasattr(exit_task, "_broadcast_data"):
+                        delattr(exit_task, "_broadcast_data")
 
     def _get_task_dead_clients(self, task: Task):
         """

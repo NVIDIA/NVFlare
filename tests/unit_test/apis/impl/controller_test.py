@@ -53,6 +53,35 @@ def create_client(name, token=None):
     return Client(name=name, token=token)
 
 
+def assert_task_data_valid(data, input_data, method):
+    """Validate task data contains expected payload and system headers.
+
+    Broadcast methods use _broadcast_data copy which includes system headers added
+    during task processing. All methods should have these headers added.
+
+    Expected system headers:
+    - TASK_ID: Client task identifier
+    - MSG_ROOT_ID: Message root ID for download tracking
+    - MSG_ROOT_TTL: Message TTL (task timeout)
+
+    Args:
+        data: The data returned from process_task_request
+        input_data: The original input data
+        method: The API method used (broadcast, send, relay, etc.)
+    """
+    # Verify payload content is preserved
+    for key in input_data:
+        if key != "__headers__":
+            assert data[key] == input_data[key], f"Payload key '{key}' mismatch"
+
+    # Verify expected system headers are present
+    # These are added by _send_task_to_client for all methods
+    headers = data.get("__headers__", {})
+    assert ReservedHeaderKey.TASK_ID in headers, "Missing TASK_ID header"
+    assert ReservedHeaderKey.MSG_ROOT_ID in headers, "Missing MSG_ROOT_ID header"
+    assert ReservedHeaderKey.MSG_ROOT_TTL in headers, "Missing MSG_ROOT_TTL header"
+
+
 # TODO:
 #   - provide a easy way for researchers to test their own Controller / their own control loop?
 #   - how can they write their own test cases, simulating different client in diff. scenario...
@@ -969,8 +998,7 @@ class TestBasic(TestController):
         for i in range(num_client_requests):
             task_name_out, _, data = controller.communicator.process_task_request(client, fl_ctx)
             assert task_name_out == "__test_task"
-            # Check payload content (broadcast uses _broadcast_data copy which has extra headers)
-            assert data["hello"] == input_data["hello"]
+            assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map["__test_client0"].task_send_count == num_client_requests
         controller.cancel_task(task)
         launch_thread.join()
@@ -1125,8 +1153,7 @@ class TestBroadcastBehavior(TestController):
                 task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
                 time.sleep(0.1)
             assert task_name_out == "__test_task"
-            # Check payload content (broadcast uses _broadcast_data copy which has extra headers)
-            assert data["hello"] == input_data["hello"]
+            assert_task_data_valid(data, input_data, method)
             assert task.last_client_task_map[client.name].task_send_count == 1
             assert controller.get_num_standing_tasks() == 1
             _, next_client_task_id, _ = controller.communicator.process_task_request(client, fl_ctx)
@@ -1175,8 +1202,7 @@ class TestBroadcastBehavior(TestController):
             task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
             time.sleep(0.1)
         assert task_name_out == "__test_task"
-        # Check payload content (broadcast uses _broadcast_data copy which has extra headers)
-        assert data["hello"] == input_data["hello"]
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
         assert controller.get_num_standing_tasks() == 1
 
