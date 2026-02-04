@@ -101,6 +101,40 @@ class TestPTScaffoldRecipe:
 
         assert recipe.initial_model == model_config
 
+    def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
+        """Test that relative paths are rejected."""
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            ScaffoldRecipe(
+                name="test_relative_path",
+                initial_model=simple_model,
+                initial_ckpt="relative/path/model.pt",
+                **base_recipe_params,
+            )
+
+    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'path' key raises error."""
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        with pytest.raises(ValueError, match="must have 'path' key"):
+            ScaffoldRecipe(
+                name="test_invalid_dict",
+                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                **base_recipe_params,
+            )
+
+    def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config with non-string 'path' raises error."""
+        from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
+
+        with pytest.raises(ValueError, match="'path' must be a string"):
+            ScaffoldRecipe(
+                name="test_invalid_path_type",
+                initial_model={"path": 123, "args": {}},  # Path is not string
+                **base_recipe_params,
+            )
+
 
 class TestTFScaffoldRecipe:
     """Test cases for TensorFlow ScaffoldRecipe."""

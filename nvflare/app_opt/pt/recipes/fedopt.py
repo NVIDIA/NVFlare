@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
@@ -158,23 +157,11 @@ class FedOptRecipe(Recipe):
         self.initial_model = v.initial_model
         self.initial_ckpt = v.initial_ckpt
 
-        # Validate initial_ckpt is absolute path if provided
-        if self.initial_ckpt is not None:
-            if not os.path.isabs(self.initial_ckpt):
-                raise ValueError(
-                    f"initial_ckpt must be an absolute path, got: {self.initial_ckpt}. "
-                    "Use absolute paths like '/workspace/model.pt' for server-side checkpoints."
-                )
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
 
-        # Validate dict config structure if initial_model is dict
-        if isinstance(self.initial_model, dict):
-            if "path" not in self.initial_model:
-                raise ValueError(
-                    "Dict model config must have 'path' key with fully qualified class path. "
-                    f"Got: {self.initial_model}"
-                )
-            if not isinstance(self.initial_model["path"], str):
-                raise ValueError(f"Dict model config 'path' must be a string, got: {type(self.initial_model['path'])}")
+        validate_initial_ckpt(self.initial_ckpt)
+        validate_dict_model_config(self.initial_model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
