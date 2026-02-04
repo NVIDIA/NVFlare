@@ -166,6 +166,7 @@ if __name__ == "__main__":
 
     job = FedJob(name="cifar10_fedavg_xsite_val")
 
+    # Add TensorBoard analytics receiver to capture streamed metrics
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Set up model persistor and shareable generator
@@ -217,4 +218,4 @@ if __name__ == "__main__":
         job.to(executor, f"site-{i}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_xsite_val", gpu="0")

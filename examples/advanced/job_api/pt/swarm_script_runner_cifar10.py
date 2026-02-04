@@ -28,6 +28,7 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = CCWFJob(name="cifar10_swarm")
+    # Add TensorBoard analytics receiver to capture streamed metrics
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
     job.add_swarm(
@@ -42,4 +43,4 @@ if __name__ == "__main__":
     )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_swarm", n_clients=n_clients, gpu="0")

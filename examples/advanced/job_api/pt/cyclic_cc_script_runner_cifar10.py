@@ -28,6 +28,9 @@ if __name__ == "__main__":
     job = CCWFJob(name="cifar10_cyclic")
     job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
+    # Add TensorBoard analytics receiver to capture streamed metrics
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
+
     job.add_cyclic(
         server_config=CyclicServerConfig(num_rounds=num_rounds, max_status_report_interval=300),
         client_config=CyclicClientConfig(
@@ -38,4 +41,4 @@ if __name__ == "__main__":
     )
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", n_clients=n_clients, gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_cyclic", n_clients=n_clients, gpu="0")

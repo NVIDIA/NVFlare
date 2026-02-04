@@ -94,7 +94,9 @@ def main():
                     print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    summary_writer.add_scalar(
+                        tag="loss_for_each_batch", scalar=running_loss, global_step=global_step
+                    )
                     running_loss = 0.0
 
         print("Finished Training")
@@ -141,6 +143,8 @@ def main():
         )
         # (8) send model back to NVFlare
         flare.send(output_model)
+
+    summary_writer.flush()
 
 
 if __name__ == "__main__":
