@@ -12,20 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Optional, Union
 
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
 
 
 class CyclicRecipe(BaseCyclicRecipe):
+    """PyTorch-specific Cyclic federated learning recipe.
+
+    Args:
+        name: Name identifier for the federated learning job. Defaults to "cyclic".
+        initial_model: Starting model object to begin training. Can be:
+            - nn.Module instance
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - PTModel instance (already wrapped)
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
+        num_rounds: Number of complete training rounds to execute. Defaults to 2.
+        min_clients: Minimum number of clients required to participate. Must be >= 2.
+        train_script: Path to the client training script to execute.
+        train_args: Additional command-line arguments to pass to the training script.
+        launch_external_process: Whether to run training in a separate process. Defaults to False.
+        command: Shell command to execute the training script. Defaults to "python3 -u".
+        framework: ML framework type for compatibility. Defaults to FrameworkType.PYTORCH.
+        server_expected_format: Data exchange format between server and clients.
+        params_transfer_type: Method for transferring model parameters.
+        server_memory_gc_rounds: Run memory cleanup every N rounds on server. Defaults to 1.
+    """
+
     def __init__(
         self,
         *,
         name: str = "cyclic",
-        initial_model: Any = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         num_rounds: int = 2,
         min_clients: int = 2,
         train_script: str,
@@ -37,13 +62,18 @@ class CyclicRecipe(BaseCyclicRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
     ):
-        if initial_model is None or isinstance(initial_model, PTModel):
+        # Wrap model with PTModel if needed
+        if initial_model is None and initial_ckpt is None:
+            model_to_pass = None
+        elif isinstance(initial_model, PTModel):
             model_to_pass = initial_model
         else:
-            model_to_pass = PTModel(initial_model)
+            model_to_pass = PTModel(model=initial_model, initial_ckpt=initial_ckpt)
+
         super().__init__(
             name=name,
             initial_model=model_to_pass,
+            initial_ckpt=None,  # Already handled by PTModel wrapper
             num_rounds=num_rounds,
             min_clients=min_clients,
             train_script=train_script,

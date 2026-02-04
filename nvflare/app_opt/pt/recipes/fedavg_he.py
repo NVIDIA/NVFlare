@@ -27,8 +27,9 @@ from nvflare.app_opt.he.model_shareable_generator import HEModelShareableGenerat
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -38,6 +39,7 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
 
     name: str
     initial_model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -71,8 +73,13 @@ class FedAvgRecipeWithHE(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        initial_model: Initial model to start federated training with. Can be:
+            - nn.Module instance
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -123,7 +130,8 @@ class FedAvgRecipeWithHE(Recipe):
         self,
         *,
         name: str = "fedavg_he",
-        initial_model: Any = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -141,6 +149,7 @@ class FedAvgRecipeWithHE(Recipe):
         v = _FedAvgRecipeWithHEValidator(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -157,6 +166,14 @@ class FedAvgRecipeWithHE(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+
+        validate_initial_ckpt(self.initial_ckpt)
+        validate_dict_model_config(self.initial_model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -170,10 +187,14 @@ class FedAvgRecipeWithHE(Recipe):
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
-        # Create a persistor with HE serialization filter if initial model is provided
+        # Create a persistor with HE serialization filter if initial model or checkpoint is provided
         model_persistor = None
-        if self.initial_model is not None:
-            model_persistor = PTFileModelPersistor(model=self.initial_model, filter_id="model_serialize_filter")
+        if self.initial_model is not None or self.initial_ckpt is not None:
+            model_persistor = PTFileModelPersistor(
+                model=self.initial_model,
+                source_ckpt_file_full_name=self.initial_ckpt,
+                filter_id="model_serialize_filter",
+            )
 
         # Create BaseFedJob with initial model and persistor
         job = BaseFedJob(
@@ -184,7 +205,7 @@ class FedAvgRecipeWithHE(Recipe):
         )
 
         # Add HE model serialization filter (must be added before persistor uses it)
-        if self.initial_model is not None:
+        if self.initial_model is not None or self.initial_ckpt is not None:
             model_serialize_filter = HEModelSerializeFilter()
             job.to_server(model_serialize_filter, id="model_serialize_filter")
 
@@ -208,7 +229,11 @@ class FedAvgRecipeWithHE(Recipe):
             num_rounds=self.num_rounds,
             wait_time_after_min_received=0,
             aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            persistor_id=(
+                job.comp_ids.get("persistor_id", "")
+                if (self.initial_model is not None or self.initial_ckpt is not None)
+                else ""
+            ),
             shareable_generator_id=shareable_generator_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
         )
