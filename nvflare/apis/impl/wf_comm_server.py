@@ -505,23 +505,35 @@ class WFCommServer(FLComponent, WFCommSpec):
             task: The task to snapshot
 
         Returns:
-            A new task with deep copied data, or original task if deepcopy fails (with warning)
+            A new task with deep copied data and independent mutable containers
+
+        Raises:
+            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
         import copy
+        import threading
 
+        # Shallow copy task structure
         snapshot_task = copy.copy(task)
+
+        # Create independent mutable containers to avoid shared state with original task
+        # This prevents modifications to snapshot_task from affecting the original task
+        snapshot_task.props = task.props.copy() if task.props else {}
+        snapshot_task.client_tasks = []
+        snapshot_task.last_client_task_map = {}
+        snapshot_task.cb_lock = threading.RLock()
+
         try:
             snapshot_task.data = copy.deepcopy(task.data)
             return snapshot_task
         except Exception as e:
-            self.logger.warning(
-                f"Failed to create broadcast snapshot - broadcasting without protection (data corruption risk!). "
-                f"task.data contains objects that cannot be deep copied: {type(e).__name__}: {e}. "
+            raise RuntimeError(
+                f"Failed to create broadcast snapshot: task.data contains objects that cannot be deep copied. "
+                f"This snapshot is REQUIRED to prevent data corruption with TensorStreamer/min_responses. "
                 f"Standard data types (PyTorch tensors, NumPy arrays, primitives) support deepcopy. "
-                f"If using custom objects in Shareable, ensure they implement __deepcopy__."
-            )
-            # Return original task - no snapshot protection
-            return task
+                f"If using custom objects in Shareable, ensure they implement __deepcopy__. "
+                f"Original error: {type(e).__name__}: {e}"
+            ) from e
 
     def broadcast(
         self,
@@ -553,9 +565,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         Raises:
             ValueError: min_responses is greater than the length of targets since this condition will make the task,
                 if allowed to be scheduled, never exit.
-
-        Note:
-            If task.data cannot be deep copied, a warning is logged and the original task is returned (no snapshot protection)
+            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         _check_positive_int("min_responses", min_responses)
@@ -620,11 +630,16 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         This broadcast will not end.
 
+        Note: Creates immutable snapshot of task.data to protect against data corruption.
+
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
             targets (Union[List[Client], List[str], None], optional): the list of eligible clients or client names
                 or None (all clients). Defaults to None.
+
+        Raises:
+            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
 
