@@ -27,6 +27,10 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = CCWFJob(name="cifar10_swarm")
+
+    # Add TensorBoard receiver to all clients
+    job.to_clients(TBAnalyticsReceiver(events=["analytix_log_stats"]))
+
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
     job.add_swarm(
         server_config=SwarmServerConfig(num_rounds=num_rounds),

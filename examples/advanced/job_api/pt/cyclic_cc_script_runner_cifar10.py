@@ -26,6 +26,9 @@ if __name__ == "__main__":
 
     job = CCWFJob(name="cifar10_cyclic")
 
+    # Add TensorBoard receiver to all clients
+    job.to_clients(TBAnalyticsReceiver(events=["analytix_log_stats"]))
+
     job.add_cyclic(
         server_config=CyclicServerConfig(num_rounds=num_rounds, max_status_report_interval=300),
         client_config=CyclicClientConfig(
