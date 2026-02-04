@@ -15,7 +15,7 @@
 import copy
 import importlib
 import os
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.fuel.utils.import_utils import optional_import
@@ -418,3 +418,38 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
             if os.path.isabs(script) and not os.path.exists(script):
                 non_local_scripts.append(script)
     return non_local_scripts
+
+
+def validate_initial_ckpt(initial_ckpt: Optional[str]) -> None:
+    """Validate that initial_ckpt is an absolute path if provided.
+
+    Args:
+        initial_ckpt: Checkpoint file path to validate.
+
+    Raises:
+        ValueError: If initial_ckpt is not an absolute path.
+    """
+    if initial_ckpt is not None:
+        if not os.path.isabs(initial_ckpt):
+            raise ValueError(
+                f"initial_ckpt must be an absolute path, got: {initial_ckpt}. "
+                "Use absolute paths like '/workspace/model.pt' for server-side checkpoints."
+            )
+
+
+def validate_dict_model_config(initial_model: Any) -> None:
+    """Validate dict model config structure.
+
+    Args:
+        initial_model: Model input to validate.
+
+    Raises:
+        ValueError: If dict config is missing 'path' key or 'path' is not a string.
+    """
+    if isinstance(initial_model, dict):
+        if "path" not in initial_model:
+            raise ValueError(
+                "Dict model config must have 'path' key with fully qualified class path. " f"Got: {initial_model}"
+            )
+        if not isinstance(initial_model["path"], str):
+            raise ValueError(f"Dict model config 'path' must be a string, got: {type(initial_model['path'])}")

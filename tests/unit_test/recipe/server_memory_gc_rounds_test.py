@@ -118,20 +118,21 @@ class TestCyclicRecipeServerMemoryGcRounds:
 class TestFedAvgRecipeServerMemoryGcRounds:
     """Test server_memory_gc_rounds for FedAvgRecipe."""
 
-    def test_fedavg_default_server_memory_gc_rounds(self, mock_file_system, base_recipe_params):
+    def test_fedavg_default_server_memory_gc_rounds(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe has default server_memory_gc_rounds=0."""
         from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
-        recipe = FedAvgRecipe(name="test_fedavg", **base_recipe_params)
+        recipe = FedAvgRecipe(name="test_fedavg", initial_model=simple_model, **base_recipe_params)
 
         assert recipe.server_memory_gc_rounds == 0
 
-    def test_fedavg_custom_server_memory_gc_rounds(self, mock_file_system, base_recipe_params):
+    def test_fedavg_custom_server_memory_gc_rounds(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe accepts custom server_memory_gc_rounds."""
         from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
             name="test_fedavg",
+            initial_model=simple_model,
             server_memory_gc_rounds=3,
             **base_recipe_params,
         )
