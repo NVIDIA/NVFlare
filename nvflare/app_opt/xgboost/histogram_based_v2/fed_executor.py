@@ -43,8 +43,12 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.model_file_name = model_file_name
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
+        self._cached_adaptor = None  # Cache adaptor to prevent recreation
 
     def get_adaptor(self, fl_ctx: FLContext):
+        # Return cached adaptor if it exists to prevent losing configuration
+        if self._cached_adaptor is not None:
+            return self._cached_adaptor
 
         engine = fl_ctx.get_engine()
         handler = ClientSecurityHandler()
@@ -63,4 +67,5 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
+        self._cached_adaptor = adaptor  # Cache for future calls
         return adaptor
