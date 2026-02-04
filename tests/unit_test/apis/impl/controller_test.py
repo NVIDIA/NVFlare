@@ -56,13 +56,12 @@ def create_client(name, token=None):
 def assert_task_data_valid(data, input_data, method):
     """Validate task data contains expected payload and system headers.
 
-    System headers (TASK_ID, MSG_ROOT_ID, MSG_ROOT_TTL) are added to task_data
-    in _send_task_to_client before make_copy() is called. For broadcast methods,
-    task_data is the _broadcast_data copy; headers are added to this copy before
-    it's returned to the client.
+    System headers (TASK_ID, MSG_ROOT_ID, MSG_ROOT_TTL) are set on task_data in
+    _send_task_to_client, then make_copy() deep copies the headers for each client.
+    Each client receives unique headers (e.g., TASK_ID is per-client).
 
     Expected system headers:
-    - TASK_ID: Client task identifier
+    - TASK_ID: Client task identifier (unique per client)
     - MSG_ROOT_ID: Message root ID for download tracking
     - MSG_ROOT_TTL: Message TTL (task timeout)
 
