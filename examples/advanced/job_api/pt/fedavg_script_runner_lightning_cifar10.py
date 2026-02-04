@@ -15,7 +15,6 @@
 from src.lit_net import LitNet
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":

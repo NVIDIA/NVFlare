@@ -110,7 +110,7 @@ def create_data_splits(split_dir, num_sites, alpha, seed=0):
     # Check if splits already exist
     if os.path.exists(split_dir):
         # Check if all site files exist
-        all_exist = all(os.path.exists(os.path.join(split_dir, f"site-{i}.npy")) for i in range(num_sites))
+        all_exist = all(os.path.exists(os.path.join(split_dir, f"site-{i + 1}.npy")) for i in range(num_sites))
         if all_exist:
             print(f"Data splits already exist at {split_dir}, skipping creation")
             return
@@ -139,15 +139,17 @@ def create_data_splits(split_dir, num_sites, alpha, seed=0):
 
     # Save site data files
     for site in range(num_sites):
-        site_file_name = os.path.join(split_dir, f"site-{site}.npy")
+        site_name = f"site-{site + 1}"
+        site_file_name = os.path.join(split_dir, f"{site_name}.npy")
         np.save(site_file_name, np.array(site_idx[site]))
-        print(f"Saved site-{site} data ({len(site_idx[site])} samples) to: {site_file_name}")
+        print(f"Saved {site_name} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
     # Print summary
     print("\nClass distribution summary:")
     for site, classes in class_sum.items():
+        site_name = f"site-{site + 1}"
         total_samples = sum(classes.values())
-        print(f"  site-{site}: {total_samples} samples - {classes}")
+        print(f"  {site_name}: {total_samples} samples - {classes}")
 
     print(f"\nData splits created at: {split_dir}")
 
