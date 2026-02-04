@@ -548,13 +548,12 @@ class WFCommServer(FLComponent, WFCommSpec):
         if not hasattr(task, "_snapshot_task") or task._snapshot_task is None:
             task._snapshot_task = snapshot_task
 
-        # Mark original task as used to prevent reuse (schedule_time check in _schedule_task)
-        # This ensures ValueError is raised if someone tries to reuse the original task object
-        if task.schedule_time is None:
-            task.schedule_time = time.time()
-
         try:
             snapshot_task.data = copy.deepcopy(task.data)
+            # Mark original task as used AFTER deepcopy succeeds
+            # This ensures task remains reusable if deepcopy fails (caller can retry)
+            if task.schedule_time is None:
+                task.schedule_time = time.time()
             return snapshot_task
         except Exception as e:
             raise RuntimeError(
