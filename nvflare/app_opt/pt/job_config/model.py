@@ -93,6 +93,10 @@ class PTModel:
 
         # Handle dict config {"path": "...", "args": {...}}
         elif isinstance(self.model, dict):
+            # TODO: Future enhancement - when dict config is used, we currently create a PTFileModelPersistor
+            # instance that will dynamically instantiate the model at runtime. Consider enhancing Job API to
+            # allow passing dict config directly to job.add_component() without pre-creating the persistor,
+            # which would simplify the internal implementation for dict-based models.
             persistor = self._create_persistor_for_dict_config()
             persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
 

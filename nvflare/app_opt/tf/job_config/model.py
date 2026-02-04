@@ -79,6 +79,10 @@ class TFModel:
             persistor = self._create_persistor_for_model()
         elif isinstance(self.model, dict):
             # Dict config provided
+            # TODO: Future enhancement - when dict config is used, we currently create a TFModelPersistor
+            # instance that will dynamically instantiate the model at runtime. Consider enhancing Job API to
+            # allow passing dict config directly to job.add_component() without pre-creating the persistor,
+            # which would simplify the internal implementation for dict-based models.
             persistor = self._create_persistor_for_dict_config()
         elif self.initial_ckpt:
             # Checkpoint only (TF can load full model from file)
