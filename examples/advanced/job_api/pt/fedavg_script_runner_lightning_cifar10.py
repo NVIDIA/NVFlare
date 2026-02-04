@@ -25,9 +25,6 @@ if __name__ == "__main__":
 
     job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
 
-    # Add TensorBoard analytics receiver to capture streamed metrics
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
-
     # Add clients
     for i in range(n_clients):
         executor = ScriptRunner(

@@ -166,9 +166,6 @@ if __name__ == "__main__":
 
     job = FedJob(name="cifar10_fedavg_xsite_val")
 
-    # Add TensorBoard analytics receiver to capture streamed metrics
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
-
     # Set up model persistor and shareable generator
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
     persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")
@@ -215,7 +212,9 @@ if __name__ == "__main__":
             script=train_script,
             script_args=f"--data_split_path {data_split_root}",  # Pass data split path to clients
         )
-        job.to(executor, f"site-{i + 1}")
+        target = f"site-{i + 1}"
+        job.to(executor, target)
+        job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), target)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir/pt_xsite_val", gpu="0")

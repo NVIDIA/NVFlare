@@ -27,13 +27,11 @@ if __name__ == "__main__":
 
     job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
-    # Add TensorBoard analytics receiver to capture streamed metrics
-    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
-
     for i in range(n_clients):
         site_name = f"site-{i + 1}"
         executor = ScriptRunner(script=train_script, script_args="")
         job.to(executor, site_name, tasks=["train"])
+        job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), site_name)
 
         # add privacy filter.
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
