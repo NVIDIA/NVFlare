@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
@@ -39,8 +39,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        initial_model: Initial model to start federated training with. Can be:
+            - nn.Module instance
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -94,7 +99,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        initial_model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -107,7 +113,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -116,7 +122,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         patience: Optional[int] = None,
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
     ):
         # Store PyTorch-specific model_locator before calling parent
@@ -126,6 +132,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         super().__init__(
             name=name,
             initial_model=initial_model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -152,7 +159,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
-        if self.initial_model is not None:
+        if self.initial_model is not None or self.initial_ckpt is not None:
             from nvflare.app_opt.pt.job_config.model import PTModel
 
             # Disable numpy conversion when using tensor format to keep PyTorch tensors
@@ -160,6 +167,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
             pt_model = PTModel(
                 model=self.initial_model,
+                initial_ckpt=self.initial_ckpt,
                 persistor=self.model_persistor,
                 locator=self._pt_model_locator,
                 allow_numpy_conversion=allow_numpy_conversion,

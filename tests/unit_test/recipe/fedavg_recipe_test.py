@@ -128,27 +128,33 @@ def get_model_selector(recipe):
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
-    def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params):
+    def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe initialization with default (built-in) aggregation."""
-        recipe = FedAvgRecipe(name="test_fedavg", **base_recipe_params)
+        recipe = FedAvgRecipe(name="test_fedavg", initial_model=simple_model, **base_recipe_params)
 
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
-        assert recipe.initial_model is None
+        assert recipe.initial_model == simple_model
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
-    def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params):
+    def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
-        recipe = FedAvgRecipe(name="test_fedavg_key_metric", key_metric=key_metric, **base_recipe_params)
+        recipe = FedAvgRecipe(
+            name="test_fedavg_key_metric", initial_model=simple_model, key_metric=key_metric, **base_recipe_params
+        )
 
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
 
-    def test_custom_aggregator_initialization(self, mock_file_system, base_recipe_params, custom_aggregator):
+    def test_custom_aggregator_initialization(
+        self, mock_file_system, base_recipe_params, custom_aggregator, simple_model
+    ):
         """Test FedAvgRecipe initialization with custom aggregator."""
         params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
-        recipe = FedAvgRecipe(name="test_fedavg_custom", aggregator=custom_aggregator, **params)
+        recipe = FedAvgRecipe(
+            name="test_fedavg_custom", initial_model=simple_model, aggregator=custom_aggregator, **params
+        )
 
         assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
@@ -172,10 +178,11 @@ class TestFedAvgRecipe:
             (5, 10, "--lr 0.01 --batch_size 32"),  # Complex configuration
         ],
     )
-    def test_recipe_configurations(self, mock_file_system, min_clients, num_rounds, train_args):
+    def test_recipe_configurations(self, mock_file_system, simple_model, min_clients, num_rounds, train_args):
         """Test various FedAvgRecipe configurations using parametrized tests."""
         recipe = FedAvgRecipe(
             name=f"test_config_{min_clients}_{num_rounds}",
+            initial_model=simple_model,
             train_script="mock_train_script.py",
             train_args=train_args,
             min_clients=min_clients,
@@ -299,19 +306,16 @@ class TestNumpyFedAvgRecipe:
 
         assert recipe.per_site_config == per_site_config
 
-    def test_numpy_recipe_with_none_initial_model(self, mock_file_system):
-        """Test NumpyFedAvgRecipe with no initial model."""
-        recipe = NumpyFedAvgRecipe(
-            name="test_numpy_no_model",
-            initial_model=None,
-            min_clients=2,
-            num_rounds=3,
-            train_script="client.py",
-        )
-
-        # Should still create the recipe without error
-        assert recipe.name == "test_numpy_no_model"
-        assert recipe.job is not None
+    def test_numpy_recipe_with_none_initial_model_raises_error(self, mock_file_system):
+        """Test NumpyFedAvgRecipe with no model raises error."""
+        with pytest.raises(ValueError, match="Must provide either initial_model"):
+            NumpyFedAvgRecipe(
+                name="test_numpy_no_model",
+                initial_model=None,
+                min_clients=2,
+                num_rounds=3,
+                train_script="client.py",
+            )
 
     def test_numpy_recipe_full_configuration(self, mock_file_system):
         """Test NumpyFedAvgRecipe with all new features."""
@@ -349,10 +353,11 @@ class TestNumpyFedAvgRecipe:
 class TestFedAvgRecipeEarlyStopping:
     """Test early stopping configuration for FedAvgRecipe."""
 
-    def test_early_stopping_configuration(self, mock_file_system, base_recipe_params):
+    def test_early_stopping_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with early stopping configuration."""
         recipe = FedAvgRecipe(
             name="test_early_stop",
+            initial_model=simple_model,
             stop_cond="accuracy >= 80",
             patience=5,
             **base_recipe_params,
@@ -362,31 +367,34 @@ class TestFedAvgRecipeEarlyStopping:
         assert recipe.stop_cond == "accuracy >= 80"
         assert recipe.patience == 5
 
-    def test_save_filename_configuration(self, mock_file_system, base_recipe_params):
+    def test_save_filename_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with custom save filename."""
         recipe = FedAvgRecipe(
             name="test_save_file",
+            initial_model=simple_model,
             save_filename="best_model.pt",
             **base_recipe_params,
         )
 
         assert recipe.save_filename == "best_model.pt"
 
-    def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params):
+    def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with exclude_vars configuration."""
         recipe = FedAvgRecipe(
             name="test_exclude",
+            initial_model=simple_model,
             exclude_vars="bn.*|running_mean|running_var",
             **base_recipe_params,
         )
 
         assert recipe.exclude_vars == "bn.*|running_mean|running_var"
 
-    def test_aggregation_weights_configuration(self, mock_file_system, base_recipe_params):
+    def test_aggregation_weights_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with per-client aggregation weights."""
         weights = {"site-1": 2.0, "site-2": 1.0}
         recipe = FedAvgRecipe(
             name="test_weights",
+            initial_model=simple_model,
             aggregation_weights=weights,
             **base_recipe_params,
         )
@@ -409,3 +417,119 @@ class TestFedAvgRecipeValidation:
                 aggregator=invalid_aggregator,  # type: ignore[arg-type]
                 **base_recipe_params,
             )
+
+    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'path' key"):
+            FedAvgRecipe(
+                name="test_invalid_dict",
+                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                **base_recipe_params,
+            )
+
+    def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config with non-string 'path' raises error."""
+        with pytest.raises(ValueError, match="'path' must be a string"):
+            FedAvgRecipe(
+                name="test_invalid_path_type",
+                initial_model={"path": 123, "args": {}},  # Path is not string
+                **base_recipe_params,
+            )
+
+
+class TestFedAvgRecipeInitialCkpt:
+    """Test initial_ckpt parameter for FedAvgRecipe."""
+
+    def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that initial_ckpt parameter is accepted."""
+        recipe = FedAvgRecipe(
+            name="test_initial_ckpt",
+            initial_model=simple_model,
+            initial_ckpt="/abs/path/to/model.pt",
+            **base_recipe_params,
+        )
+
+        assert recipe.initial_ckpt == "/abs/path/to/model.pt"
+        assert recipe.initial_model == simple_model
+
+    def test_initial_ckpt_with_none_model_not_allowed_for_pt(self, mock_file_system, base_recipe_params):
+        """Test that PT FedAvg rejects initial_ckpt with None model (PT needs architecture)."""
+        # PyTorch requires model architecture even when loading from checkpoint
+        # TensorFlow can load full models, but PT cannot
+        with pytest.raises(ValueError, match="Unable to add None to job"):
+            FedAvgRecipe(
+                name="test_ckpt_no_model",
+                initial_model=None,
+                initial_ckpt="/abs/path/to/model.pt",
+                **base_recipe_params,
+            )
+
+    def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
+        """Test that relative paths are rejected (without mock to allow validation)."""
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            FedAvgRecipe(
+                name="test_relative_path",
+                initial_model=simple_model,
+                initial_ckpt="relative/path/model.pt",
+                **base_recipe_params,
+            )
+
+    def test_dict_model_config_accepted(self, mock_file_system, base_recipe_params):
+        """Test that dict model config is accepted."""
+        model_config = {
+            "path": "my_module.models.SimpleNet",
+            "args": {"input_size": 10, "output_size": 5},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config",
+            initial_model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.initial_model == model_config
+
+    def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
+        """Test that dict model config with initial_ckpt is accepted."""
+        model_config = {
+            "path": "my_module.models.SimpleNet",
+            "args": {"input_size": 10},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_with_ckpt",
+            initial_model=model_config,
+            initial_ckpt="/abs/path/to/pretrained.pt",
+            **base_recipe_params,
+        )
+
+        assert recipe.initial_model == model_config
+        assert recipe.initial_ckpt == "/abs/path/to/pretrained.pt"
+
+
+class TestNumpyFedAvgRecipeInitialCkpt:
+    """Test initial_ckpt parameter for NumpyFedAvgRecipe."""
+
+    def test_numpy_initial_ckpt_accepted(self, mock_file_system):
+        """Test that initial_ckpt parameter is accepted for NumPy recipe."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_ckpt",
+            initial_model=[1.0, 2.0, 3.0],
+            initial_ckpt="/abs/path/to/model.npy",
+            min_clients=2,
+            train_script="client.py",
+        )
+
+        assert recipe._np_initial_ckpt == "/abs/path/to/model.npy"
+
+    def test_numpy_initial_ckpt_only(self, mock_file_system):
+        """Test that NumPy recipe works with initial_ckpt only (no initial_model)."""
+        # NumPy can load model from checkpoint without architecture
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_ckpt_only",
+            initial_model=None,
+            initial_ckpt="/abs/path/to/model.npy",
+            min_clients=2,
+            train_script="client.py",
+        )
+
+        assert recipe._np_initial_ckpt == "/abs/path/to/model.npy"
+        assert recipe._np_initial_model is None
