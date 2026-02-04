@@ -19,6 +19,7 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -27,6 +28,7 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = CCWFJob(name="cifar10_swarm")
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
     aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
     job.add_swarm(
         server_config=SwarmServerConfig(num_rounds=num_rounds),

@@ -15,6 +15,7 @@
 from src.lit_net import LitNet
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -23,6 +24,7 @@ if __name__ == "__main__":
     train_script = "src/cifar10_lightning_fl.py"
 
     job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Add clients
     for i in range(n_clients):

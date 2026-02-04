@@ -25,6 +25,7 @@ from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEva
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -33,6 +34,8 @@ if __name__ == "__main__":
     train_script = "src/cifar10_fl_train_eval_submit.py"
 
     job = FedJob(name="cse_pt")
+
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
     persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")

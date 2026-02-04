@@ -29,6 +29,7 @@ from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEva
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -164,6 +165,8 @@ if __name__ == "__main__":
     create_data_splits(data_split_root, n_clients, alpha)
 
     job = FedJob(name="cifar10_fedavg_xsite_val")
+
+    job.to_server(TBAnalyticsReceiver(events=["fed.analytix_log_stats"]))
 
     # Set up model persistor and shareable generator
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
