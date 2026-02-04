@@ -438,7 +438,7 @@ class TestTensorServerStreamer:
         # Setup mocks
         mock_fl_context.get_engine.return_value = mock_engine_with_clients
         mock_fl_context.get_prop.side_effect = lambda key, default=None: {
-            "AppConstants.CURRENT_ROUND": current_round,
+            AppConstants.CURRENT_ROUND: current_round,
             FLContextKey.TASK_ID: task_id,
         }.get(key, default)
 
