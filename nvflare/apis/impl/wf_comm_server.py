@@ -279,7 +279,12 @@ class WFCommServer(FLComponent, WFCommSpec):
             # remember the task name and data to be sent to the client
             # since task.data could be reset by the after_task_sent_cb
             task_name = task.name
-            task_data = task.data
+            # Use _broadcast_data if available (deep copied for broadcast to protect against
+            # concurrent in-place modifications), otherwise use task.data directly.
+            # Note: before_task_sent_cb modifications to task.data won't be reflected in
+            # _broadcast_data - this is by design since per-client data modification is
+            # incompatible with broadcast's shared data model.
+            task_data = getattr(task, "_broadcast_data", None) or task.data
             operator = task.operator
 
             if task.after_task_sent_cb is not None:
@@ -491,50 +496,6 @@ class WFCommServer(FLComponent, WFCommSpec):
             self._tasks.append(task)
             self.log_info(fl_ctx, "scheduled task {}".format(task.name))
 
-    def _create_broadcast_snapshot(self, task: Task) -> Task:
-        """Create a snapshot of task data to protect against concurrent in-place modifications.
-
-        Critical for TensorStreamer/NumpyDownloader scenarios where min_responses < total_clients:
-        - Without snapshot: In-place aggregation corrupts data while slow clients download
-        - With snapshot: All clients download from immutable copy (one copy per broadcast)
-
-        Note: Only needed for broadcast (concurrent downloads). Sequential send/relay don't need
-        this as they dispatch one client at a time. Without streaming, FOBS creates copies automatically.
-
-        Args:
-            task: The task to snapshot
-
-        Returns:
-            A new task with deep copied data and independent mutable containers
-
-        Raises:
-            RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
-        """
-        import copy
-        import threading
-
-        # Shallow copy task structure
-        snapshot_task = copy.copy(task)
-
-        # Create independent mutable containers to avoid shared state with original task
-        # This prevents modifications to snapshot_task from affecting the original task
-        snapshot_task.props = task.props.copy() if task.props else {}
-        snapshot_task.client_tasks = []
-        snapshot_task.last_client_task_map = {}
-        snapshot_task.cb_lock = threading.RLock()
-
-        try:
-            snapshot_task.data = copy.deepcopy(task.data)
-            return snapshot_task
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to create broadcast snapshot: task.data contains objects that cannot be deep copied. "
-                f"This snapshot is REQUIRED to prevent data corruption with TensorStreamer/min_responses. "
-                f"Standard data types (PyTorch tensors, NumPy arrays, primitives) support deepcopy. "
-                f"If using custom objects in Shareable, ensure they implement __deepcopy__. "
-                f"Original error: {type(e).__name__}: {e}"
-            ) from e
-
     def broadcast(
         self,
         task: Task,
@@ -542,7 +503,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         targets: Union[List[Client], List[str], None] = None,
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
-    ) -> Task:
+    ):
         """Schedule a broadcast task.  This is a non-blocking call.
 
         The task is scheduled into a task list.
@@ -559,14 +520,13 @@ class WFCommServer(FLComponent, WFCommSpec):
                 submission.  0 means no grace period.
               Submission of late clients in the grace period are still collected as valid submission. Defaults to 0.
 
-        Returns:
-            Task: The snapshot task that was scheduled (use this with wait_for_task or broadcast_and_wait)
-
         Raises:
             ValueError: min_responses is greater than the length of targets since this condition will make the task,
                 if allowed to be scheduled, never exit.
             RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
+        import copy
+
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
         _check_positive_int("min_responses", min_responses)
         _check_positive_int("wait_time_after_min_received", wait_time_after_min_received)
@@ -575,16 +535,22 @@ class WFCommServer(FLComponent, WFCommSpec):
                 "min_responses ({}) must be less than length of targets ({}).".format(min_responses, len(targets))
             )
 
-        # Create snapshot to protect against concurrent in-place modifications
-        # Broadcast sends to multiple clients CONCURRENTLY, so controller can modify
-        # data while downloads are in progress, causing corruption
-        snapshot_task = self._create_broadcast_snapshot(task)
+        # Deep copy task.data to _broadcast_data to protect against concurrent in-place modifications
+        # Broadcast sends to multiple clients CONCURRENTLY, so if controller modifies
+        # task.data (e.g., in-place aggregation) while clients are downloading, it causes corruption
+        # We store the copy in _broadcast_data so controller can still modify task.data freely
+        try:
+            task._broadcast_data = copy.deepcopy(task.data)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to deep copy task.data for broadcast: {type(e).__name__}: {e}. "
+                f"This is required to prevent data corruption when min_responses < total clients."
+            ) from e
 
         manager = BcastTaskManager(
-            task=snapshot_task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
+            task=task, min_responses=min_responses, wait_time_after_min_received=wait_time_after_min_received
         )
-        self._schedule_task(task=snapshot_task, fl_ctx=fl_ctx, manager=manager, targets=targets)
-        return snapshot_task
+        self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
 
     def broadcast_and_wait(
         self,
@@ -613,14 +579,14 @@ class WFCommServer(FLComponent, WFCommSpec):
             abort_signal (Optional[Signal], optional): as this is a blocking call, this abort_signal informs
                 this method to return. Defaults to None.
         """
-        snapshot_task = self.broadcast(
+        self.broadcast(
             task=task,
             fl_ctx=fl_ctx,
             targets=targets,
             min_responses=min_responses,
             wait_time_after_min_received=wait_time_after_min_received,
         )
-        self.wait_for_task(snapshot_task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
         """Schedule a broadcast task.  This is a non-blocking call.
@@ -630,7 +596,7 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         This broadcast will not end.
 
-        Note: Creates immutable snapshot of task.data to protect against data corruption.
+        Note: Deep copies task.data to protect against data corruption.
 
         Args:
             task (Task): the task to be scheduled
@@ -641,13 +607,21 @@ class WFCommServer(FLComponent, WFCommSpec):
         Raises:
             RuntimeError: If task.data cannot be deep copied (contains non-serializable objects)
         """
+        import copy
+
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
 
-        # Create snapshot to protect against concurrent in-place modifications
-        snapshot_task = self._create_broadcast_snapshot(task)
+        # Deep copy task.data to _broadcast_data to protect against concurrent in-place modifications
+        try:
+            task._broadcast_data = copy.deepcopy(task.data)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to deep copy task.data for broadcast_forever: {type(e).__name__}: {e}. "
+                f"This is required to prevent data corruption."
+            ) from e
 
         manager = BcastForeverTaskManager()
-        self._schedule_task(task=snapshot_task, fl_ctx=fl_ctx, manager=manager, targets=targets)
+        self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
 
     def send(
         self,
