@@ -828,10 +828,14 @@ class WFCommServer(FLComponent, WFCommSpec):
         snapshot_task = getattr(task, "_snapshot_task", None)
         if snapshot_task is not None:
             snapshot_task.completion_status = completion_status
+            if hasattr(task, "exception"):
+                snapshot_task.exception = task.exception
         # If this is a snapshot, also sync to original task
         original_task = getattr(task, "_original_task", None)
         if original_task is not None:
             original_task.completion_status = completion_status
+            if hasattr(task, "exception"):
+                original_task.exception = task.exception
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
         """Cancel all standing tasks in this controller.
@@ -844,10 +848,12 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             for t in self._tasks:
                 t.completion_status = completion_status
-                # If this is a broadcast snapshot, also sync status to original task
+                # If this is a broadcast snapshot, also sync status and exception to original task
                 original_task = getattr(t, "_original_task", None)
                 if original_task is not None:
                     original_task.completion_status = completion_status
+                    if hasattr(t, "exception"):
+                        original_task.exception = t.exception
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
