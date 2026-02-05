@@ -25,7 +25,10 @@ if __name__ == "__main__":
     recipe = FedAvgRecipe(
         name="hello-tf_fedavg",
         num_rounds=num_rounds,
+        # Model can be specified as class instance or dict config:
         initial_model=Net(),
+        # Alternative: initial_model={"path": "model.Net", "args": {}},
+        # For pre-trained weights: initial_ckpt="/server/path/to/model.h5",
         min_clients=n_clients,
         train_script=train_script,
     )

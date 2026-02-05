@@ -36,7 +36,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class GlobalEvaluator(Widget):
     def __init__(
         self,
-        model_path: Union[str, nn.Module],
+        model_path: Union[str, nn.Module, Dict],
         eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
@@ -44,7 +44,11 @@ class GlobalEvaluator(Widget):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
         Args:
-            model_path: PyTorch model to evaluate
+            model_path: PyTorch model to evaluate. Can be:
+                - An nn.Module instance
+                - A string class path (e.g., "mymodule.MyModel")
+                - A dict config with 'path' and optional 'args' keys
+                  (e.g., {"path": "mymodule.MyModel", "args": {"num_classes": 10}})
             eval_frequency: Frequency of evaluation (evaluate every N rounds)
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
@@ -57,8 +61,13 @@ class GlobalEvaluator(Widget):
 
         if isinstance(model_path, nn.Module):
             pass
+        elif isinstance(model_path, dict):
+            if "path" not in model_path:
+                raise ValueError("model_path dict must contain 'path' key with the model class path")
         elif not isinstance(model_path, str):
-            raise ValueError(f"model_path must be either a Pytorch model or class path, but got {type(model_path)}")
+            raise ValueError(
+                f"model_path must be nn.Module, str class path, or dict config, but got {type(model_path)}"
+            )
 
         # Validate eval_frequency - positive integer
         check_positive_int("eval_frequency", eval_frequency)
@@ -81,28 +90,53 @@ class GlobalEvaluator(Widget):
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
 
-    def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
-        """Load model from model path.
+    def _load_model_class(self, class_path: str, fl_ctx: FLContext) -> Any:
+        """Load model class from class path.
 
         Args:
-            model_path (str): model path in format "module.submodule.ClassName"
+            class_path (str): model class path in format "module.submodule.ClassName"
             fl_ctx (FLContext): FL context
 
         Returns:
-            model class instance
+            model class (not instance)
         """
         try:
-            self.logger.info(f"Loading model class from path: {model_path}")
-            module_path, class_name = model_path.rsplit(".", 1)
+            self.logger.info(f"Loading model class from path: {class_path}")
+            module_path, class_name = class_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
             model_class = getattr(module, class_name)
             return model_class
         except Exception as e:
             self.system_panic(
-                reason=f"Failed to load model class from '{model_path}': {str(e)}",
+                reason=f"Failed to load model class from '{class_path}': {str(e)}",
                 fl_ctx=fl_ctx,
             )
             return None
+
+    def _instantiate_model(self, fl_ctx: FLContext) -> Optional[nn.Module]:
+        """Instantiate model from model_path config.
+
+        Args:
+            fl_ctx (FLContext): FL context
+
+        Returns:
+            nn.Module instance or None on failure
+        """
+        if isinstance(self.model_path, dict):
+            # Dict config: {"path": "module.ClassName", "args": {...}}
+            class_path = self.model_path["path"]
+            model_args = self.model_path.get("args", {})
+            model_class = self._load_model_class(class_path, fl_ctx)
+            if model_class is None:
+                return None
+            self.logger.info(f"Instantiating model with args: {model_args}")
+            return model_class(**model_args)
+        else:
+            # String class path (no args)
+            model_class = self._load_model_class(self.model_path, fl_ctx)
+            if model_class is None:
+                return None
+            return model_class()
 
     def _create_data_loader(self):
         if self.torchvision_dataset is not None:
@@ -130,7 +164,7 @@ class GlobalEvaluator(Widget):
         else:
             # For custom datasets (e.g., XOR)
             data = self.custom_dataset["data"]
-            labels = self.custom_dataset["label"]
+            labels = self.custom_dataset["labels"]
             # Convert data and labels from list to tensors
             data = torch.tensor(data, dtype=torch.float32)
             labels = torch.tensor(labels, dtype=torch.long)
@@ -144,6 +178,15 @@ class GlobalEvaluator(Widget):
                 self.logger.info(f"Adjusted batch size to {self.batch_size} (data size)")
             self.data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
             self.logger.info(f"Created custom data loader with {len(data)} samples, batch size {self.batch_size}")
+
+    def _to_tensor(self, v) -> torch.Tensor:
+        """Convert value to tensor, reusing memory when possible."""
+        if isinstance(v, torch.Tensor):
+            return v
+        elif hasattr(v, "__array__"):
+            return torch.from_numpy(v)
+        else:
+            return torch.tensor(v)
 
     def _eval_model(self) -> Dict[str, float]:
         if self.data_loader is None:
@@ -177,7 +220,10 @@ class GlobalEvaluator(Widget):
             self.logger.info(f"Starting evaluation {evaluation_id} for round {current_round}")
 
             # Load the model weights
-            global_weights_tensors = {k: torch.tensor(v) for k, v in global_weights.items()}
+            if not global_weights or len(global_weights) == 0:
+                self.logger.error(f"Empty global_weights received for round {current_round}")
+                return
+            global_weights_tensors = {k: self._to_tensor(v) for k, v in global_weights.items()}
             self.model.load_state_dict(global_weights_tensors)
 
             # Evaluate the model
@@ -197,19 +243,24 @@ class GlobalEvaluator(Widget):
 
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
-        if isinstance(self.model_path, str):
-            # load the model
-            model_class = self._load_model(self.model_path, fl_ctx)
-            if model_class is None:
+        if isinstance(self.model_path, nn.Module):
+            # Direct nn.Module instance
+            self.model = self.model_path
+        elif isinstance(self.model_path, (str, dict)):
+            # String class path or dict config
+            self.model = self._instantiate_model(fl_ctx)
+            if self.model is None:
                 self.system_panic(
-                    reason="Failed to load model class during initialization",
+                    reason="Failed to instantiate model during initialization",
                     fl_ctx=fl_ctx,
                 )
                 return
-            self.model = model_class()
         else:
-            # the model_path is nn.Module
-            self.model = self.model_path
+            self.system_panic(
+                reason=f"Invalid model_path type: {type(self.model_path)}",
+                fl_ctx=fl_ctx,
+            )
+            return
 
         # Initialize the data loader
         self._create_data_loader()
@@ -235,12 +286,20 @@ class GlobalEvaluator(Widget):
         global_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
+        # Validate global_model
+        if not global_model or ModelLearnableKey.WEIGHTS not in global_model:
+            self.logger.error("Invalid global_model received, skipping evaluation")
+            return
+
         # Check if evaluation should be performed
         if current_round % self.eval_frequency != 0:
             return
 
-        # Get the global weights
+        # Get the global weights and validate
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
+        if not global_weights or len(global_weights) == 0:
+            self.logger.error(f"Empty global_weights in global_model for round {current_round}, skipping evaluation")
+            return
 
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"

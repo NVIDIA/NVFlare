@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for SklearnFedAvgRecipe with initial_ckpt support."""
+"""Tests for Sklearn recipes (FedAvg, KMeans, SVM) with initial_ckpt support."""
 
 from unittest.mock import patch
 
@@ -102,3 +102,83 @@ class TestSklearnFedAvgRecipe:
         )
 
         assert recipe.per_site_config == per_site_config
+
+
+class TestKMeansFedAvgRecipe:
+    """Test cases for KMeansFedAvgRecipe with initial_ckpt support."""
+
+    def test_basic_initialization(self, mock_file_system):
+        """Test KMeansFedAvgRecipe basic initialization."""
+        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+
+        recipe = KMeansFedAvgRecipe(
+            name="test_kmeans",
+            n_clusters=3,
+            train_script="train.py",
+            min_clients=2,
+            num_rounds=5,
+        )
+
+        assert recipe.name == "test_kmeans"
+        assert recipe.job is not None
+
+    def test_initial_ckpt_accepted(self, mock_file_system):
+        """Test that initial_ckpt parameter is accepted."""
+        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+
+        recipe = KMeansFedAvgRecipe(
+            name="test_kmeans_ckpt",
+            n_clusters=3,
+            train_script="train.py",
+            min_clients=2,
+            num_rounds=5,
+            initial_ckpt="/abs/path/to/kmeans.joblib",
+        )
+
+        assert recipe.job is not None
+
+    def test_relative_path_rejected(self, mock_file_system):
+        """Test that relative paths are rejected."""
+        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            KMeansFedAvgRecipe(
+                name="test_kmeans",
+                n_clusters=3,
+                train_script="train.py",
+                min_clients=2,
+                num_rounds=5,
+                initial_ckpt="relative/path/model.joblib",
+            )
+
+
+class TestSVMFedAvgRecipe:
+    """Test cases for SVMFedAvgRecipe with initial_ckpt support."""
+
+    def test_basic_initialization(self, mock_file_system):
+        """Test SVMFedAvgRecipe basic initialization."""
+        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+        recipe = SVMFedAvgRecipe(
+            name="test_svm",
+            train_script="train.py",
+            min_clients=2,
+            kernel="rbf",
+        )
+
+        assert recipe.name == "test_svm"
+        assert recipe.job is not None
+
+    def test_initial_ckpt_accepted(self, mock_file_system):
+        """Test that initial_ckpt parameter is accepted."""
+        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+        recipe = SVMFedAvgRecipe(
+            name="test_svm_ckpt",
+            train_script="train.py",
+            min_clients=2,
+            kernel="rbf",
+            initial_ckpt="/abs/path/to/svm.joblib",
+        )
+
+        assert recipe.job is not None
