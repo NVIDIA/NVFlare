@@ -183,7 +183,7 @@ class GlobalEvaluator(Widget):
         """Convert value to tensor, reusing memory when possible."""
         if isinstance(v, torch.Tensor):
             return v
-        elif hasattr(v, '__array__'):
+        elif hasattr(v, "__array__"):
             return torch.from_numpy(v)
         else:
             return torch.tensor(v)
