@@ -13,7 +13,6 @@
 # limitations under the License.
 import uuid
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_client_runner import XGBClientRunner
@@ -44,18 +43,8 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.model_file_name = model_file_name
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
-        self._cached_adaptor = None  # Cache adaptor so rank set in configure is still there at start()
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Clear adaptor cache on END_RUN so executor can be reused in next run."""
-        if event_type == EventType.END_RUN:
-            self._cached_adaptor = None
-        super().handle_event(event_type, fl_ctx)
 
     def get_adaptor(self, fl_ctx: FLContext):
-        if self._cached_adaptor is not None:
-            return self._cached_adaptor
-
         engine = fl_ctx.get_engine()
         handler = ClientSecurityHandler()
         engine.add_component(str(uuid.uuid4()), handler)
@@ -73,5 +62,4 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
-        self._cached_adaptor = adaptor
         return adaptor
