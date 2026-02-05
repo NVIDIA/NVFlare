@@ -192,7 +192,6 @@ def main():
 
     # Model configs
     model_name_or_path = args.model_name_or_path
-    peft_config = None
 
     # Load model with device_map
     default_dtype = torch.get_default_dtype()

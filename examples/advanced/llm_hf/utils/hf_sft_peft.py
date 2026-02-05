@@ -84,7 +84,6 @@ def main():
 
     # Model configs
     model_name_or_path = args.model_name_or_path
-    peft_config = None
 
     # Load model
     default_dtype = torch.get_default_dtype()
@@ -115,6 +114,8 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
+    else:
+        peft_config = None
     model.config.pretraining_tp = 1
 
     # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
