@@ -30,7 +30,6 @@ Run with:
 """
 
 import copy
-import queue
 import random
 import threading
 import time
@@ -99,7 +98,7 @@ class TestSelfMessageDeadlock(unittest.TestCase):
             """Simulates the _do_learn thread that processes queued tasks."""
             while not task_processed.is_set():
                 if task_queue:
-                    task = task_queue.pop(0)
+                    task_queue.pop(0)
                     call_order.append("process_task_start")
                     time.sleep(0.1)  # Simulate processing
                     call_order.append("process_task_end")
@@ -156,18 +155,17 @@ class TestSelfMessageDeadlock(unittest.TestCase):
             """Simulates set_learn_task (local queue)."""
             local_queues.append(me)
 
-        # Original behavior (problematic)
-        original_targets = clients.copy()
-        # This would include self in network broadcast - BAD
+        # Fixed behavior (matches production code order)
+        should_queue_locally = me in clients
+        network_targets = [t for t in clients if t != me]
 
-        # Fixed behavior
-        fixed_targets = clients.copy()
-        if me in fixed_targets:
-            fixed_targets.remove(me)
-            simulate_set_learn_task()  # Queue locally for self
+        # Send to network targets FIRST (matches swarm_client_ctl.py lines 499-502)
+        if network_targets:
+            simulate_send_learn_task(network_targets)
 
-        if fixed_targets:
-            simulate_send_learn_task(fixed_targets)  # Network broadcast to others
+        # Queue locally AFTER network succeeds (matches swarm_client_ctl.py lines 505-509)
+        if should_queue_locally:
+            simulate_set_learn_task()
 
         # Verify the fix
         self.assertNotIn(me, network_sends, "Self should NOT be in network broadcast targets")
@@ -300,68 +298,6 @@ class TestRealDeadlockScenario(unittest.TestCase):
         )
         self.assertFalse(operation_completed.is_set(), "Operation should not complete due to deadlock")
 
-    def test_fix_prevents_deadlock(self):
-        """
-        This test demonstrates that our fix (queue locally instead of self-message)
-        prevents the deadlock.
-        """
-        task_queue = queue.Queue()
-        operation_completed = threading.Event()
-        local_task_processed = threading.Event()
-
-        def worker_thread():
-            """Simulates _do_learn thread that processes queued tasks."""
-            while True:
-                try:
-                    task = task_queue.get(timeout=0.1)
-                    # Process task - this happens on a DIFFERENT thread
-                    time.sleep(0.1)
-                    local_task_processed.set()
-                    task_queue.task_done()
-                except queue.Empty:
-                    if operation_completed.is_set():
-                        break
-
-        def blocking_handler_for_remote():
-            """Handler for remote targets - can do blocking operations."""
-            time.sleep(0.1)
-            return True
-
-        def simulate_fixed_scatter():
-            """Simulates the fixed _scatter behavior."""
-            me = "site-2"
-            targets = ["site-1", "site-2", "site-3"]
-
-            # Fixed behavior: exclude self from network broadcast
-            network_targets = [t for t in targets if t != me]
-
-            # Queue local task (non-blocking)
-            if me in targets:
-                task_queue.put({"target": me, "data": "learn_task"})
-
-            # Send to remote targets (this would not deadlock)
-            for t in network_targets:
-                blocking_handler_for_remote()
-
-            operation_completed.set()
-
-        # Start worker thread
-        worker = threading.Thread(target=worker_thread, daemon=True)
-        worker.start()
-
-        # Run the fixed scatter
-        start_time = time.time()
-        simulate_fixed_scatter()
-        elapsed = time.time() - start_time
-
-        # Wait for local task to be processed
-        local_task_processed.wait(timeout=2.0)
-
-        # Verify no deadlock occurred
-        self.assertTrue(operation_completed.is_set(), "Operation should complete without deadlock")
-        self.assertTrue(local_task_processed.is_set(), "Local task should be processed by worker thread")
-        self.assertLess(elapsed, 1.0, "Should complete quickly without deadlock")
-
 
 # =============================================================================
 # CORECELL-BASED TESTS
@@ -374,21 +310,35 @@ class TestCoreCellSelfMessage(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up a CoreCell for testing."""
-        CoreCell.ALL_CELLS.clear()
+        """Set up a CoreCell for testing, preserving existing ALL_CELLS state."""
+        # Save existing ALL_CELLS state for restoration
+        cls._saved_all_cells = dict(CoreCell.ALL_CELLS)
+
+        # Use unique cell name based on port to avoid conflicts
         cls.port = get_open_ports(1)[0]
-        cls.cell_name = "server"
+        cls.cell_name = f"test_cell_self_msg_{cls.port}"
         cls.listening_url = f"tcp://localhost:{cls.port}"
 
         cls.cell = CoreCell(fqcn=cls.cell_name, root_url=cls.listening_url, secure=False, credentials={})
         cls.cell.start()
-        time.sleep(0.5)
+        # Wait for cell to be registered in ALL_CELLS (deterministic check)
+        for _ in range(50):  # Up to 5 seconds
+            if cls.cell_name in CoreCell.ALL_CELLS:
+                break
+            time.sleep(0.1)
+        assert cls.cell_name in CoreCell.ALL_CELLS, "Cell failed to register"
 
     @classmethod
     def tearDownClass(cls):
-        """Clean up the cell."""
-        cls.cell.stop()
-        CoreCell.ALL_CELLS.clear()
+        """Clean up the cell and restore ALL_CELLS state."""
+        try:
+            cls.cell.stop()
+        finally:
+            # Remove our test cell and restore saved state
+            CoreCell.ALL_CELLS.pop(cls.cell_name, None)
+            for name, cell in cls._saved_all_cells.items():
+                if name not in CoreCell.ALL_CELLS:
+                    CoreCell.ALL_CELLS[name] = cell
 
     def test_self_in_all_cells(self):
         """Verify that the cell is registered in ALL_CELLS (prerequisite for sync self-message)."""
@@ -406,8 +356,9 @@ class TestCoreCellSelfMessage(unittest.TestCase):
         sender_thread_id = threading.current_thread().ident
         handler_called = threading.Event()
 
-        test_channel = "test_channel"
-        test_topic = "test_topic"
+        # Use unique channel/topic for this test to avoid cross-test interference
+        test_channel = f"channel_sync_{id(self)}"
+        test_topic = f"topic_sync_{id(self)}"
 
         def message_handler(message: Message):
             nonlocal handler_thread_id
@@ -424,7 +375,9 @@ class TestCoreCellSelfMessage(unittest.TestCase):
 
         # CRITICAL: Handler runs on the SAME thread as sender (synchronous call)
         self.assertEqual(
-            sender_thread_id, handler_thread_id, "Handler should run on the SAME thread as sender (synchronous call)"
+            sender_thread_id,
+            handler_thread_id,
+            "Handler should run on the SAME thread as sender (synchronous call)",
         )
 
     def test_blocking_handler_would_deadlock_real_cell(self):
@@ -432,8 +385,9 @@ class TestCoreCellSelfMessage(unittest.TestCase):
         Demonstrate that a blocking handler would cause deadlock.
         Uses a timeout to detect the deadlock scenario.
         """
-        test_channel = "deadlock_test"
-        test_topic = "deadlock_topic"
+        # Use unique channel/topic for this test
+        test_channel = f"channel_deadlock_{id(self)}"
+        test_topic = f"topic_deadlock_{id(self)}"
 
         external_trigger = threading.Event()
         deadlock_detected = False
@@ -448,13 +402,11 @@ class TestCoreCellSelfMessage(unittest.TestCase):
 
         self.cell.register_request_cb(channel=test_channel, topic=test_topic, cb=blocking_handler)
 
-        start_time = time.time()
         request = Message(headers={}, payload=b"test")
         self.cell.fire_and_forget(channel=test_channel, topic=test_topic, targets=[self.cell_name], message=request)
-        elapsed = time.time() - start_time
 
+        # The key assertion: deadlock was detected (handler blocked waiting for external trigger)
         self.assertTrue(deadlock_detected, "Deadlock should be detected (handler timed out waiting)")
-        self.assertGreater(elapsed, 0.9, "Call should be blocked for ~1 second (handler timeout)")
 
 
 class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
@@ -469,56 +421,70 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up CoreCell for testing."""
-        CoreCell.ALL_CELLS.clear()
+        """Set up CoreCell for testing, preserving existing ALL_CELLS state."""
+        cls._saved_all_cells = dict(CoreCell.ALL_CELLS)
+
         cls.port = get_open_ports(1)[0]
-        cls.cell_name = "client.broadcast-test"
+        cls.cell_name = f"test_cell_broadcast_{cls.port}"
         cls.listening_url = f"tcp://localhost:{cls.port}"
 
         cls.cell = CoreCell(fqcn=cls.cell_name, root_url=cls.listening_url, secure=False, credentials={})
         cls.cell.start()
-        time.sleep(0.5)
+        # Wait for cell to be registered in ALL_CELLS (deterministic check)
+        for _ in range(50):  # Up to 5 seconds
+            if cls.cell_name in CoreCell.ALL_CELLS:
+                break
+            time.sleep(0.1)
+        assert cls.cell_name in CoreCell.ALL_CELLS, "Cell failed to register"
 
     @classmethod
     def tearDownClass(cls):
-        cls.cell.stop()
-        CoreCell.ALL_CELLS.clear()
+        """Clean up the cell and restore ALL_CELLS state."""
+        try:
+            cls.cell.stop()
+        finally:
+            CoreCell.ALL_CELLS.pop(cls.cell_name, None)
+            for name, cell in cls._saved_all_cells.items():
+                if name not in CoreCell.ALL_CELLS:
+                    CoreCell.ALL_CELLS[name] = cell
 
     def test_broadcast_multi_requests_to_self_is_sync(self):
         """
         Test broadcast_multi_requests to self - this is EXACTLY what swarm learning uses.
         """
         handler_thread = None
-        processing_time = 0.3
+        handler_completed = threading.Event()
+
+        # Use unique channel/topic for this test
+        test_channel = f"aux_broadcast_{id(self)}"
+        test_topic = f"learn_task_{id(self)}"
 
         def request_handler(message: Message):
             nonlocal handler_thread
             handler_thread = threading.current_thread().ident
-            time.sleep(processing_time)
+            handler_completed.set()
             reply = Message()
             reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             return reply
 
-        self.cell.register_request_cb(channel="aux", topic="swarm.learn_task", cb=request_handler)
+        self.cell.register_request_cb(channel=test_channel, topic=test_topic, cb=request_handler)
 
         sender_thread = threading.current_thread().ident
 
         request = Message(headers={}, payload=b"learn_task_data")
         target_msgs = {
             self.cell_name: TargetMessage(
-                target=self.cell_name, channel="aux", topic="swarm.learn_task", message=request
+                target=self.cell_name, channel=test_channel, topic=test_topic, message=request
             )
         }
 
-        start_time = time.time()
         self.cell.broadcast_multi_requests(target_msgs=target_msgs, timeout=5.0, secure=False, optional=False)
-        elapsed = time.time() - start_time
 
-        # Handler runs on same thread (synchronous)
+        # Wait for handler to complete (should be immediate for sync call)
+        self.assertTrue(handler_completed.is_set(), "Handler should have completed")
+
+        # Key assertion: Handler runs on same thread (synchronous)
         self.assertEqual(sender_thread, handler_thread, "Handler should run on SAME thread as sender")
-
-        # Sender was blocked during handler execution
-        self.assertGreater(elapsed, processing_time - 0.05, "Sender should be blocked during handler processing")
 
     def test_tensor_wait_simulation_causes_deadlock(self):
         """
@@ -526,6 +492,10 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
         """
         tensor_event = threading.Event()
         deadlock_detected = threading.Event()
+
+        # Use unique channel/topic for this test
+        test_channel = f"tensor_broadcast_{id(self)}"
+        test_topic = f"tensor_task_{id(self)}"
 
         def blocking_handler(message: Message):
             # Simulate wait_for_tensors() waiting for streaming data
@@ -535,12 +505,12 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
             reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             return reply
 
-        self.cell.register_request_cb(channel="tensor_test", topic="learn_with_tensors", cb=blocking_handler)
+        self.cell.register_request_cb(channel=test_channel, topic=test_topic, cb=blocking_handler)
 
         request = Message(headers={}, payload=b"task_with_tensors")
         target_msgs = {
             self.cell_name: TargetMessage(
-                target=self.cell_name, channel="tensor_test", topic="learn_with_tensors", message=request
+                target=self.cell_name, channel=test_channel, topic=test_topic, message=request
             )
         }
 

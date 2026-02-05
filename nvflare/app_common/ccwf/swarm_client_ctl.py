@@ -492,13 +492,14 @@ class SwarmClientController(ClientSideController):
         # waiting for streaming data that can't arrive on the blocked thread.
         # Instead, queue the task locally via set_learn_task (non-blocking, processed by _do_learn thread).
         should_queue_locally = self.me in targets
-        if should_queue_locally:
-            targets.remove(self.me)
+        network_targets = [t for t in targets if t != self.me]
 
         # Send to network targets first - if this fails, don't queue locally for consistency
-        if targets:
-            self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
-            if not self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx):
+        if network_targets:
+            self.log_info(
+                fl_ctx, f"broadcasting learn task of round {for_round} to {network_targets}; aggr client is {aggr}"
+            )
+            if not self.send_learn_task(targets=network_targets, request=task_data, fl_ctx=fl_ctx):
                 return False
 
         # Network broadcast succeeded (or no network targets), now queue locally
