@@ -24,6 +24,7 @@ Launch with:
 
 import argparse
 import copy
+import math
 import os
 
 # Add deterministic seed for reproducibility illustration
@@ -34,7 +35,7 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -186,7 +187,7 @@ def main():
     # Adjust batch size based on training mode
     batch_size = 2 if args.train_mode.lower() == "sft" else 4
     gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
-    logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
+    logging_steps = max(1, int(len(dataset_train) / (20 * batch_size * gra_accu_steps)))
     if rank == 0:
         print(f"logging_steps: {logging_steps}")
 
@@ -230,9 +231,9 @@ def main():
 
     # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
     # Total training steps = (dataset_size / (batch_size * grad_accum * world_size)) * num_epochs
-    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps * world_size)) * (
-        args.local_epoch * args.num_rounds
-    )
+    # Use ceiling division to ensure at least 1 step per epoch for small datasets
+    steps_per_epoch = math.ceil(len(dataset_train) / (batch_size * gra_accu_steps * world_size))
+    total_train_steps = steps_per_epoch * (args.local_epoch * args.num_rounds)
     warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
 
     # Set TensorBoard logging directory via environment variable
@@ -288,6 +289,13 @@ def main():
         # Add a callback to stop training after one epoch
         callbacks=[StopCallback()],
     )
+
+    # Verify PEFT wrapping in PEFT mode
+    if train_mode and not isinstance(trainer.model, PeftModel):
+        raise RuntimeError(
+            "PEFT mode is enabled but trainer.model is not a PeftModel. "
+            "SFTTrainer may have failed to wrap the model with PEFT."
+        )
 
     # (3) Train federated rounds
     # Start with global model at the beginning of each round

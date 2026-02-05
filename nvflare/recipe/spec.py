@@ -94,11 +94,16 @@ class ExecEnv(ABC):
         """
         pass
 
-    def stop(self) -> None:
-        """Stop the execution environment and clean up resources.
+    def stop(self, clean_up: bool = False) -> None:
+        """Stop the execution environment and optionally clean up resources.
 
         This method is called after job execution to ensure proper cleanup.
         Default implementation is a no-op. Override in subclasses that need cleanup.
+
+        Args:
+            clean_up: If True, remove workspace and temporary files after stopping.
+                      If False, only stop running processes but preserve workspace.
+                      Defaults to False.
         """
         pass
 

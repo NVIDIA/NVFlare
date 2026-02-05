@@ -14,8 +14,8 @@ Create a bash script to copy the hello-world example to the current directory:
 #!/bin/bash
 
 # Copy hello-world example to the current directory
-cp -r ../../../../hello-world/hello-pt/src setup-1/.
-cp -r ../../../../hello-world/hello-pt/src setup-2/.
+cp -r ../src setup-1/.
+cp -r ../src setup-2/.
 ```
 
 Run the script:
@@ -38,7 +38,7 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
 
 2. Start the services using Docker Compose:
     ```bash
-    docker-compose up -d
+    docker compose up -d
     ```
     You should see something similar to the following:
 
@@ -51,7 +51,7 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
 
 3. To stop the services, run:
     ```bash
-    docker-compose down
+    docker compose down
     ```
 
 **Note:** The StatsD Exporter port is 9125 (not 8125).
@@ -111,11 +111,6 @@ We need to manually edit the configuration files for System Metrics collections.
 
 The detailed configurations can be found [here](./setup-1/local_config). We need to copy them to the proper locations, or you can manually edit these files.
 
-```bash
-cd setup-1
-./prepare_local_config.sh
-```
-
 ## Start up FLARE FL system with POC
 
 Now we are ready to start the FLARE FL system.
@@ -127,6 +122,12 @@ Now we are ready to start the FLARE FL system.
     ```
 
     This will prepare 1 server and 2 clients ("site-1", "site-2") and one admin console client (admin@nvidia.com). You can examine the output directory: ```/tmp/nvflare/poc/example_project/prod_00```.
+
+    Then run the script to modify the generated poc startup kits.
+    
+    ```bash
+    ./prepare_local_config.sh
+    ```
 
 2. Start POC:
     ```bash
@@ -250,11 +251,10 @@ The detailed configurations can be found [here](./setup-2/local_config). We need
 
 ```bash
 cd setup-2
-./prepare_local_config.sh
 ```
  
 ### Complete with rest of the steps
-  * start the POC
+  * start the POC and ./prepare_local_config.sh
   * submit job
   * review the metrics and visualization
 
