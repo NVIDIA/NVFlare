@@ -348,11 +348,6 @@ class ControllerSpec(ABC):
         could join/disconnect at any moment. While the task is standing, any client that joins automatically
         becomes a target for this broadcast.
 
-        NOTE: task.data is deep copied after before_task_sent_cb runs for the first client to protect
-        against data corruption from concurrent in-place modifications. This copy is then reused for
-        all subsequent clients. Modifications to task.data in before_task_sent_cb ARE captured for the
-        first client, but per-client data customization is NOT supported for broadcast.
-
         Args:
             task: the task to be sent
             fl_ctx: the FL context
@@ -403,10 +398,7 @@ class ControllerSpec(ABC):
         All clients will get the task every time it asks for a new task.
         This is a non-blocking call.
 
-        NOTE: task.data is deep copied after before_task_sent_cb runs for the first client to protect
-        against data corruption from concurrent in-place modifications. This copy is then reused for
-        all subsequent clients. Modifications to task.data in before_task_sent_cb ARE captured for the
-        first client, but per-client data customization is NOT supported for broadcast.
+        NOTE: you can change the content of the task in the before_task_sent function.
 
         Args:
             task: the task to be sent
