@@ -49,10 +49,7 @@ def main():
         name="fedavg_wandb",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        # Model can be specified as class instance or dict config:
         initial_model=Net(),
-        # Alternative: initial_model={"path": "model.Net", "args": {}},
-        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.script,
         launch_external_process=args.launch_external_process,
     )

@@ -168,8 +168,6 @@ def main():
         per_site_config[site_name] = site_config
 
     # Create FedAvgRecipe
-    # Model can be specified as class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name=job_name,
         initial_model=initial_model,

@@ -116,8 +116,6 @@ def main():
         }
 
     # Create FedAvgRecipe
-    # Model can be specified as class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="gnn_protein",
         initial_model=model,

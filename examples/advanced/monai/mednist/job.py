@@ -46,12 +46,9 @@ def main():
         name="mednist_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        # Model can be specified as class instance or dict config:
         initial_model=FLDenseNet121(
             spatial_dims=2, in_channels=1, out_channels=6
         ),  # We wrap the DenseNet121 into FLDenseNet121 to preserve the configuration when sending the model to the server.
-        # Alternative: initial_model={"path": "network.FLDenseNet121", "args": {"spatial_dims": 2, "in_channels": 1, "out_channels": 6}},
-        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script="client.py",
     )
 
