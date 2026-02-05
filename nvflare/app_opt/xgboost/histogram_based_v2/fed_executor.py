@@ -13,6 +13,7 @@
 # limitations under the License.
 import uuid
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.histogram_based_v2.adaptors.grpc_client_adaptor import GrpcClientAdaptor
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_client_runner import XGBClientRunner
@@ -44,6 +45,14 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
         self._cached_adaptor = None  # Cache adaptor to prevent recreation
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        """Override to clear adaptor cache on END_RUN to support executor reuse across runs."""
+        if event_type == EventType.END_RUN:
+            # Clear cached adaptor to ensure clean state for next run
+            self._cached_adaptor = None
+        # Call parent handler for standard event processing
+        super().handle_event(event_type, fl_ctx)
 
     def get_adaptor(self, fl_ctx: FLContext):
         # Return cached adaptor if it exists to prevent losing configuration
