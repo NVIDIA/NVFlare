@@ -485,8 +485,30 @@ class SwarmClientController(ClientSideController):
         if aggr not in targets:
             targets.append(aggr)
 
-        self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
-        return self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx)
+        # Handle self locally to avoid synchronous self-message deadlock.
+        # When sending to self via broadcast_and_wait, the message is processed synchronously
+        # on the same thread (via _send_direct_message in core_cell.py). If TensorStreamer
+        # is enabled, this causes deadlock because wait_for_tensors() blocks the thread
+        # waiting for streaming data that can't arrive on the blocked thread.
+        # Instead, queue the task locally via set_learn_task (non-blocking, processed by _do_learn thread).
+        should_queue_locally = self.me in targets
+        if should_queue_locally:
+            targets.remove(self.me)
+
+        # Send to network targets first - if this fails, don't queue locally for consistency
+        if targets:
+            self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
+            if not self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx):
+                return False
+
+        # Network broadcast succeeded (or no network targets), now queue locally
+        if should_queue_locally:
+            self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
+            if not self.set_learn_task(task_data=task_data, fl_ctx=fl_ctx):
+                self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
+                return False
+
+        return True
 
     def _monitor_gather(self):
         while True:
