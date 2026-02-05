@@ -11,6 +11,6 @@ Data Scientist Guide
    client_api_usage
    job_recipe
    available_recipes
-   ../timeouts
+   ../timeout_troubleshooting
    flare_api
    poc

@@ -1,8 +1,8 @@
-.. _timeouts:
+.. _timeouts_programming_guide:
 
-############################
-Timeouts in NVIDIA FLARE
-############################
+####################################
+Timeouts in NVIDIA FLARE (Reference)
+####################################
 
 This document provides a comprehensive overview of all timeout configurations in NVIDIA FLARE,
 organized by functional categories with relationships, impacts, and usage examples.
@@ -336,23 +336,6 @@ Reliable Messages provide guaranteed delivery with retry logic (reliable_message
        abort_signal=abort_signal,
        fl_ctx=fl_ctx,
    )
-
-
-High Availability Timeouts
-==========================
-
-Overseer agent heartbeat (dummy_overseer_agent.py):
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 12 63
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - heartbeat_interval
-     - 0.5
-     - Interval for overseer heartbeats
 
 
 Federated Event Timeouts
@@ -1448,9 +1431,9 @@ the streaming behavior (tensor_stream/server.py, client.py):
    .. code-block:: python
    
       # Ensure get_task_timeout >= wait_send_task_data_all_clients_timeout
-      recipe.job.to({
+      recipe.add_client_config({
           "get_task_timeout": 600,  # Must be >= streaming timeout
-      }, site_name)
+      })
 
 
 Streaming Download Timeouts
@@ -1526,24 +1509,8 @@ XGBoost histogram-based controller timeouts (histogram_based_v2/controller.py):
      - 3600.0
      - Overall workflow progress timeout
 
-XGBoost Reliable Message Timeouts
----------------------------------
-
-XGBoost uses Reliable Messages with specific timeouts for secure training:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 15 60
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - per_msg_timeout
-     - 10.0
-     - Timeout for each individual message
-   * - tx_timeout
-     - 60.0-100.0
-     - Timeout for entire transaction including retries
+**Note**: XGBoost uses Reliable Messages for secure training. See the `Reliable Message`_ section
+for ``per_msg_timeout`` and ``tx_timeout`` configuration.
 
 XGBoost gRPC Client
 -------------------
@@ -2478,15 +2445,20 @@ These files are located in the job's ``app/config/`` directory.
 
 **Ways to Configure Job-Level Timeouts:**
 
-1. **Recipe API** - Using ``recipe.job.to()`` to pass client parameters:
+1. **Recipe API** - Using ``recipe.add_client_config()`` to pass client parameters:
 
    .. code-block:: python
 
-      recipe.job.to({
+      # Apply to all clients
+      recipe.add_client_config({
           "get_task_timeout": 300,
           "submit_task_result_timeout": 300,
-          "external_pre_init_timeout": 600,
-      }, site_name)
+      })
+
+      # Apply to specific clients
+      recipe.add_client_config({
+          "get_task_timeout": 600,
+      }, clients=["site-1", "site-2"])
 
 2. **Job config files** - In ``app/config/`` directory:
 
@@ -2623,13 +2595,11 @@ Recipe with Extended Timeouts
        train_script="client.py",
    )
 
-   # Client-specific timeout parameters
-   for site_name in ["site-1", "site-2"]:
-       recipe.job.to({
-           "get_task_timeout": 300,
-           "submit_task_result_timeout": 300,
-           "external_pre_init_timeout": 600,
-       }, site_name)
+   # Client timeout parameters
+   recipe.add_client_config({
+       "get_task_timeout": 300,
+       "submit_task_result_timeout": 300,
+   })
 
 
 CCWF/Swarm Learning Configuration

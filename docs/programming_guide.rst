@@ -60,6 +60,7 @@ Please refer to :ref:`application` for more details.
    programming_guide/experiment_tracking
    programming_guide/message_quantization
    programming_guide/tensor_downloader
+   programming_guide/timeouts
    programming_guide/hierarchical_architecture
    programming_guide/hierarchical_communication
    programming_guide/migrating_to_flare_api
