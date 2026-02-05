@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
 import uuid
 
 from nvflare.apis.event_type import EventType
@@ -23,6 +24,11 @@ from .sec.client_handler import ClientSecurityHandler
 
 
 class FedXGBHistogramExecutor(XGBExecutor):
+    # Class-level cache keyed by client name so all executor instances for a client
+    # share the same adaptor (fixes "rank not set" when config and start use different instances).
+    _adaptor_cache: dict = {}
+    _adaptor_cache_lock = threading.Lock()
+
     def __init__(
         self,
         data_loader_id: str,
@@ -44,17 +50,26 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.model_file_name = model_file_name
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
-        self._cached_adaptor = None  # Cache adaptor so rank set in configure is still there at start()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Clear adaptor cache on END_RUN so executor can be reused in next run."""
         if event_type == EventType.END_RUN:
-            self._cached_adaptor = None
+            client_name = fl_ctx.get_identity_name()
+            key = client_name if (client_name and client_name != "") else "_default_"
+            with FedXGBHistogramExecutor._adaptor_cache_lock:
+                FedXGBHistogramExecutor._adaptor_cache.pop(key, None)
         super().handle_event(event_type, fl_ctx)
 
     def get_adaptor(self, fl_ctx: FLContext):
-        if self._cached_adaptor is not None:
-            return self._cached_adaptor
+        client_name = fl_ctx.get_identity_name()
+        with FedXGBHistogramExecutor._adaptor_cache_lock:
+            cache = FedXGBHistogramExecutor._adaptor_cache
+            if client_name in cache:
+                return cache[client_name]
+            # Simulator/recipe may call with None or different identity for same process.
+            # If there is exactly one cached adaptor, reuse it so config and start share it.
+            if (client_name is None or client_name == "") and len(cache) == 1:
+                return next(iter(cache.values()))
 
         engine = fl_ctx.get_engine()
         handler = ClientSecurityHandler()
@@ -73,5 +88,10 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
-        self._cached_adaptor = adaptor
-        return adaptor
+        with FedXGBHistogramExecutor._adaptor_cache_lock:
+            cache = FedXGBHistogramExecutor._adaptor_cache
+            key = client_name if (client_name and client_name != "") else "_default_"
+            if key not in cache:
+                cache[key] = adaptor
+                return adaptor
+            return cache[key]

@@ -130,7 +130,9 @@ class XGBExecutor(Executor):
                 self.log_error(fl_ctx, f"Config error: {config_error}")
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE, {ReservedKey.EXCEPTIONS: config_error})
         elif task_name == self.start_task_name:
-            # start adaptor
+            # If adaptor has no rank (e.g. start ran in a different process than config), configure from task data
+            if getattr(self.adaptor, "rank", None) is None and shareable:
+                self.adaptor.configure(shareable, fl_ctx)
             try:
                 self.adaptor.start(fl_ctx)
             except Exception as ex:
