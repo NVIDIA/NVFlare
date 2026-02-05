@@ -76,8 +76,9 @@ def main():
     # Print dataset info
     print(f"Dataset size: training {len(dataset_train)}, validation {len(dataset_valid)}")
     # record every 5% of the dataset
-    batch_size = 4
-    gra_accu_steps = 10
+    # Adjust batch size based on training mode
+    batch_size = 2 if args.train_mode.lower() == "sft" else 4
+    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
     logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
     print(f"logging_steps: {logging_steps}")
 
@@ -120,7 +121,7 @@ def main():
     total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps)) * 3
     warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
 
-    # Set TensorBoard logging directory via environment variable (replacing deprecated logging_dir)
+    # Set TensorBoard logging directory via environment variable
     os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
     # Training arguments
@@ -129,7 +130,8 @@ def main():
         num_train_epochs=3,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=False,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
         # multi-gpu training, to be consistent, use regular optimizer
         optim="adamw_torch",
@@ -147,6 +149,7 @@ def main():
         save_total_limit=2,
         seed=0,
         data_seed=0,
+        report_to="tensorboard",
     )
 
     # Trainer

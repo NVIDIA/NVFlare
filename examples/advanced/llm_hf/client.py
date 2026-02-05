@@ -185,7 +185,7 @@ def main():
     # record every 5% of the dataset
     # Adjust batch size based on training mode
     batch_size = 2 if args.train_mode.lower() == "sft" else 4
-    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10  # Keep same effective batch size
+    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
     logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
     if rank == 0:
         print(f"logging_steps: {logging_steps}")
@@ -236,7 +236,7 @@ def main():
     )
     warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
 
-    # Set TensorBoard logging directory via environment variable (replacing deprecated logging_dir)
+    # Set TensorBoard logging directory via environment variable
     if not wandb_enabled:
         os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
@@ -248,7 +248,7 @@ def main():
         num_train_epochs=args.local_epoch * args.num_rounds,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=True,  # Enable for SFT to save memory
+        gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
         # multi-gpu training, to be consistent, use regular optimizer
