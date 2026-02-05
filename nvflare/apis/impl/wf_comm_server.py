@@ -299,7 +299,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                         task.completion_status = TaskCompletionStatus.ERROR
                         task.exception = e
                         can_send_task = False
-            task_data = getattr(task, "_broadcast_data", None) or task.data
+            task_data = getattr(task, "_broadcast_data", task.data)
             operator = task.operator
 
             if task.after_task_sent_cb is not None:
