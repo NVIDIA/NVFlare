@@ -1658,7 +1658,7 @@ class TestRelayBehavior(TestController):
             task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
             time.sleep(0.1)
         assert task_name_out == "__test_task"
-        assert data == input_data
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
         assert controller.get_num_standing_tasks() == 1
 
@@ -1853,7 +1853,7 @@ class TestRelayBehavior(TestController):
                         )
                         time.sleep(0.1)
                     assert task_name_out == "__test_task"
-                    assert data == input_data
+                    assert_task_data_valid(data, input_data, method)
                     assert task.last_client_task_map[client.name].task_send_count == 1
                 else:
                     _task_name_out, _client_task_id, _ = controller.communicator.process_task_request(client, fl_ctx)
@@ -1912,7 +1912,7 @@ class TestRelayBehavior(TestController):
             task_name_out, old_client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
             time.sleep(0.1)
         assert task_name_out == "__test_task"
-        assert data == input_data
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
 
         time.sleep(task_result_timeout + 1)
@@ -1927,7 +1927,7 @@ class TestRelayBehavior(TestController):
         # second client ask should get a task since task_result_timeout passed
         task_name_out, client_task_id_1, data = controller.communicator.process_task_request(clients[1], fl_ctx)
         assert task_name_out == "__test_task"
-        assert data == input_data
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[1].name].task_send_count == 1
 
         # then we get back first client's result
@@ -1981,7 +1981,7 @@ class TestRelayBehavior(TestController):
                 task_name_out, old_client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
                 time.sleep(0.1)
             assert task_name_out == "__test_task"
-            assert data == input_data
+            assert_task_data_valid(data, input_data, method)
             assert task.last_client_task_map[client.name].task_send_count == 1
 
             time.sleep(task_result_timeout + 1)
@@ -2112,7 +2112,7 @@ class TestSendBehavior(TestController):
             )
             time.sleep(0.1)
         assert task_name_out == "__test_task"
-        assert data == input_data
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[targets[client_idx].name].task_send_count == 1
 
         # other clients
@@ -2171,7 +2171,7 @@ class TestSendBehavior(TestController):
                     task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
                     time.sleep(0.1)
                 assert task_name_out == "__test_task"
-                assert data == input_data
+                assert_task_data_valid(data, input_data, method)
                 assert task.last_client_task_map[client.name].task_send_count == 1
             else:
                 task_name_out, client_task_id, data = controller.communicator.process_task_request(client, fl_ctx)
@@ -2211,7 +2211,7 @@ class TestSendBehavior(TestController):
             task_name_out, client_task_id, data = controller.communicator.process_task_request(clients[0], fl_ctx)
             time.sleep(0.1)
         assert task_name_out == "__test_task"
-        assert data == input_data
+        assert_task_data_valid(data, input_data, method)
         assert task.last_client_task_map[clients[0].name].task_send_count == 1
 
         # once a client gets a task, other clients should not get task

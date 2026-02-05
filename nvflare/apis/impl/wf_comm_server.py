@@ -330,19 +330,22 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
 
-            # add task operator to task_data shareable
-            if operator:
-                task_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
-
             if not resend_task:
                 task.last_client_task_map[client.name] = client_task_to_send
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
 
-            task_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
-            task_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
-            task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
-            return task_name, client_task_to_send.id, make_copy(task_data)
+            # Create per-client copy first, then set per-client headers on the copy.
+            # This avoids mutating the shared _broadcast_data (for broadcast tasks).
+            client_data = make_copy(task_data)
+
+            if operator:
+                client_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
+
+            client_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
+            client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
+            return task_name, client_task_to_send.id, client_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
         """Called to cancel one task as its client_task is causing exception at upper level.
