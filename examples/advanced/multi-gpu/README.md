@@ -11,7 +11,6 @@ Multi-GPU training allows clients to leverage multiple GPUs for faster local tra
 | Framework | Strategy | Description | Directory |
 |-----------|----------|-------------|-----------|
 | **PyTorch** | DDP (DistributedDataParallel) | Manual DDP with NCCL backend | [`pt/`](pt/) |
-| **TensorFlow** | MirroredStrategy | Automatic multi-GPU distribution | [`tf/`](tf/) |
 | **PyTorch Lightning** | DDP Strategy | High-level DDP abstraction | [`lightning/`](lightning/) |
 
 ## What Each Example Demonstrates
@@ -21,12 +20,6 @@ Multi-GPU training allows clients to leverage multiple GPUs for faster local tra
 - Per-site configuration (different master ports for different sites)
 - Explicit rank coordination with NVFlare server
 - Uses `torch.distributed.run` for process spawning
-
-### TensorFlow MirroredStrategy (`tf/`)
-- TensorFlow's MirroredStrategy for synchronous multi-GPU training
-- Automatic GPU detection and distribution
-- Variables created within `strategy.scope()`
-- Single-process multi-device training
 
 ### PyTorch Lightning (`lightning/`)
 - High-level Lightning DDP integration with NVFlare
@@ -53,7 +46,7 @@ Each example follows the same pattern:
 
 ```bash
 # Navigate to example directory
-cd pt/  # or tf/ or lightning/
+cd pt/  # or lightning/
 
 # Install dependencies
 pip install -r requirements.txt
@@ -72,7 +65,6 @@ python job.py
 
 **GPU Memory Issues**
 - Reduce batch size or number of GPUs
-- TensorFlow: `TF_FORCE_GPU_ALLOW_GROWTH=true python job.py`
 
 **Check GPU Availability**
 ```bash
@@ -85,5 +77,4 @@ python -c "import torch; print(torch.cuda.device_count())"
 ### Documentation
 - [NVFlare Documentation](https://nvflare.readthedocs.io/)
 - [PyTorch DDP Tutorial](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html)
-- [TensorFlow Distributed Guide](https://www.tensorflow.org/guide/distributed_training)
 - [PyTorch Lightning DDP](https://lightning.ai/docs/pytorch/stable/accelerators/gpu_intermediate.html)
