@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pydantic import BaseModel, PositiveInt
+from typing import Optional
+
+from pydantic import BaseModel, PositiveInt, field_validator
 
 from nvflare import FedJob
 from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
@@ -20,18 +22,28 @@ from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):
     name: str
+    min_clients: PositiveInt
     num_rounds: int
     damping_factor: float
     num_features: PositiveInt
+    initial_ckpt: Optional[str] = None
     train_script: str
     train_args: str
     launch_external_process: bool = False
     command: str
+
+    @field_validator("initial_ckpt")
+    @classmethod
+    def validate_initial_ckpt(cls, v):
+        if v is not None:
+            validate_initial_ckpt(v)
+        return v
 
 
 class FedAvgLrRecipe(Recipe):
@@ -49,8 +61,13 @@ class FedAvgLrRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "lr_fedavg".
+        min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         damping_factor: default to 0.8
+        num_features: Number of features for the logistic regression. Defaults to 13.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.npy).
+            The file may not exist locally as it could be on the server.
+            Used to resume training from previously saved weights.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
@@ -58,7 +75,8 @@ class FedAvgLrRecipe(Recipe):
 
     Example:
         ```python
-            recipe = FedAvgLrRecipe(num_rounds=num_rounds,
+            recipe = FedAvgLrRecipe(min_clients=2,
+                            num_rounds=num_rounds,
                             damping_factor=0.8,
                             num_features=13,
                             train_script="client.py",
@@ -70,9 +88,11 @@ class FedAvgLrRecipe(Recipe):
         self,
         *,
         name: str = "lr_fedavg",
+        min_clients: int,
         num_rounds: int = 2,
         damping_factor=0.8,
         num_features=13,
+        initial_ckpt: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         launch_external_process=False,
@@ -81,9 +101,11 @@ class FedAvgLrRecipe(Recipe):
         # Validate inputs internally
         v = _FedAvgValidator(
             name=name,
+            min_clients=min_clients,
             num_rounds=num_rounds,
             damping_factor=damping_factor,
             num_features=num_features,
+            initial_ckpt=initial_ckpt,
             train_script=train_script,
             train_args=train_args,
             launch_external_process=launch_external_process,
@@ -91,8 +113,10 @@ class FedAvgLrRecipe(Recipe):
         )
 
         self.name = v.name
+        self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.damping_factor = v.damping_factor
+        self.initial_ckpt = v.initial_ckpt
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.launch_external_process = v.launch_external_process
@@ -100,12 +124,16 @@ class FedAvgLrRecipe(Recipe):
         self.num_features = v.num_features
 
         # Create FedJob.
-        job = FedJob(name=self.name)
-        persistor_id = job.to_server(LRModelPersistor(n_features=self.num_features), id="lr_persistor")
+        job = FedJob(name=self.name, min_clients=self.min_clients)
+        persistor = LRModelPersistor(
+            n_features=self.num_features,
+            source_ckpt_file_full_name=self.initial_ckpt,
+        )
+        persistor_id = job.to_server(persistor, id="lr_persistor")
 
         # Send custom controller to server
         controller = FedAvgLR(
-            num_clients=0,
+            num_clients=self.min_clients,
             damping_factor=self.damping_factor,
             n_features=self.num_features,
             num_rounds=self.num_rounds,

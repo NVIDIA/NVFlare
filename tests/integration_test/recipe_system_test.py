@@ -55,3 +55,43 @@ class TestRecipeSystemIntegration:
         run = recipe.execute(env)
         run.get_result()
         assert run.get_status() == "FINISHED:COMPLETED"
+
+    def test_dict_model_config_simulation(self):
+        """Test that dict model config works in simulation (end-to-end validation)."""
+        import sys
+
+        # Skip if PyTorch not available
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            import pytest
+
+            pytest.skip("PyTorch not available")
+
+        # Add hello-pt example to path for model import
+        import os
+
+        examples_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-pt")
+        sys.path.insert(0, examples_dir)
+
+        from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+        # Use dict config instead of class instance
+        model_config = {
+            "path": "model.SimpleNetwork",
+            "args": {},
+        }
+
+        env = SimEnv(num_clients=2, workspace_root="/tmp/test_dict_config")
+        recipe = FedAvgRecipe(
+            name="test_dict_config",
+            min_clients=2,
+            num_rounds=1,
+            initial_model=model_config,
+            train_script=os.path.join(examples_dir, "client.py"),
+        )
+        run = recipe.execute(env)
+
+        # Verify job was created (simulation returns immediately)
+        assert run.get_job_id() == "test_dict_config"
+        assert run.get_result() == "/tmp/test_dict_config/test_dict_config"

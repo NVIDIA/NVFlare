@@ -94,7 +94,9 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
         name="hello-numpy-train-cse",
         min_clients=n_clients,
         num_rounds=num_rounds,
+        # Model can be array or None (if using initial_ckpt):
         initial_model=np.array([0.0] * 10),  # Initial model for CSE example
+        # For pre-trained weights: initial_ckpt="/server/path/to/model.npy",
         train_script="client.py",
         train_args="",
     )

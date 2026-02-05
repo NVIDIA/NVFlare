@@ -324,6 +324,18 @@ class PTFileModelPersistor(ModelPersistor):
 
     def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         model_inventory = {}
+
+        # Include source checkpoint if provided (supports external/pre-trained models)
+        if self.source_ckpt_file_full_name and os.path.exists(self.source_ckpt_file_full_name):
+            _, tail = os.path.split(self.source_ckpt_file_full_name)
+            model_inventory[tail] = ModelDescriptor(
+                name=self.source_ckpt_file_full_name,
+                location=self.source_ckpt_file_full_name,
+                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
+                props={"source": "initial_ckpt"},
+            )
+
+        # Include training artifacts
         location = os.path.join(self.log_dir, self.global_model_file_name)
         if os.path.exists(location):
             _, tail = os.path.split(self.global_model_file_name)
