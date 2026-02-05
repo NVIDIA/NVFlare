@@ -133,8 +133,9 @@ def main():
     # record every 5% of the dataset
     # Adjust batch size based on training mode
     batch_size = 2 if args.train_mode.lower() == "sft" else 4
+    batch_size = 2 if args.train_mode.lower() == "sft" else 4
+    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
     logging_steps = max(1, int(len(dataset_train) / (20 * batch_size * gra_accu_steps)))
-    logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
     if local_rank == 0:
         print(f"logging_steps: {logging_steps}")
 
