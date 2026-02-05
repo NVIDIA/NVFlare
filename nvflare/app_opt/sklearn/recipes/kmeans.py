@@ -22,7 +22,7 @@ from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
-from nvflare.recipe.model_config import validate_checkpoint_path
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal — not part of the public API
@@ -37,9 +37,7 @@ class _KMeansValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            from nvflare.fuel.utils.constants import FrameworkType
-
-            validate_checkpoint_path(v, FrameworkType.RAW, has_model=True)
+            validate_initial_ckpt(v)
         return v
 
 

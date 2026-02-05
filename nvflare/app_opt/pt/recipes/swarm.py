@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+import importlib
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
@@ -21,10 +22,9 @@ from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import In
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.recipe.model_config import validate_checkpoint_path
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 class _SwarmValidator(BaseModel):
@@ -34,10 +34,38 @@ class _SwarmValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_checkpoint_path(v, FrameworkType.PYTORCH, has_model=True)
+            validate_initial_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+def _instantiate_model_from_dict(model_config: Dict[str, Any]) -> Any:
+    """Instantiate a model from dict config.
+
+    Args:
+        model_config: Dict with 'path' (required) and 'args' (optional) keys.
+            Example: {"path": "my_module.MyModel", "args": {"num_classes": 10}}
+
+    Returns:
+        Instantiated model
+
+    Raises:
+        ValueError: If 'path' key is missing or model cannot be instantiated.
+    """
+    if "path" not in model_config:
+        raise ValueError("model_config dict must contain 'path' key with the model class path")
+
+    class_path = model_config["path"]
+    model_args = model_config.get("args", {})
+
+    try:
+        module_path, class_name = class_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        model_class = getattr(module, class_name)
+        return model_class(**model_args)
+    except Exception as e:
+        raise ValueError(f"Failed to instantiate model from '{class_path}': {str(e)}") from e
 
 
 class BaseSwarmLearningRecipe(Recipe):
@@ -64,19 +92,44 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
 
     Args:
         name: Name of the federated learning job.
-        initial_model: PyTorch model (nn.Module) to use as the initial model.
+        initial_model: PyTorch model to use as the initial model. Can be:
+            - An nn.Module instance (e.g., MyModel())
+            - A dict config: {"path": "module.ClassName", "args": {"param": value}}
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
         num_rounds: Number of training rounds.
         train_script: Path to the training script.
         train_args: Additional arguments for the training script.
         do_cross_site_eval: Whether to perform cross-site evaluation.
         cross_site_eval_timeout: Timeout for cross-site evaluation.
+
+    Example:
+        Using nn.Module instance:
+
+        ```python
+        recipe = SimpleSwarmLearningRecipe(
+            name="swarm_job",
+            initial_model=MyModel(),
+            num_rounds=5,
+            train_script="train.py",
+        )
+        ```
+
+        Using dict config:
+
+        ```python
+        recipe = SimpleSwarmLearningRecipe(
+            name="swarm_job",
+            initial_model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
+            num_rounds=5,
+            train_script="train.py",
+        )
+        ```
     """
 
     def __init__(
         self,
         name: str,
-        initial_model,
+        initial_model: Union[Any, Dict[str, Any]],
         num_rounds: int,
         train_script: str,
         initial_ckpt: Optional[str] = None,
@@ -85,6 +138,12 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         cross_site_eval_timeout: float = 300,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+
+        # Handle dict-based model config
+        if isinstance(initial_model, dict):
+            model_instance = _instantiate_model_from_dict(initial_model)
+        else:
+            model_instance = initial_model
 
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
         if do_cross_site_eval:
@@ -99,7 +158,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config = SwarmClientConfig(
             executor=ScriptRunner(script=train_script, **train_args),
             aggregator=aggregator,
-            persistor=PTFileModelPersistor(model=initial_model, source_ckpt_file_full_name=initial_ckpt),
+            persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=initial_ckpt),
             shareable_generator=SimpleModelShareableGenerator(),
         )
 

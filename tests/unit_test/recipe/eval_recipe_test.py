@@ -94,7 +94,6 @@ class TestNumpyCrossSiteEvalRecipe:
 
         recipe = NumpyCrossSiteEvalRecipe(
             name="test_cse",
-            eval_script="eval.py",
             min_clients=2,
         )
 
@@ -106,7 +105,6 @@ class TestNumpyCrossSiteEvalRecipe:
 
         recipe = NumpyCrossSiteEvalRecipe(
             name="test_cse_ckpt",
-            eval_script="eval.py",
             min_clients=2,
             initial_ckpt="/abs/path/to/model.npy",
         )
@@ -119,10 +117,37 @@ class TestNumpyCrossSiteEvalRecipe:
 
         recipe = NumpyCrossSiteEvalRecipe(
             name="test_cse_dir",
-            eval_script="eval.py",
             min_clients=2,
             model_dir="models",
-            model_name="best_model.npy",
+            model_name={"server": "best_model.npy"},
+        )
+
+        assert recipe.job is not None
+
+    def test_with_eval_script(self, mock_file_system):
+        """Test with custom eval_script."""
+        from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+        recipe = NumpyCrossSiteEvalRecipe(
+            name="test_cse_script",
+            min_clients=2,
+            eval_script="evaluate.py",
+            eval_args="--data_root /tmp/data",
+            initial_ckpt="/abs/path/to/model.npy",
+        )
+
+        assert recipe.job is not None
+
+    def test_with_eval_script_external_process(self, mock_file_system):
+        """Test with eval_script in external process mode."""
+        from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+        recipe = NumpyCrossSiteEvalRecipe(
+            name="test_cse_external",
+            min_clients=2,
+            eval_script="evaluate.py",
+            launch_external_process=True,
+            command="python3 -u",
         )
 
         assert recipe.job is not None

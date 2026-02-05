@@ -21,13 +21,14 @@ from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.model_config import validate_checkpoint_path
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):
     name: str
+    min_clients: PositiveInt
     num_rounds: int
     damping_factor: float
     num_features: PositiveInt
@@ -41,9 +42,7 @@ class _FedAvgValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            from nvflare.fuel.utils.constants import FrameworkType
-
-            validate_checkpoint_path(v, FrameworkType.NUMPY, has_model=True)
+            validate_initial_ckpt(v)
         return v
 
 
@@ -62,6 +61,7 @@ class FedAvgLrRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "lr_fedavg".
+        min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         damping_factor: default to 0.8
         num_features: Number of features for the logistic regression. Defaults to 13.
@@ -75,7 +75,8 @@ class FedAvgLrRecipe(Recipe):
 
     Example:
         ```python
-            recipe = FedAvgLrRecipe(num_rounds=num_rounds,
+            recipe = FedAvgLrRecipe(min_clients=2,
+                            num_rounds=num_rounds,
                             damping_factor=0.8,
                             num_features=13,
                             train_script="client.py",
@@ -87,6 +88,7 @@ class FedAvgLrRecipe(Recipe):
         self,
         *,
         name: str = "lr_fedavg",
+        min_clients: int,
         num_rounds: int = 2,
         damping_factor=0.8,
         num_features=13,
@@ -99,6 +101,7 @@ class FedAvgLrRecipe(Recipe):
         # Validate inputs internally
         v = _FedAvgValidator(
             name=name,
+            min_clients=min_clients,
             num_rounds=num_rounds,
             damping_factor=damping_factor,
             num_features=num_features,
@@ -110,6 +113,7 @@ class FedAvgLrRecipe(Recipe):
         )
 
         self.name = v.name
+        self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.damping_factor = v.damping_factor
         self.initial_ckpt = v.initial_ckpt
@@ -120,7 +124,7 @@ class FedAvgLrRecipe(Recipe):
         self.num_features = v.num_features
 
         # Create FedJob.
-        job = FedJob(name=self.name)
+        job = FedJob(name=self.name, min_clients=self.min_clients)
         persistor = LRModelPersistor(
             n_features=self.num_features,
             source_ckpt_file_full_name=self.initial_ckpt,
@@ -129,7 +133,7 @@ class FedAvgLrRecipe(Recipe):
 
         # Send custom controller to server
         controller = FedAvgLR(
-            num_clients=0,
+            num_clients=self.min_clients,
             damping_factor=self.damping_factor,
             n_features=self.num_features,
             num_rounds=self.num_rounds,

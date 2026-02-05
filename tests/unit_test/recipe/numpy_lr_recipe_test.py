@@ -42,6 +42,7 @@ class TestFedAvgLrRecipe:
             train_script="train.py",
             min_clients=2,
             num_rounds=5,
+            num_features=13,
         )
 
         assert recipe.job is not None
@@ -55,6 +56,7 @@ class TestFedAvgLrRecipe:
             train_script="train.py",
             min_clients=2,
             num_rounds=5,
+            num_features=13,
             initial_ckpt="/abs/path/to/lr_weights.npy",
         )
 
@@ -70,5 +72,6 @@ class TestFedAvgLrRecipe:
                 train_script="train.py",
                 min_clients=2,
                 num_rounds=5,
+                num_features=13,
                 initial_ckpt="relative/path/model.npy",
             )

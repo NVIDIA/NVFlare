@@ -163,7 +163,7 @@ class TestSVMFedAvgRecipe:
             name="test_svm",
             train_script="train.py",
             min_clients=2,
-            num_rounds=5,
+            kernel="rbf",
         )
 
         assert recipe.name == "test_svm"
@@ -177,7 +177,7 @@ class TestSVMFedAvgRecipe:
             name="test_svm_ckpt",
             train_script="train.py",
             min_clients=2,
-            num_rounds=5,
+            kernel="rbf",
             initial_ckpt="/abs/path/to/svm.joblib",
         )
 

@@ -20,22 +20,31 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.app_common.np.np_validator import NPValidator
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
-from nvflare.fuel.utils.constants import FrameworkType as FT
 from nvflare.job_config.api import FedJob
-from nvflare.job_config.script_runner import FrameworkType
-from nvflare.recipe.model_config import validate_checkpoint_path
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal validator
 class _CrossSiteEvalValidator(BaseModel):
+    name: str
+    min_clients: int
+    eval_script: Optional[str] = None
+    eval_args: str = ""
+    launch_external_process: bool = False
+    command: str = "python3 -u"
     initial_ckpt: Optional[str] = None
+    model_dir: Optional[str] = None
+    model_name: Optional[dict] = None
+    submit_model_timeout: int = 600
+    validation_timeout: int = 6000
 
     @field_validator("initial_ckpt")
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_checkpoint_path(v, FT.NUMPY, has_model=True)
+            validate_initial_ckpt(v)
         return v
 
 
@@ -48,6 +57,12 @@ class NumpyCrossSiteEvalRecipe(Recipe):
     Args:
         name: Name of the federated job. Defaults to "numpy_cross_site_eval".
         min_clients: Minimum number of clients required to start the job. Defaults to 2.
+        eval_script: Path to the evaluation script that will be executed on each client.
+            If not provided, uses a built-in dummy validator (for testing only).
+        eval_args: Command line arguments to pass to the evaluation script. Defaults to "".
+        launch_external_process: Whether to launch the script in external process. Defaults to False.
+        command: If launch_external_process=True, command to run script (prepended to script).
+            Defaults to "python3 -u".
         initial_ckpt: Absolute path to a pre-trained model file (.npy) on the server.
             If provided, this takes precedence over model_dir/model_name.
             The file may not exist locally (server-side path).
@@ -61,10 +76,12 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         validation_timeout: Timeout (seconds) for validation tasks on clients. Defaults to 6000.
 
     Example:
-        Using initial_ckpt (pre-trained model with absolute path):
+        Using eval_script with initial_ckpt:
 
         ```python
         recipe = NumpyCrossSiteEvalRecipe(
+            eval_script="evaluate.py",
+            eval_args="--data_root /path/to/data",
             initial_ckpt="/path/to/pretrained_model.npy",
             min_clients=2,
         )
@@ -74,6 +91,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
 
         ```python
         recipe = NumpyCrossSiteEvalRecipe(
+            eval_script="evaluate.py",
             model_dir="models",
             model_name={"server": "server.npy"},
             min_clients=2,
@@ -85,14 +103,30 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         self,
         name: str = "numpy_cross_site_eval",
         min_clients: int = 2,
+        eval_script: Optional[str] = None,
+        eval_args: str = "",
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
         initial_ckpt: Optional[str] = None,
         model_dir: Optional[str] = None,
         model_name: Optional[dict] = None,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
     ):
-        # Validate initial_ckpt if provided
-        _CrossSiteEvalValidator(initial_ckpt=initial_ckpt)
+        # Validate all inputs
+        _CrossSiteEvalValidator(
+            name=name,
+            min_clients=min_clients,
+            eval_script=eval_script,
+            eval_args=eval_args,
+            launch_external_process=launch_external_process,
+            command=command,
+            initial_ckpt=initial_ckpt,
+            model_dir=model_dir,
+            model_name=model_name,
+            submit_model_timeout=submit_model_timeout,
+            validation_timeout=validation_timeout,
+        )
 
         job = FedJob(name=name, min_clients=min_clients)
 
@@ -124,10 +158,22 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         job.to_server(ValidationJsonGenerator())
 
         # Add validators to clients for validation tasks
-        job.to_clients(
-            NPValidator(),
-            tasks=[AppConstants.TASK_VALIDATION],
-        )
+        if eval_script is not None:
+            # Use custom evaluation script via ScriptRunner
+            executor = ScriptRunner(
+                script=eval_script,
+                script_args=eval_args,
+                launch_external_process=launch_external_process,
+                command=command,
+                framework=FrameworkType.RAW,
+            )
+            job.to_clients(executor, tasks=[AppConstants.TASK_VALIDATION])
+        else:
+            # Use built-in dummy validator (for testing/demo only)
+            job.to_clients(
+                NPValidator(),
+                tasks=[AppConstants.TASK_VALIDATION],
+            )
 
         # Set framework for external API compatibility (e.g., add_cross_site_evaluation)
         self.framework = FrameworkType.RAW

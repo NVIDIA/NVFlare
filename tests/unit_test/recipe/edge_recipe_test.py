@@ -105,6 +105,30 @@ class TestEdgeFedBuffRecipe:
 
         assert recipe.job is not None
 
+    def test_dict_model_config_with_evaluator(self, mock_file_system, model_manager_config, device_manager_config):
+        """Test that dict model config works with evaluator_config.
+
+        This verifies that GlobalEvaluator correctly handles dict model config.
+        """
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe, EvaluatorConfig
+
+        evaluator_config = EvaluatorConfig(
+            custom_dataset={"data": [[0, 0], [1, 1]], "label": [0, 1]},
+        )
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_edge_dict_eval",
+            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+            evaluator_config=evaluator_config,
+        )
+
+        assert recipe.job is not None
+        # Verify model is stored as dict
+        assert isinstance(recipe.model, dict)
+        assert recipe.model["path"] == "torch.nn.Linear"
+
     def test_relative_path_rejected(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
     ):

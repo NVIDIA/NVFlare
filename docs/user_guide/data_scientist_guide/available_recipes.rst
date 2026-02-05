@@ -611,14 +611,17 @@ Evaluate models across all client sites (compare each client's model against all
         name="cross-eval",
         min_clients=2,
         eval_script="evaluate.py",
+        eval_args="--data_root /path/to/data",
         initial_ckpt="/path/to/pretrained_model.npy",  # Optional: evaluate specific model
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
 .. note::
-   Use ``initial_ckpt`` to evaluate a specific pre-trained model. If not provided, the recipe
-   evaluates models from the training run directory.
+   - Use ``eval_script`` to specify custom evaluation logic. If not provided, uses a built-in
+     dummy validator (for testing only).
+   - Use ``initial_ckpt`` to evaluate a specific pre-trained model. If not provided, the recipe
+     evaluates models from the training run directory.
 
 **Examples:**
 

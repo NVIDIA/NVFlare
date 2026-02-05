@@ -18,11 +18,10 @@ from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
-from nvflare.fuel.utils.constants import FrameworkType as FT
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.model_config import validate_checkpoint_path
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal validator
@@ -33,7 +32,7 @@ class _FedEvalValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         # initial_ckpt is required for evaluation, validate it
-        validate_checkpoint_path(v, FT.PYTORCH, has_model=True)
+        validate_initial_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
@@ -153,28 +152,17 @@ class FedEvalRecipe(Recipe):
             min_clients=self.min_clients,
         )
 
-        # Setup model and persistor using PTModel (handles serialization properly)
+        # Setup model and persistor using PTModel (handles both nn.Module and dict config)
         import torch.nn as nn
 
-        from nvflare.app_opt.pt import PTFileModelPersistor
         from nvflare.app_opt.pt.job_config.model import PTModel
 
-        # Handle dict-based model config
-        if isinstance(self.initial_model, dict):
-            # Dict config: {"path": "...", "args": {...}} - passed to PTModel
-            pt_model = PTModel(
-                model=self.initial_model,
-                source_ckpt_file_full_name=self.initial_ckpt,
-            )
-        elif isinstance(self.initial_model, nn.Module):
-            # Instantiated model
-            persistor = PTFileModelPersistor(
-                model=self.initial_model,
-                source_ckpt_file_full_name=self.initial_ckpt,
-            )
-            pt_model = PTModel(model=self.initial_model, persistor=persistor)
-        else:
+        # Validate model type
+        if not isinstance(self.initial_model, (nn.Module, dict)):
             raise ValueError(f"initial_model must be nn.Module or dict config, got {type(self.initial_model)}")
+
+        # PTModel handles both nn.Module and dict config uniformly
+        pt_model = PTModel(model=self.initial_model, initial_ckpt=self.initial_ckpt)
 
         job.comp_ids.update(job.to_server(pt_model))
         persistor_id = job.comp_ids.get("persistor_id", "")

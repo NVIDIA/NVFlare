@@ -23,10 +23,8 @@ from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
-from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.recipe.model_config import validate_checkpoint_path
-from nvflare.recipe.model_config_handler import ModelConfigHandler
 from nvflare.recipe.spec import ExecEnv, Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 DEVICE_SIMULATION_ENV_KEY = "device_simulation"
 
@@ -40,7 +38,7 @@ class _EdgeFedBuffValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_checkpoint_path(v, FrameworkType.PYTORCH, has_model=True)
+            validate_initial_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
@@ -252,12 +250,12 @@ class EdgeFedBuffRecipe(Recipe):
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
 
-        # Create model config handler for PyTorch
-        self._model_handler = ModelConfigHandler(
-            model=model,
-            initial_ckpt=initial_ckpt,
-            framework=FrameworkType.PYTORCH,
-        )
+        # Determine model instance for evaluation (handle dict config vs model instance)
+        if isinstance(model, dict):
+            self._model_instance = None  # Will be created at runtime from dict config
+        else:
+            self._model_instance = model
+
         # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
         if model_manager_config.num_updates_for_model > device_manager_config.device_selection_size:
             raise ValueError(
@@ -306,8 +304,8 @@ class EdgeFedBuffRecipe(Recipe):
             job: The EdgeJob instance to configure
         """
         if self.evaluator_config:
-            # Use model instance for evaluator (from model handler if dict config)
-            model_for_eval = self._model_handler.model_instance if self._model_handler.model_instance else self.model
+            # Use model instance for evaluator (dict config or model instance)
+            model_for_eval = self._model_instance if self._model_instance else self.model
             evaluator = GlobalEvaluator(
                 model_path=model_for_eval,
                 torchvision_dataset=self.evaluator_config.torchvision_dataset,
@@ -326,8 +324,12 @@ class EdgeFedBuffRecipe(Recipe):
             update_timeout=self.model_manager_config.update_timeout,
         )
 
-        # add persistor using model config handler (supports dict config and initial_ckpt)
-        persistor_id = self._model_handler.setup_model_components(job, persistor_id="persistor")
+        # add persistor using PTModel (supports dict config and initial_ckpt)
+        from nvflare.app_opt.pt.job_config.model import PTModel
+
+        pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
+        result = job.to_server(pt_model, id="persistor")
+        persistor_id = result["persistor_id"]
 
         model_manager = BuffModelManager(
             num_updates_for_model=self.model_manager_config.num_updates_for_model,

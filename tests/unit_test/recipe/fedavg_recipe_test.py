@@ -508,8 +508,15 @@ class TestFedAvgRecipeInitialCkpt:
 class TestFedAvgRecipeDictConfigJobExport:
     """Test that dict model config works end-to-end with job export."""
 
-    def test_dict_config_job_export(self, mock_file_system, base_recipe_params, tmp_path):
+    def test_dict_config_job_export(self, tmp_path):
         """Test that a recipe with dict config can export a valid job."""
+        import os
+
+        # Create a real temp train script (don't use mock_file_system - it breaks os.makedirs)
+        train_script = str(tmp_path / "train.py")
+        with open(train_script, "w") as f:
+            f.write("# Dummy train script\n")
+
         model_config = {
             "path": "model.SimpleNetwork",
             "args": {},
@@ -517,7 +524,10 @@ class TestFedAvgRecipeDictConfigJobExport:
         recipe = FedAvgRecipe(
             name="test_dict_export",
             initial_model=model_config,
-            **base_recipe_params,
+            train_script=train_script,
+            train_args="--epochs 10",
+            min_clients=2,
+            num_rounds=5,
         )
 
         # Export the job - this validates the config is properly processed
@@ -525,13 +535,18 @@ class TestFedAvgRecipeDictConfigJobExport:
         recipe.export(job_dir=job_dir)
 
         # Verify export created the job directory
-        import os
-
         assert os.path.exists(job_dir)
         assert os.path.exists(os.path.join(job_dir, "test_dict_export"))
 
-    def test_dict_config_with_ckpt_job_export(self, mock_file_system, base_recipe_params, tmp_path):
+    def test_dict_config_with_ckpt_job_export(self, tmp_path):
         """Test that a recipe with dict config and initial_ckpt can export a valid job."""
+        import os
+
+        # Create a real temp train script (don't use mock_file_system - it breaks os.makedirs)
+        train_script = str(tmp_path / "train.py")
+        with open(train_script, "w") as f:
+            f.write("# Dummy train script\n")
+
         model_config = {
             "path": "model.SimpleNetwork",
             "args": {"num_classes": 10},
@@ -540,7 +555,10 @@ class TestFedAvgRecipeDictConfigJobExport:
             name="test_dict_ckpt_export",
             initial_model=model_config,
             initial_ckpt="/server/path/to/pretrained.pt",
-            **base_recipe_params,
+            train_script=train_script,
+            train_args="--epochs 10",
+            min_clients=2,
+            num_rounds=5,
         )
 
         # Export the job
@@ -548,8 +566,6 @@ class TestFedAvgRecipeDictConfigJobExport:
         recipe.export(job_dir=job_dir)
 
         # Verify export created the job directory
-        import os
-
         assert os.path.exists(job_dir)
         assert os.path.exists(os.path.join(job_dir, "test_dict_ckpt_export"))
 

@@ -110,3 +110,42 @@ class TestSimpleSwarmLearningRecipe:
         )
 
         assert recipe.job is not None
+
+    def test_dict_model_config_accepted(self, mock_file_system):
+        """Test that dict model config is accepted."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_dict",
+            initial_model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            num_rounds=5,
+            train_script="train.py",
+        )
+
+        assert recipe.job is not None
+
+    def test_dict_model_config_with_ckpt(self, mock_file_system):
+        """Test dict model config with initial checkpoint."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_dict_ckpt",
+            initial_model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            num_rounds=5,
+            train_script="train.py",
+            initial_ckpt="/abs/path/to/model.pt",
+        )
+
+        assert recipe.job is not None
+
+    def test_dict_model_missing_path_rejected(self, mock_file_system):
+        """Test that dict model without 'path' key is rejected."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="must contain 'path' key"):
+            SimpleSwarmLearningRecipe(
+                name="test_swarm_bad_dict",
+                initial_model={"args": {"in_features": 10}},  # Missing 'path'
+                num_rounds=5,
+                train_script="train.py",
+            )

@@ -38,6 +38,7 @@ def main():
 
     print("number of clients =", n_clients)
     recipe = FedAvgLrRecipe(
+        min_clients=n_clients,
         num_rounds=num_rounds,
         damping_factor=0.8,
         num_features=13,  # Model is created internally based on num_features
