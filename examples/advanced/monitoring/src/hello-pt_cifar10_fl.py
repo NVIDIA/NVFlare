@@ -72,11 +72,11 @@ def main():
                 cost.backward()
                 optimizer.step()
 
-                running_loss += cost.cpu().detach().numpy() / images.size()[0]
+                running_loss += cost.item()
                 if i % 3000 == 0:
                     print(f"Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
                     global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss / 3000, global_step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")
