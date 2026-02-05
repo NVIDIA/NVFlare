@@ -247,7 +247,32 @@ server_streamer = TensorServerStreamer(
 
 #### Timeout Configuration
 
-Choose timeout values based on your deployment scenario:
+**Automatic Timeout Management**
+
+Tensor streaming automatically handles timeout configuration! The server calculates and communicates the required minimum `get_task_timeout` to clients, preventing fast clients from timing out while slow clients are still receiving tensors.
+
+**How it works:**
+1. Server calculates: `min_timeout = wait_send_task_data_all_clients_timeout + 60s buffer`
+2. Server sends this requirement to clients in task responses
+3. Clients automatically adjust their timeout if needed
+4. Clear logging shows when auto-adjustment occurs
+
+**No manual configuration needed** for most deployments!
+
+**Optional Manual Override (Advanced)**
+
+If you need explicit control (e.g., testing, very slow networks), you can manually set `get_task_timeout` in `config_fed_client.json`:
+
+```json
+{
+  "format_version": 2,
+  "get_task_timeout": 400.0,
+  "executors": [...],
+  "components": [...]
+}
+```
+
+**Choosing timeout values:**
 
 **Small models (< 100MB), fast network:**
 ```python
