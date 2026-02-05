@@ -24,6 +24,7 @@ Launch with:
 
 import argparse
 import copy
+import math
 import os
 
 # Add deterministic seed for reproducibility illustration
@@ -230,9 +231,9 @@ def main():
 
     # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
     # Total training steps = (dataset_size / (batch_size * grad_accum * world_size)) * num_epochs
-    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps * world_size)) * (
-        args.local_epoch * args.num_rounds
-    )
+    # Use ceiling division to ensure at least 1 step per epoch for small datasets
+    steps_per_epoch = math.ceil(len(dataset_train) / (batch_size * gra_accu_steps * world_size))
+    total_train_steps = steps_per_epoch * (args.local_epoch * args.num_rounds)
     warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
 
     # Set TensorBoard logging directory via environment variable
