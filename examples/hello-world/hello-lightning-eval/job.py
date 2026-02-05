@@ -49,7 +49,10 @@ def main():
 
     recipe = FedEvalRecipe(
         min_clients=n_clients,
+        # Model can be specified as class instance or dict config:
         initial_model=LitNet(checkpoint=os.path.abspath(checkpoint)),
+        # Alternative: initial_model={"path": "model.LitNet", "args": {"checkpoint": "/path/to/ckpt"}},
+        # For separate checkpoint: initial_ckpt="/server/path/to/pretrained.pt",
         eval_script="client.py",
         eval_args=f"--batch_size {batch_size}",
     )

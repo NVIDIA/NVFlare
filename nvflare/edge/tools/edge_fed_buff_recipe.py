@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-import torch.nn as nn
+from pydantic import BaseModel, field_validator
 
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggrFactory
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
 from nvflare.edge.assessors.buff_model_manager import BuffModelManager
@@ -25,8 +24,24 @@ from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 from nvflare.recipe.spec import ExecEnv, Recipe
+from nvflare.recipe.utils import validate_initial_ckpt
 
 DEVICE_SIMULATION_ENV_KEY = "device_simulation"
+
+
+class _EdgeFedBuffValidator(BaseModel):
+    """Internal validator for EdgeFedBuffRecipe parameters."""
+
+    initial_ckpt: Optional[str] = None
+
+    @field_validator("initial_ckpt")
+    @classmethod
+    def validate_initial_ckpt(cls, v):
+        if v is not None:
+            validate_initial_ckpt(v)
+        return v
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class ModelManagerConfig:
@@ -175,50 +190,52 @@ class EdgeFedBuffRecipe(Recipe):
 
     Example usage:
         ```python
-        # Basic configuration
-        model_manager_config = ModelManagerConfig(
-            global_lr=0.1,
-            num_updates_for_model=20,
-            max_model_version=300,
-            max_model_history=100
-        )
-
-        device_manager_config = DeviceManagerConfig(
-            device_selection_size=200,
-            min_hole_to_fill=10,
-            device_reuse=False
-        )
-
+        # Basic configuration with model instance
         recipe = EdgeFedBuffRecipe(
             job_name="my_edge_job",
             model=MyModel(),
-            model_manager_config=model_manager_config,
-            device_manager_config=device_manager_config
+            model_manager_config=ModelManagerConfig(...),
+            device_manager_config=DeviceManagerConfig(...)
+        )
+
+        # With dict config and pre-trained checkpoint
+        recipe = EdgeFedBuffRecipe(
+            job_name="my_edge_job",
+            model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
+            initial_ckpt="/path/to/pretrained.pt",
+            model_manager_config=ModelManagerConfig(...),
+            device_manager_config=DeviceManagerConfig(...)
         )
         ```
 
-    Attributes:
-        job_name: Name of the federated learning job
-        model: PyTorch neural network model to be trained
-        model_manager_config: Configuration for the model manager
-        device_manager_config: Configuration for the device manager
-        evaluator_config: Configuration for the global evaluator (optional)
-        simulation_config: Configuration for simulated devices settings (optional)
-        custom_source_root: Path to custom source code (optional)
+    Args:
+        job_name: Name of the federated learning job.
+        model: PyTorch model to be trained. Can be:
+            - nn.Module instance: e.g., MyModel()
+            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
+            The file may not exist locally (server-side path).
+            Used to resume training from pre-trained weights.
+        model_manager_config: Configuration for the model manager.
+        device_manager_config: Configuration for the device manager.
+        evaluator_config: Configuration for the global evaluator (optional).
+        simulation_config: Configuration for simulated devices settings (optional).
+        custom_source_root: Path to custom source code (optional).
     """
 
     def __init__(
         self,
         job_name: str,
-        model: nn.Module,
+        model: Union[Any, Dict],
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
+        initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         custom_source_root: str = None,
     ):
-        if not isinstance(model, nn.Module):
-            raise ValueError(f"model must be a nn.Module but got {type(model)}")
+        # Validate initial_ckpt
+        _EdgeFedBuffValidator(initial_ckpt=initial_ckpt)
 
         if custom_source_root and not os.path.isdir(custom_source_root):
             raise ValueError(f"{custom_source_root} is not a valid directory")
@@ -226,11 +243,19 @@ class EdgeFedBuffRecipe(Recipe):
         self.job_name = job_name
         self.method_name = "edge"
         self.model = model
+        self.initial_ckpt = initial_ckpt
         self.model_manager_config = model_manager_config
         self.device_manager_config = device_manager_config
         self.evaluator_config = evaluator_config
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
+
+        # Determine model instance for evaluation (handle dict config vs model instance)
+        if isinstance(model, dict):
+            self._model_instance = None  # Will be created at runtime from dict config
+        else:
+            self._model_instance = model
+
         # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
         if model_manager_config.num_updates_for_model > device_manager_config.device_selection_size:
             raise ValueError(
@@ -279,8 +304,10 @@ class EdgeFedBuffRecipe(Recipe):
             job: The EdgeJob instance to configure
         """
         if self.evaluator_config:
+            # Use model instance for evaluator (dict config or model instance)
+            model_for_eval = self._model_instance if self._model_instance else self.model
             evaluator = GlobalEvaluator(
-                model_path=self.model,
+                model_path=model_for_eval,
                 torchvision_dataset=self.evaluator_config.torchvision_dataset,
                 eval_frequency=self.evaluator_config.eval_frequency,
                 custom_dataset=self.evaluator_config.custom_dataset,
@@ -297,8 +324,12 @@ class EdgeFedBuffRecipe(Recipe):
             update_timeout=self.model_manager_config.update_timeout,
         )
 
-        # add persistor, model_manager, and device_manager
-        persistor_id = job.to_server(PTFileModelPersistor(model=self.model), id="persistor")
+        # add persistor using PTModel (supports dict config and initial_ckpt)
+        from nvflare.app_opt.pt.job_config.model import PTModel
+
+        pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
+        result = job.to_server(pt_model, id="persistor")
+        persistor_id = result["persistor_id"]
 
         model_manager = BuffModelManager(
             num_updates_for_model=self.model_manager_config.num_updates_for_model,

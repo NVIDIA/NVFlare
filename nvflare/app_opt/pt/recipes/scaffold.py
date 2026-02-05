@@ -144,10 +144,7 @@ class ScaffoldRecipe(Recipe):
         if self.initial_model is not None or self.initial_ckpt is not None:
             pt_model = PTModel(model=self.initial_model, initial_ckpt=self.initial_ckpt)
             result = job.to_server(pt_model, id="persistor")
-            if isinstance(result, dict):
-                persistor_id = result.get("persistor_id", "persistor")
-            else:
-                persistor_id = result if result else "persistor"
+            persistor_id = result["persistor_id"]
 
         # Define the controller and send to server
         controller = Scaffold(

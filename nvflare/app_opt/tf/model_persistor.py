@@ -260,7 +260,20 @@ class TFModelPersistor(ModelPersistor):
         """
         model_inventory = {}
 
-        # Check for the main saved model
+        # Include source checkpoint if provided (supports external/pre-trained models)
+        if self.source_ckpt_file_full_name:
+            ckpt_path = self.source_ckpt_file_full_name
+            # Handle both file and directory (SavedModel format)
+            if os.path.exists(ckpt_path):
+                _, tail = os.path.split(ckpt_path)
+                model_inventory[tail] = ModelDescriptor(
+                    name=ckpt_path,
+                    location=ckpt_path,
+                    model_format="TensorFlow",
+                    props={"source": "initial_ckpt"},
+                )
+
+        # Check for the main saved model (training artifact)
         if hasattr(self, "_model_save_path") and os.path.exists(self._model_save_path):
             _, tail = os.path.split(self.save_name)
             model_inventory[tail] = ModelDescriptor(
