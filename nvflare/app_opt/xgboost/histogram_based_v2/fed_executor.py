@@ -44,18 +44,15 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.model_file_name = model_file_name
         self.metrics_writer_id = metrics_writer_id
         self.in_process = in_process
-        self._cached_adaptor = None  # Cache adaptor to prevent recreation
+        self._cached_adaptor = None  # Cache adaptor so rank set in configure is still there at start()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        """Override to clear adaptor cache on END_RUN to support executor reuse across runs."""
+        """Clear adaptor cache on END_RUN so executor can be reused in next run."""
         if event_type == EventType.END_RUN:
-            # Clear cached adaptor to ensure clean state for next run
             self._cached_adaptor = None
-        # Call parent handler for standard event processing
         super().handle_event(event_type, fl_ctx)
 
     def get_adaptor(self, fl_ctx: FLContext):
-        # Return cached adaptor if it exists to prevent losing configuration
         if self._cached_adaptor is not None:
             return self._cached_adaptor
 
@@ -76,5 +73,5 @@ class FedXGBHistogramExecutor(XGBExecutor):
             tx_timeout=self.tx_timeout,
         )
         adaptor.set_runner(runner)
-        self._cached_adaptor = adaptor  # Cache for future calls
+        self._cached_adaptor = adaptor
         return adaptor
