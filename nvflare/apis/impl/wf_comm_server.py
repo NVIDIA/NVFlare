@@ -528,13 +528,16 @@ class WFCommServer(FLComponent, WFCommSpec):
         Clients can request tasks and controller will dispatch the task to eligible clients.
 
         Note:
-            task.data is deep copied after before_task_sent_cb runs for the first client to protect
+            task.data is deep copied once, after before_task_sent_cb runs for the first client, to protect
             against data corruption from concurrent in-place modifications. This copy is then reused
             for all subsequent clients. As a result:
-            - Modifications to task.data in before_task_sent_cb ARE captured in the copy (for first client only)
+            - Modifications to task.data in before_task_sent_cb ARE captured in the copy, but only for the
+              first client whose callback runs before the snapshot is taken.
             - Modifications to task.data AFTER broadcast returns (e.g., in-place aggregation) do NOT
-              affect clients - they receive the protected copy
-            - Per-client data customization in before_task_sent_cb is NOT supported (all clients get same copy)
+              affect clients - they receive the protected copy.
+            - Per-client data customization in before_task_sent_cb is NOT supported: although the callback
+              runs for every client, only modifications from the first client's callback are reflected in the
+              shared snapshot, and all clients receive that same snapshot.
 
         Args:
             task (Task): the task to be scheduled
