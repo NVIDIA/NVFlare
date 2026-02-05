@@ -37,6 +37,7 @@ class TestRunClass:
         assert self.run._cached_status is None
         assert self.run._cached_result is None
         assert self.run.logger is not None
+        assert self.run._lock is not None  # Thread safety lock
 
     def test_get_job_id(self):
         """Test get_job_id method."""
@@ -62,32 +63,32 @@ class TestRunClass:
 
     def test_get_result_waits_caches_and_stops(self):
         """Test that get_result waits for job, caches status, and stops env."""
-        self.mock_env.get_job_result.return_value = {"model": "weights"}
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
         result = self.run.get_result(timeout=30.0)
 
-        assert result == {"model": "weights"}
+        assert result == "/tmp/workspace/test_job_123"
         self.mock_env.get_job_result.assert_called_once_with(self.job_id, timeout=30.0)
         self.mock_env.get_job_status.assert_called_once_with(self.job_id)
         self.mock_env.stop.assert_called_once_with(clean_up=True)
         assert self.run._stopped is True
         assert self.run._cached_status == "FINISHED"
-        assert self.run._cached_result == {"model": "weights"}
+        assert self.run._cached_result == "/tmp/workspace/test_job_123"
 
     def test_get_result_default_timeout(self):
         """Test get_result with default timeout."""
-        self.mock_env.get_job_result.return_value = {"data": "result"}
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
         result = self.run.get_result()
 
-        assert result == {"data": "result"}
+        assert result == "/tmp/workspace/test_job_123"
         self.mock_env.get_job_result.assert_called_once_with(self.job_id, timeout=0.0)
 
     def test_get_status_returns_cached_after_stopped(self):
         """Test that get_status returns cached value after get_result is called."""
-        self.mock_env.get_job_result.return_value = {"data": "result"}
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
         # Call get_result first - this stops POC and caches status
@@ -103,7 +104,7 @@ class TestRunClass:
 
     def test_get_result_returns_cached_after_stopped(self):
         """Test that get_result returns cached value when called again."""
-        self.mock_env.get_job_result.return_value = {"data": "result"}
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
         # First call
@@ -115,34 +116,49 @@ class TestRunClass:
 
         # Second call should return cached result
         result2 = self.run.get_result()
-        assert result2 == {"data": "result"}
+        assert result2 == "/tmp/workspace/test_job_123"
         self.mock_env.get_job_result.assert_not_called()
         self.mock_env.stop.assert_not_called()
 
-    def test_get_result_stops_even_on_exception(self):
+    def test_get_result_stops_even_on_result_exception(self):
         """Test that stop is called even if get_job_result raises exception."""
         self.mock_env.get_job_result.side_effect = RuntimeError("Connection failed")
+        self.mock_env.get_job_status.return_value = "FINISHED"
 
         result = self.run.get_result()
 
-        # Exception is caught, result is None
+        # Exception is caught and logged, result is None
         assert result is None
         self.mock_env.stop.assert_called_once_with(clean_up=True)
         assert self.run._stopped is True
-        assert self.run._cached_status is None
+        assert self.run._cached_status == "FINISHED"
         assert self.run._cached_result is None
 
-    def test_get_result_caches_none_on_status_exception(self):
-        """Test that caches are set to None if get_job_status raises exception."""
-        self.mock_env.get_job_result.return_value = {"data": "result"}
+    def test_get_result_sets_stopped_even_on_stop_exception(self):
+        """Test that _stopped is set to True even if stop() raises exception."""
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
+        self.mock_env.get_job_status.return_value = "FINISHED"
+        self.mock_env.stop.side_effect = RuntimeError("Stop failed")
+
+        result = self.run.get_result()
+
+        # Result is still returned, _stopped is True despite stop() failing
+        assert result == "/tmp/workspace/test_job_123"
+        assert self.run._stopped is True
+        assert self.run._cached_status == "FINISHED"
+        assert self.run._cached_result == "/tmp/workspace/test_job_123"
+
+    def test_get_result_preserves_result_on_status_exception(self):
+        """Test that result is preserved even if get_job_status raises exception."""
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.side_effect = Exception("Status error")
 
         result = self.run.get_result()
 
-        # Result is still returned, but exception causes caches to be set to None
-        assert result == {"data": "result"}
+        # Result is still returned and cached, only status cache is None
+        assert result == "/tmp/workspace/test_job_123"
         assert self.run._cached_status is None
-        assert self.run._cached_result is None
+        assert self.run._cached_result == "/tmp/workspace/test_job_123"
         assert self.run._stopped is True
 
     def test_abort_delegates_to_env(self):
@@ -153,7 +169,7 @@ class TestRunClass:
 
     def test_abort_does_nothing_after_stopped(self):
         """Test that abort does nothing after get_result has been called."""
-        self.mock_env.get_job_result.return_value = {"data": "result"}
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
         # Stop via get_result
@@ -178,6 +194,70 @@ class TestRunClass:
         # stop should never be called
         self.mock_env.stop.assert_not_called()
         assert self.run._stopped is False
+
+    def test_init_with_none_exec_env_raises(self):
+        """Test that Run raises ValueError when exec_env is None."""
+        with pytest.raises(ValueError, match="exec_env cannot be None"):
+            Run(exec_env=None, job_id="test_job")
+
+    def test_init_with_empty_job_id_raises(self):
+        """Test that Run raises ValueError when job_id is empty."""
+        with pytest.raises(ValueError, match="job_id must be a non-empty string"):
+            Run(exec_env=self.mock_env, job_id="")
+
+    def test_init_with_none_job_id_raises(self):
+        """Test that Run raises ValueError when job_id is None."""
+        with pytest.raises(ValueError, match="job_id must be a non-empty string"):
+            Run(exec_env=self.mock_env, job_id=None)
+
+    def test_get_status_handles_exception(self):
+        """Test that get_status returns None and logs warning on exception."""
+        self.mock_env.get_job_status.side_effect = RuntimeError("Connection failed")
+
+        result = self.run.get_status()
+
+        assert result is None
+        self.mock_env.get_job_status.assert_called_once_with(self.job_id)
+
+    def test_abort_handles_exception(self):
+        """Test that abort logs warning on exception but doesn't raise."""
+        self.mock_env.abort_job.side_effect = RuntimeError("Abort failed")
+
+        # Should not raise
+        self.run.abort()
+
+        self.mock_env.abort_job.assert_called_once_with(self.job_id)
+
+    def test_concurrent_get_result_calls(self):
+        """Test that concurrent get_result calls are handled safely."""
+        import threading
+
+        self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
+        self.mock_env.get_job_status.return_value = "FINISHED"
+
+        results = []
+        errors = []
+
+        def call_get_result():
+            try:
+                result = self.run.get_result()
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        # Launch multiple threads calling get_result concurrently
+        threads = [threading.Thread(target=call_get_result) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All calls should succeed without errors
+        assert len(errors) == 0
+        # All results should be the same (cached or fresh)
+        assert all(r == "/tmp/workspace/test_job_123" for r in results)
+        # stop should only be called once (first call stops, others return cached)
+        assert self.mock_env.stop.call_count == 1
 
 
 @pytest.mark.skip(reason="Integration tests require full environment setup")
