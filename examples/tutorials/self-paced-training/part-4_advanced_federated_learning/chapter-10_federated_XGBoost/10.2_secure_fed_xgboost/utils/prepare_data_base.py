@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 import argparse
 import os
 
-import numpy as np
 import pandas as pd
 
 
@@ -29,19 +28,6 @@ def data_split_args_parser():
         help="Output path for the data split file",
     )
     return parser
-
-
-def split_num_proportion(n, site_num):
-    split = []
-    ratio_vec = np.ones(site_num)
-    total = sum(ratio_vec)
-    left = n
-    for site in range(site_num - 1):
-        x = int(n * ratio_vec[site] / total)
-        left = left - x
-        split.append(x)
-    split.append(left)
-    return split
 
 
 def main():
