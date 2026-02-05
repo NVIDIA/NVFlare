@@ -26,12 +26,17 @@ Feature Tutorials
 - `FLARE Python API: Job Submission & Monitoring <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb>`_
 - `Logging: Configuration & Customization <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`_
 - `Job CLI: Job Submission & Templates <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb>`_
+- `Job Recipe: Simplified job creation <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_recipe.ipynb>`_
 
 Self-Paced Learning
 -------------------
 
 - Extensive materials for self-paced training with NVIDIA FLARE, including detailed tutorials and resources.
 - For a comprehensive guide, see the :ref:`self_paced_training` documentation.
+
+.. note::
+
+   The self-paced training notebooks were developed with NVFlare 2.6. Not all content reflects the latest APIs; some examples may need adjustments for newer versions.
 - 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
 - Each notebook can be run independently, but sequential learning is recommended.
 - Over 100 notebooks and 80 videos: a thorough guide to federated learning with FLARE.
