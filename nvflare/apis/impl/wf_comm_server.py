@@ -531,10 +531,10 @@ class WFCommServer(FLComponent, WFCommSpec):
             task.data is deep copied after before_task_sent_cb runs for the first client to protect
             against data corruption from concurrent in-place modifications. This copy is then reused
             for all subsequent clients. As a result:
-            - Modifications to task.data in before_task_sent_cb ARE captured (for the first client)
-            - Modifications to task.data AFTER the first send (e.g., in-place aggregation) are NOT
-              sent to clients - they receive the protected copy
-            - Per-client data customization in before_task_sent_cb is NOT supported for broadcast
+            - Modifications to task.data in before_task_sent_cb ARE captured in the copy (for first client only)
+            - Modifications to task.data AFTER broadcast returns (e.g., in-place aggregation) do NOT
+              affect clients - they receive the protected copy
+            - Per-client data customization in before_task_sent_cb is NOT supported (all clients get same copy)
 
         Args:
             task (Task): the task to be scheduled
