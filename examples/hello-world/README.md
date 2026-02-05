@@ -77,24 +77,6 @@ Here's a complete example:
 - **No configuration files**: Everything defined in Python
 - **Easy experimentation**: Change parameters and re-run instantly
 
-### Model Input Options
-
-The `initial_model` parameter accepts two formats:
-
-1. **Class instance**: `initial_model=SimpleNetwork()` - Convenient, catches errors early
-2. **Dict config**: `initial_model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
-
-To resume training from pre-trained weights:
-```python
-recipe = FedAvgRecipe(
-    initial_model=SimpleNetwork(),
-    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
-    ...
-)
-```
-
-> **Note:** Class instances are converted to config files before job submission. The checkpoint file must exist on the server when the job runs.
-
 ## Examples by Framework
 
 ### Deep Learning Frameworks

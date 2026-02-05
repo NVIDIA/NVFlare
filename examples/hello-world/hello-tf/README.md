@@ -113,24 +113,6 @@ print("Job Status is:", run.get_status())
 print()
 ```
 
-### Model Input Options
-
-The `initial_model` parameter accepts two formats:
-
-1. **Class instance** (shown above): `initial_model=Net()` - Convenient and Pythonic
-2. **Dict config**: `initial_model={"path": "model.Net", "args": {}}` - Better for large models
-
-To resume from pre-trained weights, use `initial_ckpt`:
-```python
-recipe = FedAvgRecipe(
-    initial_model=Net(),
-    initial_ckpt="/server/path/to/pretrained.h5",  # Absolute path, must exist on server
-    ...
-)
-```
-
-> **Note:** For TensorFlow/Keras, SavedModel or .h5 files contain both architecture and weights, so `initial_ckpt` can be used without `initial_model`.
-
 ## Run the Experiment
 
 Execute the script using the job API to create the job and run it with the simulator:

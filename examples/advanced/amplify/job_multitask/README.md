@@ -194,8 +194,6 @@ recipe = FedAvgRecipe(
     name="amplify_seqregression_fedavg_multitask",
     min_clients=len(TASKS),
     num_rounds=600,
-    # Model can be class instance or dict config
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     initial_model=model,
     train_script="client.py",
     train_args="--data_root ./FLAb/data_fl --n_epochs 1 ..."

@@ -19,10 +19,7 @@ recipe = FedAvgRecipe(
     name="fedavg_lightning_mlflow",
     min_clients=2,
     num_rounds=2,
-    # Model can be class instance or dict config:
     initial_model=LitNet(),  # Lightning model
-    # Alternative: initial_model={"path": "model.LitNet", "args": {}},
-    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="client.py",
 )
 

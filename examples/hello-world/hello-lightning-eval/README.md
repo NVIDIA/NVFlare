@@ -95,21 +95,6 @@ recipe = FedEvalRecipe(
 )
 ```
 
-**Model Input Options:**
-
-The `initial_model` parameter accepts class instance or dict config:
-- `initial_model=LitNet(checkpoint="...")` - Class instance
-- `initial_model={"path": "model.LitNet", "args": {"checkpoint": "..."}}` - Dict config
-
-For separate checkpoint loading, use `initial_ckpt`:
-```python
-recipe = FedEvalRecipe(
-    initial_model=LitNet(),
-    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
-    ...
-)
-```
-
 ### Client Code
 
 The client evaluation script (`client.py`) is simple - it just validates the global model:

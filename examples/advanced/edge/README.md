@@ -175,20 +175,6 @@ bash start_all.sh
 #### Step2: Generate Jobs and Submit Using the EdgeFedBuffRecipe API
 Next, let's generate job configs for cifar10 via EdgeFedBuffRecipe API.
 
-**Model Input Options:**
-The `EdgeFedBuffRecipe` accepts model input in two formats:
-- Class instance: `model=Cifar10ConvNet()` - convenient for development
-- Dict config: `model={"path": "models.Cifar10ConvNet", "args": {}}` - better for large models
-
-To resume from pre-trained weights, use `initial_ckpt` (absolute path on server):
-```python
-recipe = EdgeFedBuffRecipe(
-    model=Cifar10ConvNet(),
-    initial_ckpt="/server/path/to/pretrained.pt",
-    ...
-)
-```
-
 This will generate two job configurations and submit them to run on the FL system for basic synchronous and asynchronous training:
 - sync assumes ALL devices participate in each round
 - async assumes server updates the global model and immediately dispatch it after receiving ONE device's update.

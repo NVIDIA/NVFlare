@@ -176,18 +176,16 @@ We leverage a builtin FLARE logistic regression with Newton Raphson method.
 the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
 ## Job
-```python
-recipe = FedAvgLrRecipe(
-    min_clients=n_clients,
-    num_rounds=num_rounds,
-    damping_factor=0.8,
-    num_features=13,  # Model is created internally based on num_features
-    # For pre-trained weights: initial_ckpt="/server/path/to/lr_model.npy",
-    train_script="client.py",
-    train_args=f"--data_root {data_root}",
-)
-env = SimEnv(num_clients=n_clients, num_threads=n_clients)
-run = recipe.execute(env)
+```
+  recipe = FedAvgLrRecipe(
+  num_rounds=num_rounds,
+  damping_factor=0.8,
+  num_features=13,
+  train_script="client.py",
+  train_args=f"--data_root {data_root}",
+  )
+  env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+  run = recipe.execute(env)
   # run.get_result()
 ```
 

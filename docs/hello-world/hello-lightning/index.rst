@@ -231,24 +231,6 @@ The job recipe code is used to define the client and server configurations.
     :caption: Job Recipe (job.py)
     :lines: 14-
 
-Model Input Options
-^^^^^^^^^^^^^^^^^^^
-
-The ``initial_model`` parameter accepts two formats:
-
-1. **Class instance**: ``initial_model=LitNet()`` - Convenient and Pythonic
-2. **Dict config**: ``initial_model={"path": "model.LitNet", "args": {}}`` - Better for large models
-
-To resume from pre-trained weights:
-
-.. code-block:: python
-
-   recipe = FedAvgRecipe(
-       initial_model=LitNet(),
-       initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
-       ...
-   )
-
 
 Run FL Job
 ------------------

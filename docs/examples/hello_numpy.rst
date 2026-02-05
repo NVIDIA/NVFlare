@@ -132,23 +132,6 @@ Job Recipe contains the client.py and built-in fedavg algorithm.
     :lines: 14-
 
 
-Model Input Options
-^^^^^^^^^^^^^^^^^^^
-For NumPy recipes, ``initial_model`` can be a NumPy array or list. To resume from pre-trained weights:
-
-.. code-block:: python
-
-   recipe = NumpyFedAvgRecipe(
-       initial_model=None,  # Optional when using initial_ckpt
-       initial_ckpt="/server/path/to/model.npy",  # Absolute path
-       ...
-   )
-
-.. note::
-
-   NumPy checkpoints contain the full model data, so ``initial_ckpt`` can be used without ``initial_model``.
-
-
 Run FL Job
 -----------
 This section provides the command to execute the federated learning job using the job recipe defined above. Run this command in your terminal.

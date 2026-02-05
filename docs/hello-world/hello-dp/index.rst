@@ -209,8 +209,6 @@ The ``FedAvgRecipe`` combines the client training script with DP parameters:
        name="hello-dp",
        min_clients=n_clients,
        num_rounds=num_rounds,
-       # Model can be class instance or dict config
-       # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
        initial_model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),
        train_script="client.py",
        train_args=f"--batch_size {batch_size} --target_epsilon {target_epsilon} --n_clients {n_clients}",
