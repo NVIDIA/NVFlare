@@ -66,7 +66,8 @@ class WFCommSpec(ABC):
 
         Note:
             Server-side implementation creates immutable snapshot of task.data to prevent data corruption.
-            Raises RuntimeError if task.data contains non-serializable objects.
+            If task.data contains non-serializable objects, the task is marked with ERROR status and an error is
+            logged instead of raising RuntimeError.
 
         """
         raise NotImplementedError
