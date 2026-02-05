@@ -513,19 +513,9 @@ class XGBController(Controller):
     def _start_clients(self, abort_signal: Signal, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Starting clients {self.participating_clients}")
 
-        # Include config in start task so clients that run start in a different process can configure adaptor (rank, etc.)
-        start_shareable = Shareable()
-        start_shareable[Constant.CONF_KEY_CLIENT_RANKS] = self.client_ranks
-        start_shareable[Constant.CONF_KEY_NUM_ROUNDS] = self.num_rounds
-        start_shareable[Constant.CONF_KEY_DATA_SPLIT_MODE] = xgboost.core.DataSplitMode(self.data_split_mode)
-        start_shareable[Constant.CONF_KEY_SECURE_TRAINING] = self.secure_training
-        start_shareable[Constant.CONF_KEY_XGB_PARAMS] = self.xgb_params
-        start_shareable[Constant.CONF_KEY_XGB_OPTIONS] = self.xgb_options
-        start_shareable[Constant.CONF_KEY_DISABLE_VERSION_CHECK] = self.disable_version_check
-
         task = Task(
             name=self.start_task_name,
-            data=start_shareable,
+            data=Shareable(),
             timeout=self.start_task_timeout,
             result_received_cb=self._process_start_reply,
         )
