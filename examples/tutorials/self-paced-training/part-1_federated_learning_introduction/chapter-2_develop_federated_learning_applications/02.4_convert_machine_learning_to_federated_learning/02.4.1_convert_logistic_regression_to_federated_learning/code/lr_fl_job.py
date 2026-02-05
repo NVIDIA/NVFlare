@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 if __name__ == "__main__":
     n_clients = 4
@@ -30,6 +30,9 @@ if __name__ == "__main__":
         train_args=f"--data_root {data_root}",
         launch_external_process=True,
     )
+
+    # Add experiment tracking
+    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Execute the recipe in simulation environment
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)

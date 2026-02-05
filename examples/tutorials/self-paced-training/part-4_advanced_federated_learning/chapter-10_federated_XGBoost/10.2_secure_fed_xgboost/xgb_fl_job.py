@@ -121,7 +121,7 @@ def main():
 
     # Run the job except for secure horizontal
     if args.data_split_mode == "horizontal" and args.secure:
-        print("Secure horizontal is not supported in this version")
+        print("Secure horizontal needs provisioning. Exporting job configuration only.")
     else:
         job.simulator_run(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/{job_name}")
 
