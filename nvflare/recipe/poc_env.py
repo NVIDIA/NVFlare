@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import threading
 import time
 from typing import Optional
 
@@ -126,6 +127,7 @@ class PocEnv(ExecEnv):
         self.docker_image = v.docker_image
         self.username = v.username
         self._session_manager = None  # Lazy initialization
+        self._session_manager_lock = threading.Lock()
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob to the POC environment.
@@ -299,15 +301,16 @@ class PocEnv(ExecEnv):
             return admin_dir
 
         except Exception as e:
-            raise RuntimeError(f"Failed to locate admin startup kit: {e}")
+            raise RuntimeError(f"Failed to locate admin startup kit: {e}") from e
 
-    def _get_session_manager(self):
-        """Get or create SessionManager with lazy initialization."""
-        if self._session_manager is None:
-            session_params = {
-                "username": self.username,
-                "startup_kit_location": self._get_admin_startup_kit_path(),
-                "timeout": self.get_extra_prop("login_timeout", 10),
-            }
-            self._session_manager = SessionManager(session_params)
-        return self._session_manager
+    def _get_session_manager(self) -> SessionManager:
+        """Get or create SessionManager with lazy initialization (thread-safe)."""
+        with self._session_manager_lock:
+            if self._session_manager is None:
+                session_params = {
+                    "username": self.username,
+                    "startup_kit_location": self._get_admin_startup_kit_path(),
+                    "timeout": self.get_extra_prop("login_timeout", 10),
+                }
+                self._session_manager = SessionManager(session_params)
+            return self._session_manager

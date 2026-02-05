@@ -68,13 +68,11 @@ class Run:
         with self._lock:
             if self._stopped:
                 return self._cached_status
-        # Lock released before exec_env call for performance. If another thread
-        # stops the env concurrently, the try/except handles it gracefully.
-        try:
-            return self.exec_env.get_job_status(self.job_id)
-        except Exception as e:
-            self.logger.warning(f"Failed to get job status: {e}")
-            return None
+            try:
+                return self.exec_env.get_job_status(self.job_id)
+            except Exception as e:
+                self.logger.warning(f"Failed to get job status: {e}")
+                return None
 
     def get_result(self, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the run.
@@ -123,9 +121,7 @@ class Run:
         with self._lock:
             if self._stopped:
                 return
-        # Lock released before exec_env call for performance. If another thread
-        # stops the env concurrently, the try/except handles it gracefully.
-        try:
-            self.exec_env.abort_job(self.job_id)
-        except Exception as e:
-            self.logger.warning(f"Failed to abort job: {e}")
+            try:
+                self.exec_env.abort_job(self.job_id)
+            except Exception as e:
+                self.logger.warning(f"Failed to abort job: {e}")
