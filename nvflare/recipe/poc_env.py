@@ -143,7 +143,7 @@ class PocEnv(ExecEnv):
             )
 
         if self._check_poc_running():
-            self.stop(clean_poc=True)
+            self.stop(clean_up=True)
 
         print("Preparing and starting fresh POC services...")
         prepare_poc_provision(
@@ -182,18 +182,18 @@ class PocEnv(ExecEnv):
 
         return True
 
-    def stop(self, clean_poc: bool = False):
+    def stop(self, clean_up: bool = False):
         """Try to stop and clean existing POC.
 
         This method is idempotent - safe to call multiple times.
 
         Args:
-            clean_poc (bool, optional): Whether to clean the POC workspace. Defaults to False.
+            clean_up (bool, optional): Whether to clean the POC workspace. Defaults to False.
         """
         # Check if already stopped (idempotent)
         if not self._check_poc_running():
             # POC already stopped or workspace doesn't exist
-            if clean_poc and os.path.exists(self.poc_workspace):
+            if clean_up and os.path.exists(self.poc_workspace):
                 print(f"Removing POC workspace: {self.poc_workspace}")
                 shutil.rmtree(self.poc_workspace, ignore_errors=True)
             return
@@ -216,17 +216,17 @@ class PocEnv(ExecEnv):
                 time.sleep(1)
                 count += 1
 
-            if clean_poc:
+            if clean_up:
                 if poc_running:
                     print(
                         f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
                     )
                 else:
                     _clean_poc(self.poc_workspace)
+                    print(f"Removing POC workspace: {self.poc_workspace}")
+                    shutil.rmtree(self.poc_workspace, ignore_errors=True)
         except Exception as e:
             print(f"Warning: Failed to stop and clean existing POC: {e}")
-        print(f"Removing POC workspace: {self.poc_workspace}")
-        shutil.rmtree(self.poc_workspace, ignore_errors=True)
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         return self._get_session_manager().get_job_status(job_id)

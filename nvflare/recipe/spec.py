@@ -94,7 +94,7 @@ class ExecEnv(ABC):
         """
         pass
 
-    def stop(self) -> None:
+    def stop(self, clean_up: bool = False) -> None:
         """Stop the execution environment and clean up resources.
 
         This method is called after job execution to ensure proper cleanup.

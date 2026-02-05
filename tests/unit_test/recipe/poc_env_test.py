@@ -132,7 +132,7 @@ def test_stop_poc(mock_rmtree, mock_is_running, mock_clean_poc, mock_stop_poc, m
     mock_is_running.side_effect = [True, False]
 
     env = PocEnv()
-    env.stop(clean_poc=True)
+    env.stop(clean_up=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace, excluded=["admin@nvidia.com"], services_list=[]
