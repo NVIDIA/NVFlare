@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from filelock import FileLock
 from lit_net import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from torch.utils.data import DataLoader, random_split
@@ -25,7 +28,7 @@ import nvflare.client.lightning as flare
 seed_everything(7)
 
 
-DATASET_PATH = "/tmp/nvflare/data"
+DATASET_PATH = "/tmp/nvflare/data/cifar10"
 BATCH_SIZE = 4
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -38,8 +41,12 @@ class CIFAR10DataModule(LightningDataModule):
         self.batch_size = batch_size
 
     def prepare_data(self):
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+        # Use file lock to prevent race condition when multiple sites download simultaneously
+        os.makedirs(self.data_dir, exist_ok=True)
+        lock_file = os.path.join(self.data_dir, "download.lock")
+        with FileLock(lock_file):
+            torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
+            torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
 
     def setup(self, stage: str):
         # Assign train/val datasets for use in dataloaders
