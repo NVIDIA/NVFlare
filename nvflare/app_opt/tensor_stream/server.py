@@ -55,6 +55,10 @@ class TensorServerStreamer(FLComponent):
         try_to_clean_task_data(fl_ctx): Cleans the task data in the FLContext if all clients have received the tensors.
     """
 
+    # Buffer time added to wait_send_task_data_all_clients_timeout when calculating minimum get_task_timeout
+    # This accounts for network latency, processing time, and other overhead
+    GET_TASK_TIMEOUT_BUFFER = 60.0  # seconds
+
     def __init__(
         self,
         format: str = ExchangeFormat.PYTORCH,
@@ -64,11 +68,33 @@ class TensorServerStreamer(FLComponent):
     ):
         """Initialize the TensorServerStreamer component.
 
+        The server automatically communicates the required minimum get_task_timeout to clients
+        to prevent fast clients from timing out while waiting for slow clients to receive tensors.
+
+        Background: Fast clients finish receiving tensors early and immediately request the next task.
+        However, the server blocks waiting for all clients to receive tensors (up to
+        wait_send_task_data_all_clients_timeout). Without proper timeout configuration, fast clients
+        would timeout and fail.
+
+        Automatic Timeout Management:
+            - Server calculates: min_timeout = wait_send_task_data_all_clients_timeout + 60s buffer
+            - Server sends this requirement to clients in task responses
+            - Clients automatically adjust their get_task_timeout if it's too small
+            - Transparent logging shows when auto-adjustment occurs
+
+        Optional Manual Configuration:
+            Users can still explicitly set get_task_timeout in config_fed_client.json to override
+            the automatic behavior if needed:
+                {
+                    "get_task_timeout": 400.0  // Explicit override
+                }
+
         Args:
-            format (str): The format of the tensors to send/receive. Default is ExchangeFormat.TORCH.
+            format (str): The format of the tensors to send/receive. Default is ExchangeFormat.PYTORCH.
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
-            tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 10.0 seconds.
-            wait_all_clients_timeout (float): Timeout for sending tensors to all clients. Default is 120.0 seconds.
+            tensor_send_timeout (float): Timeout for each tensor chunk transfer operation. Default is 30.0 seconds.
+            wait_send_task_data_all_clients_timeout (float): Maximum time to wait for all clients to receive
+                task tensors. Default is 300.0 seconds.
         """
         super().__init__()
         self.format = format
@@ -109,6 +135,19 @@ class TensorServerStreamer(FLComponent):
         except Exception as e:
             self.system_panic(str(e), fl_ctx)
             return
+
+        # Set minimum get_task_timeout requirement for clients
+        # This will be automatically communicated to clients in task responses via GetTaskCommand
+        recommended_get_task_timeout = self.wait_task_data_sent_to_all_clients_timeout + self.GET_TASK_TIMEOUT_BUFFER
+        fl_ctx.set_prop(FLContextKey.MIN_GET_TASK_TIMEOUT, recommended_get_task_timeout, sticky=True)
+
+        self.log_info(
+            fl_ctx,
+            f"TensorServerStreamer: Requiring clients to use get_task_timeout >= {recommended_get_task_timeout}s "
+            f"(wait_send_task_data_all_clients_timeout={self.wait_task_data_sent_to_all_clients_timeout}s "
+            f"+ {self.GET_TASK_TIMEOUT_BUFFER}s buffer). "
+            f"This will be automatically communicated to clients.",
+        )
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle events for the TensorServerStreamer component.
