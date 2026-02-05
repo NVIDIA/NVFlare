@@ -3,3 +3,4 @@ torch
 torchvision
 pytorch_lightning
 tensorboard
+filelock>=3.12.0
