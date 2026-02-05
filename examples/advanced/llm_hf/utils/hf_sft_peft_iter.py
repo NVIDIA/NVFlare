@@ -22,7 +22,7 @@ import shutil
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -169,6 +169,13 @@ def main():
         formatting_func=format_instruction,
         args=train_args,
     )
+
+    # Verify PEFT wrapping in PEFT mode
+    if train_mode and not isinstance(trainer.model, PeftModel):
+        raise RuntimeError(
+            "PEFT mode is enabled but trainer.model is not a PeftModel. "
+            "SFTTrainer may have failed to wrap the model with PEFT."
+        )
 
     # Save base model state_dict, which will be used as the starting
     # weights for each round - to show the weights are loaded correctly

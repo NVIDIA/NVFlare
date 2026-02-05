@@ -34,7 +34,7 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -288,6 +288,13 @@ def main():
         # Add a callback to stop training after one epoch
         callbacks=[StopCallback()],
     )
+
+    # Verify PEFT wrapping in PEFT mode
+    if train_mode and not isinstance(trainer.model, PeftModel):
+        raise RuntimeError(
+            "PEFT mode is enabled but trainer.model is not a PeftModel. "
+            "SFTTrainer may have failed to wrap the model with PEFT."
+        )
 
     # (3) Train federated rounds
     # Start with global model at the beginning of each round
