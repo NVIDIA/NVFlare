@@ -14,7 +14,6 @@
 
 import argparse
 import os
-import shutil
 
 import numpy as np
 import pandas as pd
@@ -62,7 +61,10 @@ def main():
     print(f"site_row_size: {site_row_size}")
 
     if os.path.exists(args.out_path):
-        shutil.rmtree(args.out_path)
+        raise ValueError(
+            f"Output path '{args.out_path}' already exists. "
+            f"Please remove it manually or specify a different output path."
+        )
 
     # assign first 80% rows to train
     df_train = df.iloc[: int(0.8 * rows_total), :]
