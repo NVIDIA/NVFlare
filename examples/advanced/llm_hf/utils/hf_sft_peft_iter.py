@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import math
 import os
 
 # Add deterministic seed for reproducibility illustration
@@ -22,7 +23,7 @@ import shutil
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -86,7 +87,7 @@ def main():
     # Adjust batch size based on training mode
     batch_size = 2 if args.train_mode.lower() == "sft" else 4
     gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
-    logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
+    logging_steps = max(1, int(len(dataset_train) / (20 * batch_size * gra_accu_steps)))
     print(f"logging_steps: {logging_steps}")
 
     # Model configs
@@ -126,7 +127,9 @@ def main():
     model.config.pretraining_tp = 1
 
     # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
-    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps)) * 1
+    # Use ceiling division to ensure at least 1 step per epoch for small datasets
+    steps_per_epoch = math.ceil(len(dataset_train) / (batch_size * gra_accu_steps))
+    total_train_steps = steps_per_epoch * 1
     warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
 
     # Set TensorBoard logging directory via environment variable
@@ -169,6 +172,13 @@ def main():
         formatting_func=format_instruction,
         args=train_args,
     )
+
+    # Verify PEFT wrapping in PEFT mode
+    if train_mode and not isinstance(trainer.model, PeftModel):
+        raise RuntimeError(
+            "PEFT mode is enabled but trainer.model is not a PeftModel. "
+            "SFTTrainer may have failed to wrap the model with PEFT."
+        )
 
     # Save base model state_dict, which will be used as the starting
     # weights for each round - to show the weights are loaded correctly

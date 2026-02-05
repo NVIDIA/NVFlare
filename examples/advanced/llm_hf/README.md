@@ -341,7 +341,7 @@ Similarly, quantization can be applied to tensor communication as well.
 ```
 python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
-In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
+In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change (from client to server after one local round) is thus:
 ```
 Before quantization: 2705.58 MB. After quantization: 676.39 MB with meta: 84.57 MB.
 ```
