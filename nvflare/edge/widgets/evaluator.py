@@ -179,6 +179,15 @@ class GlobalEvaluator(Widget):
             self.data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
             self.logger.info(f"Created custom data loader with {len(data)} samples, batch size {self.batch_size}")
 
+    def _to_tensor(self, v) -> torch.Tensor:
+        """Convert value to tensor, reusing memory when possible."""
+        if isinstance(v, torch.Tensor):
+            return v
+        elif hasattr(v, '__array__'):
+            return torch.from_numpy(v)
+        else:
+            return torch.tensor(v)
+
     def _eval_model(self) -> Dict[str, float]:
         if self.data_loader is None:
             self.logger.warning("Data loader not available for evaluation")
@@ -211,7 +220,10 @@ class GlobalEvaluator(Widget):
             self.logger.info(f"Starting evaluation {evaluation_id} for round {current_round}")
 
             # Load the model weights
-            global_weights_tensors = {k: torch.tensor(v) for k, v in global_weights.items()}
+            if not global_weights or len(global_weights) == 0:
+                self.logger.error(f"Empty global_weights received for round {current_round}")
+                return
+            global_weights_tensors = {k: self._to_tensor(v) for k, v in global_weights.items()}
             self.model.load_state_dict(global_weights_tensors)
 
             # Evaluate the model
@@ -283,8 +295,11 @@ class GlobalEvaluator(Widget):
         if current_round % self.eval_frequency != 0:
             return
 
-        # Get the global weights
+        # Get the global weights and validate
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
+        if not global_weights or len(global_weights) == 0:
+            self.logger.error(f"Empty global_weights in global_model for round {current_round}, skipping evaluation")
+            return
 
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"

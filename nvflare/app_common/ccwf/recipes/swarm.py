@@ -13,6 +13,18 @@
 # limitations under the License.
 
 # Re-export from new location for backward compatibility
-from nvflare.app_opt.pt.recipes.swarm import BaseSwarmLearningRecipe, SimpleSwarmLearningRecipe
+# These classes require PyTorch, so import is optional
+from nvflare.fuel.utils.import_utils import optional_import
+
+BaseSwarmLearningRecipe, _ = optional_import(
+    "nvflare.app_opt.pt.recipes.swarm",
+    name="BaseSwarmLearningRecipe",
+    descriptor="PyTorch is required for {}",
+)
+SimpleSwarmLearningRecipe, _ = optional_import(
+    "nvflare.app_opt.pt.recipes.swarm",
+    name="SimpleSwarmLearningRecipe",
+    descriptor="PyTorch is required for {}",
+)
 
 __all__ = ["BaseSwarmLearningRecipe", "SimpleSwarmLearningRecipe"]
