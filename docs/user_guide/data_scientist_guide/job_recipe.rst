@@ -228,10 +228,10 @@ Let's first set the path to the POC environment:
 
 .. code-block:: python
 
-   from nvflare.recipe.poc_env import POCEnv
+   from nvflare.recipe.poc_env import PocEnv
 
    # Create a POC environment
-   env = POCEnv(
+   env = PocEnv(
        num_clients=2
    )
    # Execute the recipe
