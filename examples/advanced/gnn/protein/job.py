@@ -119,7 +119,6 @@ def main():
     recipe = FedAvgRecipe(
         name="gnn_protein",
         initial_model=model,
-        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",

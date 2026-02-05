@@ -55,11 +55,9 @@ def main():
     initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
 
     # FedProx is just FedAvg with a FedProx loss term added to the client training loss (see client.py)
-    # Alternative: initial_model = {"path": "networks.tf_net.ModerateTFNet", "args": {...}}
     recipe = FedAvgRecipe(
         name=job_name,
         initial_model=initial_model,
-        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),

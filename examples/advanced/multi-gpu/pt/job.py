@@ -47,7 +47,6 @@ def main():
     recipe = FedAvgRecipe(
         name="pt_ddp",
         initial_model=initial_model,
-        # initial_ckpt=initial_ckpt,  # Uncomment to use pre-trained weights
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script=train_script,
