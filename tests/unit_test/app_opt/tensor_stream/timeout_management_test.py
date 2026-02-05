@@ -64,8 +64,10 @@ class TestServerMinTimeoutSetting:
         streamer.initialize(mock_fl_context)
 
         # Verify set_prop was called with correct minimum timeout
+        # Note: FLContextKey.MIN_GET_TASK_TIMEOUT is used for internal storage,
+        # which GetTaskCommand maps to ServerCommandKey.MIN_GET_TASK_TIMEOUT header
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -102,7 +104,7 @@ class TestGetTaskCommandPropagation:
 
         def get_prop_side_effect(key, default=None):
             return {
-                ServerCommandKey.MIN_GET_TASK_TIMEOUT: min_timeout,
+                FLContextKey.MIN_GET_TASK_TIMEOUT: min_timeout,
                 FLContextKey.RUNNER: Mock(),
             }.get(key, default)
 
@@ -127,7 +129,7 @@ class TestGetTaskCommandPropagation:
             def get_prop_side_effect(key):
                 if key == FLContextKey.RUNNER:
                     return mock_server_runner
-                elif key == ServerCommandKey.MIN_GET_TASK_TIMEOUT:
+                elif key == FLContextKey.MIN_GET_TASK_TIMEOUT:
                     return min_timeout
                 return None
 
@@ -335,7 +337,7 @@ class TestEndToEndTimeoutFlow:
 
         # Verify server set the timeout in FLContext
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -382,7 +384,7 @@ class TestEndToEndTimeoutFlow:
 
         # Verify correct minimum was set
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             expected_min_timeout,
             sticky=True,
         )
@@ -413,7 +415,7 @@ class TestTimeoutErrorScenarios:
         streamer.initialize(mock_fl_context)
 
         mock_fl_context.set_prop.assert_called_once_with(
-            ServerCommandKey.MIN_GET_TASK_TIMEOUT,
+            FLContextKey.MIN_GET_TASK_TIMEOUT,
             60.0,  # 0 + 60 = 60
             sticky=True,
         )
@@ -464,3 +466,83 @@ class TestTimeoutErrorScenarios:
 
         # Verify timeout unchanged
         assert communicator.timeout == initial_timeout
+
+    @pytest.mark.parametrize(
+        "min_timeout_value,should_adjust,expected_timeout,should_warn",
+        [
+            ("360.0", True, 360.0, False),  # String that can be coerced to float
+            ("600", True, 600.0, False),  # Integer string
+            (360.0, True, 360.0, False),  # Normal float
+            (360, True, 360.0, False),  # Integer
+            ("invalid", False, 5.0, True),  # Invalid string - should warn and ignore
+            (["360.0"], False, 5.0, True),  # List - should warn and ignore
+            ({"value": 360.0}, False, 5.0, True),  # Dict - should warn and ignore
+        ],
+    )
+    @patch("nvflare.private.fed.client.communicator.new_cell_message")
+    @patch("nvflare.private.fed.client.communicator.determine_parent_fqcn")
+    @patch("nvflare.private.fed.client.communicator.gen_new_peer_ctx")
+    def test_min_timeout_type_coercion(
+        self,
+        mock_gen_ctx,
+        mock_determine_parent,
+        mock_new_cell_message,
+        min_timeout_value,
+        should_adjust,
+        expected_timeout,
+        should_warn,
+    ):
+        """Test that MIN_GET_TASK_TIMEOUT is defensively coerced to float."""
+        from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+
+        initial_timeout = 5.0
+        communicator = Communicator(client_config={"client_name": "test_client"}, timeout=initial_timeout)
+        communicator.engine = Mock()
+        communicator.cell = Mock()
+
+        mock_determine_parent.return_value = "parent_fqcn"
+        mock_new_cell_message.return_value = Mock()
+
+        # Create response with the test value for MIN_GET_TASK_TIMEOUT
+        response_shareable = Shareable()
+        response_shareable.set_header(ServerCommandKey.TASK_NAME, "train")
+        response_shareable.set_header(ServerCommandKey.MIN_GET_TASK_TIMEOUT, min_timeout_value)
+        response_shareable.set_header(FLContextKey.TASK_ID, "task_123")
+
+        mock_task = Mock()
+
+        def get_header_side_effect(key, default=None):
+            return {
+                MessageHeaderKey.RETURN_CODE: ReturnCode.OK,
+                MessageHeaderKey.PAYLOAD_LEN: 1024,
+            }.get(key, default)
+
+        mock_task.get_header = Mock(side_effect=get_header_side_effect)
+        mock_task.payload = response_shareable
+
+        communicator.cell.send_request.return_value = mock_task
+
+        mock_fl_context = Mock()
+        mock_fl_context.get_job_id.return_value = "job_123"
+        mock_fl_context.get_run_abort_signal.return_value = None
+        mock_fl_context.set_prop = Mock()
+
+        communicator.logger = Mock()
+
+        # Call pull_task
+        communicator.pull_task("project", "token", "ssid", mock_fl_context)
+
+        # Verify timeout was adjusted (or not) as expected
+        assert communicator.timeout == expected_timeout
+
+        if should_warn:
+            # Verify warning was logged for invalid values
+            communicator.logger.warning.assert_called()
+            warning_args = communicator.logger.warning.call_args[0][0]
+            assert "Invalid MIN_GET_TASK_TIMEOUT" in warning_args
+        elif should_adjust:
+            # Verify adjustment was logged
+            communicator.logger.info.assert_called()
+            all_log_messages = [call[0][0] for call in communicator.logger.info.call_args_list]
+            adjustment_log = [msg for msg in all_log_messages if "Automatically adjusting" in msg]
+            assert len(adjustment_log) == 1
