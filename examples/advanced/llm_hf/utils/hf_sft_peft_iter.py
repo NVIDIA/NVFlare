@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import math
 import os
 
 # Add deterministic seed for reproducibility illustration
@@ -22,7 +23,7 @@ import shutil
 import datasets
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, PeftModel, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -83,14 +84,14 @@ def main():
     # Print dataset info
     print(f"Dataset size: training {len(dataset_train)}, validation {len(dataset_valid)}")
     # record every 5% of the dataset
-    batch_size = 4
-    gra_accu_steps = 10
-    logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
+    # Adjust batch size based on training mode
+    batch_size = 2 if args.train_mode.lower() == "sft" else 4
+    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
+    logging_steps = max(1, int(len(dataset_train) / (20 * batch_size * gra_accu_steps)))
     print(f"logging_steps: {logging_steps}")
 
     # Model configs
     model_name_or_path = args.model_name_or_path
-    peft_config = None
 
     # Load model
     default_dtype = torch.get_default_dtype()
@@ -121,8 +122,18 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
+    else:
+        peft_config = None
     model.config.pretraining_tp = 1
+
+    # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
+    # Use ceiling division to ensure at least 1 step per epoch for small datasets
+    steps_per_epoch = math.ceil(len(dataset_train) / (batch_size * gra_accu_steps))
+    total_train_steps = steps_per_epoch * 1
+    warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
+
+    # Set TensorBoard logging directory via environment variable
+    os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
     # Training arguments
     train_args = SFTConfig(
@@ -130,7 +141,8 @@ def main():
         num_train_epochs=1,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=False,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
         # multi-gpu training, to be consistent, use regular optimizer
         optim="adamw_torch",
@@ -139,7 +151,7 @@ def main():
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,  # Using warmup_steps instead of deprecated warmup_ratio
         # use cosine_with_restarts scheduler to check the iterative behavior
         lr_scheduler_type=args.lr_scheduler,
         lr_scheduler_kwargs={"num_cycles": 2},
@@ -148,6 +160,7 @@ def main():
         save_total_limit=2,
         seed=0,
         data_seed=0,
+        report_to="tensorboard",
     )
 
     # Trainer
@@ -160,13 +173,21 @@ def main():
         args=train_args,
     )
 
+    # Verify PEFT wrapping in PEFT mode
+    if train_mode and not isinstance(trainer.model, PeftModel):
+        raise RuntimeError(
+            "PEFT mode is enabled but trainer.model is not a PeftModel. "
+            "SFTTrainer may have failed to wrap the model with PEFT."
+        )
+
     # Save base model state_dict, which will be used as the starting
     # weights for each round - to show the weights are loaded correctly
     initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
     if train_mode:
-        params = get_peft_model_state_dict(model)
+        # Save PEFT part only
+        params = get_peft_model_state_dict(trainer.model)
     else:
-        params = model.state_dict()
+        params = trainer.model.state_dict()
     torch.save(params, initial_model_path)
 
     # Train iteratively by using "resume" functionality
