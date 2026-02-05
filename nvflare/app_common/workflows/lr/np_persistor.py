@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from typing import Optional
+
 import numpy as np
 
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
@@ -33,7 +35,13 @@ class LRModelPersistor(NPModelPersistor):
 
     """
 
-    def __init__(self, model_dir="models", model_name="weights.npy", n_features=13):
+    def __init__(
+        self,
+        model_dir="models",
+        model_name="weights.npy",
+        n_features=13,
+        source_ckpt_file_full_name: Optional[str] = None,
+    ):
         """
         Init function for LRModelPersistor.
 
@@ -43,13 +51,18 @@ class LRModelPersistor(NPModelPersistor):
             model_name: name to save and load the global model.
             n_features: number of features for the logistic regression.
                 For the UCI ML heart Disease dataset, this is 13.
+            source_ckpt_file_full_name: Full path to source checkpoint file (.npy).
+                This path may not exist locally (server-side path). If provided
+                and exists at runtime, it takes priority over the default model.
 
         """
 
-        super().__init__()
+        super().__init__(
+            model_dir=model_dir,
+            model_name=model_name,
+            source_ckpt_file_full_name=source_ckpt_file_full_name,
+        )
 
-        self.model_dir = model_dir
-        self.model_name = model_name
         self.n_features = n_features
         # A default model is loaded when no local model is available.
         # This happens when training starts.

@@ -505,6 +505,190 @@ class TestSklearnRecipeComponentConfig(unittest.TestCase):
         server_config = os.path.join(job_dir, "test-sklearn-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
 
+    def test_sklearn_kmeans(self):
+        """Test Sklearn KMeans generates correct config with checkpoint (PR3)."""
+        print("\n  Testing Sklearn KMeans (PR3)...")
+        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+
+        recipe = KMeansFedAvgRecipe(
+            name="test-sklearn-kmeans",
+            min_clients=2,
+            num_rounds=2,
+            n_clusters=3,
+            initial_ckpt=self.checkpoint_path,
+            train_script=self.train_script,
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_kmeans")
+        recipe.export(job_dir=job_dir)
+
+        server_config = os.path.join(job_dir, "test-sklearn-kmeans", "app/config/config_fed_server.json")
+        model_params = {"n_clusters": 3}
+        self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
+
+    def test_sklearn_svm(self):
+        """Test Sklearn SVM generates correct config with checkpoint (PR3)."""
+        print("\n  Testing Sklearn SVM (PR3)...")
+        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+        recipe = SVMFedAvgRecipe(
+            name="test-sklearn-svm",
+            min_clients=2,
+            kernel="rbf",
+            initial_ckpt=self.checkpoint_path,
+            train_script=self.train_script,
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_svm")
+        recipe.export(job_dir=job_dir)
+
+        server_config = os.path.join(job_dir, "test-sklearn-svm", "app/config/config_fed_server.json")
+        model_params = {"kernel": "rbf"}
+        self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
+
+
+class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
+    """Test PyTorch special recipes component config generation (PR3)."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_path = "/workspace/pretrained_model.pt"
+
+        # Create dummy train script
+        self.train_script = os.path.join(self.temp_dir, "train.py")
+        with open(self.train_script, "w") as f:
+            f.write("# Dummy train script\n")
+
+    def tearDown(self):
+        """Clean up test artifacts."""
+        import shutil
+
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def _verify_persistor_config(self, config_path, expected_model_path, expected_ckpt_path):
+        """Verify PT persistor has correct model dict and checkpoint."""
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        # Find persistor component
+        persistor = None
+        for comp in config.get("components", []):
+            if comp["id"] == "persistor":
+                persistor = comp
+                break
+
+        self.assertIsNotNone(persistor, "Persistor component not found")
+        self.assertIn(
+            "PTFileModelPersistor", persistor["path"], f"Expected PTFileModelPersistor, got {persistor['path']}"
+        )
+
+        # Verify model is dict config
+        model = persistor["args"].get("model")
+        self.assertIsInstance(model, dict, "Model should be dict config")
+        self.assertEqual(model.get("path"), expected_model_path, "Model path mismatch")
+
+        # Verify checkpoint path
+        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
+        self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
+
+        print("    ✓ Persistor config verified:")
+        print(f"      - model: {model}")
+        print(f"      - checkpoint: {ckpt_path}")
+
+    def test_pt_swarm(self):
+        """Test PT Swarm generates correct config with checkpoint (PR3)."""
+        print("\n  Testing PT Swarm (PR3)...")
+        import torch.nn as nn
+
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        # SimpleSwarmLearningRecipe requires an actual nn.Module
+        simple_model = nn.Linear(10, 2)
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test-pt-swarm",
+            initial_model=simple_model,
+            initial_ckpt=self.checkpoint_path,
+            num_rounds=2,
+            train_script=self.train_script,
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_swarm")
+        recipe.export(job_dir=job_dir)
+
+        # SimpleSwarmLearningRecipe puts persistor on client side (swarm topology)
+        client_config_path = os.path.join(job_dir, "test-pt-swarm", "app/config/config_fed_client.json")
+        with open(client_config_path, "r") as f:
+            config = json.load(f)
+
+        # Find persistor component in client config
+        persistor = None
+        for comp in config.get("components", []):
+            if "Persistor" in comp.get("path", ""):
+                persistor = comp
+                break
+
+        self.assertIsNotNone(persistor, "Persistor component not found in client config")
+        print(f"    ✓ Swarm persistor found: {persistor['path']}")
+
+    def test_pt_fedeval(self):
+        """Test PT FedEval generates correct config with checkpoint (PR3)."""
+        print("\n  Testing PT FedEval (PR3)...")
+        from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
+
+        recipe = FedEvalRecipe(
+            name="test-pt-fedeval",
+            initial_model={"path": "model.SimpleNetwork"},
+            initial_ckpt=self.checkpoint_path,
+            min_clients=2,
+            eval_script=self.train_script,  # FedEval uses eval_script, not train_script
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_fedeval")
+        recipe.export(job_dir=job_dir)
+
+        server_config = os.path.join(job_dir, "test-pt-fedeval", "app/config/config_fed_server.json")
+        self._verify_persistor_config(server_config, "model.SimpleNetwork", self.checkpoint_path)
+
+    def test_numpy_cross_site_eval(self):
+        """Test NumPy Cross-site Eval generates correct config with checkpoint (PR3)."""
+        print("\n  Testing NumPy Cross-site Eval (PR3)...")
+        from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+        recipe = NumpyCrossSiteEvalRecipe(
+            name="test-np-cross-site-eval",
+            min_clients=2,
+            initial_ckpt=self.checkpoint_path,
+        )
+
+        job_dir = os.path.join(self.temp_dir, "export_cross_site")
+        recipe.export(job_dir=job_dir)
+
+        server_config_path = os.path.join(job_dir, "test-np-cross-site-eval", "app/config/config_fed_server.json")
+
+        with open(server_config_path, "r") as f:
+            config = json.load(f)
+
+        # Find persistor/model_locator component
+        model_locator = None
+        for comp in config.get("components", []):
+            if "ModelLocator" in comp.get("path", ""):
+                model_locator = comp
+                break
+
+        self.assertIsNotNone(model_locator, "ModelLocator component not found")
+
+        # Verify model_name contains the checkpoint path when initial_ckpt is provided
+        model_name = model_locator["args"].get("model_name")
+        self.assertIsNotNone(model_name, "model_name should be set in model locator")
+        # When initial_ckpt is provided, it's stored in model_name dict under SERVER_MODEL_NAME key
+        self.assertIn(self.checkpoint_path, str(model_name), "Checkpoint path should be in model_name")
+
+        print("    ✓ Model locator config verified:")
+        print(f"      - model_name: {model_name}")
+
 
 if __name__ == "__main__":
     # Run with verbose output

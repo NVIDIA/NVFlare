@@ -206,9 +206,7 @@ class CyclicRecipe(Recipe):
         if hasattr(self.initial_model, "add_to_fed_job"):
             # It's a model wrapper - use its add_to_fed_job method
             result = job.to_server(self.initial_model, id="persistor")
-            if isinstance(result, dict):
-                return result.get("persistor_id", "persistor")
-            return result if result else "persistor"
+            return result["persistor_id"]
 
         # Unknown model type
         raise TypeError(
