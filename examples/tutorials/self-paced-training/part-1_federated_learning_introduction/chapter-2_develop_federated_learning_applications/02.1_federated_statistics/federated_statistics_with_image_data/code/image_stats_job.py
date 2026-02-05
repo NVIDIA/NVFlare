@@ -43,7 +43,7 @@ def main():
     stats_generator = ImageStatistics(data_root_dir)
 
     job = StatsJob(
-        job_name="stats_image",
+        name="stats_image",
         statistic_configs=statistic_configs,
         stats_generator=stats_generator,
         output_path=output_path,
