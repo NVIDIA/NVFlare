@@ -519,7 +519,7 @@ Federated Logistic Regression.
 
 .. code-block:: python
 
-    from nvflare.app_common.np.recipes.lr import FedAvgLrRecipe
+    from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
     from nvflare.recipe import SimEnv
 
     recipe = FedAvgLrRecipe(
@@ -695,7 +695,7 @@ Decentralized federated learning without a central server.
 
 .. note::
    ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
-   ``from nvflare.app_common.ccwf.recipes import SimpleSwarmLearningRecipe``
+   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
 
 
 Edge Recipes

@@ -178,6 +178,7 @@ the server side fedavg class is located at `nvflare.app_common.workflows.lr.feda
 ## Job
 ```python
 recipe = FedAvgLrRecipe(
+    min_clients=n_clients,
     num_rounds=num_rounds,
     damping_factor=0.8,
     num_features=13,  # Model is created internally based on num_features
