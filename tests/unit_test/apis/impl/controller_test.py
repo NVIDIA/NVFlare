@@ -622,9 +622,9 @@ def clients_pull_and_submit_result(controller, ctx, clients, task_name):
 
 
 class TestCallback(TestController):
-    # Note: before_task_sent_cb data modifications don't work with broadcast because
-    # broadcast creates _broadcast_data (deep copy) before callbacks run to protect
-    # against concurrent in-place modifications. Use NON_BROADCAST methods only.
+    # Note: before_task_sent_cb data modifications are captured only for the first client
+    # in broadcast because _broadcast_data (deep copy) is created after the first callback runs
+    # and reused for all subsequent clients. Per-client data customization is not supported.
     @pytest.mark.parametrize("method", TestController.NON_BROADCAST)
     def test_before_task_sent_cb(self, method):
         def before_task_sent_cb(client_task: ClientTask, **kwargs):
