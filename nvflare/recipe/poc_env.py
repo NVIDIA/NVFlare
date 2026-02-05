@@ -242,8 +242,6 @@ class PocEnv(ExecEnv):
                         _clean_poc(self.poc_workspace)
                     except Exception as e:
                         self.logger.debug(f"Failed to clean POC: {e}")
-                    self.logger.info(f"Removing POC workspace: {self.poc_workspace}")
-                    shutil.rmtree(self.poc_workspace, ignore_errors=True)
         except Exception as e:
             self.logger.warning(f"Failed to stop and clean existing POC: {e}")
         finally:
