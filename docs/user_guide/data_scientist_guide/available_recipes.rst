@@ -229,7 +229,7 @@ In your client training script, use the TensorFlow FedProxLoss:
 
 .. code-block:: python
 
-    from nvflare.app_opt.tf import TFFedProxLoss
+    from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
     fedprox_loss = TFFedProxLoss(mu=fedproxloss_mu)
     # Use in training loop
@@ -543,7 +543,8 @@ Compute federated statistics across distributed data.
 
 .. code-block:: python
 
-    from nvflare.recipe import FedStatsRecipe, SimEnv
+    from nvflare.recipe import SimEnv
+    from nvflare.recipe.fedstats import FedStatsRecipe
 
     recipe = FedStatsRecipe(
         name="stats",
@@ -657,7 +658,7 @@ Run Flower-based federated learning jobs.
 
 .. code-block:: python
 
-    from nvflare.app_opt.flower import FlowerRecipe
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
     from nvflare.recipe import SimEnv
 
     recipe = FlowerRecipe(
