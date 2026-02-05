@@ -20,7 +20,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
-    train_script = "src/cifar10_lightning_fl.py"
+    train_script = "src/cifar10_fl_lightning.py"
 
     job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(executor, f"site-{i}")
+        job.to(executor, f"site-{i + 1}")
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_lightning", gpu="0")
