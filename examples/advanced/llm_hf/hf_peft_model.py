@@ -18,10 +18,17 @@ from transformers import AutoModelForCausalLM
 
 
 class CausalLMPEFTModel(torch.nn.Module):
+    """
+    PEFT Model wrapper for federated learning with NVFlare.
+
+    This model is used to define the initial model structure and weights.
+    The PEFT configuration matches what's used in client.py for consistency.
+    """
+
     def __init__(self, model_name_or_path):
         super(CausalLMPEFTModel, self).__init__()
         self.model_name_or_path = model_name_or_path
-        # PEFT configs
+        # PEFT configs - must match the config in client.py
         peft_config = LoraConfig(
             lora_alpha=16,
             lora_dropout=0.1,
@@ -32,6 +39,7 @@ class CausalLMPEFTModel(torch.nn.Module):
         full_model = AutoModelForCausalLM.from_pretrained(
             model_name_or_path,
         )
+        # Wrap with PEFT for initial model structure
         self.model = get_peft_model(full_model, peft_config)
 
     def forward(self, input_id):
