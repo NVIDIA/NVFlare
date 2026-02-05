@@ -24,7 +24,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from accelerate import PartialState
-from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
+from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
@@ -130,15 +130,15 @@ def main():
     if local_rank == 0:
         print(f"Dataset size: training {len(dataset_train)}, validation {len(dataset_valid)}")
     # record every 5% of the dataset
-    batch_size = 4
-    gra_accu_steps = 10
+    # Adjust batch size based on training mode
+    batch_size = 2 if args.train_mode.lower() == "sft" else 4
+    gra_accu_steps = 20 if args.train_mode.lower() == "sft" else 10
     logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
     if local_rank == 0:
         print(f"logging_steps: {logging_steps}")
 
     # Model configs
     model_name_or_path = args.model_name_or_path
-    peft_config = None
 
     # Load model with device_map
     default_dtype = torch.get_default_dtype()
@@ -169,8 +169,17 @@ def main():
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, peft_config)
+    else:
+        peft_config = None
     model.config.pretraining_tp = 1
+
+    # Calculate warmup_steps (replacing deprecated warmup_ratio for future compatibility)
+    total_train_steps = (len(dataset_train) // (batch_size * gra_accu_steps * world_size)) * 3
+    warmup_steps = int(total_train_steps * 0.03)  # 3% warmup
+
+    # Set TensorBoard logging directory via environment variable
+    if local_rank == 0:
+        os.environ["TENSORBOARD_LOGGING_DIR"] = os.path.join(args.output_path, "logs")
 
     # Training arguments
     train_args = SFTConfig(
@@ -180,7 +189,7 @@ def main():
         num_train_epochs=3,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
-        gradient_checkpointing=False,
+        gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
         # multi-gpu training, to be consistent, use regular optimizer
@@ -190,7 +199,7 @@ def main():
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,  # Using warmup_steps instead of deprecated warmup_ratio
         # use cosine_with_restarts scheduler to check the iterative behavior
         lr_scheduler_type=args.lr_scheduler,
         lr_scheduler_kwargs={"num_cycles": 2},
@@ -202,6 +211,7 @@ def main():
         # Multi-GPU specific settings
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=False,
+        report_to="tensorboard",
     )
 
     # Trainer
@@ -222,9 +232,10 @@ def main():
     if local_rank == 0:
         initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
         if train_mode:
-            params = get_peft_model_state_dict(model)
+            # Save PEFT part only
+            params = get_peft_model_state_dict(trainer.model)
         else:
-            params = model.state_dict()
+            params = trainer.model.state_dict()
         torch.save(params, initial_model_path)
 
     # Wait for main process to finish saving
