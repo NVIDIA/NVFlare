@@ -198,6 +198,9 @@ class FLContextKey(object):
     CELL_MESSAGE = "__cell_message__"
     CLIENT_HIERARCHY = "__client_hierarchy__"
 
+    # Tensor streaming: minimum get_task_timeout required by server (stored in FLContext)
+    MIN_GET_TASK_TIMEOUT = "__min_get_task_timeout__"
+
 
 class ProcessType:
     SERVER_PARENT = "SP"
@@ -298,6 +301,7 @@ class ServerCommandKey(object):
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
     REASON = "reason"
+    MIN_GET_TASK_TIMEOUT = "min_get_task_timeout"
 
 
 class FedEventHeader(object):

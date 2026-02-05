@@ -177,7 +177,7 @@ the global models for different settings. In this example, all clients compute t
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py)
 
-> **_NOTE:_** You need to install [./plot-requirements.txt](./plot-requirements.txt) to plot and configure the `experiments` in the script.
+> **_NOTE:_** Configure the `experiments` variable in the plotting script to generate different comparison graphs.
 
 
 ### 4.1 Central vs. FedAvg
