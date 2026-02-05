@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,17 +13,22 @@
 # limitations under the License.
 
 import argparse
+import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+from filelock import FileLock
 from net import Net
+from torch.utils.data import Subset
 
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.app_constant import ModelName
+from nvflare.client.tracking import SummaryWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
@@ -39,7 +44,24 @@ def define_parser():
     parser.add_argument("--num_workers", type=int, default=1, nargs="?")
     parser.add_argument("--local_epochs", type=int, default=2, nargs="?")
     parser.add_argument("--model_path", type=str, default=f"{CIFAR10_ROOT}/cifar_net.pth", nargs="?")
+    parser.add_argument("--data_split_path", type=str, default="", help="Path to data split indices")
     return parser.parse_args()
+
+
+def load_data_split(split_path, site_name):
+    """Load pre-computed data split indices for a site."""
+    if not split_path or not os.path.exists(split_path):
+        return None
+
+    # Try to load site-specific split file
+    site_file = os.path.join(split_path, f"{site_name}.npy")
+    if os.path.exists(site_file):
+        indices = np.load(site_file)
+        print(f"Loaded {len(indices)} training indices for {site_name} from {site_file}")
+        return indices
+    else:
+        print(f"Warning: No data split file found at {site_file}, using full dataset")
+        return None
 
 
 def main():
@@ -51,11 +73,33 @@ def main():
     num_workers = args.num_workers
     local_epochs = args.local_epochs
     model_path = args.model_path
+    data_split_path = args.data_split_path
+
+    # (2) initialize NVFlare client API
+    flare.init()
+    summary_writer = SummaryWriter()
+
+    client_id = flare.get_site_name()
 
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+
+    # Use file lock to prevent race condition when multiple sites download simultaneously
+    os.makedirs(dataset_path, exist_ok=True)
+    lock_file = os.path.join(dataset_path, "download.lock")
+    with FileLock(lock_file):
+        full_trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
+        testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
+
+    # Load site-specific data partition if available
+    train_indices = load_data_split(data_split_path, client_id)
+    if train_indices is not None:
+        trainset = Subset(full_trainset, train_indices)
+        print(f"({client_id}) Using partitioned training data: {len(trainset)} samples")
+    else:
+        trainset = full_trainset
+        print(f"({client_id}) Using full training data: {len(trainset)} samples")
+
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     net = Net()
@@ -83,25 +127,23 @@ def main():
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
 
-        return 100 * correct // total
-
-    # (2) initialize NVFlare client API
-    flare.init()
+        if total == 0:
+            raise ValueError("Test loader is empty - cannot compute accuracy. Check data preparation.")
+        return 100.0 * correct / total
 
     # (3) run continuously when launch_once=true
     while flare.is_running():
 
         # (4) receive FLModel from NVFlare
         input_model = flare.receive()
-        client_id = flare.get_site_name()
 
-        # Based on different "task" we will do different things
-        # for "train" task (flare.is_train()) we use the received model to do training and/or evaluation
-        # and send back updated model and/or evaluation metrics, if the "train_with_evaluation" is specified as True
-        # in the config_fed_client we will need to do evaluation and include the evaluation metrics
-        # for "evaluate" task (flare.is_evaluate()) we use the received model to do evaluation
-        # and send back the evaluation metrics
-        # for "submit_model" task (flare.is_submit_model()) we just need to send back the local model
+        # Based on different "task" we will do different things:
+        # - for "train" task (flare.is_train()): use the received model to do training and/or evaluation,
+        #   then send back updated model and/or evaluation metrics
+        # - for "evaluate" task (flare.is_evaluate()): use the received model to do evaluation,
+        #   then send back the evaluation metrics
+        # - for "submit_model" task (flare.is_submit_model()): send back the local model
+
         # (5) performing train task on received model
         if flare.is_train():
             print(f"({client_id}) current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")
@@ -135,9 +177,8 @@ def main():
 
                     # print statistics
                     running_loss += loss.item()
-                    if i % 2000 == 1999:  # print every 2000 mini-batches
-                        print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                        running_loss = 0.0
+                    global_step = input_model.current_round * steps + epoch * len(trainloader) + i
+                    summary_writer.add_scalar(tag="train_loss", scalar=loss.item(), global_step=global_step)
 
             print(f"({client_id}) Finished Training")
 
@@ -153,6 +194,9 @@ def main():
             print(
                 f"({client_id}) Evaluating received model for model selection. Accuracy on the 10000 test images: {accuracy}"
             )
+            summary_writer.add_scalar(
+                tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round
+            )
 
             # (5.4) construct trained FL model
             output_model = flare.FLModel(
@@ -166,11 +210,14 @@ def main():
 
         # (6) performing evaluate task on received model
         elif flare.is_evaluate():
+            print(f"({client_id}) Performing cross-site validation")
             accuracy = evaluate(input_model.params)
+            print(f"({client_id}) Cross-site validation accuracy: {accuracy}")
             flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
 
         # (7) performing submit_model task to obtain best local model
         elif flare.is_submit_model():
+            print(f"({client_id}) Submitting best local model")
             model_name = input_model.meta["submit_model_name"]
             if model_name == ModelName.BEST_MODEL:
                 try:
@@ -182,6 +229,8 @@ def main():
                     raise ValueError("Unable to load best model") from e
             else:
                 raise ValueError(f"Unknown model_type: {model_name}")
+
+    summary_writer.flush()
 
 
 if __name__ == "__main__":
