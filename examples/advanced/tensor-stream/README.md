@@ -266,7 +266,7 @@ If you need explicit control (e.g., testing, very slow networks), you can manual
 ```json
 {
   "format_version": 2,
-  "get_task_timeout": 400.0,  // Explicit override
+  "get_task_timeout": 400.0,
   "executors": [...],
   "components": [...]
 }
