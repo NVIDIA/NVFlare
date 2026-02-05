@@ -164,8 +164,11 @@ class FedEvalRecipe(Recipe):
         # PTModel handles both nn.Module and dict config uniformly
         pt_model = PTModel(model=self.initial_model, initial_ckpt=self.initial_ckpt)
 
-        job.comp_ids.update(job.to_server(pt_model))
-        persistor_id = job.comp_ids.get("persistor_id", "")
+        result = job.to_server(pt_model)
+        job.comp_ids.update(result)
+        persistor_id = job.comp_ids.get("persistor_id")
+        if not persistor_id:
+            raise ValueError("Failed to obtain persistor_id from PTModel configuration")
 
         # Simple controller
         controller = EvalController(persistor_id=persistor_id, timeout=self.validation_timeout)

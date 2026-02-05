@@ -153,6 +153,12 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
 
         if not train_args:
             train_args = {}
+        else:
+            # Validate train_args doesn't conflict with ScriptRunner reserved parameters
+            reserved_keys = {"script", "launch_external_process", "command", "framework"}
+            conflicts = set(train_args.keys()) & reserved_keys
+            if conflicts:
+                raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
 
         server_config = SwarmServerConfig(num_rounds=num_rounds)
         client_config = SwarmClientConfig(

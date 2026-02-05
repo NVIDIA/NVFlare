@@ -149,3 +149,30 @@ class TestSimpleSwarmLearningRecipe:
                 num_rounds=5,
                 train_script="train.py",
             )
+
+    def test_train_args_reserved_keys_rejected(self, mock_file_system, simple_pt_model):
+        """Test that train_args with reserved keys are rejected."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="reserved keys"):
+            SimpleSwarmLearningRecipe(
+                name="test_swarm_bad_args",
+                initial_model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                train_args={"script": "other.py"},  # 'script' is reserved
+            )
+
+    def test_train_args_valid_keys_accepted(self, mock_file_system, simple_pt_model):
+        """Test that valid train_args are accepted."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_args",
+            initial_model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            train_args={"script_args": "--batch_size 32"},  # valid key
+        )
+
+        assert recipe.job is not None

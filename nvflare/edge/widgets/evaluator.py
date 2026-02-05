@@ -164,7 +164,7 @@ class GlobalEvaluator(Widget):
         else:
             # For custom datasets (e.g., XOR)
             data = self.custom_dataset["data"]
-            labels = self.custom_dataset["label"]
+            labels = self.custom_dataset["labels"]
             # Convert data and labels from list to tensors
             data = torch.tensor(data, dtype=torch.float32)
             labels = torch.tensor(labels, dtype=torch.long)
