@@ -78,7 +78,7 @@ def define_parser():
         "-n",
         "--num_rounds",
         type=int,
-        default=100,
+        default=5,
         help="number of FL rounds",
     )
     parser.add_argument(
