@@ -14,3 +14,12 @@ Please make sure you set up a virtual environment and install and configure Jupy
   * Shows how to use POC mode.
 * [Job CLI](./job_cli.ipynb)
   * Shows how to use Job Cli commands
+* [Job Recipe](./job_recipe.ipynb)
+  * Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.
+* [FLARE Logging](./logging.ipynb)
+  * Covers how to configure logging in FLARE for different use cases and modes.
+
+## Self-paced course
+
+* [Federated Learning with NVIDIA FLARE](./self-paced-training/)
+  * A five-part course covering fundamentals, system architecture, privacy and security, advanced topics, and industry applications.
