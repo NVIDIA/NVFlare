@@ -437,12 +437,10 @@ class TestTensorServerStreamer:
 
         # Setup mocks
         mock_fl_context.get_engine.return_value = mock_engine_with_clients
-        mock_fl_context.get_prop.side_effect = lambda key: {
-            "AppConstants.CURRENT_ROUND": current_round,
+        mock_fl_context.get_prop.side_effect = lambda key, default=None: {
+            AppConstants.CURRENT_ROUND: current_round,
             FLContextKey.TASK_ID: task_id,
-        }.get(
-            key, current_round
-        )  # Default to current_round for other keys
+        }.get(key, default)
 
         mock_sender_instance = Mock(spec=TensorSender)
         mock_receiver_instance = Mock(spec=TensorReceiver)

@@ -2,9 +2,8 @@
 # Videos: Federated Learning in Healthcare and Life Sciences
 
 
-## [FL In Healthcare and Lifescence](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.1-healthcare.mp4)
+## [FL In Healthcare and Life Sciences](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.1-healthcare.mp4)
 ## [FL In Medical Imaging](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.1-healthcare_nb.mp4)
-
 ## [FL In Drug Discovery](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.2-healthcare.mp4)
 * ### [FL in Drug Discovery Part 1](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.2.1-healthcare_nb.mp4)
 * ### [FL in Drug Discovery Part 2](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter11/part5-chapter11-11.2.2-healthcare_nb.mp4)

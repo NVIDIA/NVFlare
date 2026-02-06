@@ -14,7 +14,6 @@
 
 import argparse
 import os
-import shutil
 
 import numpy as np
 import pandas as pd
@@ -64,7 +63,10 @@ def main():
     print(f"site_col_size: {site_col_size}")
 
     if os.path.exists(args.out_path):
-        shutil.rmtree(args.out_path)
+        raise ValueError(
+            f"Output path '{args.out_path}' already exists. "
+            f"Please remove it manually or specify a different output path."
+        )
 
     for site in range(args.site_num):
         col_start = sum(site_col_size[:site])

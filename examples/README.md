@@ -90,6 +90,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Hello FLARE API](./tutorials/flare_api.ipynb)                                                                                         | Goes through the different commands of the FLARE API.                                                                                                           |
 | [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)                                                                                     | Shows how to use POC mode.                                                                                                                                |
 | [Job CLI](./tutorials/job_cli.ipynb)                                                                                                   | Walks through the different commands of the Job CLI.                                                                                                   |
+| [Job Recipe](./tutorials/job_recipe.ipynb)                                                                                              | Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.                                                 |
 | [Logging Tutorial](./tutorials/logging.ipynb)                                                                                 | Shows how to use the logging configuration for different modules.                                                                                           |
 
 
@@ -148,7 +149,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 9. NLP
 | Example                                                                               | Summary                                                                                                                                                         |
 |---------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [NLP-NER](./advanced/nlp-ner/README.md)                                               | Illustrates both [BERT](https://github.com/google-research/bert) and [GPT-2](https://github.com/openai/gpt-2) models from [Hugging Face](https://huggingface.co/) ([BERT-base-uncased](https://huggingface.co/bert-base-uncased), [GPT-2](https://huggingface.co/gpt2)) on a Named Entity Recognition (NER) task using the [NCBI disease dataset](https://pubmed.ncbi.nlm.nih.gov/24393765/).  |
+| [NLP-NER](./tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb)                                               | Illustrates both [BERT](https://github.com/google-research/bert) and [GPT-2](https://github.com/openai/gpt-2) models from [Hugging Face](https://huggingface.co/) ([BERT-base-uncased](https://huggingface.co/bert-base-uncased), [GPT-2](https://huggingface.co/gpt2)) on a Named Entity Recognition (NER) task using the [NCBI disease dataset](https://pubmed.ncbi.nlm.nih.gov/24393765/).  |
 
 
 ## 10. Federated Large Language Model (LLM)
