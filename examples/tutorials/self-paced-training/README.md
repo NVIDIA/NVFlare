@@ -3,6 +3,8 @@
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!  
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
 
+> **Note:** These notebooks were developed with NVFlare 2.6. Not all content reflects the latest APIs; some examples may need adjustments for newer versions.
+
 ---
 
 ## What You'll Learn
@@ -29,7 +31,7 @@ This course covers everything from the fundamentals to advanced applications, sy
 
 ## Course Outline
 
-### [Part 1: Introduction to Federated Learning](./part-1_federated_learning_introduction/part_1_introduction.ipynb)
+### [Part 1: Introduction to Federated Learning](./part-1_federated_learning_introduction/part-1_introduction.ipynb)
 
 This section provides a hands-on introduction to federated learning using NVIDIA FLARE. You will learn how to run and develop federated learning applications, with practical examples and clear guidance for both beginners and experienced practitioners.
 
