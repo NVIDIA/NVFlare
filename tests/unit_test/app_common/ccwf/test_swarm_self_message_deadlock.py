@@ -372,7 +372,8 @@ class TestCoreCellSelfMessage(unittest.TestCase):
         request = Message(headers={}, payload=b"test")
         self.cell.fire_and_forget(channel=test_channel, topic=test_topic, targets=[self.cell_name], message=request)
 
-        handler_called.wait(timeout=5.0)
+        # Verify handler was actually called before comparing thread IDs
+        self.assertTrue(handler_called.wait(timeout=5.0), "Handler should have been called")
 
         # CRITICAL: Handler runs on the SAME thread as sender (synchronous call)
         self.assertEqual(
@@ -411,7 +412,7 @@ class TestCoreCellSelfMessage(unittest.TestCase):
         self.cell.fire_and_forget(channel=test_channel, topic=test_topic, targets=[self.cell_name], message=request)
 
         # Wait for handler to complete before checking result
-        handler_completed.wait(timeout=5.0)
+        self.assertTrue(handler_completed.wait(timeout=5.0), "Handler should have completed")
 
         # The key assertion: deadlock was detected (handler blocked waiting for external trigger)
         self.assertTrue(deadlock_detected, "Deadlock should be detected (handler timed out waiting)")
@@ -529,7 +530,7 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
         self.cell.broadcast_multi_requests(target_msgs=target_msgs, timeout=5.0)
 
         # Wait for handler to complete before checking result
-        handler_completed.wait(timeout=5.0)
+        self.assertTrue(handler_completed.wait(timeout=5.0), "Handler should have completed")
 
         self.assertTrue(deadlock_detected.is_set(), "Deadlock should be detected - tensor wait timed out")
 
