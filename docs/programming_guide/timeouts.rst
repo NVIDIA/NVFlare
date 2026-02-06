@@ -2173,7 +2173,7 @@ For billion-parameter models (examples/advanced/llm_hf):
    # Recipe configuration
    recipe = FedAvgRecipe(
        name="llm_training",
-       model=None,  # Use dict config for large models
+       initial_model=None,  # Use dict config for large models
        shutdown_timeout=120.0,
    )
 
@@ -2360,8 +2360,8 @@ After deployment, these files are located at:
      - ``startup_kit/server/local/``
      - ``/opt/nvflare/workspace/server/local/`` or ``~/nvflare/workspace/server/local/``
    * - Client (Site)
-     - ``startup_kit/site-\*/local/``
-     - ``/opt/nvflare/workspace/site-\*/local/`` or ``~/nvflare/workspace/site-\*/local/``
+     - ``startup_kit/site-*/local/``
+     - ``/opt/nvflare/workspace/site-*/local/`` or ``~/nvflare/workspace/site-*/local/``
    * - Admin
      - ``startup_kit/admin/local/``
      - ``/opt/nvflare/workspace/admin/local/`` or ``~/nvflare/workspace/admin/local/``
@@ -2379,13 +2379,13 @@ After deployment, these files are located at:
      - server/local/
      - ``heart_beat_timeout``, ``admin_timeout``, ``task_request_interval``, ``heartbeat_timeout``
    * - fed_client.json
-     - site-\*/local/
+     - site-*/local/
      - ``heart_beat_interval``, ``retry_timeout``, ``communication_timeout``
    * - comm_config.json
-     - server/local/, site-\*/local/
+     - server/local/, site-*/local/
      - ``heartbeat_interval``, ``subnet_heartbeat_interval``, ``streaming_read_timeout``, ``streaming_ack_interval``, ``max_message_size``
    * - resources.json
-     - server/local/, site-\*/local/
+     - server/local/, site-*/local/
      - Resource allocation and limits
    * - admin.json
      - admin/local/
@@ -2497,7 +2497,7 @@ Client API Configuration (config_fed_client.json)
 application.conf Settings
 -------------------------
 
-.. code-block::
+.. code-block:: hocon
 
    # Task communication timeouts
    get_task_timeout = 60.0
@@ -2518,45 +2518,6 @@ application.conf Settings
 
    # Shutdown
    end_run_readiness_timeout = 10.0
-
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
-
-
-.. _server_startup_dead_job_safety_flags:
-
-Server Startup and Dead-Job Safety Flags
-----------------------------------------
-
-These ``application.conf`` flags are server-side safety controls used during job startup
-and client heartbeat synchronization:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 36 12 52
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - strict_start_job_reply_check
-     - false
-     - Enables strict START_JOB reply validation (detects missing/timeout replies and non-OK return codes).
-   * - sync_client_jobs_require_previous_report
-     - true
-     - Requires a prior positive heartbeat report before treating "missing job on client" as a dead-job signal.
-
-Recommended usage:
-
-- ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
-  Enable it (``true``) for large-scale or hierarchical deployments where startup timeouts
-  are expected and you want the server to proceed with the subset of clients that responded,
-  rather than failing the entire job. With ``false``, a timed-out reply is treated as a
-  silent success, which can mask startup problems.
-- Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
-  dead-job reports during startup races and transient heartbeat delays.
-- Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
-  where the first missing-job heartbeat immediately triggers dead-job detection.
 
 
 Admin Client Session (Python API)
@@ -2596,7 +2557,7 @@ Recipe with Extended Timeouts
 
    recipe = FedAvgRecipe(
        name="large_model_training",
-       model={"class_path": "model.LargeModel", "args": {}},
+       initial_model={"path": "model.LargeModel", "args": {}},
        min_clients=8,
        num_rounds=100,
        shutdown_timeout=120.0,
@@ -2615,12 +2576,12 @@ CCWF/Swarm Learning Configuration
 
 .. code-block:: python
 
-   from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+   from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
 
-   recipe = SwarmLearningRecipe(
+   recipe = SimpleSwarmLearningRecipe(
        min_clients=3,
        num_rounds=10,
-       model=model,
+       initial_model=model,
        train_script="train.py",
        cross_site_eval_timeout=600.0,
    )
