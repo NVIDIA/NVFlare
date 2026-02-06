@@ -94,6 +94,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
     def patched_execute(self, env, server_exec_params=None, client_exec_params=None):
         """Capture the recipe instead of executing."""
         captured_recipe["recipe"] = self
+
         # Return a mock Run object
         class MockRun:
             def get_job_id(self):
