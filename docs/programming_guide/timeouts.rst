@@ -789,10 +789,9 @@ Client-side task fetching from server (client_runner.py, communicator.py, fed_cl
 
 .. code-block:: python
 
-   client_params = {
+   recipe.add_client_config({
        "get_task_timeout": 300,  # 5 minutes
-   }
-   recipe.job.to(client_params, site_name)
+   })
 
 
 Task Manager Timeouts
@@ -2179,15 +2178,11 @@ For billion-parameter models (examples/advanced/llm_hf):
    )
 
    # Client parameters - CRITICAL for LLM
-   client_params = {
+   recipe.add_client_config({
        "get_task_timeout": 600,            # 10 min to receive task
        "submit_task_result_timeout": 600,  # 10 min to submit results
        "external_pre_init_timeout": 900,   # 15 min for model init
-   }
-   recipe.job.to(client_params, site_name)
-
-   # Client-side receive (in training script)
-   input_model = flare.receive(timeout=1200)  # 20 min for model receipt
+   })
 
 
 Unreliable/High-Latency Networks
@@ -2465,13 +2460,6 @@ These files are located in the job's ``app/config/`` directory.
    - ``config_fed_client.json`` - Client-side executor and task exchange settings
    - ``config_fed_server.json`` - Server-side controller and workflow settings
 
-3. **Client code** - Using Flare API with timeout parameter:
-
-   .. code-block:: python
-
-      input_model = flare.receive(timeout=600)
-
-
 Configuration Examples
 ======================
 
@@ -2607,7 +2595,7 @@ CCWF/Swarm Learning Configuration
 
 .. code-block:: python
 
-   from nvflare.app_common.ccwf.recipes import SimpleSwarmLearningRecipe
+   from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
 
    recipe = SimpleSwarmLearningRecipe(
        min_clients=3,
@@ -2792,7 +2780,7 @@ job to fail.
 **Hierarchy:**
 
 - Session-specific timeouts override server defaults
-- Client config overrides can be set via ``recipe.job.to()``
+- Client config overrides can be set via ``recipe.add_client_config()``
 - ``comm_config.json`` settings apply to all F3/CellNet communication
 
 **Best Practices by Component:**

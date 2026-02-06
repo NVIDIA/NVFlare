@@ -1,8 +1,8 @@
 .. _timeout_troubleshooting:
 
-############################
+#############################
 Timeout Troubleshooting Guide
-############################
+#############################
 
 This guide covers the most common timeout-related job failures and how to resolve them.
 For a comprehensive reference of all timeouts, see :ref:`timeouts_programming_guide`.
@@ -270,7 +270,10 @@ High-Latency Networks
        "submit_task_result_timeout": 600,
    })
 
-   # System-level (comm_config.json)
+System-level (``comm_config.json`` in startup kit):
+
+.. code-block:: json
+
    {
      "heartbeat_interval": 15,
      "streaming_read_timeout": 600
