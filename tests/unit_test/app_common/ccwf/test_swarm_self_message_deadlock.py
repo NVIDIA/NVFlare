@@ -159,13 +159,14 @@ class TestSelfMessageDeadlock(unittest.TestCase):
         should_queue_locally = me in clients
         network_targets = [t for t in clients if t != me]
 
-        # Send to network targets FIRST (matches swarm_client_ctl.py lines 499-502)
-        if network_targets:
-            simulate_send_learn_task(network_targets)
-
-        # Queue locally AFTER network succeeds (matches swarm_client_ctl.py lines 505-509)
+        # Queue locally FIRST with deep copy (matches swarm_client_ctl.py lines 501-505)
+        # Deep copy needed to avoid race condition with send_learn_task modifying task_data
         if should_queue_locally:
             simulate_set_learn_task()
+
+        # Then send to network targets (matches swarm_client_ctl.py lines 508-513)
+        if network_targets:
+            simulate_send_learn_task(network_targets)
 
         # Verify the fix
         self.assertNotIn(me, network_sends, "Self should NOT be in network broadcast targets")
