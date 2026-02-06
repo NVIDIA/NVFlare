@@ -292,6 +292,7 @@ Pass your aggregator to the `FedAvgRecipe`:
 ```python
 from my_custom_aggregator import MyCustomAggregator
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 
 # Instantiate your custom aggregator
 custom_aggregator = MyCustomAggregator()
@@ -307,7 +308,8 @@ recipe = FedAvgRecipe(
 )
 
 # Run the job
-recipe.simulator_run("/tmp/nvflare/simulation", gpu="0")
+env = SimEnv(num_clients=8)
+run = recipe.execute(env)
 ```
 
 #### 5.4 Running the example
