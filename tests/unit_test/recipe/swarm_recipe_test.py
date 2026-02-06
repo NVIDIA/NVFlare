@@ -49,7 +49,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
         )
@@ -62,7 +62,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
         )
@@ -75,7 +75,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_ckpt",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
             initial_ckpt="/abs/path/to/model.pt",
@@ -90,7 +90,7 @@ class TestSimpleSwarmLearningRecipe:
         with pytest.raises(ValueError, match="must be an absolute path"):
             SimpleSwarmLearningRecipe(
                 name="test_swarm",
-                initial_model=simple_pt_model,
+                model=simple_pt_model,
                 num_rounds=5,
                 train_script="train.py",
                 initial_ckpt="relative/path/model.pt",
@@ -102,7 +102,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_cse",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
             do_cross_site_eval=True,
@@ -117,7 +117,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_dict",
-            initial_model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
             train_script="train.py",
         )
@@ -130,7 +130,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_dict_ckpt",
-            initial_model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
             train_script="train.py",
             initial_ckpt="/abs/path/to/model.pt",
@@ -145,7 +145,7 @@ class TestSimpleSwarmLearningRecipe:
         with pytest.raises(ValueError, match="must contain 'path' key"):
             SimpleSwarmLearningRecipe(
                 name="test_swarm_bad_dict",
-                initial_model={"args": {"in_features": 10}},  # Missing 'path'
+                model={"args": {"in_features": 10}},  # Missing 'path'
                 num_rounds=5,
                 train_script="train.py",
             )
@@ -157,7 +157,7 @@ class TestSimpleSwarmLearningRecipe:
         with pytest.raises(ValueError, match="reserved keys"):
             SimpleSwarmLearningRecipe(
                 name="test_swarm_bad_args",
-                initial_model=simple_pt_model,
+                model=simple_pt_model,
                 num_rounds=5,
                 train_script="train.py",
                 train_args={"script": "other.py"},  # 'script' is reserved
@@ -169,7 +169,7 @@ class TestSimpleSwarmLearningRecipe:
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_args",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
             train_args={"script_args": "--batch_size 32"},  # valid key

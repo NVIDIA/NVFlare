@@ -96,7 +96,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-fedavg",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleNetwork"},
+            model={"path": "model.SimpleNetwork"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -136,7 +136,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
                 name="test-pt-fedopt",
                 min_clients=2,
                 num_rounds=2,
-                initial_model={"path": "model.SimpleNetwork"},
+                model={"path": "model.SimpleNetwork"},
                 initial_ckpt=self.checkpoint_path,
                 train_script=self.train_script,
             )
@@ -178,7 +178,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-cyclic",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleNetwork"},
+            model={"path": "model.SimpleNetwork"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -198,7 +198,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-scaffold",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleNetwork"},
+            model={"path": "model.SimpleNetwork"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -290,7 +290,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-fedavg",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleModel"},
+            model={"path": "model.SimpleModel"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -313,7 +313,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-fedopt",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleModel"},
+            model={"path": "model.SimpleModel"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -336,7 +336,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-cyclic",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleModel"},
+            model={"path": "model.SimpleModel"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -359,7 +359,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-scaffold",
             min_clients=2,
             num_rounds=2,
-            initial_model={"path": "model.SimpleModel"},
+            model={"path": "model.SimpleModel"},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -422,7 +422,7 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
             name="test-np-fedavg",
             min_clients=2,
             num_rounds=2,
-            initial_model=[[1.0, 2.0], [3.0, 4.0]],
+            model=[[1.0, 2.0], [3.0, 4.0]],
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -609,7 +609,7 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
 
         recipe = SimpleSwarmLearningRecipe(
             name="test-pt-swarm",
-            initial_model=simple_model,
+            model=simple_model,
             initial_ckpt=self.checkpoint_path,
             num_rounds=2,
             train_script=self.train_script,
@@ -640,7 +640,7 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
 
         recipe = FedEvalRecipe(
             name="test-pt-fedeval",
-            initial_model={"path": "model.SimpleNetwork"},
+            model={"path": "model.SimpleNetwork"},
             initial_ckpt=self.checkpoint_path,
             min_clients=2,
             eval_script=self.train_script,  # FedEval uses eval_script, not train_script

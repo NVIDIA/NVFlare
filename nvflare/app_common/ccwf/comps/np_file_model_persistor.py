@@ -41,7 +41,7 @@ class NPFileModelPersistor(ModelPersistor):
         last_global_model_file_name="last_global_model.npy",
         best_global_model_file_name="best_global_model.npy",
         model_dir="models",
-        initial_model_file_name="initial_model.npy",
+        initial_model_file_name="model.npy",
         source_ckpt_file_full_name: str = None,
     ):
         """Persist numpy model to/from file system.

@@ -30,7 +30,7 @@ class _ScaffoldValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
     initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
@@ -54,13 +54,13 @@ class ScaffoldRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "scaffold".
-        initial_model: Initial model to start federated training with. Can be:
+        model: Initial model to start federated training with. Can be:
             - nn.Module instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
-            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
+            Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round. Defaults to 2.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client. Defaults to "client.py".
@@ -71,7 +71,7 @@ class ScaffoldRecipe(Recipe):
         ```python
         recipe = ScaffoldRecipe(
             name="my_scaffold_job",
-            initial_model=pretrained_model,
+            model=pretrained_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -84,7 +84,7 @@ class ScaffoldRecipe(Recipe):
         self,
         *,
         name: str = "scaffold",
-        initial_model: Union[Any, dict[str, Any], None] = None,
+        model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -99,7 +99,7 @@ class ScaffoldRecipe(Recipe):
         # Validate inputs internally
         v = _ScaffoldValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
             initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
@@ -113,14 +113,14 @@ class ScaffoldRecipe(Recipe):
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
         from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
 
         validate_initial_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.initial_model)
+        validate_dict_model_config(self.model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
@@ -134,15 +134,15 @@ class ScaffoldRecipe(Recipe):
 
         # Create BaseFedJob
         job = BaseFedJob(
-            initial_model=None,  # We'll setup model below
+            model=None,  # We'll setup model below
             name=self.name,
             min_clients=self.min_clients,
         )
 
         # Setup model persistor using PTModel
         persistor_id = ""
-        if self.initial_model is not None or self.initial_ckpt is not None:
-            pt_model = PTModel(model=self.initial_model, initial_ckpt=self.initial_ckpt)
+        if self.model is not None or self.initial_ckpt is not None:
+            pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
             result = job.to_server(pt_model, id="persistor")
             persistor_id = result["persistor_id"]
 

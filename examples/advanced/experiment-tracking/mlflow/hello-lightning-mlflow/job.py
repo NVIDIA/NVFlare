@@ -45,7 +45,7 @@ if __name__ == "__main__":
         name="fedavg_lightning_mlflow",
         min_clients=args.n_clients,
         num_rounds=2,
-        initial_model=LitNet(),
+        model=LitNet(),
         train_script="client.py",
     )
 

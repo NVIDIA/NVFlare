@@ -25,14 +25,14 @@ class CyclicRecipe(BaseCyclicRecipe):
 
     Args:
         name: Name identifier for the federated learning job. Defaults to "cyclic".
-        initial_model: Starting model object to begin training. Can be:
+        model: Starting model object to begin training. Can be:
             - tf.keras.Model instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - TFModel instance (already wrapped)
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
             The file may not exist locally as it could be on the server.
-            Note: TensorFlow can load full models from .h5/SavedModel without initial_model.
+            Note: TensorFlow can load full models from .h5/SavedModel without model.
         num_rounds: Number of complete training rounds to execute. Defaults to 2.
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.
@@ -49,7 +49,7 @@ class CyclicRecipe(BaseCyclicRecipe):
         self,
         *,
         name: str = "cyclic",
-        initial_model: Union[Any, dict[str, Any], None] = None,
+        model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         num_rounds: int = 2,
         min_clients: int = 2,
@@ -63,16 +63,16 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_memory_gc_rounds: int = 1,
     ):
         # Wrap model with TFModel if needed
-        if initial_model is None and initial_ckpt is None:
+        if model is None and initial_ckpt is None:
             model_to_pass = None
-        elif isinstance(initial_model, TFModel):
-            model_to_pass = initial_model
+        elif isinstance(model, TFModel):
+            model_to_pass = model
         else:
-            model_to_pass = TFModel(model=initial_model, initial_ckpt=initial_ckpt)
+            model_to_pass = TFModel(model=model, initial_ckpt=initial_ckpt)
 
         super().__init__(
             name=name,
-            initial_model=model_to_pass,
+            model=model_to_pass,
             initial_ckpt=None,  # Already handled by TFModel wrapper
             num_rounds=num_rounds,
             min_clients=min_clients,

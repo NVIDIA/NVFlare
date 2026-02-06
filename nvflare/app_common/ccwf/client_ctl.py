@@ -369,8 +369,8 @@ class ClientSideController(Executor, TaskController):
             self.is_starting_client = True
 
             learnable = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            initial_model = self.shareable_generator.learnable_to_shareable(learnable, fl_ctx)
-            return self.start_workflow(initial_model, fl_ctx, abort_signal)
+            model = self.shareable_generator.learnable_to_shareable(learnable, fl_ctx)
+            return self.start_workflow(model, fl_ctx, abort_signal)
 
         elif task_name == self.do_learn_task_name:
             return self._process_learn_request(shareable, fl_ctx)

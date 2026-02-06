@@ -42,7 +42,7 @@ if __name__ == "__main__":
         name="fedavg_mlflow_client",
         min_clients=args.n_clients,
         num_rounds=5,
-        initial_model=SimpleNetwork(),
+        model=SimpleNetwork(),
         train_script="client.py",
     )
 

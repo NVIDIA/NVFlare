@@ -66,7 +66,7 @@ class FedEvalRecipe(Recipe):
 
     Args:
         name: Name of the federated evaluation job. Defaults to "eval".
-        initial_model: Model structure to evaluate. Can be:
+        model: Model structure to evaluate. Can be:
             - An instantiated nn.Module (e.g., Net())
             - A dict config: {"path": "module.ClassName", "args": {...}}
         initial_ckpt: Absolute path to pre-trained checkpoint file (.pt, .pth, etc.).
@@ -95,7 +95,7 @@ class FedEvalRecipe(Recipe):
 
         recipe = FedEvalRecipe(
             name="eval_job",
-            initial_model=Net(),
+            model=Net(),
             initial_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
@@ -108,7 +108,7 @@ class FedEvalRecipe(Recipe):
         ```python
         recipe = FedEvalRecipe(
             name="eval_job",
-            initial_model={"path": "my_module.Net", "args": {"num_classes": 10}},
+            model={"path": "my_module.Net", "args": {"num_classes": 10}},
             initial_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
@@ -120,7 +120,7 @@ class FedEvalRecipe(Recipe):
         self,
         *,
         name: str = "eval",
-        initial_model: Union[Any, Dict[str, Any]],
+        model: Union[Any, Dict[str, Any]],
         initial_ckpt: str,
         min_clients: int,
         eval_script: str,
@@ -135,7 +135,7 @@ class FedEvalRecipe(Recipe):
         _FedEvalValidator(initial_ckpt=initial_ckpt)
 
         self.name = name
-        self.initial_model = initial_model
+        self.model = model
         self.initial_ckpt = initial_ckpt
         self.min_clients = min_clients
         self.eval_script = eval_script
@@ -158,11 +158,11 @@ class FedEvalRecipe(Recipe):
         from nvflare.app_opt.pt.job_config.model import PTModel
 
         # Validate model type
-        if not isinstance(self.initial_model, (nn.Module, dict)):
-            raise ValueError(f"initial_model must be nn.Module or dict config, got {type(self.initial_model)}")
+        if not isinstance(self.model, (nn.Module, dict)):
+            raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
 
         # PTModel handles both nn.Module and dict config uniformly
-        pt_model = PTModel(model=self.initial_model, initial_ckpt=self.initial_ckpt)
+        pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
 
         result = job.to_server(pt_model)
         job.comp_ids.update(result)

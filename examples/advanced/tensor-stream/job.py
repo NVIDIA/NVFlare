@@ -46,7 +46,7 @@ def main():
         name="hello-tensor-stream",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=model,
+        model=model,
         server_expected_format=ExchangeFormat.PYTORCH,
         train_script="client.py",
     )

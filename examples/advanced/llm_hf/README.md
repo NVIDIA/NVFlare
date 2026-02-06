@@ -104,7 +104,7 @@ Key features:
 # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
 recipe = FedAvgRecipe(
     name=job_name,
-    initial_model=initial_model,  # CausalLMModel or CausalLMPEFTModel
+    model=model,  # CausalLMModel or CausalLMPEFTModel
     min_clients=num_clients,
     num_rounds=args.num_rounds,
     train_script="client.py",

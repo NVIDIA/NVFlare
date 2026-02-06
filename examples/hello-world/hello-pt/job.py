@@ -47,8 +47,8 @@ def main():
         min_clients=n_clients,
         num_rounds=num_rounds,
         # Model can be specified as class instance or dict config:
-        initial_model=SimpleNetwork(),
-        # Alternative: initial_model={"path": "model.SimpleNetwork", "args": {}},
+        model=SimpleNetwork(),
+        # Alternative: model={"path": "model.SimpleNetwork", "args": {}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size}",

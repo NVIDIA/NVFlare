@@ -21,7 +21,7 @@ Job Recipe API - Production Ready
                 name="hello-pt",
                 min_clients=2,
                 num_rounds=5,
-                initial_model=SimpleNetwork(),
+                model=SimpleNetwork(),
                 train_script="client.py",
             )
             env = SimEnv(num_clients=2)
@@ -152,7 +152,7 @@ API Refinements
 
 - **Simplified Task Management**: The `task_name` parameter is now streamlined (renamed from `task_to_optimize`), with "train" as the default for standard federated learning workflows.
 
-- **Enhanced Type Checking**: Improved validation of `initial_model` types with clear error messages guiding users to appropriate framework-specific recipes.
+- **Enhanced Type Checking**: Improved validation of `model` types with clear error messages guiding users to appropriate framework-specific recipes.
 
 - **InTime Aggregation by Default**: All FedAvg recipes now use memory-efficient InTime aggregation, processing client results as they arrive rather than waiting for all results.
 
@@ -315,7 +315,7 @@ If you have code based on removed examples that used Executor or ModelLearner pa
         name="my-job",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)

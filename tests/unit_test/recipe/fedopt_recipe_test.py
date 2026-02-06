@@ -64,12 +64,12 @@ class TestPTFedOptRecipe:
 
         recipe = FedOptRecipe(
             name="test_fedopt",
-            initial_model=simple_model,
+            model=simple_model,
             **base_recipe_params,
         )
 
         assert recipe.name == "test_fedopt"
-        assert recipe.initial_model == simple_model
+        assert recipe.model == simple_model
         assert recipe.job is not None
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params, simple_model):
@@ -78,7 +78,7 @@ class TestPTFedOptRecipe:
 
         recipe = FedOptRecipe(
             name="test_fedopt_ckpt",
-            initial_model=simple_model,
+            model=simple_model,
             initial_ckpt="/abs/path/to/model.pt",
             **base_recipe_params,
         )
@@ -102,11 +102,11 @@ class TestPTFedOptRecipe:
 
             recipe = FedOptRecipe(
                 name="test_fedopt_dict",
-                initial_model=model_config,
+                model=model_config,
                 **base_recipe_params,
             )
 
-            assert recipe.initial_model == model_config
+            assert recipe.model == model_config
 
     def test_with_optimizer_args(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedOptRecipe with optimizer arguments."""
@@ -118,7 +118,7 @@ class TestPTFedOptRecipe:
         }
         recipe = FedOptRecipe(
             name="test_fedopt_optim",
-            initial_model=simple_model,
+            model=simple_model,
             optimizer_args=optimizer_args,
             **base_recipe_params,
         )
@@ -132,7 +132,7 @@ class TestPTFedOptRecipe:
         with pytest.raises(ValueError, match="must be an absolute path"):
             FedOptRecipe(
                 name="test_relative_path",
-                initial_model=simple_model,
+                model=simple_model,
                 initial_ckpt="relative/path/model.pt",
                 **base_recipe_params,
             )
@@ -144,7 +144,7 @@ class TestPTFedOptRecipe:
         with pytest.raises(ValueError, match="must have 'path' key"):
             FedOptRecipe(
                 name="test_invalid_dict",
-                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'path'
                 **base_recipe_params,
             )
 
@@ -155,7 +155,7 @@ class TestPTFedOptRecipe:
         with pytest.raises(ValueError, match="'path' must be a string"):
             FedOptRecipe(
                 name="test_invalid_path_type",
-                initial_model={"path": 123, "args": {}},  # Path is not string
+                model={"path": 123, "args": {}},  # Path is not string
                 **base_recipe_params,
             )
 
@@ -171,7 +171,7 @@ class TestPTFedOptRecipe:
 
             recipe = FedOptRecipe(
                 name="test_dict_instantiation",
-                initial_model={"path": "mymodule.MyModel", "args": {"input_size": 10}},
+                model={"path": "mymodule.MyModel", "args": {"input_size": 10}},
                 **base_recipe_params,
             )
 
@@ -179,14 +179,14 @@ class TestPTFedOptRecipe:
             mock_instantiate.assert_called_once_with("mymodule.MyModel", {"input_size": 10})
             assert recipe.job is not None
 
-    def test_initial_model_none_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that initial_model=None raises ValueError."""
+    def test_model_none_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that model=None raises ValueError."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with pytest.raises(ValueError, match="FedOpt requires initial_model"):
+        with pytest.raises(ValueError, match="FedOpt requires model"):
             FedOptRecipe(
                 name="test_no_model",
-                initial_model=None,
+                model=None,
                 **base_recipe_params,
             )
 
@@ -201,7 +201,7 @@ class TestTFFedOptRecipe:
 
         recipe = FedOptRecipe(
             name="test_tf_fedopt",
-            initial_model=None,
+            model=None,
             **base_recipe_params,
         )
 
@@ -215,7 +215,7 @@ class TestTFFedOptRecipe:
 
         recipe = FedOptRecipe(
             name="test_tf_fedopt_ckpt",
-            initial_model=None,
+            model=None,
             initial_ckpt="/abs/path/to/model.h5",
             **base_recipe_params,
         )

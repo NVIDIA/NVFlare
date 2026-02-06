@@ -49,7 +49,7 @@ class TestFedEvalRecipe:
 
         recipe = FedEvalRecipe(
             name="test_fedeval",
-            initial_model=simple_pt_model,
+            model=simple_pt_model,
             initial_ckpt="/abs/path/to/model.pt",
             min_clients=2,
             eval_script="eval.py",
@@ -63,7 +63,7 @@ class TestFedEvalRecipe:
 
         recipe = FedEvalRecipe(
             name="test_fedeval_dict",
-            initial_model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             initial_ckpt="/abs/path/to/model.pt",
             min_clients=2,
             eval_script="eval.py",
@@ -79,7 +79,7 @@ class TestFedEvalRecipe:
         with pytest.raises(TypeError):
             FedEvalRecipe(
                 name="test_fedeval",
-                initial_model=simple_pt_model,
+                model=simple_pt_model,
                 min_clients=2,
                 eval_script="eval.py",
             )
