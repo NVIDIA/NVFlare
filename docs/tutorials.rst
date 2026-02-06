@@ -33,10 +33,10 @@ Self-Paced Learning
 
 - Extensive materials for self-paced training with NVIDIA FLARE, including detailed tutorials and resources.
 - For a comprehensive guide, see the :ref:`self_paced_training` documentation.
+- 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
+- Each notebook can be run independently, but sequential learning is recommended.
+- Over 100 notebooks and 80 videos: a thorough guide to federated learning with FLARE.
 
 .. note::
 
    The self-paced training notebooks were developed with NVFlare 2.6. Not all content reflects the latest APIs; some examples may need adjustments for newer versions.
-- 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
-- Each notebook can be run independently, but sequential learning is recommended.
-- Over 100 notebooks and 80 videos: a thorough guide to federated learning with FLARE.
