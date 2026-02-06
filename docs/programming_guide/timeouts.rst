@@ -1662,7 +1662,7 @@ Example:
 
 .. code-block:: python
 
-   from nvflare.edge.tools import EdgeFedBuffRecipe
+   from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
 
    recipe = EdgeFedBuffRecipe(
        model=MyModel(),
@@ -2631,7 +2631,7 @@ Edge Device Configuration
 
 .. code-block:: python
 
-   from nvflare.edge.tools import EdgeFedBuffRecipe
+   from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
 
    recipe = EdgeFedBuffRecipe(
        model=MyModel(),
