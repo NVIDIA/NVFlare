@@ -18,21 +18,22 @@ Uses FedAvg with 3 clients; each client gets a site-specific data path.
 import argparse
 import os
 
-import torch
-from model import Qwen2VLModelWrapper
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def define_parser():
-    parser = argparse.ArgumentParser(description="Federated Qwen2.5-VL SFT (3 clients)")
+    parser = argparse.ArgumentParser(description="Federated Qwen2.5-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=2, help="FL rounds")
     parser.add_argument("--data_dir", type=str, default="./data", help="Root dir for site-1, site-2, site-3 data")
-    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen2.5-VL-3B-Instruct")
-    parser.add_argument("--train_script", type=str, default="client.py")
-    parser.add_argument("--local_epochs", type=int, default=1, help="Local epochs per round")
-    parser.add_argument("--batch_size", type=int, default=2, help="Per-device batch size")
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        default="Qwen/Qwen2.5-VL-3B-Instruct",
+        help="HuggingFace model ID (same as llm in Qwen3-VL sft config)",
+    )
+    parser.add_argument("--max_steps", type=int, default=50, help="Max steps per round (passed to train_qwen.py)")
     return parser.parse_args()
 
 
@@ -40,40 +41,67 @@ def main():
     args = define_parser()
     n_clients = args.n_clients
     data_dir = os.path.abspath(args.data_dir)
+    qwen_root = os.environ.get("QWEN3VL_ROOT", "")
 
-    # Per-site train_args: each client gets its own data path
+    client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
     per_site_config = {}
-    for i in range(1, n_clients + 1):
-        site_name = f"site-{i}"
+    for site_name in client_names:
         site_data_path = os.path.join(data_dir, site_name)
+        train_args = (
+            f"--data_path {site_data_path} "
+            f"--dataset_use fl_site "
+            f"--model_name_or_path {args.model_name_or_path} "
+            f"--max_steps {args.max_steps}"
+        )
+        if qwen_root:
+            train_args = f"--qwen_root {qwen_root} " + train_args
         per_site_config[site_name] = {
-            "train_args": (
-                f"--data_path {site_data_path} "
-                f"--model_name_or_path {args.model_name_or_path} "
-                f"--epochs {args.local_epochs} --batch_size {args.batch_size}"
-            ),
+            "train_args": train_args,
+            "command": "bash custom/client_wrapper.sh",
         }
 
-    # Initial model: Qwen2.5-VL (loaded on server for aggregation)
-    initial_model = Qwen2VLModelWrapper(
-        model_name_or_path=args.model_name_or_path,
-        torch_dtype=torch.bfloat16,
-        device_map="cpu",
-    )
+    # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
+    initial_model = {
+        "path": "model.Qwen3VLModel",
+        "args": {"model_name_or_path": args.model_name_or_path},
+    }
 
     recipe = FedAvgRecipe(
         name="qwen3-vl",
         min_clients=n_clients,
         num_rounds=args.num_rounds,
         initial_model=initial_model,
-        train_script=args.train_script,
+        train_script="client_sft_runner.py",
         train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
+        launch_external_process=True,
         key_metric="loss",
     )
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    env = SimEnv(num_clients=n_clients)
+    for site_name in client_names:
+        recipe.job.to("client_wrapper.sh", site_name)
+
+    # Increase timeouts so clients can finish train_qwen.py (50 steps of VL can take 10+ min per client)
+    for site_name in client_names:
+        client_params = {"get_task_timeout": 600, "submit_task_result_timeout": 900}
+        recipe.job.to(client_params, site_name)
+
+    # Add experiment tracking with Weights & Biases
+    add_experiment_tracking(
+        recipe,
+        tracking_type="wandb",
+        tracking_config={
+            "wandb_args": {
+                "name": "qwen3-vl-fedavg",
+                "project": "nvflare",
+                "group": "nvidia",
+                "job_type": "training",
+            },
+            "mode": "online",  # optional, default "offline"
+        },
+    )
+
+    env = SimEnv(clients=client_names, num_threads=n_clients)
     run = recipe.execute(env)
     print()
     print("Job Status is:", run.get_status())

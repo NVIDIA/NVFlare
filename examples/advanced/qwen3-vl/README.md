@@ -8,10 +8,10 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 
 | File | Role |
 |------|------|
-| `model.py` | Re-exports the Qwen2.5-VL wrapper used as the FL model (`Qwen2VLModelWrapper`) |
-| `model_wrapper.py` | Defines the wrapper so the server can save/load `state_dict` |
-| `client.py` | Client training script: receives global model, trains on site data, sends update |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths, TensorBoard tracking |
+| `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen2.5-VL-3B-Instruct`). |
+| `client_sft_runner.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `client_wrapper.sh` | Wrapper script (same pattern as [llm_hf MULTINODE](../llm_hf/MULTINODE.md)): job runs `bash custom/client_wrapper.sh` with script + args; wrapper launches `client_sft_runner.py`. |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; always uses the Qwen SFT script via the runner. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards |
 
 ## Prerequisites
@@ -119,25 +119,71 @@ Output layout (same JSON format as the source, one file per client):
 - `./data/site-2/train.json`
 - `./data/site-3/train.json`
 
-## 4. Run the federated job
+## 4. Weights & Biases setup (optional but recommended)
 
-With the venv activated, `QWEN3VL_ROOT` set, and data under `./data`, start the NVFlare job (exact command may depend on your `job.py` and how it invokes the Qwen3-VL SFT scripts):
+The example uses Weights & Biases (WandB) for experiment tracking. To enable online logging:
+
+**Authentication:** Set the `WANDB_API_KEY` environment variable before running the job:
 
 ```bash
-export QWEN3VL_ROOT=/path/to/Qwen3-VL   # if not already set
-python job.py --data_dir ./data
+export WANDB_API_KEY=your_key_here
 ```
 
-Adjust `--data_dir` (or equivalent) to point at the same `./data` directory used in the prepare step. The job will run the Qwen3-VL SFT pipeline in a federated way across the 3 sites using the split PubMedVision data.
+Get your API key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
+
+**Configuration:** The `job.py` script configures WandB with:
+- `project`: "qwen3-vl-nvflare"
+- `group`: "fedavg"
+- `job_type`: "training"
+- `entity`: "hroth" (optional, set to your WandB username)
+
+You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB will run in offline mode.
+
+## 5. Run the federated job
+
+Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen.py`) as a subprocess per round, following the same pattern as [llm_hf MULTINODE](../llm_hf/MULTINODE.md): the FL client runs `client_wrapper.sh`, which launches `client_sft_runner.py`; the runner receives the global model, runs `train_qwen.py`, and sends the updated weights back.
+
+1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
+
+2. **Add a `fl_site` dataset entry** in the Qwen repo so the script can load each site’s `train.json`. The runner sets the env var `FL_SITE_DATA_DIR` to the site data dir (e.g. `./data/site-1`) before calling the script. In the Qwen3-VL repo, edit `qwen-vl-finetune/qwenvl/data/__init__.py` (or the module that defines `data_list`):
+
+   - In the `data_list(dataset_names)` function, inside the loop over `dataset_names`, add a branch for `"fl_site"` (after `sampling_rate = parse_sampling_rate(...)` and `dataset_name = re.sub(r"%(\d+)$", "", dataset_name)`):
+
+   ```python
+   if dataset_name == "fl_site":
+       base = os.environ.get("FL_SITE_DATA_DIR", "")
+       if not base:
+           raise ValueError("FL_SITE_DATA_DIR is not set for fl_site dataset")
+       config = {
+           "annotation_path": os.path.join(base, "train.json"),
+           "data_path": base,
+           "sampling_rate": sampling_rate,
+       }
+       config_list.append(config)
+       continue
+   ```
+
+   Add `import os` at the top of that file if not already present.
+
+3. **Run the job**:
+
+   ```bash
+   export QWEN3VL_ROOT=/path/to/Qwen3-VL
+   export WANDB_API_KEY=your_key_here   # optional
+   python job.py --data_dir ./data --max_steps 50
+   ```
+
+   `--max_steps` limits steps per round (default: 50).
 
 ## Summary
 
 | Step | Action |
 |------|--------|
 | 1 | Create venv, `pip install nvflare`, run `./install_requirements.sh` |
-| 2 | `git clone https://github.com/QwenLM/Qwen3-VL.git` and set `QWEN3VL_ROOT` |
+| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT`, and add `fl_site` to `data_list` in the repo |
 | 3 | Download PubMedVision (clone or Hub) and run `prepare_data.py` to get `./data/site-{1,2,3}/` |
-| 4 | Run `python job.py` (with `--data_dir ./data` or as configured) |
+| 4 | (Optional) Set `WANDB_API_KEY` for online experiment tracking |
+| 5 | Run `python job.py --data_dir ./data` (optionally `--max_steps N`) |
 
 ## References
 
