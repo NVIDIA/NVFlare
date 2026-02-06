@@ -199,6 +199,22 @@ env = SimEnv(num_clients=n_clients)
 recipe.execute(env=env)
 ```
 
+### Model Input Options
+
+The `initial_model` parameter accepts two formats:
+
+1. **Class instance** (shown above): `initial_model=TabularMLP(...)` - Convenient
+2. **Dict config**: `initial_model={"path": "model.TabularMLP", "args": {...}}` - Better for large models
+
+To resume from pre-trained weights:
+```python
+recipe = FedAvgRecipe(
+    initial_model=TabularMLP(...),
+    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
+    ...
+)
+```
+
 **Important**: Privacy budget (ε) accumulates across ALL federated rounds. The `target_epsilon` parameter specifies the total privacy budget for the entire training process, not per round.
 
 ## Run Job

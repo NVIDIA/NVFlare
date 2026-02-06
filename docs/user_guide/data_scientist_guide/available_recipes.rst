@@ -11,6 +11,30 @@ Recipes are high-level, declarative APIs that simplify job configuration and exe
    :local:
    :depth: 2
 
+Common Recipe Parameters
+========================
+
+Most training recipes accept the following model-related parameters:
+
+``initial_model``
+    The model to use for federated training. Accepts:
+
+    * **Class instance**: e.g., ``MyModel()`` - convenient and Pythonic
+    * **Dict config**: e.g., ``{"path": "module.MyModel", "args": {"param": value}}`` - better for large models
+
+    .. note::
+       Class instances are converted to configuration files before job submission. For large models,
+       use dict config to avoid unnecessary instantiation overhead.
+
+``initial_ckpt``
+    Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
+    on the server when the model is loaded during job execution.
+
+    * PyTorch: Requires ``initial_model`` for architecture (checkpoint has weights only)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+
+See :ref:`job_recipe` for detailed explanations of these options.
+
 Federated Averaging (FedAvg)
 ============================
 
@@ -205,7 +229,7 @@ In your client training script, use the TensorFlow FedProxLoss:
 
 .. code-block:: python
 
-    from nvflare.app_opt.tf import TFFedProxLoss
+    from nvflare.app_opt.tf.fedprox_loss import TFFedProxLoss
 
     fedprox_loss = TFFedProxLoss(mu=fedproxloss_mu)
     # Use in training loop
@@ -495,7 +519,7 @@ Federated Logistic Regression.
 
 .. code-block:: python
 
-    from nvflare.app_common.np.recipes.lr import FedAvgLrRecipe
+    from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
     from nvflare.recipe import SimEnv
 
     recipe = FedAvgLrRecipe(
@@ -519,7 +543,8 @@ Compute federated statistics across distributed data.
 
 .. code-block:: python
 
-    from nvflare.recipe import FedStatsRecipe, SimEnv
+    from nvflare.recipe import SimEnv
+    from nvflare.recipe.fedstats import FedStatsRecipe
 
     recipe = FedStatsRecipe(
         name="stats",
@@ -555,13 +580,18 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 
     recipe = FedEvalRecipe(
         name="eval_job",
-        initial_model=MyModel(checkpoint="pretrained_model.pt"),
+        initial_model=MyModel(),  # Model architecture
+        initial_ckpt="/path/to/pretrained_model.pt",  # Required: checkpoint path
         min_clients=2,
         eval_script="client.py",
         eval_args="--batch_size 32",
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+.. note::
+   ``initial_ckpt`` is **required** for FedEvalRecipe. The checkpoint path must be absolute and
+   point to where the pre-trained model weights exist on the server.
 
 **Examples:**
 
@@ -582,9 +612,17 @@ Evaluate models across all client sites (compare each client's model against all
         name="cross-eval",
         min_clients=2,
         eval_script="evaluate.py",
+        eval_args="--data_root /path/to/data",
+        initial_ckpt="/path/to/pretrained_model.npy",  # Optional: evaluate specific model
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+.. note::
+   - Use ``eval_script`` to specify custom evaluation logic. If not provided, uses a built-in
+     dummy validator (for testing only).
+   - Use ``initial_ckpt`` to evaluate a specific pre-trained model. If not provided, the recipe
+     evaluates models from the training run directory.
 
 **Examples:**
 
@@ -620,7 +658,7 @@ Run Flower-based federated learning jobs.
 
 .. code-block:: python
 
-    from nvflare.app_opt.flower import FlowerRecipe
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
     from nvflare.recipe import SimEnv
 
     recipe = FlowerRecipe(
@@ -643,16 +681,22 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_common.ccwf.recipes import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
     recipe = SimpleSwarmLearningRecipe(
         name="swarm",
-        min_clients=3,
+        initial_model=MyModel(),
+        num_rounds=5,
         train_script="client.py",
+        initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
+
+.. note::
+   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
+   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
 
 
 Edge Recipes
@@ -665,15 +709,19 @@ EdgeFedBuffRecipe
 
 .. code-block:: python
 
-    from nvflare.edge.tools import EdgeFedBuffRecipe
-    from nvflare.recipe import SimEnv
+    from nvflare.edge.tools.edge_fed_buff_recipe import (
+        EdgeFedBuffRecipe,
+        ModelManagerConfig,
+        DeviceManagerConfig,
+    )
 
     recipe = EdgeFedBuffRecipe(
-        name="edge-fedavg",
-        min_clients=2,
+        job_name="edge-fedavg",
+        model=MyModel(),  # or dict config: {"path": "module.MyModel", "args": {...}}
+        model_manager_config=ModelManagerConfig(max_model_version=20),
+        device_manager_config=DeviceManagerConfig(device_selection_size=100),
+        initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
 
 **Examples:**
 
