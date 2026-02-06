@@ -229,13 +229,7 @@ add_experiment_tracking(
 )
 ```
 
-**Authentication:** WandB uses the `WANDB_API_KEY` environment variable. Set it before starting the job (e.g. where the server runs, or in your shell before `python job.py`):
-
-```bash
-export WANDB_API_KEY=your_key_here
-```
-
-Get your key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
+**Authentication:** WandB reads the `WANDB_API_KEY` environment variable. The WandB receiver runs on the FL server, so the variable must be set in the **server's** environment (e.g. in the script or systemd unit that starts the server)—setting it in your local shell before `python job.py` does not apply, since the job is submitted to a remote server. In small POCs where you have shell access to the server, you can `export WANDB_API_KEY=...` there or run `wandb.login()` once on that machine; in production, the site operator must configure the key where the server process runs (e.g. via startup env, secrets manager, or container config). Get your key from [wandb.ai/authorize](https://wandb.ai/authorize).
 
 **No changes needed in client code!** The same `SummaryWriter` API works with all tracking systems.
 
