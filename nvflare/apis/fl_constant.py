@@ -197,6 +197,7 @@ class FLContextKey(object):
     EVENT_PROCESSED = "__event_processed__"
     CELL_MESSAGE = "__cell_message__"
     CLIENT_HIERARCHY = "__client_hierarchy__"
+    FOX_MODE = "__fox_mode__"
 
 
 class ProcessType:

@@ -66,3 +66,9 @@ class NotReadyToEndRun(Exception):
     """Raised when a component is not ready to end run"""
 
     pass
+
+
+class RunAborted(Exception):
+    """Raised when a run is aborted"""
+
+    pass
