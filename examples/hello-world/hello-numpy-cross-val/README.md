@@ -128,7 +128,7 @@ from nvflare.recipe import SimEnv
 # 1. Create a standard FedAvg recipe
 recipe = NumpyFedAvgRecipe(
     name="hello-numpy-train-cse",
-    model=[0.0] * 10,  # Can also use initial_ckpt="/server/path/to/model.npy"
+    initial_model=[0.0] * 10,  # Can also use initial_ckpt="/server/path/to/model.npy"
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
@@ -205,7 +205,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
-    model=YourModel(),
+    initial_model=YourModel(),
 )
 
 add_cross_site_evaluation(recipe)

@@ -196,7 +196,7 @@ recipe = FedAvgRecipe(
     num_rounds=600,
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    model=model,
+    initial_model=model,
     train_script="client.py",
     train_args="--data_root ./FLAb/data_fl --n_epochs 1 ..."
 )
