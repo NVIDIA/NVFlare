@@ -25,7 +25,6 @@ from nvflare.lighter.constants import (
     PropKey,
     ProvFileName,
     ProvisionMode,
-    TemplateSectionKey,
 )
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
@@ -119,7 +118,7 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.FED_SERVER,
+            "fed_server",
             ProvFileName.FED_SERVER_JSON,
             replacement={
                 "name": project.name,
@@ -148,7 +147,7 @@ class StaticFileBuilder(Builder):
         if self.docker_image:
             ctx.build_from_template(
                 dest_dir,
-                TemplateSectionKey.DOCKER_SERVER_SH,
+                "docker_svr_sh",
                 ProvFileName.DOCKER_SH,
                 replacement=replacement_dict,
                 exe=True,
@@ -156,7 +155,7 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.START_SERVER_SH,
+            "start_svr_sh",
             ProvFileName.START_SH,
             replacement={"ha_mode": "false"},
             exe=True,
@@ -164,35 +163,31 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.SUB_START_SH,
+            "sub_start_sh",
             ProvFileName.SUB_START_SH,
             replacement=replacement_dict,
             exe=True,
         )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+        ctx.build_from_template(dest_dir, "stop_fl_sh", ProvFileName.STOP_FL_SH, exe=True)
 
         # local folder creation
         dest_dir = ctx.get_local_dir(server)
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False)
+        ctx.build_from_template(dest_dir, "log_config", ProvFileName.LOG_CONFIG_DEFAULT, exe=False)
 
-        ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
-        )
+        ctx.build_from_template(dest_dir, "local_server_resources", ProvFileName.RESOURCES_JSON_DEFAULT, exe=False)
 
-        ctx.build_from_template(
-            dest_dir, TemplateSectionKey.SAMPLE_PRIVACY, ProvFileName.PRIVACY_JSON_SAMPLE, exe=False
-        )
+        ctx.build_from_template(dest_dir, "sample_privacy", ProvFileName.PRIVACY_JSON_SAMPLE, exe=False)
 
         # other builder (e.g. CC) can set the AUTHZ_SECTION_KEY to specify authorization policies for the server
-        authz_section_key = server.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
+        authz_section_key = server.get_prop(PropKey.AUTHZ_SECTION_KEY, "default_authz")
 
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False)
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(server)
-        ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
+        ctx.build_from_template(dest_dir, "readme_fs", ProvFileName.README_TXT, exe=False)
 
     def _build_comm_config_for_internal_listener(self, participant: Participant):
         """Build template args for comm_config, which will be used to create internal listener
@@ -249,7 +244,7 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.FED_CLIENT,
+            "fed_client",
             ProvFileName.FED_CLIENT_JSON,
             replacement={
                 "scheme": self._determine_scheme(client),
@@ -280,24 +275,22 @@ class StaticFileBuilder(Builder):
         if self.docker_image:
             ctx.build_from_template(
                 dest_dir,
-                TemplateSectionKey.DOCKER_CLIENT_SH,
+                "docker_cln_sh",
                 ProvFileName.DOCKER_SH,
                 replacement_dict,
                 exe=True,
             )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.START_CLIENT_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(dest_dir, "start_cln_sh", ProvFileName.START_SH, exe=True)
 
-        ctx.build_from_template(
-            dest_dir, TemplateSectionKey.SUB_START_SH, ProvFileName.SUB_START_SH, replacement_dict, exe=True
-        )
+        ctx.build_from_template(dest_dir, "sub_start_sh", ProvFileName.SUB_START_SH, replacement_dict, exe=True)
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+        ctx.build_from_template(dest_dir, "stop_fl_sh", ProvFileName.STOP_FL_SH, exe=True)
 
         # local folder creation
         dest_dir = ctx.get_local_dir(client)
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+        ctx.build_from_template(dest_dir, "log_config", ProvFileName.LOG_CONFIG_DEFAULT)
 
         num_gpus = 0
         gpu_mem = 0
@@ -313,7 +306,7 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
+            "local_client_resources",
             ProvFileName.RESOURCES_JSON_DEFAULT,
             replacement=replacement_dict,
             content_modify_cb=self._modify_error_sender,
@@ -322,12 +315,12 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.SAMPLE_PRIVACY,
+            "sample_privacy",
             ProvFileName.PRIVACY_JSON_SAMPLE,
         )
 
         # other builder (e.g. CC) can set the AUTHZ_SECTION_KEY to specify authorization policies for this client
-        authz_section_key = client.get_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.DEFAULT_AUTHZ)
+        authz_section_key = client.get_prop(PropKey.AUTHZ_SECTION_KEY, "default_authz")
 
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
@@ -393,7 +386,7 @@ class StaticFileBuilder(Builder):
 
             ctx.build_from_template(
                 dest_dir,
-                TemplateSectionKey.RELAY_RESOURCES_JSON,
+                "relay_resources_json",
                 ProvFileName.RELAY_RESOURCES_JSON,
                 replacement_dict,
                 exe=False,
@@ -406,7 +399,7 @@ class StaticFileBuilder(Builder):
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
-        ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
+        ctx.build_from_template(dest_dir, "readme_fc", ProvFileName.README_TXT)
 
     def _modify_error_sender(self, section: str, client: Participant) -> str:
         """Modify the local resources section and remove the "error_log_sender" component if necessary.
@@ -521,13 +514,11 @@ class StaticFileBuilder(Builder):
         }
 
         if self.docker_image:
-            ctx.build_from_template(
-                dest_dir, TemplateSectionKey.DOCKER_ADMIN_SH, ProvFileName.DOCKER_SH, replacement_dict, exe=True
-            )
+            ctx.build_from_template(dest_dir, "docker_adm_sh", ProvFileName.DOCKER_SH, replacement_dict, exe=True)
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.FL_ADMIN_SH,
+            "fl_admin_sh",
             ProvFileName.FL_ADMIN_SH,
             replacement=replacement_dict,
             exe=True,
@@ -535,12 +526,12 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(
             dest_dir,
-            TemplateSectionKey.ADM_NOTEBOOK,
+            "adm_notebook",
             ProvFileName.SYSTEM_INFO_IPYNB,
             replacement=replacement_dict,
         )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
+        ctx.build_from_template(dest_dir, "readme_am", ProvFileName.README_TXT)
 
     def prepare_admin_config(self, admin: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
@@ -570,7 +561,7 @@ class StaticFileBuilder(Builder):
         }
         ctx.build_from_template(
             dest_dir=ctx.get_kit_dir(admin),
-            temp_section=TemplateSectionKey.FED_ADMIN,
+            temp_section="fed_admin",
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
         )
@@ -578,7 +569,7 @@ class StaticFileBuilder(Builder):
         # create default resources in local
         ctx.build_from_template(
             dest_dir=ctx.get_local_dir(admin),
-            temp_section=TemplateSectionKey.DEFAULT_ADMIN_RESOURCES,
+            temp_section="default_admin_resources",
             file_name=ProvFileName.RESOURCES_JSON_DEFAULT,
         )
 
@@ -686,7 +677,7 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(
             dest_dir=dest_dir,
             file_name=ProvFileName.FED_RELAY_JSON,
-            temp_section=TemplateSectionKey.FED_RELAY,
+            temp_section="fed_relay",
             replacement=replacement_dict,
         )
 
@@ -698,17 +689,15 @@ class StaticFileBuilder(Builder):
             "cln_uid": f"uid={relay.subject}",
         }
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.START_CLIENT_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(dest_dir, "start_cln_sh", ProvFileName.START_SH, exe=True)
 
-        ctx.build_from_template(
-            dest_dir, TemplateSectionKey.SUB_START_SH, ProvFileName.SUB_START_SH, replacement_dict, exe=True
-        )
+        ctx.build_from_template(dest_dir, "sub_start_sh", ProvFileName.SUB_START_SH, replacement_dict, exe=True)
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.STOP_FL_SH, ProvFileName.STOP_FL_SH, exe=True)
+        ctx.build_from_template(dest_dir, "stop_fl_sh", ProvFileName.STOP_FL_SH, exe=True)
 
         # other local resources
         dest_dir = ctx.get_local_dir(relay)
-        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+        ctx.build_from_template(dest_dir, "log_config", ProvFileName.LOG_CONFIG_DEFAULT)
 
     def build(self, project: Project, ctx: ProvisionContext):
         server = project.get_server()
@@ -829,7 +818,6 @@ class StaticFileBuilder(Builder):
             ctx[CtxKey.CLIENT_MAP] = client_map
 
     def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates("master_template.yml")
         self._determine_relay_hierarchy(project, ctx)
         self._determine_client_hierarchy(project, ctx)
 
@@ -859,7 +847,7 @@ class StaticFileBuilder(Builder):
 
                 ctx.build_from_template(
                     dest_dir=ctx.get_local_dir(p),
-                    temp_section=TemplateSectionKey.COMM_CONFIG,
+                    temp_section="comm_config",
                     file_name=ProvFileName.COMM_CONFIG,
                     replacement=replacement_dict,
                     content_modify_cb=_remove_undefined_port,

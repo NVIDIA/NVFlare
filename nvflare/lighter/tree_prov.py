@@ -357,7 +357,7 @@ def main():
     }
 
     builders = [
-        WorkspaceBuilder(["master_template.yml"]),
+        WorkspaceBuilder(),
         StaticFileBuilder(
             config_folder="config",
             scheme="http",

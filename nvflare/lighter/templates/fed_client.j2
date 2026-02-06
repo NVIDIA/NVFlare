@@ -1,0 +1,26 @@
+{
+  "format_version": 2,
+  "servers": [
+    {
+      "name": "{{ name }}",
+      "service": {
+        "scheme": "{{ scheme }}"
+      },
+      "identity": "{{ server_identity }}"
+    }
+  ],
+  "client": {
+    "ssl_private_key": "client.key",
+    "ssl_cert": "client.crt",
+    "ssl_root_cert": "rootCA.pem",
+    "fqsn": "{{ fqsn }}",
+    "is_leaf": {{ is_leaf }},
+    "connection_security": "{{ conn_sec }}"
+  },
+  "overseer_agent": {
+    "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+    "args": {
+      "sp_end_point": "{{ sp_end_point }}"
+    }
+  }
+}

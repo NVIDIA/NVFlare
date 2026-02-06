@@ -18,7 +18,7 @@ import shutil
 
 import yaml
 
-from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -72,7 +72,7 @@ class DockerBuilder(Builder):
         self.services[client.name] = info_dict
 
     def build(self, project: Project, ctx: ProvisionContext):
-        compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
+        compose = ctx.yaml_load_template_section("compose_yaml")
         self.services = compose.get("services")
         self.compose_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_YAML)
         overseer = project.get_overseer()
@@ -100,7 +100,7 @@ class DockerBuilder(Builder):
         os.mkdir(compose_build_dir)
         with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "wt") as f:
             f.write(f"FROM {self.base_image}\n")
-            f.write(ctx.get_template_section(TemplateSectionKey.DOCKERFILE))
+            f.write(ctx.build_section_from_template("dockerfile"))
         try:
             shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT))
         except Exception:

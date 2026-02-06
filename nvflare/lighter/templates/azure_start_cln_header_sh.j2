@@ -1,0 +1,107 @@
+RESOURCE_GROUP=nvflare_client_rg_${RANDOM}_${RANDOM}
+VM_NAME=nvflare_client
+VM_IMAGE=Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest
+VM_SIZE=Standard_B2ms
+NSG_NAME=nvflare_nsgc
+ADMIN_USERNAME=nvflare
+PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+DEST_FOLDER=/var/tmp/cloud
+LOCATION=westus2
+NIC_NAME=${VM_NAME}VMNic
+echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+check_binary sshpass "Please install it first."
+check_binary jq "Please install it first."
+
+
+if [ -z ${image_name+x} ]
+then
+    container=false
+else
+    container=true
+fi
+
+if [ $container == true ]
+then
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest
+  VM_SIZE=Standard_D8s_v3
+else
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+fi
+if [ -z ${config_file+x} ]
+then
+    useDefault=true
+else
+    useDefault=false
+    . $config_file
+    report_status "$?" "Loading config file"
+fi
+
+if [ $useDefault == true ]
+then
+  while true
+  do
+    prompt LOCATION "Cloud location, press ENTER to accept default" "${LOCATION}"
+    prompt VM_IMAGE "Cloud VM image, press ENTER to accept default" "${VM_IMAGE}"
+    prompt VM_SIZE "Cloud VM size, press ENTER to accept default" "${VM_SIZE}"
+    prompt ans "location = ${LOCATION}, VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
+    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
+  done
+fi
+
+if [ $container == false ]
+then
+  echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+  prompt ans "Press ENTER when it's done or no additional dependencies."
+fi
+
+az login --use-device-code -o none
+report_status "$?" "login"
+
+# Start provisioning
+
+if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+then
+  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+  report_status "$?" "creating resource group"
+else
+  echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+fi
+
+echo "Creating Virtual Machine, will take a few minutes"
+az vm create \
+  --output json \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --name $VM_NAME \
+  --image $VM_IMAGE \
+  --size $VM_SIZE \
+  --admin-username $ADMIN_USERNAME \
+  --admin-password $PASSWORD \
+  --authentication-type password \
+  --public-ip-sku Standard > /tmp/vm.json
+report_status "$?" "creating virtual machine"
+
+IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+
+echo "Setting up network related configuration"
+
+az network nsg create \
+  --output none \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION \
+  --name $NSG_NAME
+report_status "$?" "creating network security group"
+
+az network nsg rule create \
+  --output none \
+  --resource-group $RESOURCE_GROUP \
+  --name SSH \
+  --nsg-name $NSG_NAME \
+  --priority 1000 \
+  --protocol Tcp \
+  --destination-port-ranges 22
+report_status "$?" "creating network security group rule for SSH"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+docker image rm {{ image }}
+docker build -t {{ image }} -f Dockerfile.launcher .
+docker push {{ image }}

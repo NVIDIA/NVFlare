@@ -1,0 +1,29 @@
+{
+  "format_version": "1.0",
+  "permissions": {
+    "project_admin": "any",
+    "org_admin": {
+      "submit_job": "none",
+      "clone_job": "none",
+      "manage_job": "o:submitter",
+      "download_job": "o:submitter",
+      "view": "any",
+      "operate": "o:site",
+      "shell_commands": "o:site",
+      "byoc": "none"
+    },
+    "lead": {
+      "submit_job": "any",
+      "clone_job": "n:submitter",
+      "manage_job": "n:submitter",
+      "download_job": "n:submitter",
+      "view": "any",
+      "operate": "o:site",
+      "shell_commands": "o:site",
+      "byoc": "any"
+    },
+    "member": {
+      "view": "any"
+    }
+  }
+}

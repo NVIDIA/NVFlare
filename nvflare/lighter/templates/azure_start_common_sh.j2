@@ -1,0 +1,67 @@
+az network nic update \
+  --output none \
+  --resource-group $RESOURCE_GROUP \
+  --name $NIC_NAME \
+  --network-security-group $NSG_NAME
+report_status "$?" "updating network interface card"
+
+echo "Copying files to $VM_NAME"
+DEST=$ADMIN_USERNAME@${IP_ADDRESS}:$DEST_FOLDER
+echo "Destination folder is ${DEST}"
+cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+report_status "$?" "copying startup kits to VM"
+
+if [ $container == true ]
+then
+  echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+  scripts=$(cat << 'EOF'
+sudo apt-get update && \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+sudo mkdir -p /etc/apt/keyrings && \
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+sudo apt-get update && \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io
+EOF
+)
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "$scripts" > /tmp/docker_engine.json
+  report_status "$?" "installing docker engine"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "sudo usermod -aG docker $ADMIN_USERNAME" >> /tmp/docker_engine.json
+  report_status "$?" "Setting user group"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} {{ docker_network }} ${image_name} /bin/bash -c \"python -u -m nvflare.private.fed.app.{{ type }}.{{ type }}_train -m ${DEST_FOLDER} -s fed_{{ type }}.json --set {{ cln_uid }} secure_train=true config_folder=config org={{ ORG }} \" " > /tmp/vm_create.json 2>&1 
+    report_status "$?" "launching container"
+else
+  echo "Installing packages in $VM_NAME, may take a few minutes."
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "echo ${DEST_FOLDER} && wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && python3 -m pip install --ignore-installed nvflare && touch ${DEST_FOLDER}/startup/requirements.txt && python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && ${DEST_FOLDER}/startup/start.sh && sleep 20 && cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+  report_status "$?" "installing packages"
+fi
+echo "System was provisioned"
+echo "To delete the resource group (also delete the VM), run the following command"
+echo "az group delete -n ${RESOURCE_GROUP}"
+echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt

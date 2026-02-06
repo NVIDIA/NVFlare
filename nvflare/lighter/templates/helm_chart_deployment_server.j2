@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  labels:
+    system: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      system: server
+  template:
+    metadata:
+      labels:
+        system: server
+    spec:
+      volumes:
+        - name: workspace
+          hostPath:
+            path:
+            type: Directory
+        - name: persist
+          hostPath:
+            path: /tmp/nvflare
+            type: Directory
+      containers:
+        - name: server1
+          image: nvflare-min:2.2.0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: persist
+              mountPath: /tmp/nvflare
+          command: ["/usr/local/bin/python3"]
+          args:
+            [
+              "-u",
+              "-m",
+              "nvflare.private.fed.app.server.server_train",
+              "-m",
+              "/workspace/server",
+              "-s",
+              "fed_server.json",
+              "--set",
+              "secure_train=true",
+              "config_folder=config",
+              "org=__org_name__",
+
+            ]
+          ports:
+            - containerPort: 8002
+              protocol: TCP
+            - containerPort: 8003
+              protocol: TCP
