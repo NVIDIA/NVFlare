@@ -42,7 +42,7 @@ Recipes accept model input in two formats, each with different trade-offs:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       model=SimpleNetwork(),  # Instantiated model
+       initial_model=SimpleNetwork(),  # Instantiated model
        train_script="client.py",
        ...
    )
@@ -53,8 +53,8 @@ Recipes accept model input in two formats, each with different trade-offs:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       model={
-           "class_path": "model.SimpleNetwork",
+       initial_model={
+           "path": "model.SimpleNetwork",
            "args": {"num_classes": 10, "hidden_dim": 256}
        },
        train_script="client.py",
@@ -75,9 +75,6 @@ Recipes accept model input in two formats, each with different trade-offs:
      is inefficient. Use the dictionary format to avoid unnecessary instantiation time and memory usage.
    * **Non-serializable state**: If your model carries state that cannot be reconstructed from JSON configuration
      (e.g., loaded data, open file handles), that state will be lost.
-   * **TensorFlow/Keras class instances**: Use a user-defined subclass (for example, subclassing
-     ``tf.keras.Model`` or ``tf.keras.Sequential``) so the model can be reconstructed from class path and args.
-     Passing raw inline Keras model objects may fail during job export.
    * **Trade-off**: Class instance is more Pythonic and catches errors early; dictionary format is more performant
      for large models.
 
@@ -90,7 +87,7 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       model=SimpleNetwork(),
+       initial_model=SimpleNetwork(),
        initial_ckpt="/data/models/pretrained_model.pt",  # Absolute path
        train_script="client.py",
        ...
@@ -103,11 +100,10 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
    * **Absolute path required**: The path must be an absolute path (e.g., ``/data/models/model.pt``), not relative.
    * **May not exist locally**: The checkpoint file does **not** need to exist on the machine where you create
      the recipe. It only needs to exist on the **server** when the model is actually loaded during job execution.
-   * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
+   * **PyTorch requires model architecture**: For PyTorch, you must provide ``initial_model`` (class instance or
      dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
    * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
-     and weights, so ``initial_ckpt`` can be used without ``model``. If ``model`` is provided, use a subclassed
-     Keras class instance (or dict config).
+     and weights, so ``initial_ckpt`` can be used without ``initial_model``.
 
 **Example: Resume training from pre-trained weights**
 
@@ -115,7 +111,7 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
 
    # PyTorch: requires both model and checkpoint
    recipe = FedAvgRecipe(
-       model=SimpleNetwork(),
+       initial_model=SimpleNetwork(),
        initial_ckpt="/server/path/to/pretrained.pt",
        ...
    )
@@ -148,7 +144,7 @@ We use our existing training network under ``../hello-world/hello-pt/model.py`` 
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       model=SimpleNetwork(),
+       initial_model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )
@@ -291,7 +287,7 @@ Now let's go ahead with environment creation and recipe execution.
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       model=SimpleNetwork(),
+       initial_model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )
@@ -341,3 +337,4 @@ The goal of Job Recipes is to create a simple entry point into NVFlare that is m
 Examples
 --------
 To see more examples of Job Recipe in action, check out the quick start series :ref:`quickstart`, where several job recipes are demonstrated.
+
