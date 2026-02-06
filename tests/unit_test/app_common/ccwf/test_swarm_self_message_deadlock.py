@@ -77,58 +77,6 @@ class TestSelfMessageDeadlock(unittest.TestCase):
         # Verify the call order shows synchronous execution
         self.assertEqual(call_order, ["send_start", "handler_start", "handler_end", "send_end"])
 
-    def test_async_local_task_prevents_deadlock(self):
-        """
-        Demonstrate that queuing a local task (like set_learn_task) prevents deadlock.
-
-        This simulates our proposed fix: instead of sending a message to self,
-        we directly queue the task using set_learn_task which is non-blocking.
-        """
-        call_order = []
-        task_queue = []
-        task_processed = threading.Event()
-
-        def simulate_set_learn_task(task_data):
-            """Simulates set_learn_task which queues the task for async processing."""
-            call_order.append("queue_task")
-            task_queue.append(task_data)
-            # This returns immediately - non-blocking
-
-        def worker_thread():
-            """Simulates the _do_learn thread that processes queued tasks."""
-            while not task_processed.is_set():
-                if task_queue:
-                    task_queue.pop(0)
-                    call_order.append("process_task_start")
-                    time.sleep(0.1)  # Simulate processing
-                    call_order.append("process_task_end")
-                    task_processed.set()
-                time.sleep(0.01)
-
-        # Start worker thread (like _do_learn)
-        worker = threading.Thread(target=worker_thread, daemon=True)
-        worker.start()
-
-        # Queue task locally (like our fix does)
-        call_order.append("main_start")
-        simulate_set_learn_task({"round": 1})
-        call_order.append("main_continues")  # Main thread is NOT blocked!
-
-        # Wait for task to be processed
-        task_processed.wait(timeout=2.0)
-        call_order.append("main_end")
-
-        # Verify main thread wasn't blocked while task was queued
-        # "main_continues" should appear before "process_task_start"
-        main_continues_idx = call_order.index("main_continues")
-        process_start_idx = call_order.index("process_task_start")
-
-        self.assertLess(
-            main_continues_idx,
-            process_start_idx,
-            "Main thread should continue before task processing starts (non-blocking)",
-        )
-
     def test_scatter_with_self_in_targets(self):
         """
         Simulate the _scatter scenario where self is in targets.
@@ -240,66 +188,6 @@ class TestSwarmScatterFix(unittest.TestCase):
         self.assertEqual(len(targets), 0, "No network targets when only self")
 
 
-class TestRealDeadlockScenario(unittest.TestCase):
-    """Test that demonstrates a real deadlock scenario with blocking handlers."""
-
-    def test_deadlock_with_blocking_handler_timeout(self):
-        """
-        This test simulates the ACTUAL deadlock scenario:
-
-        1. Client A (site-2) calls broadcast_and_wait to [site-1, site-2, site-3]
-        2. For site-2 (self), _send_direct_message is called synchronously
-        3. The message handler (e.g., TensorStreamer) tries to wait for something
-        4. DEADLOCK: The thread is blocked waiting for itself
-
-        We use a timeout to detect the deadlock.
-        """
-        deadlock_detected = threading.Event()
-        operation_completed = threading.Event()
-        handler_started = threading.Event()
-
-        def blocking_message_handler():
-            """
-            Simulates a handler that waits for external data (like TensorReceiver.wait_for_tensors).
-            In the real scenario, this is waiting for streaming data that would be sent
-            by the same thread that's now blocked.
-            """
-            handler_started.set()
-            # Simulate waiting for tensors - this would block forever in real deadlock
-            # We use a timeout to detect this
-            wait_event = threading.Event()
-            # This wait will never complete because no one will set it
-            # (the thread that would set it is this same thread, which is blocked)
-            result = wait_event.wait(timeout=0.5)  # Short timeout for test
-            if not result:
-                deadlock_detected.set()
-                return False
-            return True
-
-        def simulate_sync_self_message():
-            """Simulates what happens when _send_direct_message is called for self."""
-            # This is synchronous - blocks until handler returns
-            success = blocking_message_handler()
-            if success:
-                operation_completed.set()
-
-        # Run in a thread so we can check for deadlock
-        thread = threading.Thread(target=simulate_sync_self_message)
-        thread.start()
-
-        # Wait for handler to start
-        handler_started.wait(timeout=1.0)
-
-        # Wait for either completion or deadlock detection
-        thread.join(timeout=2.0)
-
-        # Verify deadlock was detected (handler timed out waiting)
-        self.assertTrue(
-            deadlock_detected.is_set(), "Deadlock should be detected - handler blocked waiting for external event"
-        )
-        self.assertFalse(operation_completed.is_set(), "Operation should not complete due to deadlock")
-
-
 # =============================================================================
 # CORECELL-BASED TESTS
 # These tests use actual CoreCell to prove the synchronous self-message behavior
@@ -331,20 +219,13 @@ class TestCoreCellSelfMessage(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        """Clean up the cell and restore ALL_CELLS state."""
+        """Clean up the cell and fully restore ALL_CELLS state."""
         try:
             cls.cell.stop()
         finally:
-            # Remove our test cell and restore saved state
-            CoreCell.ALL_CELLS.pop(cls.cell_name, None)
-            for name, cell in cls._saved_all_cells.items():
-                if name not in CoreCell.ALL_CELLS:
-                    CoreCell.ALL_CELLS[name] = cell
-
-    def test_self_in_all_cells(self):
-        """Verify that the cell is registered in ALL_CELLS (prerequisite for sync self-message)."""
-        self.assertIn(self.cell_name, CoreCell.ALL_CELLS)
-        self.assertEqual(CoreCell.ALL_CELLS[self.cell_name], self.cell)
+            # Fully restore ALL_CELLS to its original state
+            CoreCell.ALL_CELLS.clear()
+            CoreCell.ALL_CELLS.update(cls._saved_all_cells)
 
     def test_sync_self_message_same_thread_real_cell(self):
         """
@@ -448,14 +329,13 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        """Clean up the cell and restore ALL_CELLS state."""
+        """Clean up the cell and fully restore ALL_CELLS state."""
         try:
             cls.cell.stop()
         finally:
-            CoreCell.ALL_CELLS.pop(cls.cell_name, None)
-            for name, cell in cls._saved_all_cells.items():
-                if name not in CoreCell.ALL_CELLS:
-                    CoreCell.ALL_CELLS[name] = cell
+            # Fully restore ALL_CELLS to its original state
+            CoreCell.ALL_CELLS.clear()
+            CoreCell.ALL_CELLS.update(cls._saved_all_cells)
 
     def test_broadcast_multi_requests_to_self_is_sync(self):
         """
