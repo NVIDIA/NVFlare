@@ -16,7 +16,7 @@ Common Recipe Parameters
 
 Most training recipes accept the following model-related parameters:
 
-``initial_model``
+``model``
     The model to use for federated training. Accepts:
 
     * **Class instance**: e.g., ``MyModel()`` - convenient and Pythonic
@@ -30,7 +30,7 @@ Most training recipes accept the following model-related parameters:
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
-    * PyTorch: Requires ``initial_model`` for architecture (checkpoint has weights only)
+    * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
     * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
 
 See :ref:`job_recipe` for detailed explanations of these options.
@@ -53,7 +53,7 @@ PyTorch FedAvg
         name="fedavg-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -76,7 +76,7 @@ TensorFlow FedAvg
         name="fedavg-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -147,7 +147,7 @@ FedAvg with secure aggregation using homomorphic encryption.
         name="fedavg-he",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -177,7 +177,7 @@ PyTorch FedProx
         name="fedprox-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
         train_args="--fedproxloss_mu 0.01",  # Pass mu parameter to client
     )
@@ -218,7 +218,7 @@ TensorFlow FedProx
         name="fedprox-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
         train_args="--fedproxloss_mu 0.01",
     )
@@ -256,7 +256,7 @@ PyTorch FedOpt
         name="fedopt-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
         optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
@@ -279,7 +279,7 @@ TensorFlow FedOpt
         name="fedopt-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
         optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
@@ -308,7 +308,7 @@ PyTorch SCAFFOLD
         name="scaffold-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -330,7 +330,7 @@ TensorFlow SCAFFOLD
         name="scaffold-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -358,7 +358,7 @@ PyTorch Cyclic
         name="cyclic-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -380,7 +380,7 @@ TensorFlow Cyclic
         name="cyclic-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -580,7 +580,7 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 
     recipe = FedEvalRecipe(
         name="eval_job",
-        initial_model=MyModel(),  # Model architecture
+        model=MyModel(),  # Model architecture
         initial_ckpt="/path/to/pretrained_model.pt",  # Required: checkpoint path
         min_clients=2,
         eval_script="client.py",
@@ -686,7 +686,7 @@ Decentralized federated learning without a central server.
 
     recipe = SimpleSwarmLearningRecipe(
         name="swarm",
-        initial_model=MyModel(),
+        model=MyModel(),
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights

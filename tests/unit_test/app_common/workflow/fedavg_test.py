@@ -55,7 +55,7 @@ class TestFedAvgInit:
 
         assert controller.num_clients == 3  # default
         assert controller.num_rounds == 5  # default
-        assert controller.initial_model is None
+        assert controller.model is None
         assert controller.aggregator is None
         assert controller.stop_cond is None
         assert controller.patience is None
@@ -66,13 +66,13 @@ class TestFedAvgInit:
 
     def test_custom_initialization(self):
         """Test FedAvg with custom parameters."""
-        initial_model = {"layer1": [1.0, 2.0, 3.0]}
+        model = {"layer1": [1.0, 2.0, 3.0]}
         aggregator = MockModelAggregator()
 
         controller = FedAvg(
             num_clients=5,
             num_rounds=10,
-            initial_model=initial_model,
+            model=model,
             aggregator=aggregator,
             stop_cond="accuracy >= 80",
             patience=3,
@@ -84,7 +84,7 @@ class TestFedAvgInit:
 
         assert controller.num_clients == 5
         assert controller.num_rounds == 10
-        assert controller.initial_model == initial_model
+        assert controller.model == model
         assert controller.aggregator is aggregator
         assert controller.stop_cond == "accuracy >= 80"
         assert controller.patience == 3
@@ -646,11 +646,11 @@ class TestFedAvgLoadSaveModel:
         assert loaded.params["w"] == 123.0
 
 
-class TestPTFedAvgInitialModel:
-    """Test PTFedAvg initial_model type handling."""
+class TestPTFedAvgModel:
+    """Test PTFedAvg model type handling."""
 
-    def test_initial_model_with_nn_module(self):
-        """Test initial_model with torch.nn.Module extracts state_dict."""
+    def test_model_with_nn_module(self):
+        """Test model with torch.nn.Module extracts state_dict."""
         import torch.nn as nn
 
         class SimpleModel(nn.Module):
@@ -661,54 +661,54 @@ class TestPTFedAvgInitialModel:
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model = SimpleModel()
-        controller = PTFedAvg(initial_model=model)
+        controller = PTFedAvg(model=model)
 
-        # initial_model should be converted to state_dict (OrderedDict)
-        assert controller.initial_model is not None
-        assert isinstance(controller.initial_model, dict)
-        assert "linear.weight" in controller.initial_model
-        assert "linear.bias" in controller.initial_model
+        # model should be converted to state_dict (OrderedDict)
+        assert controller.model is not None
+        assert isinstance(controller.model, dict)
+        assert "linear.weight" in controller.model
+        assert "linear.bias" in controller.model
 
-    def test_initial_model_with_dict(self):
-        """Test initial_model with dict is passed through."""
+    def test_model_with_dict(self):
+        """Test model with dict is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
-        controller = PTFedAvg(initial_model=model_dict)
+        controller = PTFedAvg(model=model_dict)
 
-        assert controller.initial_model == model_dict
+        assert controller.model == model_dict
 
-    def test_initial_model_with_flmodel(self):
-        """Test initial_model with FLModel is passed through."""
+    def test_model_with_flmodel(self):
+        """Test model with FLModel is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         fl_model = FLModel(params={"w": 1.0})
-        controller = PTFedAvg(initial_model=fl_model)
+        controller = PTFedAvg(model=fl_model)
 
-        assert controller.initial_model is fl_model
+        assert controller.model is fl_model
 
-    def test_initial_model_with_none(self):
-        """Test initial_model with None is allowed."""
+    def test_model_with_none(self):
+        """Test model with None is allowed."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        controller = PTFedAvg(initial_model=None)
+        controller = PTFedAvg(model=None)
 
-        assert controller.initial_model is None
+        assert controller.model is None
 
-    def test_initial_model_with_invalid_type_raises_error(self):
-        """Test initial_model with invalid type raises TypeError."""
+    def test_model_with_invalid_type_raises_error(self):
+        """Test model with invalid type raises TypeError."""
         import pytest
 
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model="invalid_string")  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model="invalid_string")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model=12345)  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model=12345)  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model=[1, 2, 3])  # type: ignore[arg-type]
 
     def test_task_name_parameter(self):
         """Test task_name parameter is passed correctly."""

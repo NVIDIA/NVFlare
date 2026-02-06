@@ -58,7 +58,7 @@ Job Recipe
                 name="hello-pt",
                 min_clients=n_clients,
                 num_rounds=num_rounds,
-                initial_model=SimpleNetwork(),
+                model=SimpleNetwork(),
                 train_script="client.py",
                 train_args=f"--batch_size {batch_size}",
             )

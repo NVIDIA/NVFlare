@@ -86,17 +86,17 @@ You can modify the example by:
 
 ### Model Input Options
 
-For NumPy recipes, `initial_model` can be a NumPy array or list. To resume from pre-trained weights:
+For NumPy recipes, `model` can be a NumPy array or list. To resume from pre-trained weights:
 
 ```python
 recipe = NumpyFedAvgRecipe(
-    initial_model=None,  # Optional when using initial_ckpt
+    model=None,  # Optional when using initial_ckpt
     initial_ckpt="/server/path/to/model.npy",  # Absolute path
     ...
 )
 ```
 
-> **Note:** NumPy checkpoints contain the full model data, so `initial_ckpt` can be used without `initial_model`.
+> **Note:** NumPy checkpoints contain the full model data, so `initial_ckpt` can be used without `model`.
 
 ## Run the Experiment
 

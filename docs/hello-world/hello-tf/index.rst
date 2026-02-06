@@ -117,24 +117,24 @@ The job recipe includes `client.py` and the built-in FedAvg algorithm.
 Model Input Options
 ^^^^^^^^^^^^^^^^^^^
 
-The ``initial_model`` parameter accepts two formats:
+The ``model`` parameter accepts two formats:
 
-1. **Class instance**: ``initial_model=Net()`` - Convenient and Pythonic
-2. **Dict config**: ``initial_model={"path": "model.Net", "args": {}}`` - Better for large models
+1. **Class instance**: ``model=Net()`` - Convenient and Pythonic
+2. **Dict config**: ``model={"path": "model.Net", "args": {}}`` - Better for large models
 
 To resume from pre-trained weights:
 
 .. code-block:: python
 
    recipe = FedAvgRecipe(
-       initial_model=Net(),
+       model=Net(),
        initial_ckpt="/server/path/to/pretrained.h5",  # Absolute path
        ...
    )
 
 .. note::
 
-   For TensorFlow/Keras, SavedModel or .h5 files contain both architecture and weights, so ``initial_ckpt`` can be used without ``initial_model``.
+   For TensorFlow/Keras, SavedModel or .h5 files contain both architecture and weights, so ``initial_ckpt`` can be used without ``model``.
 
 Run the Experiment
 ------------------

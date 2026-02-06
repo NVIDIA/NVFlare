@@ -303,7 +303,7 @@ recipe = FedAvgRecipe(
     train_script="path/to/client.py",
     min_clients=8,
     num_rounds=50,
-    initial_model=initial_model,
+    model=model,
     aggregator=custom_aggregator  # Pass your custom aggregator here
 )
 

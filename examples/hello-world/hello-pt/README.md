@@ -128,7 +128,7 @@ recipe = FedAvgRecipe(
     name="hello-pt",
     min_clients=n_clients,
     num_rounds=num_rounds,
-    initial_model=SimpleNetwork(),
+    model=SimpleNetwork(),
     train_script="client.py",
     train_args=f"--batch_size {batch_size}",
 )
@@ -139,10 +139,10 @@ recipe.execute(env=env)
 
 ### Model Input Options
 
-The `initial_model` parameter accepts two formats:
+The `model` parameter accepts two formats:
 
-1. **Class instance** (shown above): `initial_model=SimpleNetwork()` - Convenient and Pythonic
-2. **Dict config**: `initial_model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
+1. **Class instance** (shown above): `model=SimpleNetwork()` - Convenient and Pythonic
+2. **Dict config**: `model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
 
 > **Note:** Class instances are converted to configuration files before job submission. For large models, use dict config to avoid unnecessary instantiation overhead.
 
@@ -152,7 +152,7 @@ To resume training from pre-trained weights, use the `initial_ckpt` parameter:
 
 ```python
 recipe = FedAvgRecipe(
-    initial_model=SimpleNetwork(),
+    model=SimpleNetwork(),
     initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path, must exist on server
     ...
 )

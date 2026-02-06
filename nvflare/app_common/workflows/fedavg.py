@@ -45,7 +45,7 @@ class FedAvg(BaseFedAvg):
     The parent classes provide the default implementations for other routines.
 
     For simple model persistence without complex ModelPersistor setup, you can:
-    1. Pass `initial_model` (dict of params) and `save_filename`
+    1. Pass `model` (dict of params) and `save_filename`
     2. Override `save_model()` and `load_model()` for framework-specific serialization
 
     Args:
@@ -53,8 +53,8 @@ class FedAvg(BaseFedAvg):
         num_rounds (int, optional): The total number of training rounds. Defaults to 5.
         start_round (int, optional): The starting round number.
         persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
-            If empty and initial_model is provided, uses simple save_model/load_model methods.
-        initial_model (dict or FLModel, optional): Initial model parameters. If provided,
+            If empty and model is provided, uses simple save_model/load_model methods.
+        model (dict or FLModel, optional): Initial model parameters. If provided,
             this is used instead of loading from persistor. Defaults to None.
         save_filename (str, optional): Filename for saving the best model. Defaults to
             "FL_global_model.pt". Only used when persistor_id is empty.
@@ -76,7 +76,7 @@ class FedAvg(BaseFedAvg):
     def __init__(
         self,
         *args,
-        initial_model: Optional[Union[Dict, FLModel]] = None,
+        model: Optional[Union[Dict, FLModel]] = None,
         save_filename: Optional[str] = "FL_global_model.pt",
         aggregator: Optional[ModelAggregator] = None,
         stop_cond: Optional[str] = None,
@@ -89,7 +89,7 @@ class FedAvg(BaseFedAvg):
         super().__init__(*args, **kwargs)
 
         # Simple model persistence (alternative to persistor)
-        self.initial_model = initial_model
+        self.model = model
         self.save_filename = save_filename
 
         # Custom aggregator (optional)
@@ -128,14 +128,14 @@ class FedAvg(BaseFedAvg):
         # Set NUM_ROUNDS in FL context for persistor and other components
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
-        # Load initial model - prefer initial_model if provided, else use persistor
-        if self.initial_model is not None:
-            if isinstance(self.initial_model, FLModel):
-                model = self.initial_model
+        # Load initial model - prefer model if provided, else use persistor
+        if self.model is not None:
+            if isinstance(self.model, FLModel):
+                model = self.model
             else:
                 # Assume dict of params
-                model = FLModel(params=self.initial_model)
-            self.info("Using provided initial_model")
+                model = FLModel(params=self.model)
+            self.info("Using provided model")
         else:
             model = self.load_model()
 

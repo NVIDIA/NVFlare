@@ -38,7 +38,7 @@ class NPModelPersistor(ModelPersistor):
         self,
         model_dir="models",
         model_name="server.npy",
-        initial_model: Optional[list] = None,
+        model: Optional[list] = None,
         source_ckpt_file_full_name: Optional[str] = None,
     ):
         """Model persistor for numpy arrays.
@@ -47,13 +47,13 @@ class NPModelPersistor(ModelPersistor):
             This persistor loads model data in the following priority:
             1. source_ckpt_file_full_name (if provided and exists)
             2. Previously saved numpy array from ``<run_dir>/<model_dir>/<model_name>``
-            3. initial_model (if provided)
+            3. model (if provided)
             4. Default array ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``
 
         Args:
             model_dir (str, optional): model directory. Defaults to "models".
             model_name (str, optional): model name. Defaults to "server.npy".
-            initial_model (list, optional): fallback initial model as a (JSON-serializable) list.
+            model (list, optional): fallback initial model as a (JSON-serializable) list.
                 This is only used when a previously saved model cannot be loaded.
                 It will be converted to numpy array when ``load_model`` is called.
                 Defaults to None.
@@ -67,7 +67,7 @@ class NPModelPersistor(ModelPersistor):
         self.model_name = model_name
         # Keep as list for JSON serialization during job config generation.
         # Conversion to numpy happens in load_model().
-        self.initial_model = initial_model
+        self.model = model
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         # Note: We don't validate existence here because the checkpoint path may be
         # a server-side path that doesn't exist on the job submission machine.
@@ -77,10 +77,10 @@ class NPModelPersistor(ModelPersistor):
 
         This is used by ``load_model`` when the model file cannot be loaded.
         """
-        if self.initial_model is None:
+        if self.model is None:
             return np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
         else:
-            return np.array(self.initial_model, dtype=np.float32)
+            return np.array(self.model, dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)

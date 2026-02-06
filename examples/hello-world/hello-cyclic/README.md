@@ -107,7 +107,7 @@ train_script = "client.py"
 
 recipe = CyclicRecipe(
     num_rounds=num_rounds,
-    initial_model=Net(),
+    model=Net(),
     train_script=train_script,
 )
 
@@ -121,15 +121,15 @@ print()
 
 ### Model Input Options
 
-The `initial_model` parameter accepts two formats:
+The `model` parameter accepts two formats:
 
-1. **Class instance**: `initial_model=Net()` - Convenient and Pythonic
-2. **Dict config**: `initial_model={"path": "model.Net", "args": {}}` - Better for large models
+1. **Class instance**: `model=Net()` - Convenient and Pythonic
+2. **Dict config**: `model={"path": "model.Net", "args": {}}` - Better for large models
 
 To resume from pre-trained weights:
 ```python
 recipe = CyclicRecipe(
-    initial_model=Net(),
+    model=Net(),
     initial_ckpt="/server/path/to/pretrained.h5",  # Absolute path
     ...
 )

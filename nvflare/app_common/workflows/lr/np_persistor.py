@@ -73,8 +73,8 @@ class LRModelPersistor(NPModelPersistor):
         #
         # A default matrix with value 0s is created.
         #
-        self.initial_model = np.zeros((self.n_features + 1, 1), dtype=np.float32)
+        self.model = np.zeros((self.n_features + 1, 1), dtype=np.float32)
 
     def _get_initial_model_as_numpy(self) -> np.ndarray:
         """Fallback initializer used by NPModelPersistor when no saved model exists."""
-        return self.initial_model.copy()
+        return self.model.copy()

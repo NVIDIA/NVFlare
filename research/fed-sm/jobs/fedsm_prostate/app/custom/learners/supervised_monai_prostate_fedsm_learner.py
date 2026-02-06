@@ -119,12 +119,12 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             raise ValueError(f"No global weights loaded! Received weight dict is {global_weights}")
         return local_var_dict
 
-    def compute_model_diff(self, initial_model: dict, end_model: dict, fl_ctx: FLContext):
+    def compute_model_diff(self, model: dict, end_model: dict, fl_ctx: FLContext):
         model_diff = {}
-        for name in initial_model:
+        for name in model:
             if name not in end_model:
                 continue
-            model_diff[name] = np.subtract(end_model[name].cpu().numpy(), initial_model[name], dtype=np.float32)
+            model_diff[name] = np.subtract(end_model[name].cpu().numpy(), model[name], dtype=np.float32)
             if np.any(np.isnan(model_diff[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)

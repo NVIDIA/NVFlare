@@ -36,10 +36,10 @@ class BaseFedJob(UnifiedBaseFedJob):
     User must add controllers and executors.
 
     Args:
-        initial_model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
+        model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
             The file may not exist locally as it could be on the server.
-            Note: TensorFlow can load full models from .h5/SavedModel without initial_model.
+            Note: TensorFlow can load full models from .h5/SavedModel without model.
         name (name, optional): name of the job. Defaults to "fed_job".
         min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
         mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
@@ -62,7 +62,7 @@ class BaseFedJob(UnifiedBaseFedJob):
 
     def __init__(
         self,
-        initial_model: tf.keras.Model = None,
+        model: tf.keras.Model = None,
         initial_ckpt: Optional[str] = None,
         name: str = "fed_job",
         min_clients: int = 1,
@@ -88,8 +88,8 @@ class BaseFedJob(UnifiedBaseFedJob):
 
         # TensorFlow-specific model setup
         # TFModel wrapper can handle: tf.keras.Model instances, dict configs, or None
-        if initial_model is not None or initial_ckpt is not None:
-            self._setup_tensorflow_model(initial_model, initial_ckpt, model_persistor)
+        if model is not None or initial_ckpt is not None:
+            self._setup_tensorflow_model(model, initial_ckpt, model_persistor)
 
     def _setup_tensorflow_model(
         self,

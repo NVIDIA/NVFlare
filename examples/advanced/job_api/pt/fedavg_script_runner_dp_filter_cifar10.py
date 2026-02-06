@@ -25,7 +25,7 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "src/cifar10_fl.py"
 
-    job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
+    job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, model=Net())
 
     for i in range(n_clients):
         site_name = f"site-{i + 1}"

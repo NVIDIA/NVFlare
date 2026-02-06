@@ -45,7 +45,7 @@ class PTFedAvg(FedAvg):
         task_name (str, optional): Task name for training. Defaults to "train".
         save_filename (str, optional): Filename for saving the best model.
             Defaults to "FL_global_model.pt".
-        initial_model (nn.Module, optional): Initial PyTorch model. Can be an nn.Module
+        model (nn.Module, optional): Initial PyTorch model. Can be an nn.Module
             (will call .state_dict()) or a dict of parameters.
 
     Example:
@@ -60,7 +60,7 @@ class PTFedAvg(FedAvg):
             num_rounds=10,
             stop_cond="accuracy >= 80",
             patience=3,
-            initial_model=Net(),
+            model=Net(),
         )
         job.to(controller, "server")
         ```
@@ -73,27 +73,26 @@ class PTFedAvg(FedAvg):
         patience: Optional[int] = None,
         task_name: Optional[str] = "train",
         save_filename: Optional[str] = "FL_global_model.pt",
-        initial_model: Optional[Union[torch.nn.Module, dict, FLModel]] = None,
+        model: Optional[Union[torch.nn.Module, dict, FLModel]] = None,
         **kwargs,
     ) -> None:
         # Convert PyTorch model to dict if needed
-        if initial_model is None:
+        if model is None:
             initial_model_params = None
-        elif isinstance(initial_model, torch.nn.Module):
-            initial_model_params = initial_model.state_dict()
-        elif isinstance(initial_model, dict):
-            initial_model_params = initial_model
-        elif isinstance(initial_model, FLModel):
-            initial_model_params = initial_model
+        elif isinstance(model, torch.nn.Module):
+            initial_model_params = model.state_dict()
+        elif isinstance(model, dict):
+            initial_model_params = model
+        elif isinstance(model, FLModel):
+            initial_model_params = model
         else:
             raise TypeError(
-                f"initial_model must be torch.nn.Module, dict, FLModel, or None, "
-                f"but got {type(initial_model).__name__}"
+                f"model must be torch.nn.Module, dict, FLModel, or None, " f"but got {type(model).__name__}"
             )
 
         super().__init__(
             *args,
-            initial_model=initial_model_params,
+            model=initial_model_params,
             save_filename=save_filename,
             stop_cond=stop_cond,
             patience=patience,
