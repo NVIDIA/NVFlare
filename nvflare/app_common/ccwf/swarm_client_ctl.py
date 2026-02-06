@@ -455,11 +455,12 @@ class SwarmClientController(ClientSideController):
 
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         clients = self.get_config_prop(Constant.CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS, [])
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS, [])
         train_clients = self.get_config_prop(Constant.TRAIN_CLIENTS, [])
 
         self.log_info(
-            fl_ctx, f"Starting Swarm Workflow on clients {clients}, aggrs {aggr_clients}, trainers {train_clients}"
+            fl_ctx,
+            f"Starting Swarm Workflow on clients {clients}, aggregator candidates {aggregator_candidates}, trainers {train_clients}",
         )
 
         if not self._scatter(
@@ -472,10 +473,10 @@ class SwarmClientController(ClientSideController):
 
     def _scatter(self, task_data: Shareable, for_round: int, fl_ctx: FLContext) -> bool:
         clients = self.get_config_prop(Constant.TRAIN_CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS)
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS)
 
         # determine aggr client
-        aggr = random.choice(aggr_clients)
+        aggr = random.choice(aggregator_candidates)
 
         task_data.set_header(AppConstants.CURRENT_ROUND, for_round)
         task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, for_round)
@@ -507,7 +508,8 @@ class SwarmClientController(ClientSideController):
         # Then send to remote targets
         if remote_targets:
             self.log_info(
-                fl_ctx, f"broadcasting learn task of round {for_round} to {remote_targets}; aggr client is {aggr}"
+                fl_ctx,
+                f"broadcasting learn task of round {for_round} to {remote_targets}; aggregation happens on {aggr}",
             )
             if not self.send_learn_task(targets=remote_targets, request=task_data, fl_ctx=fl_ctx):
                 return False

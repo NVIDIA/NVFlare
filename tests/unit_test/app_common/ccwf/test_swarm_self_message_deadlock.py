@@ -391,20 +391,27 @@ class TestCoreCellSelfMessage(unittest.TestCase):
         test_topic = f"topic_deadlock_{id(self)}"
 
         external_trigger = threading.Event()
+        handler_completed = threading.Event()
         deadlock_detected = False
 
         def blocking_handler(message: Message):
             nonlocal deadlock_detected
-            # Simulate waiting for something that would be triggered by the caller
-            result = external_trigger.wait(timeout=1.0)
-            if not result:
-                deadlock_detected = True
-            return Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK})
+            try:
+                # Simulate waiting for something that would be triggered by the caller
+                result = external_trigger.wait(timeout=1.0)
+                if not result:
+                    deadlock_detected = True
+                return Message(headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK})
+            finally:
+                handler_completed.set()
 
         self.cell.register_request_cb(channel=test_channel, topic=test_topic, cb=blocking_handler)
 
         request = Message(headers={}, payload=b"test")
         self.cell.fire_and_forget(channel=test_channel, topic=test_topic, targets=[self.cell_name], message=request)
+
+        # Wait for handler to complete before checking result
+        handler_completed.wait(timeout=5.0)
 
         # The key assertion: deadlock was detected (handler blocked waiting for external trigger)
         self.assertTrue(deadlock_detected, "Deadlock should be detected (handler timed out waiting)")
@@ -493,18 +500,22 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
         """
         tensor_event = threading.Event()
         deadlock_detected = threading.Event()
+        handler_completed = threading.Event()
 
         # Use unique channel/topic for this test
         test_channel = f"tensor_broadcast_{id(self)}"
         test_topic = f"tensor_task_{id(self)}"
 
         def blocking_handler(message: Message):
-            # Simulate wait_for_tensors() waiting for streaming data
-            if not tensor_event.wait(timeout=1.0):
-                deadlock_detected.set()
-            reply = Message()
-            reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-            return reply
+            try:
+                # Simulate wait_for_tensors() waiting for streaming data
+                if not tensor_event.wait(timeout=1.0):
+                    deadlock_detected.set()
+                reply = Message()
+                reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                return reply
+            finally:
+                handler_completed.set()
 
         self.cell.register_request_cb(channel=test_channel, topic=test_topic, cb=blocking_handler)
 
@@ -516,6 +527,9 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
         }
 
         self.cell.broadcast_multi_requests(target_msgs=target_msgs, timeout=5.0)
+
+        # Wait for handler to complete before checking result
+        handler_completed.wait(timeout=5.0)
 
         self.assertTrue(deadlock_detected.is_set(), "Deadlock should be detected - tensor wait timed out")
 
