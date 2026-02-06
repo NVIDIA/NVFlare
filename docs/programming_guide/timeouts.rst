@@ -758,7 +758,7 @@ Client-side workflow communication (wf_comm_client.py):
      - Purpose
    * - max_task_timeout
      - 3600
-     - Maximum task timeout when task.timeout is 0
+     - Maximum single task execution time; used as the effective timeout when the controller sets task.timeout = 0 (i.e., "no timeout")
 
 
 Task Pull/Fetch Timeouts

@@ -33,14 +33,6 @@ Task Fetch Timeout
        "get_task_timeout": 300,  # 5 minutes
    })
 
-**Critical for Tensor Streaming**: When using tensor streaming, ensure:
-
-.. code-block:: text
-
-   get_task_timeout >= wait_send_task_data_all_clients_timeout
-
-Otherwise, clients may timeout while waiting for tensors.
-
 
 External Process Pre-Init Timeout (Client API Only)
 ----------------------------------------------------
@@ -116,7 +108,7 @@ Training Task Timeout
    # Or via ModelController
    controller = FedAvg(
        num_rounds=100,
-       # timeout=0 means no timeout
+       timeout=7200,  # 2 hours per round
    )
 
 
@@ -212,17 +204,6 @@ Via Recipe API
    }, clients=["site-1", "site-2"])
 
 
-Via Client Code
----------------
-
-.. code-block:: python
-
-   import nvflare.client as flare
-
-   # Receive with explicit timeout
-   input_model = flare.receive(timeout=600)
-
-
 Via Configuration Files
 -----------------------
 
@@ -276,9 +257,6 @@ LLM/Foundation Model Training
        "get_task_timeout": 1200,
        "submit_task_result_timeout": 1200,
    })
-
-   # In training script
-   input_model = flare.receive(timeout=1200)
 
 
 High-Latency Networks
