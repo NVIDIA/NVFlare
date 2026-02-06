@@ -210,7 +210,7 @@ add_experiment_tracking(
 
 ### Weights & Biases
 
-The WandB receiver requires `wandb_args` with at least `project`, `group`, and `job_type`. Optional top-level `mode` (e.g. `"online"` or `"offline"`):
+The WandB receiver requires `wandb_args` with `project`, `group`, `job_type`, and `name` (base run name). Optional top-level `mode` (e.g. `"online"` or `"offline"`):
 
 ```python
 add_experiment_tracking(
@@ -218,8 +218,9 @@ add_experiment_tracking(
     tracking_type="wandb",
     tracking_config={
         "wandb_args": {
-            "project": "cifar10-federated",
-            "group": "fedavg",
+            "name": "cifar10-fedavg",  # base run name (receiver appends site and job id)
+            "project": "nvflare",
+            "group": "nvidia",
             "job_type": "training",
             "entity": "your-wandb-username",  # optional
         },
