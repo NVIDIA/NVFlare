@@ -100,25 +100,39 @@ the default federated cyclic algorithm provided by NVFlare.
 
 ## Job Recipe
 
+```python
+n_clients = 2
+num_rounds = 3
+train_script = "client.py"
+
+recipe = CyclicRecipe(
+    num_rounds=num_rounds,
+    initial_model=Net(),
+    train_script=train_script,
+)
+
+env = SimEnv(num_clients=n_clients)
+run = recipe.execute(env=env)
+print()
+print("Result can be found in :", run.get_result())
+print("Job Status is:", run.get_status())
+print()
 ```
-    n_clients = 2
-    num_rounds = 3
-    train_script = "client.py"
 
-    recipe = CyclicRecipe(
-        num_rounds=num_rounds,
-        initial_model=Net(),
-        train_script=train_script,
-    )
+### Model Input Options
 
-    env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env=env)
-    print()
-    print("Result can be found in :", run.get_result())
-    print("Job Status is:", run.get_status())
-    print()
+The `initial_model` parameter accepts two formats:
 
+1. **Class instance**: `initial_model=Net()` - Convenient and Pythonic
+2. **Dict config**: `initial_model={"path": "model.Net", "args": {}}` - Better for large models
 
+To resume from pre-trained weights:
+```python
+recipe = CyclicRecipe(
+    initial_model=Net(),
+    initial_ckpt="/server/path/to/pretrained.h5",  # Absolute path
+    ...
+)
 ```
 
 ## Run the experiment
