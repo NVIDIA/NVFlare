@@ -41,7 +41,7 @@ class NPFileModelPersistor(ModelPersistor):
         last_global_model_file_name="last_global_model.npy",
         best_global_model_file_name="best_global_model.npy",
         model_dir="models",
-        initial_model_file_name="model.npy",
+        model_file_name="model.npy",
         source_ckpt_file_full_name: str = None,
     ):
         """Persist numpy model to/from file system.
@@ -50,17 +50,17 @@ class NPFileModelPersistor(ModelPersistor):
             last_global_model_file_name: Filename for last global model.
             best_global_model_file_name: Filename for best global model.
             model_dir: Directory for model files (relative to run dir).
-            initial_model_file_name: Filename for initial model (relative to model_dir).
+            model_file_name: Filename for model (relative to model_dir).
             source_ckpt_file_full_name: Full absolute path to source checkpoint file.
                 This path may not exist locally (server-side path). If provided and
-                exists at runtime, it takes priority over initial_model_file_name.
+                exists at runtime, it takes priority over model_file_name.
         """
         super().__init__()
 
         self.model_dir = model_dir
         self.last_global_model_file_name = last_global_model_file_name
         self.best_global_model_file_name = best_global_model_file_name
-        self.initial_model_file_name = initial_model_file_name
+        self.model_file_name = model_file_name
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         # Note: We don't validate existence here because the checkpoint path may be
         # a server-side path that doesn't exist on the job submission machine.
@@ -70,7 +70,7 @@ class NPFileModelPersistor(ModelPersistor):
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
-        model_path = os.path.join(run_dir, self.model_dir, self.initial_model_file_name)
+        model_path = os.path.join(run_dir, self.model_dir, self.model_file_name)
 
         data = load_numpy_model(
             fl_ctx=fl_ctx,

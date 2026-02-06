@@ -307,7 +307,7 @@ def add_cross_site_evaluation(
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
                     f"but no persistor_id found in recipe.job.comp_ids. "
-                    f"Ensure your recipe includes an model to create a persistor."
+                    f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
         else:

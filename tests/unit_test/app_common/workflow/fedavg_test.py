@@ -589,10 +589,10 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "load_model_file")
 
 
-class TestPTFedAvgInitialModel:
+class TestPTFedAvgModel:
     """Test PTFedAvg model type handling."""
 
-    def test_initial_model_with_nn_module(self):
+    def test_model_with_nn_module(self):
         """Test model with torch.nn.Module extracts state_dict."""
         import torch.nn as nn
 
@@ -612,7 +612,7 @@ class TestPTFedAvgInitialModel:
         assert "linear.weight" in controller.model
         assert "linear.bias" in controller.model
 
-    def test_initial_model_with_dict(self):
+    def test_model_with_dict(self):
         """Test model with dict is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
@@ -621,7 +621,7 @@ class TestPTFedAvgInitialModel:
 
         assert controller.model == model_dict
 
-    def test_initial_model_with_flmodel(self):
+    def test_model_with_flmodel(self):
         """Test model with FLModel is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
@@ -630,7 +630,7 @@ class TestPTFedAvgInitialModel:
 
         assert controller.model is fl_model
 
-    def test_initial_model_with_none(self):
+    def test_model_with_none(self):
         """Test model with None is allowed."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
@@ -638,7 +638,7 @@ class TestPTFedAvgInitialModel:
 
         assert controller.model is None
 
-    def test_initial_model_with_invalid_type_raises_error(self):
+    def test_model_with_invalid_type_raises_error(self):
         """Test model with invalid type raises TypeError."""
         import pytest
 
