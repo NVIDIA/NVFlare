@@ -194,30 +194,47 @@ In the MLFlow UI, you can view:
 
 ## Switching Tracking Systems
 
-You can easily switch to other tracking systems by changing `tracking_type`:
+You can easily switch to other tracking systems by changing `tracking_type`. If provided, the `tracking_config` keys must match each receiver's constructor arguments.
 
 ### TensorBoard
 
+The TensorBoard receiver accepts `tb_folder` (directory name under the job run directory, default `"tb_events"`):
+
 ```python
 add_experiment_tracking(
-    recipe, 
-    tracking_type="tensorboard", 
-    tracking_config={"log_dir": "/tmp/nvflare/tensorboard"}
+    recipe,
+    tracking_type="tensorboard",
+    tracking_config={"tb_folder": "tb_events"}  # Directory name where TensorBoard event files are stored (relative to job run directory on the server)
 )
 ```
 
 ### Weights & Biases
 
+The WandB receiver requires `wandb_args` with at least `project`, `group`, and `job_type`. Optional top-level `mode` (e.g. `"online"` or `"offline"`):
+
 ```python
 add_experiment_tracking(
-    recipe, 
-    tracking_type="wandb", 
+    recipe,
+    tracking_type="wandb",
     tracking_config={
-        "project": "cifar10-federated",
-        "entity": "your-wandb-username"
+        "wandb_args": {
+            "project": "cifar10-federated",
+            "group": "fedavg",
+            "job_type": "training",
+            "entity": "your-wandb-username",  # optional
+        },
+        "mode": "online",  # optional, default "offline"
     }
 )
 ```
+
+**Authentication:** WandB uses the `WANDB_API_KEY` environment variable. Set it before starting the job (e.g. where the server runs, or in your shell before `python job.py`):
+
+```bash
+export WANDB_API_KEY=your_key_here
+```
+
+Get your key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
 
 **No changes needed in client code!** The same `SummaryWriter` API works with all tracking systems.
 
