@@ -2311,25 +2311,6 @@ Settings for Flower framework integration:
    )
 
 
-IPC-Based External Processes
-----------------------------
-
-Settings for IPC-based agent communication:
-
-.. code-block:: python
-
-   from nvflare.app_common.executors.ipc_exchanger import IPCExchanger
-
-   executor = IPCExchanger(
-       send_task_timeout=10.0,
-       resend_task_interval=5.0,
-       agent_connection_timeout=120.0,
-       agent_heartbeat_timeout=300.0,   # 5 min to detect hung agent
-       agent_heartbeat_interval=10.0,
-       agent_ack_timeout=10.0,
-   )
-
-
 Configuration File Locations
 ============================
 
