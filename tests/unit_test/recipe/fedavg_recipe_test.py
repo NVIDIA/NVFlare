@@ -130,17 +130,17 @@ class TestFedAvgRecipe:
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe initialization with default (built-in) aggregation."""
-        recipe = FedAvgRecipe(name="test_fedavg", initial_model=simple_model, **base_recipe_params)
+        recipe = FedAvgRecipe(name="test_fedavg", model=simple_model, **base_recipe_params)
 
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
-        assert recipe.initial_model == simple_model
+        assert recipe.model == simple_model
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
         recipe = FedAvgRecipe(
-            name="test_fedavg_key_metric", initial_model=simple_model, key_metric=key_metric, **base_recipe_params
+            name="test_fedavg_key_metric", model=simple_model, key_metric=key_metric, **base_recipe_params
         )
 
         model_selector = get_model_selector(recipe)
@@ -152,23 +152,19 @@ class TestFedAvgRecipe:
     ):
         """Test FedAvgRecipe initialization with custom aggregator."""
         params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
-        recipe = FedAvgRecipe(
-            name="test_fedavg_custom", initial_model=simple_model, aggregator=custom_aggregator, **params
-        )
+        recipe = FedAvgRecipe(name="test_fedavg_custom", model=simple_model, aggregator=custom_aggregator, **params)
 
         assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
         assert isinstance(recipe.aggregator, MyAggregator)
 
-    def test_initial_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
+    def test_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
         """Test FedAvgRecipe with initial model."""
         params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
-        recipe = FedAvgRecipe(
-            name="test_fedavg_initial_model", initial_model=simple_model, aggregator=custom_aggregator, **params
-        )
+        recipe = FedAvgRecipe(name="test_fedavg_model", model=simple_model, aggregator=custom_aggregator, **params)
 
-        assert_recipe_basics(recipe, "test_fedavg_initial_model", params)
-        assert recipe.initial_model == simple_model
+        assert_recipe_basics(recipe, "test_fedavg_model", params)
+        assert recipe.model == simple_model
 
     @pytest.mark.parametrize(
         "min_clients,num_rounds,train_args",
@@ -182,7 +178,7 @@ class TestFedAvgRecipe:
         """Test various FedAvgRecipe configurations using parametrized tests."""
         recipe = FedAvgRecipe(
             name=f"test_config_{min_clients}_{num_rounds}",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="mock_train_script.py",
             train_args=train_args,
             min_clients=min_clients,
@@ -205,7 +201,7 @@ class TestFedAvgRecipeKeyMetricVariants:
         key_metric = "val_loss"
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_key_metric",
-            initial_model=[1.0, 2.0, 3.0],
+            model=[1.0, 2.0, 3.0],
             min_clients=2,
             train_script="mock_train_script.py",
             key_metric=key_metric,
@@ -223,7 +219,7 @@ class TestNumpyFedAvgRecipe:
         """Test NumpyFedAvgRecipe basic initialization."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy",
-            initial_model=[[1, 2, 3], [4, 5, 6]],
+            model=[[1, 2, 3], [4, 5, 6]],
             min_clients=2,
             num_rounds=3,
             train_script="client.py",
@@ -238,7 +234,7 @@ class TestNumpyFedAvgRecipe:
         """Test NumpyFedAvgRecipe with early stopping configuration."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_early_stop",
-            initial_model=[1.0, 2.0, 3.0],
+            model=[1.0, 2.0, 3.0],
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -254,7 +250,7 @@ class TestNumpyFedAvgRecipe:
         weights = {"site-1": 2.0, "site-2": 1.0, "site-3": 0.5}
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_weights",
-            initial_model=[1.0, 2.0],
+            model=[1.0, 2.0],
             min_clients=3,
             num_rounds=5,
             train_script="client.py",
@@ -267,7 +263,7 @@ class TestNumpyFedAvgRecipe:
         """Test NumpyFedAvgRecipe with exclude_vars configuration."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_exclude",
-            initial_model=[1.0, 2.0, 3.0],
+            model=[1.0, 2.0, 3.0],
             min_clients=2,
             num_rounds=5,
             train_script="client.py",
@@ -280,7 +276,7 @@ class TestNumpyFedAvgRecipe:
         """Test NumpyFedAvgRecipe with custom save filename."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_save",
-            initial_model=[1.0, 2.0, 3.0],
+            model=[1.0, 2.0, 3.0],
             min_clients=2,
             num_rounds=5,
             train_script="client.py",
@@ -297,7 +293,7 @@ class TestNumpyFedAvgRecipe:
         }
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_per_site",
-            initial_model=[1.0, 2.0],
+            model=[1.0, 2.0],
             min_clients=2,
             num_rounds=3,
             train_script="client.py",
@@ -306,12 +302,12 @@ class TestNumpyFedAvgRecipe:
 
         assert recipe.per_site_config == per_site_config
 
-    def test_numpy_recipe_with_none_initial_model_raises_error(self, mock_file_system):
+    def test_numpy_recipe_with_none_model_raises_error(self, mock_file_system):
         """Test NumpyFedAvgRecipe with no model raises error."""
-        with pytest.raises(ValueError, match="Must provide either initial_model"):
+        with pytest.raises(ValueError, match="Must provide either model"):
             NumpyFedAvgRecipe(
                 name="test_numpy_no_model",
-                initial_model=None,
+                model=None,
                 min_clients=2,
                 num_rounds=3,
                 train_script="client.py",
@@ -321,7 +317,7 @@ class TestNumpyFedAvgRecipe:
         """Test NumpyFedAvgRecipe with all new features."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_full",
-            initial_model=[[1, 2], [3, 4], [5, 6]],
+            model=[[1, 2], [3, 4], [5, 6]],
             min_clients=3,
             num_rounds=20,
             train_script="train.py",
@@ -357,7 +353,7 @@ class TestFedAvgRecipeEarlyStopping:
         """Test FedAvgRecipe with early stopping configuration."""
         recipe = FedAvgRecipe(
             name="test_early_stop",
-            initial_model=simple_model,
+            model=simple_model,
             stop_cond="accuracy >= 80",
             patience=5,
             **base_recipe_params,
@@ -371,7 +367,7 @@ class TestFedAvgRecipeEarlyStopping:
         """Test FedAvgRecipe with custom save filename."""
         recipe = FedAvgRecipe(
             name="test_save_file",
-            initial_model=simple_model,
+            model=simple_model,
             save_filename="best_model.pt",
             **base_recipe_params,
         )
@@ -382,7 +378,7 @@ class TestFedAvgRecipeEarlyStopping:
         """Test FedAvgRecipe with exclude_vars configuration."""
         recipe = FedAvgRecipe(
             name="test_exclude",
-            initial_model=simple_model,
+            model=simple_model,
             exclude_vars="bn.*|running_mean|running_var",
             **base_recipe_params,
         )
@@ -394,7 +390,7 @@ class TestFedAvgRecipeEarlyStopping:
         weights = {"site-1": 2.0, "site-2": 1.0}
         recipe = FedAvgRecipe(
             name="test_weights",
-            initial_model=simple_model,
+            model=simple_model,
             aggregation_weights=weights,
             **base_recipe_params,
         )
@@ -423,7 +419,7 @@ class TestFedAvgRecipeValidation:
         with pytest.raises(ValueError, match="must have 'path' key"):
             FedAvgRecipe(
                 name="test_invalid_dict",
-                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'path'
                 **base_recipe_params,
             )
 
@@ -432,7 +428,7 @@ class TestFedAvgRecipeValidation:
         with pytest.raises(ValueError, match="'path' must be a string"):
             FedAvgRecipe(
                 name="test_invalid_path_type",
-                initial_model={"path": 123, "args": {}},  # Path is not string
+                model={"path": 123, "args": {}},  # Path is not string
                 **base_recipe_params,
             )
 
@@ -444,13 +440,13 @@ class TestFedAvgRecipeInitialCkpt:
         """Test that initial_ckpt parameter is accepted."""
         recipe = FedAvgRecipe(
             name="test_initial_ckpt",
-            initial_model=simple_model,
+            model=simple_model,
             initial_ckpt="/abs/path/to/model.pt",
             **base_recipe_params,
         )
 
         assert recipe.initial_ckpt == "/abs/path/to/model.pt"
-        assert recipe.initial_model == simple_model
+        assert recipe.model == simple_model
 
     def test_initial_ckpt_with_none_model_not_allowed_for_pt(self, mock_file_system, base_recipe_params):
         """Test that PT FedAvg rejects initial_ckpt with None model (PT needs architecture)."""
@@ -459,7 +455,7 @@ class TestFedAvgRecipeInitialCkpt:
         with pytest.raises(ValueError, match="Unable to add None to job"):
             FedAvgRecipe(
                 name="test_ckpt_no_model",
-                initial_model=None,
+                model=None,
                 initial_ckpt="/abs/path/to/model.pt",
                 **base_recipe_params,
             )
@@ -469,7 +465,7 @@ class TestFedAvgRecipeInitialCkpt:
         with pytest.raises(ValueError, match="must be an absolute path"):
             FedAvgRecipe(
                 name="test_relative_path",
-                initial_model=simple_model,
+                model=simple_model,
                 initial_ckpt="relative/path/model.pt",
                 **base_recipe_params,
             )
@@ -482,11 +478,11 @@ class TestFedAvgRecipeInitialCkpt:
         }
         recipe = FedAvgRecipe(
             name="test_dict_config",
-            initial_model=model_config,
+            model=model_config,
             **base_recipe_params,
         )
 
-        assert recipe.initial_model == model_config
+        assert recipe.model == model_config
 
     def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
         """Test that dict model config with initial_ckpt is accepted."""
@@ -496,12 +492,12 @@ class TestFedAvgRecipeInitialCkpt:
         }
         recipe = FedAvgRecipe(
             name="test_dict_with_ckpt",
-            initial_model=model_config,
+            model=model_config,
             initial_ckpt="/abs/path/to/pretrained.pt",
             **base_recipe_params,
         )
 
-        assert recipe.initial_model == model_config
+        assert recipe.model == model_config
         assert recipe.initial_ckpt == "/abs/path/to/pretrained.pt"
 
 
@@ -523,7 +519,7 @@ class TestFedAvgRecipeDictConfigJobExport:
         }
         recipe = FedAvgRecipe(
             name="test_dict_export",
-            initial_model=model_config,
+            model=model_config,
             train_script=train_script,
             train_args="--epochs 10",
             min_clients=2,
@@ -553,7 +549,7 @@ class TestFedAvgRecipeDictConfigJobExport:
         }
         recipe = FedAvgRecipe(
             name="test_dict_ckpt_export",
-            initial_model=model_config,
+            model=model_config,
             initial_ckpt="/server/path/to/pretrained.pt",
             train_script=train_script,
             train_args="--epochs 10",
@@ -577,7 +573,7 @@ class TestNumpyFedAvgRecipeInitialCkpt:
         """Test that initial_ckpt parameter is accepted for NumPy recipe."""
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_ckpt",
-            initial_model=[1.0, 2.0, 3.0],
+            model=[1.0, 2.0, 3.0],
             initial_ckpt="/abs/path/to/model.npy",
             min_clients=2,
             train_script="client.py",
@@ -586,15 +582,15 @@ class TestNumpyFedAvgRecipeInitialCkpt:
         assert recipe._np_initial_ckpt == "/abs/path/to/model.npy"
 
     def test_numpy_initial_ckpt_only(self, mock_file_system):
-        """Test that NumPy recipe works with initial_ckpt only (no initial_model)."""
+        """Test that NumPy recipe works with initial_ckpt only (no model)."""
         # NumPy can load model from checkpoint without architecture
         recipe = NumpyFedAvgRecipe(
             name="test_numpy_ckpt_only",
-            initial_model=None,
+            model=None,
             initial_ckpt="/abs/path/to/model.npy",
             min_clients=2,
             train_script="client.py",
         )
 
         assert recipe._np_initial_ckpt == "/abs/path/to/model.npy"
-        assert recipe._np_initial_model is None
+        assert recipe._np_model is None

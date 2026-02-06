@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     train_script = "src/client.py"
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, model=SimpleNetwork())
 
     # Add TensorBoard analytics receiver to server
     receiver = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])

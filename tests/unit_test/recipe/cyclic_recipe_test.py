@@ -71,7 +71,7 @@ class TestBaseCyclicRecipe:
             with pytest.raises(ValueError, match="must be an absolute path"):
                 BaseCyclicRecipe(
                     name="test_relative",
-                    initial_model=None,
+                    model=None,
                     initial_ckpt="relative/path/model.pt",
                     train_script="/abs/train.py",
                     min_clients=2,
@@ -79,11 +79,11 @@ class TestBaseCyclicRecipe:
                 )
 
     def test_requires_model_or_checkpoint(self, base_recipe_params):
-        """Test that at least initial_model or initial_ckpt must be provided."""
-        with pytest.raises(ValueError, match="Must provide either initial_model or initial_ckpt"):
+        """Test that at least model or initial_ckpt must be provided."""
+        with pytest.raises(ValueError, match="Must provide either model or initial_ckpt"):
             BaseCyclicRecipe(
                 name="test_no_model",
-                initial_model=None,
+                model=None,
                 initial_ckpt=None,
                 **base_recipe_params,
             )
@@ -98,7 +98,7 @@ class TestPTCyclicRecipe:
 
         recipe = PTCyclicRecipe(
             name="test_pt_cyclic",
-            initial_model=simple_model,
+            model=simple_model,
             initial_ckpt="/abs/path/to/model.pt",
             **base_recipe_params,
         )
@@ -117,7 +117,7 @@ class TestTFCyclicRecipe:
 
         recipe = TFCyclicRecipe(
             name="test_tf_cyclic",
-            initial_model=None,
+            model=None,
             initial_ckpt="/abs/path/to/model.h5",
             **base_recipe_params,
         )

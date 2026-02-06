@@ -64,12 +64,12 @@ class TestPTScaffoldRecipe:
 
         recipe = ScaffoldRecipe(
             name="test_scaffold",
-            initial_model=simple_model,
+            model=simple_model,
             **base_recipe_params,
         )
 
         assert recipe.name == "test_scaffold"
-        assert recipe.initial_model == simple_model
+        assert recipe.model == simple_model
         assert recipe.job is not None
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params, simple_model):
@@ -78,7 +78,7 @@ class TestPTScaffoldRecipe:
 
         recipe = ScaffoldRecipe(
             name="test_scaffold_ckpt",
-            initial_model=simple_model,
+            model=simple_model,
             initial_ckpt="/abs/path/to/model.pt",
             **base_recipe_params,
         )
@@ -95,11 +95,11 @@ class TestPTScaffoldRecipe:
         }
         recipe = ScaffoldRecipe(
             name="test_scaffold_dict",
-            initial_model=model_config,
+            model=model_config,
             **base_recipe_params,
         )
 
-        assert recipe.initial_model == model_config
+        assert recipe.model == model_config
 
     def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
         """Test that relative paths are rejected."""
@@ -108,7 +108,7 @@ class TestPTScaffoldRecipe:
         with pytest.raises(ValueError, match="must be an absolute path"):
             ScaffoldRecipe(
                 name="test_relative_path",
-                initial_model=simple_model,
+                model=simple_model,
                 initial_ckpt="relative/path/model.pt",
                 **base_recipe_params,
             )
@@ -120,7 +120,7 @@ class TestPTScaffoldRecipe:
         with pytest.raises(ValueError, match="must have 'path' key"):
             ScaffoldRecipe(
                 name="test_invalid_dict",
-                initial_model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'path'
                 **base_recipe_params,
             )
 
@@ -131,7 +131,7 @@ class TestPTScaffoldRecipe:
         with pytest.raises(ValueError, match="'path' must be a string"):
             ScaffoldRecipe(
                 name="test_invalid_path_type",
-                initial_model={"path": 123, "args": {}},  # Path is not string
+                model={"path": 123, "args": {}},  # Path is not string
                 **base_recipe_params,
             )
 
@@ -146,7 +146,7 @@ class TestTFScaffoldRecipe:
 
         recipe = ScaffoldRecipe(
             name="test_tf_scaffold",
-            initial_model=None,
+            model=None,
             **base_recipe_params,
         )
 
@@ -160,7 +160,7 @@ class TestTFScaffoldRecipe:
 
         recipe = ScaffoldRecipe(
             name="test_tf_scaffold_ckpt",
-            initial_model=None,
+            model=None,
             initial_ckpt="/abs/path/to/model.h5",
             **base_recipe_params,
         )

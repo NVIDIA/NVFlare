@@ -87,7 +87,7 @@ class TestRecipeSystemIntegration:
             name="test_dict_config",
             min_clients=2,
             num_rounds=1,
-            initial_model=model_config,
+            model=model_config,
             train_script=os.path.join(examples_dir, "client.py"),
         )
         run = recipe.execute(env)

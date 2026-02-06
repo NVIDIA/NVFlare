@@ -49,7 +49,7 @@ def main():
         name="fedavg_wandb",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=Net(),
+        model=Net(),
         train_script=args.script,
         launch_external_process=args.launch_external_process,
     )

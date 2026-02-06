@@ -36,16 +36,16 @@ class TestNPModelPersistorInit:
 
         assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.npy"
 
-    def test_init_with_initial_model_and_ckpt(self):
-        """Init with both initial_model and source_ckpt should work."""
+    def test_init_with_model_and_ckpt(self):
+        """Init with both model and source_ckpt should work."""
         from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 
         persistor = NPModelPersistor(
-            initial_model=[[1, 2], [3, 4]],
+            model=[[1, 2], [3, 4]],
             source_ckpt_file_full_name="/data/pretrained/model.npy",
         )
 
-        assert persistor.initial_model == [[1, 2], [3, 4]]
+        assert persistor.model == [[1, 2], [3, 4]]
         assert persistor.source_ckpt_file_full_name == "/data/pretrained/model.npy"
 
 

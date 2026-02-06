@@ -29,7 +29,7 @@ class _FedOptValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str = "fedopt"
-    initial_model: Any = None
+    model: Any = None
     initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int = 2
@@ -62,13 +62,13 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial TensorFlow model to start federated training with. Can be:
+        model: Initial TensorFlow model to start federated training with. Can be:
             - tf.keras.Model instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
             The file may not exist locally as it could be on the server.
-            Note: TensorFlow can load full models from .h5/SavedModel without initial_model.
+            Note: TensorFlow can load full models from .h5/SavedModel without model.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -97,7 +97,7 @@ class FedOptRecipe(Recipe):
 
         recipe = FedOptRecipe(
             name="my_fedopt_job",
-            initial_model=model,
+            model=model,
             min_clients=8,
             num_rounds=50,
             train_script="cifar10_fedopt/client.py",
@@ -117,7 +117,7 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Union[Any, dict[str, Any], None] = None,
+        model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -134,7 +134,7 @@ class FedOptRecipe(Recipe):
         # Validate inputs internally
         v = _FedOptValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
             initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
@@ -150,14 +150,14 @@ class FedOptRecipe(Recipe):
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
         from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
 
         validate_initial_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.initial_model)
+        validate_dict_model_config(self.model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
@@ -173,7 +173,7 @@ class FedOptRecipe(Recipe):
 
         # Create BaseFedJob
         job = BaseFedJob(
-            initial_model=self.initial_model,
+            model=self.model,
             initial_ckpt=self.initial_ckpt,
             name=self.name,
             min_clients=self.min_clients,

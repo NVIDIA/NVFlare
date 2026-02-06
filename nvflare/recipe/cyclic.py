@@ -30,7 +30,7 @@ class _CyclicValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
     initial_ckpt: Optional[str] = None
     num_rounds: int
     min_clients: conint(ge=2)
@@ -60,7 +60,7 @@ class CyclicRecipe(Recipe):
 
     Args:
         name: Name identifier for the federated learning job. Defaults to "cyclic".
-        initial_model: Starting model object to begin training. Can be:
+        model: Starting model object to begin training. Can be:
             - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
@@ -86,7 +86,7 @@ class CyclicRecipe(Recipe):
     Example:
         >>> recipe = CyclicRecipe(
         ...     name="my_cyclic_job",
-        ...     initial_model=my_model,
+        ...     model=my_model,
         ...     num_rounds=5,
         ...     min_clients=3,
         ...     train_script="client_train.py",
@@ -99,7 +99,7 @@ class CyclicRecipe(Recipe):
         self,
         *,
         name: str = "cyclic",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        model: Union[Any, Dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         num_rounds: int = 2,
         min_clients: int = 2,
@@ -115,7 +115,7 @@ class CyclicRecipe(Recipe):
         # Validate inputs internally
         v = _CyclicValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
             initial_ckpt=initial_ckpt,
             num_rounds=num_rounds,
             min_clients=min_clients,
@@ -130,14 +130,14 @@ class CyclicRecipe(Recipe):
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
         from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
 
         validate_initial_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.initial_model)
+        validate_dict_model_config(self.model)
 
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -150,9 +150,9 @@ class CyclicRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Validate that we have at least one model source
-        if self.initial_model is None and self.initial_ckpt is None:
+        if self.model is None and self.initial_ckpt is None:
             raise ValueError(
-                "Must provide either initial_model or initial_ckpt. " "Cannot create a job without a model source."
+                "Must provide either model or initial_ckpt. " "Cannot create a job without a model source."
             )
 
         job = FedJob(name=name, min_clients=v.min_clients)
@@ -199,18 +199,18 @@ class CyclicRecipe(Recipe):
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        if self.initial_model is None:
+        if self.model is None:
             return ""
 
-        # Check if initial_model is a model wrapper (PTModel, TFModel)
-        if hasattr(self.initial_model, "add_to_fed_job"):
+        # Check if model is a model wrapper (PTModel, TFModel)
+        if hasattr(self.model, "add_to_fed_job"):
             # It's a model wrapper - use its add_to_fed_job method
-            result = job.to_server(self.initial_model, id="persistor")
+            result = job.to_server(self.model, id="persistor")
             return result["persistor_id"]
 
         # Unknown model type
         raise TypeError(
-            f"Unsupported initial_model type: {type(self.initial_model).__name__}. "
+            f"Unsupported model type: {type(self.model).__name__}. "
             f"Use a framework-specific recipe (PTCyclicRecipe, TFCyclicRecipe, etc.) "
             f"or wrap your model in PTModel/TFModel."
         )

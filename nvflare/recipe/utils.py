@@ -172,7 +172,7 @@ def add_cross_site_evaluation(
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         recipe = NumpyFedAvgRecipe(
-            name="my-job", initial_model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
+            name="my-job", model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
         )
 
         # That's it! Framework auto-detected, validator auto-added
@@ -186,7 +186,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyModel(), train_script="client.py"
+            model=MyModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -200,7 +200,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -215,7 +215,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         add_cross_site_evaluation(recipe)
@@ -307,7 +307,7 @@ def add_cross_site_evaluation(
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
                     f"but no persistor_id found in recipe.job.comp_ids. "
-                    f"Ensure your recipe includes an initial_model to create a persistor."
+                    f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
         else:
@@ -437,19 +437,17 @@ def validate_initial_ckpt(initial_ckpt: Optional[str]) -> None:
             )
 
 
-def validate_dict_model_config(initial_model: Any) -> None:
+def validate_dict_model_config(model: Any) -> None:
     """Validate dict model config structure.
 
     Args:
-        initial_model: Model input to validate.
+        model: Model input to validate.
 
     Raises:
         ValueError: If dict config is missing 'path' key or 'path' is not a string.
     """
-    if isinstance(initial_model, dict):
-        if "path" not in initial_model:
-            raise ValueError(
-                "Dict model config must have 'path' key with fully qualified class path. " f"Got: {initial_model}"
-            )
-        if not isinstance(initial_model["path"], str):
-            raise ValueError(f"Dict model config 'path' must be a string, got: {type(initial_model['path'])}")
+    if isinstance(model, dict):
+        if "path" not in model:
+            raise ValueError("Dict model config must have 'path' key with fully qualified class path. " f"Got: {model}")
+        if not isinstance(model["path"], str):
+            raise ValueError(f"Dict model config 'path' must be a string, got: {type(model['path'])}")

@@ -102,7 +102,7 @@ Example: Using PyTorch FedAvg Recipe
         name="my-fedavg-job",
         min_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),  # Even multi-GB models work efficiently
+        model=MyLargeModel(),  # Even multi-GB models work efficiently
         train_script="client.py",
     )
 
@@ -124,7 +124,7 @@ Example: Using PTFedAvg Controller Directly
     controller = PTFedAvg(
         num_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),
+        model=MyLargeModel(),
     )
     job.to(controller, "server")
 

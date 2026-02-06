@@ -76,7 +76,7 @@ class TestCyclicRecipeServerMemoryGcRounds:
 
         recipe = CyclicRecipe(
             name="test_cyclic",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -90,7 +90,7 @@ class TestCyclicRecipeServerMemoryGcRounds:
 
         recipe = CyclicRecipe(
             name="test_cyclic",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -105,7 +105,7 @@ class TestCyclicRecipeServerMemoryGcRounds:
 
         recipe = CyclicRecipe(
             name="test_cyclic",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -122,7 +122,7 @@ class TestFedAvgRecipeServerMemoryGcRounds:
         """Test FedAvgRecipe has default server_memory_gc_rounds=0."""
         from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
-        recipe = FedAvgRecipe(name="test_fedavg", initial_model=simple_model, **base_recipe_params)
+        recipe = FedAvgRecipe(name="test_fedavg", model=simple_model, **base_recipe_params)
 
         assert recipe.server_memory_gc_rounds == 0
 
@@ -132,7 +132,7 @@ class TestFedAvgRecipeServerMemoryGcRounds:
 
         recipe = FedAvgRecipe(
             name="test_fedavg",
-            initial_model=simple_model,
+            model=simple_model,
             server_memory_gc_rounds=3,
             **base_recipe_params,
         )
@@ -149,7 +149,7 @@ class TestFedOptRecipeServerMemoryGcRounds:
 
         recipe = FedOptRecipe(
             name="test_fedopt",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -163,7 +163,7 @@ class TestFedOptRecipeServerMemoryGcRounds:
 
         recipe = FedOptRecipe(
             name="test_fedopt",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -182,7 +182,7 @@ class TestFedAvgHERecipeServerMemoryGcRounds:
 
         recipe = FedAvgRecipeWithHE(
             name="test_fedavg_he",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,
@@ -196,7 +196,7 @@ class TestFedAvgHERecipeServerMemoryGcRounds:
 
         recipe = FedAvgRecipeWithHE(
             name="test_fedavg_he",
-            initial_model=simple_model,
+            model=simple_model,
             train_script="client.py",
             min_clients=2,
             num_rounds=3,

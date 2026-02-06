@@ -40,7 +40,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model (as list or numpy array) to start federated training with.
+        model: Initial model (as list or numpy array) to start federated training with.
             Lists are preferred for JSON serialization compatibility. If None,
             clients will start with their own local models.
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.npy, .npz).
@@ -76,7 +76,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         ```python
         recipe = NumpyFedAvgRecipe(
             name="my_fedavg_job",
-            initial_model=numpy_model,
+            model=numpy_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -103,7 +103,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Union[Any, Dict[str, Any], None] = None,
+        model: Union[Any, Dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -126,14 +126,14 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
     ):
-        # Store initial_model and initial_ckpt for NumPy-specific setup
-        self._np_initial_model = initial_model
+        # Store model and initial_ckpt for NumPy-specific setup
+        self._np_model = model
         self._np_initial_ckpt = initial_ckpt
 
         # Call the unified FedAvgRecipe with NumPy-specific settings
         super().__init__(
             name=name,
-            initial_model=initial_model,
+            model=model,
             initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
@@ -165,22 +165,20 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle NumPy-specific model setup."""
-        if self._np_initial_model is not None or self._np_initial_ckpt is not None:
+        if self._np_model is not None or self._np_initial_ckpt is not None:
             # Convert numpy array to list for JSON serialization
             # NPModelPersistor expects a list, not a numpy array
-            initial_model_list = None
-            if self._np_initial_model is not None:
-                if isinstance(self._np_initial_model, np.ndarray):
-                    initial_model_list = self._np_initial_model.tolist()
-                elif isinstance(self._np_initial_model, list):
-                    initial_model_list = self._np_initial_model
+            model_list = None
+            if self._np_model is not None:
+                if isinstance(self._np_model, np.ndarray):
+                    model_list = self._np_model.tolist()
+                elif isinstance(self._np_model, list):
+                    model_list = self._np_model
                 else:
-                    raise TypeError(
-                        f"initial_model must be a numpy array or list, got {type(self._np_initial_model).__name__}"
-                    )
+                    raise TypeError(f"model must be a numpy array or list, got {type(self._np_model).__name__}")
 
             persistor = NPModelPersistor(
-                initial_model=initial_model_list,
+                model=model_list,
                 source_ckpt_file_full_name=self._np_initial_ckpt,
             )
             return job.to_server(persistor, id="persistor")

@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     train_script = "src/train_script.py"
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, model=SimpleNetwork())
 
     # Add clients
     for i in range(n_clients):

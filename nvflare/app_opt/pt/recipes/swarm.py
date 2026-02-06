@@ -92,7 +92,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
 
     Args:
         name: Name of the federated learning job.
-        initial_model: PyTorch model to use as the initial model. Can be:
+        model: PyTorch model to use as the initial model. Can be:
             - An nn.Module instance (e.g., MyModel())
             - A dict config: {"path": "module.ClassName", "args": {"param": value}}
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
@@ -108,7 +108,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         ```python
         recipe = SimpleSwarmLearningRecipe(
             name="swarm_job",
-            initial_model=MyModel(),
+            model=MyModel(),
             num_rounds=5,
             train_script="train.py",
         )
@@ -119,7 +119,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         ```python
         recipe = SimpleSwarmLearningRecipe(
             name="swarm_job",
-            initial_model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
+            model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
             num_rounds=5,
             train_script="train.py",
         )
@@ -129,7 +129,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
     def __init__(
         self,
         name: str,
-        initial_model: Union[Any, Dict[str, Any]],
+        model: Union[Any, Dict[str, Any]],
         num_rounds: int,
         train_script: str,
         initial_ckpt: Optional[str] = None,
@@ -140,10 +140,10 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
         # Handle dict-based model config
-        if isinstance(initial_model, dict):
-            model_instance = _instantiate_model_from_dict(initial_model)
+        if isinstance(model, dict):
+            model_instance = _instantiate_model_from_dict(model)
         else:
-            model_instance = initial_model
+            model_instance = model
 
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
         if do_cross_site_eval:

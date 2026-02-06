@@ -35,7 +35,7 @@ class _FedOptValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
     initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
@@ -60,13 +60,13 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial model to start federated training with (REQUIRED). Can be:
+        model: Initial model to start federated training with (REQUIRED). Can be:
             - nn.Module instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             Note: FedOpt requires a model for the server-side optimizer to work.
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
-            Note: PyTorch requires initial_model when using initial_ckpt (for architecture).
+            Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -94,7 +94,7 @@ class FedOptRecipe(Recipe):
         ```python
         recipe = FedOptRecipe(
             name="my_fedopt_job",
-            initial_model=pretrained_model,
+            model=pretrained_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -120,7 +120,7 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Union[Any, dict[str, Any], None] = None,
+        model: Union[Any, dict[str, Any], None] = None,
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -139,7 +139,7 @@ class FedOptRecipe(Recipe):
         # Validate inputs internally
         v = _FedOptValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
             initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
@@ -154,14 +154,14 @@ class FedOptRecipe(Recipe):
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
         from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
 
         validate_initial_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.initial_model)
+        validate_dict_model_config(self.model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
@@ -189,16 +189,16 @@ class FedOptRecipe(Recipe):
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
-            initial_model=None,
+            model=None,
             name=self.name,
             min_clients=self.min_clients,
         )
 
-        # FedOpt requires a model (either initial_model or initial_ckpt must be provided)
+        # FedOpt requires a model (either model or initial_ckpt must be provided)
         # The PTFedOptModelShareableGenerator needs source_model to exist
-        if self.initial_model is None:
+        if self.model is None:
             raise ValueError(
-                "FedOpt requires initial_model. Provide either:\n"
+                "FedOpt requires model. Provide either:\n"
                 "  - nn.Module instance\n"
                 "  - Dict config: {'path': 'module.ClassName', 'args': {...}}\n"
                 "Note: initial_ckpt alone is not sufficient for PyTorch (model architecture needed)."
@@ -206,12 +206,12 @@ class FedOptRecipe(Recipe):
 
         # Handle dict config: instantiate model before registering as component
         # PTFileModelPersistor expects component ID to resolve to nn.Module, not dict
-        model_to_register = self.initial_model
-        if isinstance(self.initial_model, dict):
+        model_to_register = self.model
+        if isinstance(self.model, dict):
             from nvflare.fuel.utils.class_utils import instantiate_class
 
-            class_path = self.initial_model.get("path")
-            class_args = self.initial_model.get("args", {})
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
             try:
                 model_to_register = instantiate_class(class_path, class_args)
             except Exception as e:

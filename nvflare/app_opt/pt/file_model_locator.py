@@ -46,7 +46,7 @@ class PTFileModelLocator(ModelLocator):
         if not self.pt_persistor_id:
             raise ValueError(
                 "PTFileModelLocator requires a valid pt_persistor_id, but got empty string. "
-                "Ensure your PyTorch recipe includes an initial_model to create a persistor."
+                "Ensure your PyTorch recipe includes an model to create a persistor."
             )
 
         engine = fl_ctx.get_engine()

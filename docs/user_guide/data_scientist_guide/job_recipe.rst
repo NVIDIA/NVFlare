@@ -42,7 +42,7 @@ Recipes accept model input in two formats, each with different trade-offs:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       initial_model=SimpleNetwork(),  # Instantiated model
+       model=SimpleNetwork(),  # Instantiated model
        train_script="client.py",
        ...
    )
@@ -53,7 +53,7 @@ Recipes accept model input in two formats, each with different trade-offs:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       initial_model={
+       model={
            "path": "model.SimpleNetwork",
            "args": {"num_classes": 10, "hidden_dim": 256}
        },
@@ -87,7 +87,7 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
 
    recipe = FedAvgRecipe(
        name="hello-pt",
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        initial_ckpt="/data/models/pretrained_model.pt",  # Absolute path
        train_script="client.py",
        ...
@@ -100,10 +100,10 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
    * **Absolute path required**: The path must be an absolute path (e.g., ``/data/models/model.pt``), not relative.
    * **May not exist locally**: The checkpoint file does **not** need to exist on the machine where you create
      the recipe. It only needs to exist on the **server** when the model is actually loaded during job execution.
-   * **PyTorch requires model architecture**: For PyTorch, you must provide ``initial_model`` (class instance or
+   * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
      dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
    * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
-     and weights, so ``initial_ckpt`` can be used without ``initial_model``.
+     and weights, so ``initial_ckpt`` can be used without ``model``.
 
 **Example: Resume training from pre-trained weights**
 
@@ -111,7 +111,7 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
 
    # PyTorch: requires both model and checkpoint
    recipe = FedAvgRecipe(
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        initial_ckpt="/server/path/to/pretrained.pt",
        ...
    )
@@ -144,7 +144,7 @@ We use our existing training network under ``../hello-world/hello-pt/model.py`` 
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )
@@ -287,7 +287,7 @@ Now let's go ahead with environment creation and recipe execution.
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )

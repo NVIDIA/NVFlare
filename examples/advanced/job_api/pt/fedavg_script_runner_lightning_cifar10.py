@@ -22,7 +22,7 @@ if __name__ == "__main__":
     num_rounds = 2
     train_script = "src/cifar10_fl_lightning.py"
 
-    job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, initial_model=LitNet())
+    job = FedAvgJob(name="cifar10_fedavg_lightning", num_rounds=num_rounds, n_clients=n_clients, model=LitNet())
 
     # Add clients
     for i in range(n_clients):
