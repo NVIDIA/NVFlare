@@ -1,0 +1,106 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Prepare PubMedVision for federated Qwen3-VL by splitting into 3 parts (one per client).
+
+Supports:
+  - Local JSON/JSONL file (e.g. from git clone of the dataset repo)
+  - HuggingFace Hub (load_dataset)
+"""
+
+import argparse
+import os
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Prepare PubMedVision for federated Qwen3-VL (3 clients)")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="./data",
+        help="Root directory for client data (default: ./data)",
+    )
+    parser.add_argument(
+        "--num_clients",
+        type=int,
+        default=3,
+        help="Number of client splits (default: 3)",
+    )
+    parser.add_argument(
+        "--subset_size",
+        type=int,
+        default=None,
+        help="Max samples per client (default: None = use full split). Set e.g. 5000 for a quick run.",
+    )
+    parser.add_argument(
+        "--data_file",
+        type=str,
+        default=None,
+        help="Path to local PubMedVision JSON/JSONL (e.g. PubMedVision_InstructionTuning_VQA.json). "
+        "If set, uses this instead of HuggingFace Hub.",
+    )
+    parser.add_argument(
+        "--split_name",
+        type=str,
+        default="PubMedVision_Alignment_VQA",
+        help="PubMedVision subset when loading from Hub: PubMedVision_Alignment_VQA or "
+        "PubMedVision_InstructionTuning_VQA (ignored if --data_file is set)",
+    )
+    args = parser.parse_args()
+
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        raise ImportError("Please install datasets: pip install datasets")
+
+    if args.data_file:
+        if not os.path.isfile(args.data_file):
+            raise FileNotFoundError(f"Data file not found: {args.data_file}")
+        print(f"Loading from local file: {args.data_file}")
+        dataset = load_dataset("json", data_files=args.data_file, split="train")
+    else:
+        print(f"Loading {args.split_name} from HuggingFace ...")
+        dataset = load_dataset(
+            "FreedomIntelligence/PubMedVision",
+            args.split_name,
+            split="train",
+            trust_remote_code=True,
+        )
+
+    n_total = len(dataset)
+    n_clients = args.num_clients
+    n_per_client_full = n_total // n_clients
+    if args.subset_size is not None:
+        n_per_client = min(n_per_client_full, args.subset_size)
+    else:
+        n_per_client = n_per_client_full
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    for i in range(n_clients):
+        start = i * (n_total // n_clients)
+        end = start + n_per_client
+        shard = dataset.select(range(start, end))
+        client_dir = os.path.join(args.output_dir, f"site-{i + 1}")
+        os.makedirs(client_dir, exist_ok=True)
+        out_path = os.path.join(client_dir, "train.json")
+        shard.to_json(out_path)
+        print(f"  site-{i + 1}: {len(shard)} samples -> {out_path}")
+
+    print(f"Done. Client data under {args.output_dir}/site-1, site-2, site-3.")
+
+
+if __name__ == "__main__":
+    main()
