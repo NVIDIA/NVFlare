@@ -108,6 +108,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Hello FLARE API](./tutorials/flare_api.ipynb)                                                                                         | Goes through the different commands of the FLARE API.                                                                                                           |
 | [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)                                                                                     | Shows how to use POC mode.                                                                                                                                |
 | [Job CLI](./tutorials/job_cli.ipynb)                                                                                                   | Walks through the different commands of the Job CLI.                                                                                                   |
+| [Job Recipe](./tutorials/job_recipe.ipynb)                                                                                              | Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.                                                 |
 | [Logging Tutorial](./tutorials/logging.ipynb)                                                                                 | Shows how to use the logging configuration for different modules.                                                                                           |
 
 
