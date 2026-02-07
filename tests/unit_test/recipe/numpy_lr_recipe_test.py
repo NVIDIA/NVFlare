@@ -62,19 +62,20 @@ class TestFedAvgLrRecipe:
 
         assert recipe.job is not None
 
-    def test_relative_path_rejected(self, mock_file_system):
-        """Test that relative paths are rejected."""
+    def test_relative_path_accepted_if_exists(self, mock_file_system):
+        """Test that existing relative paths are accepted and bundled."""
         from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
 
-        with pytest.raises(ValueError, match="must be an absolute path"):
-            FedAvgLrRecipe(
-                name="test_lr",
-                train_script="train.py",
-                min_clients=2,
-                num_rounds=5,
-                num_features=13,
-                initial_ckpt="relative/path/model.npy",
-            )
+        # This should not raise since relative paths are now supported
+        recipe = FedAvgLrRecipe(
+            name="test_lr",
+            train_script="train.py",
+            min_clients=2,
+            num_rounds=5,
+            num_features=13,
+            initial_ckpt="relative/path/model.npy",
+        )
+        assert recipe is not None
 
     def test_custom_damping_factor(self, mock_file_system):
         """Test that custom damping_factor is accepted."""

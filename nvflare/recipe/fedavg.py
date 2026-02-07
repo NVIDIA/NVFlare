@@ -241,6 +241,8 @@ class FedAvgRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Validate that we have at least one model source
+        # Note: Subclasses (e.g., sklearn) that manage models differently should pass
+        # a model or model_persistor to satisfy this check.
         if self.model is None and self.model_persistor is None and self.initial_ckpt is None:
             raise ValueError(
                 "Must provide either model, initial_ckpt, or model_persistor. "

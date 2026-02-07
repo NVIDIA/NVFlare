@@ -64,19 +64,18 @@ class TestBaseCyclicRecipe:
     Use framework-specific recipes (PTCyclicRecipe, TFCyclicRecipe) for those.
     """
 
-    def test_initial_ckpt_must_be_absolute(self):
-        """Test that relative paths are rejected (no mock - validation must run)."""
-        # Don't use mock_file_system fixture - we need real os.path.isabs check
-        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
-            with pytest.raises(ValueError, match="must be an absolute path"):
-                BaseCyclicRecipe(
-                    name="test_relative",
-                    model=None,
-                    initial_ckpt="relative/path/model.pt",
-                    train_script="/abs/train.py",
-                    min_clients=2,
-                    num_rounds=2,
-                )
+    def test_initial_ckpt_must_exist_for_relative_path(self):
+        """Test that non-existent relative paths are rejected (no mock - validation must run)."""
+        # Don't use mock_file_system fixture - we need real validation
+        with pytest.raises(ValueError, match="does not exist locally"):
+            BaseCyclicRecipe(
+                name="test_relative",
+                model=None,
+                initial_ckpt="relative/path/model.pt",
+                train_script="/abs/train.py",
+                min_clients=2,
+                num_rounds=2,
+            )
 
     def test_requires_model_or_checkpoint(self, base_recipe_params):
         """Test that at least model or initial_ckpt must be provided."""
