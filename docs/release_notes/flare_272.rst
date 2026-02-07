@@ -2,11 +2,12 @@
 What's New in FLARE v2.7.2
 **************************
 
-NVIDIA FLARE 2.7.2 is a feature release that builds on the Job Recipe API introduced in 2.7.0, bringing it to production readiness.
-This release also introduces significant memory management improvements with the new Tensor-based Downloader for efficient large model handling.
+NVIDIA FLARE 2.7.2 is a feature release that builds on the Job Recipe API introduced in 2.7.0, bringing it to general availability.
+This release also introduces significant memory management improvements with the new Tensor-based Downloader for efficient large model handling,
+and comprehensive timeout documentation.
 
-Job Recipe API - Production Ready
-=================================
+Job Recipe API - Generally Available
+=====================================
 
 .. sidebar::
 
@@ -27,7 +28,7 @@ Job Recipe API - Production Ready
             env = SimEnv(num_clients=2)
             run = recipe.execute(env)
 
-The Job Recipe API, introduced as a technical preview in 2.7.0, is now production-ready with comprehensive coverage across all major examples.
+The Job Recipe API, introduced as a technical preview in 2.7.0, is now generally available with comprehensive coverage across all major examples.
 Almost all examples in the NVFlare repository have been converted to use Job Recipes, demonstrating the simplicity and power of this approach.
 
 Key Highlights
@@ -142,32 +143,59 @@ Benefits for LLM Training
     
     For details on the underlying FOBS decomposer architecture, see :ref:`decomposer_for_large_object`.
 
+Server-Side Memory Cleanup
+--------------------------
+
+FLARE 2.7.2 adds automatic server-side memory management to address RSS growth in long-running jobs:
+
+- **Periodic garbage collection and heap trimming**: Automatically runs ``gc.collect()`` and ``malloc_trim()`` to return freed memory back to the OS, preventing unbounded RSS (Resident Set Size — the actual physical memory used by a process) growth over many training rounds.
+- **Environment variable tuning**: Guidance on ``MALLOC_ARENA_MAX`` settings to control glibc memory arena fragmentation for both server and client processes.
+- **Platform-aware**: Memory cleanup adapts to the runtime platform (Linux/glibc, musl, macOS), with full heap trimming on Linux/glibc and safe fallbacks elsewhere.
+- **Minimal overhead**: Cleanup takes 10-500ms per invocation — negligible compared to typical training round durations.
+
+.. admonition:: Learn More
+
+    For configuration details, platform compatibility, recommended settings, and API reference, see :doc:`/programming_guide/memory_management`.
+
+Comprehensive Timeout Documentation
+====================================
+
+Two new timeout guides have been added:
+
+**Timeout Troubleshooting Guide** (:doc:`/user_guide/timeout_troubleshooting`) — A user-facing guide covering common timeout-related job failures and how to resolve them. Covers the most frequently encountered timeout scenarios with symptoms, causes, and fixes.
+
+**Timeouts Reference** (:doc:`/programming_guide/timeouts`) — A comprehensive programming reference covering all 100+ timeout parameters across NVFlare components, organized by functional categories:
+
+- **Network Communication**: F3/CellNet, server config, client config, gRPC, reliable message
+- **Executor and Launcher**: LauncherExecutor, TaskExchanger, IPCExchanger, Pipe Handler
+- **Workflow Controllers**: FedAvg, SAG, CrossSiteEval, Statistics, SplitNN, etc.
+- **Edge Devices**: Edge general, Hierarchical FL, Mobile client
+- **Streaming**: File, container, tensor, object streaming
+- **XGBoost**: Histogram controller, reliable message, gRPC client
+- **Configuration Locations**: System-level and job-level file paths
+- **Recommended Settings**: Use-case specific configurations (development, production, LLM training, edge devices)
+
 Additional Improvements
 =======================
-
-API Refinements
----------------
-
-- **FedAvg Controller Enhancements**: Improved `load_model()` and `save_model()` methods that properly override base class methods for framework-specific serialization (PyTorch, TensorFlow).
-
-- **Simplified Task Management**: The `task_name` parameter is now streamlined (renamed from `task_to_optimize`), with "train" as the default for standard federated learning workflows.
-
-- **Enhanced Type Checking**: Improved validation of `model` types with clear error messages guiding users to appropriate framework-specific recipes.
-
-- **InTime Aggregation by Default**: All FedAvg recipes now use memory-efficient InTime aggregation, processing client results as they arrive rather than waiting for all results.
 
 Example Consolidation
 ---------------------
 
 To provide a cleaner and more focused learning experience, we have consolidated and streamlined the examples:
 
-- **Removed Deprecated Examples**: Examples using old APIs (Executor-based, ModelLearner-based patterns) have been removed. All examples now use the modern Recipe API or Client API.
+- **Removed Deprecated Examples**: Most examples using old APIs (Executor-based, ModelLearner-based patterns) have been removed. The majority of examples now use the modern Recipe API or Client API.
 
 - **Unified Example Structure**: Each example now follows a consistent structure with a ``job.py`` entry point that uses the Recipe API, making it easier to understand and adapt.
 
 - **Reduced Redundancy**: Duplicate examples demonstrating the same concepts with different APIs have been consolidated into single, canonical examples.
 
 - **Focus on Best Practices**: Remaining examples showcase the recommended patterns for building federated learning applications with FLARE.
+
+- **New Example**: **Hello Differential Privacy** (``hello-world/hello-dp``) — Demonstrates federated learning with differential privacy using the Recipe API.
+
+.. note::
+
+    A few examples and tutorials still use older APIs. These will continue to be updated in upcoming releases.
 
 MONAI Integration
 -----------------
@@ -179,39 +207,88 @@ MONAI Integration
 Documentation
 -------------
 
-- **Comprehensive Recipe Documentation**: New :ref:`available_recipes` guide with code examples and links to working examples for all available recipes.
+- **Available Recipes Guide**: New :ref:`available_recipes` guide with code examples and links to working examples for all available recipes.
 
-- **Updated Examples**: All example READMEs updated to reflect the Recipe-based approach.
+- **Timeout Documentation**: New :doc:`/user_guide/timeout_troubleshooting` for common job failures, and :doc:`/programming_guide/timeouts` as comprehensive reference for all 100+ timeout parameters.
+
+- **Memory Management Guide**: New :doc:`/programming_guide/memory_management` covering server-side garbage collection, ``MALLOC_ARENA_MAX`` tuning, platform compatibility, and troubleshooting.
+
+- **Tensor Downloader Guide**: Expanded :doc:`/programming_guide/tensor_downloader` with configuration examples, architecture details, and tuning guidance.
+
+- **Hello Differential Privacy**: New :doc:`/hello-world/hello-dp/index` example and documentation.
+
+- **Client-Controlled Workflows**: Expanded documentation for :doc:`/programming_guide/controllers/client_controlled_workflows`.
+
+- **Job Recipe Guide**: Updated :doc:`/user_guide/data_scientist_guide/job_recipe` with dict model config and initial checkpoint examples.
 
 Bug Fixes
 ---------
 
-- Fixed handling of absolute paths for `train_script` in production environments where scripts may be pre-installed.
-- Improved environment-specific validation for script resources (SimEnv/PocEnv require local files, ProdEnv allows pre-installed scripts).
-- Fixed aggregation state management when using custom aggregators.
-- Removed dead code in framework-specific recipes.
+- Fixed TLS corruption by replacing ``fork`` with ``posix_spawn`` for subprocess creation.
+- Fixed potential data corruption issue in the Streamer component.
+- Fixed Swarm Learning controller compatibility with tensor streaming.
+- Fixed Swarm Learning controller bug.
+- Fixed XGBoost adaptor and recipe integration issues.
+- Addressed client-side vulnerability for tree-based horizontal XGBoost.
+- Fixed NumPy cross-site evaluation regression.
+- Fixed POC Run result caching and environment cleanup.
+- Fixed TensorBoard analytics receiver import error.
+- Improved error handling in FOBS serialization (raise exception on errors).
+- Improved error messages in Client API.
+- Updated PEFT/TRL integration for latest API compatibility.
+- Updated HuggingFace LLM integration.
+- Security dependency updates for web components.
 
 Migration Guide
 ===============
 
-This section provides guidance for migrating from previous FLARE versions to 2.7.2.
+This section provides guidance for migrating from 2.7.1 to 2.7.2.
+
+initial_model → model
+---------------------
+
+The ``initial_model`` parameter in all recipes has been renamed to ``model`` for clarity:
+
+**Before:**
+
+.. code-block:: python
+
+    recipe = FedAvgRecipe(
+        ...
+        initial_model=SimpleNetwork(),
+    )
+
+**After:**
+
+.. code-block:: python
+
+    recipe = FedAvgRecipe(
+        ...
+        model=SimpleNetwork(),
+    )
+
+The ``model`` parameter now also accepts dict-based configuration:
+
+.. code-block:: python
+
+    recipe = FedAvgRecipe(
+        ...
+        model={"path": "my_module.MyModel", "args": {"hidden_size": 256}},
+        initial_ckpt="pretrained.pt",
+    )
 
 PTFedAvgEarlyStopping → PTFedAvg
 --------------------------------
 
-The ``PTFedAvgEarlyStopping`` class has been renamed to ``PTFedAvg``. A backward-compatible alias is provided, but you should update your code:
+The ``PTFedAvgEarlyStopping`` class has been merged into ``PTFedAvg`` with InTime aggregation support. A backward-compatible alias is provided:
 
-**Before (deprecated):**
+**Before:**
 
 .. code-block:: python
 
     from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
 
-    controller = PTFedAvgEarlyStopping(
-        num_clients=2,
-        num_rounds=5,
-        ...
-    )
+    controller = PTFedAvgEarlyStopping(...)
 
 **After:**
 
@@ -219,127 +296,20 @@ The ``PTFedAvgEarlyStopping`` class has been renamed to ``PTFedAvg``. A backward
 
     from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-    controller = PTFedAvg(
-        num_clients=2,
-        num_rounds=5,
-        ...
-    )
+    controller = PTFedAvg(...)
 
-task_to_optimize → task_name
-----------------------------
+MONAI-FLARE Wheel
+-----------------
 
-The ``task_to_optimize`` parameter has been renamed to ``task_name`` for clarity:
-
-**Before (deprecated):**
-
-.. code-block:: python
-
-    controller = FedAvg(
-        ...
-        task_to_optimize="train",
-    )
-
-**After:**
-
-.. code-block:: python
-
-    controller = FedAvg(
-        ...
-        task_name="train",
-    )
-
-Note: In Recipe API, the task name defaults to "train" and typically does not need to be specified.
-
-MONAI-FLARE Wheel Migration
----------------------------
-
-The separate ``nvflare-monai`` wheel is deprecated. Migrate to using the Client API directly:
-
-**Before (deprecated):**
-
-.. code-block:: bash
-
-    pip install nvflare-monai
-
-.. code-block:: python
-
-    from nvflare.app_opt.monai import MonaiTrainer
-
-    # Using MONAI-specific executor
-    executor = MonaiTrainer(...)
-
-**After:**
-
-.. code-block:: python
-
-    import nvflare.client as flare
-    from monai.engines import SupervisedTrainer
-
-    # Initialize FLARE client
-    flare.init()
-
-    # Use standard MONAI trainer with Client API
-    while flare.is_running():
-        input_model = flare.receive()
-        # ... train with MONAI ...
-        flare.send(output_model)
-
-See the updated MONAI examples in ``examples/advanced/monai/`` for complete migration patterns.
-
-Migrating from Old Example Patterns
------------------------------------
-
-If you have code based on removed examples that used Executor or ModelLearner patterns, migrate to the Recipe API:
-
-**Before (Executor-based, deprecated):**
-
-.. code-block:: python
-
-    from nvflare.apis.executor import Executor
-
-    class MyTrainer(Executor):
-        def execute(self, task_name, shareable, fl_ctx, abort_signal):
-            # Training logic
-            ...
-
-**After (Recipe + Client API):**
-
-``job.py``:
-
-.. code-block:: python
-
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = FedAvgRecipe(
-        name="my-job",
-        min_clients=2,
-        num_rounds=5,
-        model=MyModel(),
-        train_script="client.py",
-    )
-    env = SimEnv(num_clients=2)
-    recipe.execute(env)
-
-``client.py``:
-
-.. code-block:: python
-
-    import nvflare.client as flare
-
-    flare.init()
-    while flare.is_running():
-        input_model = flare.receive()
-        # Training logic
-        ...
-        flare.send(output_model)
+The separate ``nvflare-monai`` wheel package is deprecated. Use the Client API directly for MONAI integration.
+See the updated examples in ``examples/advanced/monai/`` and the `MONAI Migration Guide <https://github.com/NVIDIA/NVFlare/blob/main/integration/monai/MIGRATION.md>`_.
 
 Backward Compatibility Notes
 ----------------------------
 
 - **Job Config API**: Existing ``FedJob``-based configurations continue to work alongside the new Recipe API.
-- **Deprecated APIs**: All deprecated APIs from 2.7.0 remain functional with deprecation warnings but will be removed in a future release.
 - **Config-based Jobs**: JSON/YAML configuration-based jobs continue to work as before.
+- **Executor/ModelLearner APIs**: Still functional but no longer the recommended pattern. Use Recipe API + Client API for new projects.
 
 Getting Started
 ===============
@@ -352,15 +322,13 @@ The easiest way to get started with FLARE 2.7.2 is through the Hello World examp
     cd examples/hello-world/hello-pt
     python job.py
 
-    # Run the TensorFlow FedAvg example
-    cd examples/hello-world/hello-tf
-    python job.py
+For more examples and tutorials, see:
 
-For more examples, see:
-
+- :ref:`quickstart` — Get up and running quickly
+- :ref:`available_recipes` — Complete list of ready-to-use recipes
+- :ref:`job_recipe` — Job Recipe programming guide
 - `Hello World Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world>`_
-- `CIFAR-10 Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10>`_
-- `XGBoost Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost>`_
-- `Job Recipe Tutorial <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_recipe.ipynb>`_
+- `Advanced Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced>`_
+- `Self-Paced Training Tutorials <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training>`_
 
 
