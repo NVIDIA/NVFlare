@@ -22,7 +22,7 @@ from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_initial_ckpt
+from nvflare.recipe.utils import validate_ckpt
 
 
 # Internal — not part of the public API
@@ -42,7 +42,7 @@ class _FedAvgValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_initial_ckpt(v)
+            validate_ckpt(v)
         return v
 
 

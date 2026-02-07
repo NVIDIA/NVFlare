@@ -56,7 +56,7 @@ class ScaffoldRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "scaffold".
         model: Initial model to start federated training with. Can be:
             - nn.Module instance
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.
@@ -117,10 +117,12 @@ class ScaffoldRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt, validate_dict_model_config
 
-        validate_initial_ckpt(self.initial_ckpt)
+        validate_ckpt(self.initial_ckpt)
         validate_dict_model_config(self.model)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds

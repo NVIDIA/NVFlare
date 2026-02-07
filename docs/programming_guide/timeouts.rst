@@ -2557,7 +2557,7 @@ Recipe with Extended Timeouts
 
    recipe = FedAvgRecipe(
        name="large_model_training",
-       model={"path": "model.LargeModel", "args": {}},
+       model={"class_path": "model.LargeModel", "args": {}},
        min_clients=8,
        num_rounds=100,
        shutdown_timeout=120.0,

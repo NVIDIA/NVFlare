@@ -15,7 +15,7 @@
 import copy
 import importlib
 import os
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.fuel.utils.import_utils import optional_import
@@ -420,23 +420,23 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
     return non_local_scripts
 
 
-def validate_initial_ckpt(initial_ckpt: Optional[str]) -> None:
-    """Validate initial_ckpt path if provided.
+def validate_ckpt(ckpt: Optional[str]) -> None:
+    """Validate a checkpoint path if provided.
 
     For absolute paths: no local existence check (file may be a server-side path).
     For relative paths: verifies the file exists locally (it will be bundled into the job).
 
     Args:
-        initial_ckpt: Checkpoint file path to validate.
+        ckpt: Checkpoint file path to validate (e.g. initial_ckpt or eval_ckpt).
 
     Raises:
         ValueError: If relative path does not exist locally.
     """
-    if initial_ckpt is not None:
-        if not os.path.isabs(initial_ckpt):
-            if not os.path.isfile(initial_ckpt):
+    if ckpt is not None:
+        if not os.path.isabs(ckpt):
+            if not os.path.isfile(ckpt):
                 raise ValueError(
-                    f"initial_ckpt relative path does not exist locally: {initial_ckpt}. "
+                    f"Checkpoint relative path does not exist locally: {ckpt}. "
                     "Relative paths are treated as local files that will be bundled into the job. "
                     "Use an absolute path for server-side checkpoints."
                 )
@@ -471,16 +471,42 @@ def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
 
 
 def validate_dict_model_config(model: Any) -> None:
-    """Validate dict model config structure.
+    """Validate recipe dict model config structure.
+
+    Recipes accept model config with ``class_path`` (fully qualified class name).
+    The job/config layer uses ``path``; recipes use ``class_path`` only.
 
     Args:
         model: Model input to validate.
 
     Raises:
-        ValueError: If dict config is missing 'path' key or 'path' is not a string.
+        ValueError: If dict config is missing 'class_path' or value is not a string.
     """
     if isinstance(model, dict):
-        if "path" not in model:
-            raise ValueError("Dict model config must have 'path' key with fully qualified class path. " f"Got: {model}")
-        if not isinstance(model["path"], str):
-            raise ValueError(f"Dict model config 'path' must be a string, got: {type(model['path'])}")
+        if "class_path" not in model:
+            raise ValueError(
+                "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {model}"
+            )
+        class_path = model["class_path"]
+        if not isinstance(class_path, str):
+            raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
+
+
+def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert recipe model dict (class_path) to job/config format (path).
+
+    Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
+    This normalizes so the underlying stack is unchanged.
+
+    Args:
+        recipe_model: Dict with 'class_path' and optional 'args'.
+
+    Returns:
+        Dict with 'path' and 'args' for use by PTModel, persistors, etc.
+    """
+    if "class_path" not in recipe_model:
+        raise ValueError(
+            "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {recipe_model}"
+        )
+    return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}

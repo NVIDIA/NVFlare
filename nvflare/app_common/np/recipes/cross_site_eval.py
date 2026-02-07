@@ -24,7 +24,7 @@ from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEva
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_initial_ckpt
+from nvflare.recipe.utils import validate_ckpt
 
 
 # Internal validator
@@ -50,7 +50,7 @@ class _CrossSiteEvalValidator(BaseModel):
                     f"initial_ckpt must be an absolute path for NumpyCrossSiteEvalRecipe, got: {v}. "
                     "Relative path support for this recipe is planned for a future release."
                 )
-            validate_initial_ckpt(v)
+            validate_ckpt(v)
         return v
 
 

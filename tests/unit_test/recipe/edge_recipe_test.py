@@ -98,7 +98,7 @@ class TestEdgeFedBuffRecipe:
 
         recipe = EdgeFedBuffRecipe(
             job_name="test_edge_dict",
-            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
         )
@@ -118,7 +118,7 @@ class TestEdgeFedBuffRecipe:
 
         recipe = EdgeFedBuffRecipe(
             job_name="test_edge_dict_eval",
-            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
             evaluator_config=evaluator_config,

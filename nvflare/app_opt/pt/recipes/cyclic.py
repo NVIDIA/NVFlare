@@ -64,9 +64,9 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_memory_gc_rounds: int = 1,
     ):
         # Validate initial_ckpt early (base class won't see it since we pass None)
-        from nvflare.recipe.utils import validate_initial_ckpt
+        from nvflare.recipe.utils import validate_ckpt
 
-        validate_initial_ckpt(initial_ckpt)
+        validate_ckpt(initial_ckpt)
 
         # Store initial_ckpt for _setup_model_and_persistor; wrap model with PTModel there
         self._pt_initial_ckpt = initial_ckpt

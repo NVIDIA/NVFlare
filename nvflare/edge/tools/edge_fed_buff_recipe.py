@@ -24,7 +24,7 @@ from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 from nvflare.recipe.spec import ExecEnv, Recipe
-from nvflare.recipe.utils import validate_initial_ckpt
+from nvflare.recipe.utils import validate_ckpt
 
 DEVICE_SIMULATION_ENV_KEY = "device_simulation"
 
@@ -38,7 +38,7 @@ class _EdgeFedBuffValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_initial_ckpt(v)
+            validate_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
@@ -201,7 +201,7 @@ class EdgeFedBuffRecipe(Recipe):
         # With dict config and pre-trained checkpoint
         recipe = EdgeFedBuffRecipe(
             job_name="my_edge_job",
-            model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
+            model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
             initial_ckpt="/path/to/pretrained.pt",
             model_manager_config=ModelManagerConfig(...),
             device_manager_config=DeviceManagerConfig(...)
@@ -212,7 +212,7 @@ class EdgeFedBuffRecipe(Recipe):
         job_name: Name of the federated learning job.
         model: PyTorch model to be trained. Can be:
             - nn.Module instance: e.g., MyModel()
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
             The file may not exist locally (server-side path).
             Used to resume training from pre-trained weights.
@@ -242,6 +242,12 @@ class EdgeFedBuffRecipe(Recipe):
 
         self.job_name = job_name
         self.method_name = "edge"
+        # Normalize dict model (recipe accepts class_path; job API uses path)
+        if isinstance(model, dict):
+            from nvflare.recipe.utils import recipe_model_to_job_model, validate_dict_model_config
+
+            validate_dict_model_config(model)
+            model = recipe_model_to_job_model(model)
         self.model = model
         self.initial_ckpt = initial_ckpt
         self.model_manager_config = model_manager_config

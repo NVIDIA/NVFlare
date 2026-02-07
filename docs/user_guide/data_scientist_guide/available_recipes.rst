@@ -20,7 +20,7 @@ Most training recipes accept the following model-related parameters:
     The model to use for federated training. Accepts:
 
     * **Class instance**: e.g., ``MyModel()`` - convenient and Pythonic
-    * **Dict config**: e.g., ``{"path": "module.MyModel", "args": {"param": value}}`` - better for large models
+    * **Dict config**: e.g., ``{"class_path": "module.MyModel", "args": {"param": value}}`` - better for large models
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
@@ -580,8 +580,8 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 
     recipe = FedEvalRecipe(
         name="eval_job",
-        model=MyModel(),  # Model architecture
-        initial_ckpt="/path/to/pretrained_model.pt",  # Required: checkpoint path
+        model=MyModel(),
+        eval_ckpt="/path/to/pretrained_model.pt",
         min_clients=2,
         eval_script="client.py",
         eval_args="--batch_size 32",
@@ -590,8 +590,8 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
     run = recipe.execute(env)
 
 .. note::
-   ``initial_ckpt`` is **required** for FedEvalRecipe. The checkpoint path must be absolute and
-   point to where the pre-trained model weights exist on the server.
+   ``eval_ckpt`` is **required**. It must be an absolute path to the pre-trained checkpoint (.pt, .pth)
+   on the server (may not exist locally when building the job).
 
 **Examples:**
 
@@ -717,8 +717,8 @@ EdgeFedBuffRecipe
 
     recipe = EdgeFedBuffRecipe(
         job_name="edge-fedavg",
-        model=MyModel(),  # or dict config: {"path": "module.MyModel", "args": {...}}
-        model_manager_config=ModelManagerConfig(max_model_version=20),
+        model=MyModel(),
+        model_manager_config=ModelManagerConfig(max_num_active_model_versions=3, max_model_version=20),
         device_manager_config=DeviceManagerConfig(device_selection_size=100),
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )

@@ -21,7 +21,7 @@ from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_initial_ckpt
+from nvflare.recipe.utils import validate_ckpt
 
 
 # Internal validator
@@ -32,7 +32,7 @@ class _FedEvalValidator(BaseModel):
     @classmethod
     def validate_eval_ckpt(cls, v):
         # eval_ckpt is required for evaluation, validate it
-        validate_initial_ckpt(v)
+        validate_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
@@ -68,7 +68,7 @@ class FedEvalRecipe(Recipe):
         name: Name of the federated evaluation job. Defaults to "eval".
         model: Model structure to evaluate. Can be:
             - An instantiated nn.Module (e.g., Net())
-            - A dict config: {"path": "module.ClassName", "args": {...}}
+            - A dict config: {"class_path": "module.ClassName", "args": {...}}
         eval_ckpt: Absolute path to pre-trained checkpoint file (.pt, .pth, etc.).
             Required for evaluation - specifies which weights to evaluate.
             The file may not exist locally (server-side path).
@@ -108,7 +108,7 @@ class FedEvalRecipe(Recipe):
         ```python
         recipe = FedEvalRecipe(
             name="eval_job",
-            model={"path": "my_module.Net", "args": {"num_classes": 10}},
+            model={"class_path": "my_module.Net", "args": {"num_classes": 10}},
             eval_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
@@ -157,9 +157,14 @@ class FedEvalRecipe(Recipe):
 
         from nvflare.app_opt.pt.job_config.model import PTModel
 
-        # Validate model type
+        # Validate model type and normalize dict (class_path -> path for job API)
         if not isinstance(self.model, (nn.Module, dict)):
             raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
+        if isinstance(self.model, dict):
+            from nvflare.recipe.utils import recipe_model_to_job_model, validate_dict_model_config
+
+            validate_dict_model_config(self.model)
+            self.model = recipe_model_to_job_model(self.model)
 
         # PTModel handles both nn.Module and dict config uniformly
         from nvflare.recipe.utils import prepare_initial_ckpt

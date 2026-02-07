@@ -41,7 +41,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         name: Name of the federated learning job. Defaults to "fedavg".
         model: Initial model to start federated training with. Can be:
             - nn.Module instance
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.

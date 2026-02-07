@@ -415,20 +415,20 @@ class TestFedAvgRecipeValidation:
             )
 
     def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'path' key raises error."""
-        with pytest.raises(ValueError, match="must have 'path' key"):
+        """Test that dict config without 'class_path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'class_path' key"):
             FedAvgRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'
                 **base_recipe_params,
             )
 
     def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config with non-string 'path' raises error."""
-        with pytest.raises(ValueError, match="'path' must be a string"):
+        """Test that dict config with non-string 'class_path' raises error."""
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
             FedAvgRecipe(
                 name="test_invalid_path_type",
-                model={"path": 123, "args": {}},  # Path is not string
+                model={"class_path": 123, "args": {}},  # class_path is not string
                 **base_recipe_params,
             )
 
@@ -471,9 +471,9 @@ class TestFedAvgRecipeInitialCkpt:
             )
 
     def test_dict_model_config_accepted(self, mock_file_system, base_recipe_params):
-        """Test that dict model config is accepted."""
+        """Test that dict model config (class_path) is accepted and normalized to path for job API."""
         model_config = {
-            "path": "my_module.models.SimpleNet",
+            "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10, "output_size": 5},
         }
         recipe = FedAvgRecipe(
@@ -482,12 +482,13 @@ class TestFedAvgRecipeInitialCkpt:
             **base_recipe_params,
         )
 
-        assert recipe.model == model_config
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
 
     def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
-        """Test that dict model config with initial_ckpt is accepted."""
+        """Test that dict model config (class_path) with initial_ckpt is accepted."""
         model_config = {
-            "path": "my_module.models.SimpleNet",
+            "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10},
         }
         recipe = FedAvgRecipe(
@@ -497,7 +498,8 @@ class TestFedAvgRecipeInitialCkpt:
             **base_recipe_params,
         )
 
-        assert recipe.model == model_config
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10}
         assert recipe.initial_ckpt == "/abs/path/to/pretrained.pt"
 
 
@@ -514,7 +516,7 @@ class TestFedAvgRecipeDictConfigJobExport:
             f.write("# Dummy train script\n")
 
         model_config = {
-            "path": "model.SimpleNetwork",
+            "class_path": "model.SimpleNetwork",
             "args": {},
         }
         recipe = FedAvgRecipe(
@@ -544,7 +546,7 @@ class TestFedAvgRecipeDictConfigJobExport:
             f.write("# Dummy train script\n")
 
         model_config = {
-            "path": "model.SimpleNetwork",
+            "class_path": "model.SimpleNetwork",
             "args": {"num_classes": 10},
         }
         recipe = FedAvgRecipe(

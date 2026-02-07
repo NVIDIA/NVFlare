@@ -80,7 +80,7 @@ class FedAvgRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "fedavg".
         model: Initial model to start federated training with. Can be:
             - Model instance (nn.Module, tf.keras.Model, etc.)
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
             For framework-specific types (nn.Module, tf.keras.Model), use the
             corresponding framework recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe).
@@ -212,10 +212,12 @@ class FedAvgRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt, validate_dict_model_config
 
-        validate_initial_ckpt(self.initial_ckpt)
+        validate_ckpt(self.initial_ckpt)
         validate_dict_model_config(self.model)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
 
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
