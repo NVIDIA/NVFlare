@@ -52,7 +52,7 @@ def main():
         # Model can be specified as class instance or dict config:
         model=LitNet(),
         # Alternative: model={"path": "model.LitNet", "args": {}},
-        # For separate checkpoint: initial_ckpt="/server/path/to/pretrained.pt",
+        # For separate checkpoint: eval_ckpt="/server/path/to/pretrained.pt",
         eval_ckpt=os.path.abspath(checkpoint),
         eval_script="client.py",
         eval_args=f"--batch_size {batch_size}",
