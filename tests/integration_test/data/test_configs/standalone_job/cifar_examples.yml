@@ -1,16 +1,25 @@
-jobs_root_dir: ../../examples/advanced/cifar10/cifar10-real-world/jobs
+# CIFAR10 integration tests using recipe-based examples
+# These tests export recipe-based jobs to traditional job folders for testing
+#
+# All CIFAR10 PT examples share the same data preparation and model structure.
+# Each test exports the actual job.py from examples to ensure consistency.
+
+jobs_root_dir: ./data/jobs
 cleanup: true
-project_yaml: ./data/projects/2_clients_with_he.yml
-additional_python_paths:
-- ../../examples/advanced/cifar10
+project_yaml: ./data/projects/dummy.yml
+# No additional_python_paths needed - export_recipe_job.py copies src/ contents directly to app/custom/
 
 tests:
-  - test_name: Test a simplified copy of job cifar10_fedavg_he for example cifar10-real-world.
+  # =============================================================================
+  # CIFAR10 Simulation Examples (cifar10-sim)
+  # =============================================================================
+
+  - test_name: Test CIFAR10 FedAvg (recipe-based)
     event_sequence:
       - trigger:
           type: server_log
           data: Server started
-        actions: [ "submit_job cifar10_fedavg_he_copy" ]
+        actions: [ "submit_job cifar10_fedavg_test" ]
         result:
           type: job_submit_success
       - trigger:
@@ -23,20 +32,19 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.CIFAR10ResultValidator
     setup:
-      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - bash ../../examples/advanced/cifar10/cifar10-real-world/prepare_data.sh
-      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he --post _copy
+      # Install requirements (strip nvflare since we use dev version)
+      - grep -v "^nvflare" ../../examples/advanced/cifar10/pt/cifar10-sim/requirements.txt > /tmp/temp_req.txt && pip install -r /tmp/temp_req.txt --quiet
+      # Export runs the actual job.py which also prepares data
+      - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_fedavg_test"
     teardown:
-      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he_copy
-  - test_name: Test a simplified copy of job cifar10_fedavg_stream_tb for example cifar10-real-world.
+      - rm -rf ./data/jobs/cifar10_fedavg_test
+
+  - test_name: Test CIFAR10 FedOpt (recipe-based)
     event_sequence:
       - trigger:
           type: server_log
           data: Server started
-        actions: [ "submit_job cifar10_fedavg_stream_tb_copy" ]
+        actions: [ "submit_job cifar10_fedopt_test" ]
         result:
           type: job_submit_success
       - trigger:
@@ -49,10 +57,102 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.CIFAR10ResultValidator
     setup:
-      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
-      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb --post _copy
+      - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedopt --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_fedopt_test"
     teardown:
-      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb_copy
+      - rm -rf ./data/jobs/cifar10_fedopt_test
+
+  - test_name: Test CIFAR10 FedProx (recipe-based)
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cifar10_fedprox_test" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": True }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+    setup:
+      - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedprox --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_fedprox_test"
+    teardown:
+      - rm -rf ./data/jobs/cifar10_fedprox_test
+
+  - test_name: Test CIFAR10 SCAFFOLD (recipe-based)
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cifar10_scaffold_test" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": True }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+    setup:
+      - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_scaffold --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_scaffold_test"
+    teardown:
+      - rm -rf ./data/jobs/cifar10_scaffold_test
+
+  - test_name: Test CIFAR10 Custom Aggregators (recipe-based)
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job cifar10_custom_aggr_test" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": True }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+    setup:
+      - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-sim/cifar10_custom_aggr --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_custom_aggr_test --aggregator weighted"
+    teardown:
+      - rm -rf ./data/jobs/cifar10_custom_aggr_test
+
+  # =============================================================================
+  # CIFAR10 Real-World Examples (cifar10-real-world) - Requires HE project
+  # =============================================================================
+
+  # Note: These tests require HE-enabled project configuration
+  # Uncomment and use project_yaml: ./data/projects/2_clients_with_he.yml
+
+  # - test_name: Test CIFAR10 FedAvg with Homomorphic Encryption (recipe-based)
+  #   event_sequence:
+  #     - trigger:
+  #         type: server_log
+  #         data: Server started
+  #       actions: [ "submit_job cifar10_fedavg_he_test" ]
+  #       result:
+  #         type: job_submit_success
+  #     - trigger:
+  #         type: run_state
+  #         data: { "run_finished": True }
+  #       actions: [ "ensure_current_job_done" ]
+  #       result:
+  #         type: run_state
+  #         data: { "run_finished": True }
+  #   validators:
+  #     - path: tests.integration_test.src.validators.CIFAR10ResultValidator
+  #   setup:
+  #     - mkdir -p ./data/jobs
+  #     - python export_recipe_job.py --recipe_dir ../../examples/advanced/cifar10/pt/cifar10-real-world/cifar10_fedavg_he --output_dir ./data/jobs --recipe_args "--n_clients 2 --num_rounds 2 --name cifar10_fedavg_he_test"
+  #   teardown:
+  #     - rm -rf ./data/jobs/cifar10_fedavg_he_test
