@@ -198,7 +198,7 @@ class FedAvgRecipeWithHE(Recipe):
 
         # Create BaseFedJob with initial model and persistor
         job = BaseFedJob(
-            model=self.model,
+            initial_model=self.model,
             name=self.name,
             min_clients=self.min_clients,
             model_persistor=model_persistor,

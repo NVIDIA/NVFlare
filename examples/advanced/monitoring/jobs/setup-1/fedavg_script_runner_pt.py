@@ -37,7 +37,7 @@ def main(job_configs_dir):
     train_script = "src/hello-pt_cifar10_fl.py"
     job_name = "hello-pt"
 
-    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, model=SimpleNetwork())
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
 
     # add server side monitoring components
 
