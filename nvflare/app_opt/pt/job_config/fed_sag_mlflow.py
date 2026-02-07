@@ -27,7 +27,7 @@ from nvflare.app_opt.tracking.mlflow.mlflow_writer import MLflowWriter
 class SAGMLFlowJob(BaseFedJob):
     def __init__(
         self,
-        model: nn.Module,
+        initial_model: nn.Module,
         n_clients: int,
         num_rounds: int,
         name: str = "fed_job",
@@ -45,7 +45,7 @@ class SAGMLFlowJob(BaseFedJob):
         User must add executors.
 
         Args:
-            model (nn.Module): initial PyTorch Model
+            initial_model (nn.Module): Initial PyTorch model.
             n_clients (int): number of clients for this job
             num_rounds (int): number of rounds for FedAvg
             name (name, optional): name of the job. Defaults to "fed_job"
@@ -56,7 +56,7 @@ class SAGMLFlowJob(BaseFedJob):
                 Defaults to "accuracy".
             kwargs: kwargs dict
         """
-        super().__init__(model, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 
         shareable_generator = FullModelShareableGenerator()
         shareable_generator_id = self.to_server(shareable_generator, id="shareable_generator")

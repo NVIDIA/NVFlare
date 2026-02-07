@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     job = BaseFedJob(
         name="cifar10_lightning_fedavg",
-        model=LitNet(),
+        initial_model=LitNet(),
     )
 
     controller = FedAvg(

@@ -22,7 +22,7 @@ from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 class FedAvgJob(BaseFedJob):
     def __init__(
         self,
-        model: tf.keras.Model,
+        initial_model: tf.keras.Model,
         n_clients: int,
         num_rounds: int,
         name: str = "fed_job",
@@ -37,7 +37,7 @@ class FedAvgJob(BaseFedJob):
         User must add executors.
 
         Args:
-            model (tf.keras.Model): initial TensorFlow Model
+            initial_model (tf.keras.Model): Initial TensorFlow model.
             n_clients (int): number of clients for this job
             num_rounds (int): number of rounds for FedAvg
             name (name, optional): name of the job. Defaults to "fed_job"
@@ -47,10 +47,10 @@ class FedAvgJob(BaseFedJob):
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
         """
-        if not isinstance(model, tf.keras.Model):
-            raise ValueError(f"Expected initial model to be tf.keras.Model, but got type f{type(model)}.")
+        if not isinstance(initial_model, tf.keras.Model):
+            raise ValueError(f"Expected initial model to be tf.keras.Model, but got type {type(initial_model)}.")
 
-        super().__init__(model, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 
         controller = FedAvg(
             num_clients=n_clients,
