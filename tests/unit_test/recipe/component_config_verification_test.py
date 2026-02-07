@@ -14,13 +14,15 @@
 # limitations under the License.
 
 """
-Comprehensive verification test for recipe component config generation.
+Verification tests for recipe component config generation (PT, TF, NumPy only).
 
-Verifies that all changed recipes correctly generate component configs with:
-1. Dict model config: {"path": "module.Class"}
-2. initial_ckpt parameter: source_ckpt_file_full_name in persistor
+Verifies that exported jobs produce correct component configs:
+- PT/TF: dict model config (e.g. {"path": "module.Class"}) and initial_ckpt
+  passed through to persistor as source_ckpt_file_full_name.
+- NumPy: persistor config with initial_ckpt (source_ckpt_file_full_name).
 
-This ensures all recipe changes properly handle the new interface.
+Sklearn recipe component config tests live in
+tests/unit_test/app_opt/sklearn/sklearn_component_config_test.py (model_path).
 """
 
 import json

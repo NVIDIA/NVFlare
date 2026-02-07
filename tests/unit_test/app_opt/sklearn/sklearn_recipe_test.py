@@ -84,6 +84,18 @@ class TestSklearnFedAvgRecipe:
 
         assert recipe.job is not None
 
+    def test_relative_path_rejected(self, mock_file_system, base_recipe_params):
+        """Test that relative model_path is rejected at construction time."""
+        from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            SklearnFedAvgRecipe(
+                name="test_sklearn",
+                model_params={"n_classes": 2},
+                model_path="relative/path/model.joblib",
+                **base_recipe_params,
+            )
+
     def test_with_per_site_config(self, mock_file_system, base_recipe_params):
         """Test SklearnFedAvgRecipe with per-site configuration."""
         from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
