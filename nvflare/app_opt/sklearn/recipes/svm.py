@@ -17,12 +17,11 @@ from typing import Literal, Optional
 from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
-from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal — not part of the public API
@@ -31,13 +30,13 @@ class _SVMValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     kernel: Literal["linear", "poly", "rbf", "sigmoid"]
-    initial_ckpt: Optional[str] = None
+    model_path: Optional[str] = None
 
-    @field_validator("initial_ckpt")
+    @field_validator("model_path")
     @classmethod
-    def validate_initial_ckpt(cls, v):
+    def validate_model_path_absolute(cls, v):
         if v is not None:
-            validate_initial_ckpt(v)
+            validate_model_path(v)
         return v
 
 
@@ -67,9 +66,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         kernel: Kernel type for SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
             Defaults to 'rbf'.
-        initial_ckpt: Absolute path to a pre-trained checkpoint file (.joblib).
-            The file may not exist locally as it could be on the server.
-            Used to resume training from previously saved support vectors.
+        model_path: Absolute path to a saved model file (.joblib).
+            If provided, the file must exist at runtime. Used to load previously
+            saved support vectors.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
@@ -131,7 +130,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         name: str = "svm_fedavg",
         min_clients: int,
         kernel: Literal["linear", "poly", "rbf", "sigmoid"] = "rbf",
-        initial_ckpt: Optional[str] = None,
+        model_path: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
@@ -139,14 +138,14 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
     ):
-        v = _SVMValidator(kernel=kernel, initial_ckpt=initial_ckpt)
+        v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
-        self.initial_ckpt = v.initial_ckpt
+        self.model_path = v.model_path
 
         # Create SVM-specific persistor
         persistor = JoblibModelParamPersistor(
             initial_params={"kernel": self.kernel},
-            source_ckpt_file_full_name=initial_ckpt,
+            model_path=model_path,
         )
 
         # Create SVMAssembler (will be added to job after super().__init__)

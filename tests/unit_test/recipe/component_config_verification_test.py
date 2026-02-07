@@ -14,13 +14,15 @@
 # limitations under the License.
 
 """
-Comprehensive verification test for recipe component config generation.
+Verification tests for recipe component config generation (PT, TF, NumPy only).
 
-Verifies that all changed recipes correctly generate component configs with:
-1. Dict model config: {"path": "module.Class"}
-2. initial_ckpt parameter: source_ckpt_file_full_name in persistor
+Verifies that exported jobs produce correct component configs:
+- PT/TF: dict model config (e.g. {"path": "module.Class"}) and initial_ckpt
+  passed through to persistor as source_ckpt_file_full_name.
+- NumPy: persistor config with initial_ckpt (source_ckpt_file_full_name).
 
-This ensures all recipe changes properly handle the new interface.
+Sklearn recipe component config tests live in
+tests/unit_test/app_opt/sklearn/sklearn_component_config_test.py (model_path).
 """
 
 import json
@@ -432,119 +434,6 @@ class TestNumpyRecipeComponentConfig(unittest.TestCase):
 
         server_config = os.path.join(job_dir, "test-np-fedavg", "app/config/config_fed_server.json")
         self._verify_persistor_config(server_config, self.checkpoint_path)
-
-
-class TestSklearnRecipeComponentConfig(unittest.TestCase):
-    """Test Sklearn recipe component config generation."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.temp_dir = tempfile.mkdtemp()
-        self.checkpoint_path = "/workspace/checkpoint.pkl"
-
-        # Create dummy train script
-        self.train_script = os.path.join(self.temp_dir, "train.py")
-        with open(self.train_script, "w") as f:
-            f.write("# Dummy train script\n")
-
-    def tearDown(self):
-        """Clean up test artifacts."""
-        import shutil
-
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
-    def _verify_persistor_config(self, config_path, expected_initial_params, expected_ckpt_path):
-        """Verify Sklearn persistor component has correct config."""
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        # Find persistor component
-        persistor = None
-        for comp in config.get("components", []):
-            if comp["id"] == "persistor":
-                persistor = comp
-                break
-
-        self.assertIsNotNone(persistor, "Persistor component not found")
-        self.assertIn("joblib", persistor["path"].lower(), f"Expected Joblib persistor, got {persistor['path']}")
-
-        # Verify initial_params (Sklearn uses initial_params in persistor, not model_params)
-        initial_params = persistor["args"].get("initial_params")
-        if expected_initial_params:
-            self.assertIsNotNone(initial_params, "initial_params should be set")
-            self.assertEqual(initial_params, expected_initial_params, "initial_params mismatch")
-
-        # Verify checkpoint path
-        ckpt_path = persistor["args"].get("source_ckpt_file_full_name")
-        self.assertEqual(ckpt_path, expected_ckpt_path, "Checkpoint path mismatch")
-
-        print("    ✓ Persistor config verified:")
-        print(f"      - initial_params: {initial_params}")
-        print(f"      - checkpoint: {ckpt_path}")
-
-    def test_sklearn_fedavg(self):
-        """Test Sklearn FedAvg generates correct config with checkpoint."""
-        print("\n  Testing Sklearn FedAvg...")
-        from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
-
-        model_params = {"n_estimators": 10}
-
-        recipe = SklearnFedAvgRecipe(
-            name="test-sklearn-fedavg",
-            min_clients=2,
-            num_rounds=2,
-            model_params=model_params,
-            initial_ckpt=self.checkpoint_path,
-            train_script=self.train_script,
-        )
-
-        job_dir = os.path.join(self.temp_dir, "export")
-        recipe.export(job_dir=job_dir)
-
-        server_config = os.path.join(job_dir, "test-sklearn-fedavg", "app/config/config_fed_server.json")
-        self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
-
-    def test_sklearn_kmeans(self):
-        """Test Sklearn KMeans generates correct config with checkpoint (PR3)."""
-        print("\n  Testing Sklearn KMeans (PR3)...")
-        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
-
-        recipe = KMeansFedAvgRecipe(
-            name="test-sklearn-kmeans",
-            min_clients=2,
-            num_rounds=2,
-            n_clusters=3,
-            initial_ckpt=self.checkpoint_path,
-            train_script=self.train_script,
-        )
-
-        job_dir = os.path.join(self.temp_dir, "export_kmeans")
-        recipe.export(job_dir=job_dir)
-
-        server_config = os.path.join(job_dir, "test-sklearn-kmeans", "app/config/config_fed_server.json")
-        model_params = {"n_clusters": 3}
-        self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
-
-    def test_sklearn_svm(self):
-        """Test Sklearn SVM generates correct config with checkpoint (PR3)."""
-        print("\n  Testing Sklearn SVM (PR3)...")
-        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
-
-        recipe = SVMFedAvgRecipe(
-            name="test-sklearn-svm",
-            min_clients=2,
-            kernel="rbf",
-            initial_ckpt=self.checkpoint_path,
-            train_script=self.train_script,
-        )
-
-        job_dir = os.path.join(self.temp_dir, "export_svm")
-        recipe.export(job_dir=job_dir)
-
-        server_config = os.path.join(job_dir, "test-sklearn-svm", "app/config/config_fed_server.json")
-        model_params = {"kernel": "rbf"}
-        self._verify_persistor_config(server_config, model_params, self.checkpoint_path)
 
 
 class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
