@@ -43,11 +43,11 @@ def mock_file_system():
 
 
 @pytest.fixture
-def simple_model():
+def simple_model(tmp_path):
     """Create a simple test model with a checkpoint."""
-    with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
-        checkpoint_path = tmp.name
-    return SimpleTestModel(checkpoint=checkpoint_path), checkpoint_path
+    checkpoint_path = tmp_path / "checkpoint.pt"
+    checkpoint_path.touch()
+    return SimpleTestModel(checkpoint=str(checkpoint_path)), str(checkpoint_path)
 
 
 @pytest.fixture
