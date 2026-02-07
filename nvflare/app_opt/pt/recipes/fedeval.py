@@ -26,12 +26,12 @@ from nvflare.recipe.utils import validate_initial_ckpt
 
 # Internal validator
 class _FedEvalValidator(BaseModel):
-    initial_ckpt: str
+    eval_ckpt: str
 
-    @field_validator("initial_ckpt")
+    @field_validator("eval_ckpt")
     @classmethod
-    def validate_initial_ckpt(cls, v):
-        # initial_ckpt is required for evaluation, validate it
+    def validate_eval_ckpt(cls, v):
+        # eval_ckpt is required for evaluation, validate it
         validate_initial_ckpt(v)
         return v
 
@@ -69,7 +69,7 @@ class FedEvalRecipe(Recipe):
         model: Model structure to evaluate. Can be:
             - An instantiated nn.Module (e.g., Net())
             - A dict config: {"path": "module.ClassName", "args": {...}}
-        initial_ckpt: Absolute path to pre-trained checkpoint file (.pt, .pth, etc.).
+        eval_ckpt: Absolute path to pre-trained checkpoint file (.pt, .pth, etc.).
             Required for evaluation - specifies which weights to evaluate.
             The file may not exist locally (server-side path).
         min_clients: Minimum number of clients required to start evaluation.
@@ -96,7 +96,7 @@ class FedEvalRecipe(Recipe):
         recipe = FedEvalRecipe(
             name="eval_job",
             model=Net(),
-            initial_ckpt="/path/to/pretrained_model.pt",
+            eval_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
             eval_args="--batch_size 32",
@@ -109,7 +109,7 @@ class FedEvalRecipe(Recipe):
         recipe = FedEvalRecipe(
             name="eval_job",
             model={"path": "my_module.Net", "args": {"num_classes": 10}},
-            initial_ckpt="/path/to/pretrained_model.pt",
+            eval_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
         )
@@ -121,7 +121,7 @@ class FedEvalRecipe(Recipe):
         *,
         name: str = "eval",
         model: Union[Any, Dict[str, Any]],
-        initial_ckpt: str,
+        eval_ckpt: str,
         min_clients: int,
         eval_script: str,
         eval_args: str = "",
@@ -131,12 +131,12 @@ class FedEvalRecipe(Recipe):
         validation_timeout: int = 6000,
         per_site_config: Optional[Dict[str, Dict]] = None,
     ):
-        # Validate initial_ckpt
-        _FedEvalValidator(initial_ckpt=initial_ckpt)
+        # Validate eval_ckpt
+        _FedEvalValidator(eval_ckpt=eval_ckpt)
 
         self.name = name
         self.model = model
-        self.initial_ckpt = initial_ckpt
+        self.eval_ckpt = eval_ckpt
         self.min_clients = min_clients
         self.eval_script = eval_script
         self.eval_args = eval_args
@@ -162,7 +162,7 @@ class FedEvalRecipe(Recipe):
             raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
 
         # PTModel handles both nn.Module and dict config uniformly
-        pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
+        pt_model = PTModel(model=self.model, initial_ckpt=self.eval_ckpt)
 
         result = job.to_server(pt_model)
         job.comp_ids.update(result)
