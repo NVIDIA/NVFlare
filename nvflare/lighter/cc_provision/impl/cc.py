@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional, Type
 
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.lighter import utils
-from nvflare.lighter.constants import PropKey, TemplateSectionKey
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -81,7 +81,7 @@ class CCBuilder(Builder):
         self._cc_enabled_sites.append(participant)
         participant.set_prop(PropKey.CC_ENABLED, True)
         participant.set_prop(PropKey.CC_CONFIG_DICT, cc_config)
-        participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
+        participant.set_prop(PropKey.AUTHZ_SECTION_KEY, "cc_authz")
         cc_issuers = cc_config.get(CCConfigKey.CC_ISSUERS, [])
         participant.set_prop(PropKey.CC_ISSUERS, cc_issuers)
         # Add cc_issuers to ctx for cc manager

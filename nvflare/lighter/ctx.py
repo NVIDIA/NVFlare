@@ -17,9 +17,8 @@ from typing import List, Optional, Union
 
 import yaml
 
-import nvflare.lighter as prov
 from nvflare.lighter import utils
-from nvflare.lighter.utils import load_yaml
+from nvflare.lighter.template_engine import TemplateEngine
 
 from .constants import CtxKey, PropKey, ProvisionMode
 from .entity import Entity, Project
@@ -45,41 +44,12 @@ class ProvisionContext(dict):
         self[CtxKey.ADMIN_PORT] = admin_port
         self[CtxKey.FED_LEARN_PORT] = fed_learn_port
         self[CtxKey.SERVER_NAME] = server.name
-        self[CtxKey.TEMP_FILES_LOADED] = []
-        self[CtxKey.TEMPLATE] = {}
+
+        # Initialize Jinja2 template engine
+        self._template_engine = TemplateEngine()
 
     def get_project(self) -> Project:
         return self.get(CtxKey.PROJECT)
-
-    def load_templates(self, temp_files: Union[str, List[str]]):
-        if not temp_files:
-            return
-
-        if isinstance(temp_files, str):
-            temp_files = [temp_files]
-        elif not isinstance(temp_files, list):
-            raise ValueError(f"temp_files must be str or List[str] but got {type(temp_files)}")
-
-        prov_folder = os.path.dirname(prov.__file__)
-        temp_folder = os.path.join(prov_folder, "templates")
-
-        loaded = self[CtxKey.TEMP_FILES_LOADED]
-        template = self[CtxKey.TEMPLATE]
-        for f in temp_files:
-            if f not in loaded:
-                template.update(load_yaml(os.path.join(temp_folder, f)))
-                loaded.append(f)
-
-    def get_template_section(self, section_key: str):
-        template = self.get(CtxKey.TEMPLATE)
-        if not template:
-            raise RuntimeError("template is not available")
-
-        section = template.get(section_key)
-        if not section:
-            raise RuntimeError(f"missing section {section_key} in template")
-
-        return section
 
     def set_provision_mode(self, mode: str):
         valid_modes = [ProvisionMode.POC, ProvisionMode.NORMAL]
@@ -167,10 +137,9 @@ class ProvisionContext(dict):
 
         section = ""
         for s in temp_section:
-            section += self.get_template_section(s)
+            # Template files are named {section_key}.j2
+            section += self._template_engine.render(f"{s}.j2", replacement or {})
 
-        if replacement:
-            section = utils.sh_replace(section, replacement)
         if content_modify_cb:
             section = content_modify_cb(section, **cb_kwargs)
         return section

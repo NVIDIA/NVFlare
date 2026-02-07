@@ -21,7 +21,7 @@ import yaml
 
 from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, ServerDockerJobLauncher
 from nvflare.lighter import utils
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
@@ -103,7 +103,7 @@ class DockerLauncherBuilder(Builder):
             }
             ctx.build_from_template(
                 dest_dir,
-                TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
+                "docker_launcher_svr_sh",
                 ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement=replacement_dict,
                 exe=True,
@@ -162,17 +162,14 @@ class DockerLauncherBuilder(Builder):
             }
             ctx.build_from_template(
                 dest_dir,
-                TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
+                "docker_launcher_cln_sh",
                 ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement=replacement_dict,
                 exe=True,
             )
 
-    def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates("docker_launcher_template.yml")
-
     def build(self, project: Project, ctx: ProvisionContext):
-        compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
+        compose = ctx.yaml_load_template_section("compose_yaml")
         self.services = compose.get("services")
         self.compose_file_path = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_YAML)
         overseer = project.get_overseer()
@@ -200,11 +197,11 @@ class DockerLauncherBuilder(Builder):
         os.makedirs(compose_build_dir, exist_ok=True)
         with open(os.path.join(compose_build_dir, ProvFileName.LAUNCHER_DOCKERFILE), "wt") as f:
             f.write(f"FROM {self.base_image}\n")
-            f.write(ctx.get_template_section(TemplateSectionKey.LAUNCHER_DOCKERFILE))
+            f.write(ctx.build_section_from_template("launcher_dockerfile"))
         replacement_dict = {"image": self.docker_image}
         ctx.build_from_template(
             compose_build_dir,
-            TemplateSectionKey.DOCKER_BUILD_SH,
+            "docker_build_sh",
             ProvFileName.DOCKER_BUILD_SH,
             replacement=replacement_dict,
             exe=True,

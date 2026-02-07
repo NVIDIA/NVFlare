@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  labels:
+    system: server
+spec:
+  selector:
+    system: server
+  ports:
+    - name: fl-port
+      protocol: TCP
+      port: 8002
+      targetPort: fl-port
+    - name: admin-port
+      protocol: TCP
+      port: 8003
+      targetPort: admin-port

@@ -365,13 +365,6 @@ def load_yaml_include(root, yaml_data):
     return new_data
 
 
-def sh_replace(src, mapping_dict):
-    result = src
-    for k, v in mapping_dict.items():
-        result = result.replace("{~~" + k + "~~}", str(v))
-    return result
-
-
 def update_project_server_name_config(project_config: dict, old_server_name, server_name) -> dict:
     update_participant_server_name(project_config, old_server_name, server_name)
     return project_config

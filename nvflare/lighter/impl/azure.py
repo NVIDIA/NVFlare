@@ -11,16 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class AzureBuilder(Builder):
     def __init__(self):
         Builder.__init__(self)
-
-    def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates(["master_template.yml", "azure_template.yml"])
 
     def build(self, project: Project, ctx: ProvisionContext):
         # build server
@@ -32,9 +29,9 @@ class AzureBuilder(Builder):
             dest_dir=dest_dir,
             file_name=ProvFileName.AZURE_START_SH,
             temp_section=[
-                TemplateSectionKey.CLOUD_SCRIPT_HEADER,
-                TemplateSectionKey.AZURE_START_SVR_HEADER_SH,
-                TemplateSectionKey.AZURE_START_COMMON_SH,
+                "cloud_script_header",
+                "azure_start_svr_header_sh",
+                "azure_start_common_sh",
             ],
             # use the server org for project.
             replacement={
@@ -59,9 +56,9 @@ class AzureBuilder(Builder):
                 dest_dir=dest_dir,
                 file_name=ProvFileName.AZURE_START_SH,
                 temp_section=[
-                    TemplateSectionKey.CLOUD_SCRIPT_HEADER,
-                    TemplateSectionKey.AZURE_START_CLN_HEADER_SH,
-                    TemplateSectionKey.AZURE_START_COMMON_SH,
+                    "cloud_script_header",
+                    "azure_start_cln_header_sh",
+                    "azure_start_common_sh",
                 ],
                 replacement={
                     "client_name": participant.name,

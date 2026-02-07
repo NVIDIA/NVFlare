@@ -16,7 +16,7 @@ import os
 
 import yaml
 
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
@@ -33,7 +33,6 @@ class HelmChartBuilder(Builder):
         self.helm_chart_templates_directory = None
 
     def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates("master_template.yml")
         self.helm_chart_directory = os.path.join(ctx.get_wip_dir(), ProvFileName.HELM_CHART_DIR)
         os.mkdir(self.helm_chart_directory)
 
@@ -101,16 +100,16 @@ class HelmChartBuilder(Builder):
 
     def build(self, project: Project, ctx: ProvisionContext):
         with open(os.path.join(self.helm_chart_directory, ProvFileName.CHART_YAML), "wt") as f:
-            yaml.dump(ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_CHART), f)
+            yaml.dump(ctx.yaml_load_template_section("helm_chart_chart"), f)
 
         with open(os.path.join(self.helm_chart_directory, ProvFileName.VALUES_YAML), "wt") as f:
-            yaml.dump(ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_VALUES), f)
+            yaml.dump(ctx.yaml_load_template_section("helm_chart_values"), f)
 
-        self.service_overseer = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_SERVICE_OVERSEER)
-        self.service_server = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_SERVICE_SERVER)
+        self.service_overseer = ctx.yaml_load_template_section("helm_chart_service_overseer")
+        self.service_server = ctx.yaml_load_template_section("helm_chart_service_server")
 
-        self.deployment_overseer = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_DEPLOYMENT_OVERSEER)
-        self.deployment_server = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_DEPLOYMENT_SERVER)
+        self.deployment_overseer = ctx.yaml_load_template_section("helm_chart_deployment_overseer")
+        self.deployment_server = ctx.yaml_load_template_section("helm_chart_deployment_server")
         self.helm_chart_templates_directory = os.path.join(
             self.helm_chart_directory, ProvFileName.HELM_CHART_TEMPLATES_DIR
         )

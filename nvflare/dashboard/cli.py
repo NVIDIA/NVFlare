@@ -22,7 +22,7 @@ import docker
 import nvflare
 from nvflare.apis.utils.format_check import name_check
 from nvflare.dashboard.utils import EnvVar
-from nvflare.lighter import tplt_utils, utils
+from nvflare.lighter import utils
 
 supported_csp = ("azure", "aws")
 
@@ -147,28 +147,24 @@ def stop():
 
 
 def cloud(args):
-    lighter_folder = os.path.dirname(utils.__file__)
-    template = utils.load_yaml(os.path.join(lighter_folder, "templates", "master_template.yml"))
-    template.update(utils.load_yaml(os.path.join(lighter_folder, "templates", "aws_template.yml")))
-    template.update(utils.load_yaml(os.path.join(lighter_folder, "templates", "azure_template.yml")))
-    tplt = tplt_utils.Template(template)
+    from nvflare.lighter.template_engine import TemplateEngine
+
     cwd = os.getcwd()
     csp = args.cloud
     dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
-    dsb_start = template[f"{csp}_start_dsb_sh"]
     version = nvflare.__version__
     if "+" in version:
         print(
             f"Unable to launching dashboard on cloud with {version}.  Please install official NVFlare release from PyPi."
         )
         exit(0)
-    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
-    utils._write(
-        dest,
-        utils.sh_replace(tplt.get_cloud_script_header() + dsb_start, replacement_dict),
-        "t",
-        exe=True,
-    )
+
+    engine = TemplateEngine()
+    context = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
+    dsb_section = "aws_start_dsb_sh" if csp == "aws" else "azure_start_dsb_sh"
+    content = engine.render("cloud_script_header.j2", context)
+    content += engine.render(f"{dsb_section}.j2", context)
+    utils._write(dest, content, "t", exe=True)
     print(f"Dashboard launch script for cloud is written at {dest}.  Now running it.")
     if args.vpc_id and args.subnet_id:
         option = [f"--vpc-id={args.vpc_id}", f"--subnet-id={args.subnet_id}"]

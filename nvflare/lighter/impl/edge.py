@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.lighter.constants import PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -21,9 +21,6 @@ class EdgeBuilder(Builder):
 
     def __init__(self):
         Builder.__init__(self)
-
-    def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates("edge_template.yml")
 
     def build(self, project: Project, ctx: ProvisionContext):
         for client in project.get_clients():
@@ -50,6 +47,6 @@ class EdgeBuilder(Builder):
         ctx.build_from_template(
             dest_dir=dest_dir,
             file_name=ProvFileName.EDGE_RESOURCES_JSON,
-            temp_section=TemplateSectionKey.EDGE_LCP_RESOURCES,
+            temp_section="edge_lcp_resources",
             replacement=replacement,
         )

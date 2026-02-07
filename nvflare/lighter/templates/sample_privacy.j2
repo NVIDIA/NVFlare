@@ -1,0 +1,56 @@
+{
+  "scopes": [
+    {
+      "name": "public",
+      "properties": {
+        "train_dataset": "/data/public/train",
+        "val_dataset": "/data/public/val"
+      },
+      "task_result_filters": [
+        {
+          "name": "AddNoiseToMinMax",
+          "args": {
+            "min_noise_level": 0.2,
+            "max_noise_level": 0.2
+          }
+        },
+        {
+          "name": "PercentilePrivacy",
+          "args": {
+            "percentile": 10,
+            "gamma": 0.02
+          }
+        }
+      ],
+      "task_data_filters": [
+        {
+          "name": "BadModelDetector"
+        }
+      ]
+    },
+    {
+      "name": "private",
+      "properties": {
+        "train_dataset": "/data/private/train",
+        "val_dataset": "/data/private/val"
+      },
+      "task_result_filters": [
+        {
+          "name": "AddNoiseToMinMax",
+          "args": {
+            "min_noise_level": 0.1,
+            "max_noise_level": 0.1
+          }
+        },
+        {
+          "name": "SVTPrivacy",
+          "args": {
+            "fraction": 0.1,
+            "epsilon": 0.2
+          }
+        }
+      ]
+    }
+  ],
+  "default_scope": "public"
+}

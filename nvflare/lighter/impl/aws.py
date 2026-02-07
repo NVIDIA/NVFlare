@@ -11,16 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.lighter.constants import ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class AWSBuilder(Builder):
     def __init__(self):
         Builder.__init__(self)
-
-    def initialize(self, project: Project, ctx: ProvisionContext):
-        ctx.load_templates(["master_template.yml", "aws_template.yml"])
 
     def build(self, project: Project, ctx: ProvisionContext):
         # build server
@@ -37,8 +34,8 @@ class AWSBuilder(Builder):
             dest_dir=dest_dir,
             file_name=ProvFileName.AWS_START_SH,
             temp_section=[
-                TemplateSectionKey.CLOUD_SCRIPT_HEADER,
-                TemplateSectionKey.AWS_START_SH,
+                "cloud_script_header",
+                "aws_start_sh",
             ],
             replacement=replacement,
             exe=True,
@@ -57,8 +54,8 @@ class AWSBuilder(Builder):
                 dest_dir=dest_dir,
                 file_name=ProvFileName.AWS_START_SH,
                 temp_section=[
-                    TemplateSectionKey.CLOUD_SCRIPT_HEADER,
-                    TemplateSectionKey.AWS_START_SH,
+                    "cloud_script_header",
+                    "aws_start_sh",
                 ],
                 replacement=replacement,
                 exe=True,

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# docker run script for FL server
+DOCKER_IMAGE={{ docker_image }}
+echo "Starting docker with $DOCKER_IMAGE"
+
+NETWORK_NAME="nvflare-network"
+if docker network ls --filter name=$NETWORK_NAME --format "{% raw %}{{.Name}}{% endraw %}" | grep -wq $NETWORK_NAME; then
+    echo "Network '${NETWORK_NAME}' exists."
+else
+    docker network create $NETWORK_NAME
+fi
+
+docker run --name {{ client_name }} --network nvflare-network \
+  -v $DIR/..:/workspace \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p {{ communication_port }}:{{ communication_port }} \
+  -it --rm $DOCKER_IMAGE /bin/bash -c "export NVFL_DOCKER_WORKSPACE=$DIR/..;startup/sub_start.sh \
+  {{ client_name }} {{ server_host_name }}:{{ fed_learn_port }}:{{ admin_port }}"
