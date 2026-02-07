@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for Evaluation recipes (FedEval, CrossSiteEval)."""
+"""Tests for Numpy CrossSiteEval recipe.
+
+FedEvalRecipe (PT) is tested in tests/unit_test/app_opt/pt/recipes/fed_eval_recipe_test.py.
+"""
 
 from unittest.mock import patch
 
 import pytest
-
-torch = pytest.importorskip("torch")
 
 
 @pytest.fixture
@@ -30,59 +31,6 @@ def mock_file_system():
         patch("os.path.exists", return_value=True),
     ):
         yield
-
-
-@pytest.fixture
-def simple_pt_model():
-    """Create a simple PyTorch model for testing."""
-    import torch.nn as nn
-
-    return nn.Linear(10, 2)
-
-
-class TestFedEvalRecipe:
-    """Test cases for FedEvalRecipe (PyTorch)."""
-
-    def test_basic_initialization(self, mock_file_system, simple_pt_model):
-        """Test FedEvalRecipe basic initialization with required initial_ckpt."""
-        from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
-
-        recipe = FedEvalRecipe(
-            name="test_fedeval",
-            model=simple_pt_model,
-            initial_ckpt="/abs/path/to/model.pt",
-            min_clients=2,
-            eval_script="eval.py",
-        )
-
-        assert recipe.job is not None
-
-    def test_dict_model_config_accepted(self, mock_file_system):
-        """Test that dict model config is accepted."""
-        from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
-
-        recipe = FedEvalRecipe(
-            name="test_fedeval_dict",
-            model={"path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
-            initial_ckpt="/abs/path/to/model.pt",
-            min_clients=2,
-            eval_script="eval.py",
-        )
-
-        assert recipe.job is not None
-
-    def test_initial_ckpt_required(self, mock_file_system, simple_pt_model):
-        """Test that initial_ckpt is required for FedEvalRecipe."""
-        from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
-
-        # FedEvalRecipe requires initial_ckpt - should raise if missing
-        with pytest.raises(TypeError):
-            FedEvalRecipe(
-                name="test_fedeval",
-                model=simple_pt_model,
-                min_clients=2,
-                eval_script="eval.py",
-            )
 
 
 class TestNumpyCrossSiteEvalRecipe:

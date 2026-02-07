@@ -641,7 +641,7 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
         recipe = FedEvalRecipe(
             name="test-pt-fedeval",
             model={"path": "model.SimpleNetwork"},
-            initial_ckpt=self.checkpoint_path,
+            eval_ckpt=self.checkpoint_path,
             min_clients=2,
             eval_script=self.train_script,  # FedEval uses eval_script, not train_script
         )
