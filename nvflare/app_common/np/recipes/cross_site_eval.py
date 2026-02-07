@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Optional
 
 from pydantic import BaseModel, field_validator
@@ -44,6 +45,11 @@ class _CrossSiteEvalValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
+            if not os.path.isabs(v):
+                raise ValueError(
+                    f"initial_ckpt must be an absolute path for NumpyCrossSiteEvalRecipe, got: {v}. "
+                    "Relative path support for this recipe is planned for a future release."
+                )
             validate_initial_ckpt(v)
         return v
 
@@ -133,6 +139,7 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         # Determine model source
         if initial_ckpt is not None:
             # Use absolute path - pass directly to locator
+            # Note: Relative path support deferred to future release (locator path resolution needed)
             locator_model_name = {NPModelLocator.SERVER_MODEL_NAME: initial_ckpt}
             locator_model_dir = model_dir if model_dir is not None else "models"
         else:

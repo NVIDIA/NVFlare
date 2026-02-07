@@ -221,9 +221,12 @@ class FedOptRecipe(Recipe):
         job.to_server(model_to_register, id=self.source_model)
 
         # Add the persisted model to the job with checkpoint support
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
         persistor = PTFileModelPersistor(
             model=self.source_model,
-            source_ckpt_file_full_name=self.initial_ckpt,
+            source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = job.to_server(persistor, id="persistor")
 

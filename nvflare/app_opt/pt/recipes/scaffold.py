@@ -142,7 +142,10 @@ class ScaffoldRecipe(Recipe):
         # Setup model persistor using PTModel
         persistor_id = ""
         if self.model is not None or self.initial_ckpt is not None:
-            pt_model = PTModel(model=self.model, initial_ckpt=self.initial_ckpt)
+            from nvflare.recipe.utils import prepare_initial_ckpt
+
+            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+            pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
             result = job.to_server(pt_model, id="persistor")
             persistor_id = result["persistor_id"]
 

@@ -147,10 +147,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         """Override to handle TensorFlow-specific model setup."""
         if self.model is not None or self.initial_ckpt is not None:
             from nvflare.app_opt.tf.job_config.model import TFModel
+            from nvflare.recipe.utils import prepare_initial_ckpt
 
+            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
             tf_model = TFModel(
                 model=self.model,
-                initial_ckpt=self.initial_ckpt,
+                initial_ckpt=ckpt_path,
                 persistor=self.model_persistor,
             )
             job.comp_ids["persistor_id"] = job.to_server(tf_model)

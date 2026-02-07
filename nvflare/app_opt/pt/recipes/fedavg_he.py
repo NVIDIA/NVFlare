@@ -77,8 +77,9 @@ class FedAvgRecipeWithHE(Recipe):
             - nn.Module instance
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
-        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
-            exist locally as it could be on the server. Used to load initial weights.
+        initial_ckpt: Path to a pre-trained checkpoint file. Can be:
+            - Relative path: file will be bundled into the job's custom/ directory.
+            - Absolute path: treated as a server-side path, used as-is at runtime.
             Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
@@ -187,22 +188,25 @@ class FedAvgRecipeWithHE(Recipe):
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
-        # Create a persistor with HE serialization filter if initial model or checkpoint is provided
-        model_persistor = None
-        if self.model is not None or self.initial_ckpt is not None:
-            model_persistor = PTFileModelPersistor(
-                model=self.model,
-                source_ckpt_file_full_name=self.initial_ckpt,
-                filter_id="model_serialize_filter",
-            )
-
-        # Create BaseFedJob with initial model and persistor
+        # Create BaseFedJob without model first (model setup done manually below for HE)
         job = BaseFedJob(
-            initial_model=self.model,
             name=self.name,
             min_clients=self.min_clients,
-            model_persistor=model_persistor,
         )
+
+        # Create a persistor with HE serialization filter if initial model or checkpoint is provided
+        if self.model is not None or self.initial_ckpt is not None:
+            from nvflare.app_opt.pt.job_config.model import PTModel
+            from nvflare.recipe.utils import prepare_initial_ckpt
+
+            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+            model_persistor = PTFileModelPersistor(
+                model=self.model,
+                source_ckpt_file_full_name=ckpt_path,
+                filter_id="model_serialize_filter",
+            )
+            pt_model = PTModel(model=self.model, persistor=model_persistor)
+            job.comp_ids.update(job.to_server(pt_model))
 
         # Add HE model serialization filter (must be added before persistor uses it)
         if self.model is not None or self.initial_ckpt is not None:
