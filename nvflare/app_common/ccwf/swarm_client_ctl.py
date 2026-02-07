@@ -455,11 +455,12 @@ class SwarmClientController(ClientSideController):
 
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         clients = self.get_config_prop(Constant.CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS, [])
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS, [])
         train_clients = self.get_config_prop(Constant.TRAIN_CLIENTS, [])
 
         self.log_info(
-            fl_ctx, f"Starting Swarm Workflow on clients {clients}, aggrs {aggr_clients}, trainers {train_clients}"
+            fl_ctx,
+            f"Starting Swarm Workflow on clients {clients}, aggregator candidates {aggregator_candidates}, trainers {train_clients}",
         )
 
         if not self._scatter(
@@ -472,10 +473,10 @@ class SwarmClientController(ClientSideController):
 
     def _scatter(self, task_data: Shareable, for_round: int, fl_ctx: FLContext) -> bool:
         clients = self.get_config_prop(Constant.TRAIN_CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS)
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS)
 
         # determine aggr client
-        aggr = random.choice(aggr_clients)
+        aggr = random.choice(aggregator_candidates)
 
         task_data.set_header(AppConstants.CURRENT_ROUND, for_round)
         task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, for_round)
@@ -485,8 +486,35 @@ class SwarmClientController(ClientSideController):
         if aggr not in targets:
             targets.append(aggr)
 
-        self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
-        return self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx)
+        # Handle self locally to avoid synchronous self-message deadlock.
+        # When sending to self via broadcast_and_wait, the message is processed synchronously
+        # on the same thread (via _send_direct_message in core_cell.py). If TensorStreamer
+        # is enabled, this causes deadlock because wait_for_tensors() blocks the thread
+        # waiting for streaming data that can't arrive on the blocked thread.
+        # Instead, queue the task locally via set_learn_task (non-blocking, processed by _do_learn thread).
+        should_queue_locally = self.me in targets
+        remote_targets = [t for t in targets if t != self.me]
+
+        # Queue locally FIRST with a deep copy. Deep copy is needed because:
+        # 1. set_learn_task stores a reference, _do_learn processes it later on another thread
+        # 2. send_learn_task may modify task_data in-place (e.g., TensorStreamer replacing tensors with REF IDs)
+        # 3. Without deep copy, there's a race condition between modification and processing
+        if should_queue_locally:
+            self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
+            if not self.set_learn_task(task_data=copy.deepcopy(task_data), fl_ctx=fl_ctx):
+                self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
+                return False
+
+        # Then send to remote targets
+        if remote_targets:
+            self.log_info(
+                fl_ctx,
+                f"broadcasting learn task of round {for_round} to {remote_targets}; aggregation happens on {aggr}",
+            )
+            if not self.send_learn_task(targets=remote_targets, request=task_data, fl_ctx=fl_ctx):
+                return False
+
+        return True
 
     def _monitor_gather(self):
         while True:
