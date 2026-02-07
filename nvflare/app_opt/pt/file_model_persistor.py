@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional, Union
 import torch
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -229,15 +229,22 @@ class PTFileModelPersistor(ModelPersistor):
         """
         src_file_name = None
         if self.source_ckpt_file_full_name:
-            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
-            if not os.path.exists(self.source_ckpt_file_full_name):
+            if os.path.isabs(self.source_ckpt_file_full_name):
+                ckpt_path = self.source_ckpt_file_full_name
+            else:
+                # Relative path: resolve against app's custom directory
+                app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+                ckpt_path = os.path.join(
+                    app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME, self.source_ckpt_file_full_name
+                )
+            # Checkpoint MUST exist at runtime (fail fast to catch config errors)
+            if not os.path.exists(ckpt_path):
                 self.system_panic(
-                    reason=f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
-                    "Check that the checkpoint exists at runtime.",
+                    reason=f"Source checkpoint not found: {ckpt_path}. " "Check that the checkpoint exists at runtime.",
                     fl_ctx=fl_ctx,
                 )
                 return None
-            src_file_name = self.source_ckpt_file_full_name
+            src_file_name = ckpt_path
         elif self.ckpt_preload_path:
             src_file_name = self.ckpt_preload_path
 

@@ -64,8 +64,9 @@ class CyclicRecipe(Recipe):
             - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
-        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
-            exist locally as it could be on the server. Used to load initial weights.
+        initial_ckpt: Path to a pre-trained checkpoint file. Can be:
+            - Relative path: file will be bundled into the job's custom/ directory.
+            - Absolute path: treated as a server-side path, used as-is at runtime.
         num_rounds: Number of complete training rounds to execute. Defaults to 2.
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.

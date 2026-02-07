@@ -69,7 +69,16 @@ def _instantiate_model_from_dict(model_config: Dict[str, Any]) -> Any:
 
 
 class BaseSwarmLearningRecipe(Recipe):
-    """Base recipe for Swarm Learning (framework-agnostic)."""
+    """Base recipe for Swarm Learning (framework-agnostic).
+
+    Args:
+        name: Name of the federated learning job.
+        server_config: Swarm server configuration.
+        client_config: Swarm client configuration.
+        cse_config: Optional cross-site evaluation configuration.
+        job: Optional pre-created CCWFJob. If None, a new one is created.
+            Subclasses may create the job early to add files before building configs.
+    """
 
     def __init__(
         self,
@@ -77,8 +86,10 @@ class BaseSwarmLearningRecipe(Recipe):
         server_config: SwarmServerConfig,
         client_config: SwarmClientConfig,
         cse_config: CrossSiteEvalConfig = None,
+        job: CCWFJob = None,
     ):
-        job = CCWFJob(name=name)
+        if job is None:
+            job = CCWFJob(name=name)
         job.add_swarm(
             server_config=server_config,
             client_config=client_config,
@@ -95,7 +106,9 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         model: PyTorch model to use as the initial model. Can be:
             - An nn.Module instance (e.g., MyModel())
             - A dict config: {"path": "module.ClassName", "args": {"param": value}}
-        initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
+        initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
+            - Relative path: file will be bundled into the job's custom/ directory.
+            - Absolute path: treated as a server-side path, used as-is at runtime.
         num_rounds: Number of training rounds.
         train_script: Path to the training script.
         train_args: Additional arguments for the training script.
@@ -160,12 +173,18 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             if conflicts:
                 raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
 
+        # Create job early so prepare_initial_ckpt can bundle files into it
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        job = CCWFJob(name=name)
+        ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
+
         server_config = SwarmServerConfig(num_rounds=num_rounds)
         client_config = SwarmClientConfig(
             executor=ScriptRunner(script=train_script, **train_args),
             aggregator=aggregator,
-            persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=initial_ckpt),
+            persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=ckpt_path),
             shareable_generator=SimpleModelShareableGenerator(),
         )
 
-        BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config)
+        BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
