@@ -148,11 +148,10 @@ class TestKMeansFedAvgRecipe:
         assert recipe.job is not None
 
     def test_relative_path_rejected(self):
-        """Test that relative paths are rejected (no mock_file_system so path fails existence)."""
+        """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""
         from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
 
-        # validate_initial_ckpt allows relative only if file exists; without mock it raises
-        with pytest.raises(ValidationError, match="relative path does not exist locally"):
+        with pytest.raises(ValidationError, match="must be an absolute path"):
             KMeansFedAvgRecipe(
                 name="test_kmeans",
                 n_clusters=3,
@@ -193,3 +192,16 @@ class TestSVMFedAvgRecipe:
         )
 
         assert recipe.job is not None
+
+    def test_relative_path_rejected(self):
+        """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""
+        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+        with pytest.raises(ValidationError, match="must be an absolute path"):
+            SVMFedAvgRecipe(
+                name="test_svm",
+                train_script="train.py",
+                min_clients=2,
+                kernel="rbf",
+                model_path="relative/path/svm.joblib",
+            )

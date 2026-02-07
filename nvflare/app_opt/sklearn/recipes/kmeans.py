@@ -17,12 +17,11 @@ from typing import Optional
 from pydantic import BaseModel, conint, field_validator
 
 from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.app_opt.sklearn.kmeans_assembler import KMeansAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe
-from nvflare.recipe.utils import validate_initial_ckpt
 
 
 # Internal — not part of the public API
@@ -35,9 +34,9 @@ class _KMeansValidator(BaseModel):
 
     @field_validator("model_path")
     @classmethod
-    def validate_model_path(cls, v):
+    def validate_model_path_absolute(cls, v):
         if v is not None:
-            validate_initial_ckpt(v)
+            validate_model_path(v)
         return v
 
 

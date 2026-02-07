@@ -28,6 +28,19 @@ from nvflare.app_common.app_constant import AppConstants
 MODEL_PATH_KEY = "model_path"
 
 
+def validate_model_path(path: Optional[str]) -> None:
+    """Require model_path to be absolute if provided.
+
+    All sklearn recipes use this so construction fails fast instead of at runtime
+    when the persistor's load_model() runs. Call from recipe __init__ or validators.
+    """
+    if path is not None and not os.path.isabs(path):
+        raise ValueError(
+            f"model_path must be an absolute path, got: {path!r}. "
+            "Use absolute paths like '/workspace/model.joblib' for server-side model files."
+        )
+
+
 class JoblibModelParamPersistor(ModelPersistor):
     def __init__(
         self,

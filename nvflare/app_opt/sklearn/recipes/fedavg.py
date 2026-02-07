@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -135,12 +134,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):
-        # Reject relative paths at construction (persistor requires absolute path at runtime)
-        if model_path is not None and not os.path.isabs(model_path):
-            raise ValueError(
-                f"model_path must be an absolute path, got: {model_path!r}. "
-                "Use absolute paths like '/workspace/model.joblib' for server-side model files."
-            )
+        validate_model_path(model_path)
 
         # Create sklearn-specific persistor
         persistor = JoblibModelParamPersistor(
