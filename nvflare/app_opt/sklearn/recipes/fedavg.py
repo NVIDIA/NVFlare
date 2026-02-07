@@ -16,7 +16,7 @@ from typing import Optional
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -40,10 +40,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         model_params: Model hyperparameters as a dictionary. For SGDClassifier, can include:
             n_classes, learning_rate, eta0, loss, penalty, fit_intercept, etc.
-            Can also include initial weights if needed.
-        initial_ckpt: Absolute path to a pre-trained checkpoint file (.joblib, .pkl).
-            The file may not exist locally as it could be on the server.
-            Used to load initial model parameters.
+        model_path: Optional absolute path to a saved model file (.joblib, .pkl). If provided,
+            the model is loaded from this path at runtime (file must exist). Takes precedence
+            over model_params when loading.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         aggregator: Custom aggregator for combining client updates. If None,
@@ -126,7 +125,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         min_clients: int,
         num_rounds: int = 2,
         model_params: Optional[dict] = None,
-        initial_ckpt: Optional[str] = None,
+        model_path: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         aggregator: Optional[Aggregator] = None,
@@ -138,10 +137,12 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
     ):
-        # Create sklearn-specific persistor with checkpoint support
+        validate_model_path(model_path)
+
+        # Create sklearn-specific persistor
         persistor = JoblibModelParamPersistor(
             initial_params=model_params or {},
-            source_ckpt_file_full_name=initial_ckpt,
+            model_path=model_path,
         )
 
         # Call the unified FedAvgRecipe with sklearn-specific settings

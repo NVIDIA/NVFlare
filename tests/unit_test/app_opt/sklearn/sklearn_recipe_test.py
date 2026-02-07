@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for Sklearn recipes (FedAvg, KMeans, SVM) with initial_ckpt support."""
+"""Tests for Sklearn recipes (FedAvg, KMeans, SVM) with model_path support."""
 
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -58,33 +59,42 @@ class TestSklearnFedAvgRecipe:
         assert recipe.name == "test_sklearn"
         assert recipe.job is not None
 
-    def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params):
-        """Test that initial_ckpt parameter is accepted."""
+    def test_model_path_parameter_accepted(self, mock_file_system, base_recipe_params):
+        """Test that model_path argument is accepted."""
         from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
 
-        model_params = {"n_classes": 2}
         recipe = SklearnFedAvgRecipe(
             name="test_sklearn_ckpt",
-            model_params=model_params,
-            initial_ckpt="/abs/path/to/model.joblib",
+            model_params={"n_classes": 2},
+            model_path="/abs/path/to/model.joblib",
             **base_recipe_params,
         )
 
-        # The initial_ckpt is passed to the persistor, not stored on recipe directly
         assert recipe.job is not None
 
-    def test_initial_ckpt_only_without_model_params(self, mock_file_system, base_recipe_params):
-        """Test that initial_ckpt works without model_params."""
+    def test_model_path_only_without_model_params(self, mock_file_system, base_recipe_params):
+        """Test that model_path alone (load from file) works."""
         from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
 
         recipe = SklearnFedAvgRecipe(
             name="test_sklearn_ckpt_only",
-            model_params=None,
-            initial_ckpt="/abs/path/to/pretrained.joblib",
+            model_path="/abs/path/to/pretrained.joblib",
             **base_recipe_params,
         )
 
         assert recipe.job is not None
+
+    def test_relative_path_rejected(self, mock_file_system, base_recipe_params):
+        """Test that relative model_path is rejected at construction time."""
+        from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            SklearnFedAvgRecipe(
+                name="test_sklearn",
+                model_params={"n_classes": 2},
+                model_path="relative/path/model.joblib",
+                **base_recipe_params,
+            )
 
     def test_with_per_site_config(self, mock_file_system, base_recipe_params):
         """Test SklearnFedAvgRecipe with per-site configuration."""
@@ -105,7 +115,7 @@ class TestSklearnFedAvgRecipe:
 
 
 class TestKMeansFedAvgRecipe:
-    """Test cases for KMeansFedAvgRecipe with initial_ckpt support."""
+    """Test cases for KMeansFedAvgRecipe with model_path support."""
 
     def test_basic_initialization(self, mock_file_system):
         """Test KMeansFedAvgRecipe basic initialization."""
@@ -122,8 +132,8 @@ class TestKMeansFedAvgRecipe:
         assert recipe.name == "test_kmeans"
         assert recipe.job is not None
 
-    def test_initial_ckpt_accepted(self, mock_file_system):
-        """Test that initial_ckpt parameter is accepted."""
+    def test_model_path_accepted(self, mock_file_system):
+        """Test that model_path parameter is accepted."""
         from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
 
         recipe = KMeansFedAvgRecipe(
@@ -132,14 +142,28 @@ class TestKMeansFedAvgRecipe:
             train_script="train.py",
             min_clients=2,
             num_rounds=5,
-            initial_ckpt="/abs/path/to/kmeans.joblib",
+            model_path="/abs/path/to/kmeans.joblib",
         )
 
         assert recipe.job is not None
 
+    def test_relative_path_rejected(self):
+        """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""
+        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+
+        with pytest.raises(ValidationError, match="must be an absolute path"):
+            KMeansFedAvgRecipe(
+                name="test_kmeans",
+                n_clusters=3,
+                train_script="train.py",
+                min_clients=2,
+                num_rounds=5,
+                model_path="relative/path/model.joblib",
+            )
+
 
 class TestSVMFedAvgRecipe:
-    """Test cases for SVMFedAvgRecipe with initial_ckpt support."""
+    """Test cases for SVMFedAvgRecipe with model_path support."""
 
     def test_basic_initialization(self, mock_file_system):
         """Test SVMFedAvgRecipe basic initialization."""
@@ -155,8 +179,8 @@ class TestSVMFedAvgRecipe:
         assert recipe.name == "test_svm"
         assert recipe.job is not None
 
-    def test_initial_ckpt_accepted(self, mock_file_system):
-        """Test that initial_ckpt parameter is accepted."""
+    def test_model_path_accepted(self, mock_file_system):
+        """Test that model_path parameter is accepted."""
         from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
 
         recipe = SVMFedAvgRecipe(
@@ -164,7 +188,20 @@ class TestSVMFedAvgRecipe:
             train_script="train.py",
             min_clients=2,
             kernel="rbf",
-            initial_ckpt="/abs/path/to/svm.joblib",
+            model_path="/abs/path/to/svm.joblib",
         )
 
         assert recipe.job is not None
+
+    def test_relative_path_rejected(self):
+        """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""
+        from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+        with pytest.raises(ValidationError, match="must be an absolute path"):
+            SVMFedAvgRecipe(
+                name="test_svm",
+                train_script="train.py",
+                min_clients=2,
+                kernel="rbf",
+                model_path="relative/path/svm.joblib",
+            )

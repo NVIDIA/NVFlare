@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Test that all persistors fail fast when source_ckpt_file_full_name doesn't exist at runtime."""
+"""Test that persistors fail fast when model path doesn't exist at runtime."""
 
 import tempfile
 import unittest
@@ -30,10 +30,10 @@ class TestCheckpointValidation(unittest.TestCase):
         self.nonexistent_path = "/tmp/nonexistent_checkpoint_12345.ckpt"
 
     def test_sklearn_persistor_fails_fast_on_missing_checkpoint(self):
-        """Test JoblibModelParamPersistor fails when checkpoint doesn't exist."""
+        """Test JoblibModelParamPersistor fails when model_path doesn't exist."""
         from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 
-        persistor = JoblibModelParamPersistor(source_ckpt_file_full_name=self.nonexistent_path)
+        persistor = JoblibModelParamPersistor(model_path=self.nonexistent_path)
 
         # Mock _initialize to set save_path
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -43,9 +43,9 @@ class TestCheckpointValidation(unittest.TestCase):
             with self.assertRaises(ValueError) as context:
                 persistor.load_model(self.fl_ctx)
 
-            self.assertIn("Source checkpoint not found", str(context.exception))
+            self.assertIn("Model file not found", str(context.exception))
             self.assertIn(self.nonexistent_path, str(context.exception))
-            self.assertIn("Check that the checkpoint exists at runtime", str(context.exception))
+            self.assertIn("Check that the file exists at runtime", str(context.exception))
 
     def test_numpy_utils_fails_fast_on_missing_checkpoint(self):
         """Test load_numpy_model utility fails when checkpoint doesn't exist."""
