@@ -189,7 +189,7 @@ class FedOptRecipe(Recipe):
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
-            model=None,
+            initial_model=None,
             name=self.name,
             min_clients=self.min_clients,
         )
