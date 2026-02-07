@@ -36,7 +36,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     User must add controllers and executors.
 
     Args:
-        model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
+        initial_model (tf.keras.Model): Initial TensorFlow model. Defaults to None.
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
             The file may not exist locally as it could be on the server.
             Note: TensorFlow can load full models from .h5/SavedModel without model.
@@ -62,7 +62,7 @@ class BaseFedJob(UnifiedBaseFedJob):
 
     def __init__(
         self,
-        model: tf.keras.Model = None,
+        initial_model: tf.keras.Model = None,
         initial_ckpt: Optional[str] = None,
         name: str = "fed_job",
         min_clients: int = 1,
@@ -88,12 +88,12 @@ class BaseFedJob(UnifiedBaseFedJob):
 
         # TensorFlow-specific model setup
         # TFModel wrapper can handle: tf.keras.Model instances, dict configs, or None
-        if model is not None or initial_ckpt is not None:
-            self._setup_tensorflow_model(model, initial_ckpt, model_persistor)
+        if initial_model is not None or initial_ckpt is not None:
+            self._setup_tensorflow_model(initial_model, initial_ckpt, model_persistor)
 
     def _setup_tensorflow_model(
         self,
-        model: Optional[tf.keras.Model],
+        initial_model: Optional[tf.keras.Model],
         initial_ckpt: Optional[str],
         persistor: Optional[ModelPersistor] = None,
     ):
@@ -102,5 +102,5 @@ class BaseFedJob(UnifiedBaseFedJob):
         from nvflare.recipe.utils import prepare_initial_ckpt
 
         ckpt_path = prepare_initial_ckpt(initial_ckpt, self)
-        tf_model = TFModel(model=model, initial_ckpt=ckpt_path, persistor=persistor)
+        tf_model = TFModel(model=initial_model, initial_ckpt=ckpt_path, persistor=persistor)
         self.comp_ids["persistor_id"] = self.to_server(tf_model)

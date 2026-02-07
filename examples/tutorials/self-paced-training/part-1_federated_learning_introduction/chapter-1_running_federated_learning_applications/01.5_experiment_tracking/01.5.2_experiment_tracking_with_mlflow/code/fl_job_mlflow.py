@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     train_script = "src/client_mlflow.py"
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, model=SimpleNetwork())
+    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
     receiver = MLflowReceiver(
         tracking_uri="file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
         kw_args={

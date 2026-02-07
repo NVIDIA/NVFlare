@@ -161,7 +161,7 @@ class ScaffoldRecipe(Recipe):
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
-            model=self.model,
+            initial_model=self.model,
             initial_ckpt=self.initial_ckpt,
             name=self.name,
             min_clients=self.min_clients,

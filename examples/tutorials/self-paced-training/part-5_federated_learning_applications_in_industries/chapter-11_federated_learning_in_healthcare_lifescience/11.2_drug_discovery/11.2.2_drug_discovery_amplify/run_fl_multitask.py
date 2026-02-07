@@ -40,7 +40,7 @@ def main(args):
     model = AmplifyRegressor(pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes)
 
     # Create BaseFedJob with initial model
-    job = BaseFedJob(name=f"amplify_seqregression_{args.exp_name}", model=model)
+    job = BaseFedJob(name=f"amplify_seqregression_{args.exp_name}", initial_model=model)
 
     # Define the controller and send to server
     controller = FedAvg(

@@ -35,7 +35,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     User must add controllers and executors.
 
     Args:
-        model (nn.Module, optional): initial PyTorch Model. Defaults to None.
+        initial_model (nn.Module, optional): Initial PyTorch model. Defaults to None.
         name (str, optional): name of the job. Defaults to "fed_job".
         min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
         mandatory_clients (list[str] | None, optional): mandatory clients to run the job. Default None.
@@ -59,7 +59,7 @@ class BaseFedJob(UnifiedBaseFedJob):
 
     def __init__(
         self,
-        model: nn.Module = None,
+        initial_model: nn.Module = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
@@ -84,19 +84,21 @@ class BaseFedJob(UnifiedBaseFedJob):
         )
 
         # PyTorch-specific model setup
-        if model is not None:
-            if not isinstance(model, nn.Module):
-                raise TypeError(f"model must be an instance of nn.Module, but got {type(model).__name__}")
-            self._setup_pytorch_model(model, model_persistor, model_locator)
+        if initial_model is not None:
+            if not isinstance(initial_model, nn.Module):
+                raise TypeError(
+                    f"initial_model must be an instance of nn.Module, but got {type(initial_model).__name__}"
+                )
+            self._setup_pytorch_model(initial_model, model_persistor, model_locator)
 
     def _setup_pytorch_model(
         self,
-        model: nn.Module,
+        initial_model: nn.Module,
         persistor: Optional[ModelPersistor] = None,
         locator: Optional[ModelLocator] = None,
     ):
         """Setup PyTorch model with persistor and locator."""
         from nvflare.app_opt.pt.job_config.model import PTModel
 
-        pt_model = PTModel(model=model, persistor=persistor, locator=locator)
+        pt_model = PTModel(model=initial_model, persistor=persistor, locator=locator)
         self.comp_ids.update(self.to_server(pt_model))
