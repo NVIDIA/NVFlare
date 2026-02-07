@@ -50,25 +50,32 @@ def load_numpy_model(
     """
     data = None
 
-    # Priority 1: Load from source checkpoint (absolute path) if provided
+    # Priority 1: Load from source checkpoint if provided
     if source_ckpt_file_full_name:
+        if os.path.isabs(source_ckpt_file_full_name):
+            ckpt_path = source_ckpt_file_full_name
+        else:
+            # Relative path: resolve against app's custom directory
+            from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+
+            app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+            ckpt_path = os.path.join(app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME, source_ckpt_file_full_name)
         # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
-        if not os.path.exists(source_ckpt_file_full_name):
+        if not os.path.exists(ckpt_path):
             raise ValueError(
-                f"Source checkpoint not found: {source_ckpt_file_full_name}. "
-                "Check that the checkpoint exists at runtime."
+                f"Source checkpoint not found: {ckpt_path}. " "Check that the checkpoint exists at runtime."
             )
         try:
             logger.log_info(
                 fl_ctx,
-                f"Loading model from source checkpoint: {source_ckpt_file_full_name}",
+                f"Loading model from source checkpoint: {ckpt_path}",
                 fire_event=False,
             )
-            data = np.load(source_ckpt_file_full_name)
+            data = np.load(ckpt_path)
         except Exception as e:
             # If loading fails after file exists, this is a real error - raise it
             raise ValueError(
-                f"Failed to load from source checkpoint {source_ckpt_file_full_name}: " f"{secure_format_exception(e)}"
+                f"Failed to load from source checkpoint {ckpt_path}: " f"{secure_format_exception(e)}"
             ) from e
 
     # Priority 2: Load from model file path

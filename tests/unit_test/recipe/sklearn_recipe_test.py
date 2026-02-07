@@ -137,20 +137,6 @@ class TestKMeansFedAvgRecipe:
 
         assert recipe.job is not None
 
-    def test_relative_path_rejected(self, mock_file_system):
-        """Test that relative paths are rejected."""
-        from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
-
-        with pytest.raises(ValueError, match="must be an absolute path"):
-            KMeansFedAvgRecipe(
-                name="test_kmeans",
-                n_clusters=3,
-                train_script="train.py",
-                min_clients=2,
-                num_rounds=5,
-                initial_ckpt="relative/path/model.joblib",
-            )
-
 
 class TestSVMFedAvgRecipe:
     """Test cases for SVMFedAvgRecipe with initial_ckpt support."""

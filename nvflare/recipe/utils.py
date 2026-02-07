@@ -421,20 +421,53 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
 
 
 def validate_initial_ckpt(initial_ckpt: Optional[str]) -> None:
-    """Validate that initial_ckpt is an absolute path if provided.
+    """Validate initial_ckpt path if provided.
+
+    For absolute paths: no local existence check (file may be a server-side path).
+    For relative paths: verifies the file exists locally (it will be bundled into the job).
 
     Args:
         initial_ckpt: Checkpoint file path to validate.
 
     Raises:
-        ValueError: If initial_ckpt is not an absolute path.
+        ValueError: If relative path does not exist locally.
     """
     if initial_ckpt is not None:
         if not os.path.isabs(initial_ckpt):
-            raise ValueError(
-                f"initial_ckpt must be an absolute path, got: {initial_ckpt}. "
-                "Use absolute paths like '/workspace/model.pt' for server-side checkpoints."
-            )
+            if not os.path.isfile(initial_ckpt):
+                raise ValueError(
+                    f"initial_ckpt relative path does not exist locally: {initial_ckpt}. "
+                    "Relative paths are treated as local files that will be bundled into the job. "
+                    "Use an absolute path for server-side checkpoints."
+                )
+
+
+def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
+    """Prepare initial_ckpt for job deployment.
+
+    - Relative path: treated as a local file. The file is bundled into the server
+      app's custom directory and the basename is returned for runtime resolution.
+    - Absolute path: treated as a server-side (remote) path and returned as-is.
+      The file is expected to exist on the server at runtime.
+
+    Args:
+        initial_ckpt: Checkpoint file path (absolute or relative).
+        job: BaseFedJob instance to add the file to.
+
+    Returns:
+        The checkpoint path to pass to the persistor:
+        - None if initial_ckpt is None
+        - Basename for relative paths (file is bundled into app/custom/)
+        - Absolute path as-is for server-side checkpoints
+    """
+    if initial_ckpt is None:
+        return None
+    if os.path.isabs(initial_ckpt):
+        # Absolute path: server-side checkpoint, use as-is
+        return initial_ckpt
+    # Relative path: bundle local file into server app's custom/ directory
+    job.add_file_to_server(initial_ckpt)
+    return os.path.basename(initial_ckpt)
 
 
 def validate_dict_model_config(model: Any) -> None:

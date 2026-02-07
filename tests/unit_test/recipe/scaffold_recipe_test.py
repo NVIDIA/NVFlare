@@ -101,11 +101,11 @@ class TestPTScaffoldRecipe:
 
         assert recipe.model == model_config
 
-    def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
-        """Test that relative paths are rejected."""
+    def test_initial_ckpt_must_exist_for_relative_path(self, base_recipe_params, simple_model):
+        """Test that non-existent relative paths are rejected."""
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
-        with pytest.raises(ValueError, match="must be an absolute path"):
+        with pytest.raises(ValueError, match="does not exist locally"):
             ScaffoldRecipe(
                 name="test_relative_path",
                 model=simple_model,
