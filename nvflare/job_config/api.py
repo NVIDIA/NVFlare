@@ -509,6 +509,50 @@ class FedJob:
 
         return self.to(obj=obj, target=ALL_SITES, id=id, **kwargs)
 
+    def add_file_to(self, src_path: str, target: str, dest_dir=None, app_folder_type=None):
+        """Add a file to a specific target's app directory.
+
+        Args:
+            src_path: Local path to the file to be bundled into the job.
+            target: Target site name (e.g., "server", "site-1", or ALL_SITES for all clients).
+            dest_dir: Optional subdirectory within the target folder to place the file.
+            app_folder_type: Type of app folder to place the file. Valid values: "custom", "config".
+                If not specified, defaults to "custom".
+        """
+        self._validate_target(target)
+        target_type = JobTargetType.get_target_type(target)
+        app = self._deploy_map.get(target)
+        if not app:
+            if target_type == JobTargetType.SERVER:
+                app = ServerApp()
+                self._add_server_app(app, target)
+            else:
+                app = ClientApp()
+                self._add_client_app(app, target)
+        app.add_file_source(src_path, dest_dir, app_folder_type)
+
+    def add_file_to_server(self, src_path: str, dest_dir=None, app_folder_type=None):
+        """Add a file to the server app directory.
+
+        Args:
+            src_path: Local path to the file to be bundled into the job.
+            dest_dir: Optional subdirectory within the target folder to place the file.
+            app_folder_type: Type of app folder to place the file. Valid values: "custom", "config".
+                If not specified, defaults to "custom".
+        """
+        self.add_file_to(src_path, SERVER_SITE_NAME, dest_dir, app_folder_type)
+
+    def add_file_to_clients(self, src_path: str, dest_dir=None, app_folder_type=None):
+        """Add a file to all client apps' directory.
+
+        Args:
+            src_path: Local path to the file to be bundled into the job.
+            dest_dir: Optional subdirectory within the target folder to place the file.
+            app_folder_type: Type of app folder to place the file. Valid values: "custom", "config".
+                If not specified, defaults to "custom".
+        """
+        self.add_file_to(src_path, ALL_SITES, dest_dir, app_folder_type)
+
     def _validate_target(self, target):
         if not target:
             raise ValueError("Must provide a valid target name")

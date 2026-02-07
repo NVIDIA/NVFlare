@@ -460,9 +460,9 @@ class TestFedAvgRecipeInitialCkpt:
                 **base_recipe_params,
             )
 
-    def test_initial_ckpt_must_be_absolute_path(self, base_recipe_params, simple_model):
-        """Test that relative paths are rejected (without mock to allow validation)."""
-        with pytest.raises(ValueError, match="must be an absolute path"):
+    def test_initial_ckpt_must_exist_for_relative_path(self, base_recipe_params, simple_model):
+        """Test that non-existent relative paths are rejected."""
+        with pytest.raises(ValueError, match="does not exist locally"):
             FedAvgRecipe(
                 name="test_relative_path",
                 model=simple_model,

@@ -129,17 +129,18 @@ class TestEdgeFedBuffRecipe:
         assert isinstance(recipe.model, dict)
         assert recipe.model["path"] == "torch.nn.Linear"
 
-    def test_relative_path_rejected(
+    def test_relative_path_accepted_if_exists(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
     ):
-        """Test that relative paths are rejected."""
+        """Test that existing relative paths are accepted and bundled."""
         from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
 
-        with pytest.raises(ValueError, match="must be an absolute path"):
-            EdgeFedBuffRecipe(
-                job_name="test_edge",
-                model=simple_pt_model,
-                model_manager_config=model_manager_config,
-                device_manager_config=device_manager_config,
-                initial_ckpt="relative/path/model.pt",
-            )
+        # This should not raise since relative paths are now supported
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_edge",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+            initial_ckpt="relative/path/model.pt",
+        )
+        assert recipe is not None

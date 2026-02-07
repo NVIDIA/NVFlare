@@ -162,7 +162,10 @@ class FedEvalRecipe(Recipe):
             raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
 
         # PTModel handles both nn.Module and dict config uniformly
-        pt_model = PTModel(model=self.model, initial_ckpt=self.eval_ckpt)
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.eval_ckpt, job)
+        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
 
         result = job.to_server(pt_model)
         job.comp_ids.update(result)

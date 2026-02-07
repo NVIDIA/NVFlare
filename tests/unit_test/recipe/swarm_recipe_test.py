@@ -83,18 +83,19 @@ class TestSimpleSwarmLearningRecipe:
 
         assert recipe.job is not None
 
-    def test_relative_path_rejected(self, mock_file_system, simple_pt_model):
-        """Test that relative paths are rejected."""
+    def test_relative_path_accepted_if_exists(self, mock_file_system, simple_pt_model):
+        """Test that existing relative paths are accepted and bundled."""
         from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
 
-        with pytest.raises(ValueError, match="must be an absolute path"):
-            SimpleSwarmLearningRecipe(
-                name="test_swarm",
-                model=simple_pt_model,
-                num_rounds=5,
-                train_script="train.py",
-                initial_ckpt="relative/path/model.pt",
-            )
+        # This should not raise since relative paths are now supported
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            initial_ckpt="relative/path/model.pt",
+        )
+        assert recipe is not None
 
     def test_cross_site_eval_option(self, mock_file_system, simple_pt_model):
         """Test with cross-site evaluation enabled."""

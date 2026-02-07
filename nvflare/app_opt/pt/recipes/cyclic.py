@@ -30,8 +30,9 @@ class CyclicRecipe(BaseCyclicRecipe):
             - Dict config: {"path": "module.ClassName", "args": {"param": value}}
             - PTModel instance (already wrapped)
             - None: no initial model
-        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
-            exist locally as it could be on the server. Used to load initial weights.
+        initial_ckpt: Path to a pre-trained checkpoint file. Can be:
+            - Relative path: file will be bundled into the job's custom/ directory.
+            - Absolute path: treated as a server-side path, used as-is at runtime.
             Note: PyTorch requires model when using initial_ckpt (for architecture).
         num_rounds: Number of complete training rounds to execute. Defaults to 2.
         min_clients: Minimum number of clients required to participate. Must be >= 2.
@@ -62,18 +63,26 @@ class CyclicRecipe(BaseCyclicRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
     ):
-        # Wrap model with PTModel if needed
+        # Validate initial_ckpt early (base class won't see it since we pass None)
+        from nvflare.recipe.utils import validate_initial_ckpt
+
+        validate_initial_ckpt(initial_ckpt)
+
+        # Store initial_ckpt for _setup_model_and_persistor; wrap model with PTModel there
+        self._pt_initial_ckpt = initial_ckpt
         if model is None and initial_ckpt is None:
             model_to_pass = None
         elif isinstance(model, PTModel):
             model_to_pass = model
+            self._pt_initial_ckpt = None  # Already handled by PTModel wrapper
         else:
-            model_to_pass = PTModel(model=model, initial_ckpt=initial_ckpt)
+            # Don't wrap yet — prepare_initial_ckpt needs the job which doesn't exist yet
+            model_to_pass = model
 
         super().__init__(
             name=name,
             model=model_to_pass,
-            initial_ckpt=None,  # Already handled by PTModel wrapper
+            initial_ckpt=None,  # Handled in _setup_model_and_persistor
             num_rounds=num_rounds,
             min_clients=min_clients,
             train_script=train_script,
@@ -85,3 +94,20 @@ class CyclicRecipe(BaseCyclicRecipe):
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
         )
+
+    def _setup_model_and_persistor(self, job) -> str:
+        """Override to handle PyTorch-specific model setup with relative ckpt support."""
+        if self.model is None and self._pt_initial_ckpt is None:
+            return ""
+
+        # If model is already a PTModel wrapper (user passed PTModel directly), use as-is
+        if hasattr(self.model, "add_to_fed_job"):
+            result = job.to_server(self.model, id="persistor")
+            return result["persistor_id"]
+
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self._pt_initial_ckpt, job)
+        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
+        result = job.to_server(pt_model, id="persistor")
+        return result["persistor_id"]

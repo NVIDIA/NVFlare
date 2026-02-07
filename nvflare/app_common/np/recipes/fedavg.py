@@ -166,6 +166,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle NumPy-specific model setup."""
         if self._np_model is not None or self._np_initial_ckpt is not None:
+            from nvflare.recipe.utils import prepare_initial_ckpt
+
             # Convert numpy array to list for JSON serialization
             # NPModelPersistor expects a list, not a numpy array
             model_list = None
@@ -177,9 +179,10 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
                 else:
                     raise TypeError(f"model must be a numpy array or list, got {type(self._np_model).__name__}")
 
+            ckpt_path = prepare_initial_ckpt(self._np_initial_ckpt, job)
             persistor = NPModelPersistor(
                 model=model_list,
-                source_ckpt_file_full_name=self._np_initial_ckpt,
+                source_ckpt_file_full_name=ckpt_path,
             )
             return job.to_server(persistor, id="persistor")
         return ""
