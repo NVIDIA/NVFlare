@@ -54,16 +54,13 @@ class Net(nn.Module):
 
 
 class LitNet(LightningModule):
-    def __init__(self, checkpoint=None):
+    def __init__(self):
         super().__init__()
-        self.save_hyperparameters()
         self.model = Net()
         self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
         # (optional) pass additional information via self.__fl_meta__
         self.__fl_meta__ = {}
-
-        self.checkpoint = checkpoint
 
     def forward(self, x):
         out = self.model(x)
