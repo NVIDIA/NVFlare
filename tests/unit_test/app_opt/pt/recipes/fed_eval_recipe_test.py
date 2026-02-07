@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 import torch.nn as nn
+from pydantic import ValidationError
 
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
@@ -224,11 +225,20 @@ class TestFedEvalRecipe:
 class TestFedEvalRecipeValidation:
     """Test FedEvalRecipe input validation."""
 
-    def test_invalid_eval_ckpt_raises_error(self, mock_file_system, simple_model):
-        """Test that relative or non-absolute eval_ckpt raises ValueError."""
+    def test_invalid_eval_ckpt_raises_error(self, simple_model):
+        """Test that relative eval_ckpt raises when path does not exist locally.
+
+        validate_initial_ckpt() allows relative paths if the file exists locally;
+        it only raises when the relative path is missing. We do not use
+        mock_file_system here so the relative path is not considered existing,
+        and the validator raises (Pydantic wraps in ValidationError).
+        """
         model, _ = simple_model
 
-        with pytest.raises(ValueError, match="initial_ckpt must be an absolute path"):
+        with pytest.raises(
+            ValidationError,
+            match="relative path does not exist locally|initial_ckpt must be an absolute path",
+        ):
             FedEvalRecipe(
                 name="test_invalid_ckpt",
                 model=model,
