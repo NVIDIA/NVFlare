@@ -124,9 +124,12 @@ class FedAvgLrRecipe(Recipe):
 
         # Create FedJob.
         job = FedJob(name=self.name, min_clients=self.min_clients)
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
         persistor = LRModelPersistor(
             n_features=self.num_features,
-            source_ckpt_file_full_name=self.initial_ckpt,
+            source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = job.to_server(persistor, id="lr_persistor")
 
