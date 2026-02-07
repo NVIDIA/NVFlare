@@ -24,13 +24,29 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey,
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
+# Key in initial_params that means "load model from this path"
+MODEL_PATH_KEY = "model_path"
+
+
+def validate_model_path(path: Optional[str]) -> None:
+    """Require model_path to be absolute if provided.
+
+    All sklearn recipes use this so construction fails fast instead of at runtime
+    when the persistor's load_model() runs. Call from recipe __init__ or validators.
+    """
+    if path is not None and not os.path.isabs(path):
+        raise ValueError(
+            f"model_path must be an absolute path, got: {path!r}. "
+            "Use absolute paths like '/workspace/model.joblib' for server-side model files."
+        )
+
 
 class JoblibModelParamPersistor(ModelPersistor):
     def __init__(
         self,
         initial_params: Optional[Dict[str, Any]] = None,
         save_name: str = "model_param.joblib",
-        source_ckpt_file_full_name: Optional[str] = None,
+        model_path: Optional[str] = None,
     ):
         """Persist global model parameters from a dict to a joblib file.
 
@@ -43,19 +59,19 @@ class JoblibModelParamPersistor(ModelPersistor):
 
         Args:
             initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
-                These are parameter VALUES, not a class path configuration.
-                Used as fallback if no checkpoint or previously saved model is available.
+                Hyperparameters/config only; do not put model_path here—use the model_path
+                argument instead. Used as fallback when model_path is None and no saved
+                model exists in save_path.
             save_name: Filename for saving model params. Defaults to "model_param.joblib".
-            source_ckpt_file_full_name: Full path to source checkpoint file.
-                This path may not exist locally (server-side path). If provided
-                and exists at runtime, it takes priority over initial_params.
+            model_path: Optional absolute path to a saved model file (.joblib, .pkl).
+                If provided, the model is loaded from this path at runtime (file must exist).
+                Defaults to None. For backward compatibility, initial_params may still
+                contain key "model_path" and will be used if model_path is None.
         """
         super().__init__()
-        self.initial_params = initial_params
+        self.initial_params = initial_params or {}
         self.save_name = save_name
-        self.source_ckpt_file_full_name = source_ckpt_file_full_name
-        # Note: We don't validate existence here because the checkpoint path may be
-        # a server-side path that doesn't exist on the job submission machine.
+        self.model_path = model_path
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
@@ -76,32 +92,35 @@ class JoblibModelParamPersistor(ModelPersistor):
             ModelLearnable object
         """
         model = None
+        initial_params = self.initial_params if isinstance(self.initial_params, dict) else {}
 
-        # Priority 1: Load from source checkpoint if provided
-        if self.source_ckpt_file_full_name:
-            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
-            if not os.path.exists(self.source_ckpt_file_full_name):
-                raise ValueError(
-                    f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
-                    "Check that the checkpoint exists at runtime."
-                )
-            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
-            model = load(self.source_ckpt_file_full_name)
+        # Priority 1: Load from explicit model_path argument, or from initial_params (backward compat)
+        path = self.model_path or initial_params.get(MODEL_PATH_KEY)
+        if path:
+            if not os.path.isabs(str(path)):
+                raise ValueError(f"model_path must be a non-empty absolute path, got: {path!r}")
+            if not os.path.exists(path):
+                raise ValueError(f"Model file not found: {path}. Check that the file exists at runtime.")
+            self.logger.info(f"Loading model from {path}")
+            model = load(path)
 
         # Priority 2: Load from previously saved model
         if model is None and os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             model = load(self.save_path)
 
-        # Priority 3: Use initial params
+        # Priority 3: Use initial_params as config (exclude model_path so clients don't see it)
         if model is None:
-            if self.initial_params is not None:
-                self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
-                model = self.initial_params
-            else:
+            if initial_params:
+                config = {k: v for k, v in initial_params.items() if k != MODEL_PATH_KEY}
+                if config:
+                    self.logger.info(f"Initialization, sending global settings: {config}")
+                    model = config
+            if model is None:
                 raise ValueError(
-                    "No model parameters available. Provide either source_ckpt_file_full_name, "
-                    "a previously saved model, or initial_params."
+                    "No model parameters available. Provide initial_params (hyperparameters) "
+                    "and/or model_path (absolute path to saved .joblib/.pkl), "
+                    "or ensure a previously saved model exists."
                 )
 
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
