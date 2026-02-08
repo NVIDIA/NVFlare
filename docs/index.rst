@@ -80,14 +80,24 @@ NVIDIA FLARE
    :hidden:
    :caption: Confidential Computing
 
-   user_guide/confidential_computing/index
+   Overview <user_guide/confidential_computing/index>
+   user_guide/confidential_computing/on_premises/index
+   user_guide/confidential_computing/on_premises/cc_architecture
+   user_guide/confidential_computing/on_premises/cc_deployment_guide
+   user_guide/confidential_computing/on_premises/attestation
+   user_guide/confidential_computing/on_premises/hashicorp_vault_trustee_kbs_deployment
+   user_guide/confidential_computing/azure/index
+   user_guide/confidential_computing/azure/azure_confidential_virtual_machine_deployment
+   user_guide/confidential_computing/azure/confidential_azure_container_instances_deployment
 
 .. toctree::
    :maxdepth: 1
    :hidden:
    :caption: Edge Development
 
-   user_guide/edge_development/index
+   Edge Overview <user_guide/edge_development/index>
+   user_guide/edge_development/flare_mobile
+   user_guide/edge_development/mobile_android
 
 .. toctree::
    :maxdepth: 1
@@ -106,7 +116,42 @@ NVIDIA FLARE
    :hidden:
    :caption: Architecture & Developer Guide
 
-   developer_guide
+   Overview <developer_guide>
+   programming_guide/system_architecture
+   flare_system_architecure
+   cellnet_architecture
+   user_guide/core_concepts/job
+   user_guide/core_concepts/workspace
+   user_guide/core_concepts/application
+   programming_guide/fl_model
+   programming_guide/fl_context
+   programming_guide/fl_component
+   programming_guide/event_system
+   programming_guide/fed_job_api
+   user_guide/nvflare_cli/fl_simulator
+   user_guide/data_scientist_guide/poc
+   programming_guide/workflows_and_controllers
+   programming_guide/controllers/model_controller
+   programming_guide/controllers/scatter_and_gather_workflow
+   programming_guide/controllers/cyclic_workflow
+   programming_guide/controllers/client_controlled_workflows
+   programming_guide/controllers/cross_site_model_evaluation
+   programming_guide/controllers/initialize_global_weights
+   programming_guide/filters
+   programming_guide/component_configuration
+   programming_guide/resource_manager_and_consumer
+   programming_guide/global_model_initialization
+   programming_guide/timeouts
+   programming_guide/dashboard_api
+   programming_guide/hierarchical_architecture
+   programming_guide/hierarchical_communication
+   programming_guide/execution_api_type/3rd_party_integration
+   deprecated/FLAdminAPI
+   programming_guide/execution_api_type/executor
+   programming_guide/shareable
+   programming_guide/data_exchange_object
+   programming_guide/controllers/controllers
+   programming_guide/execution_api_type
 
 .. toctree::
    :maxdepth: 1

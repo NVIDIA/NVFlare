@@ -538,10 +538,3 @@ The key parameters are as follows:
    Asynchronous Federated Learning with Bidirectional Quantized Communications and Buffered Aggregation. 
    arXiv preprint arXiv:2308.00263. https://arxiv.org/pdf/2308.00263
 
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   flare_mobile
-   mobile_android

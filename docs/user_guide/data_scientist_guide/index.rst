@@ -1,3 +1,4 @@
+:orphan:
 
 .. _data_scientist_guide:
 
