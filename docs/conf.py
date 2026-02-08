@@ -107,7 +107,7 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_theme_options = {
     "collapse_navigation": True,
     "display_version": True,
-    "navigation_depth": 8,
+    "navigation_depth": 1,
     "sticky_navigation": True,  # Set to False to disable the sticky nav while scrolling.
     # 'logo_only': True,  # if we have a html_logo below, this shows /only/ the logo with no title text
 }
