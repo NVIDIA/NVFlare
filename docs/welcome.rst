@@ -153,6 +153,7 @@ Real-World Use Cases & FLARE Day
 
 See how organizations use NVIDIA FLARE in production across healthcare, autonomous driving, finance, and more:
 
+- `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
 - `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
 - `Real-World FL Research <https://nvidia.github.io/NVFlare/research>`_ -- Published research and industry applications built with FLARE
 
