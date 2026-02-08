@@ -18,7 +18,6 @@ NVIDIA FLARE
 
    installation
    quickstart
-   user_guide/data_scientist_guide/available_recipes
    run_mode
 
 .. toctree::
@@ -28,6 +27,7 @@ NVIDIA FLARE
 
    user_guide/data_scientist_guide/client_api_usage
    user_guide/data_scientist_guide/job_recipe
+   user_guide/data_scientist_guide/available_recipes
    programming_guide/fed_job_api
    user_guide/data_scientist_guide/flare_api
    programming_guide/experiment_tracking
