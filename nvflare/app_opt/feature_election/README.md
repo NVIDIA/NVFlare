@@ -10,6 +10,25 @@ Feature Election enables multiple clients with tabular datasets to collaborative
 
 FLASH is available on [GitHub](https://github.com/parasecurity/FLASH)
 
+## Citation
+
+If you use Feature Election in your research, please cite the FLASH framework paper:
+
+**IEEE Style:**
+> I. Christofilogiannis, G. Valavanis, A. Shevtsov, I. Lamprou and S. Ioannidis, "FLASH: A Framework for Federated Learning with Attribute Selection and Hyperparameter Optimization," 2025 3rd International Conference on Federated Learning Technologies and Applications (FLTA), Dubrovnik, Croatia, 2025, pp. 93-100, doi: 10.1109/FLTA67013.2025.11336571.
+
+**BibTeX:**
+```bibtex
+@INPROCEEDINGS{11336571,
+  author={Christofilogiannis, Ioannis and Valavanis, Georgios and Shevtsov, Alexander and Lamprou, Ioannis and Ioannidis, Sotiris},
+  booktitle={2025 3rd International Conference on Federated Learning Technologies and Applications (FLTA)}, 
+  title={FLASH: A Framework for Federated Learning with Attribute Selection and Hyperparameter Optimization}, 
+  year={2025},
+  pages={93-100},
+  doi={10.1109/FLTA67013.2025.11336571}
+}
+```
+
 ### Key Features
 
 - **Easy Integration**: Simple API for tabular datasets (pandas, numpy)
@@ -318,10 +337,6 @@ logging.basicConfig(level=logging.DEBUG)
 ```bash
 pytest tests/unit_test/app_opt/feature_election/test_feature_election.py -v
 ```
-
-## Citation
-
-If you use Feature Election in your research, please cite the FLASH framework paper (PENDING, email: jchr2001@gmail.com)
 
 ## Acknowledgments
 
