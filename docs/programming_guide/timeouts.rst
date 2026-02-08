@@ -2497,7 +2497,7 @@ Client API Configuration (config_fed_client.json)
 application.conf Settings
 -------------------------
 
-.. code-block:: hocon
+.. code-block::
 
    # Task communication timeouts
    get_task_timeout = 60.0

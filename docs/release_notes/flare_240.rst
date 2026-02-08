@@ -354,7 +354,7 @@ The old structure puts the server's result dict directly at the top level of the
 To make it consistent between server and client results, we've change to put the server's result as an item keyed on "server".
 If any code is based on the old return structure of FLAdminAPI, please update it accordingly.
 
-.. code-block:: json
+.. code-block::
 
     {
       "server": { # new "server" key for server result dict
