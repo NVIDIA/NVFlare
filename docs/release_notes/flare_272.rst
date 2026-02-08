@@ -146,9 +146,9 @@ Benefits for LLM Training
 Server-Side Memory Cleanup
 --------------------------
 
-FLARE 2.7.2 adds automatic server-side memory management to address RSS growth in long-running jobs:
+FLARE 2.7.2 adds automatic server-side memory management to address RSS (Resident Set Size — the actual physical memory used by a process) growth in long-running jobs:
 
-- **Periodic garbage collection and heap trimming**: Automatically runs ``gc.collect()`` and ``malloc_trim()`` to return freed memory back to the OS, preventing unbounded RSS (Resident Set Size — the actual physical memory used by a process) growth over many training rounds.
+- **Periodic garbage collection and heap trimming**: Automatically runs ``gc.collect()`` and ``malloc_trim()`` to return freed memory back to the OS, preventing unbounded RSS growth over many training rounds.
 - **Environment variable tuning**: Guidance on ``MALLOC_ARENA_MAX`` settings to control glibc memory arena fragmentation for both server and client processes.
 - **Platform-aware**: Memory cleanup adapts to the runtime platform (Linux/glibc, musl, macOS), with full heap trimming on Linux/glibc and safe fallbacks elsewhere.
 - **Minimal overhead**: Cleanup takes 10-500ms per invocation — negligible compared to typical training round durations.
