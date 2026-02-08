@@ -537,3 +537,11 @@ The key parameters are as follows:
 .. [1] Nguyen, J., Malik, K., Zhan, H., Yousefpour, A., Rabbat, M., Malek, M., & Huba, D. (2023). 
    Asynchronous Federated Learning with Bidirectional Quantized Communications and Buffered Aggregation. 
    arXiv preprint arXiv:2308.00263. https://arxiv.org/pdf/2308.00263
+
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   flare_mobile
+   mobile_android

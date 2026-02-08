@@ -5,79 +5,106 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: -1
    :hidden:
-   :caption: Introduction
+   :caption: Welcome
 
-   fl_introduction
-   flare_overview
-   whats_new
-   release_notes/previous_release
-   Installation <installation>
-   getting_started
-   Quick Start <quickstart>
+   welcome
 
 .. toctree::
    :maxdepth: -1
    :hidden:
-   :caption: Guides
+   :caption: Get Started
 
-   example_applications_algorithms
-   tutorials
-   user_guide
-   programming_guide
-   best_practices
-   edge_development/index
-   confidential_computing/index
+   get_started
 
 .. toctree::
    :maxdepth: -1
    :hidden:
-   :caption: Miscellaneous
+   :caption: User Guide
 
-   faq
-   publications_and_talks
-   contributing
-   API <apidocs/modules>
-   glossary
+   user_guide_new
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Deployment & Operations
+
+   deployment
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Security
+
+   security
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Confidential Computing
+
+   user_guide/confidential_computing/index
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Edge Development
+
+   user_guide/edge_development/index
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Architecture & Developer Guide
+
+   developer_guide
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Troubleshooting
+
+   troubleshooting
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Examples & Tutorials
+
+   examples_tutorials
+
+.. toctree::
+   :maxdepth: -1
+   :hidden:
+   :caption: Reference
+
+   reference
 
 NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
 researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables
 platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
 
-NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads from research
-and simulation to real-world production deployment.  Some of the key components of this architecture include:
-
- - **FL Simulator** for rapid development and prototyping
- - **FLARE Dashboard** for simplified project management and deployment
- - **Reference FL algorithms** (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
- - **Privacy preservation** with differential privacy, homomorphic encryption, and more
- - **Management tools** for secure provisioning and deployment, orchestration, and management
- - **Specification-based API** for extensibility
-
-FLARE consists three main product categories:
-
-    - **FLARE Core**: All major FLARE's main components and Infrastructures
-    - **FLARE Confidential AI**: Confidential Federated AI with FLARE and confidential computing
-    - **FLARE Edge**: FLARE edge development
-
-
-Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` and :ref:`What's New <whats_new>`.
-
 Getting Started
 ===============
 To get started with NVIDIA FLARE:
 
-1. Follow the :ref:`installation` guide to set up your environment
-2. Run through the :ref:`quickstart` guide to try your first example
-3. Explore more examples in the :ref:`Example Applications <example_applications>` section
+1. Read the :ref:`Welcome <welcome>` page for a quick overview of FLARE and its capabilities
+2. Follow the :ref:`installation` guide to set up your environment
+3. Run through the :ref:`quickstart` guide to try your first example
+4. Explore more examples in the :ref:`Examples & Tutorials <examples_tutorials>` section
 
-For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
+For New Users
+=============
+If you are new to FLARE, we recommend starting with the :ref:`Client API <client_api>` and :ref:`Job Recipe API <job_recipe>` --
+these higher-level APIs let you convert existing ML training code to federated with minimal changes.
 
-FLARE for Users
-===============
-If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
-When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <deployment_overview>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
+See the :ref:`User Guide <user_guide>` for detailed usage instructions.
 
-FLARE for Developers
-====================
-When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ <faq>`, and :ref:`API Reference <apidocs/modules>`
-provide an in-depth look at the FLARE platform and APIs.
+For Deployment & Security
+=========================
+When you are ready for production, the :ref:`Deployment & Operations <deployment_operations>` section covers provisioning, deployment, and operations.
+The :ref:`Security <security>` section covers authentication, authorization, data privacy, and auditing.
+
+For Developers
+==============
+For deep dives into FLARE architecture, custom workflows, and low-level APIs, see the
+:ref:`Architecture & Developer Guide <developer_guide>` and the :ref:`API Reference <apidocs/modules>`.
