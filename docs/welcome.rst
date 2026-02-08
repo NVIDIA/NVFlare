@@ -28,27 +28,47 @@ What is NVIDIA FLARE?
 =====================
 
 **NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
-extensible Python SDK that allows researchers, data scientists, and data engineers to adapt existing ML/DL and
-compute workflows to a federated paradigm.
+extensible Python SDK that makes it easy to bring federated learning to your existing ML/DL workflows.
 
-FLARE brings computing to distributed datasets rather than copying data to a central location.
-Data remains within each compute node, with only pre-approved results shared among collaborators.
+**Get started in minutes** -- FLARE is designed so that data scientists can convert their existing training code
+to federated with minimal effort:
 
-.. image:: resources/flare_overview.png
-    :height: 400px
+- Use the **Client API** to add just a few lines to your existing training script
+- Use the **Job Recipe API** to pick a pre-built FL algorithm and run it immediately
+- Use the **FL Simulator** to test everything locally before deploying
+
+Here is a complete federated averaging job in just a few lines:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+    from nvflare.recipe import SimEnv
+
+    recipe = FedAvgRecipe(
+        name="my-first-fl-job",
+        min_clients=2,
+        num_rounds=5,
+        model=MyModel(),
+        train_script="train.py",
+    )
+    run = recipe.execute(SimEnv(num_clients=2))
+
+FLARE supports **PyTorch, TensorFlow, XGBoost, scikit-learn**, and any framework that can run in Python.
+It scales from a single laptop (Simulator) to thousands of distributed sites (Production) to millions of edge
+devices -- all using the same job definition.
 
 Key Features
 ============
 
 **Built for Productivity**
 
-- **Client API** -- Convert existing ML/DL training code to federated with minimal code changes
+- **Client API** -- Convert existing training code to federated with minimal changes
 - **Job Recipe API** -- Pre-built recipes for FedAvg, FedProx, SCAFFOLD, XGBoost, Cyclic, and more
-- **FL Simulator** -- Rapid development and prototyping on a single machine
+- **FL Simulator** -- Rapid prototyping on a single machine
 - **POC Mode** -- Multi-process simulation of a federated network on one host
-- **FLARE API** -- Run and monitor jobs directly from Python code or notebooks
-- **Dashboard** -- Web UI for project setup, approval, and deployment artifact distribution
-- **Experiment Tracking** -- Built-in support for MLflow, Weights & Biases, and TensorBoard
+- **FLARE API** -- Run and monitor jobs from Python code or notebooks
+- **Dashboard** -- Web UI for project setup and deployment artifact distribution
+- **Experiment Tracking** -- MLflow, Weights & Biases, and TensorBoard
 
 **Built for Security & Privacy**
 
@@ -91,26 +111,6 @@ FLARE consists of three product categories:
     asynchronous aggregation (FedBuff), device simulation, and mobile SDKs for Android and iOS
     (via ExecuTorch).
 
-High-Level Architecture
-=======================
-
-The FLARE architecture comprises three main layers:
-
-- **Foundation Layer** -- Communication infrastructure (CellNet/F3), messaging protocols, streaming, privacy preservation, and secure platform management
-- **Application Layer** -- Building blocks for federated learning including federation workflows, learning algorithms, and execution APIs
-- **Tooling Layer** -- FL Simulator and POC CLI for experimentation, plus deployment and management tools for production
-
-For detailed architecture information, see :ref:`flare_system_architecture`.
-
-Design Principles
-=================
-
-- **Less is more** -- We solve unique challenges by building an open platform that enables others to solve their specific problems
-- **Design to specification** -- Every component and API is spec-based, so alternative implementations can be easily constructed
-- **Build for real-world scenarios** -- Components handle unexpected events and fail gracefully
-- **Keep the system general-purpose** -- Layered packaging with minimal dependencies enables diverse federated computing use cases
-- **Client system friendly** -- Runs anywhere with minimal environmental dependencies and does not interfere with the deployment environment
-
 What is New in 2.7.2
 ====================
 
@@ -131,14 +131,20 @@ See :doc:`release_notes/previous` for previous releases.
 Roadmap
 =======
 
-NVIDIA FLARE continues to evolve with a focus on:
+.. image:: resources/flare_roadmap.png
+   :alt: NVIDIA FLARE Roadmap
+   :width: 100%
 
-- **Simplified APIs** -- Making federated learning more accessible with higher-level abstractions and improved developer experience
-- **LLM & Generative AI** -- Enhanced support for federated fine-tuning of large language models, including PEFT and quantization workflows
-- **Edge & Mobile** -- Expanding edge device support with new platform integrations and improved scalability
-- **Confidential Computing** -- Broader hardware TEE support (Intel TDX) and additional cloud provider integrations
-- **Performance & Scale** -- Continued optimization for large-scale deployments, large models, and high-throughput scenarios
-- **Ecosystem Integration** -- Deeper integration with ML frameworks, MLOps platforms, and data engineering tools
+**FLARE Core -- Ease of Use & Scalability**
+
+- **2026-Q1**: Make easier for FL data scientists -- Job Recipe production ready, memory management with Tensor-based Downloader, example consolidation
+- **2026-Q2**: Make easier for FL researchers -- FLARE Collab API, native K8s support, provision enhancement
+- **2026-Q4**: Enable advanced capabilities -- K8s advanced features enhancement, K8s user experience enhancement
+
+**Confidential FL -- End-to-End Security**
+
+- **2026-Q2**: CC technology showcase -- IP protection, upgrade to NV CVM reference build scripts
+- **2026-Q4**: Enhance confidential federated AI -- Improve usability and operation, strengthen Secure Aggregation and IP Protection in both cloud and on-prem
 
 For the latest updates, visit the `NVIDIA FLARE GitHub <https://github.com/NVIDIA/NVFlare>`_.
 

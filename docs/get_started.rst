@@ -7,17 +7,13 @@ Get Started
 
 Welcome to NVIDIA FLARE! Follow the steps below to install, run your first federated learning job, and explore examples.
 
-.. toctree::
-   :maxdepth: 2
-
-   installation
-   quickstart
-   user_guide/data_scientist_guide/available_recipes
-   run_mode
+- :ref:`installation` -- Set up NVIDIA FLARE
+- :ref:`quickstart` -- Hello world examples with PyTorch, TensorFlow, and more
+- :ref:`available_recipes` -- Ready-to-use federated learning recipes
+- :ref:`run_mode` -- Simulator, POC, and Production modes
 
 .. toctree::
    :maxdepth: 1
-   :caption: Hello World Examples
    :hidden:
 
    hello-world/hello-pt/index
