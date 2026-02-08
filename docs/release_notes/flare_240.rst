@@ -208,7 +208,7 @@ Each leaf of clients (edge devices) only connect to its server, where this serve
 One potential use case is with global studies, where the client machine may be located across different regions.
 Rather than requiring every region's client machines connect to only a single FL server in that region, the FL HUB could enable a more performant tiered multi-server setup.
 
-Learn more about the FL Hub in the :ref:`hierarchy_unification_bridge` documentation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
+Learn more about the FL Hub in the :ref:`Hierarchy Unification Bridge <hierarchy_unification_bridge>` documentation and the :github_nvflare_link:`code <nvflare/app_common/hub>`.
 
 Misc. Features
 ==============
@@ -333,7 +333,7 @@ FLARE API Parity
 In FLARE 2.3.0, an initial version of the FLARE API was implemented as a redesigned FLAdminAPI, however we only included a subset of the functions.
 In FLARE 2.4.0, the FLARE API has been enhanced to include the remaining functions of the FLAdminAPI, so that the FLAdminAPI can sunset.
 
-See the :ref:`migrating_to_flare_api` for more details on the added functions.
+See the :ref:`Migrating to FLARE API <migrating_to_flare_api>` for more details on the added functions.
 
 Timeout Handling
 ----------------

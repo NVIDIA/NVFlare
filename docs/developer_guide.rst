@@ -15,6 +15,14 @@ System Architecture
 - :doc:`FLARE System Architecture <flare_system_architecure>`
 - :doc:`CellNet Architecture <cellnet_architecture>`
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/system_architecture
+   flare_system_architecure
+   cellnet_architecture
+
 Core Concepts
 =============
 
@@ -29,6 +37,21 @@ Core Concepts
 - :doc:`FL Simulator <user_guide/nvflare_cli/fl_simulator>`
 - :doc:`POC <user_guide/data_scientist_guide/poc>`
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   user_guide/core_concepts/job
+   user_guide/core_concepts/workspace
+   user_guide/core_concepts/application
+   programming_guide/fl_model
+   programming_guide/fl_context
+   programming_guide/fl_component
+   programming_guide/event_system
+   programming_guide/fed_job_api
+   user_guide/nvflare_cli/fl_simulator
+   user_guide/data_scientist_guide/poc
+
 Workflows & Controllers
 =======================
 
@@ -40,6 +63,18 @@ Workflows & Controllers
 - :doc:`Cross-Site Model Evaluation <programming_guide/controllers/cross_site_model_evaluation>`
 - :doc:`Initialize Global Weights <programming_guide/controllers/initialize_global_weights>`
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/workflows_and_controllers
+   programming_guide/controllers/model_controller
+   programming_guide/controllers/scatter_and_gather_workflow
+   programming_guide/controllers/cyclic_workflow
+   programming_guide/controllers/client_controlled_workflows
+   programming_guide/controllers/cross_site_model_evaluation
+   programming_guide/controllers/initialize_global_weights
+
 Advanced Topics
 ===============
 
@@ -47,8 +82,19 @@ Advanced Topics
 - :doc:`Component Configuration <programming_guide/component_configuration>`
 - :doc:`Resource Manager and Consumer <programming_guide/resource_manager_and_consumer>`
 - :doc:`Global Model Initialization <programming_guide/global_model_initialization>`
-- :doc:`Timeouts <programming_guide/timeouts>`
+- :doc:`Timeouts Reference <programming_guide/timeouts>`
 - :doc:`Dashboard API <programming_guide/dashboard_api>`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/filters
+   programming_guide/component_configuration
+   programming_guide/resource_manager_and_consumer
+   programming_guide/global_model_initialization
+   programming_guide/timeouts
+   programming_guide/dashboard_api
 
 Hierarchical Architecture
 =========================
@@ -56,10 +102,23 @@ Hierarchical Architecture
 - :doc:`Hierarchical Architecture <programming_guide/hierarchical_architecture>`
 - :doc:`Hierarchical Communication <programming_guide/hierarchical_communication>`
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/hierarchical_architecture
+   programming_guide/hierarchical_communication
+
 3rd-Party Integration
 =====================
 
 - :doc:`3rd-Party Integration <programming_guide/execution_api_type/3rd_party_integration>`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/execution_api_type/3rd_party_integration
 
 Low-Level APIs
 ==============
@@ -73,3 +132,14 @@ Most users do not need these directly, but they are available for advanced custo
 - :doc:`Data Exchange Object <programming_guide/data_exchange_object>`
 - :doc:`Controllers <programming_guide/controllers/controllers>`
 - :doc:`Execution API Types <programming_guide/execution_api_type>`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   deprecated/FLAdminAPI
+   programming_guide/execution_api_type/executor
+   programming_guide/shareable
+   programming_guide/data_exchange_object
+   programming_guide/controllers/controllers
+   programming_guide/execution_api_type

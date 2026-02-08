@@ -25,7 +25,7 @@ Python 3.7 is no longer actively supported and tested.
 New FLARE API to provide better user experience 
 ===============================================
 The new FLARE API is an improved version of the FLAdminAPI with better ease of use. FLARE API currently supports selected commands. See
-:ref:`migrating_to_flare_api` for details on migrating to the new FLARE API. For now, the FLAdminAPI should still remain functional.
+:ref:`Migrating to FLARE API <migrating_to_flare_api>` for details on migrating to the new FLARE API. For now, the FLAdminAPI should still remain functional.
 For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/2.3/examples/tutorials/flare_api.ipynb.
 
 Job Signing for Improved Security
@@ -130,7 +130,7 @@ Migration to 2.3.0: Notes and Tips
 1. FLARE API
 ============
 FLARE API is the FLAdminAPI redesigned for a better user experience in version 2.3. To understand the FLARE API usage, the relationship to
-the FLAdmin API, and migration steps, please refer to :ref:`migrating_to_flare_api`.
+the FLAdmin API, and migration steps, please refer to :ref:`Migrating to FLARE API <migrating_to_flare_api>`.
 
 2. Enhancements to the ``list_jobs`` command
 ============================================

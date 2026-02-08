@@ -15,7 +15,7 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - FLARE Dashboard
  - :ref:`Dynamic Provisioning <dynamic_provisioning_cli>`
  - Improved :ref:`POC (proof of concept) command <poc_command>`
- - :ref:`docker_compose`
+ - :ref:`Docker Compose <docker_compose>`
  - :ref:`preflight_check`
  - Site-policy management
  - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/xgboost>
