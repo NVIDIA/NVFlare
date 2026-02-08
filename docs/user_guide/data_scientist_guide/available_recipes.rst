@@ -590,9 +590,14 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
     run = recipe.execute(env)
 
 .. note::
-   ``eval_ckpt`` is **required**. It must be an absolute path to the pre-trained checkpoint (.pt, .pth)
-   on the server (may not exist locally when building the job).
+   ``eval_ckpt`` is **required**. It can be either:
 
+   * an absolute path on the server to the pre-trained checkpoint (.pt, .pth), or
+   * a relative or absolute path to a local checkpoint file that will be bundled with the job
+     (for example, via utilities such as ``prepare_initial_ckpt``).
+
+   When specifying an absolute server-side path, the checkpoint file may not exist locally when
+   building the job.
 **Examples:**
 
 - `examples/hello-world/hello-lightning-eval <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning-eval>`_
