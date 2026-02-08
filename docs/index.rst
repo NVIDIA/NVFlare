@@ -7,9 +7,10 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Welcome
+   :caption: Overview
 
    welcome
+   industry_use_cases
    release_notes/flare_272
    release_notes/previous
 
@@ -20,7 +21,17 @@ NVIDIA FLARE
 
    installation
    quickstart
+   Hello PyTorch <hello-world/hello-pt/index>
+   Hello TensorFlow <hello-world/hello-tf/index>
+   Hello Lightning <hello-world/hello-lightning/index>
+   Hello XGBoost <hello-world/hello-xgboost/index>
+   Hello Differential Privacy <hello-world/hello-dp/index>
+   Hello Flower <hello-world/hello-flower/index>
+   Hello Logistic Regression <hello-world/hello-lr/index>
+   Hello Tabular Statistics <hello-world/hello-tabular-stats/index>
+   Hello Cyclic <hello-world/hello-cyclic/index>
    run_mode
+   migration_guide
 
 .. toctree::
    :maxdepth: 1
@@ -31,9 +42,11 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
-   programming_guide/experiment_tracking
+   programming_guide/fed_job_api
    user_guide/data_scientist_guide/federated_xgboost/federated_xgboost
    user_guide/data_scientist_guide/flower_integration/flower_integration
+   programming_guide/experiment_tracking
+   user_guide/data_scientist_guide/data_preparation
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::
@@ -48,11 +61,12 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/aws_eks
    user_guide/admin_guide/deployment/containerized_deployment
    user_guide/admin_guide/deployment/helm_chart
+   production_readiness
 
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Operations & Configuration
+   :caption: Operations
 
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
@@ -61,11 +75,14 @@ NVIDIA FLARE
    user_guide/admin_guide/configurations/communication_configuration
    user_guide/admin_guide/configurations/variable_resolution
    user_guide/admin_guide/configurations/server_port_consolidation
+   operations/performance_tuning
+   operations/backup_recovery
+   operations/upgrade_guide
 
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Security
+   :caption: Security & Compliance
 
    flare_security_overview
    user_guide/admin_guide/security/terminologies_and_roles
@@ -75,6 +92,7 @@ NVIDIA FLARE
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
    user_guide/admin_guide/security/auditing
    user_guide/admin_guide/security/unsafe_component_detection
+   user_guide/admin_guide/security/regulatory_guidance
    security_faq
 
 .. toctree::
@@ -95,7 +113,7 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Edge Development
+   :caption: Edge & Mobile
 
    Edge Overview <user_guide/edge_development/index>
    user_guide/edge_development/flare_mobile
@@ -116,12 +134,18 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Architecture & Developer Guide
+   :caption: Developer Guide
 
    Overview <developer_guide>
    programming_guide/system_architecture
    flare_system_architecure
    cellnet_architecture
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Core Concepts
+
    user_guide/core_concepts/job
    user_guide/core_concepts/workspace
    user_guide/core_concepts/application
@@ -129,9 +153,12 @@ NVIDIA FLARE
    programming_guide/fl_context
    programming_guide/fl_component
    programming_guide/event_system
-   programming_guide/fed_job_api
-   user_guide/nvflare_cli/fl_simulator
-   user_guide/data_scientist_guide/poc
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Workflows & Controllers
+
    programming_guide/workflows_and_controllers
    programming_guide/controllers/model_controller
    programming_guide/controllers/scatter_and_gather_workflow
@@ -139,6 +166,12 @@ NVIDIA FLARE
    programming_guide/controllers/client_controlled_workflows
    programming_guide/controllers/cross_site_model_evaluation
    programming_guide/controllers/initialize_global_weights
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Advanced Topics
+
    programming_guide/filters
    programming_guide/component_configuration
    programming_guide/resource_manager_and_consumer
@@ -147,6 +180,14 @@ NVIDIA FLARE
    programming_guide/dashboard_api
    programming_guide/hierarchical_architecture
    programming_guide/hierarchical_communication
+   user_guide/nvflare_cli/fl_simulator
+   user_guide/data_scientist_guide/poc
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Low-Level APIs
+
    programming_guide/execution_api_type/3rd_party_integration
    deprecated/FLAdminAPI
    programming_guide/execution_api_type/executor
@@ -160,7 +201,9 @@ NVIDIA FLARE
    :hidden:
    :caption: Troubleshooting
 
+   troubleshooting/common_errors
    user_guide/timeout_troubleshooting
+   troubleshooting/debugging_guide
    user_guide/nvflare_cli/preflight_check
    faq
 
@@ -195,21 +238,25 @@ To get started with NVIDIA FLARE:
 
 1. Read the :ref:`Welcome <welcome>` page for a quick overview of FLARE and its capabilities
 2. Follow the :ref:`installation` guide to set up your environment
-3. Run through the :ref:`quickstart` guide to try your first example
-4. Explore more examples in the :ref:`Examples & Tutorials <examples_tutorials>` section
+3. Run through the :ref:`quickstart` guide with a Hello World example
+4. Browse :ref:`Industry Use Cases <industry_use_cases>` relevant to your domain
+5. Explore more in the **Examples & Tutorials** section
 
 For New Users
 =============
 If you are new to FLARE, we recommend starting with the :ref:`Client API <client_api>` and :ref:`Job Recipe API <job_recipe>` --
 these higher-level APIs let you convert existing ML training code to federated with minimal changes.
+If you have existing centralized ML code, see the :ref:`Migration Guide <migration_guide>`.
 
 For Deployment & Security
 =========================
-When you are ready for production, the **Deployment** section covers provisioning and deployment options,
-and the **Operations & Configuration** section covers admin commands, monitoring, and system configuration.
-The :ref:`Security <security>` section covers authentication, authorization, data privacy, and auditing.
+When you are ready for production, the **Deployment** section covers provisioning and deployment options.
+The **Operations** section covers admin commands, monitoring, and system configuration.
+Review the :ref:`Production Readiness Checklist <production_readiness>` before going live.
+The **Security & Compliance** section covers authentication, authorization, data privacy, and regulatory guidance.
 
 For Developers
 ==============
 For deep dives into FLARE architecture, custom workflows, and low-level APIs, see the
-:ref:`Architecture & Developer Guide <developer_guide>` and the :doc:`API Reference <apidocs/modules>`.
+**Developer Guide**, **Workflows & Controllers**, and **Advanced Topics** sections,
+or browse the :doc:`API Reference <apidocs/modules>`.
