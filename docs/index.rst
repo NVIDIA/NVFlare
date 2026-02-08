@@ -54,9 +54,9 @@ NVIDIA FLARE
 
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
+   user_guide/admin_guide/configurations/logging_configuration
    user_guide/admin_guide/configurations/configurations
    user_guide/admin_guide/configurations/communication_configuration
-   user_guide/admin_guide/configurations/logging_configuration
    user_guide/admin_guide/configurations/variable_resolution
    user_guide/admin_guide/configurations/server_port_consolidation
 
@@ -68,9 +68,9 @@ NVIDIA FLARE
    flare_security_overview
    user_guide/admin_guide/security/terminologies_and_roles
    user_guide/admin_guide/security/identity_security
+   user_guide/admin_guide/security/communication_security
    user_guide/admin_guide/security/site_policy_management
    user_guide/admin_guide/security/authorization_policy_previewer
-   user_guide/admin_guide/security/communication_security
    user_guide/admin_guide/security/data_privacy_protection
    user_guide/admin_guide/security/serialization
    user_guide/admin_guide/security/auditing

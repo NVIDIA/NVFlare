@@ -148,6 +148,21 @@ Roadmap
 
 For the latest updates, visit the `NVIDIA FLARE GitHub <https://github.com/NVIDIA/NVFlare>`_.
 
+Real-World Use Cases & FLARE Day
+================================
+
+See how organizations use NVIDIA FLARE in production across healthcare, autonomous driving, finance, and more:
+
+- `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
+- `Real-World FL Research <https://nvidia.github.io/NVFlare/research>`_ -- Published research and industry applications built with FLARE
+
+Learn More
+==========
+
+- `Tutorial Website <https://nvidia.github.io/NVFlare/>`_ -- Video tutorials, code walkthroughs, and the example catalog
+- `Example Catalog <https://nvidia.github.io/NVFlare/catalog/>`_ -- Browse examples by framework, algorithm, and use case
+- :ref:`Self-Paced Training <self_paced_training>` -- 100+ notebooks and 80 videos for comprehensive self-paced learning
+
 
 .. toctree::
    :hidden:
