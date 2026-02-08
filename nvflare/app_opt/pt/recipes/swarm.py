@@ -156,9 +156,8 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
 
         # Handle dict-based model config (recipe accepts class_path; normalize for job API)
         if isinstance(model, dict):
-            from nvflare.recipe.utils import recipe_model_to_job_model, validate_dict_model_config
+            from nvflare.recipe.utils import recipe_model_to_job_model
 
-            validate_dict_model_config(model)
             model = recipe_model_to_job_model(model)
             model_instance = _instantiate_model_from_dict(model)
         else:

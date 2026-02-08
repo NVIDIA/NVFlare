@@ -170,10 +170,9 @@ class FedAvgRecipeWithHE(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt, validate_dict_model_config
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
 
         validate_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.model)
         if isinstance(self.model, dict):
             self.model = recipe_model_to_job_model(self.model)
 

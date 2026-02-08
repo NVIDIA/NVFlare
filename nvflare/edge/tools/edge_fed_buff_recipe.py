@@ -244,9 +244,8 @@ class EdgeFedBuffRecipe(Recipe):
         self.method_name = "edge"
         # Normalize dict model (recipe accepts class_path; job API uses path)
         if isinstance(model, dict):
-            from nvflare.recipe.utils import recipe_model_to_job_model, validate_dict_model_config
+            from nvflare.recipe.utils import recipe_model_to_job_model
 
-            validate_dict_model_config(model)
             model = recipe_model_to_job_model(model)
         self.model = model
         self.initial_ckpt = initial_ckpt

@@ -31,7 +31,7 @@ def temp_workdir():
         os.chdir(original_cwd)
 
 
-class TestValidateInitialCkpt:
+class TestValidateCkpt:
     """Tests for validate_ckpt function."""
 
     def test_none_ckpt(self):

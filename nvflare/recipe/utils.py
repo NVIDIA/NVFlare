@@ -493,11 +493,11 @@ def validate_dict_model_config(model: Any) -> None:
 
 
 def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert recipe model dict (class_path) to job/config format (path).
+    """Validate and convert recipe model dict (class_path) to job/config format (path).
 
-    Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    Calls :func:`validate_dict_model_config` internally so callers do not need to
+    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}} only.
     The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
-    This normalizes so the underlying stack is unchanged.
 
     Args:
         recipe_model: Dict with 'class_path' and optional 'args'.
@@ -505,8 +505,5 @@ def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict with 'path' and 'args' for use by PTModel, persistors, etc.
     """
-    if "class_path" not in recipe_model:
-        raise ValueError(
-            "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {recipe_model}"
-        )
+    validate_dict_model_config(recipe_model)
     return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}

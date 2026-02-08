@@ -161,9 +161,8 @@ class FedEvalRecipe(Recipe):
         if not isinstance(self.model, (nn.Module, dict)):
             raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
         if isinstance(self.model, dict):
-            from nvflare.recipe.utils import recipe_model_to_job_model, validate_dict_model_config
+            from nvflare.recipe.utils import recipe_model_to_job_model
 
-            validate_dict_model_config(self.model)
             self.model = recipe_model_to_job_model(self.model)
 
         # PTModel handles both nn.Module and dict config uniformly
