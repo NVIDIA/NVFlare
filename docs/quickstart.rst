@@ -12,14 +12,6 @@ Make sure you have completed the :ref:`installation` steps before proceeding.
 
     For a complete list of ready-to-use federated learning recipes with code examples, see :ref:`available_recipes`.
 
-Prerequisites
-=============
-
-- Python 3.9+
-- pip
-- Git
-- NVFlare installed (see :ref:`installation`)
-
 Hello-world Examples
 ====================
 
