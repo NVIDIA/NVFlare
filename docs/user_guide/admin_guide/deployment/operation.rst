@@ -68,9 +68,4 @@ commands shown as examples of how they may be run with a description.
 The FLARE API is the redesigned FLAdminAPI with a better user experience introduced in version 2.3.0.
 We recommend using the FLARE API as the FLAdminAPI is now deprecated and will soon sunset.
 
-.. toctree::
-   :maxdepth: 1
-
-   flare_api
-   FLAdminAPI
-   migrating_to_flare_api
+For job management via Python, see the :ref:`FLARE API <flare_api>`.

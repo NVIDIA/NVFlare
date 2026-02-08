@@ -159,10 +159,34 @@ This flexibility is particularly useful in BYOConn (Bring Your Own Connectivity)
 * The customer must ensure proper connection security setup between sites and their respective proxies
 
 Important Notes
-===============
+---------------
 
 * All sites must protect their startup kits securely
 * Never share tokens and signatures with others
 * The IT infrastructure must allow necessary ports to be opened
 * Server addresses must be properly configured and accessible
 * Custom CA certificates must be properly managed and secured
+
+Secure Message Serialization (FOBS)
+------------------------------------
+
+In distributed systems, message serialization is a critical security concern. The commonly used Python Pickle
+mechanism is considered insecure because it can execute arbitrary code during deserialization.
+
+NVFLARE employs a secure serialization framework called **FOBS (FLARE Object Serializer)** for all server-client
+data exchanges. FOBS is a drop-in replacement for Pickle built on **MessagePack** that ensures only explicitly
+supported and registered object types can be serialized, preventing code execution or tampering attacks.
+
+**Security Properties:**
+
+- Prevents arbitrary code execution during deserialization
+- Enforces type whitelisting through registered decomposers
+- Uses MessagePack for compact, cross-language binary encoding
+- Ensures data integrity and type safety across federated nodes
+
+For detailed usage, decomposer registration, and custom type support, see :ref:`FOBS Reference <serialization>`.
+
+.. toctree::
+   :hidden:
+
+   serialization

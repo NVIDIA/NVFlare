@@ -1,5 +1,3 @@
-.. _security:
-
 ########
 Security
 ########

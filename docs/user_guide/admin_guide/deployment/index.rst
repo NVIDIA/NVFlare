@@ -13,10 +13,7 @@ Deployment Guide
    helm_chart
    cloud_deployment
    aws_eks
-   ../tools/provision_command
-   ../tools/dashboard_command
    dashboard_ui
-   ../tools/preflight_check
    notes_on_large_models
 
 

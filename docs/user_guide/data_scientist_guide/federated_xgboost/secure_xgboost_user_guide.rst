@@ -67,7 +67,7 @@ NVFlare supports federated training in the following 4 modes:
 4. **Vertical with HE** - Histogram-based (gradients secured against passive parties)
 
 Security Risks and Mitigations
-=======================
+==============================
 
 Risks
 --------------

@@ -221,15 +221,22 @@ can also be done in ``START_RUN`` event handler.
 
 Custom object cannot be put in ``shareable`` directly,
 it must be serialized using FOBS first. Assuming ``custom_data`` contains custom type,
-this is how data can be stored in shareable,
+this is how data can be stored in shareable:
+
 ::
+
     shareable[CUSTOM_DATA] = fobs.dumps(custom_data)
-On the receiving end,
+
+On the receiving end:
+
 ::
+
     custom_data = fobs.loads(shareable[CUSTOM_DATA])
 
-This doesn't work
+This doesn't work:
+
 ::
+
     shareable[CUSTOM_DATA] = custom_data
 
 

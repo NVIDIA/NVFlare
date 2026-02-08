@@ -1,3 +1,8 @@
+:orphan:
+
+.. deprecated:: 2.7
+   This tool is deprecated.
+
 .. _authorization_policy_previewer:
 
 ******************************

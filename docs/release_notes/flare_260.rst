@@ -137,7 +137,7 @@ Downstream Task Fitting
 -----------------------
 Local Fine-Tuning tends to overfit, with training accuracy diverging from validation early. In contrast, Federated Averaging (FedAvg) models show continual performance improvement, highlighting the benefits of federated generalization over isolated training.
 
-For more details, see our :github_nvflare_link:`BioNeMo examples <examples/advanced/bionemo>`_.
+For more details, see our :github_nvflare_link:`BioNeMo examples <examples/advanced/bionemo>`.
 
 Tutorials and Education
 =======================

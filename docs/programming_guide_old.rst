@@ -1,5 +1,3 @@
-.. _programming_guide:
-
 #################
 Programming Guide
 #################
@@ -71,8 +69,8 @@ Please refer to :ref:`application` for more details.
    user_guide/nvflare_cli/nvflare_cli
    user_guide/confidential_computing/index
    user_guide/edge_development/index
-   user_guide/flower_integration/flower_integration
-   user_guide/federated_xgboost/federated_xgboost
+   user_guide/data_scientist_guide/flower_integration/flower_integration
+   user_guide/data_scientist_guide/federated_xgboost/federated_xgboost
 
 
 .. rubric:: Code Structure
