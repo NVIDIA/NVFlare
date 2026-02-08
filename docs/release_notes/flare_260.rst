@@ -81,8 +81,8 @@ The structured logging feature addresses several customer concerns:
 Key improvements:
   - Changed from `fileConfig <https://docs.python.org/3/library/logging.config.html>`_ to `dictConfig <https://docs.python.org/3/library/logging.config.html#logging.config.dictConfig>`_
   - The new FLARE Loggers are designed to follow the package level hierarchy using dot separated logger names in order to facilitate granular control at different levels
-  - :doc:`Default Logging Configuration file <user_guide/configurations/logging_configuration>` `log_config.json.default` for all NVFLARE sub-systems with pre-configured handlers for console level colors, logs, error logs, structured json logs, and fl training logs
-  - :doc:`Dynamic Logging Configuration Commands <user_guide/configurations/logging_configuration>` to allow dynamic change logging configuration without restarting the FL system
+  - :doc:`Default Logging Configuration file <../user_guide/admin_guide/configurations/logging_configuration>` `log_config.json.default` for all NVFLARE sub-systems with pre-configured handlers for console level colors, logs, error logs, structured json logs, and fl training logs
+  - :doc:`Dynamic Logging Configuration Commands <../user_guide/admin_guide/configurations/logging_configuration>` to allow dynamic change logging configuration without restarting the FL system
   - To support various needs and backward compatibility, we now have the following default log files:
     - log.txt: default log file from previous NVFLARE versions
     - log.json: JSON format log
@@ -93,7 +93,7 @@ Key improvements:
     - Full: previous logging configuration
     - Verbose: debug level logging
 
-For details, please refer to `logging tutorials <https://github.com/NVIDIA/NVFlare/blob/2.6/examples/tutorials/logging.ipynb>`_ and :doc:`logging documentation <user_guide/configurations/logging_configuration>`.
+For details, please refer to `logging tutorials <https://github.com/NVIDIA/NVFlare/blob/2.6/examples/tutorials/logging.ipynb>`_ and :doc:`logging documentation <../user_guide/admin_guide/configurations/logging_configuration>`.
 
 Federated Statistics Extension
 ==============================

@@ -9,7 +9,7 @@ The complete example code can be found in the :github_nvflare_link:`hello-pt dir
 Before You Start
 ----------------
 
-Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
+Feel free to refer to the :doc:`detailed documentation <../developer_guide>` at any point
 to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
 We recommend you first finish the :doc:`Hello NumPy <hello_numpy>` exercise since it introduces the

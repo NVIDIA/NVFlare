@@ -152,4 +152,4 @@ The :ref:`Security <security>` section covers authentication, authorization, dat
 For Developers
 ==============
 For deep dives into FLARE architecture, custom workflows, and low-level APIs, see the
-:ref:`Architecture & Developer Guide <developer_guide>` and the :ref:`API Reference <apidocs/modules>`.
+:ref:`Architecture & Developer Guide <developer_guide>` and the :doc:`API Reference <apidocs/modules>`.
