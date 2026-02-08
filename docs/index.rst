@@ -37,16 +37,22 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Deployment & Operations
+   :caption: Deployment
 
    user_guide/admin_guide/deployment/overview
    programming_guide/provisioning_system
    user_guide/admin_guide/deployment/dashboard_ui
-   user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/deployment/cloud_deployment
    user_guide/admin_guide/deployment/aws_eks
    user_guide/admin_guide/deployment/containerized_deployment
    user_guide/admin_guide/deployment/helm_chart
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Operations & Configuration
+
+   user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/configurations
    user_guide/admin_guide/configurations/communication_configuration
@@ -153,7 +159,8 @@ these higher-level APIs let you convert existing ML training code to federated w
 
 For Deployment & Security
 =========================
-When you are ready for production, the :ref:`Deployment & Operations <deployment_operations>` section covers provisioning, deployment, and operations.
+When you are ready for production, the **Deployment** section covers provisioning and deployment options,
+and the **Operations & Configuration** section covers admin commands, monitoring, and system configuration.
 The :ref:`Security <security>` section covers authentication, authorization, data privacy, and auditing.
 
 For Developers
