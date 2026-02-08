@@ -142,7 +142,7 @@ recipe.execute(env=env)
 The `model` parameter accepts two formats:
 
 1. **Class instance** (shown above): `model=SimpleNetwork()` - Convenient and Pythonic
-2. **Dict config**: `model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
+2. **Dict config**: `model={"class_path": "model.SimpleNetwork", "args": {}}` - Better for large models
 
 > **Note:** Class instances are converted to configuration files before job submission. For large models, use dict config to avoid unnecessary instantiation overhead.
 

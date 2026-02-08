@@ -204,7 +204,7 @@ recipe.execute(env=env)
 The `model` parameter accepts two formats:
 
 1. **Class instance** (shown above): `model=TabularMLP(...)` - Convenient
-2. **Dict config**: `model={"path": "model.TabularMLP", "args": {...}}` - Better for large models
+2. **Dict config**: `model={"class_path": "model.TabularMLP", "args": {...}}` - Better for large models
 
 To resume from pre-trained weights:
 ```python

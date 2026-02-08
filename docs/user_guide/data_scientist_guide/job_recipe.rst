@@ -54,7 +54,7 @@ Recipes accept model input in two formats, each with different trade-offs:
    recipe = FedAvgRecipe(
        name="hello-pt",
        model={
-           "path": "model.SimpleNetwork",
+           "class_path": "model.SimpleNetwork",
            "args": {"num_classes": 10, "hidden_dim": 256}
        },
        train_script="client.py",
