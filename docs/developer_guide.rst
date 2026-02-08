@@ -31,6 +31,9 @@ Core Concepts
    programming_guide/fl_context
    programming_guide/fl_component
    programming_guide/event_system
+   programming_guide/fed_job_api
+   user_guide/nvflare_cli/fl_simulator
+   user_guide/data_scientist_guide/poc
 
 Workflows & Controllers
 =======================
@@ -56,11 +59,6 @@ Advanced Topics
    programming_guide/component_configuration
    programming_guide/resource_manager_and_consumer
    programming_guide/global_model_initialization
-   programming_guide/message_quantization
-   programming_guide/memory_management
-   programming_guide/tensor_downloader
-   programming_guide/file_streaming
-   programming_guide/decomposer_for_large_object
    programming_guide/timeouts
    programming_guide/dashboard_api
 

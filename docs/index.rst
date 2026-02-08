@@ -28,13 +28,10 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/client_api_usage
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/available_recipes
-   programming_guide/fed_job_api
    user_guide/data_scientist_guide/flare_api
    programming_guide/experiment_tracking
    user_guide/data_scientist_guide/federated_xgboost/federated_xgboost
    user_guide/data_scientist_guide/flower_integration/flower_integration
-   user_guide/nvflare_cli/fl_simulator
-   user_guide/data_scientist_guide/poc
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::
@@ -50,7 +47,6 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/aws_eks
    user_guide/admin_guide/deployment/containerized_deployment
    user_guide/admin_guide/deployment/helm_chart
-   user_guide/admin_guide/deployment/notes_on_large_models
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/configurations
    user_guide/admin_guide/configurations/communication_configuration
@@ -91,6 +87,18 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
+   :caption: Large Models & LLM
+
+   user_guide/admin_guide/deployment/notes_on_large_models
+   programming_guide/message_quantization
+   programming_guide/memory_management
+   programming_guide/tensor_downloader
+   programming_guide/file_streaming
+   programming_guide/decomposer_for_large_object
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
    :caption: Architecture & Developer Guide
 
    developer_guide
@@ -101,7 +109,6 @@ NVIDIA FLARE
    :caption: Troubleshooting
 
    user_guide/timeout_troubleshooting
-   programming_guide/memory_management
    user_guide/nvflare_cli/preflight_check
    faq
 
