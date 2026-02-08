@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.recipe.utils import prepare_initial_ckpt, validate_initial_ckpt
+from nvflare.recipe.utils import prepare_initial_ckpt, validate_ckpt
 
 
 @pytest.fixture
@@ -31,23 +31,23 @@ def temp_workdir():
         os.chdir(original_cwd)
 
 
-class TestValidateInitialCkpt:
-    """Tests for validate_initial_ckpt function."""
+class TestValidateCkpt:
+    """Tests for validate_ckpt function."""
 
     def test_none_ckpt(self):
         """None should pass validation."""
-        validate_initial_ckpt(None)  # Should not raise
+        validate_ckpt(None)  # Should not raise
 
     def test_absolute_path_not_exists(self):
         """Absolute path that doesn't exist should pass (server-side path)."""
-        validate_initial_ckpt("/server/path/to/checkpoint.pt")  # Should not raise
+        validate_ckpt("/server/path/to/checkpoint.pt")  # Should not raise
 
     def test_absolute_path_exists(self):
         """Absolute path that exists locally should pass."""
         with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
             ckpt_path = f.name
         try:
-            validate_initial_ckpt(ckpt_path)  # Should not raise
+            validate_ckpt(ckpt_path)  # Should not raise
         finally:
             os.unlink(ckpt_path)
 
@@ -55,24 +55,24 @@ class TestValidateInitialCkpt:
         """Relative path that exists locally should pass."""
         ckpt_file = "checkpoint.pt"
         open(ckpt_file, "w").close()
-        validate_initial_ckpt(ckpt_file)  # Should not raise
+        validate_ckpt(ckpt_file)  # Should not raise
 
     def test_relative_path_not_exists(self):
         """Relative path that doesn't exist should raise ValueError."""
         with pytest.raises(ValueError, match="does not exist locally"):
-            validate_initial_ckpt("non_existent_checkpoint.pt")
+            validate_ckpt("non_existent_checkpoint.pt")
 
     def test_relative_path_subdirectory_exists(self, temp_workdir):
         """Relative path in subdirectory that exists should pass."""
         os.makedirs("checkpoints", exist_ok=True)
         ckpt_file = "checkpoints/model.pt"
         open(ckpt_file, "w").close()
-        validate_initial_ckpt(ckpt_file)  # Should not raise
+        validate_ckpt(ckpt_file)  # Should not raise
 
     def test_relative_path_subdirectory_not_exists(self):
         """Relative path in subdirectory that doesn't exist should raise."""
         with pytest.raises(ValueError, match="does not exist locally"):
-            validate_initial_ckpt("checkpoints/non_existent.pt")
+            validate_ckpt("checkpoints/non_existent.pt")
 
 
 class TestPrepareInitialCkpt:

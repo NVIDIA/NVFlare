@@ -118,7 +118,7 @@ print()
 The `model` parameter accepts two formats:
 
 1. **Class instance** (shown above): `model=Net()` - Convenient and Pythonic
-2. **Dict config**: `model={"path": "model.Net", "args": {}}` - Better for large models
+2. **Dict config**: `model={"class_path": "model.Net", "args": {}}` - Better for large models
 
 To resume from pre-trained weights, use `initial_ckpt`:
 ```python

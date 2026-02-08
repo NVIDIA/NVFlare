@@ -62,7 +62,7 @@ class CyclicRecipe(Recipe):
         name: Name identifier for the federated learning job. Defaults to "cyclic".
         model: Starting model object to begin training. Can be:
             - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Path to a pre-trained checkpoint file. Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
@@ -135,10 +135,11 @@ class CyclicRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import validate_dict_model_config, validate_initial_ckpt
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
 
-        validate_initial_ckpt(self.initial_ckpt)
-        validate_dict_model_config(self.model)
+        validate_ckpt(self.initial_ckpt)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
 
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script

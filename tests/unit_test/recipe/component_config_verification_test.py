@@ -17,7 +17,7 @@
 Verification tests for recipe component config generation (PT, TF, NumPy only).
 
 Verifies that exported jobs produce correct component configs:
-- PT/TF: dict model config (e.g. {"path": "module.Class"}) and initial_ckpt
+- PT/TF: dict model config (recipes accept {"class_path": "module.Class"}; exported config uses "path") and initial_ckpt
   passed through to persistor as source_ckpt_file_full_name.
 - NumPy: persistor config with initial_ckpt (source_ckpt_file_full_name).
 
@@ -98,7 +98,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-fedavg",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleNetwork"},
+            model={"class_path": "model.SimpleNetwork", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -138,7 +138,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
                 name="test-pt-fedopt",
                 min_clients=2,
                 num_rounds=2,
-                model={"path": "model.SimpleNetwork"},
+                model={"class_path": "model.SimpleNetwork", "args": {}},
                 initial_ckpt=self.checkpoint_path,
                 train_script=self.train_script,
             )
@@ -180,7 +180,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-cyclic",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleNetwork"},
+            model={"class_path": "model.SimpleNetwork", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -200,7 +200,7 @@ class TestPTRecipeComponentConfig(unittest.TestCase):
             name="test-pt-scaffold",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleNetwork"},
+            model={"class_path": "model.SimpleNetwork", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -292,7 +292,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-fedavg",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleModel"},
+            model={"class_path": "model.SimpleModel", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -315,7 +315,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-fedopt",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleModel"},
+            model={"class_path": "model.SimpleModel", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -338,7 +338,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-cyclic",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleModel"},
+            model={"class_path": "model.SimpleModel", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -361,7 +361,7 @@ class TestTFRecipeComponentConfig(unittest.TestCase):
             name="test-tf-scaffold",
             min_clients=2,
             num_rounds=2,
-            model={"path": "model.SimpleModel"},
+            model={"class_path": "model.SimpleModel", "args": {}},
             initial_ckpt=self.checkpoint_path,
             train_script=self.train_script,
         )
@@ -529,7 +529,7 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
 
         recipe = FedEvalRecipe(
             name="test-pt-fedeval",
-            model={"path": "model.SimpleNetwork"},
+            model={"class_path": "model.SimpleNetwork", "args": {}},
             eval_ckpt=self.checkpoint_path,
             min_clients=2,
             eval_script=self.train_script,  # FedEval uses eval_script, not train_script

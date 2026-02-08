@@ -51,7 +51,7 @@ def main():
         min_clients=n_clients,
         # Model can be specified as class instance or dict config:
         model=LitNet(),
-        # Alternative: model={"path": "model.LitNet", "args": {}},
+        # Alternative: model={"class_path": "model.LitNet", "args": {}},
         # For separate checkpoint: eval_ckpt="/server/path/to/pretrained.pt",
         eval_ckpt=os.path.abspath(checkpoint),
         eval_script="client.py",

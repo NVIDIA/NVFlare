@@ -21,7 +21,7 @@ recipe = FedAvgRecipe(
     num_rounds=2,
     # Model can be class instance or dict config:
     model=LitNet(),  # Lightning model
-    # Alternative: model={"path": "model.LitNet", "args": {}},
+    # Alternative: model={"class_path": "model.LitNet", "args": {}},
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="client.py",
 )

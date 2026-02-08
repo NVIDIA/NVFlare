@@ -24,7 +24,7 @@ from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import Simpl
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_initial_ckpt
+from nvflare.recipe.utils import validate_ckpt
 
 
 class _SwarmValidator(BaseModel):
@@ -34,18 +34,20 @@ class _SwarmValidator(BaseModel):
     @classmethod
     def validate_initial_ckpt(cls, v):
         if v is not None:
-            validate_initial_ckpt(v)
+            validate_ckpt(v)
         return v
 
     model_config = {"arbitrary_types_allowed": True}
 
 
 def _instantiate_model_from_dict(model_config: Dict[str, Any]) -> Any:
-    """Instantiate a model from dict config.
+    """Instantiate a model from dict config (internal job format with 'path' key).
+
+    Recipes accept {"class_path": "...", "args": {...}} and normalize to {"path": "...", "args": {...}}
+    before calling this. So this function receives the normalized config.
 
     Args:
         model_config: Dict with 'path' (required) and 'args' (optional) keys.
-            Example: {"path": "my_module.MyModel", "args": {"num_classes": 10}}
 
     Returns:
         Instantiated model
@@ -105,7 +107,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         name: Name of the federated learning job.
         model: PyTorch model to use as the initial model. Can be:
             - An nn.Module instance (e.g., MyModel())
-            - A dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - A dict config: {"class_path": "module.ClassName", "args": {"param": value}}
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
@@ -132,7 +134,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         ```python
         recipe = SimpleSwarmLearningRecipe(
             name="swarm_job",
-            model={"path": "my_module.MyModel", "args": {"num_classes": 10}},
+            model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
             num_rounds=5,
             train_script="train.py",
         )
@@ -152,8 +154,11 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
-        # Handle dict-based model config
+        # Handle dict-based model config (recipe accepts class_path; normalize for job API)
         if isinstance(model, dict):
+            from nvflare.recipe.utils import recipe_model_to_job_model
+
+            model = recipe_model_to_job_model(model)
             model_instance = _instantiate_model_from_dict(model)
         else:
             model_instance = model

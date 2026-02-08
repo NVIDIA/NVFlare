@@ -92,7 +92,7 @@ class TestPTFedOptRecipe:
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
         model_config = {
-            "path": "my_module.models.SimpleNet",
+            "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10},
         }
 
@@ -106,7 +106,8 @@ class TestPTFedOptRecipe:
                 **base_recipe_params,
             )
 
-            assert recipe.model == model_config
+            assert recipe.model["path"] == "my_module.models.SimpleNet"
+            assert recipe.model["args"] == {"input_size": 10}
 
     def test_with_optimizer_args(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedOptRecipe with optimizer arguments."""
@@ -138,24 +139,24 @@ class TestPTFedOptRecipe:
             )
 
     def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'path' key raises error."""
+        """Test that dict config without 'class_path' key raises error."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with pytest.raises(ValueError, match="must have 'path' key"):
+        with pytest.raises(ValueError, match="must have 'class_path' key"):
             FedOptRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'
                 **base_recipe_params,
             )
 
     def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config with non-string 'path' raises error."""
+        """Test that dict config with non-string 'class_path' raises error."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with pytest.raises(ValueError, match="'path' must be a string"):
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
             FedOptRecipe(
                 name="test_invalid_path_type",
-                model={"path": 123, "args": {}},  # Path is not string
+                model={"class_path": 123, "args": {}},  # class_path is not string
                 **base_recipe_params,
             )
 
@@ -171,7 +172,7 @@ class TestPTFedOptRecipe:
 
             recipe = FedOptRecipe(
                 name="test_dict_instantiation",
-                model={"path": "mymodule.MyModel", "args": {"input_size": 10}},
+                model={"class_path": "mymodule.MyModel", "args": {"input_size": 10}},
                 **base_recipe_params,
             )
 

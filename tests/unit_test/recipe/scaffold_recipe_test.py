@@ -90,7 +90,7 @@ class TestPTScaffoldRecipe:
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
         model_config = {
-            "path": "my_module.models.SimpleNet",
+            "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10},
         }
         recipe = ScaffoldRecipe(
@@ -99,7 +99,8 @@ class TestPTScaffoldRecipe:
             **base_recipe_params,
         )
 
-        assert recipe.model == model_config
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10}
 
     def test_initial_ckpt_must_exist_for_relative_path(self, base_recipe_params, simple_model):
         """Test that non-existent relative paths are rejected."""
@@ -117,21 +118,21 @@ class TestPTScaffoldRecipe:
         """Test that dict config without 'path' key raises error."""
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
-        with pytest.raises(ValueError, match="must have 'path' key"):
+        with pytest.raises(ValueError, match="must have 'class_path' key"):
             ScaffoldRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'
                 **base_recipe_params,
             )
 
     def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config with non-string 'path' raises error."""
+        """Test that dict config with non-string 'class_path' raises error."""
         from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 
-        with pytest.raises(ValueError, match="'path' must be a string"):
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
             ScaffoldRecipe(
                 name="test_invalid_path_type",
-                model={"path": 123, "args": {}},  # Path is not string
+                model={"class_path": 123, "args": {}},  # class_path is not string
                 **base_recipe_params,
             )
 

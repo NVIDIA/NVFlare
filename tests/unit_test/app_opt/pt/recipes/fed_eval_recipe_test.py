@@ -228,7 +228,7 @@ class TestFedEvalRecipeValidation:
     def test_invalid_eval_ckpt_raises_error(self, simple_model):
         """Test that relative eval_ckpt raises when path does not exist locally.
 
-        validate_initial_ckpt() allows relative paths if the file exists locally;
+        validate_ckpt() allows relative paths if the file exists locally;
         it only raises when the relative path is missing. We do not use
         mock_file_system here so the relative path is not considered existing,
         and the validator raises (Pydantic wraps in ValidationError).
