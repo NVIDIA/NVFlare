@@ -3,7 +3,7 @@
 .. _hierarchy_unification_bridge:
 
 .. deprecated:: 2.7
-   The Hierarchy Unification Bridge (HUB) is deprecated. See :ref:`hierarchical_architecture` for the current hierarchical FL approach.
+   The Hierarchy Unification Bridge (HUB) is deprecated. See :ref:`Hierarchical Architecture <flare_hierarchical_architecture>` for the current hierarchical FL approach.
 
 ############################
 Hierarchy Unification Bridge

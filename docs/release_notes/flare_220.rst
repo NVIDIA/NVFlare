@@ -13,7 +13,7 @@ With FLARE v2.2, the primary goals were to:
 To accomplish these goals, a set of key new tools and features were developed, including:
  - FL Simulator
  - FLARE Dashboard
- - :ref:`dynamic_provisioning`
+ - :ref:`Dynamic Provisioning <dynamic_provisioning_cli>`
  - Improved :ref:`POC (proof of concept) command <poc_command>`
  - :ref:`docker_compose`
  - :ref:`preflight_check`
@@ -54,7 +54,7 @@ provisioning CLI is still included in the main nvflare CLI:
 
   nvflare provision -h
 
-The CLI method of provisioning has also been enhanced to allow for :ref:`dynamic provisioning <dynamic_provisioning>`,
+The CLI method of provisioning has also been enhanced to allow for :ref:`dynamic provisioning <dynamic_provisioning_cli>`,
 allowing the addition of new sites or users without the need to re-provision existing sites.
 
 In addition to these enhancements to the provisioning workflow, we provide some new tools to simplify local deployment
