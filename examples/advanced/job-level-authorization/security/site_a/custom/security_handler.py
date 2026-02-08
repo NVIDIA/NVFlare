@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,8 +33,12 @@ class CustomSecurityHandler(FLComponent):
         if command in ["check_resources"]:
             security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)
             job_meta = security_items.get(FLContextKey.JOB_META)
-            if job_meta.get(JobMetaKey.JOB_NAME) == "FL Demo Job1":
-                return False, f"Not authorized to execute: {command}"
+            job_name = job_meta.get(JobMetaKey.JOB_NAME)
+            if job_name == "FL-Demo-Job2":
+                return (
+                    False,
+                    f"Job '{job_name}' BLOCKED by site_a's CustomSecurityHandler - not authorized to execute: {command}",
+                )
             else:
                 return True, ""
         else:

@@ -320,7 +320,7 @@ The SFT curves are shown below, magenta for centralized results, others for FL t
 
 These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2, 1/4, and even 1/8, which can significantly reduce the message size, making it crucial for transmitting LLM updates.
 
-For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of GPT-Neo-1.3B model are reduced to: 
+For message reduce, from float32 to 16-/8-/4-bit, the message sizes (in MB) of GPT-Neo-1.3B model under SFT are reduced to: 
 
 | Quantization      | Raw Model Size | Quantized Model Size | Quantization Meta Size |
 |-------------------|----------------|----------------------|------------------------|
@@ -341,9 +341,9 @@ Similarly, quantization can be applied to tensor communication as well.
 ```
 python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
-In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
+In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change (from client to server after one local round) is thus:
 ```
-Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 MB.
+Before quantization: 2705.58 MB. After quantization: 676.39 MB with meta: 84.57 MB.
 ```
 
 ## Federated Training with Multiple Clients

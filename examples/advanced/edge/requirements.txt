@@ -1,4 +1,4 @@
-nvflare~=2.7rc
+nvflare~=2.7.2rc
 executorch
 torchvision
 torch

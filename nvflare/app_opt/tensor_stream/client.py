@@ -48,10 +48,24 @@ class TensorClientStreamer(FLComponent):
     ):
         """Initialize the TensorClientStreamer component.
 
+        The client automatically receives and applies the minimum get_task_timeout requirement
+        from the server when tensor streaming is active. This prevents fast clients from timing
+        out while waiting for slow clients to finish receiving tensors.
+
+        Automatic Timeout Management:
+            - Server calculates and sends the required minimum timeout
+            - Client automatically adjusts if the received minimum is higher than current timeout
+            - Logs clearly indicate when automatic adjustment occurs
+            - No manual configuration needed in most cases
+
+        Optional Manual Override:
+            Users can explicitly set get_task_timeout in config_fed_client.json if they need
+            to override the automatic behavior (e.g., for even longer timeouts).
+
         Args:
-            format (str): The format of the tensors to send. Default is ExchangeFormat.TORCH.
+            format (str): The format of the tensors to send. Default is ExchangeFormat.PYTORCH.
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
-            tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
+            tensor_send_timeout (float): Timeout for each tensor chunk transfer operation. Default is 30.0 seconds.
         """
         super().__init__()
         self.format = format
