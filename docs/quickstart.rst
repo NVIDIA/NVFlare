@@ -36,3 +36,17 @@ The following hello-world examples demonstrate different federated learning algo
 9. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
 
 Let's start with Hello PyTorch: :doc:`hello-world/hello-pt/index`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   hello-world/hello-pt/index
+   hello-world/hello-tf/index
+   hello-world/hello-lightning/index
+   hello-world/hello-xgboost/index
+   hello-world/hello-dp/index
+   hello-world/hello-flower/index
+   hello-world/hello-lr/index
+   hello-world/hello-tabular-stats/index
+   hello-world/hello-cyclic/index

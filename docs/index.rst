@@ -21,15 +21,6 @@ NVIDIA FLARE
 
    installation
    quickstart
-   Hello PyTorch <hello-world/hello-pt/index>
-   Hello TensorFlow <hello-world/hello-tf/index>
-   Hello Lightning <hello-world/hello-lightning/index>
-   Hello XGBoost <hello-world/hello-xgboost/index>
-   Hello Differential Privacy <hello-world/hello-dp/index>
-   Hello Flower <hello-world/hello-flower/index>
-   Hello Logistic Regression <hello-world/hello-lr/index>
-   Hello Tabular Statistics <hello-world/hello-tabular-stats/index>
-   Hello Cyclic <hello-world/hello-cyclic/index>
    run_mode
    migration_guide
 
@@ -100,24 +91,14 @@ NVIDIA FLARE
    :hidden:
    :caption: Confidential Computing
 
-   Overview <user_guide/confidential_computing/index>
-   user_guide/confidential_computing/on_premises/index
-   user_guide/confidential_computing/on_premises/cc_architecture
-   user_guide/confidential_computing/on_premises/cc_deployment_guide
-   user_guide/confidential_computing/on_premises/attestation
-   user_guide/confidential_computing/on_premises/hashicorp_vault_trustee_kbs_deployment
-   user_guide/confidential_computing/azure/index
-   user_guide/confidential_computing/azure/azure_confidential_virtual_machine_deployment
-   user_guide/confidential_computing/azure/confidential_azure_container_instances_deployment
+   user_guide/confidential_computing/index
 
 .. toctree::
    :maxdepth: 1
    :hidden:
    :caption: Edge & Mobile
 
-   Edge Overview <user_guide/edge_development/index>
-   user_guide/edge_development/flare_mobile
-   user_guide/edge_development/mobile_android
+   user_guide/edge_development/index
 
 .. toctree::
    :maxdepth: 1
