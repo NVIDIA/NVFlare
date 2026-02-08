@@ -67,12 +67,12 @@ NVIDIA FLARE
 
    flare_security_overview
    user_guide/admin_guide/security/terminologies_and_roles
-   user_guide/admin_guide/security/identity_security
-   user_guide/admin_guide/security/communication_security
+   Identity & Access Control <user_guide/admin_guide/security/identity_security>
    user_guide/admin_guide/security/site_policy_management
    user_guide/admin_guide/security/authorization_policy_previewer
-   user_guide/admin_guide/security/data_privacy_protection
-   user_guide/admin_guide/security/serialization
+   Network & Communication <user_guide/admin_guide/security/communication_security>
+   Secure Serialization (FOBS) <user_guide/admin_guide/security/serialization>
+   Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
    user_guide/admin_guide/security/auditing
    user_guide/admin_guide/security/unsafe_component_detection
 
