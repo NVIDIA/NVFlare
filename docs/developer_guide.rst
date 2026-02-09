@@ -182,16 +182,12 @@ Most users do not need these directly, but they are available for advanced custo
 Troubleshooting
 ===============
 
-- :doc:`Common Errors & Solutions <troubleshooting/common_errors>`
 - :doc:`Timeout Troubleshooting <user_guide/timeout_troubleshooting>`
-- :doc:`Debugging Guide <troubleshooting/debugging_guide>`
 - :doc:`FAQ <faq>`
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   troubleshooting/common_errors
    user_guide/timeout_troubleshooting
-   troubleshooting/debugging_guide
    faq
