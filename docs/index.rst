@@ -80,13 +80,10 @@ NVIDIA FLARE
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
    Preflight Check <user_guide/nvflare_cli/preflight_check>
-   production_readiness
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/logging_configuration
    System Configuration <user_guide/admin_guide/configurations/system_configuration>
-   operations/performance_tuning
-   operations/upgrade_guide
 
 .. toctree::
    :maxdepth: 1
@@ -101,7 +98,6 @@ NVIDIA FLARE
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
    user_guide/admin_guide/security/auditing
    Confidential Computing <user_guide/confidential_computing/index>
-   user_guide/admin_guide/security/regulatory_guidance
    security_faq
 
 .. toctree::

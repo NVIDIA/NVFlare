@@ -1,3 +1,5 @@
+:orphan:
+
 .. _upgrade_guide:
 
 ################
