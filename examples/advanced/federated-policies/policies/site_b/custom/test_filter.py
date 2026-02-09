@@ -21,15 +21,14 @@ log = logging.getLogger(__name__)
 
 
 class TestFilter(Filter):
-    def __init__(self, local_name, block=False):
-        super().__init__()
-        self.local_name = local_name
+    def __init__(self, name, block=False):
+        self.name = name
         self.block = block
 
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         if self.block:
-            log.info(f"Filter {self.local_name} blocked the content")
-            raise ContentBlockedException("Content blocked by filter " + self.local_name)
+            log.info(f"Filter {self.name} blocked the content")
+            raise ContentBlockedException("Content blocked by filter " + self.name)
 
-        log.info(f"Filter {self.local_name} is invoked")
+        log.info(f"Filter {self.name} is invoked")
         return shareable

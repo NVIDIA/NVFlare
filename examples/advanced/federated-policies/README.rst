@@ -22,7 +22,7 @@ System Requirements
 
 2. Install NVFlare
 ::
-    pip install -r requirements.txt
+    pip install nvflare
 
 3. The example is part of the NVFlare source code. The source code can be obtained like this,
 ::
@@ -78,7 +78,6 @@ So jobs can be submitted like this, type the following command in the admin cons
 ::
    submit_job ../../job1
 
-
 Participants
 ------------
 Site
@@ -123,10 +122,10 @@ we just use :code:`job1` in all the following tests.
     :header-rows: 1
 
     * - User
-      - Command (in admin console cli) or python cli
+      - Command
       - Expected behavior
     * - trainer@a.org
-      - python job4.py --startup_kit_location ./workspace/fed_policy/prod_00/trainer@a.org --username trainer@a.org
+      - submit_job ../../job1
       - Job deployed and started on all sites
     * - trainer@a.org
       - clone_job [the job ID that we previous submitted]
@@ -135,10 +134,10 @@ we just use :code:`job1` in all the following tests.
       - clone_job [the job ID that we previous submitted]
       - Rejected because submitter is in a different org
     * - admin@a.org
-      - python job4.py --startup_kit_location ./workspace/fed_policy/prod_00/admin@a.org --username admin@a.org
+      - submit_job ../../job1
       - Rejected because role "org_admin" is not allowed to submit jobs
     * - trainer@b.org
-      - python job4.py --startup_kit_location ./workspace/fed_policy/prod_00/trainer@b.org --username trainer@b.org
+      - submit_job ../../job1
       - site_a rejected the job because the submitter is in a different org, while site_b accepted the job
         so the job will still run since in meta.json we specify min_clients as 1
 
