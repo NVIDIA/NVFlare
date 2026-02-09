@@ -10,9 +10,8 @@ NVIDIA FLARE
    :caption: Overview
 
    welcome
-   industry_use_cases
    release_notes/flare_272
-   release_notes/previous
+   industry_use_cases
 
 .. toctree::
    :maxdepth: 1
@@ -61,10 +60,7 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/logging_configuration
-   user_guide/admin_guide/configurations/configurations
-   user_guide/admin_guide/configurations/communication_configuration
-   user_guide/admin_guide/configurations/variable_resolution
-   user_guide/admin_guide/configurations/server_port_consolidation
+   System Configuration <user_guide/admin_guide/configurations/system_configuration>
    operations/performance_tuning
    operations/upgrade_guide
 
@@ -80,23 +76,9 @@ NVIDIA FLARE
    Network & Communication <user_guide/admin_guide/security/communication_security>
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
    user_guide/admin_guide/security/auditing
+   Confidential Computing <user_guide/confidential_computing/index>
    user_guide/admin_guide/security/regulatory_guidance
    security_faq
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Confidential Computing
-
-   user_guide/confidential_computing/index
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Edge & Mobile
-
-   Edge Devices (Jetson / GPU) <user_guide/edge_development/edge_devices>
-   Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
 
 .. toctree::
    :maxdepth: 1
@@ -109,6 +91,15 @@ NVIDIA FLARE
    programming_guide/tensor_downloader
    programming_guide/file_streaming
    programming_guide/decomposer_for_large_object
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Edge & Mobile
+
+   Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
+   Hierarchical FL <programming_guide/hierarchical_architecture>
+   programming_guide/hierarchical_communication
 
 .. toctree::
    :maxdepth: 1
@@ -146,6 +137,7 @@ NVIDIA FLARE
    API Reference <apidocs/modules>
    glossary
    publications_and_talks
+   release_notes/previous
    contributing
 
 NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
