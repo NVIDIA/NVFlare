@@ -137,7 +137,7 @@ For New Users
 =============
 If you are new to FLARE, we recommend starting with the :ref:`Client API <client_api>` and :ref:`Job Recipe API <job_recipe>` --
 these higher-level APIs let you convert existing ML training code to federated with minimal changes.
-If you have existing centralized ML code, see the :ref:`Migration Guide <migration_guide>`.
+If you have existing FLARE code, see the :ref:`Migration Guide <migration_guide>`.
 
 For Deployment & Security
 =========================
