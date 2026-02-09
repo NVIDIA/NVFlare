@@ -28,8 +28,17 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=2)
+    parser.add_argument("--model-name", type=str, default="gpt2", help="Hugging Face model name.")
+    parser.add_argument("--n_clients", type=int, default=2, help="Number of clients to simulate.")
+    parser.add_argument("--num_rounds", type=int, default=2, help="Number of federated learning rounds.")
+    parser.add_argument("--export-only", action="store_true", help="If set, export the job without executing it.")
+    parser.add_argument(
+        "--export-path", type=str, default="jobs/tensor-example-job-gpt2", help="Path to export the job."
+    )
+    parser.add_argument("--disable-tensorstream", action="store_true", help="If set, disable tensor streamers.")
+    parser.add_argument(
+        "--exchange-model-only", action="store_true", help="If set, only exchange the model without training."
+    )
 
     return parser.parse_args()
 
@@ -40,27 +49,43 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
 
-    model, _ = get_model("gpt2")
+    model, _ = get_model(args.model_name)
+
+    if args.disable_tensorstream:
+        server_expected_format = ExchangeFormat.NUMPY
+    else:
+        server_expected_format = ExchangeFormat.PYTORCH
+
+    train_args = f"--model-name {args.model_name}"
+    if args.exchange_model_only:
+        train_args += " --exchange-model-only"
 
     recipe = FedAvgRecipe(
         name="hello-tensor-stream",
         min_clients=n_clients,
         num_rounds=num_rounds,
         model=model,
-        server_expected_format=ExchangeFormat.PYTORCH,
+        server_expected_format=server_expected_format,
         train_script="client.py",
+        train_args=train_args,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    recipe.job.to_server(TensorServerStreamer(), "tensor_server_streamer")
-    recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
+    if not args.disable_tensorstream:
+        recipe.job.to_server(TensorServerStreamer(), "tensor_server_streamer")
+        recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
 
-    env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env)
-    print()
-    print("Job Status is:", run.get_status())
-    print("Result can be found in :", run.get_result())
-    print()
+    if args.export_only:
+        recipe.job.export_job(args.export_path)
+        print(f"Job exported to {args.export_path}")
+    else:
+        env = SimEnv(num_clients=n_clients)
+        run = recipe.execute(env)
+
+        print()
+        print("Job Status is:", run.get_status())
+        print("Result can be found in :", run.get_result())
+        print()
 
 
 if __name__ == "__main__":
