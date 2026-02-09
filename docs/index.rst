@@ -121,15 +121,51 @@ NVIDIA FLARE
    release_notes/previous
    contributing
 
-NVIDIA FLARE (Federated Learning Application Runtime Environment) is an open-source Python SDK
-for federated learning. Add a few lines to your existing training code and run it across distributed
-sites -- from 2 hospitals to millions of edge devices.
+NVIDIA FLARE (Federated Learning Application Runtime Environment) is an open-source SDK for
+federated learning. It helps ML practitioners adapt existing training workflows (PyTorch,
+TensorFlow, XGBoost, scikit-learn, NeMo) to a federated setting with minimal code changes,
+and enables platform teams to deploy secure, privacy-preserving multi-party collaboration.
 
-**New here?** Start with :ref:`Installation <installation>`, then :ref:`Quick Start <quickstart>` to run your first FL job.
+Choose Your Path
+================
 
-**Already using FLARE?** See the **User Guide** for APIs (:ref:`Client API <client_api>`, :ref:`Recipes <job_recipe>`), or :ref:`Examples & Tutorials <example_applications>` for code.
+New to FLARE (ML Practitioners)
+-------------------------------
 
-**Ready for production?** The **Deployment & Operations** section covers provisioning and infrastructure.
-**Security & Compliance** covers authentication, privacy, and confidential computing.
+Start here if you want to federate an existing training script.
 
-**Building custom workflows?** See the :ref:`Developer Guide <developer_guide>` or the :doc:`API Reference <apidocs/modules>`.
+- :doc:`Welcome <welcome>` -- What FLARE is and what it supports
+- :doc:`Installation <installation>` -- Install FLARE and set up your environment
+- :doc:`Quick Start <quickstart>` -- Run a Hello World example and convert your ML code
+- :ref:`Client API <client_api>` -- Recommended high-level API for federated training
+- :ref:`Job Recipe API <job_recipe>` -- Pre-built recipes for common FL workflows
+- :doc:`Migration Guide <migration_guide>` -- Upgrade between FLARE versions
+- :ref:`Examples & Tutorials <example_applications>` -- End-to-end examples and tutorials
+
+Deployment & Security (Production Teams)
+----------------------------------------
+
+Start here if you are deploying FLARE in an organization or consortium.
+
+- :doc:`Deployment Overview <user_guide/admin_guide/deployment/overview>` -- Provisioning, Docker/Kubernetes, cloud deployment, dashboard
+- :doc:`Admin Commands <user_guide/admin_guide/deployment/operation>` -- Operating and managing a running FL system
+- :doc:`System Configuration <user_guide/admin_guide/configurations/system_configuration>` -- Configuration files and settings
+- :doc:`Preflight Check <user_guide/nvflare_cli/preflight_check>` -- Pre-launch validation
+- :doc:`Security Overview <flare_security_overview>` -- Authentication, authorization, privacy, auditing
+- :doc:`Confidential Computing <user_guide/confidential_computing/index>` -- Hardware-backed TEEs for end-to-end IP protection
+
+Developers (Advanced / Contributors)
+-------------------------------------
+
+Start here if you want to extend FLARE or build custom workflows.
+
+- :ref:`Developer Guide <developer_guide>` -- Architecture deep-dives, controllers, filters, and extension points
+- :doc:`API Reference <apidocs/modules>` -- Full Python API documentation
+- :doc:`Contributing <contributing>` -- How to contribute to NVIDIA FLARE
+
+Explore by Use Case
+===================
+
+- :doc:`Industry Use Cases <industry_use_cases>` -- Real-world deployments across healthcare, finance, government, and more
+- **Large Models & LLM** -- Federated fine-tuning, memory management, and optimization for large models
+- **Edge & Mobile** -- Mobile training (iOS/Android) and hierarchical FL for large-scale deployments

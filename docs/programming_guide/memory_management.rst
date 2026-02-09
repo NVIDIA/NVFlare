@@ -1,8 +1,8 @@
 .. _memory_management:
 
-#############################
-Memory Management Best Practices
-#############################
+###################
+Memory Management
+###################
 
 This guide describes memory management techniques for long-running federated learning jobs
 using Python, PyTorch, and glibc.
