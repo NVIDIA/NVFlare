@@ -68,14 +68,9 @@ logic for training.
 
 Neural Network
 ^^^^^^^^^^^^^^^
-Let's see what a simplified MNIST network looks like.
+Let's see the simplified MNIST model used in this example:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf/src/tf_net.py
-   :language: python
-   :lines: 15-
-   :lineno-start: 15
-   :linenos:
-   :caption: tf_net.py
+- :github_nvflare_link:`model.py <examples/hello-world/hello-tf/model.py>`
 
 This ``TFNet`` class is the convolutional neural network to train with MNIST dataset.
 This is not related to NVIDIA FLARE, and it is implemented in a file called ``tf_net.py``.
@@ -89,25 +84,19 @@ you will likely have different datasets for each client.
 
 Additionally, the optimizer and loss function need to be configured.
 
-All of this happens before the ``while flare.is_running():`` line in ``hello-tf_fl.py``.
+All of this happens before the ``while flare.is_running():`` line in ``client.py``.
+See:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf/src/hello-tf_fl.py
-   :language: python
-   :lines: 29-57
-   :lineno-start: 29
-   :linenos:
-   :caption: hello-tf_fl.py
+- :github_nvflare_link:`client.py <examples/hello-world/hello-tf/client.py>`
 
 Client Local Train
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 The client code gets the weights from the input_model received from the server then performs a simple :code:`self.model.fit`
 so the client's model is trained with its own dataset:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf/src/hello-tf_fl.py
-   :language: python
-   :lines: 58-91
-   :lineno-start: 58
-   :linenos:
+See the full local training implementation in:
+
+- :github_nvflare_link:`client.py <examples/hello-world/hello-tf/client.py>`
   
 After finishing the local training, the newly-trained weights are sent back to the NVIDIA FLARE server in the params of
 :mod:`FLModel<nvflare.app_common.abstract.fl_model>`.
@@ -217,15 +206,16 @@ The full source code for this exercise can be found in
 Notes on running with GPU
 -------------------------
 
-We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.
+We recommend using the `NVIDIA TensorFlow Docker container <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow>`_ if you want to use GPU.
 
 If you choose to run the example using GPUs, it is important to note that,
 by default, TensorFlow will attempt to allocate all available GPU memory at the start.
 In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory
-by setting the following flags.
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
-```
+by setting the following flags:
+
+.. code-block:: bash
+
+   TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
 
 If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
 This can be achieved by using the `--gpu` argument during simulation, e.g., `nvflare simulator -n 2 --gpu 0,1 [job]`.

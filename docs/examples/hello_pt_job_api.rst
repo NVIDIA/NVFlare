@@ -85,11 +85,9 @@ Neural Network
 The training procedure and network architecture are modified from 
 `Training a Classifier <https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html>`_.
 
-Let's see what an extremely simplified CIFAR10 training looks like:
+Let's see the simplified CIFAR10 model used in this example:
 
-.. literalinclude:: ../examples/hello-world/hello-pt/model.py
-   :language: python
-   :caption: model.py
+- :github_nvflare_link:`model.py <examples/hello-world/hello-pt/model.py>`
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
 This is not related to NVIDIA FLARE, so we implement it in a file called ``simple_network.py``.

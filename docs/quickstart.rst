@@ -68,10 +68,6 @@ Converting existing training code to federated learning requires just 3 changes:
 That's it. Your training logic stays the same -- FLARE handles the communication, aggregation, and orchestration.
 For the full Client API reference, see :ref:`Client API <client_api>`. For pre-built recipes, see :ref:`Available Recipes <available_recipes>`.
 
-.. seealso::
-
-    For a complete list of ready-to-use federated learning recipes with code examples, see :ref:`available_recipes`.
-
 Hello-world Examples
 ====================
 

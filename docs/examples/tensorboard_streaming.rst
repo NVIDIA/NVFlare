@@ -40,12 +40,10 @@ And install the required dependencies in the example folder (NVFlare/examples/ad
 Adding TensorBoard Streaming to Configurations
 ------------------------------------------------
 
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
+Inside the example, job configuration and TensorBoard setup are defined in:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/config/config_fed_client.json
-   :language: json
-   :linenos:
-   :caption: config_fed_client.json
+- :github_nvflare_link:`job.py <examples/advanced/experiment-tracking/tensorboard/job.py>`
+- :github_nvflare_link:`client.py <examples/advanced/experiment-tracking/tensorboard/client.py>`
 
 Take a look at the components section of the client config at line 24.
 The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
@@ -59,11 +57,6 @@ Finally, we have the :class:`ConvertToFedEvent<nvflare.app_common.widgets.conver
 which converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``,
 which will then be streamed from the clients to the server.
-
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/config/config_fed_server.json
-   :language: json
-   :linenos:
-   :caption: config_fed_server.json
 
 Under the component section in the server config, we have the
 :class:`TBAnalyticsReceiver<nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver>`
@@ -79,15 +72,11 @@ Notice how the accepted event type ``"fed.analytix_log_stats"`` matches the outp
 Adding TensorBoard Streaming to your Code
 -------------------------------------------
 
-In this exercise, all of the TensorBoard code additions will be made in ``pt_learner.py``.
+In this exercise, TensorBoard logging is implemented in:
+
+- :github_nvflare_link:`client.py <examples/advanced/experiment-tracking/tensorboard/client.py>`
 
 First we must initialize our TensorBoard writer to the ``AnalyticsSender`` we defined in the client config:
-
-.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_tb.py
-   :language: python
-   :lines: 110-113
-   :lineno-start: 110
-   :linenos:
 
 The ``LearnerExecutor`` passes in the component dictionary into the ``parts`` parameter of ``initialize()``.
 We can then access the ``AnalyticsSender`` component we defined in ``config_fed_client.json``
@@ -98,14 +87,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_tb.py
-   :language: python
-   :lines: 151-181
-   :lineno-start: 151
-   :linenos:
-
-We use ``add_scalar(tag, scalar, global_step)`` on line 181 to send training loss metrics,
-while on line 174 we send the validation accuracy at the end of each epoch.
+The script uses ``add_scalar(tag, scalar, global_step)`` to send training metrics and validation accuracy.
 
 You can learn more about other supported writer methods in
 :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>`.

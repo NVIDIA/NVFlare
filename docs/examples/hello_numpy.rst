@@ -57,17 +57,12 @@ Here for simplicity's sake, we use synthetic data that allows you to clearly see
 
 Model
 ------------------
-The ``SimpleNumpyModel`` class implements a basic neural network model using NumPy arrays.
-The model represents a simple 3x3 weight matrix that can be trained through federated learning. The model starts with fixed weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]`` and provides methods for training and evaluation.
+This example uses an in-script NumPy model update loop in the client code, using a simple 3x3 weight matrix to
+demonstrate aggregation behavior clearly.
 
-The model implementation is located in ``model.py``.
+See the full implementation in:
 
-
-.. literalinclude:: ../../../examples/hello-world/hello-numpy/model.py
-    :language: python
-    :linenos:
-    :caption: model.py
-    :lines: 14-
+- :github_nvflare_link:`client.py <examples/hello-world/hello-numpy/client.py>`
 
 
 
@@ -103,13 +98,9 @@ The following code snippet highlights how these methods are used:
    output_model = flare.FLModel(params=new_params)  # 4. Package results
    flare.send(output_model)  # 5. Send updated model to server
 
-For the complete implementation, see the full client code below:
+For the complete implementation, see:
 
-.. literalinclude:: ../../../examples/hello-world/hello-numpy/client.py
-    :language: python
-    :linenos:
-    :caption: Client Code (client.py)
-    :lines: 14-
+- :github_nvflare_link:`client.py <examples/hello-world/hello-numpy/client.py>`
 
 
 Server Code
@@ -125,11 +116,9 @@ Job Recipe Code
 Job Recipe contains the client.py and built-in fedavg algorithm.
 
 
-.. literalinclude:: ../../../examples/hello-world/hello-numpy/job.py
-    :language: python
-    :linenos:
-    :caption: job recipe (job.py)
-    :lines: 14-
+See the job recipe implementation:
+
+- :github_nvflare_link:`job.py <examples/hello-world/hello-numpy/job.py>`
 
 
 Model Input Options

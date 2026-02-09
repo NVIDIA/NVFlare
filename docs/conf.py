@@ -114,7 +114,6 @@ extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{bu
 # a list of builtin themes.
 #
 html_theme = "sphinx_rtd_theme"
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_theme_options = {
     "collapse_navigation": True,
     "navigation_depth": 1,
