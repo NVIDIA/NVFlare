@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 import json
+import os
 from unittest.mock import patch
 
 from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, configure_logging

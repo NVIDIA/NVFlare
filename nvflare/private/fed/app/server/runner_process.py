@@ -15,7 +15,6 @@
 """Provides a command line interface for federated server."""
 
 import argparse
-import logging
 import os
 import sys
 import threading
