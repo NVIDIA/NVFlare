@@ -4,10 +4,6 @@
 Hello XGBoost
 #####################
 
-.. note::
-   This example is coming soon. It will provide a complete walkthrough of
-   federated XGBoost training with NVIDIA FLARE.
-
 Overview
 ========
 
@@ -21,9 +17,10 @@ NVIDIA FLARE supports multiple XGBoost federation modes:
 - **Vertical (column-split)** -- Each site has different features for the same samples
 - **Histogram-based** -- Federated histogram aggregation for tree construction
 
-*Full example walkthrough coming soon.*
+For the comprehensive XGBoost guide, see :doc:`/user_guide/data_scientist_guide/federated_xgboost/federated_xgboost`.
 
-For now, see:
+Examples
+========
 
-- :doc:`/user_guide/data_scientist_guide/federated_xgboost/federated_xgboost` -- Comprehensive XGBoost guide
-- `XGBoost examples on GitHub <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost>`_ -- Code examples
+- `Federated XGBoost (horizontal) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/fedxgb>`_ -- Standard federated XGBoost with histogram-based aggregation
+- `Secure Federated XGBoost <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/fedxgb_secure>`_ -- XGBoost with encryption for secure aggregation
