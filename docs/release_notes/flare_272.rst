@@ -68,22 +68,8 @@ Key Highlights
 Memory Management with Tensor-based Downloader
 ----------------------------------------------
 
-.. sidebar::
-
-    **Transparent Memory Optimization**
-
-    No code changes required! The TensorDownloader works automatically behind the scenes, reducing memory usage without any modifications to your training scripts.
-
 FLARE 2.7.2 introduces the **TensorDownloader** for PyTorch models, extending the FileDownloader concept introduced in 2.7.0 specifically for tensor data.
 This feature addresses critical memory challenges when working with large language models (LLMs) and other large-scale models in federated learning.
-
-.. note::
-
-    The Tensor Downloader supports **PyTorch tensors and NumPy arrays**. TensorFlow models currently use traditional serialization.
-
-.. important::
-
-    **Transparent to Users**: This optimization is built into all PyTorch workflows and completely transparent to end users. It works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.
 
 Key Features
 ~~~~~~~~~~~~
@@ -139,9 +125,12 @@ Benefits for LLM Training
 
 .. admonition:: Learn More
 
-    For a complete user guide including configuration examples and how to tune or disable the feature, see :ref:`tensor_downloader`.
-    
-    For details on the underlying FOBS decomposer architecture, see :ref:`decomposer_for_large_object`.
+    **Transparent & zero code changes** -- the TensorDownloader works automatically in all PyTorch workflows.
+    Supports **PyTorch tensors and NumPy arrays** (TensorFlow uses traditional serialization).
+
+    - User guide with configuration and tuning: :ref:`tensor_downloader`
+    - FOBS decomposer architecture: :ref:`decomposer_for_large_object`
+
 
 Server-Side Memory Cleanup
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
