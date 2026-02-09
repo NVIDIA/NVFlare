@@ -22,7 +22,7 @@ Pre-Upgrade Checklist
 *Coming soon.* Will cover:
 
 - Review release notes for breaking changes
-- Back up current deployment (see :doc:`backup_recovery`)
+- Back up current deployment 
 - Test upgrade in staging environment
 - Plan maintenance window
 - Communicate with participating sites

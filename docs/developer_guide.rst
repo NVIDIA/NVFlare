@@ -12,7 +12,7 @@ System Architecture
 ===================
 
 - :doc:`System Architecture Overview <programming_guide/system_architecture>`
-- :doc:`FLARE System Architecture <flare_system_architecure>`
+- :doc:`FLARE System Architecture <flare_system_architecture>`
 - :doc:`CellNet Architecture <cellnet_architecture>`
 
 .. toctree::
@@ -20,7 +20,7 @@ System Architecture
    :hidden:
 
    programming_guide/system_architecture
-   flare_system_architecure
+   flare_system_architecture
    cellnet_architecture
 
 Core Concepts
