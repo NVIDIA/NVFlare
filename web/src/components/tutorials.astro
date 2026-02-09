@@ -126,18 +126,6 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/job-level-authorization/README.md`
   },
   {
-    title: "Step-by-Step CIFAR10 Examples",
-    tags: ["beg.", "algorithm", "pytorch", "dl"],
-    description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
-  },
-  {
-    title: "Step-by-Step HIGGS Examples",
-    tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
-    description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
-  },
-  {
     title: "Hello NumPy",
     tags: ["beg.", "algorithm", "client-api", "numpy", "recipe-api"],
     description: "Simple federated learning example using NumPy and the Recipe API. Shows how to convert NumPy ML code to FL with FedAvg.",
@@ -148,12 +136,6 @@ const tutorials = [
     tags: ["int.", "pytorch", "lightning", "recipe-api"],
     description: "Multi-GPU federated learning examples for PyTorch and Lightning using the Recipe API.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/multi-gpu`
-  },
-  {
-    title: "Hello FedAvg",
-    tags: ["beg.", "algorithm", "pytorch", "model-controller"],
-    description: "Example using the FedAvg workflow to implement Federated Averaging with early stopping, model selection, and saving and loading to show flexibility of Model Controller API.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
   },
   {
     title: "Hello Numpy Cross-Site Validation",
@@ -189,20 +171,13 @@ const tutorials = [
     title: "Simulated Federated Learning with CIFAR-10",
     tags: ["int.", "algorithm", "simulator", "pytorch", "learner", "model-controller", "dl"],
     description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-sim/README.md`
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
     tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he", "highlight"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
-  },
-  {
-    title: "Logistic Regression with Newton-Raphton",
-    tags: ["int.", "algorithm", "client-api", "model-controller", "ml"],
-    description:
-      "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/lr-newton-raphson`,
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-real-world/README.md`
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
@@ -239,20 +214,14 @@ const tutorials = [
   {
     title: "Histogram-based FL for XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Histogram-based algorithm for XGBoost.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/histogram-based/README.md`
+    description: "Horizontal federated XGBoost with histogram-based algorithm. Part of consolidated XGBoost examples.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md`
   },
   {
     title: "Tree-based Federated Learning for XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Tree-based algorithms including bagging and cyclic approaches for XGBoost.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/tree-based/README.md`
-  },
-  {
-    title: "Federated Learning for Random Forest based on XGBoost",
-    tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Example of using NVIDIA FLARE with scikit-learn and Random Forest.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/random_forest/README.md`
+    description: "Tree-based (bagging and cyclic) federated XGBoost. Part of consolidated XGBoost examples.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md`
   },
   {
     title: "Federated Vertical XGBoost",
@@ -282,7 +251,7 @@ const tutorials = [
     title: "MONAI & NVIDIA FLARE Integration with Experiment Tracking",
     tags: ["adv.", "algorithm", "experiment-tracking", "monai"],
     description: "Example using NVIDIA FLARE and MONAI integration with experiment tracking streaming from clients to server.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/examples/spleen_ct_segmentation_local/README.md#51-experiment-tracking-with-mlflow`
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/monai/spleen_ct_segmentation/README.md`
   },
   {
     title: "KeyCloak Site Authentication Integration",
@@ -297,7 +266,7 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb`
   },
   {
-    title: "Parameter Efficient Fine Turning",
+    title: "Parameter Efficient Fine Tuning",
     tags: ["adv.", "algorithm", "nemo", "llm", "highlight"],
     description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/peft`
@@ -389,7 +358,7 @@ const tutorials = [
   {
     title: "FedSM",
     tags: ["adv.", "algorithm", "research", "pytorch"],
-    description: "Personalized Federated Learning with FedSM Alogithrm. Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation.",
+    description: "Personalized Federated Learning with FedSM Algorithm. Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-sm`
   },
   {
@@ -426,7 +395,7 @@ const tutorials = [
       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/monitoring/README.md`,
     },
     {
-      title: "distributed optimization",
+      title: "Distributed Optimization",
       tags: ["adv.", "p2p"],
       description:
         "P2P Distributed Optimization algorithms with NVFlare. In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few examples showing how to directly use the nvflare.app_opt.p2p API to run distributed optimization algorithms, on the other hand we provide a walkthrough of the actual implementation of the APIs in nvflare.app_opt.p2p to show how to exploit lower-level NVFlare APIs for advanced use-cases.",
