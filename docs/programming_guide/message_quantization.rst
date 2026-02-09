@@ -93,4 +93,10 @@ Message quantization provides:
 * No impact on model convergence
 * Support for various precision levels
 * Seamless integration with existing training scripts
-* Compatibility with both numpy and PyTorch 
+* Compatibility with both numpy and PyTorch
+
+Examples
+--------
+
+* `Federated LLM with Quantization (HuggingFace) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_ -- End-to-end SFT/PEFT example with ``--quantize_mode`` option for fp16, 8-bit, and 4-bit communication
+* `Self-Paced Training: LLM Quantization (Chapter 8.4) <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.4_llm_quantization>`_ -- Step-by-step tutorial notebook on message quantization

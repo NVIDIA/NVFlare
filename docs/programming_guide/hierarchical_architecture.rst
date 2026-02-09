@@ -128,7 +128,7 @@ The result is:
 There are 6 relay nodes in total: 2 non-leaf nodes and 4 leaf nodes (since each non-leaf node has 2 leaf nodes for a width value of 2).
 
 .. image:: ../resources/tree_prov_flare_hierarchical_architecture.png
-    :height: 45px
+    :height: 350px
 
 
 There are 18 client nodes in total. In the client hierarchy, there are 6 non-leaf clients (one for each relay node) and 12 leaf clients (3 for each leaf relay node).
