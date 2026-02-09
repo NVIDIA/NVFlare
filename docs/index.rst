@@ -18,7 +18,6 @@ NVIDIA FLARE
    :hidden:
    :caption: Get Started
 
-   get_started
    installation
    quickstart
    migration_guide
@@ -40,7 +39,38 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Deployment
+   :caption: Examples & Tutorials
+
+   example_applications_algorithms
+   tutorials
+   self-paced-training/index
+   user_guide/researcher_guide/index
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Large Models & LLM
+
+   Federated LLM Fine-Tuning <programming_guide/llm_fine_tuning>
+   programming_guide/message_quantization
+   programming_guide/memory_management
+   programming_guide/tensor_downloader
+   programming_guide/file_streaming
+   programming_guide/decomposer_for_large_object
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Edge & Mobile
+
+   Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
+   Hierarchical FL <programming_guide/hierarchical_architecture>
+   programming_guide/hierarchical_communication
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Deployment & Operations
 
    user_guide/admin_guide/deployment/overview
    programming_guide/provisioning_system
@@ -51,12 +81,6 @@ NVIDIA FLARE
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
    Preflight Check <user_guide/nvflare_cli/preflight_check>
    production_readiness
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Operations
-
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
    user_guide/admin_guide/configurations/logging_configuration
@@ -83,51 +107,9 @@ NVIDIA FLARE
 .. toctree::
    :maxdepth: 1
    :hidden:
-   :caption: Large Models & LLM
-
-   Federated LLM Fine-Tuning <programming_guide/llm_fine_tuning>
-   programming_guide/message_quantization
-   programming_guide/memory_management
-   programming_guide/tensor_downloader
-   programming_guide/file_streaming
-   programming_guide/decomposer_for_large_object
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Edge & Mobile
-
-   Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
-   Hierarchical FL <programming_guide/hierarchical_architecture>
-   programming_guide/hierarchical_communication
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
    :caption: Developer Guide
 
    developer_guide
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Troubleshooting
-
-   troubleshooting/common_errors
-   user_guide/timeout_troubleshooting
-   troubleshooting/debugging_guide
-   Preflight Check <user_guide/nvflare_cli/preflight_check>
-   faq
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-   :caption: Examples & Tutorials
-
-   example_applications_algorithms
-   tutorials
-   self-paced-training/index
-   user_guide/researcher_guide/index
 
 .. toctree::
    :maxdepth: 1
@@ -162,8 +144,8 @@ If you have existing centralized ML code, see the :ref:`Migration Guide <migrati
 
 For Deployment & Security
 =========================
-When you are ready for production, the **Deployment** section covers provisioning and deployment options.
-The **Operations** section covers admin commands, monitoring, and system configuration.
+When you are ready for production, the **Deployment & Operations** section covers provisioning, deployment, admin commands,
+monitoring, and system configuration.
 Review the :ref:`Production Readiness Checklist <production_readiness>` before going live.
 The **Security & Compliance** section covers authentication, authorization, data privacy, and regulatory guidance.
 

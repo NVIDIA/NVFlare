@@ -1,25 +1,5 @@
-.. _get_started:
-.. _getting_started:
+:orphan:
 
-###########
-Get Started
-###########
+.. _get_started_old:
 
-Welcome to NVIDIA FLARE! Follow the steps below to install, run your first federated learning job, and explore examples.
-
-- :ref:`installation` -- Set up NVIDIA FLARE
-- :ref:`quickstart` -- Hello world examples and run modes (Simulator, POC, Production)
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
-   hello-world/hello-pt/index
-   hello-world/hello-lightning/index
-   hello-world/hello-dp/index
-   hello-world/hello-tf/index
-   hello-world/hello-lr/index
-   hello-world/hello-cyclic/index
-   hello-world/hello-tabular-stats/index
-   hello-world/hello-flower/index
-   hello-world/hello-xgboost/index
+This page has moved. See :ref:`quickstart`.

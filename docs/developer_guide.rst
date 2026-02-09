@@ -178,3 +178,20 @@ Most users do not need these directly, but they are available for advanced custo
    programming_guide/data_exchange_object
    programming_guide/controllers/controllers
    programming_guide/execution_api_type
+
+Troubleshooting
+===============
+
+- :doc:`Common Errors & Solutions <troubleshooting/common_errors>`
+- :doc:`Timeout Troubleshooting <user_guide/timeout_troubleshooting>`
+- :doc:`Debugging Guide <troubleshooting/debugging_guide>`
+- :doc:`FAQ <faq>`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   troubleshooting/common_errors
+   user_guide/timeout_troubleshooting
+   troubleshooting/debugging_guide
+   faq

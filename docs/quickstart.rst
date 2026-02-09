@@ -1,4 +1,6 @@
 .. _quickstart:
+.. _get_started:
+.. _getting_started:
 
 ###################
 Quick Start Series
