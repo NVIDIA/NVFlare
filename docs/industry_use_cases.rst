@@ -4,10 +4,6 @@
 Industry Use Cases
 ####################
 
-.. note::
-   This section is coming soon. It will include detailed case studies and reference architectures
-   for federated learning deployments across industries.
-
 Federated Learning is being adopted across industries where data cannot be centralized due to
 privacy, regulatory, or competitive constraints. NVIDIA FLARE provides the platform infrastructure
 to enable these deployments.
@@ -55,7 +51,7 @@ contribute training data that continuously improves the shared models for the en
 **Other references:**
 
 - `Federated Learning for Brain Tumor Segmentation (Nature Communications) <https://doi.org/10.1038/s41467-022-33407-5>`_
-- :doc:`Hello Differential Privacy Example </hello-world/hello-dp/index>`
+-  see more use cases in FLARE DAY recordings
 
 Financial Services
 ==================
