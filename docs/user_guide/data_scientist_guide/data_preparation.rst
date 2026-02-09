@@ -4,11 +4,6 @@
 Data Preparation & Heterogeneity
 ###################################
 
-.. note::
-   This guide is coming soon. It will cover best practices for preparing data
-   for federated learning, handling data heterogeneity, and validating data quality
-   across participating sites.
-
 Overview
 ========
 
@@ -49,13 +44,3 @@ In vertical federated learning, different sites hold different features for over
 Before training, sites must identify their common users without revealing their full datasets.
 
 - `Private Set Intersection (PSI) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/psi>`_ -- User alignment for vertical federated learning; find common users/entities across sites without exposing private data
-
-Data Quality Validation
-========================
-
-*Coming soon.* Will cover:
-
-- Pre-training data quality checks
-- Detecting and handling outliers across sites
-- Monitoring data drift during training
-- Using FLARE filters for data validation
