@@ -8,6 +8,17 @@ Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hel
 
 Make sure you have completed the :ref:`installation` steps before proceeding.
 
+Run Modes
+=========
+
+FLARE supports three modes for different stages of your workflow:
+
+- **Simulator** (:ref:`fl_simulator`) -- Runs jobs on a single system for fast testing and algorithm development.
+- **POC** (:ref:`poc_command`) -- Simulates deployment on one host with separate processes for clients and server.
+- **Production** (:ref:`provisioned_setup`) -- Distributed deployment using startup kits from provisioning.
+
+Start with the **Simulator** for development, then validate with **POC** before going to **Production**.
+
 .. seealso::
 
     For a complete list of ready-to-use federated learning recipes with code examples, see :ref:`available_recipes`.

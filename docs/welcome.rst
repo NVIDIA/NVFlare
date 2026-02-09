@@ -15,8 +15,7 @@ model updates back for aggregation into a global model. After multiple rounds, a
 any raw data leaving its source.
 
 .. image:: resources/fl_diagram.png
-    :height: 350px
-    :align: center
+    :height: 450px
 
 **Types of Federated Learning:**
 
@@ -133,7 +132,7 @@ Roadmap
 
 .. image:: resources/flare_roadmap.png
    :alt: NVIDIA FLARE Roadmap
-   :width: 100%
+   :width: 55%
 
 **FLARE Core -- Ease of Use & Scalability**
 

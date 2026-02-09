@@ -20,7 +20,6 @@ NVIDIA FLARE
 
    installation
    quickstart
-   run_mode
    migration_guide
 
 .. toctree::

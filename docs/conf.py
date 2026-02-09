@@ -102,7 +102,20 @@ autosectionlabel_prefix_document = True
 exclude_patterns = []
 
 if _skip_api:
-    exclude_patterns.append("apidocs")
+    # Create a minimal stub so toctree / :doc: references to apidocs/modules
+    # still resolve even when the full API docs are not generated.
+    _apidocs_dir = os.path.join(os.path.dirname(__file__), "apidocs")
+    _stub_path = os.path.join(_apidocs_dir, "modules.rst")
+    if not os.path.exists(_stub_path):
+        os.makedirs(_apidocs_dir, exist_ok=True)
+        with open(_stub_path, "w") as _f:
+            _f.write(
+                "API Reference\n"
+                "=============\n\n"
+                ".. note::\n\n"
+                "   Full API documentation is generated during production builds.\n"
+                "   Run ``sphinx-apidoc`` or build without ``--skip-api`` to generate it.\n"
+            )
 
 extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
 
