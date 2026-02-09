@@ -56,6 +56,28 @@ FLARE supports **PyTorch, TensorFlow, XGBoost, scikit-learn**, and any framework
 It scales from a single laptop (Simulator) to thousands of distributed sites (Production) to millions of edge
 devices -- all using the same job definition.
 
+Why NVIDIA FLARE?
+=================
+
+NVIDIA FLARE is built for **real-world production deployments**, not just research prototyping.
+
+**vs. Research-Only Frameworks:**
+Unlike research-oriented FL frameworks, FLARE provides a complete production stack: secure provisioning with
+PKI certificates, fine-grained authorization policies per site, audit logging, confidential computing with
+hardware TEEs, and deployment tooling for Docker, Kubernetes, and cloud environments. Organizations including
+hospitals, national labs, and financial institutions run FLARE in production today
+(see :ref:`Industry Use Cases <industry_use_cases>`).
+
+**Key Differentiators:**
+
+- **Minimal code changes** -- The Client API lets you federate existing training scripts by adding a few lines,
+  not rewriting your code
+- **Production security** -- TLS/mTLS, per-site authorization policies, differential privacy, homomorphic
+  encryption, and hardware-backed confidential computing (AMD SEV-SNP, NVIDIA GPU TEEs)
+- **Scale** -- From 2 sites to millions of edge devices with hierarchical architecture
+- **Framework agnostic** -- PyTorch, TensorFlow, XGBoost, scikit-learn, HuggingFace, NeMo, Flower
+- **Proven in production** -- Used by healthcare consortia, national security labs, and financial institutions
+
 Key Features
 ============
 
@@ -85,11 +107,38 @@ Key Features
 - **Multi-Job Execution** -- Concurrent job execution with resource management
 - **3rd-Party Integration** -- FlareAgent for seamless integration with external systems
 
-**Built for Customization**
+What is New in 2.7.2
+====================
 
-- **Layered Architecture** -- Every layer is pluggable and customizable
-- **Specification-Based APIs** -- Build alternative implementations following well-defined specs
-- **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples
+NVIDIA FLARE 2.7.2 brings the Job Recipe API to general availability, introduces the Tensor-based Downloader for
+efficient large model handling, and adds comprehensive timeout and memory management documentation.
+
+**Highlights:**
+
+- **Job Recipe API -- Generally Available**: Unified recipe architecture covering FedAvg, FedOpt, SCAFFOLD, Cyclic, XGBoost, and more across all major frameworks
+- **Tensor-based Downloader**: Memory-efficient pull-based model transfer using safetensors format for large model training
+- **Server-Side Memory Cleanup**: Automatic garbage collection and heap trimming to prevent RSS growth in long-running jobs
+- **Edge Development**: New hierarchical architecture with EDIP protocol, mobile SDKs, and device simulation for FL at scale
+- **Confidential Computing**: End-to-end IP protection with AMD SEV-SNP + NVIDIA GPU TEEs
+
+See :doc:`release_notes/flare_272` for full release notes.
+See :doc:`release_notes/previous` for previous releases.
+
+Real-World Use Cases & FLARE Day
+================================
+
+See how organizations use NVIDIA FLARE in production across healthcare, autonomous driving, finance, and more:
+
+- `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
+- `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
+- `Real-World FL Research <https://nvidia.github.io/NVFlare/research>`_ -- Published research and industry applications built with FLARE
+
+Learn More
+==========
+
+- `Tutorial Website <https://nvidia.github.io/NVFlare/>`_ -- Video tutorials, code walkthroughs, and the example catalog
+- `Example Catalog <https://nvidia.github.io/NVFlare/catalog/>`_ -- Browse examples by framework, algorithm, and use case
+- :ref:`Self-Paced Training <self_paced_training>` -- 100+ notebooks and 80 videos for comprehensive self-paced learning
 
 Product Lines
 =============
@@ -110,29 +159,12 @@ FLARE consists of three product categories:
     asynchronous aggregation (FedBuff), device simulation, and mobile SDKs for Android and iOS
     (via ExecuTorch).
 
-What is New in 2.7.2
-====================
-
-NVIDIA FLARE 2.7.2 brings the Job Recipe API to general availability, introduces the Tensor-based Downloader for
-efficient large model handling, and adds comprehensive timeout and memory management documentation.
-
-**Highlights:**
-
-- **Job Recipe API -- Generally Available**: Unified recipe architecture covering FedAvg, FedOpt, SCAFFOLD, Cyclic, XGBoost, and more across all major frameworks
-- **Tensor-based Downloader**: Memory-efficient pull-based model transfer using safetensors format for large model training
-- **Server-Side Memory Cleanup**: Automatic garbage collection and heap trimming to prevent RSS growth in long-running jobs
-- **Edge Development**: New hierarchical architecture with EDIP protocol, mobile SDKs, and device simulation for FL at scale
-- **Confidential Computing**: End-to-end IP protection with AMD SEV-SNP + NVIDIA GPU TEEs
-
-See :doc:`release_notes/flare_272` for full release notes.
-See :doc:`release_notes/previous` for previous releases.
-
 Roadmap
 =======
 
 .. image:: resources/flare_roadmap.png
    :alt: NVIDIA FLARE Roadmap
-   :width: 55%
+   :width: 70%
 
 **FLARE Core -- Ease of Use & Scalability**
 
@@ -146,22 +178,6 @@ Roadmap
 - **2026-Q4**: Enhance confidential federated AI -- Improve usability and operation, strengthen Secure Aggregation and IP Protection in both cloud and on-prem
 
 For the latest updates, visit the `NVIDIA FLARE GitHub <https://github.com/NVIDIA/NVFlare>`_.
-
-Real-World Use Cases & FLARE Day
-================================
-
-See how organizations use NVIDIA FLARE in production across healthcare, autonomous driving, finance, and more:
-
-- `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
-- `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
-- `Real-World FL Research <https://nvidia.github.io/NVFlare/research>`_ -- Published research and industry applications built with FLARE
-
-Learn More
-==========
-
-- `Tutorial Website <https://nvidia.github.io/NVFlare/>`_ -- Video tutorials, code walkthroughs, and the example catalog
-- `Example Catalog <https://nvidia.github.io/NVFlare/catalog/>`_ -- Browse examples by framework, algorithm, and use case
-- :ref:`Self-Paced Training <self_paced_training>` -- 100+ notebooks and 80 videos for comprehensive self-paced learning
 
 
 .. toctree::

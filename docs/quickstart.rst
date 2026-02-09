@@ -21,6 +21,53 @@ FLARE supports three modes for different stages of your workflow:
 
 Start with the **Simulator** for development, then validate with **POC** before going to **Production**.
 
+
+Convert Your ML Code to Federated
+==================================
+
+Converting existing training code to federated learning requires just 3 changes:
+
+**Step 1: Add FLARE imports to your training script**
+
+.. code-block:: python
+
+    import nvflare.client as flare
+
+**Step 2: Initialize FLARE and wrap your training loop**
+
+.. code-block:: python
+
+    flare.init()
+
+    while flare.is_running():
+        input_model = flare.receive()           # receive global model
+        model.load_state_dict(input_model.params)
+
+        # ... your existing training code here ...
+
+        output_model = flare.FLModel(
+            params=model.cpu().state_dict(),
+            metrics={"accuracy": accuracy},
+        )
+        flare.send(output_model)                # send updated model back
+
+**Step 3: Create a job recipe to define the FL workflow**
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+
+    recipe = FedAvgRecipe(
+        name="my-fedavg-job",
+        min_clients=2,
+        num_rounds=5,
+        train_script="train.py",
+    )
+    recipe.execute()
+
+That's it. Your training logic stays the same -- FLARE handles the communication, aggregation, and orchestration.
+For the full Client API reference, see :ref:`Client API <client_api>`. For pre-built recipes, see :ref:`Available Recipes <available_recipes>`.
+
 .. seealso::
 
     For a complete list of ready-to-use federated learning recipes with code examples, see :ref:`available_recipes`.

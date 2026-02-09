@@ -33,6 +33,7 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/flare_api
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
+   Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
@@ -97,6 +98,7 @@ NVIDIA FLARE
    user_guide/admin_guide/security/site_policy_management
    Network & Communication <user_guide/admin_guide/security/communication_security>
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
+   Differential Privacy <user_guide/admin_guide/security/differential_privacy>
    user_guide/admin_guide/security/auditing
    Confidential Computing <user_guide/confidential_computing/index>
    security_faq
@@ -119,33 +121,15 @@ NVIDIA FLARE
    release_notes/previous
    contributing
 
-NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
-researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables
-platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
+NVIDIA FLARE (Federated Learning Application Runtime Environment) is an open-source Python SDK
+for federated learning. Add a few lines to your existing training code and run it across distributed
+sites -- from 2 hospitals to millions of edge devices.
 
-Getting Started
-===============
-To get started with NVIDIA FLARE:
+**New here?** Start with :ref:`Installation <installation>`, then :ref:`Quick Start <quickstart>` to run your first FL job.
 
-1. Read the :ref:`Welcome <welcome>` page for a quick overview of FLARE and its capabilities
-2. Follow the :ref:`installation` guide to set up your environment
-3. Run through the :ref:`quickstart` guide with a Hello World example
-4. Browse :ref:`Industry Use Cases <industry_use_cases>` relevant to your domain
-5. Explore more in the **Examples & Tutorials** section
+**Already using FLARE?** See the :ref:`User Guide <client_api>` for APIs, or :ref:`Examples & Tutorials <example_applications>` for code.
 
-For New Users
-=============
-If you are new to FLARE, we recommend starting with the :ref:`Client API <client_api>` and :ref:`Job Recipe API <job_recipe>` --
-these higher-level APIs let you convert existing ML training code to federated with minimal changes.
-If you have existing FLARE code, see the :ref:`Migration Guide <migration_guide>`.
+**Ready for production?** The **Deployment & Operations** section covers provisioning and infrastructure.
+**Security & Compliance** covers authentication, privacy, and confidential computing.
 
-For Deployment & Security
-=========================
-When you are ready for production, the **Deployment & Operations** section covers provisioning, deployment, admin commands,
-monitoring, and system configuration.
-The **Security & Compliance** section covers authentication, authorization, data privacy, and regulatory guidance.
-
-For Developers
-==============
-For deep dives into FLARE architecture, custom workflows, and low-level APIs, see the
-:ref:`Developer Guide <developer_guide>`, or browse the :doc:`API Reference <apidocs/modules>`.
+**Building custom workflows?** See the :ref:`Developer Guide <developer_guide>` or the :doc:`API Reference <apidocs/modules>`.
