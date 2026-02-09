@@ -108,5 +108,4 @@ Reference
    :maxdepth: 1
    :hidden:
 
-   flare_mobile
    mobile_android

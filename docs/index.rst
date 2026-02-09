@@ -44,7 +44,7 @@ NVIDIA FLARE
    example_applications_algorithms
    tutorials
    self-paced-training/index
-   user_guide/researcher_guide/index
+   Research Papers <user_guide/researcher_guide/index>
 
 .. toctree::
    :maxdepth: 1
@@ -64,6 +64,7 @@ NVIDIA FLARE
    :caption: Edge & Mobile
 
    Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
+   Mobile SDK Reference <user_guide/edge_development/flare_mobile>
    Hierarchical FL <programming_guide/hierarchical_architecture>
    programming_guide/hierarchical_communication
 
@@ -142,7 +143,6 @@ For Deployment & Security
 =========================
 When you are ready for production, the **Deployment & Operations** section covers provisioning, deployment, admin commands,
 monitoring, and system configuration.
-Review the :ref:`Production Readiness Checklist <production_readiness>` before going live.
 The **Security & Compliance** section covers authentication, authorization, data privacy, and regulatory guidance.
 
 For Developers
