@@ -18,6 +18,7 @@ NVIDIA FLARE
    :hidden:
    :caption: Get Started
 
+   get_started
    installation
    quickstart
    migration_guide

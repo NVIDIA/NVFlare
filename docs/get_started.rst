@@ -8,8 +8,7 @@ Get Started
 Welcome to NVIDIA FLARE! Follow the steps below to install, run your first federated learning job, and explore examples.
 
 - :ref:`installation` -- Set up NVIDIA FLARE
-- :ref:`quickstart` -- Hello world examples with PyTorch, TensorFlow, and more
-- :ref:`run_mode` -- Simulator, POC, and Production modes
+- :ref:`quickstart` -- Hello world examples and run modes (Simulator, POC, Production)
 
 .. toctree::
    :maxdepth: 1
