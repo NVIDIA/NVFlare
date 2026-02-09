@@ -27,7 +27,7 @@ Below are the scripts to run the preflight check on each type of site and the po
 
 
 Preflight check on server site
-==============================
+------------------------------
 
 If the server package is in "/path_to_NVFlare/NVFlare/workspace/example_project/prod_00" and it is called "server1",
 on the server site, a user should run: 
@@ -50,7 +50,7 @@ The problems that may be reported:
 
 
 Preflight check on client sites
-===============================
+-------------------------------
 
 Before you check the clients, make sure the server is running.
 
@@ -72,7 +72,7 @@ The problems that may be reported:
 
 
 Preflight check for admin consoles 
-==================================
+----------------------------------
 
 Before you check the FLARE Admin Console, make sure the server is running.
 

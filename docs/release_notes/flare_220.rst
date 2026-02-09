@@ -25,7 +25,7 @@ To accomplish these goals, a set of key new tools and features were developed, i
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.
 
 FL Simulator
-------------
+~~~~~~~~~~~~
 The :ref:`FL Simulator <fl_simulator>` is a lightweight tool that allows you to build, debug, and run a FLARE
 application locally without explicitly deploying a provisioned FL system.  The FL Simulator provides both a CLI for
 interactive use and an API for developing workflows programmatically. Clients are implemented using threads for each
@@ -37,12 +37,12 @@ directly to the simulator without debugging, just as in a production FLARE deplo
 and test in an interactive environment, and then deploy the same application in production without modification.
 
 POC mode upgrade
-----------------
+~~~~~~~~~~~~~~~~
 For researchers who prefer to use :ref:`POC (proof of concept) <poc_command>` mode, the usage has been improved for
 provisioning and starting a server and clients locally.
 
 FLARE Dashboard and Provisioning
---------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The :ref:`FLARE Dashboard <nvflare_dashboard_ui>` provides a web UI that allows a project administrator to configure a
 project and distribute client startup kits without the need to gather client information up-front, or manually configure
 the project using the usual ``project.yml`` configuration.  Once the details of the project have been configured,
@@ -74,7 +74,7 @@ between the different components (server, clients, overseers), ports, dns, stora
 for how to fix any potential issues.
 
 Federated Data Science
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 
 Federated XGBoost
 """""""""""""""""
@@ -93,7 +93,7 @@ controller generates an output json file that contains global as well as individ
 visualized to allow site-to-site and feature-to-feature comparison of metrics and histograms across the set of clients.
 
 Site Policy Management and Security
------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Although the concept of client authorization and security policies are not new in FLARE, version 2.2 has shifted to
 federated :ref:`site policy management <site_policy_management>`. In the past, authorization policies were defined by the
@@ -116,10 +116,10 @@ traceback, preventing unintentionally disclosing site-specific information to th
 auditing keeps a site-specific log of all access and commands performed by the project admin.
 
 Migration to 2.2.1: Notes and Tips
-==================================
+----------------------------------
 
 Stop using Pickle in favor of using FOBS to serialize/deserialize data between Client and Server
-------------------------------------------------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Prior to NVFLARE 2.1.4, NVFLARE used python's `pickle <https://docs.python.org/3/library/pickle.html>`_ to transfer data between the FL clients and server.
 NVFLARE now uses the FLARE Object Serializer (FOBS). You might experience failures if your code is still using Pickle. 
 To migrate the code or if you experience errors due to this, please refer to :github_nvflare_link:`Flare Object Serializer (FOBS) <nvflare/fuel/utils/fobs/README.rst>`.
@@ -194,16 +194,16 @@ On the receiving end:
     shareable[CUSTOM_DATA] = custom_data
 
 Replace TLS certificates
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 With 2.2.1, the authorization model has been changed so previous startup kits (which contain the old TLS certificates) will no longer work. You will need to clean up
 the old setartup kits and re-provision your project.
 
 Use new Project.yml template
-----------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 With 2.2.1, federated site policies require the new project.yml template. Please refer to :ref:`project_yml`.
 
 New local directory
--------------------
+~~~~~~~~~~~~~~~~~~~
 With 2.2.1, the provision command will produce not only the ``startup`` directory, but a ``local`` directory. 
 The resource allocation that used to be in ``project.yml`` is now expected in a ``resources.json`` file in this new ``local`` directory, and each
 sites/clients needs to manage this separately for each location.

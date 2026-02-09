@@ -17,13 +17,19 @@ then
 fi
 
 function print_usage() {
-    echo "build_doc.sh [--clean] [--html]"
+    echo "build_doc.sh [--clean] [--html] [--no-api]"
     echo ""
     echo "Build documentation"
     echo ""
+    echo "Options:"
+    echo "  --html        Build HTML docs (full build including API reference)."
+    echo "  --no-api      Skip API reference generation (faster dev builds)."
+    echo "  --clean       Clean up build artifacts."
+    echo ""
     echo "Examples:"
-    echo "./build_doc.sh --html        # build HTML docs."
-    echo "./build_doc.sh --clean       # clean up python build related files."
+    echo "./build_doc.sh --html              # full production build with API reference."
+    echo "./build_doc.sh --html --no-api     # fast dev build, skip API reference."
+    echo "./build_doc.sh --clean             # clean up python build related files."
 }
 
 function print_error_msg() {
@@ -50,7 +56,13 @@ function clean_docs() {
 
 function build_html_docs() {
     pip install -e .[dev]
-    sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
+    if [[ $skipAPI != true ]]; then
+        echo "${blue}Generating API reference...${noColor}"
+        sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
+    else
+        echo "${blue}Skipping API reference generation (--no-api)${noColor}"
+        export SKIP_API_DOCS=1
+    fi
     sphinx-build -b html docs docs/_build
 }
 
@@ -70,6 +82,9 @@ do
         ;;
         --html)
             doHTML=true
+        ;;
+        --no-api)
+            skipAPI=true
         ;;
         *)
             print_error_msg "Incorrect commandline provided, invalid key: $key"

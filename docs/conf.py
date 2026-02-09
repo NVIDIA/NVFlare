@@ -70,18 +70,24 @@ source_suffix = {
     ".md": "markdown",
 }
 
+_skip_api = os.environ.get("SKIP_API_DOCS", "").lower() in ("1", "true", "yes")
+
 extensions = [
     "recommonmark",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
-    "sphinx.ext.autodoc",
-    "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
     "sphinxcontrib.jquery",
-    "sphinx.ext.extlinks"
+    "sphinx.ext.extlinks",
 ]
+
+if not _skip_api:
+    extensions.extend([
+        "sphinx.ext.autodoc",
+        "sphinx.ext.viewcode",
+    ])
 
 autoclass_content = "both"
 add_module_names = False
@@ -94,6 +100,9 @@ autosectionlabel_prefix_document = True
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
+
+if _skip_api:
+    exclude_patterns.append("apidocs")
 
 extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
 
@@ -124,6 +133,9 @@ html_static_path = ["_static"]
 
 def generate_apidocs(*args):
     """Generate API docs automatically by trawling the available modules"""
+    if os.environ.get("SKIP_API_DOCS", "").lower() in ("1", "true", "yes"):
+        print("Skipping API doc generation (SKIP_API_DOCS is set)")
+        return
     module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "nvflare"))
     output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "apidocs"))
     print(f"output_path {output_path}")

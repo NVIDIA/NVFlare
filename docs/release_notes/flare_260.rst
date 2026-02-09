@@ -46,13 +46,13 @@ By applying message quantization techniques, FL can achieve significant bandwidt
     :height: 300px
 
 Native Tensor Transfer
-======================
+----------------------
 FLARE 2.6.0 introduces support for native tensor transfer, allowing PyTorch tensors to be sent directly without serialization overhead. This eliminates the need for Tensor to Numpy conversion, preserving the original FPnn format. The feature is currently supported for PyTorch only.
 
 Model Streaming Enhancements
-============================
+----------------------------
 Reduce Local Memory Usage
--------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~
 The new object container streaming feature processes and transmits models incrementally, rather than requiring the entire dictionary of gradients to be stored in memory at once. This significantly reduces memory overhead for large models. For more details, see :class:`ContainerStreamer<nvflare.app_common.streamers.container_streamer.ContainerStreamer>`.
 
 For example, a 70GB model with 1GB item-max:
@@ -60,7 +60,7 @@ For example, a 70GB model with 1GB item-max:
   - Container streaming: 70GB + 1GB = 71GB memory needed
 
 Support Unlimited Memory Streaming
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 File-based streaming is introduced to handle models larger than available memory. This feature reads files chunk-by-chunk, requiring only enough memory to hold one chunk of data. The memory usage is independent of model size and only depends on file I/O settings. For more details, see :class:`FileStreamer<nvflare.app_common.streamers.file_streamer.FileStreamer>`.
 
 Memory comparison for sending a 1B model:
@@ -71,7 +71,7 @@ Memory comparison for sending a 1B model:
 Note: Streaming enhancements are not yet integrated into high-level APIs or existing FL algorithm controllers/executors. Users can build custom controllers or executors to leverage this feature.
 
 Structured Logging
-==================
+------------------
 The structured logging feature addresses several customer concerns:
   - JSON format logging for data observability tools
   - Separation of training logs from communication logs
@@ -96,18 +96,18 @@ Key improvements:
 For details, please refer to `logging tutorials <https://github.com/NVIDIA/NVFlare/blob/2.6/examples/tutorials/logging.ipynb>`_ and :doc:`logging documentation <../user_guide/admin_guide/configurations/logging_configuration>`.
 
 Federated Statistics Extension
-==============================
+------------------------------
 Quantiles Support: Introduces quantile computation for federated statistics, helping summarize data distribution by providing key points that indicate how values are spread. Quantiles divide a probability distribution or dataset into intervals with equal probabilities, providing insights into data distribution patterns. For more details, see :ref:`Federated Statistics Overview <federated_statistics>`.
 
 System Monitoring
-=================
+-----------------
 FLARE Monitoring provides system metrics tracking for federated learning jobs, focusing on job and system lifecycle metrics. It leverages StatsD Exporter to monitor FLARE job and system events, which can be scraped by Prometheus and visualized with Grafana. This differs from machine learning experiment tracking by focusing on system-level metrics rather than training metrics. For more information, see :ref:`Monitoring <monitoring>`.
 
 .. image:: ../resources/system_monitoring.png
     :height: 450px
 
 Flower Integration v2
-=====================
+---------------------
 NVFlare has been updated to work with the latest Flower system architecture, which separates the client app from the supernode process. All user-facing functions remain the same. One benefit of this update is that job status information can be shared between the two systems more accurately.
 
 This integration enables applications developed with Flower to run natively on the FLARE runtime without requiring any code modifications. By unifying Flower's widely adopted, easy-to-use design tools and APIs with FLARE's industrial-grade runtime, this integration simplifies the end-to-end deployment pipeline.
@@ -115,11 +115,11 @@ This integration enables applications developed with Flower to run natively on t
 For more details on this integration, see our `blog <https://developer.nvidia.com/blog/supercharging-the-federated-learning-ecosystem-by-integrating-flower-and-nvidia-flare>`_.
 
 HTTP Driver Enhancement
-=======================
+-----------------------
 The HTTP driver has been completely rewritten using aiohttp, significantly improving reliability and efficiency. The new implementation resolves previous issues with poor performance and network error recovery, matching the performance of GRPC and TCP drivers.
 
 FLARE + BioNemo 2
-=================
+-----------------
 NVFlare examples have been upgraded to use `BioNeMo 2 <https://docs.nvidia.com/bionemo-framework/latest/>`_, enabling significant performance improvements on downstream tasks. The integrated BioNeMo ESM2 base models (650M) demonstrate notable gains in accuracy:
 
 Subcellular Localization (SCL) Prediction:
@@ -128,19 +128,19 @@ Subcellular Localization (SCL) Prediction:
   - FL: 0.776 to 0.817 accuracy improvement
 
 New Features
-------------
+~~~~~~~~~~~~
 TensorBoard Metric Streaming Callback
 """""""""""""""""""""""""""""""""""""
 Implemented a callback for PyTorch Lightning to stream training metrics to the FL server via NVFlare, allowing real-time visualization of training curves.
 
 Downstream Task Fitting
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 Local Fine-Tuning tends to overfit, with training accuracy diverging from validation early. In contrast, Federated Averaging (FedAvg) models show continual performance improvement, highlighting the benefits of federated generalization over isolated training.
 
 For more details, see our :github_nvflare_link:`BioNeMo examples <examples/advanced/bionemo>`.
 
 Tutorials and Education
-=======================
+-----------------------
 Self-paced-training tutorials covering:
   - Introduction to Federated Learning
   - Federated Learning System
@@ -149,7 +149,7 @@ Self-paced-training tutorials covering:
   - Federated Learning in Different Industries
 
 New Examples
-============
+------------
 1. Federated Embedding Model Training
 2. Object Streaming
 3. System Monitoring
@@ -164,7 +164,7 @@ Migration to 2.6.0: Notes and Tips
 **********************************
 
 Dashboard Changes
-=================
+-----------------
 
 In NVIDIA FLARE 2.6, several changes have been made to the Dashboard:
 
@@ -177,10 +177,10 @@ In NVIDIA FLARE 2.6, several changes have been made to the Dashboard:
 
 
 ScriptRunner Changes in FLARE 2.6.0
-===================================
+-----------------------------------
 
 Overview
---------
+~~~~~~~~
 
 FLARE 2.6.0 introduces a new `server_expected_format` parameter to enhance data exchange flexibility across the entire pipeline. This parameter is now available in:
 - `ScriptRunner`
@@ -197,7 +197,7 @@ These parameters only defined the communication format between the NVFlare clien
 However, the server-to-client communication was always restricted to NumPy arrays.
 
 New Implementation
-------------------
+~~~~~~~~~~~~~~~~~~
 
 With FLARE 2.6.0, we now support:
 1. End-to-end PyTorch tensor pipeline

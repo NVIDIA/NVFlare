@@ -15,17 +15,17 @@ Note that the client hierarchy follows the relay hierarchy closely for optimal p
 This client hierarchy is used to implement hierarchical aggregation algorithms for device training.
 
 Leaf Client Process (LCP)
-=========================
+-------------------------
 
 LCPs are the terminal nodes in the client hierarchy. They serve a special role in supporting edge applications.
 
 Interface for Edge Communication
---------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 LCPs serve as the entry point for messages from edge devices. However, these messages are not sent directly to LCPs. Instead, they pass through an intermediary component called a web node.
 
 What are web nodes?
--------------------
+~~~~~~~~~~~~~~~~~~~
 
 Web nodes are routing components that receive messages from edge devices and forward them to the appropriate LCPs. They manage load distribution and ensure consistent message routing.
 
@@ -45,7 +45,7 @@ The following diagram shows this architecture.
     :height: 350px
 
 Routing to Client Job Processes (CJs)
--------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 LCPs route received edge messages to the appropriate client job processes (CJs), which implement application processing logic.
 
@@ -58,7 +58,7 @@ The following diagram shows the system with a job deployed.
 
 
 CJ Hierarchy
-============
+------------
 
 Once a job is deployed, there is one SJ (Server Job) process and one dedicated CJ process for the job on each CP. The CJ hierarchy mirrors the hierarchy of their CPs. Device messages are received and processed by the CJs associated with LCPs.
 
@@ -71,12 +71,12 @@ The following diagram shows the CJ hierarchy corresponding to the example above.
 Leaf CJs are associated with LCPs. They interact with edge devices indirectly following the Edge Device Interaction Protocol (EDIP). They also serve as the first-line aggregator, aggregating training results from their devices and reporting the aggregation result to their parent CJs. All intermediate CJs aggregate results from their children and report aggregation results to their parents, continuing up to the SJ, which generates the final aggregation result.
 
 Routing Proxy (Web Node Implementation)
-=======================================
+---------------------------------------
 
 In the current implementation, the web node is realized as a component called the Routing Proxy.
 
 Routing Logic
--------------
+~~~~~~~~~~~~~
 
 The Routing Proxy uses a hash-based routing strategy based on each device's unique identifier:
 
@@ -86,7 +86,7 @@ The Routing Proxy uses a hash-based routing strategy based on each device's uniq
 - It also ensures even distribution of devices across available LCPs
 
 Provision
-=========
+---------
 
 The communication hierarchy and client hierarchy must be properly created using the provisioning tool. This can be done with the ``listening_host``, ``connect_to``, and FQSN properties, as discussed in :ref:`hierarchical_communication`, but this approach can be tedious and error-prone, especially when the number of nodes is large.
 

@@ -32,7 +32,7 @@ The Job Recipe API, introduced as a technical preview in 2.7.0, is now generally
 Almost all examples in the NVFlare repository have been converted to use Job Recipes, demonstrating the simplicity and power of this approach.
 
 Key Highlights
---------------
+~~~~~~~~~~~~~~
 
 - **Unified Recipe Architecture**: All framework-specific recipes (PyTorch, TensorFlow, NumPy, scikit-learn) now inherit from a unified base recipe, ensuring consistent behavior and easier maintenance.
 
@@ -66,7 +66,7 @@ Key Highlights
     For a complete list of available recipes with code examples and links to corresponding examples, see :ref:`available_recipes`.
 
 Memory Management with Tensor-based Downloader
-==============================================
+----------------------------------------------
 
 .. sidebar::
 
@@ -86,7 +86,7 @@ This feature addresses critical memory challenges when working with large langua
     **Transparent to Users**: This optimization is built into all PyTorch workflows and completely transparent to end users. It works automatically without requiring any changes to your existing training code or job configurations. The TensorDecomposer integrates seamlessly with the existing FOBS serialization system.
 
 Key Features
-------------
+~~~~~~~~~~~~
 
 - **Zero Code Changes Required**: Your existing PyTorch FL jobs benefit from memory optimization without any modification.
 
@@ -95,7 +95,7 @@ Key Features
 - **Pull-based Architecture**: Unlike push-based streaming, each recipient pulls data at its own pace, making it more reliable for heterogeneous network conditions.
 
 Performance Results
--------------------
+~~~~~~~~~~~~~~~~~~~
 
 Based on our internal testing with a 5GB model and 4 clients using FedAvg, we observed **20% to 50% memory usage reduction** on both server and client sides.
 
@@ -104,7 +104,7 @@ Based on our internal testing with a 5GB model and 4 clients using FedAvg, we ob
     Your results may vary depending on model size, number of clients, network conditions, and different FL algorithms and workflows.
 
 How It Works
-------------
+~~~~~~~~~~~~
 
 The TensorDownloader operates transparently behind the scenes:
 
@@ -130,7 +130,7 @@ For advanced users who need direct control, the low-level API is available:
     )
 
 Benefits for LLM Training
--------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **Reduced Memory Footprint**: 20-50% reduction critical for large models that approach memory limits
 - **Improved Scalability**: Multiple clients can download at different rates without blocking
@@ -144,7 +144,7 @@ Benefits for LLM Training
     For details on the underlying FOBS decomposer architecture, see :ref:`decomposer_for_large_object`.
 
 Server-Side Memory Cleanup
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 FLARE 2.7.2 adds automatic server-side memory management to address RSS (Resident Set Size — the actual physical memory used by a process) growth in long-running jobs:
 
@@ -158,7 +158,7 @@ FLARE 2.7.2 adds automatic server-side memory management to address RSS (Residen
     For configuration details, platform compatibility, recommended settings, and API reference, see :doc:`/programming_guide/memory_management`.
 
 Comprehensive Timeout Documentation
-====================================
+------------------------------------
 
 Two new timeout guides have been added:
 
@@ -176,10 +176,10 @@ Two new timeout guides have been added:
 - **Recommended Settings**: Use-case specific configurations (development, production, LLM training, edge devices)
 
 Additional Improvements
-=======================
+-----------------------
 
 Example Consolidation
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 To provide a cleaner and more focused learning experience, we have consolidated and streamlined the examples:
 
@@ -198,14 +198,14 @@ To provide a cleaner and more focused learning experience, we have consolidated 
     A few examples and tutorials still use older APIs. These will continue to be updated in upcoming releases.
 
 MONAI Integration
------------------
+~~~~~~~~~~~~~~~~~
 
 - **MONAI-FLARE Wheel Deprecated**: The separate ``nvflare-monai`` wheel package is now deprecated. MONAI integration is now achieved directly through the Client API, simplifying the integration and reducing dependency management overhead. For further information, see the `MONAI Migration Guide <https://github.com/NVIDIA/NVFlare/blob/main/integration/monai/MIGRATION.md>`_.
 
 - **Updated MONAI Examples**: All MONAI examples have been updated to use the Client API pattern, making it easier to integrate MONAI training workflows with FLARE without requiring additional packages.
 
 Documentation
--------------
+~~~~~~~~~~~~~
 
 - **Available Recipes Guide**: New :ref:`available_recipes` guide with code examples and links to working examples for all available recipes.
 
@@ -222,7 +222,7 @@ Documentation
 - **Job Recipe Guide**: Updated :doc:`/user_guide/data_scientist_guide/job_recipe` with dict model config and initial checkpoint examples.
 
 Bug Fixes
----------
+~~~~~~~~~
 
 - Fixed TLS corruption by replacing ``fork`` with ``posix_spawn`` for subprocess creation.
 - Fixed potential data corruption issue in the Streamer component.
@@ -240,12 +240,12 @@ Bug Fixes
 - Security dependency updates for web components.
 
 Migration Guide
-===============
+---------------
 
 This section provides guidance for migrating from 2.7.1 to 2.7.2.
 
 initial_model → model
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 The ``initial_model`` parameter in all recipes has been renamed to ``model`` for clarity:
 
@@ -278,7 +278,7 @@ The ``model`` parameter now also accepts dict-based configuration:
     )
 
 PTFedAvgEarlyStopping → PTFedAvg
---------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``PTFedAvgEarlyStopping`` class has been merged into ``PTFedAvg`` with InTime aggregation support. A backward-compatible alias is provided:
 
@@ -299,20 +299,20 @@ The ``PTFedAvgEarlyStopping`` class has been merged into ``PTFedAvg`` with InTim
     controller = PTFedAvg(...)
 
 MONAI-FLARE Wheel
------------------
+~~~~~~~~~~~~~~~~~
 
 The separate ``nvflare-monai`` wheel package is deprecated. Use the Client API directly for MONAI integration.
 See the updated examples in ``examples/advanced/monai/`` and the `MONAI Migration Guide <https://github.com/NVIDIA/NVFlare/blob/main/integration/monai/MIGRATION.md>`_.
 
 Backward Compatibility Notes
-----------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **Job Config API**: Existing ``FedJob``-based configurations continue to work alongside the new Recipe API.
 - **Config-based Jobs**: JSON/YAML configuration-based jobs continue to work as before.
 - **Executor/ModelLearner APIs**: Still functional but no longer the recommended pattern. Use Recipe API + Client API for new projects.
 
 Getting Started
-===============
+---------------
 
 The easiest way to get started with FLARE 2.7.2 is through the Hello World examples:
 

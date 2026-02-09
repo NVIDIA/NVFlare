@@ -33,8 +33,6 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
-   programming_guide/fed_job_api
-   user_guide/data_scientist_guide/federated_xgboost/federated_xgboost
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    user_guide/data_scientist_guide/data_preparation
@@ -50,8 +48,9 @@ NVIDIA FLARE
    user_guide/admin_guide/deployment/dashboard_ui
    user_guide/admin_guide/deployment/cloud_deployment
    user_guide/admin_guide/deployment/aws_eks
-   user_guide/admin_guide/deployment/containerized_deployment
-   user_guide/admin_guide/deployment/helm_chart
+   Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
+   Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Preflight Check <user_guide/nvflare_cli/preflight_check>
    production_readiness
 
 .. toctree::
@@ -67,7 +66,6 @@ NVIDIA FLARE
    user_guide/admin_guide/configurations/variable_resolution
    user_guide/admin_guide/configurations/server_port_consolidation
    operations/performance_tuning
-   operations/backup_recovery
    operations/upgrade_guide
 
 .. toctree::
@@ -82,7 +80,6 @@ NVIDIA FLARE
    Network & Communication <user_guide/admin_guide/security/communication_security>
    Data Privacy & Filters <user_guide/admin_guide/security/data_privacy_protection>
    user_guide/admin_guide/security/auditing
-   user_guide/admin_guide/security/unsafe_component_detection
    user_guide/admin_guide/security/regulatory_guidance
    security_faq
 
@@ -98,14 +95,15 @@ NVIDIA FLARE
    :hidden:
    :caption: Edge & Mobile
 
-   user_guide/edge_development/index
+   Edge Devices (Jetson / GPU) <user_guide/edge_development/edge_devices>
+   Mobile Training (iOS / Android) <user_guide/edge_development/mobile_training>
 
 .. toctree::
    :maxdepth: 1
    :hidden:
    :caption: Large Models & LLM
 
-   user_guide/admin_guide/deployment/notes_on_large_models
+   Federated LLM Fine-Tuning <programming_guide/llm_fine_tuning>
    programming_guide/message_quantization
    programming_guide/memory_management
    programming_guide/tensor_downloader
@@ -127,7 +125,7 @@ NVIDIA FLARE
    troubleshooting/common_errors
    user_guide/timeout_troubleshooting
    troubleshooting/debugging_guide
-   user_guide/nvflare_cli/preflight_check
+   Preflight Check <user_guide/nvflare_cli/preflight_check>
    faq
 
 .. toctree::
@@ -147,7 +145,6 @@ NVIDIA FLARE
 
    API Reference <apidocs/modules>
    glossary
-   release_notes/extra_270
    publications_and_talks
    contributing
 

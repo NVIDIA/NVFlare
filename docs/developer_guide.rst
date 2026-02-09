@@ -84,6 +84,7 @@ Advanced Topics
 - :doc:`Global Model Initialization <programming_guide/global_model_initialization>`
 - :doc:`Timeouts Reference <programming_guide/timeouts>`
 - :doc:`Dashboard API <programming_guide/dashboard_api>`
+- :doc:`Unsafe Component Detection <user_guide/admin_guide/security/unsafe_component_detection>`
 
 .. toctree::
    :maxdepth: 1
@@ -95,6 +96,40 @@ Advanced Topics
    programming_guide/global_model_initialization
    programming_guide/timeouts
    programming_guide/dashboard_api
+   user_guide/admin_guide/security/unsafe_component_detection
+
+Large Models & LLM
+==================
+
+Techniques for federated training and fine-tuning of large models, including LLMs.
+
+**Deployment & Optimization:**
+
+- :doc:`Notes on Large Models <user_guide/admin_guide/deployment/notes_on_large_models>` -- Deployment considerations for large model training
+- :doc:`Message Quantization <programming_guide/message_quantization>` -- Reducing message size via quantization
+- :doc:`File Streaming <programming_guide/file_streaming>` -- Streaming large files between participants
+- :doc:`Tensor Downloader <programming_guide/tensor_downloader>` -- Efficient model parameter transfer
+- :doc:`Memory Management <programming_guide/memory_management>` -- Controlling memory usage during training
+- :doc:`Decomposer for Large Objects <programming_guide/decomposer_for_large_object>` -- Serializing large objects efficiently
+
+**LLM Fine-Tuning:**
+
+- `Federated SFT (Supervised Fine-Tuning) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_ -- Federated SFT with HuggingFace
+- `Federated PEFT (Parameter-Efficient Fine-Tuning) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_ -- LoRA and other PEFT methods
+- `NeMo SFT Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ -- Federated SFT with NeMo
+- `NeMo PEFT Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Federated PEFT with NeMo
+- `NeMo Prompt Learning <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning>`_ -- Federated prompt tuning with NeMo
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   user_guide/admin_guide/deployment/notes_on_large_models
+   programming_guide/message_quantization
+   programming_guide/memory_management
+   programming_guide/tensor_downloader
+   programming_guide/file_streaming
+   programming_guide/decomposer_for_large_object
 
 Hierarchical Architecture
 =========================

@@ -8,7 +8,7 @@ NVFlare 2.5.0 offers several new sets of APIs that allows for end-to-end ease of
 scientists' experience working with FLARE. The new API covers client, server and job construction with end-to-end pythonic user experience.
 
 Model Controller API
---------------------
+~~~~~~~~~~~~~~~~~~~~
 The new :ref:`model_controller` greatly simplifies the experience of developing new federated learning workflows. Users can simply subclass
 the ModelController to develop new workflows. The new API doesn't require users to know the details of NVFlare constructs except for FLModel
 class, where it is simply a data structure that contains model weights, optimization parameters and metadata. 
@@ -17,7 +17,7 @@ You can easily construct a new workflow with basic python code, and when ready, 
 communication between clients and server. 
 
 Client API
-----------
+~~~~~~~~~~
 We introduced another :ref:`client_api` implementation,
 :class:`InProcessClientAPIExecutor<nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor>`.
 This has the same interface and syntax of the previous Client API using
@@ -32,7 +32,7 @@ the operations will be carried out within the memory space of the executor.
 SubProcessLauncherClientAPI can be used for cases where a separate training process is required.
 
 Job API
--------
+~~~~~~~
 The new Job API, or :ref:`fed_job_api`, combined with Client API and Model Controller API, will give users an end-to-end pythonic
 user experience. The Job configuration, required prior to the current release, can now be directly generated automatically, so the
 user doesn't need to edit the configuration files manually. 
@@ -41,7 +41,7 @@ We provide many examples to demonstrate the power of the new Job APIs making it 
 learning algorithms or create new applications. 
 
 Flower Integration
-==================
+------------------
 Integration between NVFlare and the `Flower <https://flower.ai/>`_ framework aims to provide researchers the ability to leverage
 the strengths of both frameworks by enabling Flower projects to seamlessly run on top of NVFlare. Through the seamless
 integration of Flower and FLARE, applications crafted within the Flower framework can effortlessly operate within the FLARE runtime
@@ -51,7 +51,7 @@ Please find details `here <https://arxiv.org/abs/2407.00031>`__. A hello-world e
 :github_nvflare_link:`here <examples/hello-world/hello-flower>`.
 
 Secure XGBoost
-==============
+--------------
 The latest features from XGBoost introduced the support for secure federated learning via homomorphic encryption. For vertical federated
 XGBoost learning, the gradients of each sample are protected by encryption such that the label information
 will not be leaked to unintended parties; while for horizontal federated XGBoost learning, the local gradient histograms will not be
@@ -64,12 +64,12 @@ Please check `federated xgboost with nvflare user guide <https://nvflare.readthe
 and the :github_nvflare_link:`example <examples/advanced/xgboost_secure>`
 
 Tensorflow support
-==================
+------------------
 With community contributions, we add FedOpt, FedProx and Scaffold algorithms using Tensorflow.
 You can check the code :github_nvflare_link:`here <nvflare/app_opt/tf>` and the :github_nvflare_link:`example <examples/getting_started/tf>`
 
 FOBS Auto Registration
-======================
+----------------------
 FOBS, the secure mechanism NVFlare uses for message serialization and deserialization, is enhanced with new auto registration features.
 These changes will reduce the number of decomposers that users have to register. The changes are:
 
@@ -82,9 +82,9 @@ These changes will reduce the number of decomposers that users have to register.
 
 
 New Examples
-============
+------------
 Secure Federated Kaplan-Meier Analysis
---------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The :github_nvflare_link:`Secure Federated Kaplan-Meier Analysis via Time-Binning and Homomorphic Encryption example <examples/advanced/kaplan-meier-he>`
 illustrates two features:
 
@@ -92,7 +92,7 @@ illustrates two features:
   - How to use the Flare ModelController API to contract a workflow to facilitate HE under simulator mode.
 
 BioNemo example for Drug Discovery
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 `BioNeMo <https://www.nvidia.com/en-us/clara/bionemo/>`_ is NVIDIA's generative AI platform for drug discovery.
 We included several examples of running BioNeMo in a federated learning environment using NVFlare:
 
@@ -100,12 +100,12 @@ We included several examples of running BioNeMo in a federated learning environm
   - The :github_nvflare_link:`downstream example <examples/advanced/bionemo/downstream/README.md>` shows three different downstream tasks for fine-tuning a BioNeMo ESM-style model.
 
 Federated Logistic Regression with NR optimization
---------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The :github_nvflare_link:`Federated Logistic Regression with Second-Order Newton-Raphson optimization example <examples/advanced/lr-newton-raphson>`
 shows how to implement a federated binary classification via logistic regression with second-order Newton-Raphson optimization.
 
 Hierarchical Federated Statistics
----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 :github_nvflare_link:`Hierarchical Federated Statistics <examples/advanced/federated-statistics/hierarchical_stats>` is helpful when there
 are multiple organizations involved.  For example, in the medical device applications, the medical devices usage statistics can be
 viewed from both device, device-hosting site, and hospital or manufacturers' point of views.
@@ -114,16 +114,16 @@ may like to see overall stats of devices including different products from diffe
 federated stats will be very helpful.
 
 FedAvg Early Stopping Example
-------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The :github_nvflare_link:`FedAvg Early Stopping example <examples/hello-world/hello-fedavg>` tries to demonstrate that with the new server-side model
 controller API, it is very easy to change the control conditions and adjust workflows with a few lines of python code.
 
 Tensorflow Algorithms & Examples
---------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 FedOpt, FedProx, Scaffold implementation for Tensorflow.
 
 FedBN: Federated Learning on Non-IID Features via Local Batch Normalization
----------------------------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The :github_nvflare_link:`FedBN example <research/fed-bn>` showcases a federated learning algorithm designed
 to address the feature shift problem when aggregating models across different data distributions.
 
@@ -133,13 +133,13 @@ are supported by a convergence analysis that shows in a simplified setting that 
 
 
 End-to-end Federated XGBoost examples
--------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 In :github_nvflare_link:`this example <examples/advanced/finance-end-to-end/xgboost.ipynb>`,
 we try to show that end-to-end process of feature engineering, pre-processing and training in federated settings. You
 can use FLARE to perform federated ETL and then training. 
 
 Developer Tutorial Page
-=======================
+-----------------------
 To let users quickly learn Federated Learning with FLARE, we developed a `tutorial web page <https://nvidia.github.io/NVFlare>`_ with
 both code and video to interactively learn how to convert and run FL in a few minutes. We also
 created a tutorial catalog to help you easily search and find the examples you are interested in.
@@ -152,7 +152,7 @@ FLARE 2.5.0 introduces some API and behavior changes. This migration guide will 
 to the current version.
 
 Deprecate "name" to only use "path"
-===================================
+-----------------------------------
 In 2.5.0, the "name" field in configurations is deprecated. You need to change the "name" field to "path" and use the full path. For
 example,
 
@@ -167,7 +167,7 @@ needs to be updated to:
   "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"
 
 XGBoost v1 - v2
-===============
+---------------
 
 XGBoost support is enhanced in 2.5.0 to support secure training using Homomorphic Encryption (HE). The user interface is also simplified by
 setting the XGBoost parameters in the controller so all clients get the same parameters. 
@@ -179,7 +179,7 @@ The main changes are:
   - New :class:`CSVDataLoader<nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader>`
 
 Sample configuration files for 2.5.0
--------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 config_fed_server.json
 """"""""""""""""""""""
@@ -254,7 +254,7 @@ config_fed_client.json
   }
 
 Simulator workspace structure
-=============================
+-----------------------------
 
 In 2.4.0, the server and all the clients shared the same simulator workspace root of ``simulate_job``. The server and each client had
 their own app_XXXX job definition, but the same root folder for the workspace may result in conflicting model file locations.
@@ -498,7 +498,7 @@ structure is consistent with the format of the POC real world application.
    <br />
 
 Allow Simulator local resources configuration
-==============================================
+----------------------------------------------
 In 2.4.0, we only support the ``log.config`` setting file within the simulator workspace ``startup`` folder to be used to change the log format.
 
 In 2.5.0, we enable the full ``local`` and ``startup`` contents to be configured under the simulator workspace. All the POC real world application
