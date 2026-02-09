@@ -107,6 +107,16 @@ Key Features
 - **Multi-Job Execution** -- Concurrent job execution with resource management
 - **3rd-Party Integration** -- FlareAgent for seamless integration with external systems
 
+**Built for Customization**
+
+- **Event-Driven Plugin Architecture** -- Every layer of FLARE is customizable through an event system
+  and component plugins. Intercept, modify, or extend any stage of the FL workflow
+- **Specification-Based APIs** -- Build alternative implementations following well-defined specs for
+  controllers, aggregators, filters, executors, and more
+- **Pluggable Components** -- Swap aggregation strategies, privacy filters, model persistors, and
+  communication backends without changing application code
+- **Rich Examples** -- Extensive library of FL algorithms, workflows, and application examples to build from
+
 What is New in 2.7.2
 ====================
 

@@ -127,7 +127,7 @@ sites -- from 2 hospitals to millions of edge devices.
 
 **New here?** Start with :ref:`Installation <installation>`, then :ref:`Quick Start <quickstart>` to run your first FL job.
 
-**Already using FLARE?** See the :ref:`User Guide <client_api>` for APIs, or :ref:`Examples & Tutorials <example_applications>` for code.
+**Already using FLARE?** See the **User Guide** for APIs (:ref:`Client API <client_api>`, :ref:`Recipes <job_recipe>`), or :ref:`Examples & Tutorials <example_applications>` for code.
 
 **Ready for production?** The **Deployment & Operations** section covers provisioning and infrastructure.
 **Security & Compliance** covers authentication, privacy, and confidential computing.

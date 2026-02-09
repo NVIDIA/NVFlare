@@ -142,7 +142,7 @@ Regardless of your industry, the path to federated learning follows a similar pa
 1. **Identify the use case** -- What ML model do you want to improve with federated data?
 2. **Start with simulation** -- Use the :ref:`FL Simulator <fl_simulator>` to prototype with synthetic data
 3. **Prove value with POC** -- Run a :ref:`POC deployment <poc_command>` with 2-3 participating sites
-4. **Scale to production** -- Follow the :doc:`Production Readiness Checklist <production_readiness>`
+4. **Scale to production** -- Follow the :doc:`Deployment Guide <user_guide/admin_guide/deployment/overview>` for provisioning and infrastructure
 
 For questions about industry-specific deployments, see the :doc:`publications_and_talks` page
 for talks and papers relevant to your domain.

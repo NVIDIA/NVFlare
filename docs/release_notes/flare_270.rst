@@ -133,13 +133,13 @@ Develop Edge Applications with FLARE
 
 .. sidebar::
 
-   .. image:: resources/hierarchical_fl.png
+   .. image:: ../resources/hierarchical_fl.png
         :height: 150px
 
-   .. image:: resources/edge_cross_device_fl.png
+   .. image:: ../resources/edge_cross_device_fl.png
         :height: 150px
 
-   .. image:: resources/edge_simplify_device_programming.png
+   .. image:: ../resources/edge_simplify_device_programming.png
         :height: 150px
 
 

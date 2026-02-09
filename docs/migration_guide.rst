@@ -95,6 +95,6 @@ FLARE 2.7.0 introduced several major changes:
 - **File Streaming**: Pull-based file download for large model transfers.
   See :ref:`file_streaming`.
 
-For migrating from the older FLARE API to the Client API, see :ref:`migrating_to_flare_api`.
+For migrating from the older FLAdminAPI to the Client API, see :doc:`Migrating to FLARE API </programming_guide/migrating_to_flare_api>`.
 
 For the full list of 2.7.0 changes, see :doc:`/release_notes/flare_270`.

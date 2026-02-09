@@ -53,7 +53,7 @@ From CellNet's perspective, clients are simply cells, each with its own FQCN. Fo
 The following diagram shows an alternative arrangement where some clients are connected to intermediate nodes or directly to the server.
 
 
-.. image:: ../resources/communication_hierarchy_clients_intermediary_nodes.png
+.. image:: ../resources/communication_hierarchy_intermediary_nodes.png
     :height: 350px
 
 
