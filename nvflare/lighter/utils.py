@@ -280,7 +280,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                     cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
                     public_key = cert.public_key()
                     verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
-            except:
+            except Exception:
                 return False
 
             for file in files:
