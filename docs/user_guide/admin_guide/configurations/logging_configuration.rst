@@ -313,6 +313,35 @@ This argument can be any of the following:
 - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
 - For admin commands only: read the current log configuration file log_config.json from the workspace (``reload``)
 
+.. _fl_log_level_env_var:
+
+FL_LOG_LEVEL Environment Variable
+=================================
+
+The ``FL_LOG_LEVEL`` environment variable can be used to set the log configuration without passing a command-line argument or API parameter.
+It accepts the same values as the :ref:`Log Config Argument <log_config_argument>` above (``concise``, ``full``, ``verbose``, a filepath, or a log level).
+
+This environment variable is applied across all modes: simulator, POC, and production.
+
+**Precedence** (highest to lowest):
+
+1. Explicit parameter (``-l`` CLI flag or ``log_config`` API argument)
+2. ``FL_LOG_LEVEL`` environment variable
+3. Default (``concise`` for simulator CLI, workspace ``log_config.json`` for POC/production)
+
+Example usage:
+
+.. code-block:: shell
+
+    # Only show error level logs
+    FL_LOG_LEVEL=error python job.py
+
+    # Use verbose logging
+    FL_LOG_LEVEL=verbose nvflare simulator -w /tmp/nvflare/workspace -n 2 -t 2 job_folder
+
+    # Set for all NVFLARE processes in the session
+    export FL_LOG_LEVEL=error
+
 
 Simulator log configuration
 ===========================

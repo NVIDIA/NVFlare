@@ -54,7 +54,7 @@ from nvflare.fuel.utils import log_utils
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, dynamic_log_config
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import AppFolderConstants
@@ -129,6 +129,8 @@ class SimulatorRunner(FLComponent):
             )
         self.workspace = os.path.join(running_dir, self.workspace)
 
+        if log_config is None:
+            log_config = os.environ.get(FL_LOG_LEVEL)
         if log_config:
             log_config_path = os.path.join(running_dir, log_config)
             self.log_config = log_config_path if os.path.isfile(log_config_path) else log_config
