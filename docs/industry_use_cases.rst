@@ -33,7 +33,26 @@ better models together while keeping patient data local.
 **FLARE features used:** Client API, Differential Privacy, Homomorphic Encryption,
 Confidential Computing, Cross-Site Evaluation
 
-**References:**
+**Cancer AI Alliance (CAIA):**
+The Cancer AI Alliance -- a consortium of leading cancer centers -- uses NVIDIA FLARE
+with Rhino Federated Computing Platform to train AI models across multiple institutions
+while keeping sensitive patient data behind each center's firewall. Only model weights
+are exchanged; cancer centers retain full control over data selection, access policies,
+and local execution. The platform supports differential privacy, model encryption, and
+confidential computing for projects requiring enhanced protection.
+
+- `How CAIA operationalizes secure, multi-site research with federated learning (Dec 2025) <https://www.canceralliance.ai/blog/caia-multi-site-research-federated-learning>`_
+
+**Eli Lilly TuneLab -- Federated Drug Discovery:**
+In September 2025, Eli Lilly launched TuneLab, an AI/ML platform that gives biotech
+companies access to drug discovery models trained on over $1 billion of Lilly's research
+data. The platform uses federated learning so that biotech partners can fine-tune Lilly's
+models on their own proprietary molecular data without exposing it. In return, partners
+contribute training data that continuously improves the shared models for the entire ecosystem.
+
+- `Lilly launches TuneLab platform (Sep 2025) <https://investor.lilly.com/news-releases/news-release-details/lilly-launches-tunelab-platform-give-biotechnology-companies>`_
+
+**Other references:**
 
 - `Federated Learning for Brain Tumor Segmentation (Nature Communications) <https://doi.org/10.1038/s41467-022-33407-5>`_
 - :doc:`Hello Differential Privacy Example </hello-world/hello-dp/index>`
@@ -61,32 +80,58 @@ Secure Aggregation
 
 - :doc:`Federated XGBoost </user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>`
 
-Automotive & Autonomous Vehicles
-================================
-
-*Coming soon.* Multi-OEM perception model training, V2X communication
-data analysis, driver behavior modeling across fleet data.
-
-Telecommunications
-==================
-
-*Coming soon.* Network optimization, anomaly detection across network
-nodes, edge computing for 5G/6G.
-
-Manufacturing & Industrial IoT
+Government & National Security
 ==============================
 
-*Coming soon.* Predictive maintenance across factories, quality control
-with distributed sensor data, supply chain optimization.
+Government agencies and national laboratories use federated learning to collaboratively
+train AI models on sensitive, geographically distributed datasets that cannot be centralized
+due to classification, data sovereignty, or security constraints.
 
-Government & Public Sector
-==========================
+**Trilab Federated AI (Sandia, Los Alamos, Lawrence Livermore):**
+In 2025, the three NNSA national security laboratories demonstrated a federated-learning
+prototype -- codenamed *Chandler* -- that trains a shared large language model across
+three geographically distributed classified systems without exchanging raw data.
+Using NVIDIA FLARE to orchestrate training, the labs exchange only model weights (parameters)
+between epochs while keeping each laboratory's unique datasets local. The prototype ran
+on both NVIDIA and AMD GPU hardware, including Lawrence Livermore's El Capitan, the
+world's fastest supercomputer.
 
-*Coming soon.* Census and survey data analysis, cross-agency
-collaboration, national security applications with data sovereignty requirements.
+*"Federated training is a critical tool to delivering a robust capability in a cost
+effective, performant and secure way."* -- Si Hammond, NNSA Office of Advanced Simulation
+and Computing
+
+**Reference:**
+
+- `Three national security laboratories, one AI model (Sandia Lab News, Dec 2025) <https://www.sandia.gov/labnews/2025/12/18/three-national-security-laboratories-one-ai-model/>`_
+
+**Taiwan International Federated Learning Center (Ministry of Health and Welfare):**
+In January 2026, Taiwan's Ministry of Health and Welfare announced the establishment of an
+International High-Computing and Federated Learning Center for training smart medical AI
+models while preserving data privacy and sovereignty. The center completed proof of concept
+with 16 major hospitals and plans to scale to 100 regional hospitals and ultimately all
+Taiwanese hospitals. Medical data remains on local hospital servers while the central AI
+model learns from distributed data through federated learning. The center is also facilitating
+international collaboration with Thailand's Mahidol University to jointly develop standards
+for AI-based medical product verification across ASEAN markets.
+
+**Reference:**
+
+- `Health ministry eyeing Thailand collaboration (Taipei Times, Jan 2026) <https://www.taipeitimes.com/News/taiwan/archives/2026/01/29/2003851543>`_
+
+
+FLARE Day -- Real-World Deployments
+====================================
+
+FLARE Day is an annual event showcasing real-world federated learning deployments across
+healthcare, finance, autonomous driving, and more. These talks feature practitioners sharing
+production experiences and lessons learned.
+
+- **FLARE Day 2026** -- *Coming September 2026*
+- `FLARE Day 2025 <https://developer.nvidia.com/flare-day-2025>`_ -- Real-world FL applications in healthcare, finance, autonomous driving, and more
+- `FLARE Day 2024 <https://nvidia.github.io/NVFlare/flareDay>`_ -- Talks and demos featuring real-world FL deployments at NVIDIA, healthcare institutions, and industry partners
 
 Getting Started with Your Industry
-===================================
+====================================
 
 Regardless of your industry, the path to federated learning follows a similar pattern:
 
