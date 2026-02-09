@@ -72,9 +72,17 @@ sensitivity prevent sharing transaction data between institutions.
 **FLARE features used:** XGBoost integration, GNN support, Private Set Intersection,
 Secure Aggregation
 
-**References:**
+**Swift Collaborative Fraud Defence:**
+In September 2025, Swift partnered with 13 global banks -- including ANZ, BNY, and Intesa
+Sanpaolo -- to test federated learning for cross-border fraud detection. Using privacy-enhancing
+technologies, participating institutions trained AI models locally on their own data without
+sharing customer information. In trials involving 10 million artificial transactions, the
+collaborative federated model was **twice as effective** at detecting known fraudulent transactions
+compared to models trained on a single institution's data alone.
 
-- :doc:`Federated XGBoost </user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>`
+**Reference:**
+
+- `Swift-led experiments reveal blueprint for collaborative fraud defence using AI (Sep 2025) <https://www.swift.com/news-events/news/swift-led-experiments-reveal-blueprint-collaborative-fraud-defence-using-ai>`_
 
 Government & National Security
 ==============================
