@@ -167,5 +167,5 @@ Explore by Use Case
 ===================
 
 - :doc:`Industry Use Cases <industry_use_cases>` -- Real-world deployments across healthcare, finance, government, and more
-- **Large Models & LLM** -- Federated fine-tuning, memory management, and optimization for large models
-- **Edge & Mobile** -- Mobile training (iOS/Android) and hierarchical FL for large-scale deployments
+- :ref:`Large Models & LLM <llm_fine_tuning>` -- Federated fine-tuning, memory management, and optimization for large models
+- :ref:`Edge & Mobile <mobile_training>` -- Mobile training (iOS/Android) and hierarchical FL for large-scale deployments
