@@ -57,6 +57,18 @@ logging.basicConfig(
 log = logging.getLogger("stress_test")
 
 
+class RetryCounter(logging.Handler):
+    """Counts retry warning messages from download_service."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.count = 0
+
+    def emit(self, record):
+        if "retryable error" in record.getMessage():
+            self.count += 1
+
+
 # ---------------------------------------------------------------------------
 # Slow Downloadable — simulates large-model produce() overhead
 # ---------------------------------------------------------------------------
@@ -136,15 +148,19 @@ def run_stress_test(
     connect_url = f"tcp://localhost:{port}"
 
     small_pool = CheckedExecutor(pool_size, "stm-stress")
+    retry_counter = RetryCounter()
+    logging.getLogger("nvflare.fuel.f3.streaming.download_service").addHandler(retry_counter)
 
     server_cell = None
     client_cells = []
     tx_id = None
 
     with patch("nvflare.fuel.f3.streaming.stream_utils.stream_thread_pool", small_pool), \
-         patch("nvflare.fuel.f3.streaming.byte_receiver.stream_thread_pool", small_pool), \
+         patch("nvflare.fuel.f3.streaming.stream_utils.callback_thread_pool", small_pool), \
+         patch("nvflare.fuel.f3.streaming.byte_receiver.callback_thread_pool", small_pool), \
          patch("nvflare.fuel.f3.streaming.byte_streamer.stream_thread_pool", small_pool), \
-         patch("nvflare.fuel.f3.streaming.blob_streamer.stream_thread_pool", small_pool):
+         patch("nvflare.fuel.f3.streaming.blob_streamer.stream_thread_pool", small_pool), \
+         patch("nvflare.fuel.f3.streaming.blob_streamer.callback_thread_pool", small_pool):
 
         try:
             server_cell = Cell("server", listen_url, secure=False, credentials={})
@@ -231,7 +247,8 @@ def run_stress_test(
         status = "OK" if c.completed else f"FAIL ({c.failure_reason})"
         log.info(f"  {c.name}: {status}  chunks={c.chunks_received}")
     log.info(f"Result: {succeeded}/{num_clients} succeeded, "
-             f"{failed}/{num_clients} failed, {timed_out} still stuck")
+             f"{failed}/{num_clients} failed, {timed_out} still stuck, "
+             f"{retry_counter.count} retries")
     log.info(f"{'='*60}")
 
     assert failed == 0, (

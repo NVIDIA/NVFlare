@@ -22,7 +22,7 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
+from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
 from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_traceback
 
@@ -97,7 +97,7 @@ class BlobHandler:
 
         stream_thread_pool.submit(self._read_stream, blob_task)
 
-        self.blob_cb(future, *args, **kwargs)
+        callback_thread_pool.submit(self.blob_cb, future, *args, **kwargs)
 
         return 0
 

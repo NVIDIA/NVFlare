@@ -51,6 +51,9 @@ class CheckedExecutor(ThreadPoolExecutor):
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 
+CALLBACK_THREAD_POOL_SIZE = 64
+callback_thread_pool = CheckedExecutor(CALLBACK_THREAD_POOL_SIZE, "stm_cb")
+
 
 def wrap_view(buffer: BytesAlike) -> memoryview:
     if isinstance(buffer, memoryview):
@@ -124,6 +127,7 @@ def stream_stats_category(fqcn: str, channel: str, topic: str, stream_type: str 
 
 
 def stream_shutdown():
+    callback_thread_pool.shutdown(wait=True)
     stream_thread_pool.shutdown(wait=True)
 
 

@@ -32,7 +32,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category, stream_thread_pool
+from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, callback_thread_pool, stream_stats_category
 
 log = logging.getLogger(__name__)
 
@@ -356,7 +356,7 @@ class ByteReceiver:
                 value=task.size / ONE_MB,
             )
 
-            stream_thread_pool.submit(self._callback_wrapper, task, callback)
+            callback_thread_pool.submit(self._callback_wrapper, task, callback)
 
     @staticmethod
     def _callback_wrapper(task: RxTask, callback: Callback):
