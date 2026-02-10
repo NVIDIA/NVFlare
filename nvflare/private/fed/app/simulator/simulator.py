@@ -15,10 +15,11 @@
 """Federated Simulator launching script."""
 
 import argparse
+import os
 import sys
 from sys import platform
 
-from nvflare.fuel.utils.log_utils import LogMode
+from nvflare.fuel.utils.log_utils import FL_LOG_LEVEL, LogMode
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.app.utils import version_check
 
@@ -34,7 +35,7 @@ def define_simulator_parser(simulator_parser):
         "-l",
         "--log_config",
         type=str,
-        default=LogMode.CONCISE,
+        default=None,
         help="log config mode ('concise', 'full', 'verbose'), filepath, or level",
     )
     simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
@@ -47,6 +48,9 @@ def define_simulator_parser(simulator_parser):
 
 
 def run_simulator(simulator_args):
+    log_config = simulator_args.log_config
+    if log_config is None:
+        log_config = os.environ.get(FL_LOG_LEVEL, LogMode.CONCISE)
     simulator = SimulatorRunner(
         job_folder=simulator_args.job_folder,
         workspace=simulator_args.workspace,
@@ -54,7 +58,7 @@ def run_simulator(simulator_args):
         n_clients=simulator_args.n_clients,
         threads=simulator_args.threads,
         gpu=simulator_args.gpu,
-        log_config=simulator_args.log_config,
+        log_config=log_config,
         max_clients=simulator_args.max_clients,
         end_run_for_all=simulator_args.end_run_for_all,
     )

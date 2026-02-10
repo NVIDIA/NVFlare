@@ -15,7 +15,6 @@
 """Provides a command line interface for federated server."""
 
 import argparse
-import logging
 import os
 import sys
 import threading
@@ -81,16 +80,6 @@ def main(args):
         configure_logging(workspace, args.job_id)
         logger = get_script_logger()
         logger.info("Runner_process started.")
-
-        log_level = os.environ.get("FL_LOG_LEVEL", "")
-        numeric_level = getattr(logging, log_level.upper(), None)
-        if isinstance(numeric_level, int):
-            logging.getLogger().setLevel(numeric_level)
-            logger.debug("loglevel debug enabled")
-            logger.info("loglevel info enabled")
-            logger.warning("loglevel warn enabled")
-            logger.error("loglevel error enabled")
-            logger.critical("loglevel critical enabled")
 
         conf.configure()
         event_handlers = conf.handlers

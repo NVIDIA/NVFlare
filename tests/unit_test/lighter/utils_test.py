@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import json
 import os
 import shutil
 import tempfile
@@ -25,6 +26,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
@@ -162,3 +164,116 @@ class TestSignFolder:
 
         participant = self._get_participant("client", data.get("participants"))
         assert participant.get("client_name") == "client-1"
+
+
+@pytest.mark.xdist_group(name="lighter_utils_group")
+class TestVerifyFolderSignature:
+    """Unit tests for verify_folder_signature."""
+
+    def _setup_certs_and_folder(self, tmp_path):
+        """Create root CA, client cert, a folder with files, and return paths/keys."""
+        root_cert, client_pri_key, client_cert, _server_pri_key, _server_cert = get_test_certs()
+        root_ca_path = tmp_path / "root.crt"
+        client_crt_path = tmp_path / "client.crt"
+        root_ca_path.write_bytes(serialize_cert(root_cert))
+        client_crt_path.write_bytes(serialize_cert(client_cert))
+
+        folder = tmp_path / "signed_folder"
+        folder.mkdir()
+        (folder / "subdir").mkdir()
+        (folder / "file1.txt").write_bytes(b"content one")
+        (folder / "file2.bin").write_bytes(b"content two")
+        (folder / "subdir" / "nested.txt").write_bytes(b"nested content")
+
+        return str(folder), str(root_ca_path), str(client_crt_path), client_pri_key, client_cert
+
+    def test_verify_folder_signature_success_with_submitter_cert(self, tmp_path):
+        """Verify returns True when folder is signed with per-folder submitter cert (single_signer=False)."""
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is True
+
+    def test_verify_folder_signature_success_single_signer(self, tmp_path):
+        """Verify returns True when folder is signed by root key only (single_signer=True)."""
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        root_pub_key = root_pri_key.public_key()
+        root_cert = generate_cert("root", "nvidia", "root", root_pri_key, root_pub_key, ca=True)
+        root_ca_path = tmp_path / "root.crt"
+        root_ca_path.write_bytes(serialize_cert(root_cert))
+
+        folder = tmp_path / "single_signer_folder"
+        folder.mkdir()
+        (folder / "data.txt").write_bytes(b"data")
+        sign_folders(folder, root_pri_key, crt_path=None)
+
+        assert verify_folder_signature(folder, str(root_ca_path), single_signer=True) is True
+
+    def test_verify_folder_signature_fails_when_file_tampered(self, tmp_path):
+        """Verify returns False when a file is modified after signing."""
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        with open(os.path.join(folder, "file1.txt"), "wb") as f:
+            f.write(b"tampered content")
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_verify_folder_signature_fails_when_signature_file_missing(self, tmp_path):
+        """Verify returns False when a directory has no signature file."""
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        os.unlink(os.path.join(folder, "subdir", NVFLARE_SIG_FILE))
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_verify_folder_signature_fails_when_root_ca_path_invalid(self, tmp_path):
+        """Verify returns False when root_ca_path does not exist or is invalid."""
+        folder, _root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        assert verify_folder_signature(folder, str(tmp_path / "nonexistent.crt"), single_signer=False) is False
+        assert verify_folder_signature(folder, str(tmp_path / "root.crt") + ".missing", single_signer=False) is False
+
+    def test_verify_folder_signature_fails_when_file_signature_missing(self, tmp_path):
+        """Verify returns False when a file has no entry in the signature JSON."""
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        sig_path = os.path.join(folder, NVFLARE_SIG_FILE)
+        with open(sig_path, "rt") as f:
+            sigs = json.load(f)
+        del sigs["file1.txt"]
+        with open(sig_path, "wt") as f:
+            json.dump(sigs, f)
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_verify_folder_signature_fails_when_subfolder_signature_missing(self, tmp_path):
+        """Verify returns False when a subfolder has no signature in the JSON."""
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        sig_path = os.path.join(folder, NVFLARE_SIG_FILE)
+        with open(sig_path, "rt") as f:
+            sigs = json.load(f)
+        del sigs["subdir"]
+        with open(sig_path, "wt") as f:
+            json.dump(sigs, f)
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_verify_folder_signature_fails_when_single_signer_but_submitter_cert_expected(self, tmp_path):
+        """Verify returns False when single_signer=False but a directory has no submitter cert."""
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        root_pub_key = root_pri_key.public_key()
+        root_cert = generate_cert("root", "nvidia", "root", root_pri_key, root_pub_key, ca=True)
+        root_ca_path = tmp_path / "root.crt"
+        root_ca_path.write_bytes(serialize_cert(root_cert))
+
+        folder = tmp_path / "no_submitter"
+        folder.mkdir()
+        (folder / "f.txt").write_bytes(b"x")
+        sign_folders(folder, root_pri_key, crt_path=None)
+        # single_signer=False expects NVFLARE_SUBMITTER_CRT_FILE in each dir -> not present -> fails
+        assert verify_folder_signature(folder, str(root_ca_path), single_signer=False) is False
+
+    def test_verify_folder_signature_with_custom_signature_file(self, tmp_path):
+        """Verify works with a custom signature_file name."""
+        custom_sig_file = "custom_sig.json"
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path, signature_file=custom_sig_file)
+        assert (
+            verify_folder_signature(folder, root_ca_path, single_signer=False, signature_file=custom_sig_file) is True
+        )
