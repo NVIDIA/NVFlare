@@ -209,7 +209,7 @@ Via Configuration Files
 
 **application.conf** (job-level):
 
-.. code-block:: hocon
+.. code-block::
 
    get_task_timeout = 300.0
    submit_task_result_timeout = 300.0

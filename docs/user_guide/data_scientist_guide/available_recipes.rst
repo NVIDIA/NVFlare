@@ -16,11 +16,11 @@ Common Recipe Parameters
 
 Most training recipes accept the following model-related parameters:
 
-``initial_model``
+``model``
     The model to use for federated training. Accepts:
 
     * **Class instance**: e.g., ``MyModel()`` - convenient and Pythonic
-    * **Dict config**: e.g., ``{"path": "module.MyModel", "args": {"param": value}}`` - better for large models
+    * **Dict config**: e.g., ``{"class_path": "module.MyModel", "args": {"param": value}}`` - better for large models
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
@@ -30,7 +30,7 @@ Most training recipes accept the following model-related parameters:
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
-    * PyTorch: Requires ``initial_model`` for architecture (checkpoint has weights only)
+    * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
     * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
 
 See :ref:`job_recipe` for detailed explanations of these options.
@@ -53,7 +53,7 @@ PyTorch FedAvg
         name="fedavg-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -76,7 +76,7 @@ TensorFlow FedAvg
         name="fedavg-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -147,7 +147,7 @@ FedAvg with secure aggregation using homomorphic encryption.
         name="fedavg-he",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -177,7 +177,7 @@ PyTorch FedProx
         name="fedprox-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
         train_args="--fedproxloss_mu 0.01",  # Pass mu parameter to client
     )
@@ -218,7 +218,7 @@ TensorFlow FedProx
         name="fedprox-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
         train_args="--fedproxloss_mu 0.01",
     )
@@ -256,7 +256,7 @@ PyTorch FedOpt
         name="fedopt-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
         optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
@@ -279,7 +279,7 @@ TensorFlow FedOpt
         name="fedopt-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
         optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
@@ -308,7 +308,7 @@ PyTorch SCAFFOLD
         name="scaffold-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -330,7 +330,7 @@ TensorFlow SCAFFOLD
         name="scaffold-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -358,7 +358,7 @@ PyTorch Cyclic
         name="cyclic-pt",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyModel(),
+        model=MyModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -380,7 +380,7 @@ TensorFlow Cyclic
         name="cyclic-tf",
         min_clients=2,
         num_rounds=5,
-        initial_model=MyTFModel(),
+        model=MyTFModel(),
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
@@ -580,8 +580,8 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 
     recipe = FedEvalRecipe(
         name="eval_job",
-        initial_model=MyModel(),  # Model architecture
-        initial_ckpt="/path/to/pretrained_model.pt",  # Required: checkpoint path
+        model=MyModel(),
+        eval_ckpt="/path/to/pretrained_model.pt",
         min_clients=2,
         eval_script="client.py",
         eval_args="--batch_size 32",
@@ -590,8 +590,14 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
     run = recipe.execute(env)
 
 .. note::
-   ``initial_ckpt`` is **required** for FedEvalRecipe. The checkpoint path must be absolute and
-   point to where the pre-trained model weights exist on the server.
+   ``eval_ckpt`` is **required**. It can be either:
+
+   * an absolute path on the server to the pre-trained checkpoint (.pt, .pth), or
+   * a relative or absolute path to a local checkpoint file that will be bundled with the job
+     (for example, via utilities such as ``prepare_initial_ckpt``).
+
+   When specifying an absolute server-side path, the checkpoint file may not exist locally when
+   building the job.
 
 **Examples:**
 
@@ -686,7 +692,7 @@ Decentralized federated learning without a central server.
 
     recipe = SimpleSwarmLearningRecipe(
         name="swarm",
-        initial_model=MyModel(),
+        model=MyModel(),
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
@@ -717,8 +723,8 @@ EdgeFedBuffRecipe
 
     recipe = EdgeFedBuffRecipe(
         job_name="edge-fedavg",
-        model=MyModel(),  # or dict config: {"path": "module.MyModel", "args": {...}}
-        model_manager_config=ModelManagerConfig(max_model_version=20),
+        model=MyModel(),
+        model_manager_config=ModelManagerConfig(max_num_active_model_versions=3, max_model_version=20),
         device_manager_config=DeviceManagerConfig(device_selection_size=100),
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )

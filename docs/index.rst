@@ -31,7 +31,6 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
-   API Evolution & Recommendations <programming_guide/flare_api_evolution>
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
@@ -93,7 +92,7 @@ NVIDIA FLARE
    :hidden:
    :caption: Security & Compliance
 
-   system_architecture/security_overview
+   flare_security_overview
    user_guide/admin_guide/security/terminologies_and_roles
    Identity & Access Control <user_guide/admin_guide/security/identity_security>
    user_guide/admin_guide/security/site_policy_management
@@ -152,7 +151,7 @@ Start here if you are deploying FLARE in an organization or consortium.
 - :doc:`Admin Commands <user_guide/admin_guide/deployment/operation>` -- Operating and managing a running FL system
 - :doc:`System Configuration <user_guide/admin_guide/configurations/system_configuration>` -- Configuration files and settings
 - :doc:`Preflight Check <user_guide/nvflare_cli/preflight_check>` -- Pre-launch validation
-- :doc:`Security Overview <system_architecture/security_overview>` -- Authentication, authorization, privacy, auditing
+- :doc:`Security Overview <flare_security_overview>` -- Authentication, authorization, privacy, auditing
 - :doc:`Confidential Computing <user_guide/confidential_computing/index>` -- Hardware-backed TEEs for end-to-end IP protection
 
 Developers (Advanced / Contributors)
