@@ -31,6 +31,7 @@ Example:
 import argparse
 import importlib.util
 import os
+import shlex
 import shutil
 import sys
 from unittest.mock import patch
@@ -153,8 +154,8 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
             job_custom_dir = os.path.join(output_abs_path, job_name, "app", "custom")
             if os.path.exists(job_custom_dir):
                 for item in os.listdir(src_dir):
-                    # Skip __pycache__ and hidden files
-                    if item.startswith("__") or item.startswith("."):
+                    # Skip __pycache__ and hidden (dot) files only; keep __init__.py etc.
+                    if item == "__pycache__" or item.startswith("."):
                         continue
                     src_item = os.path.join(src_dir, item)
                     dest_item = os.path.join(job_custom_dir, item)
@@ -183,8 +184,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Parse recipe_args string into list
-    recipe_args = args.recipe_args.split() if args.recipe_args else []
+    # Parse recipe_args string into list (shell-style, handles quotes and escapes)
+    recipe_args = shlex.split(args.recipe_args) if args.recipe_args else []
 
     # Extract job name from recipe_args if provided (--name <job_name>)
     # We need this to clean only the specific job subfolder, not the entire output_dir
