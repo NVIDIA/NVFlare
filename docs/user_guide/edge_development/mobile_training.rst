@@ -14,7 +14,7 @@ How It Works
 
 1. **Design your model** in standard PyTorch (keep it lightweight for mobile)
 2. **Wrap it** in a ``DeviceModel`` that includes loss and prediction logic for ExecuTorch
-3. **Use the ETFedBuffRecipe** to create a FLARE job -- FLARE handles everything else
+3. **Use the ETFedBuffRecipe** to create a FLARE job [1]_ -- FLARE handles everything else
 
 The mobile SDKs (Android and iOS) communicate with the FLARE server via HTTP,
 following the :ref:`Edge Device Interaction Protocol (EDIP) <flare_edge>`.

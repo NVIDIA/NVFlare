@@ -2360,8 +2360,8 @@ After deployment, these files are located at:
      - ``startup_kit/server/local/``
      - ``/opt/nvflare/workspace/server/local/`` or ``~/nvflare/workspace/server/local/``
    * - Client (Site)
-     - ``startup_kit/site-*/local/``
-     - ``/opt/nvflare/workspace/site-*/local/`` or ``~/nvflare/workspace/site-*/local/``
+     - ``startup_kit/site-\*/local/``
+     - ``/opt/nvflare/workspace/site-\*/local/`` or ``~/nvflare/workspace/site-\*/local/``
    * - Admin
      - ``startup_kit/admin/local/``
      - ``/opt/nvflare/workspace/admin/local/`` or ``~/nvflare/workspace/admin/local/``
@@ -2379,13 +2379,13 @@ After deployment, these files are located at:
      - server/local/
      - ``heart_beat_timeout``, ``admin_timeout``, ``task_request_interval``, ``heartbeat_timeout``
    * - fed_client.json
-     - site-*/local/
+     - site-\*/local/
      - ``heart_beat_interval``, ``retry_timeout``, ``communication_timeout``
    * - comm_config.json
-     - server/local/, site-*/local/
+     - server/local/, site-\*/local/
      - ``heartbeat_interval``, ``subnet_heartbeat_interval``, ``streaming_read_timeout``, ``streaming_ack_interval``, ``max_message_size``
    * - resources.json
-     - server/local/, site-*/local/
+     - server/local/, site-\*/local/
      - Resource allocation and limits
    * - admin.json
      - admin/local/

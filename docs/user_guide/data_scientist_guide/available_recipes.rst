@@ -598,6 +598,7 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 
    When specifying an absolute server-side path, the checkpoint file may not exist locally when
    building the job.
+
 **Examples:**
 
 - `examples/hello-world/hello-lightning-eval <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning-eval>`_
