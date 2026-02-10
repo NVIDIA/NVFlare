@@ -215,10 +215,18 @@ class TestDownloadObject:
         assert consumer.consumed_data == [b"c1", b"c2", b"c3"]
 
     def test_retry_resends_same_state(self, cell, consumer):
-        """Test retry resends the same state so producer re-generates the same chunk."""
-        c1_state = {"start": 0, "count": 1}
+        """Test retry resends the same state so producer re-generates the same chunk.
+
+        Uses a consumer that transforms state (appends a marker) to prove that
+        the retry carries the *consumer-returned* state, not the raw producer state.
+        """
+        producer_state = {"start": 0, "count": 1}
+        # Consumer transforms state by adding a marker
+        consumer_returned_state = {"start": 0, "count": 1, "consumed": True}
+        consumer.consume = lambda ref_id, state, data: consumer_returned_state
+
         cell.send_request.side_effect = [
-            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state=c1_state),
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state=producer_state),
             _make_reply(ReturnCode.TIMEOUT),
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c2", state={"start": 1, "count": 1}),
             _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
@@ -230,14 +238,15 @@ class TestDownloadObject:
         calls = cell.send_request.call_args_list
 
         # calls[0]: initial request (no state)
-        # calls[1]: request after consuming c1, carries state from c1 (got TIMEOUT)
-        # calls[2]: retry of calls[1], should carry the SAME state
-        payload_before_timeout = calls[1].kwargs["request"].payload
+        # calls[1]: request after consuming c1, carries consumer-returned state (got TIMEOUT)
+        # calls[2]: retry of calls[1], should carry the SAME consumer-returned state
+        payload_timeout = calls[1].kwargs["request"].payload
         payload_retry = calls[2].kwargs["request"].payload
-        # Core contract: TIMEOUT request and retry carry identical state
-        assert payload_before_timeout.get("state") == payload_retry.get("state")
-        # The state should match what consumer.consume() returned (c1's state)
-        assert payload_retry.get("state") == c1_state
+        # Core contract: TIMEOUT request and its retry carry identical state
+        assert payload_timeout.get("state") == payload_retry.get("state")
+        # The state must be what consumer.consume() returned, not the raw producer state
+        assert payload_retry.get("state") == consumer_returned_state
+        assert payload_retry.get("state") != producer_state  # explicitly different
 
     def test_non_timeout_error_fails_immediately(self, cell, consumer):
         """Test non-TIMEOUT errors are not retried."""
@@ -325,3 +334,8 @@ class TestDownloadObject:
 
         assert consumer.failed
         assert "dict" in consumer.failure_reason
+
+    def test_negative_max_retries_raises(self, cell, consumer):
+        """Test that negative max_retries raises ValueError."""
+        with pytest.raises(ValueError, match="max_retries must be non-negative"):
+            download_object("server.site-1", "ref-001", 10.0, cell, consumer, max_retries=-1)

@@ -572,6 +572,8 @@ def download_object(
 
     """
     logger = get_obj_logger(download_object)
+    if max_retries < 0:
+        raise ValueError(f"max_retries must be non-negative, got {max_retries}")
     consecutive_timeouts = 0
     # Track current download state (None = initial request).
     # On retry, resend the same state so producer re-generates the same chunk.
@@ -611,16 +613,17 @@ def download_object(
             if rc == ReturnCode.TIMEOUT:
                 if consecutive_timeouts < max_retries:
                     consecutive_timeouts += 1
+                    backoff = min(2.0 * (2 ** (consecutive_timeouts - 1)), 60.0)
                     logger.warning(
                         f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
-                        f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}). "
-                        f"Resending same state to re-request the chunk."
+                        f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}, "
+                        f"backoff={backoff:.1f}s). Resending same state to re-request the chunk."
                     )
                     # Check abort signal before sleeping to minimise delay
                     if abort_signal and abort_signal.triggered:
                         consumer.download_failed(ref_id, f"download aborted after {duration} secs")
                         return
-                    time.sleep(2.0)
+                    time.sleep(backoff)
                     if abort_signal and abort_signal.triggered:
                         consumer.download_failed(ref_id, f"download aborted after {duration} secs")
                         return
