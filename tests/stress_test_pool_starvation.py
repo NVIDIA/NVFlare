@@ -144,8 +144,8 @@ def run_stress_test(
 
     with patch("nvflare.fuel.f3.streaming.stream_utils.stream_thread_pool", small_pool), \
          patch("nvflare.fuel.f3.streaming.stream_utils.callback_thread_pool", small_pool), \
-         patch("nvflare.fuel.f3.streaming.byte_receiver.callback_thread_pool", small_pool), \
          patch("nvflare.fuel.f3.streaming.byte_streamer.stream_thread_pool", small_pool), \
+         patch("nvflare.fuel.f3.streaming.byte_receiver.stream_thread_pool", small_pool), \
          patch("nvflare.fuel.f3.streaming.blob_streamer.stream_thread_pool", small_pool), \
          patch("nvflare.fuel.f3.streaming.blob_streamer.callback_thread_pool", small_pool):
 
