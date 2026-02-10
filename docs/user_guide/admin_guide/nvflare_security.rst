@@ -1,8 +1,13 @@
+:orphan:
+
 .. _nvflare_security:
 
 ****************************************
 NVIDIA FLARE Security
 ****************************************
+
+.. note::
+   This page has been reorganized. See the :ref:`Security Overview <security>` for the updated security documentation.
 
 The security framework of NVIDIA FLARE has been reworked for better usability and to improve security.
 
