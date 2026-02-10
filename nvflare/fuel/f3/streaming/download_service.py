@@ -145,16 +145,6 @@ class Downloadable(ABC):
         """
         pass
 
-    def release(self):
-        """Drop the infrastructure reference to the source object.
-
-        Called by _Transaction.transaction_done() AFTER the transaction_done_cb
-        fires.  Subclasses should override this to null their base_obj (or any
-        other large reference) so the GC can reclaim the memory immediately.
-        The default implementation is a no-op.
-        """
-        pass
-
 
 class _PropKey:
     REF_ID = "ref_id"
@@ -242,12 +232,9 @@ class _Transaction:
         self.timeout = timeout
         self.num_receivers = num_receivers
         self.last_active_time = time.time()
-        self.start_time = time.time()
-        self.total_bytes = 0
         self.transaction_done_cb = transaction_done_cb
         self.cb_kwargs = cb_kwargs
         self.refs = []
-        self.logger = get_obj_logger(self)
 
     def mark_active(self):
         """Called to update the last active time of the transaction.
@@ -297,33 +284,13 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
-        elapsed = time.time() - self.start_time
-        size_mb = self.total_bytes / (1024 * 1024)
-        self.logger.info(
-            f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
-            f"size={size_mb:.1f}MB ({self.total_bytes:,} bytes)"
-        )
-
-        # Snapshot base_objs BEFORE the loop so the callback receives the
-        # original objects.  obj.transaction_done() may clear the chunk cache
-        # (CacheableObject.clear_cache()); the source object itself is released
-        # via obj.release() AFTER the callback so the callback can still
-        # observe it (e.g. for memory-GC notifications).
-        base_objs = [ref.obj.base_obj for ref in self.refs]
-
         for ref in self.refs:
             obj = ref.obj
             assert isinstance(obj, Downloadable)
             obj.transaction_done(self.tid, status)
 
         if self.transaction_done_cb:
-            self.transaction_done_cb(self.tid, status, base_objs, **self.cb_kwargs)
-
-        # Release source objects after the callback so the callback can still
-        # reference them.  This drops the last infrastructure reference to
-        # large objects (e.g. numpy dicts) allowing GC to reclaim them.
-        for ref in self.refs:
-            ref.obj.release()
+            self.transaction_done_cb(self.tid, status, [ref.obj.base_obj for ref in self.refs], **self.cb_kwargs)
 
 
 class TransactionInfo:
@@ -489,11 +456,7 @@ class DownloadService:
             )
             return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
         else:
-            # continue — accumulate bytes for timing summary in transaction_done()
-            # CacheableObject returns a list of byte-chunks; FileDownloader returns raw bytes.
-            # Sum chunk lengths for lists (len(list) counts items, not bytes).
-            if data is not None:
-                tx.total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
+            # continue
             return make_reply(
                 ReturnCode.OK,
                 body={
@@ -612,8 +575,6 @@ def download_object(
     if max_retries < 0:
         raise ValueError(f"max_retries must be non-negative, got {max_retries}")
     consecutive_timeouts = 0
-    total_bytes = 0
-    download_start = time.time()
     # Track current download state (None = initial request).
     # On retry, resend the same state so producer re-generates the same chunk.
     current_state = None
@@ -687,12 +648,6 @@ def download_object(
         assert isinstance(payload, dict)
         status = payload.get(_PropKey.STATUS)
         if status == ProduceRC.EOF:
-            elapsed = time.time() - download_start
-            size_mb = total_bytes / (1024 * 1024)
-            logger.info(
-                f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
-                f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
-            )
             consumer.download_completed(ref_id)
             return
         elif status == ProduceRC.ERROR:
@@ -700,10 +655,7 @@ def download_object(
             return
 
         # continue
-        # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
         data = payload.get(_PropKey.DATA)
-        if data is not None:
-            total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
         state = payload.get(_PropKey.STATE)
         try:
             new_state = consumer.consume(ref_id, state, data)
