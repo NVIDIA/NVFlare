@@ -63,8 +63,10 @@ def main():
         if flare.is_train():
             # Training task: receive global model, train, send update.
             if input_model.params is None or NPConstants.NUMPY_KEY not in input_model.params:
-                flare.send(flare.FLModel(metrics={}))
-                continue
+                raise RuntimeError(
+                    "Train task received no model params (params is None or missing numpy_key). "
+                    "Server requires a valid initial model; empty response would break aggregation."
+                )
             input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
             print(f"Received weights: {input_np_arr}")
             new_params = train(input_np_arr)
@@ -101,7 +103,10 @@ def main():
         elif flare.is_submit_model():
             # Submit local model for cross-site evaluation (must be WEIGHTS DXO).
             if last_params is None:
-                last_params = np.array([0.0] * 10, dtype=np.float32)
+                raise RuntimeError(
+                    "submit_model called but no local model (last_params) available. "
+                    "CSE expects client weights; run training first or fix job order."
+                )
             print(f"Client {client_name} submitting local model")
             flare.send(
                 flare.FLModel(

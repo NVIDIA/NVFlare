@@ -41,8 +41,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
         model: Initial model (as list or numpy array) to start federated training with.
-            Lists are preferred for JSON serialization compatibility. If None,
-            clients will start with their own local models.
+            Lists are preferred for JSON serialization compatibility. Required unless
+            initial_ckpt is provided: the base FedAvgRecipe raises ValueError if model,
+            initial_ckpt, and model_persistor are all None.
         initial_model: Deprecated alias for ``model``. Use ``model``. If both are set, ``model`` wins.
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.npy, .npz).
             The file may not exist locally as it could be on the server.
