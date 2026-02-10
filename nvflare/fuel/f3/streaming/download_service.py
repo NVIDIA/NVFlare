@@ -548,6 +548,7 @@ def download_object(
     secure=False,
     optional=False,
     abort_signal: Signal = None,
+    max_retries: int = 3,
 ):
     """Download a large object from the object owner.
 
@@ -560,18 +561,27 @@ def download_object(
         secure: use P2P private communication with the data owner
         optional: suppress log messages
         abort_signal: for signaling abort
+        max_retries: max number of retries per request on TIMEOUT (default 3).
+            Pull-based download is idempotent: resending the same state causes
+            the producer to re-generate the same chunk, making retry safe.
 
     Returns: None
 
     """
-    request = new_cell_message(
-        headers={},
-        payload={
-            _PropKey.REF_ID: ref_id,
-        },
-    )
+    logger = get_obj_logger(download_object)
+    consecutive_timeouts = 0
+    # Track current download state (None = initial request).
+    # On retry, resend the same state so producer re-generates the same chunk.
+    current_state = None
 
     while True:
+        # Build a fresh request each iteration (including retries)
+        # to avoid re-encoding an already-encoded message.
+        request_payload = {_PropKey.REF_ID: ref_id}
+        if current_state is not None:
+            request_payload[_PropKey.STATE] = current_state
+        request = new_cell_message(headers={}, payload=request_payload)
+
         start_time = time.time()
         reply = cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
@@ -592,8 +602,34 @@ def download_object(
         assert isinstance(reply, Message)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
+            # Retry on TIMEOUT: streaming transport may intermittently lose
+            # responses.  Pull-based download is idempotent — resending the
+            # same state re-generates the same chunk, making retry safe.
+            if rc == ReturnCode.TIMEOUT and consecutive_timeouts < max_retries:
+                consecutive_timeouts += 1
+                logger.warning(
+                    f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
+                    f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}). "
+                    f"Resending same state to re-request the chunk."
+                )
+                time.sleep(2.0)
+                continue
+
+            if consecutive_timeouts >= max_retries:
+                logger.warning(
+                    f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
+                    f"ref={ref_id}. Giving up."
+                )
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             return
+
+        # Log recovery if we were retrying
+        if consecutive_timeouts > 0:
+            logger.warning(
+                f"[DOWNLOAD_RECOVERED] Download from {from_fqcn} recovered after "
+                f"{consecutive_timeouts} timeout(s) (ref={ref_id})."
+            )
+        consecutive_timeouts = 0
 
         payload = reply.payload
         assert isinstance(payload, dict)
@@ -622,5 +658,5 @@ def download_object(
             consumer.download_failed(ref_id, "download aborted")
             return
 
-        # ask for more
-        request = new_cell_message(headers={}, payload={_PropKey.REF_ID: ref_id, _PropKey.STATE: new_state})
+        # Update state for next request
+        current_state = new_state
