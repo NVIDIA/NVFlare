@@ -616,10 +616,13 @@ def download_object(
                         f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}). "
                         f"Resending same state to re-request the chunk."
                     )
-                    time.sleep(2.0)
-                    # Check abort signal after sleep to avoid unnecessary retry
+                    # Check abort signal before sleeping to minimise delay
                     if abort_signal and abort_signal.triggered:
-                        consumer.download_failed(ref_id, "download aborted during retry")
+                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                        return
+                    time.sleep(2.0)
+                    if abort_signal and abort_signal.triggered:
+                        consumer.download_failed(ref_id, f"download aborted after {duration} secs")
                         return
                     continue
                 else:
