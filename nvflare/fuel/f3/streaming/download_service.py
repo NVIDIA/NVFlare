@@ -562,8 +562,11 @@ def download_object(
         optional: suppress log messages
         abort_signal: for signaling abort
         max_retries: max number of retries per request on TIMEOUT (default 3).
-            Pull-based download is idempotent: resending the same state causes
-            the producer to re-generate the same chunk, making retry safe.
+            Resending the same state causes the producer to re-generate the
+            same chunk, so retry is data-safe.  Note: CacheableObject's
+            _adjust_cache may run twice for the same state on retry, which
+            can prematurely evict cache entries in multi-receiver scenarios
+            but does not affect data correctness.
 
     Returns: None
 
@@ -603,23 +606,27 @@ def download_object(
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
             # Retry on TIMEOUT: streaming transport may intermittently lose
-            # responses.  Pull-based download is idempotent — resending the
-            # same state re-generates the same chunk, making retry safe.
-            if rc == ReturnCode.TIMEOUT and consecutive_timeouts < max_retries:
-                consecutive_timeouts += 1
-                logger.warning(
-                    f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
-                    f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}). "
-                    f"Resending same state to re-request the chunk."
-                )
-                time.sleep(2.0)
-                continue
-
-            if consecutive_timeouts >= max_retries:
-                logger.warning(
-                    f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
-                    f"ref={ref_id}. Giving up."
-                )
+            # responses.  Resending the same state re-generates the same
+            # chunk, making retry data-safe (see docstring for caveats).
+            if rc == ReturnCode.TIMEOUT:
+                if consecutive_timeouts < max_retries:
+                    consecutive_timeouts += 1
+                    logger.warning(
+                        f"[DOWNLOAD_RETRY] Request to {from_fqcn} timed out after {duration:.1f}s "
+                        f"(ref={ref_id}, retry {consecutive_timeouts}/{max_retries}). "
+                        f"Resending same state to re-request the chunk."
+                    )
+                    time.sleep(2.0)
+                    # Check abort signal after sleep to avoid unnecessary retry
+                    if abort_signal and abort_signal.triggered:
+                        consumer.download_failed(ref_id, "download aborted during retry")
+                        return
+                    continue
+                else:
+                    logger.warning(
+                        f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
+                        f"ref={ref_id}. Giving up."
+                    )
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             return
 

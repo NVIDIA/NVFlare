@@ -205,10 +205,10 @@ class TestDownloadObject:
         """Test retry counter resets after successful recovery, allowing future retries."""
         cell.send_request.side_effect = [
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
-            _make_reply(ReturnCode.TIMEOUT),                                               # timeout 1/2
-            _make_reply(ReturnCode.TIMEOUT),                                               # timeout 2/2
+            _make_reply(ReturnCode.TIMEOUT),  # timeout 1/2
+            _make_reply(ReturnCode.TIMEOUT),  # timeout 2/2
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c2", state={"start": 1, "count": 1}),
-            _make_reply(ReturnCode.TIMEOUT),                                               # new timeout 1/2 (counter reset)
+            _make_reply(ReturnCode.TIMEOUT),  # new timeout 1/2 (counter reset)
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c3", state={"start": 2, "count": 1}),
             _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
         ]
@@ -232,11 +232,14 @@ class TestDownloadObject:
         assert consumer.completed
         calls = cell.send_request.call_args_list
 
-        # Call 1 (after c1): carries state from c1
-        # Call 2 (retry):    should carry the SAME state (idempotent re-request)
+        # calls[0]: initial request (no state)
+        # calls[1]: request after consuming c1, carries state from c1 (got TIMEOUT)
+        # calls[2]: retry of calls[1], should carry the SAME state
         payload_before_timeout = calls[1].kwargs["request"].payload
         payload_retry = calls[2].kwargs["request"].payload
         assert payload_before_timeout.get("state") == payload_retry.get("state")
+        # Verify the retried state matches the state returned by c1
+        assert payload_retry.get("state") == {"start": 0, "count": 1}
 
     def test_non_timeout_error_fails_immediately(self, cell, consumer):
         """Test non-TIMEOUT errors are not retried."""
