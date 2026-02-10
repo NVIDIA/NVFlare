@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import threading
 import time
 import uuid
@@ -25,8 +24,6 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
-
-log = logging.getLogger(__name__)
 
 OBJ_DOWNLOADER_CHANNEL = "download_service__"
 OBJ_DOWNLOADER_TOPIC = "download_service__download"
@@ -542,9 +539,6 @@ class Consumer(ABC):
         pass
 
 
-_RETRYABLE_CODES = {ReturnCode.TIMEOUT, ReturnCode.COMM_ERROR}
-
-
 def download_object(
     from_fqcn: str,
     ref_id: str,
@@ -554,8 +548,6 @@ def download_object(
     secure=False,
     optional=False,
     abort_signal: Signal = None,
-    max_retries: int = 3,
-    retry_interval: float = 2.0,
 ):
     """Download a large object from the object owner.
 
@@ -568,8 +560,6 @@ def download_object(
         secure: use P2P private communication with the data owner
         optional: suppress log messages
         abort_signal: for signaling abort
-        max_retries: max retries per chunk on transient errors (TIMEOUT, COMM_ERROR)
-        retry_interval: seconds to wait between retries
 
     Returns: None
 
@@ -580,8 +570,6 @@ def download_object(
             _PropKey.REF_ID: ref_id,
         },
     )
-
-    retries_left = max_retries
 
     while True:
         start_time = time.time()
@@ -604,13 +592,6 @@ def download_object(
         assert isinstance(reply, Message)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
-            if rc in _RETRYABLE_CODES and retries_left > 0:
-                retries_left -= 1
-                log.warning(f"retryable error {rc} from {from_fqcn} ({retries_left} retries left), waiting...")
-                if not _sleep_or_abort(retry_interval, abort_signal):
-                    consumer.download_failed(ref_id, "download aborted during retry wait")
-                    return
-                continue
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             return
 
@@ -623,9 +604,6 @@ def download_object(
         elif status == ProduceRC.ERROR:
             consumer.download_failed(ref_id, f"producer error after {duration} secs")
             return
-
-        # success: reset retry budget for next chunk
-        retries_left = max_retries
 
         # continue
         data = payload.get(_PropKey.DATA)
@@ -646,20 +624,3 @@ def download_object(
 
         # ask for more
         request = new_cell_message(headers={}, payload={_PropKey.REF_ID: ref_id, _PropKey.STATE: new_state})
-
-
-def _sleep_or_abort(seconds: float, abort_signal: Signal = None) -> bool:
-    """Sleep for the given duration, checking abort_signal periodically.
-
-    Returns True if sleep completed, False if aborted.
-    """
-    if not abort_signal:
-        time.sleep(seconds)
-        return True
-
-    end = time.time() + seconds
-    while time.time() < end:
-        if abort_signal.triggered:
-            return False
-        time.sleep(min(0.1, end - time.time()))
-    return True
