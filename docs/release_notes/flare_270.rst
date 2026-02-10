@@ -39,10 +39,10 @@ using confidential computing.
 
 
 FLARE Core
-==========
+----------
 
 Job Recipe
------------
+~~~~~~~~~~~
 
 .. sidebar::
 
@@ -88,7 +88,7 @@ When combined with the Client API (typically 4+ lines), building and running fed
 
 
 Enhanced Communication: Port Consolidation and new HTTP Driver
---------------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. sidebar::
 
@@ -113,7 +113,7 @@ Enhanced Communication: Port Consolidation and new HTTP Driver
     :ref:`Check out FL server port consolidation details <server_port_consolidation>`.
 
 Security Enhancement
---------------------
+~~~~~~~~~~~~~~~~~~~~
 
 Fixed the following issues:
 
@@ -129,17 +129,17 @@ Fixed the following issues:
 
 
 Develop Edge Applications with FLARE
-====================================
+------------------------------------
 
 .. sidebar::
 
-   .. image:: resources/hierarchical_fl.png
+   .. image:: ../resources/hierarchical_fl.png
         :height: 150px
 
-   .. image:: resources/edge_cross_device_fl.png
+   .. image:: ../resources/edge_cross_device_fl.png
         :height: 150px
 
-   .. image:: resources/edge_simplify_device_programming.png
+   .. image:: ../resources/edge_simplify_device_programming.png
         :height: 150px
 
 
@@ -166,7 +166,7 @@ without writing Swift, Objective-C, Java, or Kotlin. FLARE handles PyTorch → E
 
 
 Self-Paced-Training Tutorials
-==============================
+------------------------------
 
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security,
@@ -179,7 +179,7 @@ and real-world industry use cases.
 
 
 Extra Features
-==============
+--------------
 
 There are additional new features released in version 2.7.0, including memory management improvements with FileDownloader for large model streaming. You can find more details in :ref:`extra_270`.
 

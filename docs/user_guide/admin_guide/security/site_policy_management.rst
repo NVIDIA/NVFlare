@@ -66,7 +66,7 @@ The Org Admin can also install additional custom code in the "local/custom" fold
 own custom filters for privacy control.
 
 Resource Management Policy
-==========================
+--------------------------
 Configuration items in fed_server|client.json that should be local decisions are now moved to local resources.json.default.
 
 Here is the example of resources.json.default for FL Server:
@@ -162,11 +162,11 @@ Here is the example of resources.json.default for a FL Client:
 As you can see, the Org Admin of the FL client site can change the number of GPUs and other parameters without going through another Provision process.
 
 Authorization Policy Management
-===============================
+-------------------------------
 The Org Admin can define local authorization policy in authorization.json. 
 
 Privacy Management
-==================
+------------------
 NVFLARE comes with a security enhancement that allows each site to define its own privacy protection policy to be applied to the learning results produced by the client.
 
 Note that in this discussion, data privacy protection specifically refers to this threat: the receiver (Server) of the learning results produced by a sender (Client) could discover/reconstruct the learning data by reverse engineering the learning results.
@@ -254,7 +254,7 @@ The following is a sample policy:
 The scope of the job is specified with the meta key "scope". If the job doesn't specify scope, the default scope is used.
 
 Privacy Processing Rules
-========================
+------------------------
 The following are the privacy processing rules built into NVFLARE:
 
 If the site does not define privacy.json, then no privacy control is applied.
@@ -266,7 +266,7 @@ If the job-specified scope is not found in the scope list of the site, then the 
 If a job's scope is found (either as default scope, or explicitly defined in the site's scope list), then the scope's filters (if any) are applied before the job-specified filters (if any). This rule is enforced during task execution time.
  
 Create Site Policies
-====================
+--------------------
 To ensure system integrity and minimize chance of errors, please follow the following simple steps:
 
 1) Make a copy of the file that you want to override and name the new file with a temporary name. For example:  cp resources.json.default my_resources.json
