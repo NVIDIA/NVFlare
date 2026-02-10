@@ -17,15 +17,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import nvflare.fuel.f3.streaming.download_service as download_service
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
-import nvflare.fuel.f3.streaming.download_service as download_service
-from nvflare.fuel.f3.streaming.download_service import (
-    Consumer,
-    ProduceRC,
-    download_object,
-)
+from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, download_object
 
 
 class MockConsumer(Consumer):
