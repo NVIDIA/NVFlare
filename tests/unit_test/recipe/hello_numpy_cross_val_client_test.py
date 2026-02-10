@@ -83,11 +83,14 @@ def _make_mock_flare(*, receive_return, is_train, is_evaluate, is_submit_model):
 
     Used only in TestHelloNumpyCrossValClientFailFast. Other recipe tests in this folder
     test recipe classes and use patch("os.path.*"); they do not run or mock client scripts.
+
+    is_running.side_effect = [True, False] so the while loop runs at most one iteration then
+    exits; avoids hanging if client logic stops raising.
     """
     mock = MagicMock()
     mock.init.return_value = None
     mock.system_info.return_value = {"site_name": "site-1"}
-    mock.is_running.return_value = True
+    mock.is_running.side_effect = [True, False]
     mock.receive.return_value = receive_return
     mock.is_train.return_value = is_train
     mock.is_evaluate.return_value = is_evaluate
