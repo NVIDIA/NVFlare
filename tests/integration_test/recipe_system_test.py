@@ -26,8 +26,11 @@ TODO: Decide if these should be added to an existing test category or run in a s
 
 import os
 
+import numpy as np
+
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
+from nvflare.recipe.utils import add_cross_site_evaluation
 
 
 class TestRecipeSystemIntegration:
@@ -42,7 +45,12 @@ class TestRecipeSystemIntegration:
     def test_end_to_end_simulation_workflow(self):
         """Test complete workflow with simulation environment."""
         env = SimEnv(num_clients=2, workspace_root="/tmp/test_integration")
-        recipe = NumpyFedAvgRecipe(name="test_integration", min_clients=2, train_script=self.client_script_path)
+        recipe = NumpyFedAvgRecipe(
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
+        )
         run = recipe.execute(env)
         assert run.get_job_id() == "test_integration"
         assert run.get_status() is None
@@ -51,10 +59,40 @@ class TestRecipeSystemIntegration:
     def test_end_to_end_poc_workflow(self):
         """Test complete workflow with POC environment."""
         env = PocEnv(num_clients=2)
-        recipe = NumpyFedAvgRecipe(name="test_integration", min_clients=2, train_script=self.client_script_path)
+        recipe = NumpyFedAvgRecipe(
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
+        )
         run = recipe.execute(env)
         run.get_result()
         assert run.get_status() == "FINISHED:COMPLETED"
+
+    def test_hello_numpy_cross_val_training_and_cse(self):
+        """End-to-end: training + CSE with hello-numpy-cross-val client (model required; fail-fast on missing params).
+
+        Requires simulator to bind ports (run with permissions that allow network/socket bind).
+        """
+        examples_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-numpy-cross-val"
+        )
+        client_script = os.path.abspath(os.path.join(examples_dir, "client.py"))
+        env = SimEnv(num_clients=2, workspace_root="/tmp/test_hello_numpy_cse")
+        recipe = NumpyFedAvgRecipe(
+            name="hello-numpy-train-cse",
+            min_clients=2,
+            num_rounds=2,
+            model=np.array([0.0] * 10),
+            train_script=client_script,
+            train_args="",
+        )
+        add_cross_site_evaluation(recipe)
+        run = recipe.execute(env)
+        assert run.get_job_id() == "hello-numpy-train-cse"
+        result_path = run.get_result()
+        assert result_path == "/tmp/test_hello_numpy_cse/hello-numpy-train-cse"
+        assert os.path.isdir(result_path)
 
     def test_dict_model_config_simulation(self):
         """Test that dict model config works in simulation (end-to-end validation)."""
