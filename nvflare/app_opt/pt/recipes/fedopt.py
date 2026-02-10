@@ -211,7 +211,7 @@ class FedOptRecipe(Recipe):
         if isinstance(self.model, dict):
             from nvflare.fuel.utils.class_utils import instantiate_class
 
-            class_path = self.model.get("path")
+            class_path = self.model.get("class_path") or self.model.get("path")
             class_args = self.model.get("args", {})
             try:
                 model_to_register = instantiate_class(class_path, class_args)

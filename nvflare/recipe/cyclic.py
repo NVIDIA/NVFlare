@@ -61,7 +61,7 @@ class CyclicRecipe(Recipe):
         name: Name identifier for the federated learning job. Defaults to "cyclic".
         initial_model: Starting model object to begin training. Can be:
             - Model instance (nn.Module, tf.keras.Model, np.ndarray, etc.)
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - None: no initial model
         initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
             exist locally as it could be on the server. Used to load initial weights.

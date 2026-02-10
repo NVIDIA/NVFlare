@@ -76,7 +76,7 @@ def main():
     # First send the model to the server
     job.to("model.py", "server")
     # Then send the model persistor to the server
-    model_args = {"path": "model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
+    model_args = {"class_path": "model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
     # When using message_mode="tensor", we need to set allow_numpy_conversion=False
     allow_numpy_conversion = message_mode != "tensor"
     job.to(

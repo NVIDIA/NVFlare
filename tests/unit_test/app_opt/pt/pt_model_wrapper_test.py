@@ -45,7 +45,7 @@ class TestPTModelInit:
         try:
             from nvflare.app_opt.pt.job_config.model import PTModel
 
-            model_dict = {"path": "my_module.models.Net", "args": {"num_classes": 10}}
+            model_dict = {"class_path": "my_module.models.Net", "args": {"num_classes": 10}}
             pt_model = PTModel(model=model_dict)
 
             assert pt_model.model == model_dict
@@ -105,7 +105,7 @@ class TestPTFileModelPersistorDictConfig:
         try:
             from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
-            model_dict = {"path": "my_module.models.Net", "args": {"num_classes": 10}}
+            model_dict = {"class_path": "my_module.models.Net", "args": {"num_classes": 10}}
             persistor = PTFileModelPersistor(model=model_dict)
 
             assert persistor.model == model_dict

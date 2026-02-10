@@ -27,7 +27,7 @@ class CyclicRecipe(BaseCyclicRecipe):
         name: Name identifier for the federated learning job. Defaults to "cyclic".
         model: Starting model object to begin training. Can be:
             - tf.keras.Model instance
-            - Dict config: {"path": "module.ClassName", "args": {"param": value}}
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
             - TFModel instance (already wrapped)
             - None: no initial model
         initial_ckpt: Path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir). Can be:
@@ -105,7 +105,11 @@ class CyclicRecipe(BaseCyclicRecipe):
             result = job.to_server(self.model, id="persistor")
             return result["persistor_id"]
 
-        from nvflare.recipe.utils import prepare_initial_ckpt
+        from nvflare.recipe.utils import prepare_initial_ckpt, recipe_model_to_job_model
+
+        # Recipe accepts class_path; translate to path for job/config layer
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
 
         ckpt_path = prepare_initial_ckpt(self._tf_initial_ckpt, job)
         tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path)

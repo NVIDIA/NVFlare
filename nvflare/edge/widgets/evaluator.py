@@ -47,8 +47,8 @@ class GlobalEvaluator(Widget):
             model_path: PyTorch model to evaluate. Can be:
                 - An nn.Module instance
                 - A string class path (e.g., "mymodule.MyModel")
-                - A dict config with 'path' and optional 'args' keys
-                  (e.g., {"path": "mymodule.MyModel", "args": {"num_classes": 10}})
+                - A dict config with 'class_path' and optional 'args' keys
+                  (e.g., {"class_path": "mymodule.MyModel", "args": {"num_classes": 10}})
             eval_frequency: Frequency of evaluation (evaluate every N rounds)
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
@@ -62,7 +62,7 @@ class GlobalEvaluator(Widget):
         if isinstance(model_path, nn.Module):
             pass
         elif isinstance(model_path, dict):
-            if "path" not in model_path:
+            if not model_path.get("path"):
                 raise ValueError("model_path dict must contain 'path' key with the model class path")
         elif not isinstance(model_path, str):
             raise ValueError(
@@ -123,8 +123,8 @@ class GlobalEvaluator(Widget):
             nn.Module instance or None on failure
         """
         if isinstance(self.model_path, dict):
-            # Dict config: {"path": "module.ClassName", "args": {...}}
-            class_path = self.model_path["path"]
+            # Dict config: Job API expects "path" (Recipe translates class_path -> path)
+            class_path = self.model_path.get("path")
             model_args = self.model_path.get("args", {})
             model_class = self._load_model_class(class_path, fl_ctx)
             if model_class is None:

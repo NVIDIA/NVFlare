@@ -15,7 +15,7 @@
 import copy
 import importlib
 import os
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.fuel.utils.import_utils import optional_import
@@ -172,7 +172,7 @@ def add_cross_site_evaluation(
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         recipe = NumpyFedAvgRecipe(
-            name="my-job", initial_model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
+            name="my-job", model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
         )
 
         # That's it! Framework auto-detected, validator auto-added
@@ -186,7 +186,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyModel(), train_script="client.py"
+            model=MyModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -200,7 +200,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -215,7 +215,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         add_cross_site_evaluation(recipe)
@@ -307,7 +307,7 @@ def add_cross_site_evaluation(
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
                     f"but no persistor_id found in recipe.job.comp_ids. "
-                    f"Ensure your recipe includes an initial_model to create a persistor."
+                    f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
         else:
@@ -420,36 +420,90 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
     return non_local_scripts
 
 
-def validate_initial_ckpt(initial_ckpt: Optional[str]) -> None:
-    """Validate that initial_ckpt is an absolute path if provided.
+def validate_ckpt(ckpt: Optional[str]) -> None:
+    """Validate a checkpoint path if provided.
+
+    For absolute paths: no local existence check (file may be a server-side path).
+    For relative paths: verifies the file exists locally (it will be bundled into the job).
 
     Args:
-        initial_ckpt: Checkpoint file path to validate.
+        ckpt: Checkpoint file path to validate (e.g. initial_ckpt or eval_ckpt).
 
     Raises:
-        ValueError: If initial_ckpt is not an absolute path.
+        ValueError: If relative path does not exist locally.
     """
-    if initial_ckpt is not None:
-        if not os.path.isabs(initial_ckpt):
-            raise ValueError(
-                f"initial_ckpt must be an absolute path, got: {initial_ckpt}. "
-                "Use absolute paths like '/workspace/model.pt' for server-side checkpoints."
-            )
+    if ckpt is not None:
+        if not os.path.isabs(ckpt):
+            if not os.path.isfile(ckpt):
+                raise ValueError(
+                    f"Checkpoint relative path does not exist locally: {ckpt}. "
+                    "Relative paths are treated as local files that will be bundled into the job. "
+                    "Use an absolute path for server-side checkpoints."
+                )
 
 
-def validate_dict_model_config(initial_model: Any) -> None:
-    """Validate dict model config structure.
+def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
+    """Prepare initial_ckpt for job deployment.
+
+    - Relative path: treated as a local file. The file is bundled into the server
+      app's custom directory and the basename is returned for runtime resolution.
+    - Absolute path: treated as a server-side (remote) path and returned as-is.
+      The file is expected to exist on the server at runtime.
 
     Args:
-        initial_model: Model input to validate.
+        initial_ckpt: Checkpoint file path (absolute or relative).
+        job: BaseFedJob instance to add the file to.
+
+    Returns:
+        The checkpoint path to pass to the persistor:
+        - None if initial_ckpt is None
+        - Basename for relative paths (file is bundled into app/custom/)
+        - Absolute path as-is for server-side checkpoints
+    """
+    if initial_ckpt is None:
+        return None
+    if os.path.isabs(initial_ckpt):
+        # Absolute path: server-side checkpoint, use as-is
+        return initial_ckpt
+    # Relative path: bundle local file into server app's custom/ directory
+    job.add_file_to_server(initial_ckpt)
+    return os.path.basename(initial_ckpt)
+
+
+def validate_dict_model_config(model: Any) -> None:
+    """Validate recipe dict model config structure.
+
+    Recipes accept model config with ``class_path`` (fully qualified class name).
+    The job/config layer uses ``path``; recipes use ``class_path`` only.
+
+    Args:
+        model: Model input to validate.
 
     Raises:
-        ValueError: If dict config is missing 'path' key or 'path' is not a string.
+        ValueError: If dict config is missing 'class_path' or value is not a string.
     """
-    if isinstance(initial_model, dict):
-        if "path" not in initial_model:
+    if isinstance(model, dict):
+        if "class_path" not in model:
             raise ValueError(
-                "Dict model config must have 'path' key with fully qualified class path. " f"Got: {initial_model}"
+                "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {model}"
             )
-        if not isinstance(initial_model["path"], str):
-            raise ValueError(f"Dict model config 'path' must be a string, got: {type(initial_model['path'])}")
+        class_path = model["class_path"]
+        if not isinstance(class_path, str):
+            raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
+
+
+def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and convert recipe model dict (class_path) to job/config format (path).
+
+    Calls :func:`validate_dict_model_config` internally so callers do not need to
+    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
+
+    Args:
+        recipe_model: Dict with 'class_path' and optional 'args'.
+
+    Returns:
+        Dict with 'path' and 'args' for use by PTModel, persistors, etc.
+    """
+    validate_dict_model_config(recipe_model)
+    return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}

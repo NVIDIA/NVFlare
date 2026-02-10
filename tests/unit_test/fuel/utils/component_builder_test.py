@@ -105,7 +105,7 @@ class TestComponentBuilder:
         config = {
             "id": "id",
             "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponent",
-            "args": {"model": {"path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {}}},
+            "args": {"model": {"class_path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {}}},
         }
         builder = MockComponentBuilder()
         assert isinstance(config, dict)
@@ -134,7 +134,9 @@ class TestComponentBuilder:
         config = {
             "id": "id",
             "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponent",
-            "args": {"model": {"path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {"abc": 1}}},
+            "args": {
+                "model": {"class_path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {"abc": 1}}
+            },
         }
 
         # the failure message changes since 3.10
