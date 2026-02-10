@@ -120,7 +120,7 @@ for AI-based medical product verification across ASEAN markets.
 
 **Reference:**
 
-- `Health ministry eyeing Thailand collaboration (Taipei Times, Jan 2026) <https://www.taipeitimes.com/News/taiwan/archives/2026/01/29/2003851543>`_
+- `Taiwan launches new era of medical AI with global collaboration (Jan 2026) <https://www.rti.org.tw/en/news?uid=3&pid=188971>`_
 
 
 FLARE Day -- Real-World Deployments
