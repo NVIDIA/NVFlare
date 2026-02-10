@@ -61,7 +61,7 @@ function clean_docs() {
 
 function build_html_docs() {
     pip install -e .[dev]
-    if [[ "$SKIP_API_DOCS" == "1" ]]; then
+    if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
         echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
     else
         echo "${blue}Generating API reference...${noColor}"
@@ -70,13 +70,15 @@ function build_html_docs() {
     sphinx-build -b html docs docs/_build
 }
 
-if [ -z "$1" ]
-then
+if [[ $# -eq 0 ]]; then
     print_error_msg "Too few arguments to $0"
     print_usage
+    exit 1
 fi
 
 # parse arguments
+doClean=false
+doHTML=false
 while [[ $# -gt 0 ]]
 do
     key="$1"
