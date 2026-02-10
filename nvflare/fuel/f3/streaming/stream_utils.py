@@ -21,6 +21,7 @@ from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 STREAM_THREAD_POOL_SIZE = 128
+CALLBACK_THREAD_POOL_SIZE = 64
 ONE_MB = 1024 * 1024
 MILLION = 1000000
 
@@ -50,8 +51,6 @@ class CheckedExecutor(ThreadPoolExecutor):
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
-
-CALLBACK_THREAD_POOL_SIZE = 64
 callback_thread_pool = CheckedExecutor(CALLBACK_THREAD_POOL_SIZE, "stm_cb")
 
 
