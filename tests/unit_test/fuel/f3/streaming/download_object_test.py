@@ -216,8 +216,9 @@ class TestDownloadObject:
 
     def test_retry_resends_same_state(self, cell, consumer):
         """Test retry resends the same state so producer re-generates the same chunk."""
+        c1_state = {"start": 0, "count": 1}
         cell.send_request.side_effect = [
-            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state={"start": 0, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c1", state=c1_state),
             _make_reply(ReturnCode.TIMEOUT),
             _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=b"c2", state={"start": 1, "count": 1}),
             _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
@@ -233,9 +234,10 @@ class TestDownloadObject:
         # calls[2]: retry of calls[1], should carry the SAME state
         payload_before_timeout = calls[1].kwargs["request"].payload
         payload_retry = calls[2].kwargs["request"].payload
+        # Core contract: TIMEOUT request and retry carry identical state
         assert payload_before_timeout.get("state") == payload_retry.get("state")
-        # Verify the retried state matches the state returned by c1
-        assert payload_retry.get("state") == {"start": 0, "count": 1}
+        # The state should match what consumer.consume() returned (c1's state)
+        assert payload_retry.get("state") == c1_state
 
     def test_non_timeout_error_fails_immediately(self, cell, consumer):
         """Test non-TIMEOUT errors are not retried."""
