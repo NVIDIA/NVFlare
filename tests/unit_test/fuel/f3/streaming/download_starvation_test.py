@@ -27,7 +27,7 @@ Two test classes, each with their own Cell pair:
 
 2. TestDownloadPreFixStarvation (SHOULD FAIL/timeout):
    Before creating cells, patches BlobHandler.handle_blob_cb to call blob_cb
-   SYNCHRONOUSLY + slows _read_stream with 2s delay. Creates cells AFTER patch
+   SYNCHRONOUSLY + slows _read_stream with 0.2s delay. Creates cells AFTER patch
    so the bound methods capture the patched behavior.
    With a 4-worker pool and 8 concurrent downloads -> deadlock.
 """
@@ -60,6 +60,10 @@ TOTAL_SIZE = 50 * 1024    # 50 KB -> ~200 chunks per download
 NUM_PARALLEL = 8
 PER_REQ_TIMEOUT = 5.0
 TX_TIMEOUT = 120.0
+
+# Event used to cancel the slow _read_stream delay during teardown,
+# so deadlocked workers unblock and the process exits cleanly.
+_stop_delay = threading.Event()
 
 
 class ChunkedDownloadable(Downloadable):
@@ -151,9 +155,13 @@ def _run_parallel_downloads(server_name, server, client, data, num_parallel,
 # ---------------------------------------------------------------------------
 
 def _slow_read_stream(original_read_stream, delay):
-    """Wraps _read_stream with a delay simulating large blob transfer."""
+    """Wraps _read_stream with a cancellable delay simulating large blob transfer.
+
+    Uses _stop_delay event so the delay can be cancelled during teardown,
+    allowing deadlocked workers to unblock and the process to exit cleanly.
+    """
     def wrapper(blob_task):
-        time.sleep(delay)
+        _stop_delay.wait(timeout=delay)  # cancellable via _stop_delay.set()
         return original_read_stream(blob_task)
     return wrapper
 
@@ -161,10 +169,10 @@ def _slow_read_stream(original_read_stream, delay):
 def _pre_fix_handle_blob_cb(self, future, stream, resume, *args, **kwargs):
     """Pre-fix behavior: blob_cb runs SYNCHRONOUSLY on the pool worker.
 
-    Combined with slow _read_stream (2s), blob_cb blocks on future.result()
-    for 2s. With a 4-worker pool and 8 concurrent requests arriving, all 4
-    workers end up stuck in blob_cb, and the queued _read_stream tasks
-    can't run -> deadlock.
+    Combined with slow _read_stream (0.2s), blob_cb blocks on future.result()
+    long enough for concurrent requests to fill the pool. With 4 workers and 8
+    concurrent requests, all workers end up stuck in blob_cb, and the queued
+    _read_stream tasks can't run -> deadlock.
     """
     import nvflare.fuel.f3.streaming.blob_streamer as blob_mod
 
@@ -173,7 +181,7 @@ def _pre_fix_handle_blob_cb(self, future, stream, resume, *args, **kwargs):
 
     blob_task = BlobTask(future, stream)
 
-    slow_reader = _slow_read_stream(self._read_stream, delay=2.0)
+    slow_reader = _slow_read_stream(self._read_stream, delay=0.2)
     blob_mod.stream_thread_pool.submit(slow_reader, blob_task)
 
     # SYNCHRONOUS blob_cb -- the pre-fix behavior
@@ -196,9 +204,11 @@ class TestDownloadWithFix:
         client = Cell(CLIENT_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
         client.core_cell.start()
         time.sleep(1.0)
-        yield server, client
-        client.core_cell.stop()
-        server.core_cell.stop()
+        try:
+            yield server, client
+        finally:
+            client.core_cell.stop()
+            server.core_cell.stop()
 
     def test_parallel_downloads_with_fix(self, cells):
         """All parallel downloads complete when callback_thread_pool is separate."""
@@ -244,6 +254,9 @@ class TestDownloadPreFixStarvation:
         # Tiny shared pool
         tiny_pool = CheckedExecutor(4, "tiny_shared")
 
+        # Reset the stop flag for this test run
+        _stop_delay.clear()
+
         # Patch BEFORE cell creation
         BlobHandler.handle_blob_cb = _pre_fix_handle_blob_cb
         blob_mod.stream_thread_pool = tiny_pool
@@ -260,24 +273,37 @@ class TestDownloadPreFixStarvation:
         try:
             yield server, client
         finally:
-            client.core_cell.stop()
-            server.core_cell.stop()
-
-            # Restore original pools and class method
+            # Restore original pools and class method FIRST
             BlobHandler.handle_blob_cb = orig_handle
             blob_mod.stream_thread_pool = orig_blob_stp
             recv_mod.stream_thread_pool = orig_recv_stp
             send_mod.stream_thread_pool = orig_send_stp
+
+            # Signal the slow _read_stream delays to cancel immediately,
+            # unblocking any deadlocked workers still waiting on future.result()
+            _stop_delay.set()
+
+            # Shut down the tiny pool (don't wait -- workers may be deadlocked)
             tiny_pool.shutdown(wait=False)
+
+            # Remove the tiny pool's deadlocked threads from Python's internal
+            # atexit tracking so they don't block process exit.
+            from concurrent.futures import thread as _thread_mod
+            for t in list(_thread_mod._threads_queues):
+                if getattr(t, 'name', '').startswith("tiny_shared"):
+                    _thread_mod._threads_queues.pop(t, None)
+
+            client.core_cell.stop()
+            server.core_cell.stop()
 
     def test_parallel_downloads_simulating_pre_fix_starvation(self, patched_cells):
         """Simulates the pre-fix bug: blob_cb runs synchronously on pool worker,
-        _read_stream has 2s delay (simulating large blob transfer).
+        _read_stream has 0.2s delay (simulating large blob transfer).
 
         With pool_size=4 and 8 concurrent downloads:
           - ByteReceiver._callback_wrapper runs on tiny pool
           - handle_blob_cb submits slow _read_stream + calls blob_cb synchronously
-          - blob_cb (Adapter.call) blocks on future.result() for 2s
+          - blob_cb (Adapter.call) blocks on future.result() for 0.2s
           - _callback_wrapper holds the pool worker the whole time
           - 4 workers all stuck -> _read_stream queued but can't run -> deadlock
           - Remaining 4 requests can't even start
