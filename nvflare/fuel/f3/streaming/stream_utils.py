@@ -46,8 +46,8 @@ class CheckedExecutor(ThreadPoolExecutor):
     def submit(self, fn, *args, **kwargs):
         if self.stopped:
             log.debug(f"Call {fn} is ignored after streaming shutting down")
-        else:
-            super().submit(fn, *args, **kwargs)
+            return None
+        return super().submit(fn, *args, **kwargs)
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
