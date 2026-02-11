@@ -48,6 +48,7 @@ class TestBlobHandlerPoolBlocking:
         mock_future.headers = {}
         mock_stream = MagicMock()
         mock_stream.get_size.return_value = 0
+        mock_stream.read.return_value = b""
 
         pool = ThreadPoolExecutor(max_workers=1)
 
