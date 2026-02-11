@@ -21,6 +21,7 @@ from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 STREAM_THREAD_POOL_SIZE = 128
+CALLBACK_THREAD_POOL_SIZE = 64
 ONE_MB = 1024 * 1024
 MILLION = 1000000
 
@@ -45,11 +46,12 @@ class CheckedExecutor(ThreadPoolExecutor):
     def submit(self, fn, *args, **kwargs):
         if self.stopped:
             log.debug(f"Call {fn} is ignored after streaming shutting down")
-        else:
-            super().submit(fn, *args, **kwargs)
+            return None
+        return super().submit(fn, *args, **kwargs)
 
 
 stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
+callback_thread_pool = CheckedExecutor(CALLBACK_THREAD_POOL_SIZE, "stm_cb")
 
 
 def wrap_view(buffer: BytesAlike) -> memoryview:
@@ -124,6 +126,7 @@ def stream_stats_category(fqcn: str, channel: str, topic: str, stream_type: str 
 
 
 def stream_shutdown():
+    callback_thread_pool.shutdown(wait=True)
     stream_thread_pool.shutdown(wait=True)
 
 
