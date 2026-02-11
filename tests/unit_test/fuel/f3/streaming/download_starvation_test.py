@@ -65,15 +65,15 @@ _stop_delay = threading.Event()
 class ChunkedDownloadable(Downloadable):
     def __init__(self, data: bytes, chunk_size: int):
         super().__init__(data)
-        self.data = data
         self.chunk_size = chunk_size
 
     def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
+        data = self.base_obj
         offset = state.get("offset", 0) if state else 0
-        if offset >= len(self.data):
+        if offset >= len(data):
             return ProduceRC.EOF, None, {}
-        end = min(offset + self.chunk_size, len(self.data))
-        return ProduceRC.OK, self.data[offset:end], {"offset": end}
+        end = min(offset + self.chunk_size, len(data))
+        return ProduceRC.OK, data[offset:end], {"offset": end}
 
 
 class ChunkedConsumer(Consumer):
@@ -124,7 +124,7 @@ def _run_parallel_downloads(
                 consumer=consumer,
                 max_retries=max_retries,
             ),
-            daemon=True,
+            daemon=True,  # prevent download threads from blocking test teardown
         )
         threads.append(t)
 
@@ -175,9 +175,6 @@ def _pre_fix_handle_blob_cb(self, future, stream, resume, *args, **kwargs):
     _read_stream tasks can't run -> deadlock.
     """
     import nvflare.fuel.f3.streaming.blob_streamer as blob_mod
-
-    if resume:
-        pass
 
     blob_task = BlobTask(future, stream)
 
