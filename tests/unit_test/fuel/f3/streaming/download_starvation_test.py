@@ -55,6 +55,7 @@ TOTAL_SIZE = 50 * 1024  # 50 KB -> ~200 chunks per download
 NUM_PARALLEL = 8
 PER_REQ_TIMEOUT = 5.0
 TX_TIMEOUT = 120.0
+CELL_CONNECT_TIMEOUT = 2.0  # seconds to wait for TCP cell connection
 
 # Event used to cancel the slow _read_stream delay during teardown,
 # so deadlocked workers unblock and the process exits cleanly.
@@ -202,7 +203,7 @@ class TestDownloadWithFix:
         server.core_cell.start()
         client = Cell(CLIENT_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
         client.core_cell.start()
-        time.sleep(1.0)
+        time.sleep(CELL_CONNECT_TIMEOUT)
         try:
             yield server, client
         finally:
@@ -266,7 +267,7 @@ class TestDownloadPreFixStarvation:
         server.core_cell.start()
         client = Cell(CLIENT2_CELL, f"tcp://localhost:{port}", secure=False, credentials={})
         client.core_cell.start()
-        time.sleep(1.0)
+        time.sleep(CELL_CONNECT_TIMEOUT)
 
         try:
             yield server, client
@@ -286,11 +287,15 @@ class TestDownloadPreFixStarvation:
 
             # Remove the tiny pool's deadlocked threads from Python's internal
             # atexit tracking so they don't block process exit.
-            from concurrent.futures import thread as _thread_mod
+            # _threads_queues is a CPython implementation detail; guard for portability.
+            try:
+                from concurrent.futures import thread as _thread_mod
 
-            for t in list(_thread_mod._threads_queues):
-                if getattr(t, "name", "").startswith("tiny_shared"):
-                    _thread_mod._threads_queues.pop(t, None)
+                for t in list(_thread_mod._threads_queues):
+                    if getattr(t, "name", "").startswith("tiny_shared"):
+                        _thread_mod._threads_queues.pop(t, None)
+            except (ImportError, AttributeError):
+                pass  # non-CPython or future Python version without this internal
 
             client.core_cell.stop()
             server.core_cell.stop()
