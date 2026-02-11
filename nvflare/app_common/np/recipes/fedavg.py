@@ -33,7 +33,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     memory-efficient InTime aggregation, specifically designed for NumPy-based models.
 
     The recipe configures:
-    - A federated job with initial model (optional)
+    - A federated job with initial model (required for cross-site eval; otherwise client may see KeyError: 'numpy_key')
     - FedAvg controller with InTime aggregation for memory efficiency
     - Optional early stopping and model selection
     - Script runners for client-side training execution
@@ -41,8 +41,10 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
         model: Initial model (as list or numpy array) to start federated training with.
-            Lists are preferred for JSON serialization compatibility. If None,
-            clients will start with their own local models.
+            Lists are preferred for JSON serialization compatibility. Required unless
+            initial_ckpt is provided: the base FedAvgRecipe raises ValueError if model,
+            initial_ckpt, and model_persistor are all None.
+        initial_model: Deprecated alias for ``model``. Use ``model``. If both are set, ``model`` wins.
         initial_ckpt: Absolute path to a pre-trained checkpoint file (.npy, .npz).
             The file may not exist locally as it could be on the server.
             Used to load initial model parameters.
@@ -104,6 +106,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         *,
         name: str = "fedavg",
         model: Union[Any, Dict[str, Any], None] = None,
+        initial_model: Union[Any, Dict[str, Any], None] = None,  # backward compat (2.7 / old job.py)
         initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -126,14 +129,14 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
     ):
-        # Store model and initial_ckpt for NumPy-specific setup
-        self._np_model = model
+        # Store model and initial_ckpt for NumPy-specific setup (model wins over initial_model for 2.7 compat)
+        self._np_model = model if model is not None else initial_model
         self._np_initial_ckpt = initial_ckpt
 
         # Call the unified FedAvgRecipe with NumPy-specific settings
         super().__init__(
             name=name,
-            model=model,
+            model=self._np_model,
             initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
@@ -164,7 +167,12 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         self.framework = FrameworkType.RAW
 
     def _setup_model_and_persistor(self, job) -> str:
-        """Override to handle NumPy-specific model setup."""
+        """Override to handle NumPy-specific model setup.
+
+        Returns a non-empty string component id when a persistor is configured, and \"\" otherwise.
+        Normalizes job.to_server() return (e.g. None or non-string) so the parent's
+        has_persistor = persistor_id != \"\" and model_params assignment remain correct.
+        """
         if self._np_model is not None or self._np_initial_ckpt is not None:
             from nvflare.recipe.utils import prepare_initial_ckpt
 
@@ -184,7 +192,11 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
                 model=model_list,
                 source_ckpt_file_full_name=ckpt_path,
             )
-            return job.to_server(persistor, id="persistor")
+            raw_id = job.to_server(persistor, id="persistor")
+            persistor_id = raw_id if isinstance(raw_id, str) and (raw_id or "").strip() else ""
+            if persistor_id and hasattr(job, "comp_ids"):
+                job.comp_ids["persistor_id"] = persistor_id
+            return persistor_id
         return ""
 
     def add_cse_validator_if_needed(self):
