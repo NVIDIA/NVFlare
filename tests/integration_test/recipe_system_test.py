@@ -69,16 +69,18 @@ class TestRecipeSystemIntegration:
         run.get_result()
         assert run.get_status() == "FINISHED:COMPLETED"
 
-    def test_hello_numpy_cross_val_training_and_cse(self):
+    def test_hello_numpy_cross_val_training_and_cse(self, tmp_path):
         """End-to-end: training + CSE with hello-numpy-cross-val client (model required; fail-fast on missing params).
 
+        Uses tmp_path for workspace so it works on Windows, sandboxed CI, and custom temp dirs.
         Requires simulator to bind ports (run with permissions that allow network/socket bind).
         """
         examples_dir = os.path.join(
             os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-numpy-cross-val"
         )
         client_script = os.path.abspath(os.path.join(examples_dir, "client.py"))
-        env = SimEnv(num_clients=2, workspace_root="/tmp/test_hello_numpy_cse")
+        workspace_root = str(tmp_path / "hello_numpy_cse")
+        env = SimEnv(num_clients=2, workspace_root=workspace_root)
         recipe = NumpyFedAvgRecipe(
             name="hello-numpy-train-cse",
             min_clients=2,
@@ -91,7 +93,8 @@ class TestRecipeSystemIntegration:
         run = recipe.execute(env)
         assert run.get_job_id() == "hello-numpy-train-cse"
         result_path = run.get_result()
-        assert result_path == "/tmp/test_hello_numpy_cse/hello-numpy-train-cse"
+        expected_result = os.path.join(env.workspace_root, run.get_job_id())
+        assert result_path == expected_result
         assert os.path.isdir(result_path)
 
     def test_dict_model_config_simulation(self):

@@ -167,7 +167,12 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         self.framework = FrameworkType.RAW
 
     def _setup_model_and_persistor(self, job) -> str:
-        """Override to handle NumPy-specific model setup."""
+        """Override to handle NumPy-specific model setup.
+
+        Returns a non-empty string component id when a persistor is configured, and \"\" otherwise.
+        Normalizes job.to_server() return (e.g. None or non-string) so the parent's
+        has_persistor = persistor_id != \"\" and model_params assignment remain correct.
+        """
         if self._np_model is not None or self._np_initial_ckpt is not None:
             from nvflare.recipe.utils import prepare_initial_ckpt
 
@@ -187,8 +192,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
                 model=model_list,
                 source_ckpt_file_full_name=ckpt_path,
             )
-            persistor_id = job.to_server(persistor, id="persistor")
-            if hasattr(job, "comp_ids"):
+            raw_id = job.to_server(persistor, id="persistor")
+            persistor_id = raw_id if isinstance(raw_id, str) and (raw_id or "").strip() else ""
+            if persistor_id and hasattr(job, "comp_ids"):
                 job.comp_ids["persistor_id"] = persistor_id
             return persistor_id
         return ""

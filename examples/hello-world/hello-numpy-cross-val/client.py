@@ -116,7 +116,8 @@ def main():
             )
 
         else:
-            # Unknown task; send empty metrics so the protocol is satisfied.
+            # Task is not train, evaluate, or submit_model (e.g. future task type or different job config).
+            # Send empty metrics so we always reply and the protocol does not hang.
             flare.send(flare.FLModel(metrics={}))
 
 
