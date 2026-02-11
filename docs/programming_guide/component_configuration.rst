@@ -21,7 +21,7 @@ the configuration file (fed_server_config.json or fed_client_config.json) and ex
 Once the component is loaded, you can find it by ``component_id``, which is specified by you in the configuration file. 
 
 Component configuration and lookup
-==================================
+----------------------------------
 To understand component configuration, we can look at the job configuration and see how the components are defined and
 used. Below is the server side configuration for :ref:`hello_pt_job_api`.
 
@@ -90,7 +90,7 @@ used. Below is the server side configuration for :ref:`hello_pt_job_api`.
 Note the two sections for components and workflows.
 
 Component Configuration
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 A FLARE job configuration defines a list of components. Here, we skip many other components so we can focus on just one component:
 
 .. code-block:: json
@@ -184,7 +184,7 @@ argument, not as two arguments to the constructor, we specify:
 By default ``config_type`` is "Component" if not specified.
 
 Name and Path
--------------
+~~~~~~~~~~~~~
 The class path can be quite long, so NVFLARE allows users to only specify the class name, and NVFLARE will search the specified Python path
 to find the corresponding class path. In the configuration, you can use "name" to do this.
 
@@ -220,7 +220,7 @@ When such a case happens, although the failure is class instantiation, FLARE may
 failure originated from configuration parsing. You will need to look at the traceback and find the root cause of the failure.
 
 Workflow Configuration
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 The second part of the Job configuration is the workflow configuration with the key ``workflows``.
 
 Workflows define a list of workflows. In the example above, three workflows are defined:
@@ -242,7 +242,7 @@ Filters Configuration
 There are additional optional filters such as ``task_data_filters`` or ``task_result_filters``. These correspond to the :ref:`filters` mechanism.
 
 Component events
-================
+----------------
 After understanding that components are instantiated dynamically based on the component configuration, another important aspect of
 components is event handling.
 
@@ -306,7 +306,7 @@ Each FLComponent will receive certain system events and application events, depe
 Server or Client component. The FLComponent class can decide to handle or ignore the events.
 
 Component configuration and event handling
-==========================================
+------------------------------------------
 The second approach in component configuration: register components to handle events. 
 
 Unlike the previous approach of component configuration, where we define a component in the job configuration,

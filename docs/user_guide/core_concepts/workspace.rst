@@ -128,6 +128,6 @@ From the Workspace, you can access each folder location accordingly
     workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
 
 
-.. literalinclude:: ../../nvflare/apis/workspace.py
+.. literalinclude:: ../../../nvflare/apis/workspace.py
     :language: python
     :lines: 36-

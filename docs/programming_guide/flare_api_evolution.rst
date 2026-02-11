@@ -4,6 +4,38 @@
 Evolution of FLARE APIs
 ########################
 
+Which APIs Should I Use?
+========================
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 25 25 20
+
+   * - Role
+     - Client-side
+     - Server-side
+     - Job Wiring
+   * - **Data Scientists** — applying FL to ML workflows
+     - Client API
+     - Built-in algorithms (FedAvg, FedProx, etc.)
+     - Job Recipe
+   * - **FL Researchers** — developing new FL algorithms
+     - Collab API, Client API
+     - Collab API
+     - Job Recipe
+   * - **System Integrators** — building platforms or custom integrations
+     - Collab API, Executor API
+     - Collab API, Controller API
+     - Job Recipe
+
+.. tip::
+
+   The newer APIs — **Client API**, **Job Recipe API**, and **Collab API** — are designed for simplicity and cover most use cases.
+   The lower-level Controller/Executor APIs are for advanced customization and system integration.
+
+   Deprecated APIs to avoid in new projects: LearnerExecutor/Learner (use Client API), ModelController (use Collab API), Job Template CLI (use Job Recipe).
+
+For details on each API layer, see the evolution history below.
 
 Evolution of FLARE Server Side API
 ==================================

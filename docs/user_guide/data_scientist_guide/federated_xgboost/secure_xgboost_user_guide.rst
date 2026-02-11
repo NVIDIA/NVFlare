@@ -67,7 +67,7 @@ NVFlare supports federated training in the following 4 modes:
 4. **Vertical with HE** - Histogram-based (gradients secured against passive parties)
 
 Security Risks and Mitigations
-=======================
+==============================
 
 Risks
 --------------
@@ -85,28 +85,48 @@ Attack Surface
 
 The attack surface varies by collaboration mode and party role:
 
-**Server**: Depending on the collaboration mode, the server may have access to 
+**Server**: Depending on the collaboration mode, the server may have access to
+
 1. The local model:
+
    - Horizontal tree-based:
+
       - **Model Statistics Leakage** over each client's data distribution
+
 2. Local histograms:
+
    - Horizontal histogram-based / vertical histogram-based:
+
       - **Histogram Leakage** over each client / passive party's data distribution
+
 3. Sample-wise gradients:
+
    - Vertical histogram-based:
+
       - **Gradient Leakage** over active party's label information
 
 **Clients**: Depending on the collaboration mode, the clients may have access to
+
 1. The aggregated global model:
+
    - Horizontal tree-based:
-      - **Model Statistics Leakage** over global data distribution 
+
+      - **Model Statistics Leakage** over global data distribution
+
 2. Global histograms:
+
    - Horizontal histogram-based:
-      - **Histogram Leakage** over global data distribution 
+
+      - **Histogram Leakage** over global data distribution
+
 3. Local histograms:
-   - Vertical histogram-based: 
+
+   - Vertical histogram-based:
+
       - **Histogram Leakage** over each passive party's data distribution on active party
-3. Sample-wise gradients:
+
+4. Sample-wise gradients:
+
    - **Gradient Leakage** over active party's label information on passive parties
 
 Mitigations
@@ -145,8 +165,8 @@ The following table summarizes the available mitigations for different collabora
 
 **Notes:**
 
-- **Vertical histogram-based**: 
-  
+- **Vertical histogram-based**:
+
   - **Primary goal**: Protect sample gradients from passive parties (critical)
   - **Secondary goal**: Hide split values from non-feature owners (desirable but lower risk)
 

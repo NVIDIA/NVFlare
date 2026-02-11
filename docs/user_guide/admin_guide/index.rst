@@ -1,3 +1,4 @@
+:orphan:
 
 .. _admin_guide:
 
@@ -11,7 +12,6 @@ Guide for project Admin and Org Admin
    :maxdepth: 2
 
    deployment/index
-   nvflare_security
    configurations/configurations.rst
    monitoring
    diagnostic_commands
