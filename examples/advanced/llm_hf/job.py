@@ -105,12 +105,12 @@ def main():
     # to instantiate the model on the server.
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
-        model = {"path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
+        model = {"class_path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
         model = {
-            "path": "hf_peft_model.CausalLMPEFTModel",
+            "class_path": "hf_peft_model.CausalLMPEFTModel",
             "args": {"model_name_or_path": args.model_name_or_path},
         }
         job_name = "llm_hf_peft"
