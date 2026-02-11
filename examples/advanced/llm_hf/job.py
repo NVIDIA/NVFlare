@@ -105,12 +105,12 @@ def main():
     # to instantiate the model on the server.
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
-        initial_model = {"path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
+        model = {"class_path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
-        initial_model = {
-            "path": "hf_peft_model.CausalLMPEFTModel",
+        model = {
+            "class_path": "hf_peft_model.CausalLMPEFTModel",
             "args": {"model_name_or_path": args.model_name_or_path},
         }
         job_name = "llm_hf_peft"
@@ -170,7 +170,7 @@ def main():
     # Create FedAvgRecipe
     recipe = FedAvgRecipe(
         name=job_name,
-        initial_model=initial_model,
+        model=model,
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",

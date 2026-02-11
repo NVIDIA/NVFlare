@@ -51,7 +51,9 @@ def main():
         name="hello-numpy",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        # Model can be array or None (if using initial_ckpt):
+        model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        # For pre-trained weights: initial_ckpt="/server/path/to/model.npy",
         train_script="client.py",
         train_args=train_args,
         launch_external_process=launch_process,

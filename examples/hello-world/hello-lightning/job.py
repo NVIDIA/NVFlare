@@ -47,7 +47,10 @@ def main():
     recipe = FedAvgRecipe(
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=LitNet(),
+        # Model can be specified as class instance or dict config:
+        model=LitNet(),
+        # Alternative: model={"path": "model.LitNet", "args": {}},
+        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script="client.py",
         train_args=f"--batch_size {batch_size}",
     )

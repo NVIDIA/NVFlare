@@ -45,11 +45,15 @@ def main():
     checkpoint = args.checkpoint
 
     # Create recipe with checkpoint
-    print(f"Using pre-trained checkpoint: {checkpoint}")
+    print(f"Running evaluation with pre-trained checkpoint: {checkpoint}")
 
     recipe = FedEvalRecipe(
         min_clients=n_clients,
-        initial_model=LitNet(checkpoint=os.path.abspath(checkpoint)),
+        # Model can be specified as class instance or dict config:
+        model=LitNet(),
+        # Alternative: model={"class_path": "model.LitNet", "args": {}},
+        # For separate checkpoint: eval_ckpt="/server/path/to/pretrained.pt",
+        eval_ckpt=os.path.abspath(checkpoint),
         eval_script="client.py",
         eval_args=f"--batch_size {batch_size}",
     )

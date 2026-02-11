@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
 
@@ -21,8 +21,9 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.base_fed_job import BaseFedJob
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -31,7 +32,8 @@ class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -46,7 +48,7 @@ class _FedAvgValidator(BaseModel):
     server_expected_format: ExchangeFormat
     params_transfer_type: TransferType
     model_persistor: Optional[ModelPersistor] = None
-    per_site_config: Optional[dict[str, dict]] = None
+    per_site_config: Optional[Dict[str, Dict]] = None
     launch_once: bool = True
     shutdown_timeout: float = 0.0
     key_metric: str = "accuracy"
@@ -76,11 +78,14 @@ class FedAvgRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. Can be:
-            - nn.Module for PyTorch (will call .state_dict())
-            - tf.keras.Model for TensorFlow
-            - dict for sklearn/RAW frameworks (model parameters)
-            - None (no initial model)
+        model: Initial model to start federated training with. Can be:
+            - Model instance (nn.Module, tf.keras.Model, etc.)
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+            For framework-specific types (nn.Module, tf.keras.Model), use the
+            corresponding framework recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe).
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -115,14 +120,13 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
-        launch_once: Controls the lifecycle of the external process. If True (default), the process
-            is launched once at startup and persists throughout all rounds, handling multiple training
-            requests. If False, a new process is launched and torn down for each individual request
-            from the server (e.g., each train or validate request). Only used if `launch_external_process`
-            is True. Defaults to True.
+        launch_once: Whether the external process will be launched only once at the beginning
+            or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
             Only used if `launch_external_process` is True. Defaults to 0.0.
-        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
+        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
+            key_metric selects the metric used for global model selection by the IntimeModelSelector.
+            Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
@@ -137,13 +141,17 @@ class FedAvgRecipe(Recipe):
         This recipe uses InTime (streaming) aggregation for memory efficiency - each client
         result is aggregated immediately upon receipt rather than collecting all results first.
         Memory usage is constant regardless of the number of clients.
+
+        If you want to use a custom aggregator, you can pass it in the aggregator parameter.
+        The custom aggregator must be a subclass of the Aggregator class.
     """
 
     def __init__(
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        model: Union[Any, Dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -158,7 +166,7 @@ class FedAvgRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
-        per_site_config: Optional[dict[str, dict]] = None,
+        per_site_config: Optional[Dict[str, Dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -173,7 +181,8 @@ class FedAvgRecipe(Recipe):
         # Validate inputs internally
         v = _FedAvgValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -199,7 +208,16 @@ class FedAvgRecipe(Recipe):
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
+
+        validate_ckpt(self.initial_ckpt)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -223,13 +241,14 @@ class FedAvgRecipe(Recipe):
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
-        # Validate RAW framework requirements
-        if self.framework == FrameworkType.RAW:
-            if self.initial_model is None and self.model_persistor is None:
-                raise ValueError(
-                    "RAW framework requires either initial_model (dict or ModelPersistor) or model_persistor. "
-                    "Consider using framework-specific wrappers (e.g., SklearnFedAvgRecipe) for convenience."
-                )
+        # Validate that we have at least one model source
+        # Note: Subclasses (e.g., sklearn) that manage models differently should pass
+        # a model or model_persistor to satisfy this check.
+        if self.model is None and self.model_persistor is None and self.initial_ckpt is None:
+            raise ValueError(
+                "Must provide either model, initial_ckpt, or model_persistor. "
+                "Cannot create a job without a model source."
+            )
 
         # Create BaseFedJob - all frameworks use it for consistency
         job = BaseFedJob(
@@ -242,12 +261,12 @@ class FedAvgRecipe(Recipe):
         # Child classes (PT/TF wrappers) override this method for framework-specific logic
         persistor_id = self._setup_model_and_persistor(job)
 
-        # Convert initial_model to dict if needed (e.g., PyTorch nn.Module)
+        # Convert model to dict if needed (e.g., PyTorch nn.Module)
         # Only pass to controller if no persistor is handling the model
         # (persistor already handles initial model via PTModel/TFModel)
-        # Note: empty string "" means no persistor, so we need initial_model_params
+        # Note: empty string "" means no persistor, so we need model_params
         has_persistor = persistor_id != ""
-        initial_model_params = None if has_persistor else self._get_initial_model_params()
+        model_params = None if has_persistor else self._get_model_params()
 
         # Prepare aggregator for controller - must be ModelAggregator for FLModel-based aggregation
         model_aggregator = self._get_model_aggregator()
@@ -257,7 +276,7 @@ class FedAvgRecipe(Recipe):
             num_clients=self.min_clients,
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
-            initial_model=initial_model_params,
+            model=model_params,
             save_filename=self.save_filename,
             aggregator=model_aggregator,
             stop_cond=self.stop_cond,
@@ -326,8 +345,8 @@ class FedAvgRecipe(Recipe):
 
         Recipe.__init__(self, job)
 
-    def _get_initial_model_params(self) -> Optional[Dict]:
-        """Convert initial_model to dict of params.
+    def _get_model_params(self) -> Optional[Dict]:
+        """Convert model to dict of params.
 
         Base implementation handles dict and None. Framework-specific subclasses
         should override this to handle their model types (e.g., nn.Module, tf.keras.Model).
@@ -335,16 +354,16 @@ class FedAvgRecipe(Recipe):
         Returns:
             Optional[Dict]: model parameters as dict, or None
         """
-        if self.initial_model is None:
+        if self.model is None:
             return None
 
-        if isinstance(self.initial_model, dict):
-            return self.initial_model
+        if isinstance(self.model, dict):
+            return self.model
 
         # Unknown type - subclasses should override for framework-specific handling
         raise TypeError(
-            f"initial_model must be a dict or None for the base recipe. "
-            f"Got {type(self.initial_model).__name__}. "
+            f"model must be a dict or None for the base recipe. "
+            f"Got {type(self.model).__name__}. "
             f"Use a framework-specific recipe (e.g., nvflare.app_opt.pt.recipes.FedAvgRecipe) "
             f"for nn.Module or other model types."
         )
@@ -381,6 +400,9 @@ class FedAvgRecipe(Recipe):
 
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
         """Setup framework-specific model components and persistor.
+
+        Base implementation handles custom persistor. Framework-specific subclasses
+        should override this to use PTModel/TFModel for their model types.
 
         Returns:
             str: The persistor_id to be used by the controller.

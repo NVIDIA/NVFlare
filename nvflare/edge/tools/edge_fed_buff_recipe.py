@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-import torch.nn as nn
+from pydantic import BaseModel, field_validator
 
-from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggrFactory
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
 from nvflare.edge.assessors.buff_model_manager import BuffModelManager
@@ -25,8 +24,24 @@ from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 from nvflare.recipe.spec import ExecEnv, Recipe
+from nvflare.recipe.utils import validate_ckpt
 
 DEVICE_SIMULATION_ENV_KEY = "device_simulation"
+
+
+class _EdgeFedBuffValidator(BaseModel):
+    """Internal validator for EdgeFedBuffRecipe parameters."""
+
+    initial_ckpt: Optional[str] = None
+
+    @field_validator("initial_ckpt")
+    @classmethod
+    def validate_initial_ckpt(cls, v):
+        if v is not None:
+            validate_ckpt(v)
+        return v
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class ModelManagerConfig:
@@ -84,9 +99,6 @@ class DeviceManagerConfig:
     Attributes:
         device_selection_size: Number of devices to select for each training round.
             Default: 100
-        initial_min_client_num: Minimum number of clients to have at the beginning.
-            This can be useful for initial model dispatch.
-            Default: 1
         min_hole_to_fill: Minimum number of model updates to wait for before
             sampling the next batch of devices and dispatching the current global model.
             - If set to 1, the server immediately dispatch the current global model to a sampled device.
@@ -98,32 +110,20 @@ class DeviceManagerConfig:
             if False, devices will be selected only once, which could be realistic for real-world scenarios where the
             device pool is huge while participation is random.
             Default: True (always reuse / include the existing devices for further learning)
-        device_sampling_strategy: Strategy for sampling devices when filling selection.
-            - "balanced": try to balance the usage of devices across clients.
-            - "random": randomly select devices from the available pool.
-            Default: "balanced"
     """
 
     def __init__(
         self,
         device_selection_size: int = 100,
-        initial_min_client_num: int = 1,
         min_hole_to_fill: int = 1,
         device_reuse: bool = True,
-        device_sampling_strategy: str = "balanced",
     ):
         self.device_selection_size = device_selection_size
-        self.initial_min_client_num = initial_min_client_num
         self.min_hole_to_fill = min_hole_to_fill
         # check if min_hole_to_fill is smaller than device_selection_size
         if min_hole_to_fill > device_selection_size:
             raise ValueError("min_hole_to_fill needs to be smaller than or equal to device_selection_size")
         self.device_reuse = device_reuse
-        if device_sampling_strategy not in ("balanced", "random"):
-            raise ValueError(
-                f"device_sampling_strategy must be 'balanced' or 'random', got '{device_sampling_strategy}'"
-            )
-        self.device_sampling_strategy = device_sampling_strategy
 
 
 class SimulationConfig:
@@ -190,62 +190,77 @@ class EdgeFedBuffRecipe(Recipe):
 
     Example usage:
         ```python
-        # Basic configuration
-        model_manager_config = ModelManagerConfig(
-            global_lr=0.1,
-            num_updates_for_model=20,
-            max_model_version=300,
-            max_model_history=100
-        )
-
-        device_manager_config = DeviceManagerConfig(
-            device_selection_size=200,
-            min_hole_to_fill=10,
-            device_reuse=False
-        )
-
+        # Basic configuration with model instance
         recipe = EdgeFedBuffRecipe(
             job_name="my_edge_job",
             model=MyModel(),
-            model_manager_config=model_manager_config,
-            device_manager_config=device_manager_config
+            model_manager_config=ModelManagerConfig(...),
+            device_manager_config=DeviceManagerConfig(...)
+        )
+
+        # With dict config and pre-trained checkpoint
+        recipe = EdgeFedBuffRecipe(
+            job_name="my_edge_job",
+            model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
+            initial_ckpt="/path/to/pretrained.pt",
+            model_manager_config=ModelManagerConfig(...),
+            device_manager_config=DeviceManagerConfig(...)
         )
         ```
 
-    Attributes:
-        job_name: Name of the federated learning job
-        model: PyTorch neural network model to be trained
-        model_manager_config: Configuration for the model manager
-        device_manager_config: Configuration for the device manager
-        evaluator_config: Configuration for the global evaluator (optional)
-        simulation_config: Configuration for simulated devices settings (optional)
-        custom_source_root: Path to custom source code (optional)
+    Args:
+        job_name: Name of the federated learning job.
+        model: PyTorch model to be trained. Can be:
+            - nn.Module instance: e.g., MyModel()
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
+            The file may not exist locally (server-side path).
+            Used to resume training from pre-trained weights.
+        model_manager_config: Configuration for the model manager.
+        device_manager_config: Configuration for the device manager.
+        evaluator_config: Configuration for the global evaluator (optional).
+        simulation_config: Configuration for simulated devices settings (optional).
+        custom_source_root: Path to custom source code (optional).
     """
 
     def __init__(
         self,
         job_name: str,
-        model: nn.Module,
+        model: Union[Any, Dict],
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
+        initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         custom_source_root: str = None,
     ):
-        if not isinstance(model, nn.Module):
-            raise ValueError(f"model must be a nn.Module but got {type(model)}")
+        # Validate initial_ckpt
+        _EdgeFedBuffValidator(initial_ckpt=initial_ckpt)
 
         if custom_source_root and not os.path.isdir(custom_source_root):
             raise ValueError(f"{custom_source_root} is not a valid directory")
 
         self.job_name = job_name
         self.method_name = "edge"
+        # Normalize dict model (recipe accepts class_path; job API uses path)
+        if isinstance(model, dict):
+            from nvflare.recipe.utils import recipe_model_to_job_model
+
+            model = recipe_model_to_job_model(model)
         self.model = model
+        self.initial_ckpt = initial_ckpt
         self.model_manager_config = model_manager_config
         self.device_manager_config = device_manager_config
         self.evaluator_config = evaluator_config
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
+
+        # Determine model instance for evaluation (handle dict config vs model instance)
+        if isinstance(model, dict):
+            self._model_instance = None  # Will be created at runtime from dict config
+        else:
+            self._model_instance = model
+
         # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
         if model_manager_config.num_updates_for_model > device_manager_config.device_selection_size:
             raise ValueError(
@@ -294,8 +309,10 @@ class EdgeFedBuffRecipe(Recipe):
             job: The EdgeJob instance to configure
         """
         if self.evaluator_config:
+            # Use model instance for evaluator (dict config or model instance)
+            model_for_eval = self._model_instance if self._model_instance else self.model
             evaluator = GlobalEvaluator(
-                model_path=self.model,
+                model_path=model_for_eval,
                 torchvision_dataset=self.evaluator_config.torchvision_dataset,
                 eval_frequency=self.evaluator_config.eval_frequency,
                 custom_dataset=self.evaluator_config.custom_dataset,
@@ -312,8 +329,14 @@ class EdgeFedBuffRecipe(Recipe):
             update_timeout=self.model_manager_config.update_timeout,
         )
 
-        # add persistor, model_manager, and device_manager
-        persistor_id = job.to_server(PTFileModelPersistor(model=self.model), id="persistor")
+        # add persistor using PTModel (supports dict config and initial_ckpt)
+        from nvflare.app_opt.pt.job_config.model import PTModel
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
+        result = job.to_server(pt_model, id="persistor")
+        persistor_id = result["persistor_id"]
 
         model_manager = BuffModelManager(
             num_updates_for_model=self.model_manager_config.num_updates_for_model,
@@ -325,10 +348,8 @@ class EdgeFedBuffRecipe(Recipe):
 
         device_manager = BuffDeviceManager(
             device_selection_size=self.device_manager_config.device_selection_size,
-            initial_min_client_num=self.device_manager_config.initial_min_client_num,
             min_hole_to_fill=self.device_manager_config.min_hole_to_fill,
             device_reuse=self.device_manager_config.device_reuse,
-            device_sampling_strategy=self.device_manager_config.device_sampling_strategy,
         )
         device_manager_id = job.to_server(device_manager, id="device_manager")
 
