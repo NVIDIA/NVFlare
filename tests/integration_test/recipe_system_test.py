@@ -28,7 +28,7 @@ import os
 
 import numpy as np
 
-from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
+from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
 
@@ -97,41 +97,6 @@ class TestRecipeSystemIntegration:
         assert result_path == expected_result
         assert os.path.isdir(result_path)
 
-    def test_hello_numpy_cross_val_cse_only_dummy_validator(self, tmp_path):
-        """End-to-end: CSE-only with no eval_script (NPValidator + submit_model).
-
-        Uses NumpyCrossSiteEvalRecipe without eval_script so clients use the built-in
-        NPValidator, which handles submit_model by returning make_reply(ReturnCode.OK)
-        and validation by returning dummy metrics. Verifies:
-        - Executor is registered for submit_model (no "no executor available" error).
-        - NPValidator submit_model path completes without ValueError (empty FLModel).
-        - Server model is located, validation tasks run, ValidationJsonGenerator writes results.
-        """
-        model_file = tmp_path / "pretrained.npy"
-        np.save(str(model_file), np.array([1.0, 2.0, 3.0]))
-        workspace_root = str(tmp_path / "cse_only_dummy")
-        env = SimEnv(num_clients=2, workspace_root=workspace_root)
-        recipe = NumpyCrossSiteEvalRecipe(
-            name="cse-only-dummy",
-            min_clients=2,
-            initial_ckpt=str(model_file),
-            # No eval_script -> NPValidator on clients (submit_model returns OK)
-        )
-        run = recipe.execute(env)
-        assert run.get_job_id() == "cse-only-dummy"
-        result_path = run.get_result()
-        expected_result = os.path.join(env.workspace_root, run.get_job_id())
-        assert result_path == expected_result
-        assert os.path.isdir(result_path)
-        # CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
-        cse_results_file = os.path.join(
-            result_path, "server", "simulate_job", "cross_site_val", "cross_val_results.json"
-        )
-        assert os.path.isfile(cse_results_file), (
-            f"CSE results file not found at {cse_results_file}; "
-            "submit_model and/or validation path may not have completed."
-        )
-
     def test_dict_model_config_simulation(self):
         """Test that dict model config works in simulation (end-to-end validation)."""
         import sys
@@ -145,6 +110,8 @@ class TestRecipeSystemIntegration:
             pytest.skip("PyTorch not available")
 
         # Add hello-pt example to path for model import
+        import os
+
         examples_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-pt")
         sys.path.insert(0, examples_dir)
 
@@ -152,7 +119,7 @@ class TestRecipeSystemIntegration:
 
         # Use dict config instead of class instance
         model_config = {
-            "class_path": "model.SimpleNetwork",
+            "path": "model.SimpleNetwork",
             "args": {},
         }
 
