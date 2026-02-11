@@ -23,12 +23,17 @@ This example demonstrates two modes:
 """
 
 import argparse
+import os
 
 from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
+
+# SimEnv layout: server run dir is result_root/server/simulate_job; CSE writes under cross_site_val/
+SERVER_RUN_DIR = ("server", "simulate_job")
+CSE_RESULTS_REL_PARTS = (*SERVER_RUN_DIR, "cross_site_val", "cross_val_results.json")
 
 
 def define_parser():
@@ -67,14 +72,16 @@ def run_cse_only(n_clients: int):
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
 
+    result_root = run.get_result()
+    cse_results_path = os.path.join(result_root, *CSE_RESULTS_REL_PARTS)
     print("\n" + "=" * 60)
     print("Cross-site evaluation complete!")
     print("=" * 60)
-    print(f"Result location: {run.get_result()}")
+    print(f"Result location: {result_root}")
     print(f"Job status: {run.get_status()}")
     print()
     print("To view results:")
-    print(f"  cat {run.get_result()}/cross_site_val/cross_val_results.json")
+    print(f"  cat {cse_results_path}")
     print()
 
 
@@ -109,8 +116,7 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
     run = recipe.execute(env)
 
     result_root = run.get_result()
-    # In SimEnv, CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
-    cse_results_path = f"{result_root}/server/simulate_job/cross_site_val/cross_val_results.json"
+    cse_results_path = os.path.join(result_root, *CSE_RESULTS_REL_PARTS)
     print("\n" + "=" * 60)
     print("Training and cross-site evaluation complete!")
     print("=" * 60)
