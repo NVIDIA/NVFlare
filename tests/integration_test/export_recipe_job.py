@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import os
 import shlex
 import shutil
 import sys
+from typing import Optional
 from unittest.mock import patch
 
 
@@ -47,36 +48,46 @@ def ensure_nvflare_on_path():
         sys.path.insert(0, repo_root)
 
 
+def find_src_parent(start_path: str, max_levels: int = 5) -> Optional[str]:
+    """Find nearest ancestor that contains a src/ directory.
+
+    Returns the parent directory that owns ``src/``; returns None if not found.
+    """
+    parent = os.path.dirname(start_path)
+    for _ in range(max_levels):
+        if not parent or parent == os.path.dirname(parent):
+            break
+        src_path = os.path.join(parent, "src")
+        if os.path.isdir(src_path):
+            return parent
+        parent = os.path.dirname(parent)
+    return None
+
+
 def add_paths_for_recipe(recipe_dir: str):
-    """Add necessary paths for importing recipe modules."""
+    """Add necessary paths for importing recipe modules.
+
+    Adds the recipe directory itself and, if found, the nearest ancestor ``src/``
+    directory (used by CIFAR-10 examples for ``from data.xxx`` / ``from model`` imports).
+    Only directories that contain a ``src/`` sub-folder are added — intermediate
+    ancestors are *not* added so we don't pollute ``sys.path``.
+    """
     recipe_abs_path = os.path.abspath(recipe_dir)
 
     # Add recipe directory itself
     if recipe_abs_path not in sys.path:
         sys.path.insert(0, recipe_abs_path)
 
-    # Walk up and find src/ directory - add it to path for "from data.xxx" style imports
-    parent = os.path.dirname(recipe_abs_path)
-    while parent and parent != "/":
-        if parent not in sys.path:
-            sys.path.insert(0, parent)
-
-        # Check for src/ directory at this level
-        # This is for CIFAR10 examples where imports are "from data.xxx" and "from model"
-        # and the actual files are in pt/src/data/ and pt/src/model.py
-        src_path = os.path.join(parent, "src")
-        if os.path.exists(src_path) and os.path.isdir(src_path):
-            # Add src/ itself so "from data.xxx" and "from model" work
-            if src_path not in sys.path:
-                sys.path.insert(0, src_path)
-
-        # Check if we've reached the examples root
-        if os.path.basename(parent) in ["examples", "cifar10"]:
-            break
-        parent = os.path.dirname(parent)
+    src_parent = find_src_parent(recipe_abs_path, max_levels=5)
+    if src_parent:
+        src_path = os.path.join(src_parent, "src")
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        if src_parent not in sys.path:
+            sys.path.insert(0, src_parent)
 
 
-def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: list = None):
+def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Optional[list[str]] = None):
     """
     Import and run job.py, but patch recipe.execute() to export instead.
 
@@ -95,6 +106,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
     # Capture state to restore on exit (including on exception)
     original_path = list(sys.path)
     original_cwd = os.getcwd()
+    original_argv = sys.argv
 
     # Ensure nvflare is importable so the patch target can be resolved
     ensure_nvflare_on_path()
@@ -109,61 +121,70 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
     captured_recipe = {"recipe": None}
 
     def patched_execute(self, env, server_exec_params=None, client_exec_params=None):
-        """Capture the recipe instead of executing."""
+        """Capture the recipe instead of executing.
+
+        Applies server/client exec params exactly as the real Recipe.execute does
+        so the exported job matches what a real run would produce.
+        """
+        if server_exec_params:
+            self.job.to_server(server_exec_params)
+        if client_exec_params:
+            self.job.to_clients(client_exec_params)
+        # Match real Recipe.execute behavior so export matches runtime configuration.
+        self.process_env(env)
+
         captured_recipe["recipe"] = self
 
-        # Return a mock Run object
         class MockRun:
+            """Mimics the real Run interface so post-execute code in job.py doesn't break."""
+
+            def __init__(self, job_id):
+                self.job_id = job_id
+
             def get_job_id(self):
                 return self.job_id
 
             def get_status(self):
                 return "EXPORTED"
 
-            def get_result(self):
+            def get_result(self, timeout: float = 0.0):
                 return output_abs_path
 
-            def __init__(self, job_id):
-                self.job_id = job_id
+            def abort(self):
+                pass
 
         return MockRun(self.name if hasattr(self, "name") else "exported_job")
 
     try:
-        # Patch sys.argv to pass recipe_args
-        original_argv = sys.argv
         sys.argv = ["job.py"] + (recipe_args or [])
 
-        # Patch recipe execute method to capture instead of run
         with patch("nvflare.recipe.spec.Recipe.execute", patched_execute):
-            # Load and run the job.py module
             spec = importlib.util.spec_from_file_location("__main__", job_py_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"Unable to load recipe module from: {job_py_path}")
             module = importlib.util.module_from_spec(spec)
-            # Set __name__ to __main__ so the if __name__ == "__main__" block runs
             module.__name__ = "__main__"
-
-            # Execute the module (this runs the main() which creates and "executes" the recipe)
             try:
                 spec.loader.exec_module(module)
-            except SystemExit:
-                pass  # Some scripts call sys.exit()
+            except SystemExit as e:
+                # Keep successful exits quiet but preserve true failures.
+                if e.code not in (None, 0):
+                    raise
 
-        # Get the captured recipe
         recipe = captured_recipe["recipe"]
         if recipe is None:
-            raise RuntimeError("Failed to capture recipe - job.py may not have called recipe.execute()")
+            raise RuntimeError("Failed to capture recipe - job.py did not call recipe.execute()")
 
         # Export the recipe to job folder
         os.makedirs(output_abs_path, exist_ok=True)
         recipe.export(job_dir=output_abs_path)
         print(f"Exported recipe to: {output_abs_path}")
 
-        # Copy the src/ folder if it exists (for model imports)
-        src_dir = os.path.join(os.path.dirname(recipe_abs_path), "src")
-        if not os.path.exists(src_dir):
-            # Try going up one more level
-            src_dir = os.path.join(os.path.dirname(os.path.dirname(recipe_abs_path)), "src")
+        # Copy the src/ folder if it exists (for model imports).
+        src_parent = find_src_parent(recipe_abs_path, max_levels=5)
+        src_dir = os.path.join(src_parent, "src") if src_parent else None
 
-        if os.path.exists(src_dir):
+        if src_dir is not None:
             # Copy CONTENTS of src/ directly into app/custom/ (not as a subdirectory)
             # This way imports like "from data.xxx" work with just /local/custom in PYTHONPATH
             job_name = recipe.job.name
