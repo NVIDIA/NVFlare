@@ -40,12 +40,7 @@ import pytest
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
-from nvflare.fuel.f3.streaming.download_service import (
-    Consumer,
-    Downloadable,
-    ProduceRC,
-    download_object,
-)
+from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, ProduceRC, download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.stream_utils import CheckedExecutor
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -56,7 +51,7 @@ SERVER2_CELL = "server2"
 CLIENT2_CELL = "client2"
 
 CHUNK_SIZE = 256
-TOTAL_SIZE = 50 * 1024    # 50 KB -> ~200 chunks per download
+TOTAL_SIZE = 50 * 1024  # 50 KB -> ~200 chunks per download
 NUM_PARALLEL = 8
 PER_REQ_TIMEOUT = 5.0
 TX_TIMEOUT = 120.0
@@ -104,8 +99,9 @@ def _make_test_data() -> bytes:
     return bytes(range(256)) * (TOTAL_SIZE // 256)
 
 
-def _run_parallel_downloads(server_name, server, client, data, num_parallel,
-                            per_req_timeout, wait_secs=60.0, max_retries=0):
+def _run_parallel_downloads(
+    server_name, server, client, data, num_parallel, per_req_timeout, wait_secs=60.0, max_retries=0
+):
     consumers = []
     threads = []
 
@@ -154,15 +150,18 @@ def _run_parallel_downloads(server_name, server, client, data, num_parallel,
 # Pre-fix BlobHandler.handle_blob_cb reproducer
 # ---------------------------------------------------------------------------
 
+
 def _slow_read_stream(original_read_stream, delay):
     """Wraps _read_stream with a cancellable delay simulating large blob transfer.
 
     Uses _stop_delay event so the delay can be cancelled during teardown,
     allowing deadlocked workers to unblock and the process to exit cleanly.
     """
+
     def wrapper(blob_task):
         _stop_delay.wait(timeout=delay)  # cancellable via _stop_delay.set()
         return original_read_stream(blob_task)
+
     return wrapper
 
 
@@ -221,8 +220,7 @@ class TestDownloadWithFix:
         print(f"\n[WITH FIX] {succeeded} ok, {failed} failed, {timed_out} timed out / {NUM_PARALLEL}")
 
         assert succeeded == NUM_PARALLEL, (
-            f"[WITH FIX] Only {succeeded}/{NUM_PARALLEL} succeeded "
-            f"({failed} failed, {timed_out} timed out)"
+            f"[WITH FIX] Only {succeeded}/{NUM_PARALLEL} succeeded " f"({failed} failed, {timed_out} timed out)"
         )
 
 
@@ -289,8 +287,9 @@ class TestDownloadPreFixStarvation:
             # Remove the tiny pool's deadlocked threads from Python's internal
             # atexit tracking so they don't block process exit.
             from concurrent.futures import thread as _thread_mod
+
             for t in list(_thread_mod._threads_queues):
-                if getattr(t, 'name', '').startswith("tiny_shared"):
+                if getattr(t, "name", "").startswith("tiny_shared"):
                     _thread_mod._threads_queues.pop(t, None)
 
             client.core_cell.stop()
@@ -313,7 +312,11 @@ class TestDownloadPreFixStarvation:
         data = _make_test_data()
 
         succeeded, failed, timed_out = _run_parallel_downloads(
-            SERVER2_CELL, server, client, data, NUM_PARALLEL,
+            SERVER2_CELL,
+            server,
+            client,
+            data,
+            NUM_PARALLEL,
             per_req_timeout=3.0,
             wait_secs=40.0,
             max_retries=0,
