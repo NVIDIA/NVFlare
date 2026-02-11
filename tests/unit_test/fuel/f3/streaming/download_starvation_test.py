@@ -97,7 +97,8 @@ class ChunkedConsumer(Consumer):
 
 
 def _make_test_data() -> bytes:
-    return bytes(range(256)) * (TOTAL_SIZE // 256)
+    pattern = bytes(range(256))
+    return (pattern * (TOTAL_SIZE // len(pattern) + 1))[:TOTAL_SIZE]
 
 
 def _run_parallel_downloads(
@@ -325,8 +326,9 @@ class TestDownloadPreFixStarvation:
         )
         print(f"\n[PRE-FIX SIM] {succeeded} ok, {failed} failed, {timed_out} timed out / {NUM_PARALLEL}")
 
-        assert succeeded < NUM_PARALLEL, (
-            f"[PRE-FIX SIM] Unexpectedly all {succeeded}/{NUM_PARALLEL} succeeded. "
-            f"The synchronous blob_cb + slow _read_stream should cause deadlock."
+        assert succeeded == 0, (
+            f"[PRE-FIX SIM] Expected 0 succeeded but got {succeeded}/{NUM_PARALLEL} "
+            f"({failed} failed, {timed_out} timed out). "
+            f"The synchronous blob_cb + slow _read_stream should cause complete deadlock."
         )
-        print(f"[PRE-FIX SIM] Confirmed starvation: only {succeeded}/{NUM_PARALLEL} succeeded")
+        print(f"[PRE-FIX SIM] Confirmed starvation: 0/{NUM_PARALLEL} succeeded")
