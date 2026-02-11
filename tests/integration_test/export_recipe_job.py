@@ -37,6 +37,16 @@ import sys
 from unittest.mock import patch
 
 
+def ensure_nvflare_on_path():
+    """Ensure the NVFlare package root is on sys.path so the recipe patch target can be imported."""
+    # Infer repo root from this script's location: .../tests/integration_test/export_recipe_job.py
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(script_dir))
+    nvflare_dir = os.path.join(repo_root, "nvflare")
+    if os.path.isdir(nvflare_dir) and repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+
 def add_paths_for_recipe(recipe_dir: str):
     """Add necessary paths for importing recipe modules."""
     recipe_abs_path = os.path.abspath(recipe_dir)
@@ -82,11 +92,17 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
     if not os.path.exists(job_py_path):
         raise FileNotFoundError(f"job.py not found in {recipe_dir}")
 
+    # Capture state to restore on exit (including on exception)
+    original_path = list(sys.path)
+    original_cwd = os.getcwd()
+
+    # Ensure nvflare is importable so the patch target can be resolved
+    ensure_nvflare_on_path()
+
     # Add paths for imports
     add_paths_for_recipe(recipe_dir)
 
     # Change to recipe directory so relative imports work
-    original_cwd = os.getcwd()
     os.chdir(recipe_abs_path)
 
     # Storage for captured recipe
@@ -169,6 +185,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: lis
     finally:
         os.chdir(original_cwd)
         sys.argv = original_argv
+        sys.path = original_path
 
 
 def main():
