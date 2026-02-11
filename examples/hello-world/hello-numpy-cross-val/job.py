@@ -108,17 +108,20 @@ def run_training_and_cse(n_clients: int, num_rounds: int):
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
 
+    result_root = run.get_result()
+    # In SimEnv, CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
+    cse_results_path = f"{result_root}/server/simulate_job/cross_site_val/cross_val_results.json"
     print("\n" + "=" * 60)
     print("Training and cross-site evaluation complete!")
     print("=" * 60)
-    print(f"Result location: {run.get_result()}")
+    print(f"Result location: {result_root}")
     print(f"Job status: {run.get_status()}")
     print()
     print("To view training results:")
-    print(f"  ls {run.get_result()}/")
+    print(f"  ls {result_root}/")
     print()
     print("To view CSE results:")
-    print(f"  cat {run.get_result()}/cross_site_val/cross_val_results.json")
+    print(f"  cat {cse_results_path}")
     print()
 
 
