@@ -1,3 +1,5 @@
+.. _identity_security_page:
+
 #################
 Identity Security
 #################

@@ -91,7 +91,7 @@ Rest of the args are for job lifecycle management. Their meanings are the same a
 
 
 Client Config: config_fed_client.json
-=====================================
+-------------------------------------
 A typical client configuration looks like this:
 
 .. code-block:: json
