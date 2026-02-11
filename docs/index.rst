@@ -31,6 +31,7 @@ NVIDIA FLARE
    user_guide/data_scientist_guide/job_recipe
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
+   API Evolution & Recommendations <programming_guide/flare_api_evolution>
    user_guide/data_scientist_guide/flower_integration/flower_integration
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>

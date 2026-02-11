@@ -12,9 +12,9 @@ Which APIs Should I Use?
    :widths: 30 25 25 20
 
    * - Role
-     - Client API
-     - Server API
-     - Wiring API
+     - Client-side
+     - Server-side
+     - Job Wiring
    * - **Data Scientists** — applying FL to ML workflows
      - Client API
      - Built-in algorithms (FedAvg, FedProx, etc.)
