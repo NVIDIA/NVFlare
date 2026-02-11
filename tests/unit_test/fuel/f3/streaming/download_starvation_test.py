@@ -30,8 +30,6 @@ Two test classes, each with their own Cell pair:
    SYNCHRONOUSLY + slows _read_stream with 2s delay. Creates cells AFTER patch
    so the bound methods capture the patched behavior.
    With a 4-worker pool and 8 concurrent downloads -> deadlock.
-
-NOT intended for git -- local validation only.
 """
 
 import threading
@@ -187,6 +185,7 @@ def _pre_fix_handle_blob_cb(self, future, stream, resume, *args, **kwargs):
 # ======================================================================== #
 # Test 1: With the fix (real code) -- should PASS
 # ======================================================================== #
+@pytest.mark.timeout(60)
 class TestDownloadWithFix:
 
     @pytest.fixture(scope="class")
@@ -220,6 +219,7 @@ class TestDownloadWithFix:
 # ======================================================================== #
 # Test 2: Simulate pre-fix -- should FAIL with starvation
 # ======================================================================== #
+@pytest.mark.timeout(120)
 class TestDownloadPreFixStarvation:
 
     @pytest.fixture(scope="class")
@@ -257,17 +257,18 @@ class TestDownloadPreFixStarvation:
         client.core_cell.start()
         time.sleep(1.0)
 
-        yield server, client
+        try:
+            yield server, client
+        finally:
+            client.core_cell.stop()
+            server.core_cell.stop()
 
-        client.core_cell.stop()
-        server.core_cell.stop()
-
-        # Restore
-        BlobHandler.handle_blob_cb = orig_handle
-        blob_mod.stream_thread_pool = orig_blob_stp
-        recv_mod.stream_thread_pool = orig_recv_stp
-        send_mod.stream_thread_pool = orig_send_stp
-        tiny_pool.stopped = True
+            # Restore original pools and class method
+            BlobHandler.handle_blob_cb = orig_handle
+            blob_mod.stream_thread_pool = orig_blob_stp
+            recv_mod.stream_thread_pool = orig_recv_stp
+            send_mod.stream_thread_pool = orig_send_stp
+            tiny_pool.shutdown(wait=False)
 
     def test_parallel_downloads_simulating_pre_fix_starvation(self, patched_cells):
         """Simulates the pre-fix bug: blob_cb runs synchronously on pool worker,
