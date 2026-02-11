@@ -95,7 +95,7 @@ Data
 
 In this example, we are using the UCI (University of California, Irvine) `adult dataset <https://archive.ics.uci.edu/dataset/2/adult>`_.
 
-The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
+The original dataset already contains "training" and "test" datasets. Here we simply assume that the training and test data sets belong to different clients.
 so we assigned the training data and test data into two clients.
 
 Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
