@@ -845,23 +845,31 @@ class SwarmClientController(ClientSideController):
                 time.sleep(self.request_to_submit_result_interval)
 
             # send the result to the aggr
-            self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
+            if aggr == self.me:
+                # Avoid synchronous self-message path through CoreCell._send_direct_message.
+                self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
+                engine = fl_ctx.get_engine()
+                local_fl_ctx = fl_ctx.clone()
+                local_fl_ctx.set_peer_context(engine.new_context())
+                reply = self._process_learn_result(result, local_fl_ctx, abort_signal)
+            else:
+                self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
 
-            task = Task(
-                name=self.report_learn_result_task_name,
-                data=result,
-                timeout=int(self.learn_task_ack_timeout),
-                secure=self.is_task_secure(fl_ctx),
-            )
+                task = Task(
+                    name=self.report_learn_result_task_name,
+                    data=result,
+                    timeout=int(self.learn_task_ack_timeout),
+                    secure=self.is_task_secure(fl_ctx),
+                )
 
-            resp = self.broadcast_and_wait(
-                task=task,
-                targets=[aggr],
-                min_responses=1,
-                fl_ctx=fl_ctx,
-            )
+                resp = self.broadcast_and_wait(
+                    task=task,
+                    targets=[aggr],
+                    min_responses=1,
+                    fl_ctx=fl_ctx,
+                )
 
-            reply = resp.get(aggr)
+                reply = resp.get(aggr)
             if not reply:
                 self.log_error(fl_ctx, f"failed to receive reply from aggregation client: {aggr}")
                 self.update_status(action="receive_learn_result_reply", error=ReturnCode.EXECUTION_EXCEPTION)
