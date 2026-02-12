@@ -18,7 +18,7 @@ import sys
 
 from bionemo.core.data.load import load
 
-from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -73,9 +73,7 @@ def main(args):
     recipe.add_client_input_filter(BioNeMoParamsFilter(precision), tasks=["train", "validate"])
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
 
-    # Add decomposer register to server and clients
-    recipe.job.to_server(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
-    recipe.job.to_clients(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
+    recipe.add_decomposers([TensorDecomposer()])
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})
