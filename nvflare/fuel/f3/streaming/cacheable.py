@@ -90,9 +90,14 @@ class CacheableObject(Downloadable):
     def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:
             if not self.cache:
-                # cache cleared — produce without caching
-                return self.produce_item(index)
-            data, _ = self.cache[index]
+                cache_available = False
+                data = None
+            else:
+                cache_available = True
+                data, _ = self.cache[index]
+
+        if not cache_available:
+            return self.produce_item(index)
 
         if data is not None:
             self.logger.debug(f"got item {index} from cache for {requester}")
