@@ -25,16 +25,12 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 Create and activate a virtual environment, then install NVFlare and this example’s dependencies (including PyTorch and `flash_attn`):
 
 ```bash
-cd examples/advanced/qwen3-vl
-
-python3 -m venv .venv
-source .venv/bin/activate   # Linux/macOS
+python3.12 -m venv .venv
+source .venv/bin/activate
 
 # Install NVFlare and Qwen3-VL requirements
 ./install_requirements.sh
 ```
-
-The script installs PyTorch first (needed to build `flash_attn`), then the rest of `requirements.txt`. If you prefer to install from the NVFlare repo root, you can pass the path to this example’s `requirements.txt` and run the same steps there.
 
 ## 2. Clone the Qwen3-VL repo (SFT scripts)
 
@@ -54,8 +50,6 @@ export QWEN3VL_ROOT="${PWD}/Qwen3-VL"
 
 ## 3. Data: PubMedVision
 
-### Option A: Clone via Git (recommended for full dataset)
-
 From the [PubMedVision dataset page](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision):
 
 ```bash
@@ -69,20 +63,11 @@ Unzip the image files (**Note** this might take a while):
 cd PubMedVision
 for ((i=0; i<20; i++))
 do
-    unzip -j images_$i.zip -d images/ & # wait patiently, it takes a while...
+    echo "Unzipping archive $((i+1))/20 ..."
+    unzip -q -j images_$i.zip -d images/
 done
 cd ..
 ```
-
-Then use the JSON file for the Instruction Tuning VQA split, e.g.:
-
-- `PubMedVision/PubMedVision_InstructionTuning_VQA.json`  
-  (or the path where that file lives in your clone.)
-
-
-### Option B: Load from HuggingFace Hub
-
-You can skip cloning and load a subset by name in the prepare step (see below).
 
 ### Split data for 3 federated clients
 
@@ -93,7 +78,7 @@ Run the preparation script so each client has a non-overlapping shard under `./d
 If the JSON is in the current directory:
 
 ```bash
-python prepare_data.py --data_file PubMedVision_InstructionTuning_VQA.json --output_dir ./data
+python prepare_data.py --data_file PubMedVision/PubMedVision_InstructionTuning_VQA.json --output_dir ./data
 ```
 
 **Expected output:**
@@ -123,7 +108,7 @@ Output layout (same JSON format as the source, one file per client):
 
 The example uses Weights & Biases (WandB) for experiment tracking. To enable online logging:
 
-**Authentication:** Set the `WANDB_API_KEY` environment variable before running the job:
+**Authentication:** Set the `WANDB_API_KEY` environment variable before running the job (for local FL simulation only):
 
 ```bash
 export WANDB_API_KEY=your_key_here
@@ -131,11 +116,11 @@ export WANDB_API_KEY=your_key_here
 
 Get your API key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
 
-**Configuration:** The `job.py` script configures WandB with:
-- `project`: "qwen3-vl-nvflare"
-- `group`: "fedavg"
+**Configuration:** The `job.py` script configures WandB with (see `job.py` around lines 95–98):
+- `name`: "qwen3-vl-fedavg"
+- `project`: "nvflare"
+- `group`: "nvidia"
 - `job_type`: "training"
-- `entity`: "hroth" (optional, set to your WandB username)
 
 You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB will run in offline mode.
 

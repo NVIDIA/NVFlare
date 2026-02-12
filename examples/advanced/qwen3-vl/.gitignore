@@ -1,6 +1,13 @@
 # Prepared Data
 data/
 
+# Install cache and build temp (install_requirements.sh uses same-filesystem dirs to avoid cross-device link errors)
+.pip_cache/
+.tmp_build/
+
+# Virtual environment
+.venv/
+
 # Cloned repositories
 Qwen3-VL/
 PubMedVision/
