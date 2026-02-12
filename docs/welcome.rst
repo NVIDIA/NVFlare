@@ -169,26 +169,6 @@ FLARE consists of three product categories:
     asynchronous aggregation (FedBuff), device simulation, and mobile SDKs for Android and iOS
     (via ExecuTorch).
 
-Roadmap
-=======
-
-.. image:: resources/flare_roadmap.png
-   :alt: NVIDIA FLARE Roadmap
-   :width: 70%
-
-**FLARE Core -- Ease of Use & Scalability**
-
-- **2026-Q1**: Make easier for FL data scientists -- Job Recipe production ready, memory management with Tensor-based Downloader, example consolidation
-- **2026-Q2**: Make easier for FL researchers -- FLARE Collab API, native K8s support, provision enhancement
-- **2026-Q4**: Enable advanced capabilities -- K8s advanced features enhancement, K8s user experience enhancement
-
-**Confidential FL -- End-to-End Security**
-
-- **2026-Q2**: CC technology showcase -- IP protection, upgrade to NV CVM reference build scripts
-- **2026-Q4**: Enhance confidential federated AI -- Improve usability and operation, strengthen Secure Aggregation and IP Protection in both cloud and on-prem
-
-For the latest updates, visit the `NVIDIA FLARE GitHub <https://github.com/NVIDIA/NVFlare>`_.
-
 
 .. toctree::
    :hidden:
