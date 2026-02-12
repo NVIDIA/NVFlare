@@ -7,10 +7,4 @@ nvflare poc prepare -i project.yml -c site_a
 WORKSPACE="/tmp/nvflare/poc/job-level-authorization/prod_00"
 cp -r security/site_a/* $WORKSPACE/site_a/local
 
-for i in {1..2}
-do
-  cp -r ../../hello-world/hello-numpy $WORKSPACE/job$i
-  cp -r jobs/job$i/* $WORKSPACE/job$i
-done
-
 echo Your workspace is "$WORKSPACE"

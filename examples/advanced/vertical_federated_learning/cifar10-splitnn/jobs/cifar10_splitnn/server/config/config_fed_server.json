@@ -15,7 +15,7 @@
       "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "pt.networks.cifar10_nets.ModerateCNN"
+          "path": "pt.src.model.ModerateCNN"
         }
       }
     },

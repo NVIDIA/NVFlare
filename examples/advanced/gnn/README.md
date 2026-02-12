@@ -160,9 +160,26 @@ python3 -m pip install -r requirements.txt
 
 Install PyTorch Geometric dependencies (refer to [installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)):
 
+**Important:** The PyG extension packages must match your PyTorch version to avoid compatibility issues. First, check your PyTorch version:
+
 ```bash
-python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+python3 -c "import torch; print(f'PyTorch: {torch.__version__}')"
 ```
+
+Then install the matching PyG extensions. Replace `${TORCH}` and `${CUDA}` with your versions:
+
+```bash
+# For PyTorch 2.7.x with CUDA 12.6
+python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.7.0+cu126.html
+
+# For PyTorch 2.10.x with CUDA 12.6
+python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.10.0+cu126.html
+
+# For CPU-only installations
+python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.7.0+cpu.html
+```
+
+**Alternative (Simpler):** If you encounter installation issues or don't need the performance optimizations provided by the optional packages, you can run with just the core PyTorch Geometric library (already installed in requirements.txt). Simply skip installing the optional extensions above.
 
 Note: If you already have a specific version of nvflare installed in your environment, you may want to remove nvflare from the requirements to avoid reinstalling.
 
@@ -214,7 +231,17 @@ cd finance
 
 #### Prepare Dataset
 
-Download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. You will need:
+Download the Elliptic++ dataset from the [GitHub repository](https://github.com/git-disl/EllipticPlusPlus):
+
+```bash
+# Create the target directory and download the CSV files
+mkdir -p /tmp/nvflare/datasets/elliptic_pp
+wget -P /tmp/nvflare/datasets/elliptic_pp https://github.com/git-disl/EllipticPlusPlus/raw/main/Transactions%20Dataset/txs_classes.csv
+wget -P /tmp/nvflare/datasets/elliptic_pp https://github.com/git-disl/EllipticPlusPlus/raw/main/Transactions%20Dataset/txs_edgelist.csv
+wget -P /tmp/nvflare/datasets/elliptic_pp https://github.com/git-disl/EllipticPlusPlus/raw/main/Transactions%20Dataset/txs_features.csv
+```
+
+This will download the following files to `/tmp/nvflare/datasets/elliptic_pp`:
 - `txs_classes.csv`: Transaction IDs and their class labels (licit/illicit)
 - `txs_edgelist.csv`: Connections between transaction IDs
 - `txs_features.csv`: Transaction IDs and their features

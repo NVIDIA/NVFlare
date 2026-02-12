@@ -20,6 +20,11 @@
         "args": {}
       },
       {
+        "id": "process_launcher",
+        "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+        "args": {}
+      },
+      {
             "id": "security_handler",
             "path": "security_handler.CustomSecurityHandler"
       }

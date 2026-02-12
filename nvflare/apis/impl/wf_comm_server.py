@@ -279,7 +279,27 @@ class WFCommServer(FLComponent, WFCommSpec):
             # remember the task name and data to be sent to the client
             # since task.data could be reset by the after_task_sent_cb
             task_name = task.name
-            task_data = task.data
+
+            # For broadcast tasks, create a protected copy of task.data after before_task_sent_cb runs.
+            # This protects against data corruption from concurrent in-place modifications.
+            # The copy is created once for the first client, then reused for all subsequent clients.
+            if not hasattr(task, "_broadcast_data"):
+                manager = task.props.get(_TASK_KEY_MANAGER)
+                if isinstance(manager, (BcastTaskManager, BcastForeverTaskManager)):
+                    import copy
+
+                    try:
+                        task._broadcast_data = copy.deepcopy(task.data)
+                    except Exception as e:
+                        self.log_error(
+                            fl_ctx,
+                            f"Failed to deep copy task.data for broadcast: {type(e).__name__}: {e}. "
+                            f"Cannot proceed - data corruption risk.",
+                        )
+                        task.completion_status = TaskCompletionStatus.ERROR
+                        task.exception = e
+                        can_send_task = False
+            task_data = getattr(task, "_broadcast_data", task.data)
             operator = task.operator
 
             if task.after_task_sent_cb is not None:
@@ -310,19 +330,22 @@ class WFCommServer(FLComponent, WFCommSpec):
             client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
 
-            # add task operator to task_data shareable
-            if operator:
-                task_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
-
             if not resend_task:
                 task.last_client_task_map[client.name] = client_task_to_send
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
 
-            task_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
-            task_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
-            task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
-            return task_name, client_task_to_send.id, make_copy(task_data)
+            # Create per-client copy first, then set per-client headers on the copy.
+            # This avoids mutating the shared _broadcast_data (for broadcast tasks).
+            client_data = make_copy(task_data)
+
+            if operator:
+                client_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
+
+            client_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            client_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
+            client_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
+            return task_name, client_task_to_send.id, client_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
         """Called to cancel one task as its client_task is causing exception at upper level.
@@ -504,6 +527,18 @@ class WFCommServer(FLComponent, WFCommSpec):
         The task is scheduled into a task list.
         Clients can request tasks and controller will dispatch the task to eligible clients.
 
+        Note:
+            task.data is deep copied once, after before_task_sent_cb runs for the first client, to protect
+            against data corruption from concurrent in-place modifications. This copy is then reused
+            for all subsequent clients. As a result:
+            - Modifications to task.data in before_task_sent_cb ARE captured in the copy, but only for the
+              first client whose callback runs before the snapshot is taken.
+            - Modifications to task.data AFTER broadcast returns (e.g., in-place aggregation) do NOT
+              affect clients - they receive the protected copy.
+            - Per-client data customization in before_task_sent_cb is NOT supported: although the callback
+              runs for every client, only modifications from the first client's callback are reflected in the
+              shared snapshot, and all clients receive that same snapshot.
+
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
@@ -576,6 +611,14 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         This broadcast will not end.
 
+        Note:
+            task.data is deep copied after before_task_sent_cb runs for the first client to protect
+            against data corruption from concurrent in-place modifications. This copy is then reused
+            for all subsequent clients. As a result:
+            - Modifications to task.data in before_task_sent_cb ARE captured in the copy (for first client only)
+            - Modifications to task.data after the first client receives the task do NOT affect clients
+            - Per-client data customization in before_task_sent_cb is NOT supported (all clients get same copy)
+
         Args:
             task (Task): the task to be scheduled
             fl_ctx (FLContext): FLContext associated with this task
@@ -583,6 +626,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 or None (all clients). Defaults to None.
         """
         _check_inputs(task=task, fl_ctx=fl_ctx, targets=targets)
+
         manager = BcastForeverTaskManager()
         self._schedule_task(task=task, fl_ctx=fl_ctx, manager=manager, targets=targets)
 
@@ -957,10 +1001,25 @@ class WFCommServer(FLComponent, WFCommSpec):
                         fl_ctx, "task {} exit with status {}".format(exit_task.name, exit_task.completion_status)
                     )
 
+                    # Clean up download transactions for this task
+                    try:
+                        msg_root_id = exit_task.msg_root_id
+                        if msg_root_id:
+                            delete_msg_root(msg_root_id)
+                            self.log_debug(
+                                fl_ctx,
+                                f"Cleaned up download transactions for task {exit_task.name} (msg_root_id={msg_root_id})",
+                            )
+                    except Exception as e:
+                        self.log_exception(
+                            fl_ctx,
+                            "error cleaning up download transactions for task {}: {}".format(
+                                exit_task.name, secure_format_exception(e)
+                            ),
+                        )
+
                     if exit_task.task_done_cb is not None:
                         try:
-                            msg_root_id = exit_task.msg_root_id
-                            delete_msg_root(msg_root_id)
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
                         except Exception as e:
                             self.log_exception(
@@ -971,6 +1030,10 @@ class WFCommServer(FLComponent, WFCommSpec):
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
+
+                    # Clean up broadcast data copy to free memory (important for large models)
+                    if hasattr(exit_task, "_broadcast_data"):
+                        delattr(exit_task, "_broadcast_data")
 
     def _get_task_dead_clients(self, task: Task):
         """

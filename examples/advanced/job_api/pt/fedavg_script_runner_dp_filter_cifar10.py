@@ -17,6 +17,7 @@ from src.net import Net
 from nvflare import FilterType
 from nvflare.app_common.filters.percentile_privacy import PercentilePrivacy
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -27,13 +28,14 @@ if __name__ == "__main__":
     job = FedAvgJob(name="cifar10_fedavg_privacy", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
     for i in range(n_clients):
-        site_name = f"site-{i}"
+        site_name = f"site-{i + 1}"
         executor = ScriptRunner(script=train_script, script_args="")
         job.to(executor, site_name, tasks=["train"])
+        job.to(TBAnalyticsReceiver(events=["analytix_log_stats"]), site_name)
 
         # add privacy filter.
         pp_filter = PercentilePrivacy(percentile=10, gamma=0.01)
         job.to(pp_filter, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir/pt_dp_filter", gpu="0")

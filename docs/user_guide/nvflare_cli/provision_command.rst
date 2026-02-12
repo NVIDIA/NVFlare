@@ -19,7 +19,7 @@ Running ``nvflare provision -h`` shows all available options.
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.
 
-.. _dynamic_provisioning:
+.. _dynamic_provisioning_cli:
 
 Dynamic Provisioning
 ====================
