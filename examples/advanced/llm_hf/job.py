@@ -192,11 +192,11 @@ def main():
         quantizer = ModelQuantizer(quantization_type=args.quantize_mode.lower())
         dequantizer = ModelDequantizer()
 
-        # Add to server: quantizer on outgoing task data, dequantizer on incoming task result
+        # Add to server: quantizer on output, dequantizer on input
         recipe.add_server_output_filter(quantizer, tasks=["train"])
         recipe.add_server_input_filter(dequantizer, tasks=["train"])
 
-        # Add to all clients: quantizer on outgoing result, dequantizer on incoming task data
+        # Add to all clients: quantizer on output, dequantizer on input
         recipe.add_client_output_filter(quantizer, tasks=["train"])
         recipe.add_client_input_filter(dequantizer, tasks=["train"])
 
