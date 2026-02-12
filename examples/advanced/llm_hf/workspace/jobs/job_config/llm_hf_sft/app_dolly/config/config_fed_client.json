@@ -1,0 +1,107 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.pt.client_api_launcher_executor.PTClientAPILauncherExecutor",
+                "args": {
+                    "pipe_id": "pipe",
+                    "launcher_id": "launcher"
+                }
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ]
+            }
+        },
+        {
+            "id": "pipe",
+            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "args": {
+                "mode": "PASSIVE",
+                "site_name": "{SITE_NAME}",
+                "token": "{JOB_ID}",
+                "root_url": "{CP_URL}",
+                "secure_mode": "{SECURE_MODE}",
+                "workspace_dir": "{WORKSPACE}"
+            }
+        },
+        {
+            "id": "launcher",
+            "path": "nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher",
+            "args": {
+                "script": "bash custom/client_wrapper.sh custom/client.py --model_name_or_path EleutherAI/gpt-neo-1.3B --data_path_train /media/ziyuexu/Research/Experiment/NVFlare/nvflare_llm_global_param/examples/advanced/llm_hf/dataset/dolly/training.jsonl --data_path_valid /media/ziyuexu/Research/Experiment/NVFlare/nvflare_llm_global_param/examples/advanced/llm_hf/dataset/dolly/validation.jsonl --output_path sft --train_mode sft --message_mode numpy --num_rounds 3 --local_epoch 1 --lr_scheduler constant --wandb_project nvflare_llm --wandb_run_name nvflare_llm"
+            }
+        },
+        {
+            "id": "metrics_pipe",
+            "path": "nvflare.fuel.utils.pipe.cell_pipe.CellPipe",
+            "args": {
+                "mode": "PASSIVE",
+                "site_name": "{SITE_NAME}",
+                "token": "{JOB_ID}",
+                "root_url": "{CP_URL}",
+                "secure_mode": "{SECURE_MODE}",
+                "workspace_dir": "{WORKSPACE}"
+            }
+        },
+        {
+            "id": "metric_relay",
+            "path": "nvflare.app_common.widgets.metric_relay.MetricRelay",
+            "args": {
+                "pipe_id": "metrics_pipe",
+                "heartbeat_timeout": 0,
+                "event_type": "fed.analytix_log_stats"
+            }
+        },
+        {
+            "id": "config_preparer",
+            "path": "nvflare.app_common.widgets.external_configurator.ExternalConfigurator",
+            "args": {
+                "component_ids": [
+                    "metric_relay"
+                ]
+            }
+        }
+    ],
+    "task_data_filters": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "filters": [
+                {
+                    "path": "nvflare.app_opt.pt.quantization.dequantizer.ModelDequantizer",
+                    "args": {}
+                }
+            ]
+        }
+    ],
+    "task_result_filters": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "filters": [
+                {
+                    "path": "nvflare.app_opt.pt.quantization.quantizer.ModelQuantizer",
+                    "args": {
+                        "quantization_type": "blockwise8"
+                    }
+                }
+            ]
+        }
+    ],
+    "get_task_timeout": 300,
+    "submit_task_result_timeout": 300
+}
