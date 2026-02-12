@@ -21,7 +21,10 @@ recipe = FedAvgRecipe(
     name="fedavg_tensorboard",
     min_clients=2,
     num_rounds=5,
-    initial_model=SimpleNetwork(),
+    # Model can be class instance or dict config:
+    model=SimpleNetwork(),
+    # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="client.py",
 )
 

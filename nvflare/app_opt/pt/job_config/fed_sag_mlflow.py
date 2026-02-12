@@ -45,7 +45,7 @@ class SAGMLFlowJob(BaseFedJob):
         User must add executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model
+            initial_model (nn.Module): Initial PyTorch model.
             n_clients (int): number of clients for this job
             num_rounds (int): number of rounds for FedAvg
             name (name, optional): name of the job. Defaults to "fed_job"

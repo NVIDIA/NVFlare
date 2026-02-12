@@ -15,7 +15,10 @@ recipe = FedAvgRecipe(
     name="my_job",
     min_clients=2,
     num_rounds=5,
-    initial_model=MyModel(),
+    # Model can be class instance or dict config:
+    model=MyModel(),
+    # Alternative: model={"class_path": "mymodule.MyModel", "args": {}},
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="train.py",
 )
 

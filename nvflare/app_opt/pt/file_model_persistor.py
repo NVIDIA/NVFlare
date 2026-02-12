@@ -16,12 +16,12 @@ import json
 import os
 import re
 from collections import OrderedDict
-from typing import Dict
+from typing import Any, Dict, Optional, Union
 
 import torch
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -36,12 +36,12 @@ from nvflare.fuel.utils import fobs
 class PTFileModelPersistor(ModelPersistor):
     def __init__(
         self,
-        exclude_vars=None,
-        model=None,
-        global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
-        best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
-        source_ckpt_file_full_name=None,
-        filter_id: str = None,
+        exclude_vars: Optional[str] = None,
+        model: Optional[Union[torch.nn.Module, str, Dict[str, Any]]] = None,
+        global_model_file_name: str = DefaultCheckpointFileName.GLOBAL_MODEL,
+        best_global_model_file_name: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
+        source_ckpt_file_full_name: Optional[str] = None,
+        filter_id: Optional[str] = None,
         load_weights_only: bool = False,
         allow_numpy_conversion: bool = True,
     ):
@@ -89,7 +89,11 @@ class PTFileModelPersistor(ModelPersistor):
 
         Args:
             exclude_vars (str, optional): regex expression specifying weight vars to be excluded from training. Defaults to None.
-            model (str, optional): torch model object or component id of the model object. Defaults to None.
+            model: Model input. Can be one of:
+                - torch.nn.Module: Direct model instance
+                - str: Component ID of a model registered in config
+                - dict: {"path": "fully.qualified.Class", "args": {...}} for dynamic instantiation
+                Defaults to None.
             global_model_file_name (str, optional): file name for saving global model. Defaults to DefaultCheckpointFileName.GLOBAL_MODEL.
             best_global_model_file_name (str, optional): file name for saving best global model. Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
             source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
@@ -121,8 +125,9 @@ class PTFileModelPersistor(ModelPersistor):
 
         self.default_train_conf = None
 
-        if source_ckpt_file_full_name and not os.path.exists(source_ckpt_file_full_name):
-            raise ValueError(f"specified source checkpoint model file {source_ckpt_file_full_name} does not exist")
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
+        # Existence is validated at runtime in load_model() when the job executes.
 
     def _initialize(self, fl_ctx: FLContext):
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
@@ -164,7 +169,31 @@ class PTFileModelPersistor(ModelPersistor):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        if isinstance(self.model, str):
+        if isinstance(self.model, dict):
+            # Dict config: {"path": "module.Class", "args": {...}}
+            # Dynamically instantiate the model class
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
+            if not class_path:
+                self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
+                return
+            try:
+                self.model = instantiate_class(class_path, class_args)
+            except Exception as e:
+                self.system_panic(
+                    reason=f"Failed to instantiate model class '{class_path}': {e}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+            if not isinstance(self.model, torch.nn.Module):
+                self.system_panic(
+                    reason=f"expect model class '{class_path}' to be torch.nn.Module but got {type(self.model)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+        elif isinstance(self.model, str):
             # treat it as model component ID
             model_component_id = self.model
             engine = fl_ctx.get_engine()
@@ -200,13 +229,29 @@ class PTFileModelPersistor(ModelPersistor):
         """
         src_file_name = None
         if self.source_ckpt_file_full_name:
-            src_file_name = self.source_ckpt_file_full_name
+            if os.path.isabs(self.source_ckpt_file_full_name):
+                ckpt_path = self.source_ckpt_file_full_name
+            else:
+                # Relative path: resolve against app's custom directory
+                app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+                ckpt_path = os.path.join(
+                    app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME, self.source_ckpt_file_full_name
+                )
+            # Checkpoint MUST exist at runtime (fail fast to catch config errors)
+            if not os.path.exists(ckpt_path):
+                self.system_panic(
+                    reason=f"Source checkpoint not found: {ckpt_path}. " "Check that the checkpoint exists at runtime.",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+            src_file_name = ckpt_path
         elif self.ckpt_preload_path:
             src_file_name = self.ckpt_preload_path
 
         if src_file_name:
             try:
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+                self.log_info(fl_ctx, f"Loading checkpoint from {src_file_name} on device {device}")
                 data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
             except Exception:
@@ -287,6 +332,18 @@ class PTFileModelPersistor(ModelPersistor):
 
     def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
         model_inventory = {}
+
+        # Include source checkpoint if provided (supports external/pre-trained models)
+        if self.source_ckpt_file_full_name and os.path.exists(self.source_ckpt_file_full_name):
+            _, tail = os.path.split(self.source_ckpt_file_full_name)
+            model_inventory[tail] = ModelDescriptor(
+                name=self.source_ckpt_file_full_name,
+                location=self.source_ckpt_file_full_name,
+                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
+                props={"source": "initial_ckpt"},
+            )
+
+        # Include training artifacts
         location = os.path.join(self.log_dir, self.global_model_file_name)
         if os.path.exists(location):
             _, tail = os.path.split(self.global_model_file_name)

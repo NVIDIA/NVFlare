@@ -72,7 +72,7 @@ recipe = FedAvgRecipe(
     name="spleen_fedavg",
     min_clients=2,
     num_rounds=100,
-    initial_model=FLUNet(...),
+    model=FLUNet(...),
     train_script="client.py",
     train_args="--bundle_root bundles/spleen_ct_segmentation"
 )

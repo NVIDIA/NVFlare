@@ -21,7 +21,10 @@ recipe = FedAvgRecipe(
     name="fedavg_wandb",
     min_clients=2,
     num_rounds=5,
-    initial_model=Net(),
+    # Model can be class instance or dict config:
+    model=Net(),
+    # Alternative: model={"class_path": "model.Net", "args": {}},
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
     train_script="client.py",
 )
 
