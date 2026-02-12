@@ -18,10 +18,46 @@ Prepare PubMedVision for federated Qwen3-VL by splitting into 3 parts (one per c
 Supports:
   - Local JSON/JSONL file (e.g. from git clone of the dataset repo)
   - HuggingFace Hub (load_dataset)
+
+Writes train.json as a single JSON array so Qwen3-VL train_qwen.py (which uses
+json.load for .json) can read it. HuggingFace to_json() writes JSONL by default.
+
+Also injects <image> placeholders into the first user message so Qwen's
+_build_messages() consumes each image (one placeholder per image required).
 """
 
 import argparse
+import json
 import os
+
+
+def _ensure_qwen_image_placeholders(record):
+    """Inject <image> placeholders into the first human turn per Qwen format.
+
+    Single image:  value = "<image>" + newline + question
+    Multi-image:   value = "<image>" + newline + "<image>" + newline + question
+    (one <image> per image). See Qwen3-VL dataset config single/multi-image examples.
+    """
+    image_key = "image"
+    images = record.get(image_key) or []
+    if isinstance(images, str):
+        images = [images]
+    if not images:
+        return record
+    # One "<image>\n" per image, then the original question (Qwen single/multi-image format)
+    placeholders = "".join("<image>\n" for _ in images)
+    convs = list(record.get("conversations", []))
+    new_conversations = []
+    first_human_done = False
+    for turn in convs:
+        if turn.get("from") == "human" and not first_human_done:
+            first_human_done = True
+            value = turn.get("value", "")
+            # Only inject placeholders if the prompt does not already contain <image>
+            if "<image>" not in value:
+                turn = {**turn, "value": placeholders + value}
+        new_conversations.append(turn)
+    return {**record, "conversations": new_conversations}
 
 
 def main():
@@ -96,7 +132,12 @@ def main():
         client_dir = os.path.join(args.output_dir, f"site-{i + 1}")
         os.makedirs(client_dir, exist_ok=True)
         out_path = os.path.join(client_dir, "train.json")
-        shard.to_json(out_path)
+        # Single JSON array (not JSONL) so Qwen train_qwen.py json.load() works
+        records = [shard[i] for i in range(len(shard))]
+        # Inject <image> placeholders so Qwen _build_messages consumes each image
+        records = [_ensure_qwen_image_placeholders(r) for r in records]
+        with open(out_path, "w") as f:
+            json.dump(records, f, indent=2)
         print(f"  site-{i + 1}: {len(shard)} samples -> {out_path}")
 
     print(f"Done. Client data under {args.output_dir}/site-1, site-2, site-3.")

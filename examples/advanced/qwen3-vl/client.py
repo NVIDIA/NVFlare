@@ -26,7 +26,7 @@ import tempfile
 
 import nvflare.client as flare
 
-from model import Qwen3VLModel
+from model import Qwen3VLModel, load_qwen_vl_from_pretrained
 
 
 def _abs_path(p: str) -> str:
@@ -38,7 +38,12 @@ def main():
     parser.add_argument("--data_path", type=str, default="./data/site-1", help="Site data dir (train.json here)")
     parser.add_argument("--qwen_root", type=str, default=None, help="Qwen3-VL repo root (or set QWEN3VL_ROOT)")
     parser.add_argument("--dataset_use", type=str, default="fl_site", help="Dataset name for train_qwen.py (must exist in Qwen data_list)")
-    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen2.5-VL-3B-Instruct")
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        default="Qwen/Qwen3-VL-4B-Instruct",
+        help="HuggingFace model ID (must be Qwen3-VL to match train_qwen.py)",
+    )
     parser.add_argument("--max_steps", type=int, default=50, help="Max steps per FL round for Qwen script")
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
@@ -91,10 +96,13 @@ def main():
         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
         processor.save_pretrained(input_model_dir)
 
-        # Run Qwen3-VL training script (single process; no torchrun)
+        # Run Qwen3-VL training script with torchrun (nproc_per_node=1) so process group is initialized
         cmd = [
             sys.executable,
-            "-u",
+            "-m",
+            "torch.distributed.run",
+            "--nproc_per_node=1",
+            "--nnodes=1",
             train_script,
             "--model_name_or_path", input_model_dir,
             "--output_dir", output_model_dir,
@@ -118,10 +126,9 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Qwen SFT script failed: {e}", file=sys.stderr)
             # Send last checkpoint so round does not block; fallback to input model
-            from transformers import Qwen2_5_VLForConditionalGeneration
             load_dir = output_model_dir if os.path.isdir(output_model_dir) else input_model_dir
             try:
-                model.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(load_dir)
+                model.model = load_qwen_vl_from_pretrained(load_dir)
             except Exception:
                 pass  # keep current model (received weights)
             output_model = flare.FLModel(
@@ -132,9 +139,8 @@ def main():
             flare.send(output_model)
             continue
 
-        # Load trained model from output_dir and send state_dict
-        from transformers import Qwen2_5_VLForConditionalGeneration
-        trained = Qwen2_5_VLForConditionalGeneration.from_pretrained(output_model_dir)
+        # Load trained model from output_dir and send state_dict (use class matching saved config)
+        trained = load_qwen_vl_from_pretrained(output_model_dir)
         model.model = trained
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),

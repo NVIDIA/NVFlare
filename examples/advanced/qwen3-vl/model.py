@@ -18,23 +18,40 @@ Provides an nn.Module interface so the PT persistor can save/load state_dict.
 """
 
 import torch.nn as nn
-from transformers import Qwen2_5_VLForConditionalGeneration
+from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
+
+
+def _get_qwen_vl_model_class(model_name_or_path: str):
+    """Return the correct ForConditionalGeneration class for the model's config (qwen2_5_vl vs qwen3_vl)."""
+    config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
+    if getattr(config, "model_type", None) == "qwen3_vl":
+        try:
+            from transformers import Qwen3VLForConditionalGeneration
+            return Qwen3VLForConditionalGeneration
+        except ImportError:
+            pass
+    return Qwen2_5_VLForConditionalGeneration
+
+
+def load_qwen_vl_from_pretrained(model_name_or_path: str, **kwargs):
+    """Load Qwen VL model from path or HF ID using the class that matches the checkpoint config."""
+    model_cls = _get_qwen_vl_model_class(model_name_or_path)
+    return model_cls.from_pretrained(model_name_or_path, **kwargs)
+
 
 class Qwen3VLModel(nn.Module):
     """Qwen3-VL model wrapper for use as initial_model in FedAvgRecipe.
 
-    Model configuration uses the HuggingFace model ID (e.g. Qwen/Qwen2.5-VL-3B-Instruct).
+    Model configuration uses the HuggingFace model ID (e.g. Qwen/Qwen3-VL-4B-Instruct).
+    Supports both Qwen2.5-VL and Qwen3-VL checkpoints; the correct class is chosen from config.
+    Use a Qwen3-VL model when training with the Qwen3-VL repo's train_qwen.py.
     """
 
-    def __init__(self, model_name_or_path: str = "Qwen/Qwen2.5-VL-3B-Instruct", **kwargs):
+    def __init__(self, model_name_or_path: str = "Qwen/Qwen3-VL-4B-Instruct", **kwargs):
         super().__init__()
 
         self.model_name_or_path = model_name_or_path
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_name_or_path,
-            #torch_dtype=kwargs.get("torch_dtype", torch.bfloat16),
-            #**{k: v for k, v in kwargs.items() if k != "torch_dtype"},
-        )
+        self.model = load_qwen_vl_from_pretrained(model_name_or_path)
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)

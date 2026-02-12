@@ -1,6 +1,6 @@
 # Federated Multi-modal Fine-Tuning with Qwen3-VL
 
-This example shows how to fine-tune [Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) (vision-language) in a federated setting using [NVIDIA FLARE](https://nvflare.readthedocs.io/), with the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) medical VQA dataset split across 3 clients.
+This example shows how to fine-tune [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct) (vision-language) in a federated setting using [NVIDIA FLARE](https://nvflare.readthedocs.io/), with the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) medical VQA dataset split across 3 clients.
 
 ## Code structure
 
@@ -8,8 +8,8 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 
 | File | Role |
 |------|------|
-| `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen2.5-VL-3B-Instruct`). |
-| `client_sft_runner.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-4B-Instruct`). |
+| `client.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
 | `client_wrapper.sh` | Wrapper script (same pattern as [llm_hf MULTINODE](../llm_hf/MULTINODE.md)): job runs `bash custom/client_wrapper.sh` with script + args; wrapper launches `client_sft_runner.py`. |
 | `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; always uses the Qwen SFT script via the runner. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards |
@@ -17,7 +17,7 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 ## Prerequisites
 
 - Python 3.10+
-- CUDA-capable GPU (recommended: 18GB+ VRAM for the 3B model)
+- CUDA-capable GPU (recommended: 18GB+ VRAM for the 4B model)
 - [Git LFS](https://git-lfs.com/) (for cloning dataset repos)
 
 ## 1. Virtual environment and dependencies
@@ -84,11 +84,8 @@ python prepare_data.py --data_file PubMedVision/PubMedVision_InstructionTuning_V
 **Expected output:**
 ```
 Loading from local file: PubMedVision/PubMedVision_InstructionTuning_VQA.json
-Creating json from Arrow format: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 216/216 [00:02<00:00, 82.50ba/s]
   site-1: 215586 samples -> ./data/site-1/train.json
-Creating json from Arrow format: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 216/216 [00:02<00:00, 82.70ba/s]
   site-2: 215586 samples -> ./data/site-2/train.json
-Creating json from Arrow format: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 216/216 [00:02<00:00, 83.10ba/s]
   site-3: 215586 samples -> ./data/site-3/train.json
 Done. Client data under ./data/site-1, site-2, site-3.
 ```
@@ -130,31 +127,15 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 
 1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
 
-2. **Add a `fl_site` dataset entry** in the Qwen repo so the script can load each site’s `train.json`. The runner sets the env var `FL_SITE_DATA_DIR` to the site data dir (e.g. `./data/site-1`) before calling the script. In the Qwen3-VL repo, edit `qwen-vl-finetune/qwenvl/data/__init__.py` (or the module that defines `data_list`):
-
-   - In the `data_list(dataset_names)` function, inside the loop over `dataset_names`, add a branch for `"fl_site"` (after `sampling_rate = parse_sampling_rate(...)` and `dataset_name = re.sub(r"%(\d+)$", "", dataset_name)`):
-
-   ```python
-   if dataset_name == "fl_site":
-       base = os.environ.get("FL_SITE_DATA_DIR", "")
-       if not base:
-           raise ValueError("FL_SITE_DATA_DIR is not set for fl_site dataset")
-       config = {
-           "annotation_path": os.path.join(base, "train.json"),
-           "data_path": base,
-           "sampling_rate": sampling_rate,
-       }
-       config_list.append(config)
-       continue
-   ```
-
-   Add `import os` at the top of that file if not already present.
+2. **Dataset config for training**: The example's Qwen3-VL clone already registers a `fl_site` dataset in `qwen-vl-finetune/qwenvl/data/__init__.py` following the [official Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) (dataset definition + `data_dict`). The runner sets `FL_SITE_DATA_DIR` to each site's data dir (e.g. `./data/site-1`) before calling the script; `fl_site` paths are resolved at runtime from that and, optionally, `PUBMEDVISION_IMAGE_ROOT`. If you use a fresh Qwen3-VL clone, add the same `FL_SITE` definition and `"fl_site": FL_SITE` in `data_dict`, and in `data_list()` resolve `annotation_path` and `data_path` for `fl_site` from those env vars. If images live in a separate PubMedVision repo, set `PUBMEDVISION_IMAGE_ROOT` to that repo path (the folder containing `images/`).
 
 3. **Run the job**:
 
    ```bash
    export QWEN3VL_ROOT=/path/to/Qwen3-VL
    export WANDB_API_KEY=your_key_here   # optional
+   # If train.json is in ./data/site-* but images live in a PubMedVision clone:
+   export PUBMEDVISION_IMAGE_ROOT=/path/to/PubMedVision
    python job.py --data_dir ./data --max_steps 50
    ```
 
@@ -165,7 +146,7 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 | Step | Action |
 |------|--------|
 | 1 | Create venv, `pip install nvflare`, run `./install_requirements.sh` |
-| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT`, and add `fl_site` to `data_list` in the repo |
+| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
 | 3 | Download PubMedVision (clone or Hub) and run `prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` for online experiment tracking |
 | 5 | Run `python job.py --data_dir ./data` (optionally `--max_steps N`) |
@@ -173,5 +154,6 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 ## References
 
 - [Qwen3-VL repo](https://github.com/QwenLM/Qwen3-VL) — SFT scripts and configs (e.g. `qwen-vl-finetune/scripts/sft.sh`)
+- [Dataset config for training](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) — add/register datasets in `data/__init__.py`
 - [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) — medical VQA dataset
 - [NVIDIA FLARE](https://nvflare.readthedocs.io/) — federated learning framework
