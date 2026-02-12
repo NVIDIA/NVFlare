@@ -38,6 +38,8 @@ Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world
   * :github_nvflare_link:`Hello FLARE API <examples/tutorials/flare_api.ipynb>` - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
   * :github_nvflare_link:`NVFLARE in POC Mode <examples/tutorials/setup_poc.ipynb>` - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
   * :github_nvflare_link:`Job CLI Tutorial <examples/tutorials/job_cli.ipynb>` - Walks through the different commands of the Job CLI and showcases syntax and example usages.
+  * :github_nvflare_link:`Job Recipe <examples/tutorials/job_recipe.ipynb>` - Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.
+  * :github_nvflare_link:`FLARE Logging <examples/tutorials/logging.ipynb>` - Covers how to configure logging in FLARE for different use cases and modes.
 
 3. Federated Learning Algorithms
 ================================
@@ -107,7 +109,7 @@ Privacy preserving algorithms in NVIDIA FLARE are implemented as :ref:`filters <
 10.  Natural Language Processing (NLP)
 ======================================
 
-  * :github_nvflare_link:`NLP-NER (Github) <examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
+  * :github_nvflare_link:`NLP-NER (Github) <examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb>` - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`__) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 11. Federated Large Language Model (LLM)
 ========================================

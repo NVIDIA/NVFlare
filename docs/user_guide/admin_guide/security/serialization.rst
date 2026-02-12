@@ -7,11 +7,11 @@ deserialization when exchanging data between the server and clients.
 
 
 Flare Object Serializer (FOBS)
-==============================
+------------------------------
 
 
 Overview
---------
+~~~~~~~~
 
 FOBS is a drop-in replacement for Pickle for security purposes. It uses **MessagePack** to
 serialize objects.
@@ -36,7 +36,7 @@ registered. For example,
     TypeError: can not serialize 'xxx' object
 
 Usage
------
+~~~~~
 
 FOBS defines following 4 functions, similar to Pickle,
 
@@ -60,7 +60,7 @@ Examples,
     new_shareable = fobs.loads(data)
 
 Decomposers
------------
+~~~~~~~~~~~
 
 Decomposers are classes that inherit abstract base class :code:`fobs.Decomposer`. FOBS
 uses decomposers to break an object into **serializable objects** before serializing it
@@ -179,7 +179,7 @@ are ignored with a warning message.
 Note that ``fobs_initialize()`` may need to be called if decomposers are not registered.
 
 Enum Types
-----------
+~~~~~~~~~~
 
 All classes derived from :code:`Enum` are automatically handled by the default enum decomposer,
 which is already registered for you.
@@ -192,7 +192,7 @@ you can write and register a special decomposer.
 This will prevent FOBS from using the generic decomposer for that class.
 
 Dataclass Types
----------------
+~~~~~~~~~~~~~~~
 
 All dataclass are automatically handled by the default dataclass decomposer,
 which is already registered for you.
@@ -210,7 +210,7 @@ An example of dataclass:
         height: int
 
 Custom Types
-------------
+~~~~~~~~~~~~
 
 To support custom types with FOBS, the decomposers for the types must be included
 with the custom code and registered.
@@ -221,15 +221,22 @@ can also be done in ``START_RUN`` event handler.
 
 Custom object cannot be put in ``shareable`` directly,
 it must be serialized using FOBS first. Assuming ``custom_data`` contains custom type,
-this is how data can be stored in shareable,
+this is how data can be stored in shareable:
+
 ::
+
     shareable[CUSTOM_DATA] = fobs.dumps(custom_data)
-On the receiving end,
+
+On the receiving end:
+
 ::
+
     custom_data = fobs.loads(shareable[CUSTOM_DATA])
 
-This doesn't work
+This doesn't work:
+
 ::
+
     shareable[CUSTOM_DATA] = custom_data
 
 
