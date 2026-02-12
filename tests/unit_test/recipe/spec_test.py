@@ -290,6 +290,29 @@ class TestRecipeConfigMethods:
         finally:
             os.unlink(targeted_file)
 
+    def test_add_server_file_adds_to_server_ext_scripts_and_ext_dirs(self, temp_script):
+        """Test add_server_file stores file paths in ext_scripts and dirs in ext_dirs."""
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job_server_files",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recipe.add_server_file(temp_script)
+            recipe.add_server_file(temp_dir)
+
+            server_app = recipe.job._deploy_map.get("server")
+            assert server_app is not None
+            assert temp_script in server_app.app_config.ext_scripts
+            assert temp_dir in server_app.app_config.ext_dirs
+
     def test_config_in_generated_json(self, temp_script):
         """Test that configs appear in generated JSON files."""
         from nvflare.recipe.fedavg import FedAvgRecipe
