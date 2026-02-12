@@ -61,7 +61,7 @@ Here's a complete example:
        name="hello-pt",
        min_clients=2,
        num_rounds=2,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
    )
    
@@ -76,6 +76,24 @@ Here's a complete example:
 - **Framework-specific**: Optimized recipes for PyTorch, TensorFlow, NumPy, and more
 - **No configuration files**: Everything defined in Python
 - **Easy experimentation**: Change parameters and re-run instantly
+
+### Model Input Options
+
+The `model` parameter accepts two formats:
+
+1. **Class instance**: `model=SimpleNetwork()` - Convenient, catches errors early
+2. **Dict config**: `model={"class_path": "model.SimpleNetwork", "args": {}}` - Better for large models
+
+To resume training from pre-trained weights:
+```python
+recipe = FedAvgRecipe(
+    model=SimpleNetwork(),
+    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
+    ...
+)
+```
+
+> **Note:** Class instances are converted to config files before job submission. The checkpoint file must exist on the server when the job runs.
 
 ## Examples by Framework
 
@@ -221,7 +239,7 @@ The job recipe defines the FL workflow:
        name="my-job",
        min_clients=2,
        num_rounds=3,
-       initial_model=MyModel(),
+       model=MyModel(),
        train_script="client.py",
    )
    

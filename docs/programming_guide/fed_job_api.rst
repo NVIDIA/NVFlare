@@ -362,6 +362,8 @@ The FedAvgJob automatically adds the FedAvg controller, PTFileModelPersistor and
 
 .. code-block:: python
 
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     job = FedAvgJob(name="cifar10_fedavg", num_rounds=num_rounds, n_clients=n_clients, initial_model=Net())
 
 For more examples of job patterns, see:

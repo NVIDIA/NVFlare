@@ -1,6 +1,5 @@
-.. _hello_lightning:
 
-Hello PyTorch Lightning
+Hello Pytorch Lightning
 =======================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
@@ -231,6 +230,24 @@ The job recipe code is used to define the client and server configurations.
     :linenos:
     :caption: Job Recipe (job.py)
     :lines: 14-
+
+Model Input Options
+^^^^^^^^^^^^^^^^^^^
+
+The ``model`` parameter accepts two formats:
+
+1. **Class instance**: ``model=LitNet()`` - Convenient and Pythonic
+2. **Dict config**: ``model={"class_path": "model.LitNet", "args": {}}`` - Better for large models
+
+To resume from pre-trained weights:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(
+       model=LitNet(),
+       initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
+       ...
+   )
 
 
 Run FL Job
