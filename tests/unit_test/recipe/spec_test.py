@@ -206,6 +206,90 @@ class TestRecipeConfigMethods:
         assert all_clients_app is not None
         assert all_clients_app.app_config.additional_params == config
 
+    def test_add_client_file_adds_to_ext_scripts_and_ext_dirs(self, temp_script):
+        """Test add_client_file stores file paths in ext_scripts and dirs in ext_dirs."""
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job_files",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recipe.add_client_file(temp_script)
+            recipe.add_client_file(temp_dir)
+
+            all_clients_app = recipe.job._deploy_map.get(ALL_SITES)
+            assert all_clients_app is not None
+            assert temp_script in all_clients_app.app_config.ext_scripts
+            assert temp_dir in all_clients_app.app_config.ext_dirs
+
+    def test_add_client_file_preserves_per_site_clients_without_all_sites(self, temp_script):
+        """Test add_client_file keeps per-site topology and does not create ALL_SITES app."""
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job_per_site_files",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
+            per_site_config={"site-1": {}, "site-2": {}},
+        )
+
+        recipe.add_client_file(temp_script)
+
+        assert ALL_SITES not in recipe.job._deploy_map
+        site_1_app = recipe.job._deploy_map.get("site-1")
+        site_2_app = recipe.job._deploy_map.get("site-2")
+        assert site_1_app is not None
+        assert site_2_app is not None
+        assert temp_script in site_1_app.app_config.ext_scripts
+        assert temp_script in site_2_app.app_config.ext_scripts
+
+    def test_add_client_file_with_specific_clients_only_updates_selected_sites(self, temp_script):
+        """Test add_client_file(..., clients=[...]) only adds file to specified sites."""
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_job_targeted_files",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            initial_ckpt="/abs/path/to/model.npy",
+            framework=FrameworkType.NUMPY,
+            per_site_config={"site-1": {}, "site-2": {}, "site-3": {}},
+        )
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("targeted file for site-2 only")
+            targeted_file = f.name
+
+        recipe.add_client_file(targeted_file, clients=["site-2"])
+
+        try:
+            site_1_app = recipe.job._deploy_map.get("site-1")
+            site_2_app = recipe.job._deploy_map.get("site-2")
+            site_3_app = recipe.job._deploy_map.get("site-3")
+            assert site_1_app is not None
+            assert site_2_app is not None
+            assert site_3_app is not None
+            assert targeted_file not in site_1_app.app_config.ext_scripts
+            assert targeted_file in site_2_app.app_config.ext_scripts
+            assert targeted_file not in site_3_app.app_config.ext_scripts
+        finally:
+            os.unlink(targeted_file)
+
     def test_config_in_generated_json(self, temp_script):
         """Test that configs appear in generated JSON files."""
         from nvflare.recipe.fedavg import FedAvgRecipe
