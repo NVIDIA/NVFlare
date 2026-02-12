@@ -122,15 +122,21 @@ class Recipe(ABC):
         specific site to preserve the per-site structure and avoid creating a shared
         ALL_SITES app that would override per-site configurations.
 
+        Note: This method uses the private attribute job._deploy_map because FedJob
+        has no public API to enumerate per-site deploy targets; we need it to decide
+        whether to add client-side objects per site or to a shared ALL_SITES app.
+
         Returns:
-            List of existing client site names, or empty list if none exist.
+            List of existing client site names, or empty list if none exist (or
+            _deploy_map is unavailable).
         """
         from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
         from nvflare.job_config.defs import JobTargetType
 
+        deploy_map = getattr(self.job, "_deploy_map", {})
         return [
             target
-            for target in self.job._deploy_map.keys()
+            for target in deploy_map.keys()
             if target not in [ALL_SITES, SERVER_SITE_NAME]
             and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
         ]
