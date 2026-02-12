@@ -45,7 +45,6 @@ class FedXGBHistogramExecutor(XGBExecutor):
         self.in_process = in_process
 
     def get_adaptor(self, fl_ctx: FLContext):
-
         engine = fl_ctx.get_engine()
         handler = ClientSecurityHandler()
         engine.add_component(str(uuid.uuid4()), handler)
