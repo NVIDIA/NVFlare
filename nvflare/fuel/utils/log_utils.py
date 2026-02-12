@@ -25,6 +25,7 @@ from typing import Union
 from nvflare.apis.workspace import Workspace
 
 DEFAULT_LOG_JSON = "log_config.json"
+FL_LOG_LEVEL = "FL_LOG_LEVEL"
 
 
 class LogMode:
@@ -322,7 +323,12 @@ def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str
     with open(log_config_file_path, "r") as f:
         dict_config = json.load(f)
 
-    apply_log_config(dict_config, workspace.get_log_root(job_id), file_prefix)
+    log_root = workspace.get_log_root(job_id)
+    apply_log_config(dict_config, log_root, file_prefix)
+
+    env_log_config = os.environ.get(FL_LOG_LEVEL)
+    if env_log_config:
+        dynamic_log_config(env_log_config, log_root, log_config_file_path, file_prefix=file_prefix)
 
 
 def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
@@ -341,17 +347,17 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.config.dictConfig(dict_config)
 
 
-def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
+def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str, file_prefix: str = ""):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
     if isinstance(config, dict):
-        apply_log_config(config, dir_path)
+        apply_log_config(config, dir_path, file_prefix=file_prefix)
     elif isinstance(config, str):
         # Handle pre-defined LogModes
         if config == LogMode.RELOAD:
             config = reload_path
         elif log_config := logmode_config_dict.get(config):
-            apply_log_config(copy.deepcopy(log_config), dir_path)
+            apply_log_config(copy.deepcopy(log_config), dir_path, file_prefix=file_prefix)
             return
 
         # Read config file
@@ -359,11 +365,11 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
             with open(config, "r") as f:
                 dict_config = json.load(f)
 
-            apply_log_config(dict_config, dir_path)
+            apply_log_config(dict_config, dir_path, file_prefix=file_prefix)
         else:
             # If logging is not yet configured, use default config
             if not logging.getLogger().hasHandlers():
-                apply_log_config(default_log_dict, dir_path)
+                apply_log_config(default_log_dict, dir_path, file_prefix=file_prefix)
 
             # Set level of root logger based on levelname or levelnumber
             level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)

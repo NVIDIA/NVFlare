@@ -207,6 +207,7 @@ class PTFileModelPersistor(ModelPersistor):
         if src_file_name:
             try:
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+                self.log_info(fl_ctx, f"Loading checkpoint from {src_file_name} on device {device}")
                 data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
             except Exception:
