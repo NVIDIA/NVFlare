@@ -114,6 +114,26 @@ class Recipe(ABC):
         """
         pass
 
+    def _get_existing_client_sites(self) -> List[str]:
+        """Get list of existing per-site client apps (excluding ALL_SITES and server).
+
+        This helper method checks if there are already per-site client configurations
+        in the deploy map. If so, new client-side objects should be added to each
+        specific site to preserve the per-site structure and avoid creating a shared
+        ALL_SITES app that would override per-site configurations.
+
+        Returns:
+            List of existing client site names, or empty list if none exist.
+        """
+        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+        from nvflare.job_config.defs import JobTargetType
+
+        return [
+            target for target in self.job._deploy_map.keys()
+            if target not in [ALL_SITES, SERVER_SITE_NAME] and
+            JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+        ]
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -128,7 +148,14 @@ class Recipe(ABC):
 
         """
         if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add filter to each existing client site to avoid creating a shared ALL_SITES app
+                for site in existing_client_sites:
+                    self.job.to(filter, site, filter_type=FilterType.TASK_DATA, tasks=tasks)
+            else:
+                # No per-site clients exist yet, safe to use to_clients()
+                self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
         else:
             for client in clients:
                 self.job.to(filter, client, filter_type=FilterType.TASK_DATA, tasks=tasks)
@@ -147,7 +174,14 @@ class Recipe(ABC):
 
         """
         if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add filter to each existing client site to avoid creating a shared ALL_SITES app
+                for site in existing_client_sites:
+                    self.job.to(filter, site, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+            else:
+                # No per-site clients exist yet, safe to use to_clients()
+                self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
         else:
             for client in clients:
                 self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
@@ -166,10 +200,54 @@ class Recipe(ABC):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
 
         if clients is None:
-            self.job.to_clients(config)
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add config to each existing client site to avoid creating a shared ALL_SITES app
+                # that would override per-site executor configurations
+                for site in existing_client_sites:
+                    self.job.to(obj=config, target=site)
+            else:
+                # No per-site clients exist yet, safe to use to_clients() which targets ALL_SITES
+                self.job.to_clients(config)
         else:
             for client in clients:
                 self.job.to(obj=config, target=client)
+
+    def add_client_file(self, file_path: str, clients: Optional[List[str]] = None):
+        """Add a file or directory to client apps.
+
+        The file will be added to the client's custom directory and bundled with the job.
+        Can be a script, configuration file, or any resource needed by clients.
+
+        Args:
+            file_path: Path to the file or directory to add to clients.
+            clients: Optional list of specific client names. If None, applies to all clients.
+
+        Raises:
+            TypeError: If file_path is not a string.
+
+        Example:
+            # Add a wrapper script to all clients
+            recipe.add_client_file("client_wrapper.sh")
+
+            # Add a script to specific clients
+            recipe.add_client_file("custom_script.py", clients=["site1", "site2"])
+        """
+        if not isinstance(file_path, str):
+            raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
+
+        if clients is None:
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add file to each existing client site
+                for site in existing_client_sites:
+                    self.job.to(obj=file_path, target=site)
+            else:
+                # No per-site clients exist yet, safe to use to_clients()
+                self.job.to_clients(file_path)
+        else:
+            for client in clients:
+                self.job.to(obj=file_path, target=client)
 
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
@@ -243,7 +321,15 @@ class Recipe(ABC):
 
         reg = DecomposerRegister(class_names)
         self.job.to_server(reg, id="decomposer_reg")
-        self.job.to_clients(reg, id="decomposer_reg")
+
+        existing_client_sites = self._get_existing_client_sites()
+        if existing_client_sites:
+            # Add to each existing client site
+            for site in existing_client_sites:
+                self.job.to(reg, site, id="decomposer_reg")
+        else:
+            # No per-site clients exist yet, safe to use to_clients()
+            self.job.to_clients(reg, id="decomposer_reg")
 
     def export(
         self,
@@ -267,7 +353,14 @@ class Recipe(ABC):
             self.job.to_server(server_exec_params)
 
         if client_exec_params:
-            self.job.to_clients(client_exec_params)
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add to each existing client site
+                for site in existing_client_sites:
+                    self.job.to(client_exec_params, site)
+            else:
+                # No per-site clients exist yet, safe to use to_clients()
+                self.job.to_clients(client_exec_params)
 
         if env:
             self.process_env(env)
@@ -291,7 +384,14 @@ class Recipe(ABC):
             self.job.to_server(server_exec_params)
 
         if client_exec_params:
-            self.job.to_clients(client_exec_params)
+            existing_client_sites = self._get_existing_client_sites()
+            if existing_client_sites:
+                # Add to each existing client site
+                for site in existing_client_sites:
+                    self.job.to(client_exec_params, site)
+            else:
+                # No per-site clients exist yet, safe to use to_clients()
+                self.job.to_clients(client_exec_params)
 
         self.process_env(env)
         job_id = env.deploy(self.job)
