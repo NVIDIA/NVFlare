@@ -394,9 +394,11 @@ Modify your ``job.py`` to use ``PocEnv`` instead of ``SimEnv``:
     from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 
     # Create your recipe
+    # Model can be class instance, array, or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/model.npy"
     recipe = NumpyFedAvgRecipe(
         name="hello-numpy",
-        initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         min_clients=2,
         num_rounds=3,
         train_script="client.py",

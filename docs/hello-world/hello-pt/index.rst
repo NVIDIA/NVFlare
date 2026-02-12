@@ -1,5 +1,3 @@
-.. _hello_pt:
-
 Hello PyTorch
 =============
 
@@ -171,13 +169,38 @@ The Job Recipe specifies the ``client.py`` and selects the built-in federated av
        name="hello-pt",
        min_clients=n_clients,
        num_rounds=num_rounds,
-       initial_model=SimpleNetwork(),
+       # Model can be specified as class instance or dict config:
+       model=SimpleNetwork(),
+       # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
+       # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
        train_script="client.py",
        train_args=f"--batch_size {batch_size}",
    )
 
    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
    recipe.execute(env=env)
+
+Model Input Options
+^^^^^^^^^^^^^^^^^^^
+
+The ``model`` parameter accepts two formats:
+
+1. **Class instance** (shown above): ``model=SimpleNetwork()`` - Convenient and Pythonic
+2. **Dict config**: ``model={"class_path": "model.SimpleNetwork", "args": {}}`` - Better for large models
+
+To resume training from pre-trained weights, use ``initial_ckpt``:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(
+       model=SimpleNetwork(),
+       initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path, must exist on server
+       ...
+   )
+
+.. note::
+
+   Class instances are converted to configuration files before job submission. For large models, use dict config to avoid unnecessary instantiation overhead.
 
 Run Job
 -------

@@ -1,5 +1,3 @@
-.. _hello_tf:
-
 Hello TensorFlow
 ================
 
@@ -53,7 +51,7 @@ Code Structure
 
 .. code-block:: text
 
-   hello-tf
+   hello-pt
    |
    |-- client.py         # client local training script
    |-- model.py          # model definition
@@ -88,7 +86,7 @@ This model is used in federated learning with NVIDIA FLARE, trained across clien
 Client Code
 -----------
 
-The client code ``client.py`` is responsible for training. The training code closely resembles standard Tensorflow training code, with additional lines to handle data exchange with the server.
+The client code ``client.py`` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
 
 .. literalinclude:: ../../../examples/hello-world/hello-tf/client.py
     :language: python
@@ -113,6 +111,28 @@ The job recipe includes `client.py` and the built-in FedAvg algorithm.
     :linenos:
     :caption: job recipe (job.py)
     :lines: 14-
+
+Model Input Options
+^^^^^^^^^^^^^^^^^^^
+
+The ``model`` parameter accepts two formats:
+
+1. **Class instance**: ``model=Net()`` - Convenient and Pythonic
+2. **Dict config**: ``model={"class_path": "model.Net", "args": {}}`` - Better for large models
+
+To resume from pre-trained weights:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(
+       model=Net(),
+       initial_ckpt="/server/path/to/pretrained.h5",  # Absolute path
+       ...
+   )
+
+.. note::
+
+   For TensorFlow/Keras, SavedModel or .h5 files contain both architecture and weights, so ``initial_ckpt`` can be used without ``model``.
 
 Run the Experiment
 ------------------
