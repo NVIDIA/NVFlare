@@ -142,9 +142,10 @@ class Recipe(ABC):
         from nvflare.job_config.defs import JobTargetType
 
         return [
-            target for target in self.job._deploy_map.keys()
-            if target not in [ALL_SITES, SERVER_SITE_NAME] and
-            JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+            target
+            for target in self.job._deploy_map.keys()
+            if target not in [ALL_SITES, SERVER_SITE_NAME]
+            and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
         ]
 
     def add_client_input_filter(
