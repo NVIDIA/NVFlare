@@ -76,7 +76,10 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
             MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
-            Use `add_experiment_tracking()` utility function to easily add tracking.
+            Use ``add_experiment_tracking()`` utility to easily add tracking. Do not pass
+            ``analytics_receiver`` and also call ``add_experiment_tracking(..., server_side=True)``;
+            the two options are mutually exclusive for server-side tracking—using both would register
+            a second server component with id ``"receiver"`` and raise due to duplicate IDs.
 
     Example:
         ```python

@@ -18,6 +18,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -70,12 +71,24 @@ def add_experiment_tracking(
 
     Adds tracking receivers to the server and/or clients to collect and log metrics during training.
 
+    **Mutually exclusive with ``analytics_receiver``:** If the recipe was created with
+    ``analytics_receiver=...`` (e.g. passed to ``NumpyFedAvgRecipe`` or ``FedAvgRecipe``), do not
+    call ``add_experiment_tracking()`` with ``server_side=True``. The recipe already has a server-side
+    receiver; calling ``add_experiment_tracking()`` would try to add another server component with id
+    ``"receiver"`` and raise due to duplicate IDs. Use either the recipe's ``analytics_receiver``
+    parameter or ``add_experiment_tracking()``, not both for server-side tracking.
+
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
         tracking_config: Optional configuration dict for the tracking receiver.
         client_side: If True, add tracking to all clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+
+    Raises:
+        ValueError: If ``server_side`` is True and the recipe already has a server-side analytics
+            receiver (e.g. from ``analytics_receiver=...``). The job would otherwise get a duplicate
+            component id ``"receiver"``.
 
     Examples:
         # Server-side tracking (default - federated metrics)
@@ -105,6 +118,17 @@ def add_experiment_tracking(
 
     # Add server-side tracking
     if server_side:
+        # Detect if recipe already has a server-side receiver (e.g. from analytics_receiver=...)
+        job = recipe.job
+        if hasattr(job, "_deploy_map"):
+            server_app = job._deploy_map.get(SERVER_SITE_NAME)
+            if server_app is not None and getattr(server_app, "_used_ids", None) is not None:
+                if "receiver" in server_app._used_ids:
+                    raise ValueError(
+                        "This recipe already has a server-side analytics receiver (e.g. from "
+                        "analytics_receiver=...). Do not call add_experiment_tracking(..., server_side=True); "
+                        "use either the recipe's analytics_receiver parameter or this utility, not both."
+                    )
         receiver = receiver_class(**tracking_config)
         recipe.job.to_server(receiver, "receiver")
 
