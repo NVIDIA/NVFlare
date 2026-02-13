@@ -20,6 +20,8 @@ from typing import Optional
 
 import torch
 
+from nvflare.fuel.utils.network_utils import get_open_ports
+
 
 def _checkpoint_key_to_client(k: str) -> str:
     for old, new in (
@@ -61,8 +63,16 @@ class ESM2ModuleForServer(torch.nn.Module):
 
     def __init__(self, checkpoint_path: str, **kwargs):
         super().__init__()
+        path = os.path.abspath(checkpoint_path)
+        if not os.path.isfile(path) and not os.path.isdir(path):
+            raise FileNotFoundError(f"Checkpoint path does not exist or is not a file/directory: {checkpoint_path!r}")
         sd = load_state_dict_from_checkpoint_path(checkpoint_path)
-        self._state_dict = _expand_checkpoint_state_dict(sd) if sd else OrderedDict()
+        if sd is None:
+            raise ValueError(
+                f"Checkpoint is missing or invalid (could not load state dict from {checkpoint_path!r}). "
+                "Ensure the path points to a valid NeMo or PyTorch checkpoint."
+            )
+        self._state_dict = _expand_checkpoint_state_dict(sd)
 
     @staticmethod
     def _stored_key(k: str) -> str:
@@ -95,7 +105,7 @@ def _extract_state_dict(loaded: dict) -> Optional[OrderedDict]:
         if key in loaded and isinstance(loaded[key], (dict, OrderedDict)):
             d = loaded[key]
             break
-    if not d:
+    if d is None:
         return None
     if all(isinstance(v, torch.Tensor) for v in d.values()):
         return OrderedDict(d)
@@ -123,7 +133,7 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
             return None
     if not torch.distributed.is_initialized():
         os.environ.setdefault("MASTER_ADDR", "localhost")
-        os.environ.setdefault("MASTER_PORT", str(12355 + (os.getpid() % 1000)))
+        os.environ.setdefault("MASTER_PORT", str(get_open_ports(1)[0]))
         torch.distributed.init_process_group(backend="gloo", rank=0, world_size=1)
     ckpt_dir = os.path.abspath(weights_dir)
     try:

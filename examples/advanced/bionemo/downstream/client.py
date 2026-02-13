@@ -22,13 +22,15 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from nvflare.fuel.utils.network_utils import get_open_ports
+
 # Set NumExpr thread limits before importing numerical libraries to avoid thread conflicts
 os.environ.setdefault("NUMEXPR_MAX_THREADS", "64")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
 
-# Use a unique port per process for PyTorch distributed to avoid EADDRINUSE.
+# Use an available port for PyTorch distributed to avoid EADDRINUSE and PID collisions.
 if "MASTER_PORT" not in os.environ:
-    os.environ["MASTER_PORT"] = str(12355 + (os.getpid() % 1000))
+    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
 if "MASTER_ADDR" not in os.environ:
     os.environ.setdefault("MASTER_ADDR", "localhost")
 
@@ -419,9 +421,8 @@ def train_model(
     )
 
     # perform local training starting with the received global model
-    # Set MASTER_PORT so the training subprocess (spawned by Lightning) inherits a port
-    # that this process has not bound during setup, avoiding EADDRINUSE.
-    os.environ["MASTER_PORT"] = str(22355 + (os.getpid() % 1000))
+    # Set MASTER_PORT so the training subprocess (spawned by Lightning) inherits an available port.
+    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
     llm.train(
         model=module,
         data=data_module,
