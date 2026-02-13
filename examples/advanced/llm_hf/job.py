@@ -181,30 +181,24 @@ def main():
     )
 
     # Add client params to reduce timeout failures for longer LLM runs
-    for site_name in client_names:
-        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
-        recipe.job.to(client_params, site_name)
+    recipe.add_client_config({"get_task_timeout": 300, "submit_task_result_timeout": 300})
 
     # Add client_wrapper.sh for multi-node training
     if args.multi_node:
-        for site_name in client_names:
-            recipe.job.to("client_wrapper.sh", site_name)
+        recipe.add_client_file("client_wrapper.sh")
 
     # Add quantization filters if specified
     if args.quantize_mode:
-        from nvflare import FilterType
-
         quantizer = ModelQuantizer(quantization_type=args.quantize_mode.lower())
         dequantizer = ModelDequantizer()
 
-        # Add to server
-        recipe.job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
-        recipe.job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+        # Add to server: quantizer on output, dequantizer on input
+        recipe.add_server_output_filter(quantizer, tasks=["train"])
+        recipe.add_server_input_filter(dequantizer, tasks=["train"])
 
-        # Add to all clients
-        for site_name in client_names:
-            recipe.job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
-            recipe.job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
+        # Add to all clients: quantizer on output, dequantizer on input
+        recipe.add_client_output_filter(quantizer, tasks=["train"])
+        recipe.add_client_input_filter(dequantizer, tasks=["train"])
 
     # Add experiment tracking if requested
     if args.use_tracking:
