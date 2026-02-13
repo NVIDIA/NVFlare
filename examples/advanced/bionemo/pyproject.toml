@@ -1,6 +1,0 @@
-# Isort config for bionemo examples - must match root/NVFlare so CI passes.
-[tool.isort]
-known_first_party = "nvflare"
-profile = "black"
-multi_line_output = 3
-line_length = 120
