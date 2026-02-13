@@ -1,0 +1,669 @@
+# Recipe API  -  User Guide & Interface Design
+
+This document is the **API interface initial design** for the NVFlare Recipe API. It merges the Recipe User Guide (see RST: `user_guide/data_scientist_guide/job_recipe.rst`, `available_recipes.rst`) with the public API spec into one reference. The RST files are unchanged.
+
+A **recipe** defines *what* to run (e.g. FedAvg, Cyclic); an **execution environment** defines *where* (simulation, proof-of-concept, or production). You create a recipe with high-level parameters, then either **export** it to a job directory for submission or **execute** it in an environment. The same recipe runs everywhere without code changes.
+
+---
+
+## 1. Why Job Recipes
+
+The Job API lets you define FL workflows in Python without editing config files, but it still requires understanding controllers, executors, and workflows. **Job Recipes** simplify this:
+
+- **Only the arguments that matter:** e.g. `min_clients`, `num_rounds`, `train_script`, model.
+- **Consistent entry points** for FedAvg, Cyclic, FedOpt, and other patterns.
+- **One recipe, many environments:** SimEnv (threads), PocEnv (processes on one machine), ProdEnv (real deployment).
+
+Start with a recipe; move to the full Job API when you need to customize. Recipe support is a technical preview; not all algorithms have recipes yet.
+
+---
+
+## 2. Concepts
+
+| Concept | Description |
+|--------|--------------|
+| **Recipe** | A federated job definition (plus optional filters, config overrides, decomposers). You use a concrete recipe (e.g. `FedAvgRecipe`) and call `export()` or `execute()`. No internal job type required. |
+| **ExecEnv** | Where the job runs. NVFlare provides **SimEnv**, **PocEnv**, and **ProdEnv**; each deploys the job and returns status/results via a `Run` handle. |
+| **Run** | Returned by `recipe.execute(env)`. Use it for job ID, status, result path, and abort. |
+
+---
+
+## 3. Recipe API
+
+**Module:** `nvflare.recipe.spec.Recipe`. You use concrete recipes (e.g. `FedAvgRecipe`) or subclass `Recipe` for custom jobs.
+
+### 3.1 Constructor
+
+Concrete recipes take high-level parameters and build the job internally:
+
+```python
+recipe = FedAvgRecipe(
+    name="my_fedavg",
+    min_clients=2,
+    num_rounds=5,
+    train_script="train.py",
+    train_args="--epochs 2",
+    model=my_model,
+)
+```
+
+Optional **`per_site_config`** lets you override the training script and/or arguments (e.g. learning rate, batch size) per site; see **3.4 Per-site config** below.
+
+Custom recipe subclasses currently receive an internal job type; see **API Enhancements** (last section) for planned improvements.
+
+### 3.2 Export and execute
+
+**Export** writes the job to disk for later submission (e.g. via Job CLI):
+
+```python
+recipe.export(job_dir="/path/to/job_root")
+# Optional: server_exec_params, client_exec_params, env for process_env()
+```
+
+**Execute** runs the job in a given environment and returns a `Run`:
+
+```python
+run = recipe.execute(env=env, server_exec_params=None, client_exec_params=None)
+run.get_job_id()
+run.get_status()
+result_path = run.get_result(timeout=3600.0)
+run.abort()  # if needed
+```
+
+### 3.3 Other recipe methods
+
+All methods below are on the base `Recipe` class and work with any concrete recipe.
+
+#### process_env(env)
+
+Override to apply environment-specific configuration before deploy. Called automatically by `export(..., env=...)` and `execute(env)`. Default is a no-op; concrete recipes can override to adjust settings based on the target environment (e.g. different timeouts for simulation vs production).
+
+#### Filters
+
+Add task-data or task-result filters to server or clients. Filters transform data in transit (e.g. precision conversion, parameter exclusion, differential privacy).
+
+| Method | Direction | Scope |
+|--------|-----------|-------|
+| `add_server_output_filter(filter, tasks=None)` | Server → clients (task data) | Server |
+| `add_server_input_filter(filter, tasks=None)` | Clients → server (task result) | Server |
+| `add_client_input_filter(filter, tasks=None, clients=None)` | Server → client (task data) | All or specific clients |
+| `add_client_output_filter(filter, tasks=None, clients=None)` | Client → server (task result) | All or specific clients |
+
+**Example (BioNeMo  -  `examples/advanced/bionemo/downstream/tap/job.py`):**
+
+```python
+recipe = FedAvgRecipe(name="bionemo_tap", min_clients=3, train_script="train.py", ...)
+
+# Convert incoming params to the right precision on each client
+recipe.add_client_input_filter(BioNeMoParamsFilter(precision="bf16"), tasks=["train", "validate"])
+
+# Convert outgoing state dict format
+recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
+
+# Exclude the regression head from aggregation (personal endpoint per client)
+recipe.add_client_output_filter(
+    BioNeMoExcludeParamsFilter(exclude_vars="regression_head"),
+    tasks=["train", "validate"],
+)
+```
+
+#### Config
+
+`add_server_config(config: dict)` and `add_client_config(config: dict, clients=None)` add **top-level key-value pairs** to the generated `config_fed_server.json` or `config_fed_client.json`. At runtime, controllers and executors read these values via `nvflare.utils.configs.get_server_config_value(fl_ctx, key)` and `get_client_config_value(fl_ctx, key)`. This is the general-purpose mechanism for passing configuration from the recipe to the runtime without new constructor parameters.
+
+**Example (BioNeMo  -  override client executor timeout):**
+
+```python
+recipe = FedAvgRecipe(name="bionemo_job", min_clients=3, train_script="train.py", ...)
+
+# Override the default pre-init timeout for heavy library imports (e.g. BioNeMo/NeMo)
+recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": 600})
+
+# The ClientAPILauncherExecutor reads this at initialize() via:
+#   get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
+```
+
+#### Decomposers
+
+`add_decomposers(decomposers: List[Union[str, Decomposer]])` registers custom serialization decomposers on both server and clients. Pass class name strings or `Decomposer` instances.
+
+**Example (PyTorch tensor decomposer for BioNeMo-style jobs):**
+
+```python
+recipe = FedAvgRecipe(name="bionemo_job", min_clients=3, train_script="train.py", ...)
+
+# Register TensorDecomposer so PyTorch tensors can be serialized in transit
+recipe.add_decomposers(["nvflare.app_opt.pt.decomposers.TensorDecomposer"])
+```
+
+**Note:** The BioNeMo examples currently use `recipe.job.to_server(DecomposerRegister(...))` / `recipe.job.to_clients(DecomposerRegister(...))` directly instead of `recipe.add_decomposers(...)`. The `add_decomposers` method is the preferred API (wraps the same logic without touching the internal job).
+
+### 3.4 Per-site config
+
+To use **different training scripts or hyperparameters per site**, pass **`per_site_config`** on the recipe constructor. Keys are site names (e.g. `"site-1"`, `"site-2"`); values are dicts that override the default `train_script`, `train_args`, and optionally other recipe-specific options (e.g. `command`, `data_loader` for XGBoost). Common use: different data paths, learning rates, or batch sizes per site. Do not put credentials or secrets in `train_args` or per-site config; use environment variables or the execution environment's secret mechanism (see Section 6).
+
+**Supported on:** FedAvg (base and PT/TF/Sklearn/NumPy variants), FedEval, XGBoost (vertical, histogram, bagging), and related recipes. Each recipe documents which keys it accepts in the per-site dict (e.g. `train_script`, `train_args`; XGBoost may add `data_loader`, `lr_scale`).
+
+```python
+recipe = FedAvgRecipe(
+    name="fedavg",
+    min_clients=2,
+    num_rounds=5,
+    train_script="train.py",
+    train_args="--epochs 2",
+    model=model,
+    per_site_config={
+        "site-1": {"train_script": "train_site1.py", "train_args": "--lr 0.01 --batch_size 32"},
+        "site-2": {"train_args": "--lr 0.02 --batch_size 64"},
+    },
+)
+```
+
+**Examples:** `examples/advanced/sklearn-linear/job.py`, `sklearn-kmeans/job.py`, `sklearn-svm/job.py`; `xgboost/fedxgb/job.py`; `multi-gpu/pt/job.py`; `llm_hf/job.py`; `gnn/protein/job.py`, `gnn/finance/job.py`.
+
+### 3.5 Model (dict config)
+
+Recipes that need an initial model (e.g. FedAvg, FedOpt, SCAFFOLD) accept a **model** (or **initial_model**). Instead of passing a model *instance*, you can pass a **dict config** so the model class is resolved at runtime (useful when the class is not importable in the recipe process or you want to keep the job serializable). The dict must have:
+
+- **`class_path`** (str): Fully qualified class name (e.g. `"my_package.models.MyNet"`). The runtime will import and instantiate this class.
+- **`args`** (dict, optional): Constructor arguments for the model class. Default `{}`.
+
+```python
+# Dict config: no need to instantiate the model in the recipe process
+model_config = {
+    "class_path": "my_project.model.MyNet",
+    "args": {"in_features": 784, "hidden": 128, "num_classes": 10},
+}
+recipe = FedAvgRecipe(
+    name="fedavg",
+    min_clients=2,
+    num_rounds=5,
+    train_script="train.py",
+    train_args="--epochs 2",
+    model=model_config,
+)
+```
+
+You can still pass a model *instance* (e.g. `nn.Module`, `tf.keras.Model`) when you have it in memory; dict config is for when you prefer a declarative, serializable form.
+
+### 3.6 Checkpoint usage
+
+Recipes that support an initial model (e.g. FedAvg, FedOpt, SCAFFOLD) can take **`initial_ckpt`** and often **`save_filename`** to control where weights are loaded from and where the FL global model is saved.
+
+- **`initial_ckpt`** (optional): Path to a pre-trained checkpoint file used to **load initial weights** on the server.
+  - **Absolute path** (e.g. `/workspace/pretrained.pt`): Treated as a **server-side** path. The file must exist on the server at runtime; it is not bundled into the job. Use for production or when the checkpoint lives on shared storage.
+  - **Relative path** (e.g. `start.pt`): Treated as a **local** file. The file is **bundled** into the job (server app's `custom/` directory). At runtime the persistor sees the file by basename. Use for small checkpoints or when submitting a self-contained job.
+- **`save_filename`** (recipe parameter, e.g. FedAvg): Filename under which the **FL global model** is saved on the server after aggregation (e.g. `"FL_global_model.pt"`). The server persistor writes the best/current global model to this file in the job workspace.
+
+Typical patterns:
+
+- **Cold start (architecture + optional weights):** Pass `model=model_config` (see Section 3.5). Optionally pass `initial_ckpt` to load pre-trained weights into that model.
+- **Resume from a previous FL run:** Pass `initial_ckpt` with the path to the saved global model (e.g. from a previous job's workspace). For PyTorch, you still usually need the model architecture: use `model=model_config` (Section 3.5) and `initial_ckpt=path_to_weights`.
+- **Save location:** Use `save_filename` to control where the aggregated model is written each round or at the end.
+
+Do not put secrets (e.g. credentials to download checkpoints) in paths or config; use environment variables or runtime secret injection (see Section 6 and 10.9).
+
+---
+
+## 4. ExecEnv API
+
+**Module:** `nvflare.recipe.spec.ExecEnv`. Abstract base; you use **SimEnv**, **PocEnv**, or **ProdEnv**.
+
+**Constructor:** `ExecEnv(extra: dict = None)`.
+
+**Required methods (for custom envs):** `deploy(job) -> str`, `get_job_status(job_id)`, `abort_job(job_id)`, `get_job_result(job_id, timeout=0.0) -> Optional[str]`. **Optional:** `stop(clean_up=False)`.
+
+### 4.1 SimEnv (simulation)
+
+Best for quick experiments and debugging. Result under `/tmp/nvflare/simulation/<job_name>`.
+
+**Arguments:** `num_clients`, `clients` (list; length must match `num_clients` if both set), `num_threads`, `gpu_config` (comma-separated), `log_config`.
+
+```python
+from nvflare.recipe.sim_env import SimEnv
+env = SimEnv(num_clients=2, num_threads=2)
+run = recipe.execute(env)
+run.get_result()
+```
+
+### 4.2 PocEnv (proof-of-concept)
+
+Server and clients as separate processes on one machine. Good for demos and validation before production.
+
+**Arguments:** `num_clients`, `clients`, `gpu_ids`, `auto_stop`, `use_he`, `docker_image`, `project_conf_path`. Set `NVFLARE_POC_WORKSPACE` if needed.
+
+```python
+from nvflare.recipe.poc_env import PocEnv
+env = PocEnv(num_clients=2)
+run = recipe.execute(env)
+run.get_result()
+```
+
+### 4.3 ProdEnv (production)
+
+Uses an existing NVFlare deployment; connects via the admin startup kit.
+
+**Arguments:** `startup_kit_location`, `login_timeout`, `monitor_job_duration`.
+
+```python
+from nvflare.recipe.prod_env import ProdEnv
+env = ProdEnv(startup_kit_location="/path/to/admin/startup_kit")
+run = recipe.execute(env)
+run.get_result()
+```
+
+**Workflow:** Develop in SimEnv → validate in PocEnv → deploy in ProdEnv. Same recipe, no code changes.
+
+---
+
+## 5. Run API
+
+**Module:** `nvflare.recipe.run.Run`; returned by `recipe.execute(env)`.
+
+| Method | Description |
+|--------|-------------|
+| `get_job_id()` | Job ID from deploy. |
+| `get_status()` | Current status (cached after stop). |
+| `get_result(timeout=0.0)` | Wait for completion; returns result workspace path or None. After this, env is stopped and result cached. |
+| `abort()` | Abort the job (no-op if already stopped). |
+
+---
+
+## 6. Usage flow and best practices
+
+1. **Create a recipe** with the parameters for your algorithm (name, min_clients, num_rounds, train_script, model, etc.).
+2. **Export or execute:** use `recipe.export(job_dir)` to write a job for CLI/submission, or `recipe.execute(env)` to run in SimEnv, PocEnv, or ProdEnv.
+3. **Develop in SimEnv** to iterate quickly, **validate in PocEnv** for multi-process behavior, **deploy in ProdEnv** for production.
+4. Start with a built-in recipe; use consistent naming; monitor execution. Add filters or config with the recipe methods if needed.
+
+**Edge applications** (hierarchical/edge) are not supported by the simulator; use ProdEnv. See `examples/advanced/edge`.
+
+**Kubernetes (k8s):** The same recipe runs in a Kubernetes environment with **no recipe changes**. Use an ExecEnv that deploys to k8s (e.g. a K8sEnv or k8s-backed deployment). The existing recipe parameters - **deploy_map** (app→site placement), **resource_spec** in the job’s **meta.json** (GPU/resource requirements per site; see below), and **client_scripts** / **client_launcher** - should be defined in an environment-agnostic way so a k8s backend can translate them to Pod/Job specs, resource requests/limits, and node selectors. See **Section 9** (requirements 6 and 8) and **Sections 10.6 and 10.8** for the corresponding API design.
+
+**Secrets and credentials (dataset access, API keys, etc.):** Recipe parameters such as **train_args**, **per_site_config**, and **add_client_config** / **add_server_config** are part of the job definition and may be written to disk or logs. **Do not put actual credentials or secrets there.** Use environment variables, mounted secrets (e.g. k8s Secrets, vault), or the execution environment's secret-injection mechanism so that the training script receives credentials at runtime. The recipe can reference secret *identifiers* (e.g. env var names or secret keys) rather than values; the runtime resolves them when the job runs.
+
+---
+
+## 7. Available recipes (reference)
+
+Full list and code samples: **`user_guide/data_scientist_guide/available_recipes.rst`**.
+
+**Categories:** FedAvg (PyTorch, TensorFlow, NumPy, Sklearn, with HE), FedProx, FedOpt, SCAFFOLD, Cyclic, XGBoost (horizontal, bagging, vertical), Sklearn (KMeans, SVM, Logistic Regression), Federated Statistics, Fed Eval, Cross-Site Eval, PSI, Flower, Swarm, Edge. **Utils:** `add_experiment_tracking(recipe, tracking_type=...)`, `add_cross_site_evaluation(recipe)`.
+
+**Recipe coverage and limitations:** For **Swarm (swarming learning)** and **Cyclic**, several controller/config parameters exist in the Job API (`SwarmClientConfig`, `SwarmServerConfig`, etc.) but are **not yet exposed** on the recipe - e.g. **learn_task_timeout** (e.g. 10800), **max_concurrent_submissions** (e.g. 3), server/client timeouts. See Section 9 (requirement 9) and Section 10.9.
+
+#### 7.1 Memory management (existing recipes)
+
+**Server-side memory management:** Several recipes expose **server_memory_gc_rounds** (constructor parameter) so the server runs memory cleanup every N rounds. The recipe passes this value to the server controller as **memory_gc_rounds**; the controller (e.g. `BaseFedAvg`, `ScatterAndGather`, `CyclicController`, `Cyclic`) calls `nvflare.fuel.utils.memory_utils.cleanup_memory()` at the end of each round when the round index is a multiple of N. That function runs `gc.collect()`, `malloc_trim` (Linux/glibc), and does not use PyTorch CUDA on the server. Set **server_memory_gc_rounds** to **0** to disable.
+
+**Recipes that support server_memory_gc_rounds:** FedAvgRecipe (unified and PT/TF variants; default **0**), CyclicRecipe (PT/TF; default **1**), FedOptRecipe (PT default **1**, TF default **0**), ScaffoldRecipe (PT/TF; default **0**), FedAvgRecipeWithHE (PT; default **1**).
+
+**Best practice for long-running server jobs:** set `server_memory_gc_rounds` (e.g. 5) and use `MALLOC_ARENA_MAX=4` in the server environment.
+
+**Example (server_memory_gc_rounds):**
+
+```python
+recipe = FedAvgRecipe(
+    name="fedavg",
+    min_clients=2,
+    num_rounds=10,
+    train_script="train.py",
+    model=model,
+    server_memory_gc_rounds=5,   # run gc.collect + malloc_trim every 5 rounds on server
+)
+```
+
+**Client-side memory management:** Client-side memory options (e.g. **client_memory_gc_rounds** to run cleanup every N rounds on each client, with optional PyTorch CUDA cache clear) are not yet uniformly exposed on recipes. They are covered as **requirement 14** in Section 9 and proposed in Section 10.14. Best practice for clients: cleanup every round when possible; use `MALLOC_ARENA_MAX=2` and `torch_cuda_empty_cache=True` for PyTorch GPU clients (see `nvflare.fuel.utils.memory_utils`).
+
+---
+
+## 8. Quick reference
+
+| Goal | Use |
+|------|-----|
+| Write job to disk | `recipe.export(job_dir)` |
+| Run in an environment | `recipe.execute(env)` → `Run`; then `get_job_id()`, `get_status()`, `get_result()`, `abort()` |
+| Server/client config | `recipe.add_server_config(config)`, `recipe.add_client_config(config, clients=None)` |
+| Per-site script/args | `per_site_config={"site-1": {"train_script": "...", "train_args": "..."}, ...}` on recipe constructor |
+| Model (dict config) / checkpoint | `model={"class_path": "module.Class", "args": {...}}`; `initial_ckpt` (absolute = server-side, relative = bundled); `save_filename` for FL global model (Section 3.5). |
+| Task/result filters | `add_server_output_filter`, `add_server_input_filter`, `add_client_input_filter`, `add_client_output_filter` |
+| Custom serialization | `recipe.add_decomposers([...])` |
+| Environment-specific setup | Override `recipe.process_env(env)` |
+| Server/client memory | `server_memory_gc_rounds` (constructor, e.g. FedAvgRecipe); client options see req. 14. |
+| Job scope (policy) | Not yet exposed; see req. 13 (avoid `recipe.job.job.meta_props` hack). |
+
+---
+
+## 9. API Enhancements
+
+Requirements so users never need to know about the internal job type (for implementers; not prescriptive):
+
+| # | Requirement | Current exposure | Target release |
+|---|-------------|------------------|----------------|
+| 1 | Recipe constructor should not require users to pass an internal job. | `Recipe.__init__(self, job: FedJob)` in `nvflare.recipe.spec`. | 2.7.2          |
+| 2 | Recipe should not expose an internal job attribute. | `Recipe.job` public. | 2.7.2          |
+| 3 | ExecEnv.deploy should not force implementers to depend on the internal job type. | `ExecEnv.deploy(self, job: FedJob) -> str`; SimEnv and other envs use FedJob. | 2.7.2          |
+| 4 | Docs and examples should not tell users to build or pass an internal job. | Examples using `BaseFedJob` / `Recipe(job=job)`. | 2.7.2          |
+| 5 | Concrete recipes (e.g. FedAvgRecipe) remain the primary entry point. | Already the case; base `Recipe(job)` and `ExecEnv.deploy(job: FedJob)` need abstraction. | 2.7.2          |
+| 6 | **Deploy map in the Recipe API.** Users need to specify which app goes to which site via a **deploy_map** (app name to list of sites). deploy_map is written to the job’s **meta.json**; it only defines app-to-site placement, not resources. Recipe API should expose a way to set deploy_map without dropping to raw job config. | Deploy map exists at job/meta level; Recipe API should expose it. | 2.8.0          |
+| 7 | **Multi-script / launcher workflows (e.g. Slurm).** Support training that uses `client.py` but depends on Slurm or similar mechanisms requiring multiple additional scripts (submit scripts, wrappers, env setup). | Today recipes typically assume a single train script (+ args). Need a way to attach extra scripts or a "launcher bundle" (or launcher type like `slurm`) so that client execution can run in cluster/slurm environments with the right scripts deployed. | 2.8.0          |
+| 8 | **Kubernetes (k8s) deployment.** Recipe API must support deployment in Kubernetes without recipe changes. deploy_map (req. 6), launcher/scripts (req. 7), and **resource_spec in meta.json** (GPU/resource requirements; req. 11) should be environment-agnostic so a K8s ExecEnv can translate them to Pod/Job specs, resource requests/limits, and node selectors. | No new recipe parameters required; design existing ones so k8s backend can consume them. | 2.8.0          |
+| 9 | **Algorithm-specific config (timeouts, concurrency).** Recipes for Swarm, Cyclic, and similar workflows should expose or allow overriding of controller/config parameters (e.g. Swarm: learn_task_timeout, max_concurrent_submissions; server/client timeouts) so users do not need to drop to the Job API. | Swarm/Cyclic configs (SwarmClientConfig, SwarmServerConfig, etc.) exist in Job API; SimpleSwarmLearningRecipe and Cyclic recipe do not expose them. | 2.7.2          |
+| 10 | **Optional integrations (contribution estimation, personal model, etc.).** For commonly used recipes (especially DL/FedAvg-related), flags or config to turn on optional features (e.g. contribution estimation via fed_ce; personal model via FedSM or Ditto). When enabled, the recipe auto-adds the default component/algorithm behind the scenes. | Not yet in recipe API. | 2.8.0          |
+| 11 | **Resource (GPU) requirements in the Recipe API.** GPU and other resource requirements are **not** in deploy_map; they are in the job's **meta.json** under **resource_spec** (site name to resource dict, e.g. `num_gpus`, `mem_per_gpu_in_GiB`). Recipe API should expose resource_spec so the generated job's meta.json includes per-site resource requirements. | resource_spec exists in meta.json; Recipe API should expose it. | 2.8.0          |
+| 12 | **Client-side experiment tracking.** Recipe API should support client-side experiment tracking as a first-class option (e.g. MLflow, TensorBoard, WandB on each client). Today `add_experiment_tracking(recipe, tracking_type, ..., client_side=True)` exists but should be documented and consistently exposed so users can enable client-side tracking without dropping to job config. | add_experiment_tracking has client_side=True; needs to be documented and stable. | 2.8.0          |
+| 13 | **Job scope (meta_props) in the Recipe API.** Policy-related features (e.g. privacy scope) require setting the job scope in the job's meta. Currently users set it via the internal hack `recipe.job.job.meta_props = {"scope": "foo"}`. Recipe API should expose a way to set **scope** (or meta_props such as `scope`) so the generated job's meta.json includes it without accessing internal job types. | Job meta has scope (JobMetaKey.SCOPE); recipe does not expose it. | 2.8.0          |
+| 14 | **Client-side memory management in the Recipe API.** Clients need configurable memory cleanup (e.g. gc.collect + malloc_trim, and optionally torch.cuda.empty_cache) every N rounds to control RSS. Recipe API should expose **client_memory_gc_rounds** (and related options) so client executors/runners are configured for cleanup without dropping to job config. Align with `nvflare.fuel.utils.memory_utils` best practices (e.g. cleanup every round on client, MALLOC_ARENA_MAX=2). | memory_utils.cleanup_memory exists; client executors need recipe-level config. | 2.7.2          |
+---
+
+## 10. Proposed API changes (for the 14 requirements)
+
+The following are **proposed** API changes to address the requirements in Section 9 (14 requirements). These are design proposals, not commitments.
+
+### 10.1 Requirement 1  -  Recipe constructor without internal job
+
+**Proposal:** Base `Recipe` does not take a `job` in its public constructor. Concrete recipes (e.g. `FedAvgRecipe`) accept only recipe-level parameters and construct the internal job inside. Custom recipes that need to extend behavior do so via a **factory** or **builder** API, e.g. `Recipe.from_parameters(...)` or a dedicated builder class that returns a recipe, so users never pass or see the internal job type.
+
+```python
+# User only passes recipe-level parameters; no job object
+recipe = FedAvgRecipe(
+    name="my_fedavg",
+    min_clients=2,
+    num_rounds=5,
+    train_script="train.py",
+    train_args="--epochs 2",
+    model=my_model,
+)
+# Custom recipe via factory (no FedJob in signature)
+custom_recipe = MyRecipe.from_parameters(name="custom", min_clients=2, ...)
+```
+
+**Recommendation (ease of use):** Prefer **constructor-only for concrete recipes** (e.g. `FedAvgRecipe(...)` with no `job=`). Users see one clear entry point and all parameters in one place. For custom recipes, a **factory** (e.g. `MyRecipe.from_parameters(...)`) is easier than a builder: one call returns a ready-to-use recipe, with no separate "build" step and less room for misuse.
+
+### 10.2 Requirement 2  -  No exposed job attribute
+
+**Proposal:** Remove or make private the `Recipe.job` attribute. If code needs to pass "the job" to `ExecEnv.deploy()`, the recipe exposes an opaque descriptor or the deploy signature accepts the recipe itself and the env calls an internal recipe method (e.g. `_get_job_for_deploy()`) that is not part of the public API.
+
+```python
+# User code never touches .job
+recipe = FedAvgRecipe(name="x", min_clients=2, ...)
+recipe.export("/tmp/job")   # or recipe.execute(env)
+# recipe.job  # not part of public API (removed or private)
+```
+
+**Recommendation (ease of use):** **Remove or make `.job` private.** Users then have a single mental model: "recipe = job definition; I export or execute it." They are not tempted to depend on internal structure, so the API stays stable and docs stay simple.
+
+### 10.3 Requirement 3  -  ExecEnv.deploy not tied to FedJob
+
+**Proposal:** Change `ExecEnv.deploy(self, job: FedJob) -> str` to `ExecEnv.deploy(self, recipe: Recipe) -> str` (or an opaque type like `JobPackage`). The env receives the recipe (or a serialized job package produced by the recipe) and does not depend on the FedJob type. Implementations that need to generate or run a job do so via recipe API (e.g. `recipe.export(job_dir)` to a temp dir, then submit that directory).
+
+```python
+# ExecEnv implementer: deploy takes Recipe, not FedJob
+class SimEnv(ExecEnv):
+    def deploy(self, recipe: Recipe) -> str:
+        with tempfile.TemporaryDirectory() as job_dir:
+            recipe.export(job_dir)
+            return self._submit_job_dir(job_dir)
+# User: unchanged
+run = recipe.execute(env)
+```
+
+**Recommendation (ease of use):** **`deploy(recipe: Recipe)`** (or opaque `JobPackage`) is easier for env implementers: one type to support, no FedJob coupling. For users, nothing changes - they still call `recipe.execute(env)` - so adoption is friction-free.
+
+### 10.4 Requirement 4  -  Docs and examples without internal job
+
+**Proposal:** All user-facing docs and examples use only concrete recipe constructors (e.g. `FedAvgRecipe(name=..., min_clients=..., train_script=..., model=...)`) and `recipe.export()` / `recipe.execute(env)`. Remove or relocate any examples that construct `BaseFedJob` or pass `job=...` into a recipe to an "advanced / internals" section that is clearly not the recommended path.
+
+```python
+# Recommended (only recipe + export/execute)
+recipe = FedAvgRecipe(name="x", min_clients=2, train_script="train.py", model=m)
+recipe.export("/path/to/job_root")
+run = recipe.execute(SimEnv(num_clients=2))
+
+# Not in main docs: job = BaseFedJob(...); recipe = FedAvgRecipe(job=job)
+```
+
+**Recommendation (ease of use):** **One recommended path in docs and examples** (recipe constructor + `export` / `execute` only) reduces confusion. Advanced users who need the internal job can be directed to a separate "Internals" or "Extending recipes" section, so the main flow stays obvious for most users.
+
+### 10.5 Requirement 5  -  Concrete recipes as primary entry point
+
+**Proposal:** No API change; reinforce in docs and naming that `FedAvgRecipe`, `CyclicRecipe`, etc. are the primary entry points. Ensure base `Recipe` is documented as an advanced base for custom recipe authors, and that the internal job type is not part of the public contract (covered by 10.1–10.3).
+
+```python
+# Primary entry: concrete recipe only
+recipe = FedAvgRecipe(name="x", min_clients=2, num_rounds=5, train_script="train.py", model=m)
+# or CyclicRecipe(...), FedOptRecipe(...), etc.
+recipe.execute(SimEnv(num_clients=2))
+```
+
+**Recommendation (ease of use):** No API change here; **keep concrete recipes as the primary entry point**. Documenting this clearly avoids users digging into the base `Recipe` or job type. Least friction for the common case.
+
+### 10.6 Requirement 6  -  Deploy map in the Recipe API
+
+**Clarification:** **deploy_map** (in meta.json) only defines *which apps are deployed to which sites* (app name to list of site names). It does **not** carry GPU or resource information; see Requirement 11 (resource_spec) for that.
+
+**Proposal:** Expose **deploy_map** at the recipe level so users can specify which app runs on which sites.
+- **Option A  -  Constructor parameter:** e.g. `deploy_map: Optional[Dict[str, List[str]]] = None` where keys are app names and values are lists of site names (e.g. `{"app": ["server", "site-1", "site-2"]}` or `{"app_server": ["server"], "app_1": ["site-1"], "app_2": ["site-2"]}`). Default could be "single app on server and all clients" (current behavior).
+- **Option B  -  Recipe method:** e.g. `recipe.set_deploy_map(deploy_map: Dict[str, List[str]])` so users can set or override the map after construction. Recipe validates that app names match the apps the recipe defines.
+- When generating the job, the recipe writes this deploy_map into the job's **meta.json** (not into any other structure).
+
+```python
+# Deploy map only (app to sites)
+recipe = FedAvgRecipe(
+    name="multi_app",
+    min_clients=2,
+    train_script="train.py",
+    model=model,
+    deploy_map={
+        "app_server": ["server"],
+        "app_1": ["site-1"],
+        "app_2": ["site-2"],
+    },
+)
+```
+
+**Recommendation (ease of use):** Keep **deploy_map** strictly for app-to-site placement. Prefer a **constructor parameter** so placement is defined in one place. Document clearly that deploy_map does not carry resource/GPU info (that is Requirement 11).
+
+### 10.7 Requirement 7  -  Multi-script / launcher workflows (e.g. Slurm)
+
+**Proposal:** Support **extra scripts** and/or a **launcher type** so client execution can use Slurm or similar mechanisms.
+
+- **Option A  -  Constructor parameter:** `client_scripts: Optional[List[str]] = None` (paths to additional scripts to bundle into the client app's `custom` folder). Each concrete recipe would accept and handle this parameter. These scripts are deployed alongside `train_script` so that submit scripts, wrappers, or env setup scripts are available at runtime.
+- **Option B  -  Launcher type / bundle:** `client_launcher: Optional[Union[str, LauncherConfig]] = None` where:
+  - `str` could be a preset: e.g. `"subprocess"` (default), `"slurm"`, `"custom"`.
+  - `LauncherConfig` (or dict) could specify `type="slurm"` plus options (e.g. `submit_script="submit.sh"`, `wrapper_script="run.sh"`, `extra_scripts=["env_setup.sh"]`). The recipe (and the underlying executor/config) would use this to configure the client to run via `sbatch submit.sh` (or similar) instead of directly invoking `train_script`, with the required scripts included in the job bundle.
+- **Option C  -  Base Recipe method:** `recipe.add_client_scripts(scripts: List[str])` defined on the **base `Recipe` class** so it works with **all** recipes without each concrete recipe needing its own constructor parameter. The base method stores the script paths and bundles them into the client app at export/execute time. This is simpler to maintain because script bundling is a cross-cutting concern (not algorithm-specific) - it should be handled once in the base class rather than duplicated across every recipe's constructor and validation.
+
+Concrete recipes document how `client_scripts` and `client_launcher` are applied (e.g. which executor or launcher class is used) so that Slurm or other cluster mechanisms are supported without dropping to raw job config.
+
+```python
+# Option A: constructor parameter (recipe-specific)
+recipe = FedAvgRecipe(
+    name="slurm_job",
+    min_clients=2,
+    train_script="client.py",
+    model=model,
+    client_scripts=["submit.sh", "run_wrapper.sh", "env_setup.sh"],
+)
+
+# Option B: launcher type
+recipe = FedAvgRecipe(
+    name="slurm_job",
+    min_clients=2,
+    train_script="client.py",
+    model=model,
+    client_launcher="slurm",
+)
+
+# Option C: base Recipe method (works with any recipe, simpler to maintain)
+recipe = FedAvgRecipe(name="slurm_job", min_clients=2, train_script="client.py", model=model)
+recipe.add_client_scripts(["submit.sh", "run_wrapper.sh", "env_setup.sh"])
+# Works the same way with any recipe:
+recipe = SimpleSwarmLearningRecipe(name="swarm", model=model_config, num_rounds=10, train_script="train.py")
+recipe.add_client_scripts(["submit.sh", "env_setup.sh"])
+```
+
+**Recommendation (ease of use):** Prefer **Option C** (`recipe.add_client_scripts()`) on the **base `Recipe` class**. Script bundling is a cross-cutting concern (not algorithm-specific) - defining it once on the base class means every recipe (current and future) supports it automatically with no per-recipe constructor changes. This is simpler to maintain than duplicating `client_scripts` in every concrete recipe's constructor (Option A). For **Slurm or another launcher**, **Option B** (a preset string like `client_launcher="slurm"`) can be added later as a separate enhancement when launcher support is needed; it is independent of script bundling. Start with Option C for the common "bundle extra scripts" use case.
+
+### 10.8 Requirement 8  -  Kubernetes (k8s) deployment
+
+**Proposal:** No new recipe parameters. The same recipe runs in k8s with no changes. Ensure **deploy_map** (app→site placement), **resource_spec** in the job's **meta.json** (GPU/resource requirements per site; Section 10.11), and **client_scripts** / **client_launcher** (Section 10.7) are defined in an **environment-agnostic** way so that:
+
+- A **K8s ExecEnv** (or k8s-backed deployment) can consume the job produced by `recipe.export()` and translate (a) **deploy_map** into which Pods run which app, and (b) **resource_spec** from meta.json into k8s resource requests/limits, node selectors, or tolerations for GPU nodes.
+- Launcher/script needs (e.g. entrypoint, extra scripts) can be satisfied in k8s via container image and volume mounts rather than a new recipe API.
+
+**Recommendation (ease of use):** Keep the recipe API environment-agnostic. Users write one recipe and choose the ExecEnv (SimEnv, PocEnv, ProdEnv, or a future K8sEnv). No "k8s mode" or k8s-specific recipe parameters - the k8s backend reads **deploy_map** and **resource_spec** from the job’s meta.json (and launcher metadata) the same way Slurm or other backends do.
+
+### 10.9 Requirement 9  -  Algorithm-specific config (Swarm, Cyclic timeouts and concurrency)
+
+**Context (from code):** The Job API defines **SwarmClientConfig** / **SwarmClientController** with e.g. learn_task_timeout (max time for a training task; None = no limit), max_concurrent_submissions (default 1), learn_task_abort_timeout, learn_task_ack_timeout, final_result_ack_timeout, min_responses_required, request_to_submit_result_*. **SwarmServerConfig** has start_task_timeout, configure_task_timeout, max_status_report_interval, progress_timeout (defaults: 10, 300, 90, 3600). **CyclicServerConfig** / **CyclicClientConfig** have analogous timeouts. **SimpleSwarmLearningRecipe** builds these configs without exposing these parameters.
+
+**Proposal:** (A) Add optional recipe parameters (e.g. learn_task_timeout, max_concurrent_submissions, progress_timeout) and pass through to configs. (B) Or add server_config_overrides / client_config_overrides dicts. (C) Use the **existing** `recipe.add_server_config(config)` and `recipe.add_client_config(config)` methods (already on the base `Recipe` class; see Section 3.3) to pass algorithm-specific overrides without any new API.
+
+**Note (existing API  -  already in use):** The base `Recipe` class already provides **`recipe.add_server_config(config: dict)`** and **`recipe.add_client_config(config: dict, clients=None)`** (Section 3.3). These write top-level key-value pairs into `config_fed_server.json` / `config_fed_client.json`; at runtime, controllers and executors read them via `nvflare.utils.configs.get_server_config_value()` / `get_client_config_value()`.
+
+**Real-world example (BioNeMo):** The BioNeMo examples (`examples/advanced/bionemo/downstream/tap/job.py`, `scl/job.py`, `sabdab/job.py`) already use this pattern to override the client executor's pre-init timeout for heavy library imports:
+
+```python
+recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": 600})  # seconds
+```
+
+The `ClientAPILauncherExecutor` reads this at `initialize()` via `get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)` and overrides its default timeout. The same pattern works for any custom config key.
+
+This means users can already achieve the goal of this requirement **without new API surface** - they construct the recipe and then call `add_server_config` / `add_client_config` with the desired overrides. The question is whether to also add discoverable, type-safe constructor parameters (Option A) for the most common settings.
+
+```python
+# Option A: explicit recipe parameters (discoverable, documented)
+recipe = SimpleSwarmLearningRecipe(
+    name="swarm_job",
+    model=model_config,
+    num_rounds=10,
+    train_script="train.py",
+    learn_task_timeout=10800,        # max seconds per training task (e.g. 3 hours)
+    max_concurrent_submissions=3,    # allow 3 concurrent submissions on aggregation client
+    progress_timeout=3600,           # server: max time without workflow progress
+)
+
+# Option B: override dicts on constructor (forward-compatible for other keys)
+recipe = SimpleSwarmLearningRecipe(
+    name="swarm_job",
+    model=model_config,
+    num_rounds=10,
+    train_script="train.py",
+    client_config_overrides={
+        "learn_task_timeout": 10800,
+        "max_concurrent_submissions": 3,
+    },
+    server_config_overrides={
+        "progress_timeout": 3600,
+        "configure_task_timeout": 600,
+    },
+)
+
+# Option C: existing base Recipe methods (no new API needed)
+recipe = SimpleSwarmLearningRecipe(
+    name="swarm_job",
+    model=model_config,
+    num_rounds=10,
+    train_script="train.py",
+)
+recipe.add_server_config({
+    "progress_timeout": 3600,
+    "configure_task_timeout": 600,
+})
+recipe.add_client_config({
+    "learn_task_timeout": 10800,
+    "max_concurrent_submissions": 3,
+})
+```
+
+**Recommendation (ease of use):** For most users, **Option C** (`recipe.add_server_config()` / `recipe.add_client_config()`) is sufficient today - it already exists, works with all recipes, and requires no new API. This makes the requirement **lower priority** for implementation since the functionality is already available. For improved discoverability, **Option A** (explicit constructor parameters for the top 2-3 settings like `learn_task_timeout`, `max_concurrent_submissions`, `progress_timeout`) can be added to specific recipes (e.g. `SimpleSwarmLearningRecipe`) in a later release. Option B (override dicts) adds little value over the existing Option C and can be skipped.
+
+
+
+### 10.10 Requirement 10  -  Optional integrations (contribution estimation, personal model, etc.)
+
+**Proposal:** For selected recipes (primarily **FedAvg-related** and other commonly used DL recipes), support **flags or config** to turn on optional features that the recipe integrates behind the scenes by auto-adding the corresponding default component/algorithm. Consider multiple integration points under one design:
+
+- **Contribution estimation:** User turns on a flag or config (e.g. contribution_estimation=True or "fed_ce"); recipe adds the default contribution-estimation component (e.g. **fed_ce**).
+- **Personal model:** User turns on a flag or config (e.g. personal_model=True or "FedSM"); recipe adds the default personal-model component - e.g. **FedSM** as default, or **Ditto** as an alternative. Enables per-client personalized models behind the scenes.
+
+Same pattern for each: boolean flag or string/config to select algorithm; recipe wires in the default (or chosen) implementation without the user touching the low-level Job API. Other possible options (e.g. differential privacy, compression) can follow the same pattern.
+
+- **Option A  -  Boolean flags per feature:** contribution_estimation=True, personal_model=True. Each adds its default (fed_ce, FedSM). Simple and discoverable.
+- **Option B  -  Config per feature (built-ins only):** contribution_estimation="fed_ce" | None, personal_model="FedSM" | "Ditto" | None. Choose among built-in algorithms or disable. Custom (user-provided) algorithm support is not defined yet and is left for later.
+
+```python
+# Option A: flags (defaults: fed_ce, FedSM)
+recipe = FedAvgRecipe(name="fedavg", min_clients=3, num_rounds=10, train_script="train.py", model=model, contribution_estimation=True, personal_model=True)
+
+# Option B: config (e.g. Ditto instead of FedSM)
+recipe = FedAvgRecipe(..., contribution_estimation="fed_ce", personal_model="Ditto")
+```
+
+**Recommendation (ease of use):** **Start with Option A only** (boolean flags) for the first iteration. Support contribution_estimation and personal_model as flags; recipe adds built-in defaults (fed_ce, FedSM). Do not require supporting both Option A and Option B initially. **Option B** (config to choose among built-ins, e.g. personal_model="Ditto" instead of FedSM) is harder and can be added later when needed. Custom algorithm support (user-provided component) is not yet defined - we do not know how to support it in the recipe API - so leave it out of scope until we have a clear design.
+
+### 10.11 Requirement 11  -  Resource (GPU) requirements in the Recipe API (meta.json resource_spec)
+
+**Clarification:** GPU and other resource requirements are **not** in **deploy_map**. They are specified in the job's **meta.json** under **resource_spec**: a map from *site name* to a resource dict (e.g. `{"num_gpus": 1, "mem_per_gpu_in_GiB": 4}`). The recipe (or job generator) should write resource_spec into meta.json when producing a job; the runtime (and K8s/Slurm backends) read it for scheduling and resource allocation.
+
+**Proposal:** Expose **resource_spec** at the recipe level so users can specify GPU (or other resource) requirements per site.
+- **Option A  -  Constructor parameter:** e.g. `resource_spec: Optional[Dict[str, Dict]] = None` where keys are site names and values are resource dicts (e.g. `{"site-1": {"num_gpus": 1, "mem_per_gpu_in_GiB": 4}, "site-2": {"num_gpus": 2, "mem_per_gpu_in_GiB": 8}}`). Default could be `None` (no resource requirements in meta.json).
+- **Option B  -  Recipe method (per-recipe):** e.g. `recipe.set_resource_spec(resource_spec: Dict[str, Dict])` so users can set or override after construction.
+- **Option C  -  Base Recipe method:** `recipe.add_resource_spec(resource_spec: Dict[str, Dict])` defined on the **base `Recipe` class** so it applies to **all** recipes (FedAvg, Cyclic, Swarm, XGBoost, etc.) without each concrete recipe needing its own constructor parameter or implementation. The base method stores resource_spec and writes it into the job's **meta.json** at export/execute time. This keeps the constructor clean and makes resource_spec a cross-cutting concern handled once.
+- When generating the job, the recipe writes resource_spec into the job's **meta.json** alongside deploy_map.
+
+```python
+# Option A: constructor parameter (recipe-specific)
+recipe = FedAvgRecipe(
+    name="gpu_job",
+    min_clients=2,
+    train_script="train.py",
+    model=model,
+    resource_spec={
+        "site-1": {"num_gpus": 1, "mem_per_gpu_in_GiB": 4},
+        "site-2": {"num_gpus": 2, "mem_per_gpu_in_GiB": 8},
+    },
+)
+
+# Option C: base Recipe method (works with any recipe)
+recipe = FedAvgRecipe(name="gpu_job", min_clients=2, train_script="train.py", model=model)
+recipe.add_resource_spec({
+    "site-1": {"num_gpus": 1, "mem_per_gpu_in_GiB": 4},
+    "site-2": {"num_gpus": 2, "mem_per_gpu_in_GiB": 8},
+})
+# Works the same way with any recipe:
+recipe = CyclicRecipe(name="cyclic_gpu", min_clients=3, train_script="train.py", model=model)
+recipe.add_resource_spec({"site-1": {"num_gpus": 2}})
+```
+
+**Recommendation (ease of use):** Prefer **Option C** (`recipe.add_resource_spec()`) on the **base `Recipe` class**. Resource requirements are a cross-cutting concern (meta.json, not algorithm-specific) so they belong on the base class rather than duplicated in every concrete recipe's constructor. This keeps constructors focused on algorithm parameters and ensures every recipe (current and future) supports resource_spec automatically. Option A (constructor parameter) can be offered as a convenience on frequently used recipes (e.g. FedAvgRecipe) that delegates to the same base method. Document clearly: **resource_spec** (in meta.json) = GPU/resource requirements per site; **deploy_map** (Requirement 6) = which app runs where.
+
+### 10.12 Requirement 12  -  Client-side experiment tracking
+
+**Context:** `add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True)` already supports **client_side=True**, which adds a tracking receiver to all clients so each client logs metrics locally (e.g. MLflow, TensorBoard, WandB). This is useful for per-site experiments and debugging.
+
+**Proposal:** (1) Document client-side tracking in the main Recipe User Guide and this spec. (2) Ensure the API is stable: `client_side=True` adds the receiver to clients with appropriate event config (e.g. `ANALYTIC_EVENT_TYPE`). (3) Optionally add a recipe constructor parameter or method, e.g. `experiment_tracking={"type": "mlflow", "client_side": True, "server_side": True, "config": {...}}`, so users can enable tracking without a separate `add_experiment_tracking` call. Prefer documenting the existing helper as the primary path.
+
+**Recommendation (ease of use):** **Document `add_experiment_tracking(..., client_side=True)`** as the supported way to enable client-side experiment tracking. Add a short subsection in the user guide and in Section 7 (Available recipes) so users discover it. If demand grows, add a recipe-level parameter in a later release.
+
+### 10.13 Requirement 13  -  Job scope (meta_props) in the Recipe API
+
+**Context:** Job **scope** is used for policy-related features (e.g. privacy filters, scope-based authorization). The job's meta.json carries a **scope** key (see `JobMetaKey.SCOPE`). Today users who need to set scope use the internal hack: `recipe.job.job.meta_props = {"scope": "foo"}`. This depends on the internal job type and is brittle.
+
+**Proposal:** Expose **scope** (and optionally other meta_props) at the recipe level so the generated job's meta.json includes them.
+- **Option A  -  Constructor parameter:** e.g. `scope: Optional[str] = None` or `meta_props: Optional[Dict[str, Any]] = None` (with `scope` as a key). When generating the job, the recipe writes these into the job's meta (e.g. meta.json) so the runtime and policy layer can read them.
+- **Option B  -  Recipe method:** e.g. `recipe.set_scope(scope: str)` or `recipe.set_meta_props(props: Dict[str, Any])`.
+
+**Recommendation (ease of use):** Add **scope** as a constructor parameter (e.g. `scope: Optional[str] = None`) so policy-related jobs can set it in one place. If other meta_props are needed later, add **meta_props** dict or a small set of named params. Document that scope is used for policy/privacy and must not contain secrets.
+
+### 10.14 Requirement 14  -  Client-side memory management in the Recipe API
+
+**Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(torch_cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `torch_cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
+
+**Proposal:** Expose **client_memory_gc_rounds** (and optionally **client_torch_cuda_empty_cache**) at the recipe level so client executors/runners run memory cleanup every N rounds (and optionally clear CUDA cache).
+- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_torch_cuda_empty_cache: bool = True` for PyTorch GPU. Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(torch_cuda_empty_cache=...)` at the end of each round when configured.
+- **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_torch_cuda_empty_cache` so some sites can disable or use different values.
+
+**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_torch_cuda_empty_cache** (default True when PyTorch is used) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
+
