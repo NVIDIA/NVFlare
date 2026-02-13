@@ -18,7 +18,6 @@ import sys
 
 from bionemo.core.data.load import load
 
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -85,11 +84,6 @@ def main(args):
     recipe.add_client_output_filter(
         BioNeMoExcludeParamsFilter(exclude_vars="regression_head"), tasks=["train", "validate"]
     )
-
-    recipe.add_decomposers([TensorDecomposer()])
-
-    # So the server can instantiate model.ESM2ModuleForServer from the dict config
-    recipe.job.add_file_to_server(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model.py")))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})

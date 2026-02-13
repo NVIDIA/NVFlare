@@ -20,7 +20,6 @@ import torch
 
 from bionemo.core.data.load import load
 
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -57,7 +56,7 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type classification --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 10 --experiment-name scl_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --result-dir bionemo --micro-batch-size 64 --precision {precision} --save-top-k 1 --encoder-frozen --limit-val-batches 1.0 --classes {classes} --dataset-name scl --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths will be resolved per-client)")
 
-    # Dict config so server gets class + args (no nn.Module instance).
+    # Use dict config of the model so we only instantiate the model on the server.
     model = {
         "class_path": "model.ESM2ModuleForServer",
         "args": {
@@ -88,10 +87,6 @@ def main(args):
     # Add custom components using recipe's filter API
     recipe.add_client_input_filter(BioNeMoParamsFilter(precision), tasks=["train", "validate"])
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
-
-    recipe.add_decomposers([TensorDecomposer()])
-
-    recipe.job.add_file_to_server(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model.py")))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})
