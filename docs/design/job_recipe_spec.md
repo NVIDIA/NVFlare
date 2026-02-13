@@ -374,8 +374,6 @@ recipe = FedAvgRecipe(
     train_args="--epochs 2",
     model=my_model,
 )
-# Custom recipe via factory (no FedJob in signature)
-custom_recipe = MyRecipe.from_parameters(name="custom", min_clients=2, ...)
 ```
 
 **Recommendation (ease of use):** Prefer **constructor-only for concrete recipes** (e.g. `FedAvgRecipe(...)` with no `job=`). Users see one clear entry point and all parameters in one place. For custom recipes, a **factory** (e.g. `MyRecipe.from_parameters(...)`) is easier than a builder: one call returns a ready-to-use recipe, with no separate "build" step and less room for misuse.
