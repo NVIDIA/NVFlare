@@ -17,8 +17,43 @@ Used by job.py (initial_model) and client.py (local training).
 Provides an nn.Module interface so the PT persistor can save/load state_dict.
 """
 
+import glob
+import os
+
+import torch
 import torch.nn as nn
 from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
+
+
+def load_state_dict_from_checkpoint(checkpoint_dir: str) -> dict:
+    """Load state_dict from a HuggingFace-style checkpoint dir without loading the full model.
+
+    Reads .safetensors (or pytorch_model.bin) so the client can send weights back to the server
+    quickly and return to flare.receive(), avoiding cell_pipe send timeouts.
+    """
+    checkpoint_dir = os.path.abspath(checkpoint_dir)
+    state_dict = {}
+
+    # Prefer safetensors (faster, no pickle)
+    safetensor_files = sorted(glob.glob(os.path.join(checkpoint_dir, "*.safetensors")))
+    if safetensor_files:
+        try:
+            from safetensors.torch import load_file
+            for path in safetensor_files:
+                state_dict.update(load_file(path, device="cpu"))
+            return state_dict
+        except Exception:
+            pass
+
+    # Fallback: pytorch_model.bin
+    bin_path = os.path.join(checkpoint_dir, "pytorch_model.bin")
+    if os.path.isfile(bin_path):
+        state_dict = torch.load(bin_path, map_location="cpu", weights_only=True)
+        if isinstance(state_dict, dict) and "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+        return state_dict
+
+    raise FileNotFoundError(f"No .safetensors or pytorch_model.bin in {checkpoint_dir}")
 
 
 def _get_qwen_vl_model_class(model_name_or_path: str):

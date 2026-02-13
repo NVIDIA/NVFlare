@@ -141,6 +141,10 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 
    `--max_steps` limits steps per round (default: 50).
 
+## Timeouts and long runs
+
+After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the script must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so the script can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
+
 ## Summary
 
 | Step | Action |

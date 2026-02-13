@@ -26,7 +26,7 @@ import tempfile
 
 import nvflare.client as flare
 
-from model import Qwen3VLModel, load_qwen_vl_from_pretrained
+from model import Qwen3VLModel, load_qwen_vl_from_pretrained, load_state_dict_from_checkpoint
 
 
 def _abs_path(p: str) -> str:
@@ -125,25 +125,31 @@ def main():
             subprocess.run(cmd, cwd=cwd, env=env, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Qwen SFT script failed: {e}", file=sys.stderr)
-            # Send last checkpoint so round does not block; fallback to input model
+            # Send last checkpoint so round does not block; fallback to input model state_dict
             load_dir = output_model_dir if os.path.isdir(output_model_dir) else input_model_dir
             try:
-                model.model = load_qwen_vl_from_pretrained(load_dir)
+                raw = load_state_dict_from_checkpoint(load_dir)
+                params = {"model." + k: v for k, v in raw.items()}
             except Exception:
-                pass  # keep current model (received weights)
+                try:
+                    model.model = load_qwen_vl_from_pretrained(load_dir)
+                    params = model.cpu().state_dict()
+                except Exception:
+                    params = model.cpu().state_dict()  # keep current model (received weights)
             output_model = flare.FLModel(
-                params=model.cpu().state_dict(),
+                params=params,
                 metrics={"loss": float("nan")},
                 meta={"ERROR": str(e)},
             )
             flare.send(output_model)
             continue
 
-        # Load trained model from output_dir and send state_dict (use class matching saved config)
-        trained = load_qwen_vl_from_pretrained(output_model_dir)
-        model.model = trained
+        # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
+        # Checkpoint has inner model keys; prefix with "model." to match wrapper state_dict format.
+        raw = load_state_dict_from_checkpoint(output_model_dir)
+        params = {"model." + k: v for k, v in raw.items()}
         output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
+            params=params,
             metrics={"loss": 0.0},
             meta={"NUM_STEPS_CURRENT_ROUND": args.max_steps},
         )

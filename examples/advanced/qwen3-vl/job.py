@@ -67,6 +67,8 @@ def main():
         "args": {"model_name_or_path": args.model_name_or_path},
     }
 
+    # Use native PyTorch tensor exchange (like llm_hf message_mode=tensor) so BFloat16
+    # weights are not converted to numpy (numpy does not support BFloat16).
     recipe = FedAvgRecipe(
         name="qwen3-vl",
         min_clients=n_clients,
@@ -76,15 +78,17 @@ def main():
         train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
         launch_external_process=True,
+        server_expected_format="pytorch",
         key_metric="loss",
     )
 
     for site_name in client_names:
         recipe.job.to("client_wrapper.sh", site_name)
 
-    # Add client params to reduce timeout failures for longer LLM runs
+    # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
+    # sending results (when unset, framework uses communication_timeout default 300s).
     recipe.add_client_config(
-        {"get_task_timeout": 600, "submit_task_result_timeout": 900},
+        {"get_task_timeout": 1200, "submit_task_result_timeout": 1200},
         clients=client_names,
     )
 
