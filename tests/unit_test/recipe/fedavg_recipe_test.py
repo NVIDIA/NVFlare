@@ -17,12 +17,16 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe as PTFedAvgRecipe
+from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -125,12 +129,31 @@ def get_model_selector(recipe):
     return server_app.app_config.components.get("model_selector")
 
 
+def get_receiver(recipe):
+    """Return the server-side analytics receiver component if present."""
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get("receiver")
+
+
+class _TestAnalyticsReceiver(AnalyticsReceiver):
+    """Minimal concrete AnalyticsReceiver for testing recipe passthrough."""
+
+    def initialize(self, fl_ctx: FLContext):
+        pass
+
+    def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
+        pass
+
+    def finalize(self, fl_ctx: FLContext):
+        pass
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe initialization with default (built-in) aggregation."""
-        recipe = FedAvgRecipe(name="test_fedavg", model=simple_model, **base_recipe_params)
+        recipe = PTFedAvgRecipe(name="test_fedavg", model=simple_model, **base_recipe_params)
 
         assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.model == simple_model
@@ -139,7 +162,7 @@ class TestFedAvgRecipe:
 
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_fedavg_key_metric", model=simple_model, key_metric=key_metric, **base_recipe_params
         )
 
@@ -152,7 +175,7 @@ class TestFedAvgRecipe:
     ):
         """Test FedAvgRecipe initialization with custom aggregator."""
         params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
-        recipe = FedAvgRecipe(name="test_fedavg_custom", model=simple_model, aggregator=custom_aggregator, **params)
+        recipe = PTFedAvgRecipe(name="test_fedavg_custom", model=simple_model, aggregator=custom_aggregator, **params)
 
         assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
@@ -161,7 +184,7 @@ class TestFedAvgRecipe:
     def test_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
         """Test FedAvgRecipe with initial model."""
         params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
-        recipe = FedAvgRecipe(name="test_fedavg_model", model=simple_model, aggregator=custom_aggregator, **params)
+        recipe = PTFedAvgRecipe(name="test_fedavg_model", model=simple_model, aggregator=custom_aggregator, **params)
 
         assert_recipe_basics(recipe, "test_fedavg_model", params)
         assert recipe.model == simple_model
@@ -176,7 +199,7 @@ class TestFedAvgRecipe:
     )
     def test_recipe_configurations(self, mock_file_system, simple_model, min_clients, num_rounds, train_args):
         """Test various FedAvgRecipe configurations using parametrized tests."""
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name=f"test_config_{min_clients}_{num_rounds}",
             model=simple_model,
             train_script="mock_train_script.py",
@@ -210,6 +233,65 @@ class TestFedAvgRecipeKeyMetricVariants:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+
+
+class TestFedAvgRecipeAnalyticsReceiverPassthrough:
+    """Test analytics_receiver parameter is passed through to server app config."""
+
+    def test_analytics_receiver_passthrough_unified(self, mock_file_system, base_recipe_params):
+        """Passing analytics_receiver to unified FedAvgRecipe registers receiver on server app config."""
+        from nvflare.fuel.utils.constants import FrameworkType
+
+        receiver = _TestAnalyticsReceiver()
+        # Use dict model so base recipe accepts it (base does not accept raw nn.Module)
+        model_config = {"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 10}}
+        recipe = UnifiedFedAvgRecipe(
+            name="test_fedavg_receiver",
+            model=model_config,
+            framework=FrameworkType.PYTORCH,
+            analytics_receiver=receiver,
+            **base_recipe_params,
+        )
+        assert recipe.analytics_receiver is receiver
+        server_receiver = get_receiver(recipe)
+        assert server_receiver is not None
+        assert server_receiver is receiver
+        assert isinstance(server_receiver, AnalyticsReceiver)
+
+    def test_analytics_receiver_passthrough_numpy(self, mock_file_system):
+        """Passing analytics_receiver to NumpyFedAvgRecipe registers receiver on server app config."""
+        receiver = _TestAnalyticsReceiver()
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_receiver",
+            model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            train_script="mock_train_script.py",
+            analytics_receiver=receiver,
+        )
+        assert recipe.analytics_receiver is receiver
+        server_receiver = get_receiver(recipe)
+        assert server_receiver is not None
+        assert server_receiver is receiver
+        assert isinstance(server_receiver, AnalyticsReceiver)
+
+    def test_no_analytics_receiver_pt(self, mock_file_system, base_recipe_params, simple_model):
+        """When analytics_receiver is not passed, server app config has no receiver component."""
+        recipe = PTFedAvgRecipe(
+            name="test_fedavg_no_receiver",
+            model=simple_model,
+            **base_recipe_params,
+        )
+        assert get_receiver(recipe) is None
+
+    def test_no_analytics_receiver_numpy(self, mock_file_system):
+        """When analytics_receiver is not passed, server app config has no receiver component."""
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_no_receiver",
+            model=[1.0, 2.0, 3.0],
+            min_clients=2,
+            train_script="mock_train_script.py",
+        )
+        assert get_receiver(recipe) is None
 
 
 class TestNumpyFedAvgRecipe:
@@ -351,7 +433,7 @@ class TestFedAvgRecipeEarlyStopping:
 
     def test_early_stopping_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with early stopping configuration."""
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_early_stop",
             model=simple_model,
             stop_cond="accuracy >= 80",
@@ -365,7 +447,7 @@ class TestFedAvgRecipeEarlyStopping:
 
     def test_save_filename_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with custom save filename."""
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_save_file",
             model=simple_model,
             save_filename="best_model.pt",
@@ -376,7 +458,7 @@ class TestFedAvgRecipeEarlyStopping:
 
     def test_exclude_vars_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with exclude_vars configuration."""
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_exclude",
             model=simple_model,
             exclude_vars="bn.*|running_mean|running_var",
@@ -388,7 +470,7 @@ class TestFedAvgRecipeEarlyStopping:
     def test_aggregation_weights_configuration(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedAvgRecipe with per-client aggregation weights."""
         weights = {"site-1": 2.0, "site-2": 1.0}
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_weights",
             model=simple_model,
             aggregation_weights=weights,
@@ -408,7 +490,7 @@ class TestFedAvgRecipeValidation:
         invalid_aggregator = InvalidAggregator()
 
         with pytest.raises(ValidationError, match="should be an instance of Aggregator"):
-            FedAvgRecipe(
+            PTFedAvgRecipe(
                 name="test_invalid_agg",
                 aggregator=invalid_aggregator,  # type: ignore[arg-type]
                 **base_recipe_params,
@@ -417,7 +499,7 @@ class TestFedAvgRecipeValidation:
     def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
         """Test that dict config without 'class_path' key raises error."""
         with pytest.raises(ValueError, match="must have 'class_path' key"):
-            FedAvgRecipe(
+            PTFedAvgRecipe(
                 name="test_invalid_dict",
                 model={"args": {"input_size": 10}},  # Missing 'class_path'
                 **base_recipe_params,
@@ -426,7 +508,7 @@ class TestFedAvgRecipeValidation:
     def test_dict_config_path_not_string_raises_error(self, mock_file_system, base_recipe_params):
         """Test that dict config with non-string 'class_path' raises error."""
         with pytest.raises(ValueError, match="'class_path' must be a string"):
-            FedAvgRecipe(
+            PTFedAvgRecipe(
                 name="test_invalid_path_type",
                 model={"class_path": 123, "args": {}},  # class_path is not string
                 **base_recipe_params,
@@ -438,7 +520,7 @@ class TestFedAvgRecipeInitialCkpt:
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params, simple_model):
         """Test that initial_ckpt parameter is accepted."""
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_initial_ckpt",
             model=simple_model,
             initial_ckpt="/abs/path/to/model.pt",
@@ -453,7 +535,7 @@ class TestFedAvgRecipeInitialCkpt:
         # PyTorch requires model architecture even when loading from checkpoint
         # TensorFlow can load full models, but PT cannot
         with pytest.raises(ValueError, match="Unable to add None to job"):
-            FedAvgRecipe(
+            PTFedAvgRecipe(
                 name="test_ckpt_no_model",
                 model=None,
                 initial_ckpt="/abs/path/to/model.pt",
@@ -463,7 +545,7 @@ class TestFedAvgRecipeInitialCkpt:
     def test_initial_ckpt_must_exist_for_relative_path(self, base_recipe_params, simple_model):
         """Test that non-existent relative paths are rejected."""
         with pytest.raises(ValueError, match="does not exist locally"):
-            FedAvgRecipe(
+            PTFedAvgRecipe(
                 name="test_relative_path",
                 model=simple_model,
                 initial_ckpt="relative/path/model.pt",
@@ -476,7 +558,7 @@ class TestFedAvgRecipeInitialCkpt:
             "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10, "output_size": 5},
         }
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_dict_config",
             model=model_config,
             **base_recipe_params,
@@ -491,7 +573,7 @@ class TestFedAvgRecipeInitialCkpt:
             "class_path": "my_module.models.SimpleNet",
             "args": {"input_size": 10},
         }
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_dict_with_ckpt",
             model=model_config,
             initial_ckpt="/abs/path/to/pretrained.pt",
@@ -519,7 +601,7 @@ class TestFedAvgRecipeDictConfigJobExport:
             "class_path": "model.SimpleNetwork",
             "args": {},
         }
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_dict_export",
             model=model_config,
             train_script=train_script,
@@ -549,7 +631,7 @@ class TestFedAvgRecipeDictConfigJobExport:
             "class_path": "model.SimpleNetwork",
             "args": {"num_classes": 10},
         }
-        recipe = FedAvgRecipe(
+        recipe = PTFedAvgRecipe(
             name="test_dict_ckpt_export",
             model=model_config,
             initial_ckpt="/server/path/to/pretrained.pt",
