@@ -110,7 +110,10 @@ def _extract_state_dict(loaded: dict) -> Optional[OrderedDict]:
     if all(isinstance(v, torch.Tensor) for v in d.values()):
         return OrderedDict(d)
     flat = _flatten_state_dict(d)
-    return flat if flat and all(isinstance(v, torch.Tensor) for v in flat.values()) else None
+    # Empty flat is valid; only reject if any value is not a tensor (don't use "if flat" — empty dict is falsy)
+    if all(isinstance(v, torch.Tensor) for v in flat.values()):
+        return flat
+    return None
 
 
 def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
