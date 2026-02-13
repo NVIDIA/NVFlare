@@ -34,16 +34,6 @@ if "MASTER_PORT" not in os.environ:
 if "MASTER_ADDR" not in os.environ:
     os.environ.setdefault("MASTER_ADDR", "localhost")
 
-from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
-from megatron.core.distributed import DistributedDataParallelConfig
-from megatron.core.optimizer import OptimizerConfig
-from nemo import lightning as nl
-from nemo.collections import llm
-from nemo.lightning.pytorch import callbacks as nl_callbacks
-from nemo.lightning.pytorch.optim import MegatronOptimizerModule
-
-# (1) import nvflare lightning client API
-import nvflare.client.lightning as flare
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
@@ -55,6 +45,16 @@ from bionemo.llm.model.biobert.model import BioBertConfig
 from bionemo.llm.model.config import TorchmetricsConfig
 from bionemo.llm.utils.datamodule_utils import infer_global_batch_size
 from bionemo.llm.utils.logger_utils import WandbConfig, setup_nemo_lightning_logger
+from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
+from megatron.core.distributed import DistributedDataParallelConfig
+from megatron.core.optimizer import OptimizerConfig
+from nemo import lightning as nl
+from nemo.collections import llm
+from nemo.lightning.pytorch import callbacks as nl_callbacks
+from nemo.lightning.pytorch.optim import MegatronOptimizerModule
+
+# (1) import nvflare lightning client API
+import nvflare.client.lightning as flare
 
 
 def train_model(
