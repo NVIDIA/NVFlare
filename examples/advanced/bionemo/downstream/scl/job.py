@@ -16,10 +16,7 @@ import argparse
 import os
 import sys
 
-import torch
-
 from bionemo.core.data.load import load
-
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -29,7 +26,6 @@ BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
 
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
-from model import ESM2ModuleForServer, load_state_dict_from_checkpoint_path
 
 
 def main(args):

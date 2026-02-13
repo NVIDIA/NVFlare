@@ -200,6 +200,7 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
     except ImportError:
         try:
             from megatron.core import dist_checkpointing as dist_ckpt
+
             load_plain_tensors = getattr(dist_ckpt, "load_plain_tensors", None)
         except ImportError:
             load_plain_tensors = None
