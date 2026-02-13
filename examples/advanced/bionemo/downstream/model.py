@@ -36,6 +36,48 @@ try:
 except ImportError:
     load_safetensors = None
 
+
+def _checkpoint_key_to_client(k: str) -> str:
+    """Rewrite NeMo checkpoint key (single layer) to client format (layer 0)."""
+    for old, new in (
+        ("encoder.layers.self_attention.", "encoder.layers.0.self_attention."),
+        ("encoder.layers.mlp.", "encoder.layers.0.mlp."),
+    ):
+        if old in k:
+            k = k.replace(old, new, 1)
+    return k
+
+
+def _expand_checkpoint_state_dict(sd: OrderedDict) -> OrderedDict:
+    """Expand NeMo checkpoint state dict so layer-stacked tensors become per-layer keys.
+
+    NeMo saves some weights with a leading dimension (num_layers), e.g. shape [33, 1280, 1280].
+    The client expects one key per layer with shape [1280, 1280]. We split such tensors and
+    emit module.encoder.layers.0.*, module.encoder.layers.1.*, ...
+    """
+    out = OrderedDict()
+    for k, v in sd.items():
+        if not isinstance(v, torch.Tensor):
+            out[k] = v
+            continue
+        # Keys that are layer-stacked: encoder.layers.self_attention.* or encoder.layers.mlp.*
+        if "encoder.layers.self_attention." not in k and "encoder.layers.mlp." not in k:
+            out[_checkpoint_key_to_client(k)] = v
+            continue
+        if v.ndim < 1:
+            out[_checkpoint_key_to_client(k)] = v
+            continue
+        num_layers = v.shape[0]
+        # Split into per-layer keys
+        if "encoder.layers.self_attention." in k:
+            base = k.replace("encoder.layers.self_attention.", "encoder.layers.{}.self_attention.", 1)
+        else:
+            base = k.replace("encoder.layers.mlp.", "encoder.layers.{}.mlp.", 1)
+        for i in range(num_layers):
+            out[base.format(i)] = v[i].clone()
+    return out
+
+
 class ESM2ModuleForServer(torch.nn.Module):
     """ESM2 module for server: holds full state_dict loaded from checkpoint (no Megatron/Lightning init).
 
@@ -66,14 +108,25 @@ class ESM2ModuleForServer(torch.nn.Module):
         self.num_classes_for_metric = num_classes_for_metric
         # Load full state dict from checkpoint so state_dict() returns real weights (no inner module needed)
         sd = load_state_dict_from_checkpoint_path(checkpoint_path)
-        self._state_dict = OrderedDict(sd) if sd is not None else OrderedDict()
+        # Expand layer-stacked tensors (e.g. [33, 1280, 1280] -> 33 keys with [1280, 1280]) and
+        # normalize key names to match client (Megatron) format.
+        self._state_dict = _expand_checkpoint_state_dict(sd) if sd is not None else OrderedDict()
+        # Do NOT add a prefix here: BioNeMoParamsFilter adds "module." (fp32) when sending to client.
         self._module = None  # no BionemoLightningModule on server; state comes from checkpoint
 
+    @staticmethod
+    def _stored_key(k: str) -> str:
+        """Normalize key from client (module.module.*) to stored form (module.*) for consistency."""
+        if k.startswith("module.module."):
+            return k[len("module.") :]
+        return k
+
     def state_dict(self, *args, **kwargs):
+        # Return keys as stored; BioNeMoParamsFilter adds prefix when sending to client.
         return OrderedDict(self._state_dict)
 
     def load_state_dict(self, state_dict, strict: bool = True):
-        self._state_dict = OrderedDict(state_dict)
+        self._state_dict = OrderedDict((self._stored_key(k), v) for k, v in state_dict.items())
         # Return type compatible with torch.nn.Module.load_state_dict
         incompat = getattr(torch.nn.modules.module, "_IncompatibleKeys", None)
         if incompat is not None:
@@ -286,207 +339,10 @@ def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[Order
     return None
 
 
-# def get_esm2_module(
-#     checkpoint_path: str,
-#     task_type: str = "classification",
-#     encoder_frozen: bool = False,
-#     precision: str = "fp32",
-#     mlp_ft_dropout: float = 0.1,
-#     mlp_hidden_size: int = 256,
-#     mlp_target_size: int = 2,
-#     scale_lr_layer: Optional[str] = None,
-#     lr_multiplier: float = 1.0,
-#     num_classes_for_metric: Optional[int] = None,
-# ) -> torch.nn.Module:
-#     """Build ESM2 fine-tune Lightning module for server-side initial model.
+class MockModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weights = torch.nn.Parameter(torch.randn(10))
 
-#     Uses the same config and builder as client.py so state_dict structure
-#     matches. The returned module is an nn.Module (Lightning module) suitable
-#     for FedAvgRecipe(model=..., initial_ckpt=...).
-
-#     Args:
-#         checkpoint_path: Path to the ESM2 checkpoint directory (e.g. from bionemo load()).
-#         task_type: "classification" or "regression".
-#         encoder_frozen: Whether to freeze the encoder.
-#         precision: "fp32" or "bf16"/"fp16".
-#         mlp_ft_dropout: Dropout for the MLP head.
-#         mlp_hidden_size: Hidden size of the MLP head.
-#         mlp_target_size: Output size (e.g. number of classes for classification).
-#         scale_lr_layer: Layer name prefix for LR scaling (optional).
-#         lr_multiplier: LR multiplier for scale_lr_layer (optional).
-#         num_classes_for_metric: Number of classes for Accuracy metric (classification only).
-
-#     Returns:
-#         The ESM2 Lightning module (nn.Module).
-#     """
-#     tokenizer = get_tokenizer()
-
-#     train_metric = None
-#     if task_type == "regression":
-#         valid_metric = TorchmetricsConfig(
-#             class_path="MeanSquaredError", task="regression", metric_name="val_mse"
-#         )
-#     else:
-#         num_classes = num_classes_for_metric if num_classes_for_metric is not None else mlp_target_size
-#         valid_metric = TorchmetricsConfig(
-#             class_path="Accuracy",
-#             task="classification",
-#             kwargs={
-#                 "task": "multiclass",
-#                 "threshold": 0.5,
-#                 "num_classes": num_classes,
-#             },
-#             metric_name="val_acc",
-#         )
-
-#     # Mirror client.py: create config then set task-dependent attrs (same as train_model in client.py)
-#     config: BioBertConfig = ESM2FineTuneSeqConfig(
-#         task_type=task_type,
-#         encoder_frozen=encoder_frozen,
-#         params_dtype=get_autocast_dtype(precision),
-#         pipeline_dtype=get_autocast_dtype(precision),
-#         autocast_dtype=get_autocast_dtype(precision),
-#         tensor_model_parallel_size=1,
-#         pipeline_model_parallel_size=1,
-#         initial_ckpt_path=str(checkpoint_path),
-#         initial_ckpt_skip_keys_with_these_prefixes=[f"{task_type}_head"],
-#         train_metric=train_metric,
-#         valid_metric=valid_metric,
-#     )
-#     task_dependent_attr = {
-#         "mlp_ft_dropout": mlp_ft_dropout,
-#         "mlp_hidden_size": mlp_hidden_size,
-#         "mlp_target_size": mlp_target_size,
-#         "cnn_dropout": 0.25,
-#         "cnn_hidden_size": 32,
-#         "cnn_num_classes": 3,
-#     }
-#     for attr, value in task_dependent_attr.items():
-#         if hasattr(config, attr):
-#             setattr(config, attr, value)
-
-#     optimizer = MegatronOptimizerModule(
-#         config=OptimizerConfig(
-#             lr=1e-4,
-#             optimizer="adam",
-#             use_distributed_optimizer=True,
-#             weight_decay=0.01,
-#             adam_beta1=0.9,
-#             adam_beta2=0.98,
-#         ),
-#     )
-#     # Do not set optimizer.scale_lr_cond to a lambda here: the server model is serialized into the
-#     # job config, and lambdas cannot be serialized (inspect.getsourcefile fails on them).
-
-#     module = biobert_lightning_module(config=config, tokenizer=tokenizer, optimizer=optimizer)
-#     _materialize_lazy_module(module, tokenizer, task_type, mlp_target_size)
-#     return module
-
-
-# def _init_single_process_group_if_needed():
-#     """Initialize a single-process torch.distributed group so configure_model() can run (e.g. BionemoLightningModule)."""
-#     if torch.distributed.is_initialized():
-#         return
-#     import os
-#     os.environ.setdefault("MASTER_ADDR", "localhost")
-#     os.environ.setdefault("MASTER_PORT", "12355")
-#     torch.distributed.init_process_group(backend="gloo", rank=0, world_size=1)
-
-
-# def _materialize_lazy_module(
-#     module: torch.nn.Module,
-#     tokenizer,
-#     task_type: str,
-#     mlp_target_size: int,
-#     max_length: int = 32,
-# ) -> None:
-#     """Run one dummy forward so lazy-initialized parameters (e.g. biobert) are created.
-
-#     BionemoLightningModule has 0 parameters until setup/configure_model run.
-#     configure_model() requires the default process group; we init a single-process group if needed.
-#     """
-#     import warnings
-
-#     # Trigger Lightning model creation (BionemoLightningModule creates model in setup/configure_model)
-#     if callable(getattr(module, "setup", None)):
-#         try:
-#             module.setup("fit")
-#         except Exception as e:
-#             warnings.warn(f"module.setup('fit') failed: {e}", UserWarning, stacklevel=2)
-#     if callable(getattr(module, "configure_model", None)):
-#         try:
-#             _init_single_process_group_if_needed()
-#             module.configure_model()
-#         except Exception as e:
-#             warnings.warn(f"module.configure_model() failed: {e}", UserWarning, stacklevel=2)
-
-#     batch = _make_dummy_batch(tokenizer, task_type, max_length)
-#     if batch is None:
-#         warnings.warn("Could not build dummy batch for materialization (state_dict may be empty)", UserWarning, stacklevel=2)
-#         return
-#     try:
-#         module.eval()
-#         with torch.no_grad():
-#             if callable(getattr(module, "forward", None)):
-#                 _ = module(**batch)
-#             elif callable(getattr(module, "training_step", None)):
-#                 _ = module.training_step(batch, batch_idx=0)
-#             else:
-#                 _ = module(batch)
-#     except Exception as e:
-#         warnings.warn(
-#             f"Could not materialize lazy module (state_dict may be empty): {e}",
-#             UserWarning,
-#             stacklevel=2,
-#         )
-
-
-# def _make_dummy_batch(tokenizer, task_type: str, max_length: int):
-#     """Build a minimal batch for a dummy forward. Tries HF-style then tokenize()-style."""
-#     dummy_seq = "M"
-#     batch = None
-#     # Try 1: HuggingFace-style tokenizer(...) with return_tensors="pt"
-#     try:
-#         out = tokenizer(
-#             [dummy_seq],
-#             padding="max_length",
-#             max_length=max_length,
-#             truncation=True,
-#             return_tensors="pt",
-#         )
-#         if hasattr(out, "items"):
-#             batch = {k: v for k, v in out.items()}
-#         else:
-#             batch = {"input_ids": out if isinstance(out, torch.Tensor) else torch.tensor([out])}
-#     except (TypeError, AttributeError):
-#         pass
-#     # Try 2: tokenizer.tokenize() returns list of ids; wrap in tensor
-#     if batch is None and hasattr(tokenizer, "tokenize"):
-#         try:
-#             ids = tokenizer.tokenize(dummy_seq)
-#             if isinstance(ids, list):
-#                 ids = ids[:max_length]
-#                 if not ids:
-#                     ids = [0]
-#                 input_ids = torch.tensor([ids], dtype=torch.long)
-#             else:
-#                 input_ids = torch.tensor([[ids]], dtype=torch.long)
-#             batch = {"input_ids": input_ids}
-#         except Exception:
-#             pass
-#     # Try 3: tokenizer.encode() or single sequence
-#     if batch is None and hasattr(tokenizer, "encode"):
-#         try:
-#             ids = tokenizer.encode(dummy_seq)
-#             ids = (ids if isinstance(ids, list) else [ids])[:max_length] or [0]
-#             batch = {"input_ids": torch.tensor([ids], dtype=torch.long)}
-#         except Exception:
-#             pass
-#     if batch is None:
-#         return None
-#     device = batch["input_ids"].device
-#     if task_type == "classification":
-#         batch["labels"] = torch.zeros(1, dtype=torch.long, device=device)
-#     else:
-#         batch["labels"] = torch.zeros(1, dtype=torch.float32, device=device)
-#     return batch
+    def forward(self, x):
+        return self.weights * x
