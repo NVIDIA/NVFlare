@@ -1,3 +1,5 @@
+:orphan:
+
 .. _researcher_area:
 
 ####################

@@ -93,9 +93,16 @@ def main():
         per_site_config=per_site_config,
     )
 
-    # Run simulation
-    env = SimEnv()
-    env.run(recipe, work_dir=f"/tmp/nvflare/workspace/works/{job_name}")
+    # Run simulation with explicit client list (required when using per_site_config).
+    # num_threads must match number of clients so each client has a dedicated simulator
+    # thread and its process stays alive for the full XGBoost training (not one-task-then-exit).
+    clients = list(per_site_config.keys())
+    env = SimEnv(clients=clients, num_threads=len(clients))
+    run = recipe.execute(env)
+    print()
+    print("Job Status:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
 
 
 if __name__ == "__main__":

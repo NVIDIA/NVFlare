@@ -16,7 +16,7 @@ A client will only need to implement the selected methods of the :class:`Statist
 The result will be statistics for all features of all datasets at all sites as well as global aggregates. The result should be visualized via the visualization utility in the notebook.
 
 Assumptions
-===========
+-----------
 
 Assume that clients will provide the following:
 
@@ -29,12 +29,12 @@ Assume that clients will provide the following:
     Count is always required as we use count to enforce data privacy policy. We only support numerical features, not categorical features. The client can return all types of features but the non-numerical features will be removed.
 
 Examples
-========
+--------
 
 We provide several examples to demonstrate how should the operators be used.
 
 Tabular Examples
-----------------
+~~~~~~~~~~~~~~~~
 
 The first example is to calculate the statistics for tabular data. The data can be loaded into Pandas DataFrames, the data can be cached in memory, and we can leverage DataFrame and Numpy to calculate the local statistics.
 
@@ -60,7 +60,7 @@ The main steps are:
     * The detailed example instructions can be found in :github_nvflare_link:`Data frame statistics <examples/advanced/federated-statistics/df_stats/README.md>`
 
 COVID 19 Radiology Image Examples
----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The second example provided is an image histogram example. Different from the tabular data example, the image example show the following:
 
 * The :github_nvflare_link:`client.py <examples/advanced/federated-statistics/image_stats/client.py>` only needs to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
@@ -74,7 +74,7 @@ Here some of the image histogram ( the underline image files have only 1 channel
     :height: 300px
 
 Monai Stats with Spleen CT Image example
-----------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This example :github_nvflare_link:`Spleen CT Image Statistics <integration/monai/examples/spleen_ct_segmentation_local>` demonstrated few more details in federated statistics.
 
@@ -82,17 +82,17 @@ This example :github_nvflare_link:`Spleen CT Image Statistics <integration/monai
 * to avoid the reloading the same image into memory for each feature. This example shows the one can use pre_run() method to load and cache the externally calculated statistics. The server side controller will pass the target metrics to pre_run method so it can be used to load the statistics.
 
 Privacy Policy and Privacy Filters
-==================================
+----------------------------------
 
 NVFLARE provide data privacy protection through privacy filters :ref:`privacy-management <site_policy_management>` Each site can have its own privacy policy.
 
 Local privacy policy
---------------------
+~~~~~~~~~~~~~~~~~~~~
 
 privacy.json provides local site specific privacy policy. The policy is likely setup by the company and implemented by organization admin for the project. For different type of scope or categories, there are might be type of policy.
 
 Privacy configuration
----------------------
+~~~~~~~~~~~~~~~~~~~~~
 
 The NVFLARE privacy configuration is consists of set of task data filters and task result filters:
 
@@ -103,7 +103,7 @@ The NVFLARE privacy configuration is consists of set of task data filters and ta
 Each job will need to have privacy scope. If not specified, the default scope will be used. If default scope is not defined and job doesn't specify the privacy scope, the job deployment will fail, and job will not executed
 
 Privacy Policy Instrumentation
-------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 There are different ways to set privacy filter depending the use cases
 
@@ -164,7 +164,7 @@ Min/max random is used to generate random noise between (min_noise_level and max
 
 
 How it works
-============
+------------
 
 Some of the local statistics (such as count, failure count, sum etc.) can be calculated with one round; while others statistics such as stddev, histogram ( if the global bin range is not specified) will need to two round of calculations. We design a workflow to essentially issue three round of trip to client
 
@@ -173,7 +173,7 @@ Some of the local statistics (such as count, failure count, sum etc.) can be cal
 * 2nd statistics task -- based on the aggregated global statistics, we do the 2nd round, we calculate the VAR (with global mean) and histogram based on the global rnage (or estimated global range)
 
 Statistics
-==========
+----------
 
 Federated statistics includes numerical statistics measures for:
 
@@ -187,7 +187,7 @@ Federated statistics includes numerical statistics measures for:
 We did not include min, max value to avoid data privacy concerns.
 
 Quantiles
----------
+~~~~~~~~~
 
 Quantile statistics refers to statistical measures that divide a probability distribution or dataset into intervals with equal probabilities or proportions. Quantiles help summarize the distribution of data by providing key points that indicate how values are spread.
 
@@ -226,7 +226,7 @@ Privacy Considerations:
 * The implementation works within the existing privacy filter framework
 
 Summary
-=======
+-------
 We provided federated statistics operators that can easily aggregate and visualize the local statistics for different data site and features.
 We hope this feature will make it easier to perform federated data analysis. For more details, please look at :github_nvflare_link:`Federated Statistics (Github) <examples/advanced/federated-statistics/README.md>`
 

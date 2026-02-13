@@ -36,7 +36,7 @@ def main():
     args = define_parser()
 
     train_script = "client.py"
-    initial_model = Net()
+    model = Net()
     num_clients = 2
 
     # Build train_args based on mode
@@ -46,7 +46,7 @@ def main():
 
     recipe = FedAvgRecipe(
         name="pt_ddp",
-        initial_model=initial_model,
+        model=model,
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script=train_script,

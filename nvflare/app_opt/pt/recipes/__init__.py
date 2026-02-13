@@ -19,13 +19,25 @@ from .fedopt import FedOptRecipe
 from .scaffold import ScaffoldRecipe
 
 
-# Lazy import for HE recipe (requires optional tenseal dependency)
+# Lazy imports for recipes with optional dependencies or to avoid circular imports
 def __getattr__(name):
     if name == "FedAvgRecipeWithHE":
         from .fedavg_he import FedAvgRecipeWithHE
 
         return FedAvgRecipeWithHE
+    if name == "SimpleSwarmLearningRecipe":
+        from .swarm import SimpleSwarmLearningRecipe
+
+        return SimpleSwarmLearningRecipe
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["FedAvgRecipe", "CyclicRecipe", "FedOptRecipe", "ScaffoldRecipe", "FedAvgRecipeWithHE", "FedEvalRecipe"]
+__all__ = [
+    "FedAvgRecipe",
+    "CyclicRecipe",
+    "FedOptRecipe",
+    "ScaffoldRecipe",
+    "FedAvgRecipeWithHE",
+    "FedEvalRecipe",
+    "SimpleSwarmLearningRecipe",
+]

@@ -173,9 +173,8 @@ If you need to send an object type that can potentially be very large, you shoul
          """
          pass
 
-All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare’s core, it should register its DOT values in `nvflare.fuel.utils.fobs.dots.py`; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
+All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare’s core, it should register its DOT values in ``nvflare.fuel.utils.fobs.dots.py``; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
 - NUMPY_BYTES = 1
 - NUMPY_FILE = 2
 - TENSOR_BYTES = 3
 - TENSOR_FILE = 4
-```

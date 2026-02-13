@@ -131,7 +131,7 @@ participants including the FL Server, FL Clients, and Admin Users.
 Roles in NVIDIA FLARE
 =====================
 The :ref:`user roles <nvflare_roles>` in NVIDIA FLARE include :ref:`Project Admin <project_admin_role>`, Org Admin, Lead researcher,
-and Member researcher and can be used to set certain privileges of system operations for different users. See the :ref:`nvflare_security`
+and Member researcher and can be used to set certain privileges of system operations for different users. See the :ref:`Security Overview <security>`
 page for details.
 
 Scatter and Gather Workflow

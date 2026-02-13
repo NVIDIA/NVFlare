@@ -24,6 +24,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.app_common.np.utils import load_numpy_model
 from nvflare.security.logging import secure_format_exception
 
 
@@ -40,31 +41,44 @@ class NPFileModelPersistor(ModelPersistor):
         last_global_model_file_name="last_global_model.npy",
         best_global_model_file_name="best_global_model.npy",
         model_dir="models",
-        initial_model_file_name="initial_model.npy",
+        model_file_name="model.npy",
+        source_ckpt_file_full_name: str = None,
     ):
+        """Persist numpy model to/from file system.
+
+        Args:
+            last_global_model_file_name: Filename for last global model.
+            best_global_model_file_name: Filename for best global model.
+            model_dir: Directory for model files (relative to run dir).
+            model_file_name: Filename for model (relative to model_dir).
+            source_ckpt_file_full_name: Full absolute path to source checkpoint file.
+                This path may not exist locally (server-side path). If provided and
+                exists at runtime, it takes priority over model_file_name.
+        """
         super().__init__()
 
         self.model_dir = model_dir
         self.last_global_model_file_name = last_global_model_file_name
         self.best_global_model_file_name = best_global_model_file_name
-        self.initial_model_file_name = initial_model_file_name
+        self.model_file_name = model_file_name
+        self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
 
-        # This is default model that will be used if not local model is provided.
+        # This is default model that will be used if no model is provided.
         self.default_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
-        model_path = os.path.join(run_dir, self.model_dir, self.initial_model_file_name)
-        try:
-            # try loading previous model
-            data = np.load(model_path)
-        except Exception as e:
-            self.log_info(
-                fl_ctx,
-                f"Unable to load model from {model_path}: {secure_format_exception(e)}. Using default data instead.",
-                fire_event=False,
-            )
-            data = self.default_data.copy()
+        model_path = os.path.join(run_dir, self.model_dir, self.model_file_name)
+
+        data = load_numpy_model(
+            fl_ctx=fl_ctx,
+            logger=self,
+            source_ckpt_file_full_name=self.source_ckpt_file_full_name,
+            model_file_path=model_path,
+            get_fallback_data=lambda: self.default_data.copy(),
+        )
 
         model_learnable = make_model_learnable(weights={NPConstants.NUMPY_KEY: data}, meta_props={})
         self.log_info(fl_ctx, f"Loaded initial model: {model_learnable}")

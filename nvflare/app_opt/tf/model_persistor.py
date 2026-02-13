@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Dict
+from typing import Any, Dict, Optional, Union
 
 import tensorflow as tf
 
@@ -26,12 +26,37 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, model: tf.keras.Model, save_name="tf_model.weights.h5", filter_id: str = None):
+    def __init__(
+        self,
+        model: Optional[Union[tf.keras.Model, Dict[str, Any]]] = None,
+        save_name: str = "tf_model.weights.h5",
+        filter_id: Optional[str] = None,
+        source_ckpt_file_full_name: Optional[str] = None,
+    ):
+        """Persist TensorFlow/Keras model to/from file system.
+
+        This persistor supports loading from a source checkpoint file, which is useful
+        for pre-trained models. The checkpoint path may be a server-side path that
+        doesn't exist on the job submission machine.
+
+        Args:
+            model: Model input. Can be one of:
+                - tf.keras.Model: Direct model instance
+                - dict: {"path": "fully.qualified.Class", "args": {...}} for dynamic instantiation
+                - None: If source_ckpt_file_full_name points to a full model file
+            save_name: Filename for saving model weights. Defaults to "tf_model.weights.h5".
+            filter_id: Optional filter component ID for model serialization.
+            source_ckpt_file_full_name: Full path to source checkpoint file.
+                This path may not exist locally (server-side path).
+        """
         super().__init__(
             filter_id=filter_id,
         )
         self.save_name = save_name
         self.model = model
+        self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        # Note: We don't validate existence here because the checkpoint path may be
+        # a server-side path that doesn't exist on the job submission machine.
 
     def _initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
@@ -48,17 +73,101 @@ class TFModelPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
+        # Handle dict config: {"path": "module.Class", "args": {...}}
+        if isinstance(self.model, dict):
+            from nvflare.fuel.utils.class_utils import instantiate_class
 
-        if os.path.exists(self._model_save_path):
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
+            if not class_path:
+                self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
+                return None
+            try:
+                self.model = instantiate_class(class_path, class_args)
+            except Exception as e:
+                self.system_panic(
+                    reason=f"Failed to instantiate model class '{class_path}': {e}",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+            if not isinstance(self.model, tf.keras.Model):
+                self.system_panic(
+                    reason=f"Expected model class '{class_path}' to be tf.keras.Model but got {type(self.model)}",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+
+        # Priority: source_ckpt_file_full_name > previously saved model > model weights
+        if self.source_ckpt_file_full_name:
+            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
+            if not os.path.exists(self.source_ckpt_file_full_name):
+                self.system_panic(
+                    reason=f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    "Check that the checkpoint exists at runtime.",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+
+            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+            # Check if it's a full model file or just weights
+            if self.source_ckpt_file_full_name.endswith((".h5", ".keras")):
+                try:
+                    # Try loading as full model first
+                    self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+                except Exception as e:
+                    # Fall back to loading weights only if file format suggests weights-only
+                    self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
+                    if self.model is not None:
+                        self.model.load_weights(self.source_ckpt_file_full_name)
+                    else:
+                        self.system_panic(
+                            reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
+                            "Provide a model instance or use a full model file.",
+                            fl_ctx=fl_ctx,
+                        )
+                        return None
+            elif os.path.isdir(self.source_ckpt_file_full_name):
+                # SavedModel directory
+                self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+            else:
+                # Assume weights file
+                if self.model is not None:
+                    self.model.load_weights(self.source_ckpt_file_full_name)
+                else:
+                    self.system_panic(
+                        reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.",
+                        fl_ctx=fl_ctx,
+                    )
+                    return None
+        elif os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
-            self.model.load_weights(self._model_save_path)
+            if self.model is not None:
+                self.model.load_weights(self._model_save_path)
+            else:
+                self.system_panic(
+                    reason=f"Cannot load weights from {self._model_save_path} without a model. Provide a model instance.",
+                    fl_ctx=fl_ctx,
+                )
+                return None
+
+        # Ensure model exists before proceeding
+        if self.model is None:
+            self.system_panic(
+                reason="No model available. Provide either a model instance, source_ckpt_file_full_name with a full model, "
+                "or a previously saved model.",
+                fl_ctx=fl_ctx,
+            )
+            return None
 
         # build model if not built yet
         if not self.model.built:
             if hasattr(self.model, "_input_shape"):
                 self.model.build(input_shape=self.model._input_shape)
             else:
-                raise AttributeError("To use delayed model build, you need to set model._input_shape")
+                self.system_panic(
+                    reason="To use delayed model build, you need to set model._input_shape", fl_ctx=fl_ctx
+                )
+                return None
 
         # get flat model parameters
         layer_weights_dict = {layer.name: layer.get_weights() for layer in self.model.layers}
@@ -151,7 +260,20 @@ class TFModelPersistor(ModelPersistor):
         """
         model_inventory = {}
 
-        # Check for the main saved model
+        # Include source checkpoint if provided (supports external/pre-trained models)
+        if self.source_ckpt_file_full_name:
+            ckpt_path = self.source_ckpt_file_full_name
+            # Handle both file and directory (SavedModel format)
+            if os.path.exists(ckpt_path):
+                _, tail = os.path.split(ckpt_path)
+                model_inventory[tail] = ModelDescriptor(
+                    name=ckpt_path,
+                    location=ckpt_path,
+                    model_format="TensorFlow",
+                    props={"source": "initial_ckpt"},
+                )
+
+        # Check for the main saved model (training artifact)
         if hasattr(self, "_model_save_path") and os.path.exists(self._model_save_path):
             _, tail = os.path.split(self.save_name)
             model_inventory[tail] = ModelDescriptor(

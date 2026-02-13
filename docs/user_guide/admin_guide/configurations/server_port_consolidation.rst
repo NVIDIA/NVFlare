@@ -1,30 +1,28 @@
 .. _server_port_consolidation:
 
-FL Server Port Consolidation
-============================
+Single-Port Server Deployment
+=============================
 
-Historically, FLARE's FL Server requires two communication port numbers to be open to the public. One port is used for FL client/server communication, and another is used for admin client/server communication. For customers where port numbers are strictly managed, obtaining an additional port number can be challenging.
+**FLARE requires only one open port** for the FL server. A single port handles both
+FL client/server communication and admin client/server communication.
 
-FLARE 2.7 consolidates the port number requirement to one: the same port number can be used for both types of communication.
+.. note::
 
-For some customers, it may still be desirable to use different port numbers because they can be managed under different network security policies. To accommodate this use case, the system can still be provisioned to use two different port numbers for admin/server and client/server communications.
-
-**Connection Example Illustration**
-
-The following diagram illustrates the different connection and authentication mechanisms enabled by the single-port, TLS, and :ref:`BYOConn <byoconn>` features.
+   If your network policies require separate ports for different types of traffic,
+   you can optionally configure two separate ports. See `Using Separate Ports`_ below.
 
 .. image:: ../../../resources/flare_byocc.png
     :height: 300px
 
+The diagram above illustrates the connection and authentication mechanisms enabled by
+single-port, TLS, and :ref:`BYOConn <byoconn>` features.
 
-Detailed Changes
-----------------
+Using Separate Ports
+~~~~~~~~~~~~~~~~~~~~
 
-In previous versions, the admin client communicates with the server via a TCP connection. This is handled separately from the CellNet technology used for FL client/server communication.
-
-FLARE 2.7 modified the admin client to also use CellNet technology. This enables the admin client to communicate with the server using the same port number used for FL client/server communications.
-
-All changes are transparent to the end user—the user experience for the admin client remains unchanged.
+For environments where different network security policies apply to admin and client traffic,
+the system can still be provisioned with two separate port numbers. See the provisioning
+configuration below for details.
 
 Port Number Provision
 ---------------------

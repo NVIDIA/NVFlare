@@ -510,9 +510,11 @@ Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = SimpleSwarmLearningRecipe(
         name="swarm_learning",
-        initial_model=MyModel(),
+        model=MyModel(),
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
@@ -1003,9 +1005,11 @@ Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site ev
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe with cross-site evaluation enabled
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = SimpleSwarmLearningRecipe(
         name="swarm_with_cse",
-        initial_model=MyModel(),
+        model=MyModel(),
         num_rounds=3,
         train_script="train.py",
         do_cross_site_eval=True,
