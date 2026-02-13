@@ -51,8 +51,7 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type regression --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 1 --experiment-name tap_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --lr-multiplier 1e3 --scale-lr-layer regression_head --result-dir bionemo --micro-batch-size 8 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --label-column placeholder --dataset-name tap --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths and label_column will be resolved per-client)")
 
-    # Dict config so job config does not serialize the nn.Module (avoids callable/lambda in object graph).
-    # Server instantiates model.ESM2ModuleForServer at runtime from these args.
+    # Use dict config of the model so we only instantiate the model on the server.
     model = {
         "class_path": "model.ESM2ModuleForServer",
         "args": {

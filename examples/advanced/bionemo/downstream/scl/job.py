@@ -57,9 +57,7 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type classification --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 10 --experiment-name scl_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --result-dir bionemo --micro-batch-size 64 --precision {precision} --save-top-k 1 --encoder-frozen --limit-val-batches 1.0 --classes {classes} --dataset-name scl --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths will be resolved per-client)")
 
-    # Dict config so server gets class + args (no nn.Module instance). Same config as
-    # test_model_state_dict.py --model 8m --from-checkpoint so server and test behavior match.
-    # Initial weights come from load_state_dict_from_checkpoint_path (NeMo distributed ckpt).
+    # Dict config so server gets class + args (no nn.Module instance).
     model = {
         "class_path": "model.ESM2ModuleForServer",
         "args": {
