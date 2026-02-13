@@ -54,10 +54,22 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type classification --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 2 --experiment-name sabdab_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 1e-4 --lr-multiplier 5 --scale-lr-layer classification_head --result-dir bionemo --micro-batch-size 64 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --classes {classes} --dataset-name sabdab --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths will be resolved per-client)")
 
+    # Dict config so job config does not serialize the nn.Module (avoids callable/lambda in object graph).
+    model = {
+        "class_path": "model.ESM2ModuleForServer",
+        "args": {
+            "checkpoint_path": str(checkpoint_path),
+            "task_type": "classification",
+            "precision": precision,
+            "mlp_target_size": 2,
+        },
+    }
+
     # Create FedAvgRecipe
     job_name = f"{args.exp_name}_sabdab_esm2_{args.model}"
     recipe = FedAvgRecipe(
         name=job_name,
+        model=model,
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script=f"../{args.train_script}",
@@ -74,6 +86,8 @@ def main(args):
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
 
     recipe.add_decomposers([TensorDecomposer()])
+
+    recipe.job.add_file_to_server(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model.py")))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})

@@ -26,6 +26,12 @@ from typing import Optional
 os.environ.setdefault("NUMEXPR_MAX_THREADS", "64")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
 
+# Use a unique port per process for PyTorch distributed to avoid EADDRINUSE.
+if "MASTER_PORT" not in os.environ:
+    os.environ["MASTER_PORT"] = str(12355 + (os.getpid() % 1000))
+if "MASTER_ADDR" not in os.environ:
+    os.environ.setdefault("MASTER_ADDR", "localhost")
+
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
@@ -413,6 +419,9 @@ def train_model(
     )
 
     # perform local training starting with the received global model
+    # Set MASTER_PORT so the training subprocess (spawned by Lightning) inherits a port
+    # that this process has not bound during setup, avoiding EADDRINUSE.
+    os.environ["MASTER_PORT"] = str(22355 + (os.getpid() % 1000))
     llm.train(
         model=module,
         data=data_module,

@@ -51,10 +51,23 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type regression --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 1 --experiment-name tap_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --lr-multiplier 1e3 --scale-lr-layer regression_head --result-dir bionemo --micro-batch-size 8 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --label-column placeholder --dataset-name tap --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths and label_column will be resolved per-client)")
 
+    # Dict config so job config does not serialize the nn.Module (avoids callable/lambda in object graph).
+    # Server instantiates model.ESM2ModuleForServer at runtime from these args.
+    model = {
+        "class_path": "model.ESM2ModuleForServer",
+        "args": {
+            "checkpoint_path": str(checkpoint_path),
+            "task_type": "regression",
+            "precision": precision,
+            "mlp_target_size": 1,
+        },
+    }
+
     # Create FedAvgRecipe
     job_name = f"{args.exp_name}_tap_esm2_{args.model}"
     recipe = FedAvgRecipe(
         name=job_name,
+        model=model,
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script=f"../{args.train_script}",
@@ -75,6 +88,9 @@ def main(args):
     )
 
     recipe.add_decomposers([TensorDecomposer()])
+
+    # So the server can instantiate model.ESM2ModuleForServer from the dict config
+    recipe.job.add_file_to_server(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model.py")))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})

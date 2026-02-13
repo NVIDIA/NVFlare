@@ -16,6 +16,8 @@ import argparse
 import os
 import sys
 
+import torch
+
 from bionemo.core.data.load import load
 
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
@@ -28,6 +30,7 @@ BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
 
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
+from model import ESM2ModuleForServer, load_state_dict_from_checkpoint_path
 
 
 def main(args):
@@ -54,10 +57,25 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type classification --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 10 --experiment-name scl_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --result-dir bionemo --micro-batch-size 64 --precision {precision} --save-top-k 1 --encoder-frozen --limit-val-batches 1.0 --classes {classes} --dataset-name scl --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths will be resolved per-client)")
 
-    # Create FedAvgRecipe
+    # Dict config so server gets class + args (no nn.Module instance). Same config as
+    # test_model_state_dict.py --model 8m --from-checkpoint so server and test behavior match.
+    # Initial weights come from load_state_dict_from_checkpoint_path (NeMo distributed ckpt).
+    model = {
+        "class_path": "model.ESM2ModuleForServer",
+        "args": {
+            "checkpoint_path": str(checkpoint_path),
+            "task_type": "classification",
+            "encoder_frozen": True,
+            "precision": precision,
+            "mlp_target_size": 10,
+            "num_classes_for_metric": 10,
+        },
+    }
+
     job_name = f"{args.exp_name}_scl_esm2_{args.model}"
     recipe = FedAvgRecipe(
         name=job_name,
+        model=model,
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script=f"../{args.train_script}",
@@ -74,6 +92,8 @@ def main(args):
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
 
     recipe.add_decomposers([TensorDecomposer()])
+
+    recipe.job.add_file_to_server(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model.py")))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})
