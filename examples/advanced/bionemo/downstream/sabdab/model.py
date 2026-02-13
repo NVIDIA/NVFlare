@@ -292,12 +292,3 @@ def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[Order
         except Exception:
             pass
     return None
-
-
-class MockModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weights = torch.nn.Parameter(torch.randn(10))
-
-    def forward(self, x):
-        return self.weights * x
