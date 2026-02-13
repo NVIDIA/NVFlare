@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
@@ -58,6 +59,7 @@ class _FedAvgValidator(BaseModel):
     save_filename: str = "FL_global_model.pt"
     exclude_vars: Optional[str] = None
     aggregation_weights: Optional[Dict[str, float]] = None
+    analytics_receiver: Optional[AnalyticsReceiver] = None
     # Memory management
     server_memory_gc_rounds: int = 0
 
@@ -134,6 +136,9 @@ class FedAvgRecipe(Recipe):
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
+            MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
+            Use ``add_experiment_tracking()`` utility to easily add tracking.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
 
@@ -176,6 +181,7 @@ class FedAvgRecipe(Recipe):
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
         server_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
@@ -204,6 +210,7 @@ class FedAvgRecipe(Recipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            analytics_receiver=analytics_receiver,
             server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
@@ -239,6 +246,7 @@ class FedAvgRecipe(Recipe):
         self.save_filename = v.save_filename
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
+        self.analytics_receiver = v.analytics_receiver
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Validate that we have at least one model source
@@ -255,6 +263,7 @@ class FedAvgRecipe(Recipe):
             name=self.name,
             min_clients=self.min_clients,
             key_metric=self.key_metric,
+            analytics_receiver=self.analytics_receiver,
         )
 
         # Setup framework-specific model components and persistor

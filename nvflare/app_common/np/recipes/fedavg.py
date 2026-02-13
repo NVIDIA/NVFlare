@@ -19,6 +19,7 @@ import numpy as np
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -73,6 +74,9 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+        analytics_receiver: Component for receiving analytics data (e.g., TBAnalyticsReceiver for TensorBoard,
+            MLflowReceiver for MLflow). If not provided, no experiment tracking will be enabled.
+            Use `add_experiment_tracking()` utility function to easily add tracking.
 
     Example:
         ```python
@@ -128,6 +132,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        analytics_receiver: Optional[AnalyticsReceiver] = None,
     ):
         # Store model and initial_ckpt for NumPy-specific setup (model wins over initial_model for 2.7 compat)
         self._np_model = model if model is not None else initial_model
@@ -159,6 +164,7 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            analytics_receiver=analytics_receiver,
         )
 
         # Override framework for cross-site evaluation compatibility
