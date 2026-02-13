@@ -114,6 +114,36 @@ class Recipe(ABC):
         """
         pass
 
+    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
+        """Add an object to client apps, preserving existing per-site structure.
+
+        Args:
+            obj: Object to add to clients.
+            clients: Optional list of specific client names. If None, applies to all clients.
+            **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
+        """
+        if clients is None:
+            from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+            from nvflare.job_config.defs import JobTargetType
+
+            # FedJob has no public API to list per-site deploy targets, so we inspect
+            # private deploy map to preserve existing per-site client topology.
+            deploy_map = getattr(self.job, "_deploy_map", {})
+            existing_client_sites = [
+                target
+                for target in deploy_map.keys()
+                if target not in [ALL_SITES, SERVER_SITE_NAME]
+                and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+            ]
+            if existing_client_sites:
+                for site in existing_client_sites:
+                    self.job.to(obj, site, **kwargs)
+            else:
+                self.job.to_clients(obj, **kwargs)
+        else:
+            for client in clients:
+                self.job.to(obj, client, **kwargs)
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -127,11 +157,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
-        else:
-            for client in clients:
-                self.job.to(filter, client, filter_type=FilterType.TASK_DATA, tasks=tasks)
+        self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_client_output_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -146,11 +172,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
-        else:
-            for client in clients:
-                self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+        self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
         """Add top-level configuration parameters to config_fed_client.json.
@@ -165,11 +187,32 @@ class Recipe(ABC):
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
 
-        if clients is None:
-            self.job.to_clients(config)
-        else:
-            for client in clients:
-                self.job.to(obj=config, target=client)
+        self._add_to_client_apps(config, clients=clients)
+
+    def add_client_file(self, file_path: str, clients: Optional[List[str]] = None):
+        """Add a file or directory to client apps.
+
+        The file will be added to the client's custom directory and bundled with the job.
+        Can be a script, configuration file, or any resource needed by clients.
+
+        Args:
+            file_path: Path to the file or directory to add to clients.
+            clients: Optional list of specific client names. If None, applies to all clients.
+
+        Raises:
+            TypeError: If file_path is not a string.
+
+        Example:
+            # Add a wrapper script to all clients
+            recipe.add_client_file("client_wrapper.sh")
+
+            # Add a script to specific clients
+            recipe.add_client_file("custom_script.py", clients=["site1", "site2"])
+        """
+        if not isinstance(file_path, str):
+            raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
+
+        self._add_to_client_apps(file_path, clients=clients)
 
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
@@ -209,6 +252,27 @@ class Recipe(ABC):
 
         self.job.to_server(config)
 
+    def add_server_file(self, file_path: str):
+        """Add a file or directory to server app.
+
+        The file will be added to the server's custom directory and bundled with the job.
+        Can be a script, configuration file, or any resource needed by the server.
+
+        Args:
+            file_path: Path to the file or directory to add to server.
+
+        Raises:
+            TypeError: If file_path is not a string.
+
+        Example:
+            # Add a wrapper script to server
+            recipe.add_server_file("server_wrapper.sh")
+        """
+        if not isinstance(file_path, str):
+            raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
+
+        self.job.to_server(file_path)
+
     @staticmethod
     def _get_full_class_name(obj):
         """
@@ -243,7 +307,8 @@ class Recipe(ABC):
 
         reg = DecomposerRegister(class_names)
         self.job.to_server(reg, id="decomposer_reg")
-        self.job.to_clients(reg, id="decomposer_reg")
+
+        self._add_to_client_apps(reg, id="decomposer_reg")
 
     def export(
         self,
@@ -267,7 +332,7 @@ class Recipe(ABC):
             self.job.to_server(server_exec_params)
 
         if client_exec_params:
-            self.job.to_clients(client_exec_params)
+            self._add_to_client_apps(client_exec_params)
 
         if env:
             self.process_env(env)
@@ -291,7 +356,7 @@ class Recipe(ABC):
             self.job.to_server(server_exec_params)
 
         if client_exec_params:
-            self.job.to_clients(client_exec_params)
+            self._add_to_client_apps(client_exec_params)
 
         self.process_env(env)
         job_id = env.deploy(self.job)
