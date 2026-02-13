@@ -468,42 +468,26 @@ recipe = FedAvgRecipe(
 
 **Proposal:** Support **extra scripts** and/or a **launcher type** so client execution can use Slurm or similar mechanisms.
 
-- **Option A  -  Constructor parameter:** `client_scripts: Optional[List[str]] = None` (paths to additional scripts to bundle into the client app's `custom` folder). Each concrete recipe would accept and handle this parameter. These scripts are deployed alongside `train_script` so that submit scripts, wrappers, or env setup scripts are available at runtime.
-- **Option B  -  Launcher type / bundle:** `client_launcher: Optional[Union[str, LauncherConfig]] = None` where:
-  - `str` could be a preset: e.g. `"subprocess"` (default), `"slurm"`, `"custom"`.
-  - `LauncherConfig` (or dict) could specify `type="slurm"` plus options (e.g. `submit_script="submit.sh"`, `wrapper_script="run.sh"`, `extra_scripts=["env_setup.sh"]`). The recipe (and the underlying executor/config) would use this to configure the client to run via `sbatch submit.sh` (or similar) instead of directly invoking `train_script`, with the required scripts included in the job bundle.
-- **Option C  -  Base Recipe method:** `recipe.add_client_scripts(scripts: List[str])` defined on the **base `Recipe` class** so it works with **all** recipes without each concrete recipe needing its own constructor parameter. The base method stores the script paths and bundles them into the client app at export/execute time. This is simpler to maintain because script bundling is a cross-cutting concern (not algorithm-specific) - it should be handled once in the base class rather than duplicated across every recipe's constructor and validation.
+- **Option A  -  Base Recipe method:** `recipe.add_client_scripts(scripts: List[str])` defined on the **base `Recipe` class** so it works with **all** recipes without each concrete recipe needing its own constructor parameter. The base method stores the script paths and bundles them into the client app at export/execute time. Script bundling is a cross-cutting concern (not algorithm-specific) — it should be handled once in the base class rather than duplicated across every recipe's constructor.
+- **Option B  -  Launcher type:** `client_launcher: Optional[Union[str, LauncherConfig]] = None` where `str` is a preset (e.g. `"subprocess"`, `"slurm"`, `"custom"`) and `LauncherConfig` (or dict) specifies `type="slurm"` plus options (e.g. `submit_script`, `wrapper_script`). This configures the client to run via `sbatch` (or similar) instead of directly invoking `train_script`. This is a separate concern from script bundling and can be added later.
 
 Concrete recipes document how `client_scripts` and `client_launcher` are applied (e.g. which executor or launcher class is used) so that Slurm or other cluster mechanisms are supported without dropping to raw job config.
 
 ```python
-# Option A: constructor parameter (recipe-specific)
-recipe = FedAvgRecipe(
-    name="slurm_job",
-    min_clients=2,
-    train_script="client.py",
-    model=model,
-    client_scripts=["submit.sh", "run_wrapper.sh", "env_setup.sh"],
-)
-
-# Option B: launcher type
-recipe = FedAvgRecipe(
-    name="slurm_job",
-    min_clients=2,
-    train_script="client.py",
-    model=model,
-    client_launcher="slurm",
-)
-
-# Option C: base Recipe method (works with any recipe, simpler to maintain)
+# Option A: base Recipe method (works with any recipe)
 recipe = FedAvgRecipe(name="slurm_job", min_clients=2, train_script="client.py", model=model)
 recipe.add_client_scripts(["submit.sh", "run_wrapper.sh", "env_setup.sh"])
-# Works the same way with any recipe:
+# Same method works with any recipe:
 recipe = SimpleSwarmLearningRecipe(name="swarm", model=model_config, num_rounds=10, train_script="train.py")
 recipe.add_client_scripts(["submit.sh", "env_setup.sh"])
+
+# Option B: launcher type (separate concern, can be added later)
+recipe = FedAvgRecipe(name="slurm_job", min_clients=2, train_script="client.py", model=model)
+recipe.add_client_scripts(["submit.sh", "env_setup.sh"])  # bundle scripts
+# client_launcher="slurm"  # future: configure launcher type
 ```
 
-**Recommendation (ease of use):** Prefer **Option C** (`recipe.add_client_scripts()`) on the **base `Recipe` class**. Script bundling is a cross-cutting concern (not algorithm-specific) - defining it once on the base class means every recipe (current and future) supports it automatically with no per-recipe constructor changes. This is simpler to maintain than duplicating `client_scripts` in every concrete recipe's constructor (Option A). For **Slurm or another launcher**, **Option B** (a preset string like `client_launcher="slurm"`) can be added later as a separate enhancement when launcher support is needed; it is independent of script bundling. Start with Option C for the common "bundle extra scripts" use case.
+**Recommendation (ease of use):** Prefer **Option A** (`recipe.add_client_scripts()`) on the **base `Recipe` class**. Script bundling is a cross-cutting concern (not algorithm-specific) — defining it once on the base class means every recipe (current and future) supports it automatically with no per-recipe constructor changes. For **Slurm or another launcher**, **Option B** (launcher type/preset) can be added later as a separate enhancement; it is independent of script bundling. Start with Option A for the common "bundle extra scripts" use case.
 
 ### 10.8 Requirement 8  -  Kubernetes (k8s) deployment
 
@@ -518,19 +502,20 @@ recipe.add_client_scripts(["submit.sh", "env_setup.sh"])
 
 **Context (from code):** The Job API defines **SwarmClientConfig** / **SwarmClientController** with e.g. learn_task_timeout (max time for a training task; None = no limit), max_concurrent_submissions (default 1), learn_task_abort_timeout, learn_task_ack_timeout, final_result_ack_timeout, min_responses_required, request_to_submit_result_*. **SwarmServerConfig** has start_task_timeout, configure_task_timeout, max_status_report_interval, progress_timeout (defaults: 10, 300, 90, 3600). **CyclicServerConfig** / **CyclicClientConfig** have analogous timeouts. **SimpleSwarmLearningRecipe** builds these configs without exposing these parameters.
 
-**Proposal:** (A) Add optional recipe parameters (e.g. learn_task_timeout, max_concurrent_submissions, progress_timeout) and pass through to configs. (B) Or add server_config_overrides / client_config_overrides dicts. (C) Use the **existing** `recipe.add_server_config(config)` and `recipe.add_client_config(config)` methods (already on the base `Recipe` class; see Section 3.3) to pass algorithm-specific overrides without any new API.
+**Important distinction  -  two kinds of config:**
 
-**Note (existing API  -  already in use):** The base `Recipe` class already provides **`recipe.add_server_config(config: dict)`** and **`recipe.add_client_config(config: dict, clients=None)`** (Section 3.3). These write top-level key-value pairs into `config_fed_server.json` / `config_fed_client.json`; at runtime, controllers and executors read them via `nvflare.utils.configs.get_server_config_value()` / `get_client_config_value()`.
+| Layer | Mechanism | Where it lives | Example keys |
+|-------|-----------|-----------------|--------------|
+| **Job-level config** | Constructor args of `SwarmServerConfig` / `SwarmClientConfig` (or `CyclicServerConfig` / `CyclicClientConfig`) | Baked into the workflow/executor component at job-build time | `progress_timeout`, `learn_task_timeout`, `max_concurrent_submissions`, `configure_task_timeout` |
+| **Top-level config** | `recipe.add_server_config()` / `recipe.add_client_config()` (Section 3.3) | Written as key-value pairs in `config_fed_server.json` / `config_fed_client.json`; read at runtime via `get_server_config_value()` / `get_client_config_value()` | `EXTERNAL_PRE_INIT_TIMEOUT`, custom app-defined keys |
 
-**Real-world example (BioNeMo):** The BioNeMo examples (`examples/advanced/bionemo/downstream/tap/job.py`, `scl/job.py`, `sabdab/job.py`) already use this pattern to override the client executor's pre-init timeout for heavy library imports:
+The Swarm/Cyclic timeouts (e.g. `progress_timeout`, `learn_task_timeout`, `max_concurrent_submissions`) are **job-level**: they are constructor arguments of `SwarmServerConfig` / `SwarmClientConfig`, passed when the workflow is built. They are **not** top-level config keys and therefore **cannot** be set via `add_server_config()` / `add_client_config()`.
 
-```python
-recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": 600})  # seconds
-```
+**Proposal:**
 
-The `ClientAPILauncherExecutor` reads this at `initialize()` via `get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)` and overrides its default timeout. The same pattern works for any custom config key.
+- **Option A  -  Explicit recipe constructor parameters:** Surface the most common job-level settings (e.g. `learn_task_timeout`, `max_concurrent_submissions`, `progress_timeout`) as named constructor parameters on `SimpleSwarmLearningRecipe`. The recipe passes them through to `SwarmServerConfig` / `SwarmClientConfig`. Type-safe, discoverable, documented.
 
-This means users can already achieve the goal of this requirement **without new API surface** - they construct the recipe and then call `add_server_config` / `add_client_config` with the desired overrides. The question is whether to also add discoverable, type-safe constructor parameters (Option A) for the most common settings.
+- **Option B  -  Recipe method for job-level overrides:** Add `recipe.set_server_job_config(config: dict)` and `recipe.set_client_job_config(config: dict)` on the base `Recipe` class (or on algorithm-specific recipe subclasses). These methods accept a dict of constructor-argument overrides and apply them when building the underlying config objects (e.g. `SwarmServerConfig(**overrides)`). This avoids adding many constructor parameters while still allowing users to override any job-level setting.
 
 ```python
 # Option A: explicit recipe parameters (discoverable, documented)
@@ -544,40 +529,28 @@ recipe = SimpleSwarmLearningRecipe(
     progress_timeout=3600,           # server: max time without workflow progress
 )
 
-# Option B: override dicts on constructor (forward-compatible for other keys)
-recipe = SimpleSwarmLearningRecipe(
-    name="swarm_job",
-    model=model_config,
-    num_rounds=10,
-    train_script="train.py",
-    client_config_overrides={
-        "learn_task_timeout": 10800,
-        "max_concurrent_submissions": 3,
-    },
-    server_config_overrides={
-        "progress_timeout": 3600,
-        "configure_task_timeout": 600,
-    },
-)
-
-# Option C: existing base Recipe methods (no new API needed)
+# Option B: recipe method for job-level overrides
 recipe = SimpleSwarmLearningRecipe(
     name="swarm_job",
     model=model_config,
     num_rounds=10,
     train_script="train.py",
 )
-recipe.add_server_config({
+recipe.set_server_job_config({
     "progress_timeout": 3600,
     "configure_task_timeout": 600,
 })
-recipe.add_client_config({
+recipe.set_client_job_config({
     "learn_task_timeout": 10800,
     "max_concurrent_submissions": 3,
 })
 ```
 
-**Recommendation (ease of use):** For most users, **Option C** (`recipe.add_server_config()` / `recipe.add_client_config()`) is sufficient today - it already exists, works with all recipes, and requires no new API. This makes the requirement **lower priority** for implementation since the functionality is already available. For improved discoverability, **Option A** (explicit constructor parameters for the top 2-3 settings like `learn_task_timeout`, `max_concurrent_submissions`, `progress_timeout`) can be added to specific recipes (e.g. `SimpleSwarmLearningRecipe`) in a later release. Option B (override dicts) adds little value over the existing Option C and can be skipped.
+**Note  -  top-level config (separate concern):** `recipe.add_server_config()` / `recipe.add_client_config()` (Section 3.3) is a **separate mechanism** for top-level config keys in the JSON config files (e.g. `EXTERNAL_PRE_INIT_TIMEOUT`). It already works today and is unrelated to job-level component constructor arguments. See the BioNeMo example in Section 3.3.
+
+**Conflict resolution  -  Option A vs Option B overlap:** If both Option A and Option B are implemented, a user could specify the same key in both places with different values (e.g. `progress_timeout=3600` in the constructor **and** `set_server_job_config({"progress_timeout": 7200})`). To prevent silent surprises, **`set_server_job_config` / `set_client_job_config` must raise a `ValueError`** if the caller passes a key that was already set via an Option A constructor parameter. The error message should tell the user to use the constructor parameter instead. This makes conflicts fail-fast and unambiguous — there is exactly one place to set each value.
+
+**Recommendation (ease of use):** **Option A** (explicit constructor parameters) is best for the top 3-5 most commonly tuned settings (`learn_task_timeout`, `max_concurrent_submissions`, `progress_timeout`) — it is discoverable, type-safe, and IDE-friendly. **Option B** (`set_server_job_config` / `set_client_job_config`) complements Option A by providing an escape hatch for less common settings without bloating the constructor. Option B rejects any key that Option A already exposes (raises `ValueError`), so there is no ambiguity about which value takes effect. Start with Option A for the common settings; add Option B if users need to override additional job-level parameters.
 
 
 
@@ -608,13 +581,12 @@ recipe = FedAvgRecipe(..., contribution_estimation="fed_ce", personal_model="Dit
 **Clarification:** GPU and other resource requirements are **not** in **deploy_map**. They are specified in the job's **meta.json** under **resource_spec**: a map from *site name* to a resource dict (e.g. `{"num_gpus": 1, "mem_per_gpu_in_GiB": 4}`). The recipe (or job generator) should write resource_spec into meta.json when producing a job; the runtime (and K8s/Slurm backends) read it for scheduling and resource allocation.
 
 **Proposal:** Expose **resource_spec** at the recipe level so users can specify GPU (or other resource) requirements per site.
-- **Option A  -  Constructor parameter:** e.g. `resource_spec: Optional[Dict[str, Dict]] = None` where keys are site names and values are resource dicts (e.g. `{"site-1": {"num_gpus": 1, "mem_per_gpu_in_GiB": 4}, "site-2": {"num_gpus": 2, "mem_per_gpu_in_GiB": 8}}`). Default could be `None` (no resource requirements in meta.json).
-- **Option B  -  Recipe method (per-recipe):** e.g. `recipe.set_resource_spec(resource_spec: Dict[str, Dict])` so users can set or override after construction.
-- **Option C  -  Base Recipe method:** `recipe.add_resource_spec(resource_spec: Dict[str, Dict])` defined on the **base `Recipe` class** so it applies to **all** recipes (FedAvg, Cyclic, Swarm, XGBoost, etc.) without each concrete recipe needing its own constructor parameter or implementation. The base method stores resource_spec and writes it into the job's **meta.json** at export/execute time. This keeps the constructor clean and makes resource_spec a cross-cutting concern handled once.
+- **Option A  -  Constructor parameter:** e.g. `resource_spec: Optional[Dict[str, Dict]] = None` on each concrete recipe. Convenient when resource requirements are known at construction time, but must be duplicated across every recipe class.
+- **Option B  -  Base Recipe method:** `recipe.set_resource_spec(resource_spec: Dict[str, Dict])` defined on the **base `Recipe` class** so it works with **all** recipes (FedAvg, Cyclic, Swarm, XGBoost, etc.) without each concrete recipe needing its own constructor parameter. The base method stores resource_spec and writes it into the job's **meta.json** at export/execute time. This keeps constructors focused on algorithm parameters and makes resource_spec a cross-cutting concern handled once.
 - When generating the job, the recipe writes resource_spec into the job's **meta.json** alongside deploy_map.
 
 ```python
-# Option A: constructor parameter (recipe-specific)
+# Option A: constructor parameter (must be added to each recipe)
 recipe = FedAvgRecipe(
     name="gpu_job",
     min_clients=2,
@@ -626,18 +598,18 @@ recipe = FedAvgRecipe(
     },
 )
 
-# Option C: base Recipe method (works with any recipe)
+# Option B: base Recipe method (works with any recipe, no constructor changes needed)
 recipe = FedAvgRecipe(name="gpu_job", min_clients=2, train_script="train.py", model=model)
-recipe.add_resource_spec({
+recipe.set_resource_spec({
     "site-1": {"num_gpus": 1, "mem_per_gpu_in_GiB": 4},
     "site-2": {"num_gpus": 2, "mem_per_gpu_in_GiB": 8},
 })
-# Works the same way with any recipe:
+# Same method works with any recipe:
 recipe = CyclicRecipe(name="cyclic_gpu", min_clients=3, train_script="train.py", model=model)
-recipe.add_resource_spec({"site-1": {"num_gpus": 2}})
+recipe.set_resource_spec({"site-1": {"num_gpus": 2}})
 ```
 
-**Recommendation (ease of use):** Prefer **Option C** (`recipe.add_resource_spec()`) on the **base `Recipe` class**. Resource requirements are a cross-cutting concern (meta.json, not algorithm-specific) so they belong on the base class rather than duplicated in every concrete recipe's constructor. This keeps constructors focused on algorithm parameters and ensures every recipe (current and future) supports resource_spec automatically. Option A (constructor parameter) can be offered as a convenience on frequently used recipes (e.g. FedAvgRecipe) that delegates to the same base method. Document clearly: **resource_spec** (in meta.json) = GPU/resource requirements per site; **deploy_map** (Requirement 6) = which app runs where.
+**Recommendation (ease of use):** Prefer **Option B** (`recipe.set_resource_spec()`) on the **base `Recipe` class**. Resource requirements are a cross-cutting concern (meta.json, not algorithm-specific) so they belong on the base class rather than duplicated in every concrete recipe's constructor. This keeps constructors focused on algorithm parameters and ensures every recipe (current and future) supports resource_spec automatically with zero per-recipe work. Document clearly: **resource_spec** (in meta.json) = GPU/resource requirements per site; **deploy_map** (Requirement 6) = which app runs where.
 
 ### 10.12 Requirement 12  -  Client-side experiment tracking
 
