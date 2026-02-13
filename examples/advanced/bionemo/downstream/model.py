@@ -135,12 +135,13 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
             load_plain_tensors = None
         if load_plain_tensors is None:
             return None
-    if not torch.distributed.is_initialized():
+    we_initialized = not torch.distributed.is_initialized()
+    if we_initialized:
         os.environ.setdefault("MASTER_ADDR", "localhost")
         os.environ.setdefault("MASTER_PORT", str(get_open_ports(1)[0]))
         torch.distributed.init_process_group(backend="gloo", rank=0, world_size=1)
-    ckpt_dir = os.path.abspath(weights_dir)
     try:
+        ckpt_dir = os.path.abspath(weights_dir)
         loaded_sd = load_plain_tensors(ckpt_dir)
         if not isinstance(loaded_sd, dict):
             return None
@@ -149,6 +150,9 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
     except Exception as e:
         warnings.warn(f"NeMo distributed checkpoint load failed: {e}", UserWarning, stacklevel=2)
         return None
+    finally:
+        if we_initialized and torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
 
 
 def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[OrderedDict]:
