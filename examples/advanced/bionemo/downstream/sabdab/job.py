@@ -17,6 +17,7 @@ import os
 import sys
 
 from bionemo.core.data.load import load
+
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
