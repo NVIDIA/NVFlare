@@ -37,6 +37,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_constant import ReturnCode as FLReturnCode
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
@@ -546,7 +547,8 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
 
 
 class TestSwarmResultSubmissionFix(unittest.TestCase):
-    def test_local_submit_when_aggregator_is_self(self):
+    @staticmethod
+    def _make_swarm_controller():
         class _DummyGatherer:
             def __init__(self, **kwargs):
                 self.for_round = kwargs.get("for_round", 0)
@@ -600,14 +602,54 @@ class TestSwarmResultSubmissionFix(unittest.TestCase):
         ctl.log_debug = lambda *_args, **_kwargs: None
         ctl.log_warning = lambda *_args, **_kwargs: None
         ctl.log_error = lambda *_args, **_kwargs: None
-        ctl.broadcast_and_wait = mock.Mock(
-            side_effect=AssertionError("broadcast_and_wait must not be called for local result submission")
-        )
+        ctl.broadcast_and_wait = mock.Mock(return_value={"site-1": make_reply(FLReturnCode.OK)})
         ctl._process_learn_result = mock.Mock(return_value=make_reply(FLReturnCode.OK))
+        return ctl, task_data, fl_ctx, abort_signal, learn_result, engine, _DummyGatherer
 
-        with mock.patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer", _DummyGatherer):
-            ctl.do_learn_task("train", task_data, fl_ctx, abort_signal)
+    def test_local_submit_with_fix_does_not_block_on_self_broadcast(self):
+        (
+            ctl,
+            task_data,
+            fl_ctx,
+            abort_signal,
+            learn_result,
+            engine,
+            dummy_gatherer,
+        ) = self._make_swarm_controller()
 
+        entered_broadcast = threading.Event()
+        release_broadcast = threading.Event()
+        completed = threading.Event()
+
+        def _blocking_broadcast(**kwargs):
+            entered_broadcast.set()
+            release_broadcast.wait(timeout=5.0)
+            return {"site-1": make_reply(FLReturnCode.OK)}
+
+        ctl.broadcast_and_wait = mock.Mock(side_effect=_blocking_broadcast)
+
+        errors = []
+
+        def _run_do_learn_task():
+            try:
+                with mock.patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer", dummy_gatherer):
+                    ctl.do_learn_task("train", task_data, fl_ctx, abort_signal)
+            except Exception as e:
+                errors.append(e)
+            finally:
+                completed.set()
+
+        t = threading.Thread(target=_run_do_learn_task, daemon=True)
+        t.start()
+
+        # With the fix, self-submission bypasses broadcast_and_wait so it should complete quickly.
+        self.assertTrue(
+            completed.wait(timeout=2.0),
+            "Fix path should complete without waiting on a blocking self-broadcast call.",
+        )
+
+        self.assertFalse(entered_broadcast.is_set(), "Fix path should not call broadcast_and_wait for aggr == self.")
+        self.assertEqual(errors, [])
         ctl.broadcast_and_wait.assert_not_called()
         ctl._process_learn_result.assert_called_once()
         self.assertEqual(engine.submit_req_calls, 1, "submission permission request should still be sent once")
@@ -617,6 +659,59 @@ class TestSwarmResultSubmissionFix(unittest.TestCase):
         self.assertIs(called_abort_signal, abort_signal)
         self.assertIsNot(called_fl_ctx, fl_ctx)
         self.assertEqual(called_fl_ctx.get_peer_context().get_identity_name(), "site-1")
+
+        release_broadcast.set()
+        t.join(timeout=1.0)
+
+    def test_simulated_pre_fix_self_broadcast_blocks_until_released(self):
+        ctl, _, fl_ctx, _, learn_result, _, _ = self._make_swarm_controller()
+
+        entered_broadcast = threading.Event()
+        release_broadcast = threading.Event()
+        completed = threading.Event()
+
+        def _blocking_broadcast(**kwargs):
+            entered_broadcast.set()
+            release_broadcast.wait(timeout=5.0)
+            return {"site-1": make_reply(FLReturnCode.OK)}
+
+        ctl.broadcast_and_wait = mock.Mock(side_effect=_blocking_broadcast)
+
+        reply_holder = []
+
+        def _run_pre_fix_submit():
+            # Simulates the pre-fix logic where aggr == self still uses broadcast_and_wait.
+            task = Task(
+                name=ctl.report_learn_result_task_name,
+                data=learn_result,
+                timeout=int(ctl.learn_task_ack_timeout),
+                secure=False,
+            )
+            try:
+                resp = ctl.broadcast_and_wait(
+                    task=task,
+                    targets=["site-1"],
+                    min_responses=1,
+                    fl_ctx=fl_ctx,
+                )
+                reply_holder.append(resp.get("site-1"))
+            finally:
+                completed.set()
+
+        t = threading.Thread(target=_run_pre_fix_submit, daemon=True)
+        t.start()
+
+        self.assertTrue(entered_broadcast.wait(timeout=1.0), "Pre-fix simulation should enter broadcast call.")
+        self.assertFalse(
+            completed.wait(timeout=0.2),
+            "Pre-fix self-broadcast path should remain blocked while broadcast_and_wait is blocked.",
+        )
+
+        release_broadcast.set()
+        self.assertTrue(completed.wait(timeout=1.0), "Releasing broadcast should unblock pre-fix simulation.")
+        t.join(timeout=1.0)
+        self.assertEqual(len(reply_holder), 1)
+        self.assertIsInstance(reply_holder[0], Shareable)
 
 
 if __name__ == "__main__":
