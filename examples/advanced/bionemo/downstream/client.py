@@ -49,8 +49,6 @@ from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
 from bionemo.esm2.model.finetune.dataset import InMemoryProteinDataset, InMemorySingleValueDataset
 from bionemo.esm2.model.finetune.sequence_model import ESM2FineTuneSeqConfig
-
-# Resue parser and config constants from bionemo
 from bionemo.esm2.scripts.finetune_esm2 import get_parser
 from bionemo.llm.model.biobert.lightning import biobert_lightning_module
 from bionemo.llm.model.biobert.model import BioBertConfig

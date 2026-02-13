@@ -24,8 +24,10 @@ from nvflare.recipe import SimEnv
 # the default 300s timeout on systems with slow I/O or resource contention
 BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
 
+# isort: off
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
 from bionemo_filters import BioNeMoExcludeParamsFilter, BioNeMoParamsFilter, BioNeMoStateDictFilter
+# isort: on
 
 
 def main(args):
