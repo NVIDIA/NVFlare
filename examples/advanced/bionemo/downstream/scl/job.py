@@ -55,14 +55,7 @@ def main(args):
     # Use dict config of the model so we only instantiate the model on the server.
     model = {
         "class_path": "model.ESM2ModuleForServer",
-        "args": {
-            "checkpoint_path": str(checkpoint_path),
-            "task_type": "classification",
-            "encoder_frozen": True,
-            "precision": precision,
-            "mlp_target_size": 10,
-            "num_classes_for_metric": 10,
-        },
+        "args": {"checkpoint_path": str(checkpoint_path)},
     }
 
     job_name = f"{args.exp_name}_scl_esm2_{args.model}"

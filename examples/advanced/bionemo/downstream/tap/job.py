@@ -52,12 +52,7 @@ def main(args):
     # Use dict config of the model so we only instantiate the model on the server.
     model = {
         "class_path": "model.ESM2ModuleForServer",
-        "args": {
-            "checkpoint_path": str(checkpoint_path),
-            "task_type": "regression",
-            "precision": precision,
-            "mlp_target_size": 1,
-        },
+        "args": {"checkpoint_path": str(checkpoint_path)},
     }
 
     # Create FedAvgRecipe

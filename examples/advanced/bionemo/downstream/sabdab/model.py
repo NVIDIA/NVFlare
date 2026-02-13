@@ -11,18 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS FOR ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-Build ESM2 fine-tune module for NVFlare server-side initial model.
-
-This module is used by job.py to instantiate the ESM2 architecture so that
-FedAvgRecipe can load the initial checkpoint and aggregate client updates.
-The same architecture (config + lightning module) as client.py is used so
-state_dict keys match.
-
-Use ESM2ModuleForServer via dict config in the recipe so the job config only
-stores class path + args (no nn.Module instance). That avoids serialization
-errors from callables/lambdas in the Lightning module object graph.
-"""
+"""ESM2 server module: loads checkpoint state_dict for NVFlare FedAvg (no Megatron/Lightning init)."""
 
 import os
 import warnings
@@ -31,14 +20,8 @@ from typing import Optional
 
 import torch
 
-try:
-    from safetensors.torch import load_file as load_safetensors
-except ImportError:
-    load_safetensors = None
-
 
 def _checkpoint_key_to_client(k: str) -> str:
-    """Rewrite NeMo checkpoint key (single layer) to client format (layer 0)."""
     for old, new in (
         ("encoder.layers.self_attention.", "encoder.layers.0.self_attention."),
         ("encoder.layers.mlp.", "encoder.layers.0.mlp."),
@@ -49,12 +32,7 @@ def _checkpoint_key_to_client(k: str) -> str:
 
 
 def _expand_checkpoint_state_dict(sd: OrderedDict) -> OrderedDict:
-    """Expand NeMo checkpoint state dict so layer-stacked tensors become per-layer keys.
-
-    NeMo saves some weights with a leading dimension (num_layers), e.g. shape [33, 1280, 1280].
-    The client expects one key per layer with shape [1280, 1280]. We split such tensors and
-    emit module.encoder.layers.0.*, module.encoder.layers.1.*, ...
-    """
+    """Split layer-stacked tensors [n, ...] into per-layer keys (layers.0.*, layers.1.*, ...)."""
     out = OrderedDict()
     for k, v in sd.items():
         if not isinstance(v, torch.Tensor):
@@ -79,85 +57,25 @@ def _expand_checkpoint_state_dict(sd: OrderedDict) -> OrderedDict:
 
 
 class ESM2ModuleForServer(torch.nn.Module):
-    """ESM2 module for server: holds full state_dict loaded from checkpoint (no Megatron/Lightning init).
+    """Holds state_dict loaded from checkpoint; BioNeMoParamsFilter adds prefix when sending to client."""
 
-    Used via dict config so the job config never walks a real Lightning module. The server only needs
-    state_dict() and load_state_dict(); we load the checkpoint with load_state_dict_from_checkpoint_path
-    so the module has full content without instantiating BionemoLightningModule.
-    """
-
-    def __init__(
-        self,
-        checkpoint_path: str,
-        task_type: str = "classification",
-        encoder_frozen: bool = False,
-        precision: str = "fp32",
-        mlp_ft_dropout: float = 0.1,
-        mlp_hidden_size: int = 256,
-        mlp_target_size: int = 2,
-        num_classes_for_metric: Optional[int] = None,
-    ):
+    def __init__(self, checkpoint_path: str, **kwargs):
         super().__init__()
-        self.checkpoint_path = checkpoint_path
-        self.task_type = task_type
-        self.encoder_frozen = encoder_frozen
-        self.precision = precision
-        self.mlp_ft_dropout = mlp_ft_dropout
-        self.mlp_hidden_size = mlp_hidden_size
-        self.mlp_target_size = mlp_target_size
-        self.num_classes_for_metric = num_classes_for_metric
-        # Load full state dict from checkpoint so state_dict() returns real weights (no inner module needed)
         sd = load_state_dict_from_checkpoint_path(checkpoint_path)
-        # Expand layer-stacked tensors (e.g. [33, 1280, 1280] -> 33 keys with [1280, 1280]) and
-        # normalize key names to match client (Megatron) format.
-        self._state_dict = _expand_checkpoint_state_dict(sd) if sd is not None else OrderedDict()
-        # Do NOT add a prefix here: BioNeMoParamsFilter adds "module." (fp32) when sending to client.
-        self._module = None  # no BionemoLightningModule on server; state comes from checkpoint
+        self._state_dict = _expand_checkpoint_state_dict(sd) if sd else OrderedDict()
 
     @staticmethod
     def _stored_key(k: str) -> str:
-        """Normalize key from client (module.module.*) to stored form (module.*) for consistency."""
         if k.startswith("module.module."):
             return k[len("module.") :]
         return k
 
     def state_dict(self, *args, **kwargs):
-        # Return keys as stored; BioNeMoParamsFilter adds prefix when sending to client.
         return OrderedDict(self._state_dict)
 
     def load_state_dict(self, state_dict, strict: bool = True):
         self._state_dict = OrderedDict((self._stored_key(k), v) for k, v in state_dict.items())
-        # Return type compatible with torch.nn.Module.load_state_dict
-        incompat = getattr(torch.nn.modules.module, "_IncompatibleKeys", None)
-        if incompat is not None:
-            return incompat(missing_keys=[], unexpected_keys=[])
         return None
-
-
-def _get_module_state_dict(module: torch.nn.Module, *args, **kwargs) -> OrderedDict:
-    """Return state_dict from module, bypassing Lightning wrappers that return empty."""
-    out = module.state_dict(*args, **kwargs)
-    if out:
-        return out
-    for attr in ("model", "module", "net", "_model"):
-        inner = getattr(module, attr, None)
-        if isinstance(inner, torch.nn.Module):
-            out = inner.state_dict(*args, **kwargs)
-            if out:
-                return out
-    out = OrderedDict()
-    for name, param in module.named_parameters():
-        out[name] = param
-    for name, buf in module.named_buffers():
-        out[name] = buf
-    if out:
-        return out
-    for name, child in module.named_children():
-        if isinstance(child, torch.nn.Module):
-            child_sd = _get_module_state_dict(child, *args, **kwargs)
-            if child_sd:
-                return OrderedDict((f"{name}.{k}", v) for k, v in child_sd.items())
-    return OrderedDict()
 
 
 def _flatten_state_dict(d: dict, prefix: str = "") -> OrderedDict:
@@ -172,20 +90,17 @@ def _flatten_state_dict(d: dict, prefix: str = "") -> OrderedDict:
 
 
 def _extract_state_dict(loaded: dict) -> Optional[OrderedDict]:
+    d = loaded
     for key in ("model", "state_dict", "weights", "checkpoint"):
         if key in loaded and isinstance(loaded[key], (dict, OrderedDict)):
             d = loaded[key]
             break
-    else:
-        d = loaded
     if not d:
         return None
     if all(isinstance(v, torch.Tensor) for v in d.values()):
         return OrderedDict(d)
     flat = _flatten_state_dict(d)
-    if flat and all(isinstance(v, torch.Tensor) for v in flat.values()):
-        return flat
-    return None
+    return flat if flat and all(isinstance(v, torch.Tensor) for v in flat.values()) else None
 
 
 def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
@@ -213,18 +128,13 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
     ckpt_dir = os.path.abspath(weights_dir)
     try:
         loaded_sd = load_plain_tensors(ckpt_dir)
-        if not isinstance(loaded_sd, dict) or len(loaded_sd) == 0:
+        if not isinstance(loaded_sd, dict):
             return None
-        out = OrderedDict()
-        for k, v in loaded_sd.items():
-            if isinstance(v, torch.Tensor):
-                out[k] = v.cpu() if v.is_cuda else v
-        if out:
-            return out
+        out = OrderedDict((k, v.cpu() if v.is_cuda else v) for k, v in loaded_sd.items() if isinstance(v, torch.Tensor))
+        return out if out else None
     except Exception as e:
         warnings.warn(f"NeMo distributed checkpoint load failed: {e}", UserWarning, stacklevel=2)
         return None
-    return None
 
 
 def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[OrderedDict]:
@@ -239,56 +149,12 @@ def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[Order
         result = _load_nemo_distributed_checkpoint(path)
         if result is not None:
             return result
-        candidates = [
-            os.path.join(path, "weights", "common.pt"),
-            os.path.join(path, "model_weights.pt"),
-            os.path.join(path, "model.pt"),
-            os.path.join(path, "weights.pt"),
-            os.path.join(path, "pytorch_model.bin"),
-            os.path.join(path, "model.safetensors"),
-        ]
-        for root, _dirs, files in os.walk(path):
-            for f in sorted(files):
-                if f.endswith((".pt", ".pth", ".bin", ".safetensors")):
-                    candidates.append(os.path.join(root, f))
-        for candidate in candidates:
-            if not os.path.isfile(candidate):
-                continue
+        candidate = os.path.join(path, "weights", "common.pt")
+        if os.path.isfile(candidate):
             try:
-                if candidate.endswith(".safetensors") and load_safetensors is not None:
-                    loaded = load_safetensors(candidate, device="cpu")
-                else:
-                    loaded = torch.load(candidate, map_location="cpu", weights_only=False)
-                if loaded is not None:
-                    break
+                loaded = torch.load(candidate, map_location="cpu", weights_only=False)
             except Exception:
-                continue
-        if loaded is None:
-            weights_dir = os.path.join(path, "weights")
-            if os.path.isdir(weights_dir):
-                merged = {}
-                for f in sorted(os.listdir(weights_dir)):
-                    if not f.endswith((".pt", ".pth")):
-                        continue
-                    try:
-                        part = torch.load(os.path.join(weights_dir, f), map_location="cpu", weights_only=False)
-                        if isinstance(part, dict):
-                            for k, v in part.items():
-                                if k in ("model", "state_dict") and isinstance(v, dict):
-                                    merged.update(v)
-                                else:
-                                    merged[k] = v
-                    except Exception:
-                        continue
-                if merged:
-                    loaded = merged
-    if loaded is None:
+                pass
+    if loaded is None or not isinstance(loaded, dict):
         return None
-    if isinstance(loaded, dict):
-        return _extract_state_dict(loaded)
-    if hasattr(loaded, "state_dict") and callable(loaded.state_dict):
-        try:
-            return OrderedDict(loaded.state_dict())
-        except Exception:
-            pass
-    return None
+    return _extract_state_dict(loaded)
