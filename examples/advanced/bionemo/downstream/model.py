@@ -105,12 +105,13 @@ def _extract_state_dict(loaded: dict) -> Optional[OrderedDict]:
         if key in loaded and isinstance(loaded[key], (dict, OrderedDict)):
             d = loaded[key]
             break
-    if d is None:
+    if d is None or not d:
         return None
     if all(isinstance(v, torch.Tensor) for v in d.values()):
         return OrderedDict(d)
     flat = _flatten_state_dict(d)
-    # Empty flat is valid; only reject if any value is not a tensor (don't use "if flat" — empty dict is falsy)
+    if flat is None or not flat:
+        return None
     if all(isinstance(v, torch.Tensor) for v in flat.values()):
         return flat
     return None
