@@ -49,7 +49,7 @@ recipe = FedAvgRecipe(
 
 Optional **`per_site_config`** lets you override the training script and/or arguments (e.g. learning rate, batch size) per site; see **3.4 Per-site config** below.
 
-Custom recipe subclasses currently receive an internal job type; see **API Enhancements** (last section) for planned improvements.
+Custom recipe subclasses currently receive an internal job type; see **API Enhancements** (Section 9) for planned improvements.
 
 ### 3.2 Export and execute
 
@@ -325,7 +325,7 @@ recipe = FedAvgRecipe(
 | Run in an environment | `recipe.execute(env)` → `Run`; then `get_job_id()`, `get_status()`, `get_result()`, `abort()` |
 | Server/client config | `recipe.add_server_config(config)`, `recipe.add_client_config(config, clients=None)` |
 | Per-site script/args | `per_site_config={"site-1": {"train_script": "...", "train_args": "..."}, ...}` on recipe constructor |
-| Model (dict config) / checkpoint | `model={"class_path": "module.Class", "args": {...}}`; `initial_ckpt` (absolute = server-side, relative = bundled); `save_filename` for FL global model (Section 3.5). |
+| Model (dict config) / checkpoint | `model={"class_path": "module.Class", "args": {...}}`; `initial_ckpt` (absolute = server-side, relative = bundled); `save_filename` for FL global model (Sections 3.5 and 3.6). |
 | Task/result filters | `add_server_output_filter`, `add_server_input_filter`, `add_client_input_filter`, `add_client_output_filter` |
 | Custom serialization | `recipe.add_decomposers([...])` |
 | Environment-specific setup | Override `recipe.process_env(env)` |
