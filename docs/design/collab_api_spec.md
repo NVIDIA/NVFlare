@@ -431,8 +431,7 @@ The Collab API is designed to help researchers **develop new federated learning 
 | Scenario | Recommended Path |
 |----------|-----------------|
 | Novel algorithm, single GPU | Stay with Collab API on both sides -- fast iteration, pure Python function calls, almost free of FLARE concepts |
-| Novel algorithm, multi-GPU or production | Collab API server + Client API client (wiring mechanism TBD) -- see Section 4.4 |
-| Building a new reusable recipe | Research with `CollabRecipe`, then package server + Client API client into a new recipe via Job API -- see Section 4.4 (open: packaging tool needed) |
+| Novel algorithm, multi-GPU or production | Develop new recipe: Collab API server + Client API client, wired via Job API -- see Section 4.4 (open: packaging tool needed) |
 | Algorithm matches FedAvg/Cyclic/etc. | Switch to standard recipe (`FedAvgRecipe`, `CyclicRecipe`) -- see Section 4.2 |
 
 ### 4.2 Transition to Standard Recipe (When Your Algorithm Matches a Built-in)
@@ -515,14 +514,14 @@ recipe.execute(PocEnv(num_clients=5))
 
 ### 4.3 Progression Summary
 
-| Component | Collab API (both sides) | Hybrid: Collab Server + Client API | Standard Recipe (FedAvg, Cyclic, etc.) |
-|-----------|------------------------|-----------------------------------|---------------------------------------|
-| **Server algorithm** | `@collab.main` (custom) | `@collab.main` (custom, kept) | Built-in workflow (e.g. scatter-and-gather) |
+| Component | Collab API (both sides) | New Recipe (Collab Server + Client API) | Standard Recipe (FedAvg, Cyclic, etc.) |
+|-----------|------------------------|----------------------------------------|---------------------------------------|
+| **Server algorithm** | `@collab.main` (custom) | `@collab.main` (custom, wired into recipe) | Built-in workflow (e.g. scatter-and-gather) |
 | **Client training** | `@collab.publish` methods | `flare.receive()` / `flare.send()` script | `flare.receive()` / `flare.send()` script |
-| **Job config** | `CollabRecipe(server=..., client=...)` | Collab server + Client API client (wiring TBD) | `FedAvgRecipe(train_script=..., model=...)` |
-| **Multi-GPU** | Not supported (single process) | `launch_external_process=True` | Built-in via Recipe's launcher config |
+| **Job config** | `CollabRecipe(server=..., client=...)` | New recipe via Job API (packaging TBD) | `FedAvgRecipe(train_script=..., model=...)` |
+| **Multi-GPU** | Not supported (single process) | Supported | Built-in via Recipe's launcher config |
 | **Production deploy** | `recipe.export(...)` / `recipe.execute(...)` | Same | Same |
-| **When to use** | Rapid prototyping, algorithm experiments | Novel algorithm going to production | Algorithm matches a built-in recipe |
+| **When to use** | Rapid prototyping, algorithm experiments | Novel algorithm -> production recipe | Algorithm matches a built-in recipe |
 
 ### 4.4 Intermediate Step: Collab API Server + Client API Client
 
@@ -761,8 +760,7 @@ API Layering (all built on the same low-level Controller + Executor APIs):
 | **Custom aggregation (e.g. weighted by data quality)** | `CollabRecipe` | User controls aggregation logic in `@collab.main` |
 | **Custom communication pattern (e.g. gossip, async)** | `CollabRecipe` | User controls when and how to call clients |
 | **Production deployment of a standard algorithm** | `FedAvgRecipe` / `CyclicRecipe` | Proven, optimized, documented |
-| **Novel algorithm in production** | Collab API server + Client API client (wiring mechanism TBD) | Custom server logic with production-ready client; see Section 4.4 |
-| **Building a new reusable recipe** | Research with `CollabRecipe`, then use Job API to package into `SplitLearningRecipe(...)` | Collab API for research -> Job API for packaging -> new recipe for end users; see Section 4.4 |
+| **Novel algorithm -> new recipe** | Research with `CollabRecipe`, then wire Collab server + Client API client into a new recipe via Job API | Collab API for research -> new recipe for production; see Section 4.4 |
 | **Algorithm matches a standard recipe** | Migrate to `FedAvgRecipe` / `CyclicRecipe` (see Section 4.2) | When your algorithm matches a built-in recipe |
 
 ### 6.4 Key Difference: Who Writes the Server Logic?
@@ -816,7 +814,7 @@ All recipes (CollabRecipe and standard recipes) inherit these from the base `Rec
 
 ### 6.6 Progression Paths
 
-There are **three progression paths** from Collab API research:
+There are **two progression paths** from Collab API research:
 
 ```
 CollabRecipe (research / experiment)
@@ -825,10 +823,10 @@ CollabRecipe (research / experiment)
     |  -- fast iteration, pure Python function calls, almost free of FLARE concepts
     |  -- CollabSimEnv: same process, no simulator overhead
     |
-    +---> Path A: Build a new named Recipe
+    +---> Path A: Novel algorithm -> new recipe
     |         |
-    |         |  1. Switch client to Client API (train_script) via CollabRecipe
-    |         |  2. Use Job API to package server logic + Client API client into new recipe
+    |         |  1. Switch client to Client API (train_script)
+    |         |  2. Wire Collab server + Client API client into a new recipe via Job API
     |         |     (open: need a packaging tool to make this step easy)
     |         v
     |     SplitLearningRecipe(...) / MyCustomRecipe(...)  (NEW RECIPE)
@@ -837,16 +835,7 @@ CollabRecipe (research / experiment)
     |         |  -- supports multi-GPU, multi-node, production deployment
     |         |  -- deploy via export() or K8s
     |
-    +---> Path B: Stay with Collab server + Client API  (PRODUCTION)
-    |         |
-    |         v
-    |     @collab.main server + Client API client  (wiring mechanism TBD)
-    |         |
-    |         |  -- keep @collab.main server, Client API client
-    |         |  -- good for one-off custom algorithms or ongoing research
-    |         |  -- supports multi-GPU (DDP), multi-node, production deployment
-    |
-    +---> Path C: Algorithm matches an existing standard recipe
+    +---> Path B: Algorithm matches an existing standard recipe
               |
               v
           FedAvgRecipe / CyclicRecipe / etc.  (EXISTING RECIPE)
@@ -858,7 +847,6 @@ CollabRecipe (research / experiment)
 
 **Key insights:**
 
-- **Path A is the primary goal** of the Collab API: enable researchers to develop novel FL algorithms and then turn them into reusable, production-ready recipes. The packaging step (Collab server + Client API -> new named recipe) currently requires using the Job API directly; a higher-level packaging tool is an **open design requirement** (see Section 4.4).
-- **Path B** is appropriate for one-off custom algorithms or ongoing research where packaging into a named recipe is not yet needed.
-- **Path C** is for when the algorithm turns out to match an existing built-in workflow.
+- **Path A is the primary goal** of the Collab API: enable researchers to develop novel FL algorithms and turn them into reusable, production-ready recipes. Using Collab API on the server and Client API on the client requires wiring them together with a recipe -- this **is** developing a new recipe. The packaging step currently requires using the Job API directly; a higher-level packaging tool is an **open design requirement** (see Section 4.4).
+- **Path B** is for when the algorithm turns out to match an existing built-in workflow.
 
