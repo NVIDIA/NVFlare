@@ -47,7 +47,7 @@ This design was created with the following goals in mind:
 
 | Goal | How Addressed |
 | --- | ----- |
-| **5-minute setup** | Single command for org admins: nvflare package --cert-service --token |
+| **5-minute setup** | Single command for Site Admins: nvflare package --cert-service --token |
 | **Easier than provisioning** | No project.yml needed; no distribution of startup kits |
 | **Add clients mid-project** | Generate token + send to site. Zero touch for existing participants |
 | **Dynamic K8s scaling** | Batch tokens + StatefulSet with auto-enrollment at startup |
@@ -233,7 +233,7 @@ nvflare token generate -n new-hospital \
     --api-key $API_KEY
 # Send token + Certificate Service URL to site
 
-# Org Admin (1 command)
+# Site Admin (1 command)
 nvflare package -n new-hospital -e grpc://server:8002 -t client \
     --cert-service https://cert-service:8443 \
     --token "eyJhbGciOiJSUzI1NiIs..."
@@ -415,54 +415,39 @@ A signed token containing claims. Used for enrollment tokens that embed approval
 
 The token-based enrollment system consists of:
 
-*                                PROJECT ADMIN
-*                                 ─────────────
-*                                       │
-*                           nvflare token generate
-*                           nvflare token batch
-*                           nvflare token info
-*                                       │
-*                                 HTTPS API
-*                                       │
-*                                       ▼
-* ┌─────────────────────────────────────────────────────────────────────────┐
-* │                       CERTIFICATE SERVICE                                │
-* │                                                                          │
-* │  ┌────────────────────────────────────────────────────────────────────┐ │
-* │  │                    CertServiceApp (HTTP)                           │ │
-* │  │                                                                    │ │
-* │  │  POST /api/v1/token   ─► Token generation (for nvflare token CLI) │ │
-* │  │  GET  /api/v1/token   ─► Token info                               │ │
-* │  │  POST /api/v1/enroll  ─► CSR signing (for CertRequestor)          │ │
-* │  │  GET  /api/v1/pending ─► List pending requests                    │ │
-* │  │                                                                    │ │
-* │  └────────────────────────────┬───────────────────────────────────────┘ │
-* │                               │                                          │
-* │  ┌────────────────────────────▼───────────────────────────────────────┐ │
-* │  │                    CertService (Core Logic)                        │ │
-* │  │                                                                    │ │
-* │  │  TokenService  ─► JWT generation with embedded policy             │ │
-* │  │  Token validation, Policy evaluation, CSR signing                 │ │
-* │  │                                                                    │ │
-* │  │  Holds rootCA.key (never leaves this service)                     │ │
-* │  └────────────────────────────────────────────────────────────────────┘ │
-* └─────────────────────────────────────────────────────────────────────────┘
-*                                         │
-*                         HTTPS (TLS - Let's Encrypt)
-*                                         │
-*       ┌─────────────────────────────────┼─────────────────────────────────┐
-*       │                                 │                                 │
-*       ▼                                 ▼                                 ▼
-* ┌───────────────┐              ┌───────────────┐              ┌───────────────┐
-* │   FL Server   │              │   FL Client   │              │   FL Client   │
-* │               │              │               │              │               │
-* │ CertRequestor │              │ CertRequestor │              │ CertRequestor │
-* │               │              │               │              │               │
-* │ 1. Gen keys   │◄── mTLS ───►│ 1. Gen keys   │              │ 1. Gen keys   │
-* │ 2. Create CSR │              │ 2. Create CSR │              │ 2. Create CSR │
-* │ 3. Submit CSR │              │ 3. Submit CSR │              │ 3. Submit CSR │
-* │ 4. Get cert   │              │ 4. Get cert   │              │ 4. Get cert   │
-* └───────────────┘              └───────────────┘              └───────────────┘
+
+```
+                    +-------------------+
+                    |   PROJECT ADMIN   |
+                    | nvflare token     |
+                    | generate/batch/   |
+                    | info              |
+                    +---------+---------+
+                              | HTTPS API (tokens)
+                              v
++-------------------------------------------------------------------------------+
+|                     CERTIFICATE SERVICE                                        |
+|  +-------------------------------------------------------------------------+  |
+|  | CertServiceApp (HTTP)                                                    |  |
+|  |   POST /api/v1/token   Token generation (nvflare token CLI)              |  |
+|  |   GET  /api/v1/ca-cert Public root CA                                    |  |
+|  |   POST /api/v1/enroll  CSR signing (CertRequestor)                       |  |
+|  |   GET  /api/v1/pending List pending requests (admin)                     |  |
+|  +-------------------------------------------------------------------------+  |
+|  | CertService (core)  TokenService (JWT+policy)  rootCA.key (here)            |  |
+|  +-------------------------------------------------------------------------+  |
++-------------------------------------------------------------------------------+
+                              | HTTPS (TLS)
+              +---------------+---------------+
+              v               v               v
+      +-------------+ +-------------+ +-------------+
+      |  FL Server  | |  FL Client  | |  FL Client  |
+      |  CertReqs   |<--mTLS-->|  CertReqs   | |  CertReqs   |
+      | 1-4 flow    | | 1-4 flow    | | 1-4 flow    |
+      +-------------+ +-------------+ +-------------+
+       1.Gen keys    1.Gen keys    1.Gen keys
+       2.CSR 3.Submit 4.Get cert  (same for each)
+```
 
 ### Key Components
 
@@ -515,7 +500,7 @@ Enrollment tokens are JWTs (JSON Web Tokens) signed with the root CA private key
 | iat | timestamp | Issued at time |
 | exp | timestamp | Expiration time |
 | policy | {…} | Embedded approval policy (see below) |
-| roles | \[“lead”\] | Roles for admin tokens |
+| roles | [“lead”] | Roles for admin tokens |
 
 ### Token Security
 
@@ -555,19 +540,21 @@ By default, the **root CA private key** serves two purposes:
 
 This simplifies key management - one key pair for all cryptographic operations.
 
-* Root CA Key Pair
-* ────────────────
-* rootCA.key (private)
-*     │
-*     ├──► Sign certificates (CSRs)
-*     │
-*     └──► Sign JWT tokens
+```
+Root CA Key Pair
+────────────────
+rootCA.key (private)
+    │
+    ├──> Sign certificates (CSRs)
+    │
+    └──> Sign JWT tokens
 
-* rootCA.pem (public)
-*     │
-*     ├──► Verify certificates
-*     │
-*     └──► Verify JWT tokens
+rootCA.pem (public)
+    │
+    ├──> Verify certificates
+    │
+    └──> Verify JWT tokens
+```
 
 **Optional: Separate JWT Signing Key**
 
@@ -582,12 +569,14 @@ For advanced deployments, you can use a **separate key pair** for JWT signing:
 
 If using separate JWT keys, both services MUST use the same key pair:
 
-* TokenService                        CertService
-* ────────────                        ───────────
-* jwt_key.key (private)    ─────►    jwt_key.pub (public)
-*      │                                   │
-*      ▼                                   ▼
-* Sign tokens                         Verify tokens
+```
+TokenService                        CertService
+────────────                        ───────────
+jwt_key.key (private)    ----->    jwt_key.pub (public)
+     │                                   │
+     v                                   v
+Sign tokens                         Verify tokens
+```
 
 Configuration for separate keys:
 
@@ -684,14 +673,14 @@ Identifies the policy scope and version.
 Controls token lifetime.
 
 * **token**:
-*   **validity**: "7d"     # Supports: 30m, 2h, 7d, etc.
+  **validity**: "7d"     # Supports: 30m, 2h, 7d, etc.
 
 **Site Constraints**
 
 Restricts which site names are allowed.
 
 * **site**:
-*   **name_pattern**: "^hospital-\[0-9\]+$"   # Regex pattern
+*   **name_pattern**: "^hospital-[0-9]+$"   # Regex pattern
 
 **User Constraints**
 
@@ -699,8 +688,8 @@ For admin tokens, controls allowed roles.
 
 * **user**:
 *   **allowed_roles**:
-*     - lead
-*     - member
+    - lead
+    - member
 *   **default_role**: lead
 
 **Approval Rules**
@@ -710,15 +699,15 @@ Rules are evaluated in order - first match wins.
 * **approval**:
 *   **method**: policy
 *   **rules**:
-*     - **name**: rule_name
-*       **description**: "Human-readable description"
-*       **match**:
-*         **site_name_pattern**: "^pattern-.\*"   # Optional
-*         **source_ips**:                        # Optional
-*           - "10.0.0.0/8"
-*       **action**: approve | reject | pending
-*       **message**: "Reason message"
-*       **log**: true
+    - **name**: rule_name
+      **description**: "Human-readable description"
+      **match**:
+        **site_name_pattern**: "^pattern-.\*"   # Optional
+        **source_ips**:                        # Optional
+          - "10.0.0.0/8"
+      **action**: approve | reject | pending
+      **message**: "Reason message"
+      **log**: true
 
 **Match Conditions**
 
@@ -737,37 +726,41 @@ Rules are evaluated in order - first match wins.
 
 ### Policy Evaluation Flow
 
-* Enrollment Request
-*       │
-*       ▼
-* ┌─────────────────────┐
-* │ Validate JWT Token  │ ──► Invalid? ──► Reject (401)
-* └──────────┬──────────┘
-*            │ Valid
-*            ▼
-* ┌─────────────────────┐
-* │ Check subject_type  │ ──► Mismatch? ──► Reject
-* │ matches enrollment  │
-* └──────────┬──────────┘
-*            │ Match
-*            ▼
-* ┌─────────────────────┐
-* │ Check name matches  │ ──► Mismatch? ──► Reject
-* │ token subject       │
-* └──────────┬──────────┘
-*            │ Match
-*            ▼
-* ┌─────────────────────┐
-* │ Evaluate policy     │
-* │ rules (first match) │
-* └──────────┬──────────┘
-*            │
-*    ┌───────┴───────┐
-*    │               │
-* approve         reject
-*    │               │
-*    ▼               ▼
-* Sign CSR      Return error
+
+```
+Enrollment Request
+      │
+      ▼
+┌─────────────────────┐
+│ Validate JWT Token  │ ──► Invalid? ──► Reject (401)
+└──────────┬──────────┘
+           │ Valid
+           ▼
+┌─────────────────────┐
+│ Check subject_type  │ ──► Mismatch? ──► Reject
+│ matches enrollment  │
+└──────────┬──────────┘
+           │ Match
+           ▼
+┌─────────────────────┐
+│ Check name matches  │ ──► Mismatch? ──► Reject
+│ token subject       │
+└──────────┬──────────┘
+           │ Match
+           ▼
+┌─────────────────────┐
+│ Evaluate policy     │
+│ rules (first match) │
+└──────────┬──────────┘
+           │
+   ┌───────┴───────┐
+   │               │
+approve         reject
+   │               │
+   ▼               ▼
+Sign CSR      Return error
+
+```
 
 ## CSR Signing Process
 
@@ -875,327 +868,394 @@ nvflare/cert_service/
 
 ### HTTP API
 
-**POST /api/v1/enroll**
+#### POST /api/v1/enroll
 
 Enrollment endpoint. Returns signed certificate and root CA.
 
-*Request:
+**Request**
 
-* {
-*     **"token"**: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-*     **"csr"**: "-----BEGIN CERTIFICATE REQUEST-----\\n...",
-*     **"metadata"**: {
-*         **"name"**: "hospital-1",
-*         **"type"**: "client",
-*         **"org"**: "Hospital A"
-*     }
-* }
+```json
+{
+  "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...",
+  "metadata": {
+    "name": "hospital-1",
+    "type": "client",
+    "org": "Hospital A"
+  }
+}
+```
 
-*Response (200 OK):
+**Response (200 OK)**
 
-* {
-*     **"certificate"**: "-----BEGIN CERTIFICATE-----\\n...",
-*     **"ca_cert"**: "-----BEGIN CERTIFICATE-----\\n..."
-* }
+```json
+{
+  "certificate": "-----BEGIN CERTIFICATE-----\n...",
+  "ca_cert": "-----BEGIN CERTIFICATE-----\n..."
+}
+```
 
-*Response (202 Accepted - Pending Manual Approval):
+**Response (202 Accepted — Pending Manual Approval)**
 
-* {
-*     **"status"**: "pending",
-*     **"request_id"**: "abc123-def456-789",
-*     **"message"**: "Enrollment request queued for manual approval",
-*     **"poll_url"**: "/api/v1/enroll/abc123-def456-789"
-* }
+```json
+{
+  "status": "pending",
+  "request_id": "abc123-def456-789",
+  "message": "Enrollment request queued for manual approval",
+  "poll_url": "/api/v1/enroll/abc123-def456-789"
+}
+```
 
-*Error Responses:
+**Error responses**
 
-* **401 Unauthorized**: Invalid or expired token
-* **403 Forbidden**: Policy rejection
-* **400 Bad Request**: Invalid request format
+- **401 Unauthorized**: Invalid or expired token
+- **403 Forbidden**: Policy rejection
+- **400 Bad Request**: Invalid request format
 
-**GET /api/v1/enroll/{request_id}**
+---
+
+#### GET /api/v1/enroll/{request_id}
 
 Poll for pending request status.
 
-*Response (200 - Still Pending):
+**Response (200 — Still Pending)**
 
-* {
-*     **"status"**: "pending",
-*     **"submitted_at"**: "2025-01-04T10:15:00Z"
-* }
+```json
+{
+  "status": "pending",
+  "submitted_at": "2025-01-04T10:15:00Z"
+}
+```
 
-*Response (200 - Approved):
+**Response (200 — Approved)**
 
-* {
-*     **"status"**: "approved",
-*     **"certificate"**: "-----BEGIN CERTIFICATE-----\\n...",
-*     **"ca_cert"**: "-----BEGIN CERTIFICATE-----\\n..."
-* }
+```json
+{
+  "status": "approved",
+  "certificate": "-----BEGIN CERTIFICATE-----\n...",
+  "ca_cert": "-----BEGIN CERTIFICATE-----\n..."
+}
+```
 
-*Response (200 - Rejected):
+**Response (200 — Rejected)**
 
-* {
-*     **"status"**: "rejected",
-*     **"reason"**: "Site not authorized for this project"
-* }
+```json
+{
+  "status": "rejected",
+  "reason": "Site not authorized for this project"
+}
+```
 
-*Response (404):
+**Response (404)** — Request ID not found or expired.
 
-Request ID not found or expired.
+---
 
-**GET /api/v1/pending** (Admin Only)
+#### GET /api/v1/pending (Admin Only)
 
 List all pending enrollment requests. Requires admin authentication.
 
-*Query Parameters:
+**Query parameters**
 
-* type (optional): Filter by entity type (client, relay, user)
+- `type` (optional): Filter by entity type (client, relay, user)
 
-*Response:
+**Response**
 
-* {
-*     **"pending"**: \[
-*         {
-*             **"name"**: "hospital-1",
-*             **"entity_type"**: "client",
-*             **"org"**: "Hospital A",
-*             **"submitted_at"**: "2025-01-04T10:15:00Z",
-*             **"expires_at"**: "2025-01-11T10:15:00Z",
-*             **"token_subject"**: "hospital-\*",
-*             **"source_ip"**: "10.2.3.4"
-*         },
-*         {
-*             **"name"**: "admin@org.com",
-*             **"entity_type"**: "user",
-*             **"org"**: "Org Inc",
-*             **"role"**: "lead",
-*             **"submitted_at"**: "2025-01-04T11:00:00Z",
-*             **"expires_at"**: "2025-01-11T11:00:00Z",
-*             **"token_subject"**: "\*@org.com",
-*             **"source_ip"**: **null**
-*         }
-*     \]
-* }
+```json
+{
+  "pending": [
+    {
+      "name": "hospital-1",
+      "entity_type": "client",
+      "org": "Hospital A",
+      "submitted_at": "2025-01-04T10:15:00Z",
+      "expires_at": "2025-01-11T10:15:00Z",
+      "token_subject": "hospital-*",
+      "source_ip": "10.2.3.4"
+    },
+    {
+      "name": "admin@org.com",
+      "entity_type": "user",
+      "org": "Org Inc",
+      "role": "lead",
+      "submitted_at": "2025-01-04T11:00:00Z",
+      "expires_at": "2025-01-11T11:00:00Z",
+      "token_subject": "*@org.com",
+      "source_ip": null
+    }
+  ]
+}
+```
 
-**POST /api/v1/pending/{name}/approve** (Admin Only)
+---
+
+#### POST /api/v1/pending/{name}/approve (Admin Only)
 
 Approve a single pending enrollment request.
 
-*Query Parameters:
+**Query parameters**
 
-* type (required): Entity type (client, relay, user)
+- `type` (required): Entity type (client, relay, user)
 
-*Response (200):
+**Response (200)**
 
-* {
-*     **"status"**: "approved",
-*     **"name"**: "hospital-1",
-*     **"entity_type"**: "client",
-*     **"certificate_issued"**: **true**
-* }
+```json
+{
+  "status": "approved",
+  "name": "hospital-1",
+  "entity_type": "client",
+  "certificate_issued": true
+}
+```
 
-**POST /api/v1/pending/approve_batch** (Admin Only)
+---
+
+#### POST /api/v1/pending/approve_batch (Admin Only)
 
 Approve multiple pending requests by pattern.
 
-*Request:
+**Request**
 
-* {
-*     **"pattern"**: "hospital-\*",
-*     **"type"**: "client"
-* }
+```json
+{
+  "pattern": "hospital-*",
+  "type": "client"
+}
+```
 
-*Response (200):
+**Response (200)**
 
-* {
-*     **"approved"**: \["hospital-1", "hospital-2", "hospital-3"\],
-*     **"count"**: 3
-* }
+```json
+{
+  "approved": ["hospital-1", "hospital-2", "hospital-3"],
+  "count": 3
+}
+```
 
-**POST /api/v1/pending/{name}/reject** (Admin Only)
+---
+
+#### POST /api/v1/pending/{name}/reject (Admin Only)
 
 Reject a single pending enrollment request.
 
-*Query Parameters:
+**Query parameters**
 
-* type (required): Entity type (client, relay, user)
+- `type` (required): Entity type (client, relay, user)
 
-*Request:
+**Request**
 
-* {
-*     **"reason"**: "Not authorized for this project"
-* }
+```json
+{
+  "reason": "Not authorized for this project"
+}
+```
 
-*Response (200):
+**Response (200)**
 
-* {
-*     **"status"**: "rejected",
-*     **"name"**: "hospital-1",
-*     **"entity_type"**: "client"
-* }
+```json
+{
+  "status": "rejected",
+  "name": "hospital-1",
+  "entity_type": "client"
+}
+```
 
-**POST /api/v1/pending/reject_batch** (Admin Only)
+---
+
+#### POST /api/v1/pending/reject_batch (Admin Only)
 
 Reject multiple pending requests by pattern.
 
-*Request:
+**Request**
 
-* {
-*     **"pattern"**: "temp-\*",
-*     **"type"**: "client",
-*     **"reason"**: "Batch cleanup"
-* }
+```json
+{
+  "pattern": "temp-*",
+  "type": "client",
+  "reason": "Batch cleanup"
+}
+```
 
-*Response (200):
+**Response (200)**
 
-* {
-*     **"rejected"**: \["temp-1", "temp-2"\],
-*     **"count"**: 2
-* }
+```json
+{
+  "rejected": ["temp-1", "temp-2"],
+  "count": 2
+}
+```
 
-**GET /api/v1/enrolled** (Admin Only)
+---
+
+#### GET /api/v1/enrolled (Admin Only)
 
 List all enrolled entities.
 
-*Query Parameters:
+**Query parameters**
 
-* type (optional): Filter by entity type
+- `type` (optional): Filter by entity type
 
-*Response:
+**Response**
 
-* {
-*     **"enrolled"**: \[
-*         {
-*             **"name"**: "hospital-1",
-*             **"entity_type"**: "client",
-*             **"org"**: "Hospital A",
-*             **"enrolled_at"**: "2025-01-04T12:00:00Z"
-*         },
-*         {
-*             **"name"**: "researcher@uni.edu",
-*             **"entity_type"**: "user",
-*             **"org"**: "University",
-*             **"role"**: "member",
-*             **"enrolled_at"**: "2025-01-04T12:30:00Z"
-*         }
-*     \]
-* }
+```json
+{
+  "enrolled": [
+    {
+      "name": "hospital-1",
+      "entity_type": "client",
+      "org": "Hospital A",
+      "enrolled_at": "2025-01-04T12:00:00Z"
+    },
+    {
+      "name": "researcher@uni.edu",
+      "entity_type": "user",
+      "org": "University",
+      "role": "member",
+      "enrolled_at": "2025-01-04T12:30:00Z"
+    }
+  ]
+}
+```
 
-**POST /api/v1/token** (Admin Only) Generate an enrollment token. Used by nvflare token generate when the rootCA private key is on the Certificate Service.
+---
 
-*Request:
+#### POST /api/v1/token (Admin Only)
 
-* {
-*     **"name"**: "hospital-1",
-*     **"entity_type"**: "client",
-*     **"valid_days"**: 7,
-*     **"policy_override"**: {}
-* }
+Generate an enrollment token. Used by `nvflare token generate` when the root CA private key is on the Certificate Service.
 
-*Response (200 OK):
+**Request**
 
-* {
-*     **"token"**: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-*     **"subject"**: "hospital-1",
-*     **"expires_at"**: "2025-01-11T10:00:00Z"
-* }
+```json
+{
+  "name": "hospital-1",
+  "entity_type": "client",
+  "valid_days": 7,
+  "policy_override": {}
+}
+```
 
-*Request (Batch):
+**Response (200 OK)**
 
-* {
-*     **"names"**: \["site-001", "site-002", "site-003"\],
-*     **"entity_type"**: "client",
-*     **"valid_days"**: 7
-* }
+```json
+{
+  "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "subject": "hospital-1",
+  "expires_at": "2025-01-11T10:00:00Z"
+}
+```
 
-*Response (200 OK - Batch):
+**Request (batch)**
 
-* {
-*     **"tokens"**: \[
-*         {**"name"**: "site-001", **"token"**: "eyJhbGci..."},
-*         {**"name"**: "site-002", **"token"**: "eyJhbGci..."},
-*         {**"name"**: "site-003", **"token"**: "eyJhbGci..."}
-*     \]
-* }
+```json
+{
+  "names": ["site-001", "site-002", "site-003"],
+  "entity_type": "client",
+  "valid_days": 7
+}
+```
 
-**GET /api/v1/ca-cert**
+**Response (200 OK — batch)**
+
+```json
+{
+  "tokens": [
+    {"name": "site-001", "token": "eyJhbGci..."},
+    {"name": "site-002", "token": "eyJhbGci..."},
+    {"name": "site-003", "token": "eyJhbGci..."}
+  ]
+}
+```
+
+---
+
+#### GET /api/v1/ca-cert
 
 Download public root CA certificate. No authentication required.
 
-*Response:
+**Response**
 
-PEM-encoded root CA certificate (application/x-pem-file).
+PEM-encoded root CA certificate (`application/x-pem-file`).
 
-**GET /api/v1/ca-info**
+---
+
+#### GET /api/v1/ca-info
 
 Get root CA information. No authentication required.
 
-*Response:
+**Response**
 
-* {
-*     **"subject"**: "CN=NVFlare",
-*     **"issuer"**: "CN=NVFlare",
-*     **"not_valid_before"**: "2025-01-01T00:00:00Z",
-*     **"not_valid_after"**: "2035-01-01T00:00:00Z",
-*     **"serial_number"**: "1234567890"
-* }
+```json
+{
+  "subject": "CN=NVFlare",
+  "issuer": "CN=NVFlare",
+  "not_valid_before": "2025-01-01T00:00:00Z",
+  "not_valid_after": "2035-01-01T00:00:00Z",
+  "serial_number": "1234567890"
+}
+```
 
-**GET /health**
+---
+
+#### GET /health
 
 Health check endpoint.
 
-*Response:
+**Response**
 
-* {**"status"**: "healthy"}
+```json
+{
+  "status": "healthy"
+}
+```
 
 ### API Authentication
 
 **Admin Operations** require an API key:
 
-* POST /api/v1/token - Token generation
-* GET /api/v1/pending - List pending requests
-* GET /api/v1/pending/{name} - Get pending request details
-* POST /api/v1/pending/{name}/approve - Approve single request
-* POST /api/v1/pending/{name}/reject - Reject single request
-* POST /api/v1/pending/approve_batch - Bulk approve by pattern
-* POST /api/v1/pending/reject_batch - Bulk reject by pattern
-* GET /api/v1/enrolled - List enrolled entities
+- POST /api/v1/token — Token generation
+- GET /api/v1/pending — List pending requests
+- GET /api/v1/pending/{name} — Get pending request details
+- GET /api/v1/pending/{name}/approve — Approve single request
+- GET /api/v1/pending/{name}/reject — Reject single request
+- POST /api/v1/pending/approve_batch — Bulk approve by pattern
+- POST /api/v1/pending/reject_batch — Bulk reject by pattern
+- GET /api/v1/enrolled — List enrolled entities
 
 **No API Key Required** for:
 
-* POST /api/v1/enroll - Enrollment (token is authentication)
-* GET /api/v1/ca-cert - Public CA certificate
-* GET /api/v1/ca-info - CA information
-* GET /health - Health check
+- POST /api/v1/enroll — Enrollment (token is authentication)
+- GET /api/v1/ca-cert — Public CA certificate
+- GET /api/v1/ca-info — CA information
+- GET /health — Health check
 
 **API Key Setup:**
 
-* Generate key with CLI:
-  nvflare cert api-key \> api_key.txt
-1.
-* Configure Certificate Service:
-  # Option 1: Environment variable
-* export NVFLARE_API_KEY="\<the-key\>"
+1. **Generate key with CLI:**
 
-* # Option 2: Config file
-* # api_key: "\<the-key\>"
-2.
-* Use with admin CLI commands:
-  export NVFLARE_API_KEY="\<the-key\>"
-* nvflare token generate -n site-1 --cert-service https://...
-3.
+   ```bash
+   nvflare cert api-key > api_key.txt
+   ```
 
-**HTTP Header Format:**
+2. **Configure Certificate Service** (choose one):
 
-* Authorization: Bearer \<api-key\>
+   - **Option A - Environment variable:** Set `NVFLARE_API_KEY` to the generated key (e.g. in systemd, Docker, or K8s Secret).
+   - **Option B - Config file:** In `cert_service_config.yaml`, set `api_key: "<the-key>"`.
+
+3. **Use with admin CLI commands:**
+
+   ```bash
+   export NVFLARE_API_KEY="<the-key>"
+   nvflare token generate -n site-1 --cert-service https://...
+   ```
+
+**HTTP Header Format:** `Authorization: Bearer <api-key>`
 
 ### Pending Request Storage
 
 Pending requests are stored by the Certificate Service until:
 
-* Approved by admin (certificate issued)
-* Rejected by admin
-* Expired (default: 7 days timeout)
+- Approved by admin (certificate issued)
+- Rejected by admin
+- Expired (default: 7 days timeout)
 
 Storage options:
 
@@ -1205,64 +1265,95 @@ Storage options:
 
 ### Admin CLI for Pending Requests
 
-Administrators manage pending requests via CLI:
+Administrators manage pending requests via CLI.
 
-* # List all pending enrollment requests
-* nvflare enrollment list
+**List all pending enrollment requests:**
 
-* # Output:
-* # Name           Type      Org          Submitted             Token Subject    Status
-* # ──────────────────────────────────────────────────────────────────────────────────────
-* # hospital-1     client    Hospital A   2025-01-04 10:15:00   hospital-\*       pending
-* # hospital-2     client    Hospital B   2025-01-04 10:20:00   hospital-\*       pending
-* # admin@org.com  user      Org Inc      2025-01-04 11:00:00   \*@org.com        pending
+```bash
+nvflare enrollment list
+```
 
-* # Filter by type
-* nvflare enrollment list --type client    # Sites only
-* nvflare enrollment list --type user      # Users only
+Output:
 
-* # View details of a specific request
-* nvflare enrollment info hospital-1 --type client
+```
+Name           Type      Org          Submitted             Token Subject    Status
+──────────────────────────────────────────────────────────────────────────────────────
+hospital-1     client    Hospital A   2025-01-04 10:15:00   hospital-*       pending
+hospital-2     client    Hospital B   2025-01-04 10:20:00   hospital-*       pending
+admin@org.com  user      Org Inc      2025-01-04 11:00:00   *@org.com        pending
+```
 
-* # Output:
-* # Name:            hospital-1
-* # Type:            client
-* # Organization:    Hospital A
-* # Submitted:       2025-01-04 10:15:00 UTC
-* # Expires:         2025-01-11 10:15:00 UTC
-* # Token Subject:   hospital-\*
-* # Source IP:       10.2.3.4
-* # CSR Subject:     CN=hospital-1, O=Hospital A
+**Filter by type:**
 
-* # View user request
-* nvflare enrollment info admin@org.com --type user
+```bash
+nvflare enrollment list --type client    # Sites only
+nvflare enrollment list --type user      # Users only
+```
 
-* # Output:
-* # Name:            admin@org.com
-* # Type:            user
-* # Organization:    Org Inc
-* # Role:            lead
-* # Submitted:       2025-01-04 11:00:00 UTC
-* # ...
+**View details of a specific request:**
 
-* # Approve a pending request (specify type)
-* nvflare enrollment approve hospital-1 --type client
-* nvflare enrollment approve admin@org.com --type user
+```bash
+nvflare enrollment info hospital-1 --type client
+```
 
-* # Reject a pending request with reason
-* nvflare enrollment reject hospital-2 --type client --reason "Not authorized"
+Output:
 
-* # Bulk approve matching pattern
-* nvflare enrollment approve --pattern "hospital-\*" --type client
+```
+Name:            hospital-1
+Type:            client
+Organization:    Hospital A
+Submitted:       2025-01-04 10:15:00 UTC
+Expires:         2025-01-11 10:15:00 UTC
+Token Subject:   hospital-*
+Source IP:       10.2.3.4
+CSR Subject:     CN=hospital-1, O=Hospital A
+```
 
-* # List enrolled entities
-* nvflare enrollment enrolled                    # All
-* nvflare enrollment enrolled --type client      # Sites only
-* nvflare enrollment enrolled --type user        # Users only
+**View user request:**
 
-* # Configuration (environment variables)
-* # NVFLARE_CERT_SERVICE_URL - Certificate Service URL
-* # NVFLARE_API_KEY - Admin authentication token
+```bash
+nvflare enrollment info admin@org.com --type user
+```
+
+Output:
+
+```
+Name:            admin@org.com
+Type:            user
+Organization:    Org Inc
+Role:            lead
+Submitted:       2025-01-04 11:00:00 UTC
+...
+```
+
+**Approve a pending request (specify type):**
+
+```bash
+nvflare enrollment approve hospital-1 --type client
+nvflare enrollment approve admin@org.com --type user
+```
+
+**Reject a pending request with reason:**
+
+```bash
+nvflare enrollment reject hospital-2 --type client --reason "Not authorized"
+```
+
+**Bulk approve matching pattern:**
+
+```bash
+nvflare enrollment approve --pattern "hospital-*" --type client
+```
+
+**List enrolled entities:**
+
+```bash
+nvflare enrollment enrolled                    # All
+nvflare enrollment enrolled --type client      # Sites only
+nvflare enrollment enrolled --type user       # Users only
+```
+
+**Configuration (environment variables):** `NVFLARE_CERT_SERVICE_URL` (Certificate Service URL), `NVFLARE_API_KEY` (admin authentication token).
 
 ### Configuration
 
@@ -1270,50 +1361,52 @@ The Certificate Service is configured via a YAML file. This configuration is loa
 
 **Configuration File:**
 
-* # cert_service_config.yaml
+```yaml
+# cert_service_config.yaml
 
-* **server**:
-*   **host**: 0.0.0.0
-*   **port**: 8443
-*   **tls**:
-*     **cert**: /path/to/service.crt   # Public TLS cert (Let's Encrypt)
-*     **key**: /path/to/service.key
+server:
+  host: 0.0.0.0
+  port: 8443
+  tls:
+    cert: /path/to/service.crt   # Public TLS cert (Let's Encrypt)
+    key: /path/to/service.key
 
-* # API key for admin authentication (token gen, approvals)
-* # Generate with: nvflare cert api-key
-* **api_key**: "your-api-key-here"
-* # Or set via environment: NVFLARE_API_KEY
+# API key for admin authentication (token gen, approvals)
+# Generate with: nvflare cert api-key
+# Or set via environment: NVFLARE_API_KEY
+api_key: "your-api-key-here"
 
-* # Data directory for auto-initialization
-* # On first start, root CA is generated here if not exists
-* **data_dir**: /var/lib/cert_service
+# Data directory for auto-initialization
+# On first start, root CA is generated here if not exists
+data_dir: /var/lib/cert_service
 
-* # Project name (used as CA CN)
-* **project_name**: "NVFlare"
+# Project name (used as CA CN)
+project_name: "NVFlare"
 
-* **ca**:
-*   # If not specified, derived from data_dir
-*   **cert**: /var/lib/cert_service/rootCA.pem   # FLARE root CA (public)
-*   **key**: /var/lib/cert_service/rootCA.key    # FLARE root CA (private - auto-generated)
+ca:
+  # If not specified, derived from data_dir
+  cert: /var/lib/cert_service/rootCA.pem   # FLARE root CA (public)
+  key: /var/lib/cert_service/rootCA.key    # FLARE root CA (private - auto-generated)
 
-* **policy**:
-*   **file**: /path/to/approval_policy.yaml  # Enrollment policy
-*   # If not specified, uses built-in default (auto-approve all)
+policy:
+  file: /path/to/approval_policy.yaml  # Enrollment policy
+  # If not specified, uses built-in default (auto-approve all)
 
-* **storage**:
-*   **type**: sqlite                   # sqlite | postgresql
-*   **path**: /var/lib/cert_service/enrollment.db
-*   # For PostgreSQL:
-*   # type: postgresql
-*   # connection: postgresql://user:pass@host:5432/certdb
+storage:
+  type: sqlite                   # sqlite | postgresql
+  path: /var/lib/cert_service/enrollment.db
+  # For PostgreSQL:
+  # type: postgresql
+  # connection: postgresql://user:pass@host:5432/certdb
 
-* **pending**:
-*   **timeout**: 604800                # 7 days in seconds
-*   **cleanup_interval**: 3600         # Clean expired requests every hour
+pending:
+  timeout: 604800                # 7 days in seconds
+  cleanup_interval: 3600         # Clean expired requests every hour
 
-* **audit**:
-*   **enabled**: true
-*   **log_file**: /var/log/cert_service/audit.log
+audit:
+  enabled: true
+  log_file: /var/log/cert_service/audit.log
+```
 
 **Configuration Sections Explained:**
 
@@ -1331,26 +1424,27 @@ The Certificate Service is configured via a YAML file. This configuration is loa
 
 **How CertServiceApp Uses Configuration:**
 
-* # nvflare/cert_service/app.py
+```python
+# nvflare/cert_service/app.py
+from nvflare.cert_service.app import CertServiceApp
 
-* **from** **nvflare.cert_service.app** **import** CertServiceApp
+# Option 1: From config file
+app = CertServiceApp("/path/to/config.yaml")
 
-* # Option 1: From config file
-* app = CertServiceApp("/path/to/config.yaml")
+# Option 2: With arguments (auto-initializes root CA on first start)
+app = CertServiceApp(
+    data_dir="/var/lib/cert_service",   # Root CA generated here if not exists
+    project_name="MyProject",           # CA Common Name
+    api_key="your-api-key",             # For admin operations
+)
 
-* # Option 2: With arguments (auto-initializes root CA on first start)
-* app = CertServiceApp(
-*     data_dir="/var/lib/cert_service",   # Root CA generated here if not exists
-*     project_name="MyProject",           # CA Common Name
-*     api_key="your-api-key",             # For admin operations
-* )
-
-* # Start the server
-* app.run(
-*     host="0.0.0.0",
-*     port=8443,
-*     ssl_context=("tls.crt", "tls.key"),  # Service TLS (e.g., Let's Encrypt)
-* )
+# Start the server
+app.run(
+    host="0.0.0.0",
+    port=8443,
+    ssl_context=("tls.crt", "tls.key"),  # Service TLS (e.g., Let's Encrypt)
+)
+```
 
 **Key Behaviors:**
 
@@ -1370,77 +1464,93 @@ This ensures the root CA private key is generated locally and never transmitted.
 
 **Starting the Certificate Service:**
 
-* # Option 1: Direct Python (with config file)
-* python -c "
-* from nvflare.cert_service.app import CertServiceApp
-* app = CertServiceApp('/path/to/config.yaml')
-* app.run()
-* "
+**Option 1 — Direct Python (with config file):**
 
-* # Option 2: Direct Python (with arguments)
-* python -c "
-* from nvflare.cert_service.app import CertServiceApp
-* app = CertServiceApp(
-*     data_dir='/var/lib/cert_service',
-*     project_name='MyProject',
-*     api_key='your-api-key',
-* )
-* app.run(host='0.0.0.0', port=8443, ssl_context=('tls.crt', 'tls.key'))
-* "
+```bash
+python -c "
+from nvflare.cert_service.app import CertServiceApp
+app = CertServiceApp('/path/to/config.yaml')
+app.run()
+"
+```
 
-* # Option 3: Docker
-* docker run -d  \
-*     -v /var/lib/cert_service:/data  \
-*     -e NVFLARE_API_KEY="your-api-key"  \
-*     -p 8443:8443  \
-*     nvflare/cert-service:latest
+**Option 2 — Direct Python (with arguments):**
 
-* # Option 4: Production with gunicorn
-* gunicorn "nvflare.cert_service.app:create_app('/path/to/config.yaml')"
+```bash
+python -c "
+from nvflare.cert_service.app import CertServiceApp
+app = CertServiceApp(
+    data_dir='/var/lib/cert_service',
+    project_name='MyProject',
+    api_key='your-api-key',
+)
+app.run(host='0.0.0.0', port=8443, ssl_context=('tls.crt', 'tls.key'))
+"
+```
+
+**Option 3 — Docker:**
+
+```bash
+docker run -d  \
+    -v /var/lib/cert_service:/data  \
+    -e NVFLARE_API_KEY="your-api-key"  \
+    -p 8443:8443  \
+    nvflare/cert-service:latest
+```
+
+**Option 4 — Production with gunicorn:**
+
+```bash
+gunicorn "nvflare.cert_service.app:create_app('/path/to/config.yaml')"
+```
 
 **Configuration Flow:**
 
-* ┌─────────────────────────────────────────────────────────────────────┐
-* │                    cert_service_config.yaml                         │
-* │                      (or constructor args)                          │
-* └─────────────────────────────────────────────────────────────────────┘
-*                                 │
-*                                 ▼
-* ┌─────────────────────────────────────────────────────────────────────┐
-* │                      CertServiceApp.__init__()                      │
-* │                                                                     │
-* │   1. Auto-init: If rootCA not exists, generate it (first start)    │
-* │                                                                     │
-* │   api_key: ────► Admin authentication for protected endpoints      │
-* │                                                                     │
-* │   data_dir: ───► Root CA files, database location                  │
-* │                                                                     │
-* │   server: ─────► Flask app binding (host, port, TLS)               │
-* │                                                                     │
-* │   ca: ─────────► CertService (root CA for signing)                 │
-* │                                                                     │
-* │   policy: ─────► CertService (approval rules)                      │
-* │                                                                     │
-* │   storage: ────► EnrollmentStore (SQLite or PostgreSQL)            │
-* └─────────────────────────────────────────────────────────────────────┘
-*                                 │
-*                                 ▼
-* ┌─────────────────────────────────────────────────────────────────────┐
-* │                        HTTPS Server Running                         │
-* │                                                                     │
-* │   No API Key Required:                                              │
-* │   POST /api/v1/enroll          ─► Token validation + CSR signing   │
-* │   GET  /api/v1/ca-cert         ─► Download public rootCA.pem       │
-* │   GET  /health                 ─► Health check                     │
-* │                                                                     │
-* │   API Key Required (Admin):                                         │
-* │   POST /api/v1/token           ─► Generate enrollment tokens       │
-* │   GET  /api/v1/pending         ─► List pending requests            │
-* │   POST /api/v1/pending/{n}/approve ─► Approve single request       │
-* │   POST /api/v1/pending/approve_batch ─► Bulk approve               │
-* │   POST /api/v1/pending/reject_batch  ─► Bulk reject                │
-* │   GET  /api/v1/enrolled        ─► List enrolled entities           │
-* └─────────────────────────────────────────────────────────────────────┘
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    cert_service_config.yaml                         │
+│                      (or constructor args)                          │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      CertServiceApp.__init__()                      │
+│                                                                     │
+│   1. Auto-init: If rootCA not exists, generate it (first start)    │
+│                                                                     │
+│   api_key: ────► Admin authentication for protected endpoints      │
+│                                                                     │
+│   data_dir: ───► Root CA files, database location                  │
+│                                                                     │
+│   server: ─────► Flask app binding (host, port, TLS)               │
+│                                                                     │
+│   ca: ─────────► CertService (root CA for signing)                 │
+│                                                                     │
+│   policy: ─────► CertService (approval rules)                      │
+│                                                                     │
+│   storage: ────► EnrollmentStore (SQLite or PostgreSQL)            │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        HTTPS Server Running                         │
+│                                                                     │
+│   No API Key Required:                                              │
+│   POST /api/v1/enroll          ─► Token validation + CSR signing   │
+│   GET  /api/v1/ca-cert         ─► Download public rootCA.pem       │
+│   GET  /health                 ─► Health check                     │
+│                                                                     │
+│   API Key Required (Admin):                                         │
+│   POST /api/v1/token           ─► Generate enrollment tokens       │
+│   GET  /api/v1/pending         ─► List pending requests            │
+│   POST /api/v1/pending/{n}/approve ─► Approve single request       │
+│   POST /api/v1/pending/approve_batch ─► Bulk approve               │
+│   POST /api/v1/pending/reject_batch  ─► Bulk reject                │
+│   GET  /api/v1/enrolled        ─► List enrolled entities           │
+└─────────────────────────────────────────────────────────────────────┘
+
+```
 
 **Two Different Certificates Explained:**
 
@@ -1464,32 +1574,34 @@ The Certificate Service uses two completely separate certificates:
 
 **Recommended approach:** For most production deployments, leave tls_cert and tls_key as None. Run the service with HTTP internally and let infrastructure (reverse proxy, Ingress controller, or cloud load balancer) handle TLS termination. This is standard practice for web services.
 
-* # Development (HTTP)
-* app.run(host="127.0.0.1", port=8080)
-* # Access: http://localhost:8080
+```python
+# Development (HTTP)
+app.run(host="127.0.0.1", port=8080)
+# Access: http://localhost:8080
 
-* # Production behind nginx/traefik (HTTP internally)
-* app.run(host="127.0.0.1", port=8080)
-* # Proxy handles: https://cert-service.example.com → http://127.0.0.1:8080
+# Production behind nginx/traefik (HTTP internally)
+app.run(host="127.0.0.1", port=8080)
+# Proxy handles: https://cert-service.example.com → http://127.0.0.1:8080
 
-* # Simple production with Let's Encrypt (direct HTTPS)
-* app.run(
-*     host="0.0.0.0",
-*     port=443,
-*     ssl_context=(
-*         "/etc/letsencrypt/live/example.com/fullchain.pem",
-*         "/etc/letsencrypt/live/example.com/privkey.pem",
-*     ),
-* )
+# Simple production with Let's Encrypt (direct HTTPS)
+app.run(
+    host="0.0.0.0",
+    port=443,
+    ssl_context=(
+        "/etc/letsencrypt/live/example.com/fullchain.pem",
+        "/etc/letsencrypt/live/example.com/privkey.pem",
+    ),
+)
+```
 
 **FLARE Root CA (ca.cert/ca.key):**
 
 This is completely separate from service TLS. The FLARE root CA:
 
-* Is auto-generated on first start (if not exists)
-* Signs FL participant certificates (clients, users, relays)
-* Private key **only exists on the Certificate Service**
-* Is NOT used for HTTPS - only for FL PKI
+- Is auto-generated on first start (if not exists)
+- Signs FL participant certificates (clients, users, relays)
+- Private key **only exists on the Certificate Service**
+- Is NOT used for HTTPS — only for FL PKI
 
 ### Enrollment Store
 
@@ -1508,411 +1620,422 @@ Enrollment applies to both sites and users:
 
 **Abstract Interface**
 
-* **from** **abc** **import** ABC, abstractmethod
-* **from** **dataclasses** **import** dataclass
-* **from** **datetime** **import** datetime
-* **from** **typing** **import** Optional, List, Set
 
-* @dataclass
-* **class** **EnrolledEntity**:
-*     *"""An enrolled site or user."""
-*     name: str                    # Entity name (site-1, admin@org.com)
-*     entity_type: str             # client | relay | server | user
-*     enrolled_at: datetime
-*     org: Optional\[str\] = **None**    # Organization
-*     role: Optional\[str\] = **None**   # Role (for users only)
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional, List, Set
 
-* @dataclass
-* **class** **PendingRequest**:
-*     *"""Pending enrollment request awaiting admin approval."""
-*     name: str                    # Entity name
-*     entity_type: str             # client | relay | server | user
-*     org: str
-*     csr_pem: str
-*     submitted_at: datetime
-*     expires_at: datetime
-*     token_subject: str
-*     role: Optional\[str\] = **None**   # Role (for users only)
-*     source_ip: Optional\[str\] = **None**
-*     signed_cert: Optional\[str\] = **None**
-*     approved: bool = **False**
-*     approved_at: Optional\[datetime\] = **None**
-*     approved_by: Optional\[str\] = **None**
+@dataclass
+class EnrolledEntity:
+    """An enrolled site or user."""
+    name: str                    # Entity name (site-1, admin@org.com)
+    entity_type: str             # client | relay | server | user
+    enrolled_at: datetime
+    org: Optional[str] = None    # Organization
+    role: Optional[str] = None   # Role (for users only)
 
-* **class** **EnrollmentStore**(ABC):
-*     *"""Abstract interface for enrollment state storage.
+@dataclass
+class PendingRequest:
+    """Pending enrollment request awaiting admin approval."""
+    name: str                    # Entity name
+    entity_type: str             # client | relay | server | user
+    org: str
+    csr_pem: str
+    submitted_at: datetime
+    expires_at: datetime
+    token_subject: str
+    role: Optional[str] = None   # Role (for users only)
+    source_ip: Optional[str] = None
+    signed_cert: Optional[str] = None
+    approved: bool = False
+    approved_at: Optional[datetime] = None
+    approved_by: Optional[str] = None
 
-*     *Tracks enrolled entities (sites and users) and pending requests.
-*     *Entity uniqueness is determined by (name, entity_type) pair.
-*     *"""
+class EnrollmentStore(ABC):
+    """Abstract interface for enrollment state storage.
 
-*     # ─────────────────────────────────────────────────────
-*     # Enrolled Entities (Sites and Users)
-*     # ─────────────────────────────────────────────────────
+    Tracks enrolled entities (sites and users) and pending requests.
+    Entity uniqueness is determined by (name, entity_type) pair.
+    """
 
-*     @abstractmethod
-*     **def** is_enrolled(self, name: str, entity_type: str) -\> bool:
-*         *"""Check if an entity is already enrolled."""
-*         **pass**
+    # ─────────────────────────────────────────────────────
+    # Enrolled Entities (Sites and Users)
+    # ─────────────────────────────────────────────────────
 
-*     @abstractmethod
-*     **def** add_enrolled(self, entity: EnrolledEntity) -\> **None**:
-*         *"""Mark an entity as enrolled. Also removes from pending."""
-*         **pass**
+    @abstractmethod
+    def is_enrolled(self, name: str, entity_type: str) -> bool:
+        """Check if an entity is already enrolled."""
+        pass
 
-*     @abstractmethod
-*     **def** get_enrolled(
-*         self, entity_type: Optional\[str\] = **None**
-*     ) -\> List\[EnrolledEntity\]:
-*         *"""Get enrolled entities, optionally filtered by type."""
-*         **pass**
+    @abstractmethod
+    def add_enrolled(self, entity: EnrolledEntity) -> None:
+        """Mark an entity as enrolled. Also removes from pending."""
+        pass
 
-*     # ─────────────────────────────────────────────────────
-*     # Pending Requests
-*     # ─────────────────────────────────────────────────────
+    @abstractmethod
+    def get_enrolled(
+        self, entity_type: Optional[str] = None
+    ) -> List[EnrolledEntity]:
+        """Get enrolled entities, optionally filtered by type."""
+        pass
 
-*     @abstractmethod
-*     **def** is_pending(self, name: str, entity_type: str) -\> bool:
-*         *"""Check if an entity has a pending request."""
-*         **pass**
+    # ─────────────────────────────────────────────────────
+    # Pending Requests
+    # ─────────────────────────────────────────────────────
 
-*     @abstractmethod
-*     **def** add_pending(self, request: PendingRequest) -\> **None**:
-*         *"""Add a new pending request."""
-*         **pass**
+    @abstractmethod
+    def is_pending(self, name: str, entity_type: str) -> bool:
+        """Check if an entity has a pending request."""
+        pass
 
-*     @abstractmethod
-*     **def** get_pending(
-*         self, name: str, entity_type: str
-*     ) -\> Optional\[PendingRequest\]:
-*         *"""Get pending request for an entity."""
-*         **pass**
+    @abstractmethod
+    def add_pending(self, request: PendingRequest) -> None:
+        """Add a new pending request."""
+        pass
 
-*     @abstractmethod
-*     **def** get_all_pending(
-*         self, entity_type: Optional\[str\] = **None**
-*     ) -\> List\[PendingRequest\]:
-*         *"""Get all pending requests, optionally filtered by type."""
-*         **pass**
+    @abstractmethod
+    def get_pending(
+        self, name: str, entity_type: str
+    ) -> Optional[PendingRequest]:
+        """Get pending request for an entity."""
+        pass
 
-*     @abstractmethod
-*     **def** approve_pending(
-*         self, name: str, entity_type: str,
-*         signed_cert: str, approved_by: str
-*     ) -\> **None**:
-*         *"""Approve a pending request and store signed certificate."""
-*         **pass**
+    @abstractmethod
+    def get_all_pending(
+        self, entity_type: Optional[str] = None
+    ) -> List[PendingRequest]:
+        """Get all pending requests, optionally filtered by type."""
+        pass
 
-*     @abstractmethod
-*     **def** reject_pending(
-*         self, name: str, entity_type: str, reason: str
-*     ) -\> **None**:
-*         *"""Reject and remove a pending request."""
-*         **pass**
+    @abstractmethod
+    def approve_pending(
+        self, name: str, entity_type: str,
+        signed_cert: str, approved_by: str
+    ) -> None:
+        """Approve a pending request and store signed certificate."""
+        pass
 
-*     @abstractmethod
-*     **def** cleanup_expired(self) -\> int:
-*         *"""Remove expired pending requests. Returns count removed."""
-*         **pass**
+    @abstractmethod
+    def reject_pending(
+        self, name: str, entity_type: str, reason: str
+    ) -> None:
+        """Reject and remove a pending request."""
+        pass
+
+    @abstractmethod
+    def cleanup_expired(self) -> int:
+        """Remove expired pending requests. Returns count removed."""
+        pass
 
 **SQLite Implementation (Default)**
+```python
+import sqlite3
+from pathlib import Path
 
-* **import** **sqlite3**
-* **from** **pathlib** **import** Path
+class SQLiteEnrollmentStore(EnrollmentStore):
+    """SQLite-based enrollment store. Default for single-node deployments."""
 
-* **class** **SQLiteEnrollmentStore**(EnrollmentStore):
-*     *"""SQLite-based enrollment store. Default for single-node deployments."""
+    def __init__(self, db_path: str = "/var/lib/cert_service/enrollment.db"):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
 
-*     **def** __init__(self, db_path: str = "/var/lib/cert_service/enrollment.db"):
-*         self.db_path = Path(db_path)
-*         self.db_path.parent.mkdir(parents=**True**, exist_ok=**True**)
-*         self._init_db()
+    def _init_db(self):
+        with self._connect() as conn:
+            conn.executescript('''
+                -- Enrolled entities (sites and users)
+                CREATE TABLE IF NOT EXISTS enrolled_entities (
+                    name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    enrolled_at TEXT NOT NULL,
+                    org TEXT,
+                    role TEXT,
+                    PRIMARY KEY (name, entity_type)
+                );
 
-*     **def** _init_db(self):
-*         **with** self._connect() **as** conn:
-*             conn.executescript('''
-*                 -- Enrolled entities (sites and users)
-*                 CREATE TABLE IF NOT EXISTS enrolled_entities (
-*                     name TEXT NOT NULL,
-*                     entity_type TEXT NOT NULL,
-*                     enrolled_at TEXT NOT NULL,
-*                     org TEXT,
-*                     role TEXT,
-*                     PRIMARY KEY (name, entity_type)
-*                 );
+                -- Pending enrollment requests
+                CREATE TABLE IF NOT EXISTS pending_requests (
+                    name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    org TEXT NOT NULL,
+                    csr_pem TEXT NOT NULL,
+                    submitted_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    token_subject TEXT NOT NULL,
+                    role TEXT,
+                    source_ip TEXT,
+                    signed_cert TEXT,
+                    approved INTEGER DEFAULT 0,
+                    approved_at TEXT,
+                    approved_by TEXT,
+                    PRIMARY KEY (name, entity_type)
+                );
 
-*                 -- Pending enrollment requests
-*                 CREATE TABLE IF NOT EXISTS pending_requests (
-*                     name TEXT NOT NULL,
-*                     entity_type TEXT NOT NULL,
-*                     org TEXT NOT NULL,
-*                     csr_pem TEXT NOT NULL,
-*                     submitted_at TEXT NOT NULL,
-*                     expires_at TEXT NOT NULL,
-*                     token_subject TEXT NOT NULL,
-*                     role TEXT,
-*                     source_ip TEXT,
-*                     signed_cert TEXT,
-*                     approved INTEGER DEFAULT 0,
-*                     approved_at TEXT,
-*                     approved_by TEXT,
-*                     PRIMARY KEY (name, entity_type)
-*                 );
+                CREATE INDEX IF NOT EXISTS idx_pending_type
+                    ON pending_requests(entity_type);
+                CREATE INDEX IF NOT EXISTS idx_expires
+                    ON pending_requests(expires_at);
+            ''')
 
-*                 CREATE INDEX IF NOT EXISTS idx_pending_type
-*                     ON pending_requests(entity_type);
-*                 CREATE INDEX IF NOT EXISTS idx_expires
-*                     ON pending_requests(expires_at);
-*             ''')
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
 
-*     **def** _connect(self) -\> sqlite3.Connection:
-*         conn = sqlite3.connect(str(self.db_path))
-*         conn.row_factory = sqlite3.Row
-*         **return** conn
+    # ─────────────────────────────────────────────────────
+    # Enrolled Entities
+    # ─────────────────────────────────────────────────────
 
-*     # ─────────────────────────────────────────────────────
-*     # Enrolled Entities
-*     # ─────────────────────────────────────────────────────
+    def is_enrolled(self, name: str, entity_type: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM enrolled_entities "
+                "WHERE name = ? AND entity_type = ?",
+                (name, entity_type)
+            ).fetchone()
+        return row is not None
 
-*     **def** is_enrolled(self, name: str, entity_type: str) -\> bool:
-*         **with** self._connect() **as** conn:
-*             row = conn.execute(
-*                 "SELECT 1 FROM enrolled_entities "
-*                 "WHERE name = ? AND entity_type = ?",
-*                 (name, entity_type)
-*             ).fetchone()
-*         **return** row **is** **not** **None**
+    def add_enrolled(self, entity: EnrolledEntity) -> None:
+        with self._connect() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO enrolled_entities
+                (name, entity_type, enrolled_at, org, role)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                entity.name, entity.entity_type,
+                entity.enrolled_at.isoformat(),
+                entity.org, entity.role
+            ))
+            # Remove from pending
+            conn.execute(
+                "DELETE FROM pending_requests "
+                "WHERE name = ? AND entity_type = ?",
+                (entity.name, entity.entity_type)
+            )
 
-*     **def** add_enrolled(self, entity: EnrolledEntity) -\> **None**:
-*         **with** self._connect() **as** conn:
-*             conn.execute('''
-*                 INSERT OR REPLACE INTO enrolled_entities
-*                 (name, entity_type, enrolled_at, org, role)
-*                 VALUES (?, ?, ?, ?, ?)
-*             ''', (
-*                 entity.name, entity.entity_type,
-*                 entity.enrolled_at.isoformat(),
-*                 entity.org, entity.role
-*             ))
-*             # Remove from pending
-*             conn.execute(
-*                 "DELETE FROM pending_requests "
-*                 "WHERE name = ? AND entity_type = ?",
-*                 (entity.name, entity.entity_type)
-*             )
+    def get_enrolled(
+        self, entity_type: Optional[str] = None
+    ) -> List[EnrolledEntity]:
+        with self._connect() as conn:
+            if entity_type:
+                rows = conn.execute(
+                    "SELECT * FROM enrolled_entities WHERE entity_type = ?",
+                    (entity_type,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM enrolled_entities"
+                ).fetchall()
+        return [self._row_to_entity(row) for row in rows]
 
-*     **def** get_enrolled(
-*         self, entity_type: Optional\[str\] = **None**
-*     ) -\> List\[EnrolledEntity\]:
-*         **with** self._connect() **as** conn:
-*             **if** entity_type:
-*                 rows = conn.execute(
-*                     "SELECT \* FROM enrolled_entities WHERE entity_type = ?",
-*                     (entity_type,)
-*                 ).fetchall()
-*             **else**:
-*                 rows = conn.execute(
-*                     "SELECT \* FROM enrolled_entities"
-*                 ).fetchall()
-*         **return** \[self._row_to_entity(row) **for** row **in** rows\]
+    # ─────────────────────────────────────────────────────
+    # Pending Requests
+    # ─────────────────────────────────────────────────────
 
-*     # ─────────────────────────────────────────────────────
-*     # Pending Requests
-*     # ─────────────────────────────────────────────────────
+    def is_pending(self, name: str, entity_type: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM pending_requests "
+                "WHERE name = ? AND entity_type = ?",
+                (name, entity_type)
+            ).fetchone()
+        return row is not None
 
-*     **def** is_pending(self, name: str, entity_type: str) -\> bool:
-*         **with** self._connect() **as** conn:
-*             row = conn.execute(
-*                 "SELECT 1 FROM pending_requests "
-*                 "WHERE name = ? AND entity_type = ?",
-*                 (name, entity_type)
-*             ).fetchone()
-*         **return** row **is** **not** **None**
+    def add_pending(self, request: PendingRequest) -> None:
+        with self._connect() as conn:
+            conn.execute('''
+                INSERT OR REPLACE INTO pending_requests
+                (name, entity_type, org, csr_pem, submitted_at,
+                 expires_at, token_subject, role, source_ip)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                request.name, request.entity_type,
+                request.org, request.csr_pem,
+                request.submitted_at.isoformat(),
+                request.expires_at.isoformat(),
+                request.token_subject, request.role,
+                request.source_ip,
+            ))
 
-*     **def** add_pending(self, request: PendingRequest) -\> **None**:
-*         **with** self._connect() **as** conn:
-*             conn.execute('''
-*                 INSERT OR REPLACE INTO pending_requests
-*                 (name, entity_type, org, csr_pem, submitted_at,
-*                  expires_at, token_subject, role, source_ip)
-*                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-*             ''', (
-*                 request.name, request.entity_type,
-*                 request.org, request.csr_pem,
-*                 request.submitted_at.isoformat(),
-*                 request.expires_at.isoformat(),
-*                 request.token_subject, request.role,
-*                 request.source_ip,
-*             ))
+    def get_pending(
+        self, name: str, entity_type: str
+    ) -> Optional[PendingRequest]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM pending_requests "
+                "WHERE name = ? AND entity_type = ?",
+                (name, entity_type)
+            ).fetchone()
+        if not row:
+            return None
+        return self._row_to_request(row)
 
-*     **def** get_pending(
-*         self, name: str, entity_type: str
-*     ) -\> Optional\[PendingRequest\]:
-*         **with** self._connect() **as** conn:
-*             row = conn.execute(
-*                 "SELECT \* FROM pending_requests "
-*                 "WHERE name = ? AND entity_type = ?",
-*                 (name, entity_type)
-*             ).fetchone()
-*         **if** **not** row:
-*             **return** **None**
-*         **return** self._row_to_request(row)
+    def get_all_pending(
+        self, entity_type: Optional[str] = None
+    ) -> List[PendingRequest]:
+        with self._connect() as conn:
+            if entity_type:
+                rows = conn.execute(
+                    "SELECT * FROM pending_requests "
+                    "WHERE approved = 0 AND entity_type = ?",
+                    (entity_type,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM pending_requests WHERE approved = 0"
+                ).fetchall()
+        return [self._row_to_request(row) for row in rows]
 
-*     **def** get_all_pending(
-*         self, entity_type: Optional\[str\] = **None**
-*     ) -\> List\[PendingRequest\]:
-*         **with** self._connect() **as** conn:
-*             **if** entity_type:
-*                 rows = conn.execute(
-*                     "SELECT \* FROM pending_requests "
-*                     "WHERE approved = 0 AND entity_type = ?",
-*                     (entity_type,)
-*                 ).fetchall()
-*             **else**:
-*                 rows = conn.execute(
-*                     "SELECT \* FROM pending_requests WHERE approved = 0"
-*                 ).fetchall()
-*         **return** \[self._row_to_request(row) **for** row **in** rows\]
+    def approve_pending(
+        self, name: str, entity_type: str,
+        signed_cert: str, approved_by: str
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute('''
+                UPDATE pending_requests
+                SET signed_cert = ?, approved = 1,
+                    approved_at = ?, approved_by = ?
+                WHERE name = ? AND entity_type = ?
+            ''', (
+                signed_cert, datetime.utcnow().isoformat(),
+                approved_by, name, entity_type
+            ))
 
-*     **def** approve_pending(
-*         self, name: str, entity_type: str,
-*         signed_cert: str, approved_by: str
-*     ) -\> **None**:
-*         **with** self._connect() **as** conn:
-*             conn.execute('''
-*                 UPDATE pending_requests
-*                 SET signed_cert = ?, approved = 1,
-*                     approved_at = ?, approved_by = ?
-*                 WHERE name = ? AND entity_type = ?
-*             ''', (
-*                 signed_cert, datetime.utcnow().isoformat(),
-*                 approved_by, name, entity_type
-*             ))
+    def reject_pending(
+        self, name: str, entity_type: str, reason: str
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM pending_requests "
+                "WHERE name = ? AND entity_type = ?",
+                (name, entity_type)
+            )
 
-*     **def** reject_pending(
-*         self, name: str, entity_type: str, reason: str
-*     ) -\> **None**:
-*         **with** self._connect() **as** conn:
-*             conn.execute(
-*                 "DELETE FROM pending_requests "
-*                 "WHERE name = ? AND entity_type = ?",
-*                 (name, entity_type)
-*             )
+    def cleanup_expired(self) -> int:
+        now = datetime.utcnow().isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM pending_requests WHERE expires_at \< ?",
+                (now,)
+            )
+        return cursor.rowcount
 
-*     **def** cleanup_expired(self) -\> int:
-*         now = datetime.utcnow().isoformat()
-*         **with** self._connect() **as** conn:
-*             cursor = conn.execute(
-*                 "DELETE FROM pending_requests WHERE expires_at \< ?",
-*                 (now,)
-*             )
-*         **return** cursor.rowcount
+    # ─────────────────────────────────────────────────────
+    # Row Converters
+    # ─────────────────────────────────────────────────────
 
-*     # ─────────────────────────────────────────────────────
-*     # Row Converters
-*     # ─────────────────────────────────────────────────────
+    def _row_to_entity(self, row) -> EnrolledEntity:
+        return EnrolledEntity(
+            name=row["name"],
+            entity_type=row["entity_type"],
+            enrolled_at=datetime.fromisoformat(row["enrolled_at"]),
+            org=row["org"],
+            role=row["role"],
+        )
 
-*     **def** _row_to_entity(self, row) -\> EnrolledEntity:
-*         **return** EnrolledEntity(
-*             name=row\["name"\],
-*             entity_type=row\["entity_type"\],
-*             enrolled_at=datetime.fromisoformat(row\["enrolled_at"\]),
-*             org=row\["org"\],
-*             role=row\["role"\],
-*         )
+    def _row_to_request(self, row) -> PendingRequest:
+        return PendingRequest(
+            name=row["name"],
+            entity_type=row["entity_type"],
+            org=row["org"],
+            csr_pem=row["csr_pem"],
+            submitted_at=datetime.fromisoformat(row["submitted_at"]),
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            token_subject=row["token_subject"],
+            role=row["role"],
+            source_ip=row["source_ip"],
+            signed_cert=row["signed_cert"],
+            approved=bool(row["approved"]),
+            approved_at=(datetime.fromisoformat(row["approved_at"])
+                        if row["approved_at"] else None),
+            approved_by=row["approved_by"],
+        )
 
-*     **def** _row_to_request(self, row) -\> PendingRequest:
-*         **return** PendingRequest(
-*             name=row\["name"\],
-*             entity_type=row\["entity_type"\],
-*             org=row\["org"\],
-*             csr_pem=row\["csr_pem"\],
-*             submitted_at=datetime.fromisoformat(row\["submitted_at"\]),
-*             expires_at=datetime.fromisoformat(row\["expires_at"\]),
-*             token_subject=row\["token_subject"\],
-*             role=row\["role"\],
-*             source_ip=row\["source_ip"\],
-*             signed_cert=row\["signed_cert"\],
-*             approved=bool(row\["approved"\]),
-*             approved_at=(datetime.fromisoformat(row\["approved_at"\])
-*                         **if** row\["approved_at"\] **else** **None**),
-*             approved_by=row\["approved_by"\],
-*         )
+```
 
 **PostgreSQL Implementation (Production)**
 
 Located in nvflare/app_opt/cert_service/postgres_store.py:
 
-* **import** **psycopg2**
-* **from** **psycopg2.extras** **import** RealDictCursor
+```python
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-* **class** **PostgreSQLEnrollmentStore**(EnrollmentStore):
-*     *"""PostgreSQL-based enrollment store for production/HA deployments."""
+class PostgreSQLEnrollmentStore(EnrollmentStore):
+    """PostgreSQL-based enrollment store for production/HA deployments."""
 
-*     **def** __init__(self, connection_string: str):
-*         self.connection_string = connection_string
-*         self._init_db()
+    def __init__(self, connection_string: str):
+        self.connection_string = connection_string
+        self._init_db()
 
-*     **def** _connect(self):
-*         **return** psycopg2.connect(
-*             self.connection_string,
-*             cursor_factory=RealDictCursor
-*         )
+    def _connect(self):
+        return psycopg2.connect(
+            self.connection_string,
+            cursor_factory=RealDictCursor
+        )
 
-*     **def** _init_db(self):
-*         **with** self._connect() **as** conn:
-*             **with** conn.cursor() **as** cur:
-*                 cur.execute('''
-*                     CREATE TABLE IF NOT EXISTS enrolled_entities (
-*                         name TEXT NOT NULL,
-*                         entity_type TEXT NOT NULL,
-*                         enrolled_at TIMESTAMP NOT NULL,
-*                         PRIMARY KEY (name, entity_type)
-*                     );
+    def _init_db(self):
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''
+                    CREATE TABLE IF NOT EXISTS enrolled_entities (
+                        name TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        enrolled_at TIMESTAMP NOT NULL,
+                        PRIMARY KEY (name, entity_type)
+                    );
 
-*                     CREATE TABLE IF NOT EXISTS pending_requests (
-*                         name TEXT NOT NULL,
-*                         entity_type TEXT NOT NULL,
-*                         org TEXT NOT NULL,
-*                         csr_pem TEXT NOT NULL,
-*                         submitted_at TIMESTAMP NOT NULL,
-*                         expires_at TIMESTAMP NOT NULL,
-*                         token_subject TEXT NOT NULL,
-*                         source_ip TEXT,
-*                         signed_cert TEXT,
-*                         approved BOOLEAN DEFAULT FALSE,
-*                         approved_at TIMESTAMP,
-*                         approved_by TEXT
-*                     );
+                    CREATE TABLE IF NOT EXISTS pending_requests (
+                        name TEXT NOT NULL,
+                        entity_type TEXT NOT NULL,
+                        org TEXT NOT NULL,
+                        csr_pem TEXT NOT NULL,
+                        submitted_at TIMESTAMP NOT NULL,
+                        expires_at TIMESTAMP NOT NULL,
+                        token_subject TEXT NOT NULL,
+                        source_ip TEXT,
+                        signed_cert TEXT,
+                        approved BOOLEAN DEFAULT FALSE,
+                        approved_at TIMESTAMP,
+                        approved_by TEXT
+                    );
 
-*                     CREATE INDEX IF NOT EXISTS idx_expires
-*                         ON pending_requests(expires_at);
-*                 ''')
+                    CREATE INDEX IF NOT EXISTS idx_expires
+                        ON pending_requests(expires_at);
+                ''')
 
-*     # ... same interface methods as SQLiteEnrollmentStore ...
-*     # (uses psycopg2 instead of sqlite3)
+    # ... same interface methods as SQLiteEnrollmentStore ...
+    # (uses psycopg2 instead of sqlite3)
+
+```
+
 
 **Factory Function**
 
-* **def** create_enrollment_store(config: dict) -\> EnrollmentStore:
-*     *"""Create enrollment store based on configuration."""
+```python
+def create_enrollment_store(config: dict) -> EnrollmentStore:
+    """Create enrollment store based on configuration."""
 
-*     storage_type = config.get("type", "sqlite")
+    storage_type = config.get("type", "sqlite")
 
-*     **if** storage_type == "sqlite":
-*         path = config.get("path", "/var/lib/cert_service/enrollment.db")
-*         **return** SQLiteEnrollmentStore(db_path=path)
+    if storage_type == "sqlite":
+        path = config.get("path", "/var/lib/cert_service/enrollment.db")
+        return SQLiteEnrollmentStore(db_path=path)
 
-*     **elif** storage_type == "postgresql":
-*         conn_string = config\["connection"\]
-*         # Import only when needed (optional dependency)
-*         **from** **nvflare.app_opt.cert_service.postgres_store** **import** (
-*             PostgreSQLEnrollmentStore
-*         )
-*         **return** PostgreSQLEnrollmentStore(connection_string=conn_string)
+    elif storage_type == "postgresql":
+        conn_string = config["connection"]
+        # Import only when needed (optional dependency)
+        from nvflare.app_opt.cert_service.postgres_store import (
+            PostgreSQLEnrollmentStore
+        )
+        return PostgreSQLEnrollmentStore(connection_string=conn_string)
 
-*     **else**:
-*         **raise** **ValueError**(f"Unknown storage type: **{**storage_type**}**")
+    else:
+        raise ValueError(f"Unknown storage type: {storage_type}")
+
+```
 
 **Storage Comparison**
 
@@ -1937,69 +2060,69 @@ The CertRequestor handles client-side enrollment:
 
 **Location:** nvflare/security/enrollment/cert_requestor.py
 
-* **from** **nvflare.security.enrollment** **import** (
-*     CertRequestor,
-*     EnrollmentIdentity,
-*     EnrollmentOptions,
-*     EnrollmentResult,
-* )
+from nvflare.security.enrollment import (
+    CertRequestor,
+    EnrollmentIdentity,
+    EnrollmentOptions,
+    EnrollmentResult,
+)
 
-* # Create identity
-* identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
+# Create identity
+identity = EnrollmentIdentity.for_client("hospital-1", org="Hospital A")
 
-* # Configure options
-* options = EnrollmentOptions(
-*     timeout=30.0,                    # HTTP request timeout
-*     output_dir="/workspace/startup",
-* )
+# Configure options
+options = EnrollmentOptions(
+    timeout=30.0,                    # HTTP request timeout
+    output_dir="/workspace/startup",
+)
 
-* # Create requestor
-* requestor = CertRequestor(
-*     cert_service_url="https://cert-service.example.com",
-*     enrollment_token="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-*     identity=identity,
-*     options=options,
-* )
+# Create requestor
+requestor = CertRequestor(
+    cert_service_url="https://cert-service.example.com",
+    enrollment_token="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    identity=identity,
+    options=options,
+)
 
-* # Perform enrollment
-* result = requestor.request_certificate()
+# Perform enrollment
+result = requestor.request_certificate()
 
-* print(f"Certificate: **{**result.cert_path**}**")
-* print(f"Private key: **{**result.key_path**}**")
-* print(f"Root CA: **{**result.ca_path**}**")
+print(f"Certificate: {result.cert_path}")
+print(f"Private key: {result.key_path}")
+print(f"Root CA: {result.ca_path}")
 
 ### EnrollmentOptions Configuration
 
 EnrollmentOptions can be configured via:
 
-1. **Direct instantiation** (for testing/scripts)
-2. **FLARE client configuration** (fed_client.json)
-3. **Environment variables** (for containerized deployments)
+1. Direct instantiation (for testing/scripts)
+2. FLARE client configuration (fed_client.json)
+3. Environment variables (for containerized deployments)
 
-**Option 1: Direct Instantiation**
+Option 1: Direct Instantiation
 
-* options = EnrollmentOptions(
-*     timeout=30.0,
-*     output_dir="/workspace/startup",
-* )
+options = EnrollmentOptions(
+    timeout=30.0,
+    output_dir="/workspace/startup",
+)
 
-**Option 2: From FLARE Client Configuration**
+Option 2: From FLARE Client Configuration
 
 Enrollment settings in fed_client.json (timeouts only, NOT the URL):
 
-* {
-*     **"format_version"**: 2,
-*     **"client"**: {
-*         **"name"**: "hospital-1"
-*     },
-*     **"enrollment"**: {
-*         **"timeout"**: 30.0,
-*         **"max_retries"**: 3,
-*         **"retry_delay"**: 5.0
-*     }
-* }
+{
+    "format_version": 2,
+    "client": {
+        "name": "hospital-1"
+    },
+    "enrollment": {
+        "timeout": 30.0,
+        "max_retries": 3,
+        "retry_delay": 5.0
+    }
+}
 
-**Note**
+Note
 
 The cert_service_url is intentionally NOT in fed_client.json because:
 
@@ -2011,447 +2134,451 @@ Use environment variables or a separate file for the URL (see below).
 
 Then load from client_args:
 
-* @staticmethod
-* **def** from_client_args(client_args: dict, output_dir: str) -\> "EnrollmentOptions":
-*     *"""Create EnrollmentOptions from FLARE client configuration.
+@staticmethod
+def from_client_args(client_args: dict, output_dir: str) -> "EnrollmentOptions":
+    """Create EnrollmentOptions from FLARE client configuration.
 
-*     *Args:
-*         *client_args: Client configuration dictionary (from fed_client.json)
-*         *output_dir: Directory to save certificates
+    *Args:
+        *client_args: Client configuration dictionary (from fed_client.json)
+        *output_dir: Directory to save certificates
 
-*     *Returns:
-*         *EnrollmentOptions configured from client_args
-*     *"""
-*     enrollment_config = client_args.get("enrollment", {})
+    *Returns:
+        *EnrollmentOptions configured from client_args
+    """
+    enrollment_config = client_args.get("enrollment", {})
 
-*     **return** EnrollmentOptions(
-*         timeout=enrollment_config.get("timeout", 30.0),
-*         output_dir=output_dir,
-*         max_retries=enrollment_config.get("max_retries", 3),
-*         retry_delay=enrollment_config.get("retry_delay", 5.0),
-*     )
+    return EnrollmentOptions(
+        timeout=enrollment_config.get("timeout", 30.0),
+        output_dir=output_dir,
+        max_retries=enrollment_config.get("max_retries", 3),
+        retry_delay=enrollment_config.get("retry_delay", 5.0),
+    )
 
-**Option 3: From Environment Variables (Recommended for URL)**
+Option 3: From Environment Variables (Recommended for URL)
 
 The Certificate Service URL and token are provided via environment variables, which are set at deployment time (not package time):
 
-* # Required for enrollment
-* NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443
-* NVFLARE_ENROLLMENT_TOKEN=eyJhbGciOiJSUzI1NiIs...
+# Required for enrollment
+NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443
+NVFLARE_ENROLLMENT_TOKEN=eyJhbGciOiJSUzI1NiIs...
 
-* # Optional (have sensible defaults)
-* NVFLARE_ENROLLMENT_TIMEOUT=30.0
-* NVFLARE_ENROLLMENT_MAX_RETRIES=3
-* NVFLARE_ENROLLMENT_RETRY_DELAY=5.0
+# Optional (have sensible defaults)
+NVFLARE_ENROLLMENT_TIMEOUT=30.0
+NVFLARE_ENROLLMENT_MAX_RETRIES=3
+NVFLARE_ENROLLMENT_RETRY_DELAY=5.0
 
-* @staticmethod
-* **def** from_env(output_dir: str) -\> "EnrollmentOptions":
-*     *"""Create EnrollmentOptions from environment variables.
+@staticmethod
+def from_env(output_dir: str) -> "EnrollmentOptions":
+    """Create EnrollmentOptions from environment variables.
 
-*     *Environment Variables:
-*         *NVFLARE_ENROLLMENT_TIMEOUT: HTTP request timeout (default: 30.0)
-*         *NVFLARE_ENROLLMENT_MAX_RETRIES: Max retry attempts (default: 3\)
-*         *NVFLARE_ENROLLMENT_RETRY_DELAY: Delay between retries (default: 5.0)
+    *Environment Variables:
+        *NVFLARE_ENROLLMENT_TIMEOUT: HTTP request timeout (default: 30.0)
+        *NVFLARE_ENROLLMENT_MAX_RETRIES: Max retry attempts (default: 3\)
+        *NVFLARE_ENROLLMENT_RETRY_DELAY: Delay between retries (default: 5.0)
 
-*     *Returns:
-*         *EnrollmentOptions configured from environment
-*     *"""
-*     **import** **os**
+    *Returns:
+        *EnrollmentOptions configured from environment
+    """
+    import os
 
-*     **return** EnrollmentOptions(
-*         timeout=float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", "30.0")),
-*         output_dir=output_dir,
-*         max_retries=int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", "3")),
-*         retry_delay=float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", "5.0")),
-*     )
+    return EnrollmentOptions(
+        timeout=float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", "30.0")),
+        output_dir=output_dir,
+        max_retries=int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", "3")),
+        retry_delay=float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", "5.0")),
+    )
 
-**Option 4: From Separate Enrollment File**
+Option 4: From Separate Enrollment File
 
 For non-containerized deployments, a separate enrollment.json can be placed in the startup directory at deployment time.
 
-**Consolidated Package Command (Recommended)**
+Consolidated Package Command (Recommended)
 
 The nvflare package command can include the Certificate Service URL and token, creating everything in one step:
 
-* # Site operator runs single command with all info from Project Admin
-* nvflare package  \
-*     -n hospital-1  \
-*     -e grpc://server.example.com:8002  \
-*     -t client  \
-*     --cert-service https://cert-service.example.com:8443  \
-*     --token eyJhbGciOiJSUzI1NiIs...  \
-*     -o ./
+# Site operator runs single command with all info from Project Admin
+nvflare package  \
+    -n hospital-1  \
+    -e grpc://server.example.com:8002  \
+    -t client  \
+    --cert-service https://cert-service.example.com:8443  \
+    --token eyJhbGciOiJSUzI1NiIs...  \
+    -o ./
 
 This generates:
 
-* ./hospital-1/
-* ├── startup/
-* │   ├── fed_client.json
-* │   ├── enrollment.json         \# Created with cert_service_url
-* │   ├── enrollment_token        \# Created with token
-* │   ├── start.sh
-* │   └── ...
-* └── ...
+./hospital-1/
+├── startup/
+│   ├── fed_client.json
+│   ├── enrollment.json         \# Created with cert_service_url
+│   ├── enrollment_token        \# Created with token
+│   ├── start.sh
+│   └── ...
+└── ...
 
-**Manual File Creation (Alternative)**
+Manual File Creation (Alternative)
 
 If the package was already generated without enrollment info:
 
-* # Create enrollment.json
-* cat \> ./hospital-1/startup/enrollment.json \<\< EOF
-* {
-*     "cert_service_url": "https://cert-service.example.com:8443"
-* }
-* EOF
+# Create enrollment.json
+cat > ./hospital-1/startup/enrollment.json \<\< EOF
+{
+    "cert_service_url": "https://cert-service.example.com:8443"
+}
+EOF
 
-* # Place token
-* echo "eyJhbGciOiJSUzI1..." \> ./hospital-1/startup/enrollment_token
+# Place token
+echo "eyJhbGciOiJSUzI1..." > ./hospital-1/startup/enrollment_token
 
-**File contents:**
+File contents:
 
-* {
-*     **"cert_service_url"**: "https://cert-service.example.com:8443",
-*     **"timeout"**: 30.0,
-*     **"max_retries"**: 3,
-*     **"retry_delay"**: 5.0
-* }
+{
+    "cert_service_url": "https://cert-service.example.com:8443",
+    "timeout": 30.0,
+    "max_retries": 3,
+    "retry_delay": 5.0
+}
 
-**Note**
+Note
 
 For containerized/K8s deployments, inject NVFLARE_CERT_SERVICE_URL and NVFLARE_ENROLLMENT_TOKEN from a K8s Secret (via `envFrom: secretRef` or volume mount). For production, manage the Secret through an External Secrets Operator or Vault CSI driver for rotation and audit.
 
-**EnrollmentOptions Dataclass**
+EnrollmentOptions Dataclass
 
-* **from** **dataclasses** **import** dataclass, field
-* **from** **typing** **import** Optional
-* **import** **os**
+from dataclasses import dataclass, field
+from typing import Optional
+import os
 
-* @dataclass
-* **class** **EnrollmentOptions**:
-*     *"""Configuration options for certificate enrollment.
+@dataclass
+class EnrollmentOptions:
+    """Configuration options for certificate enrollment.
 
-*     *Args:
-*         *timeout: HTTP request timeout in seconds
-*         *output_dir: Directory to save certificates
-*         *max_retries: Maximum number of retry attempts on failure
-*         *retry_delay: Delay between retries in seconds
-*     *"""
-*     timeout: float = 30.0
-*     output_dir: str = "./startup"
-*     max_retries: int = 3
-*     retry_delay: float = 5.0
+    *Args:
+        *timeout: HTTP request timeout in seconds
+        *output_dir: Directory to save certificates
+        *max_retries: Maximum number of retry attempts on failure
+        *retry_delay: Delay between retries in seconds
+    """
+    timeout: float = 30.0
+    output_dir: str = "./startup"
+    max_retries: int = 3
+    retry_delay: float = 5.0
 
-*     @classmethod
-*     **def** from_client_args(
-*         cls, client_args: dict, output_dir: str
-*     ) -\> "EnrollmentOptions":
-*         *"""Create from FLARE client configuration."""
-*         enrollment_config = client_args.get("enrollment", {})
-*         **return** cls(
-*             timeout=enrollment_config.get("timeout", 30.0),
-*             output_dir=output_dir,
-*             max_retries=enrollment_config.get("max_retries", 3),
-*             retry_delay=enrollment_config.get("retry_delay", 5.0),
-*         )
+    @classmethod
+    def from_client_args(
+        cls, client_args: dict, output_dir: str
+    ) -> "EnrollmentOptions":
+        """Create from FLARE client configuration."""
+        enrollment_config = client_args.get("enrollment", {})
+        return cls(
+            timeout=enrollment_config.get("timeout", 30.0),
+            output_dir=output_dir,
+            max_retries=enrollment_config.get("max_retries", 3),
+            retry_delay=enrollment_config.get("retry_delay", 5.0),
+        )
 
-*     @classmethod
-*     **def** from_env(cls, output_dir: str) -\> "EnrollmentOptions":
-*         *"""Create from environment variables."""
-*         **return** cls(
-*             timeout=float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", "30.0")),
-*             output_dir=output_dir,
-*             max_retries=int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", "3")),
-*             retry_delay=float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", "5.0")),
-*         )
+    @classmethod
+    def from_env(cls, output_dir: str) -> "EnrollmentOptions":
+        """Create from environment variables."""
+        return cls(
+            timeout=float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", "30.0")),
+            output_dir=output_dir,
+            max_retries=int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", "3")),
+            retry_delay=float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", "5.0")),
+        )
 
-**Usage in FederatedClientBase**
+Usage in FederatedClientBase
 
 When integrating with FLARE client startup:
 
-* # In fed_client_base.py or auto-enrollment logic
+# In fed_client_base.py or auto-enrollment logic
 
-* **def** _perform_auto_enrollment(self, client_args: dict, startup_dir: str):
-*     *"""Perform automatic enrollment if certificates are missing."""
+def _perform_auto_enrollment(self, client_args: dict, startup_dir: str):
+    """Perform automatic enrollment if certificates are missing."""
 
-*     # 1. Get Certificate Service URL
-*     #    Priority: Environment \> enrollment.json
-*     #    NOT from fed_client.json (not known at package time)
-*     cert_service_url = os.getenv("NVFLARE_CERT_SERVICE_URL")
+    # 1. Get Certificate Service URL
+    #    Priority: Environment > enrollment.json
+    #    NOT from fed_client.json (not known at package time)
+    cert_service_url = os.getenv("NVFLARE_CERT_SERVICE_URL")
 
-*     **if** **not** cert_service_url:
-*         enrollment_file = os.path.join(startup_dir, "enrollment.json")
-*         **if** os.path.exists(enrollment_file):
-*             **with** open(enrollment_file) **as** f:
-*                 enrollment_config = json.load(f)
-*             cert_service_url = enrollment_config.get("cert_service_url")
+    if not cert_service_url:
+        enrollment_file = os.path.join(startup_dir, "enrollment.json")
+        if os.path.exists(enrollment_file):
+            with open(enrollment_file) as f:
+                enrollment_config = json.load(f)
+            cert_service_url = enrollment_config.get("cert_service_url")
 
-*     **if** **not** cert_service_url:
-*         **raise** **ValueError**(
-*             "No Certificate Service URL found. Set NVFLARE_CERT_SERVICE_URL "
-*             "or create startup/enrollment.json"
-*         )
+    if not cert_service_url:
+        raise ValueError(
+            "No Certificate Service URL found. Set NVFLARE_CERT_SERVICE_URL "
+            "or create startup/enrollment.json"
+        )
 
-*     # 2. Get enrollment token
-*     #    Priority: Environment \> token file
-*     token = os.getenv("NVFLARE_ENROLLMENT_TOKEN")
+    # 2. Get enrollment token
+    #    Priority: Environment > token file
+    token = os.getenv("NVFLARE_ENROLLMENT_TOKEN")
 
-*     **if** **not** token:
-*         token_file = os.path.join(startup_dir, "enrollment_token")
-*         **if** os.path.exists(token_file):
-*             **with** open(token_file) **as** f:
-*                 token = f.read().strip()
+    if not token:
+        token_file = os.path.join(startup_dir, "enrollment_token")
+        if os.path.exists(token_file):
+            with open(token_file) as f:
+                token = f.read().strip()
 
-*     **if** **not** token:
-*         **raise** **ValueError**(
-*             "No enrollment token found. Set NVFLARE_ENROLLMENT_TOKEN "
-*             "or place token in startup/enrollment_token"
-*         )
+    if not token:
+        raise ValueError(
+            "No enrollment token found. Set NVFLARE_ENROLLMENT_TOKEN "
+            "or place token in startup/enrollment_token"
+        )
 
-*     # 3. Get timeout options
-*     #    Priority: Environment \> enrollment.json \> fed_client.json \> defaults
-*     options = self._get_enrollment_options(client_args, startup_dir)
+    # 3. Get timeout options
+    #    Priority: Environment > enrollment.json > fed_client.json > defaults
+    options = self._get_enrollment_options(client_args, startup_dir)
 
-*     # 4. Create identity from client_args
-*     identity = EnrollmentIdentity.for_client(
-*         name=client_args.get("client_name"),
-*         org=client_args.get("org"),
-*     )
+    # 4. Create identity from client_args
+    identity = EnrollmentIdentity.for_client(
+        name=client_args.get("client_name"),
+        org=client_args.get("org"),
+    )
 
-*     # 5. Perform enrollment
-*     requestor = CertRequestor(
-*         cert_service_url=cert_service_url,
-*         enrollment_token=token,
-*         identity=identity,
-*         options=options,
-*     )
+    # 5. Perform enrollment
+    requestor = CertRequestor(
+        cert_service_url=cert_service_url,
+        enrollment_token=token,
+        identity=identity,
+        options=options,
+    )
 
-*     **return** requestor.request_certificate()
+    return requestor.request_certificate()
 
-* **def** _get_enrollment_options(
-*     self, client_args: dict, startup_dir: str
-* ) -\> EnrollmentOptions:
-*     *"""Get enrollment options from multiple sources."""
+def _get_enrollment_options(
+    self, client_args: dict, startup_dir: str
+) -> EnrollmentOptions:
+    """Get enrollment options from multiple sources."""
 
-*     # Start with defaults
-*     timeout = 30.0
-*     max_retries = 3
-*     retry_delay = 5.0
+    # Start with defaults
+    timeout = 30.0
+    max_retries = 3
+    retry_delay = 5.0
 
-*     # Override from fed_client.json
-*     enrollment_config = client_args.get("enrollment", {})
-*     timeout = enrollment_config.get("timeout", timeout)
-*     max_retries = enrollment_config.get("max_retries", max_retries)
-*     retry_delay = enrollment_config.get("retry_delay", retry_delay)
+    # Override from fed_client.json
+    enrollment_config = client_args.get("enrollment", {})
+    timeout = enrollment_config.get("timeout", timeout)
+    max_retries = enrollment_config.get("max_retries", max_retries)
+    retry_delay = enrollment_config.get("retry_delay", retry_delay)
 
-*     # Override from enrollment.json
-*     enrollment_file = os.path.join(startup_dir, "enrollment.json")
-*     **if** os.path.exists(enrollment_file):
-*         **with** open(enrollment_file) **as** f:
-*             file_config = json.load(f)
-*         timeout = file_config.get("timeout", timeout)
-*         max_retries = file_config.get("max_retries", max_retries)
-*         retry_delay = file_config.get("retry_delay", retry_delay)
+    # Override from enrollment.json
+    enrollment_file = os.path.join(startup_dir, "enrollment.json")
+    if os.path.exists(enrollment_file):
+        with open(enrollment_file) as f:
+            file_config = json.load(f)
+        timeout = file_config.get("timeout", timeout)
+        max_retries = file_config.get("max_retries", max_retries)
+        retry_delay = file_config.get("retry_delay", retry_delay)
 
-*     # Override from environment (highest priority)
-*     timeout = float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", str(timeout)))
-*     max_retries = int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", str(max_retries)))
-*     retry_delay = float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", str(retry_delay)))
+    # Override from environment (highest priority)
+    timeout = float(os.getenv("NVFLARE_ENROLLMENT_TIMEOUT", str(timeout)))
+    max_retries = int(os.getenv("NVFLARE_ENROLLMENT_MAX_RETRIES", str(max_retries)))
+    retry_delay = float(os.getenv("NVFLARE_ENROLLMENT_RETRY_DELAY", str(retry_delay)))
 
-*     **return** EnrollmentOptions(
-*         timeout=timeout,
-*         output_dir=startup_dir,
-*         max_retries=max_retries,
-*         retry_delay=retry_delay,
-*     )
+    return EnrollmentOptions(
+        timeout=timeout,
+        output_dir=startup_dir,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+    )
 
-**What Goes Where**
+What Goes Where
 
 | Configuration | When Known | Where Specified |
 | --- | ----- | --- |
-| cert_service_url | **After** Certificate Service is deployed | Environment variable or enrollment.json |
-| enrollment_token | **After** token is generated by Project Admin | Environment variable or enrollment_token file |
+| cert_service_url | After Certificate Service is deployed | Environment variable or enrollment.json |
+| enrollment_token | After token is generated by Project Admin | Environment variable or enrollment_token file |
 | timeout, max_retries | At package generation time (optional) | fed_client.json or environment |
 | client_name, org | At package generation time | fed_client.json |
 
-**Configuration Precedence**
+Configuration Precedence
 
-* cert_service_url:
-*     1. NVFLARE_CERT_SERVICE_URL (env)
-*     2. enrollment.json
-*     3. (NOT in fed_client.json)
+- cert_service_url:
+    1. `NVFLARE_CERT_SERVICE_URL` (env)
+    2. `enrollment.json`
+    3. (NOT in fed_client.json)
 
-* enrollment_token:
-*     1. NVFLARE_ENROLLMENT_TOKEN (env)
-*     2. enrollment_token (file)
+- enrollment_token:
+    1. `NVFLARE_ENROLLMENT_TOKEN` (env)
+    2. `enrollment_token` (file)
 
-* timeout, max_retries, retry_delay:
-*     1. Environment variables (highest)
-*     2. enrollment.json
-*     3. fed_client.json
-*     4. Default values (lowest)
+- timeout, max_retries, retry_delay:
+    1. Environment variables (highest)
+    2. `enrollment.json`
+    3. `fed_client.json`
+    4. Default values (lowest)
 
-**Deployment Workflow**
+Deployment Workflow
 
-* Option A: Consolidated (Recommended)
-* ─────────────────────────────────────
+Option A: Consolidated (Recommended)
+─────────────────────────────────────
 
-* Site operator receives from Project Admin:
-*     - Token string
-*     - Cert Service URL
-*     - Server endpoint
+Site operator receives from Project Admin:
+    - Token string
+    - Cert Service URL
+    - Server endpoint
 
-* Single command:
-*     nvflare package \\
-*         -n hospital-1 \\
-*         -e grpc://server:8002 \\
-*         -t client \\
-*         --cert-service https://cert-service:8443 \\
-*         --token eyJhbGciOiJSUzI1...
+Single command:
+    nvflare package \\
+        -n hospital-1 \\
+        -e grpc://server:8002 \\
+        -t client \\
+        --cert-service https://cert-service:8443 \\
+        --token eyJhbGciOiJSUzI1...
 
-* Start client:
-*     cd hospital-1 && ./startup/start.sh
+Start client:
+    cd hospital-1 && ./startup/start.sh
 
-* ─────────────────────────────────────
+─────────────────────────────────────
 
-* Option B: K8s Secret / Environment (K8s)
-* ─────────────────────────────────────────
+Option B: K8s Secret / Environment (K8s)
+─────────────────────────────────────────
 
-* Package generated without enrollment info:
-*     nvflare package -n hospital-1 -e grpc://server:8002 -t client
+Package generated without enrollment info:
+    nvflare package -n hospital-1 -e grpc://server:8002 -t client
 
-* Token and URL injected from K8s Secret (via secretRef or volume mount):
-*     # K8s Secret "hospital-1-enrollment" contains:
-*     #   NVFLARE_CERT_SERVICE_URL: https://cert-service:8443
-*     #   NVFLARE_ENROLLMENT_TOKEN: eyJhbGciOiJSUzI1...
-*     cd hospital-1 && ./startup/start.sh
+Token and URL injected from K8s Secret (via secretRef or volume mount):
+    # K8s Secret "hospital-1-enrollment" contains:
+    #   NVFLARE_CERT_SERVICE_URL: https://cert-service:8443
+    #   NVFLARE_ENROLLMENT_TOKEN: eyJhbGciOiJSUzI1...
+    cd hospital-1 && ./startup/start.sh
 
 ### Enrollment Flow
 
-**Auto-Approved Flow**
+Auto-Approved Flow
 
-* CertRequestor                          Certificate Service
-* ─────────────                          ───────────────────
-*      │
-*      │  1. Generate RSA key pair
-*      │     (locally - never transmitted)
-*      │
-*      │  2. Create CSR
-*      │     (signed with private key)
-*      │
-*      │  3. POST /api/v1/enroll
-*      │     { token, csr, metadata }
-*      │────────────────────────────────────►│
-*      │                                     │
-*      │                                     │  4. Validate token
-*      │                                     │
-*      │                                     │  5. Check policy → approve
-*      │                                     │
-*      │                                     │  6. Verify CSR signature
-*      │                                     │
-*      │                                     │  7. Sign certificate
-*      │                                     │
-*      │  200: { certificate, ca_cert }      │
-*      │◄────────────────────────────────────│
-*      │
-*      │  8. Save files:
-*      │     - client.crt (certificate)
-*      │     - client.key (private key)
-*      │     - rootCA.pem (root CA)
-*      │
-*      │  9. Return EnrollmentResult
-*      │     (in-memory + file paths)
-*      ▼
 
-**Pending (Manual Approval) Flow**
+```
+CertRequestor                          Certificate Service
+─────────────                          ───────────────────
+     │
+     │  1. Generate RSA key pair
+     │     (locally - never transmitted)
+     │
+     │  2. Create CSR
+     │     (signed with private key)
+     │
+     │  3. POST /api/v1/enroll
+     │     { token, csr, metadata }
+     │────────────────────────────────────>│
+     │                                     │
+     │                                     │  4. Validate token
+     │                                     │
+     │                                     │  5. Check policy → approve
+     │                                     │
+     │                                     │  6. Verify CSR signature
+     │                                     │
+     │                                     │  7. Sign certificate
+     │                                     │
+     │  200: { certificate, ca_cert }      │
+     │<────────────────────────────────────│
+     │
+     │  8. Save files:
+     │     - client.crt (certificate)
+     │     - client.key (private key)
+     │     - rootCA.pem (root CA)
+     │
+     │  9. Return EnrollmentResult
+     │     (in-memory + file paths)
+     ▼
 
-When policy action is pending, the request is queued for admin approval. The client returns immediately - **no polling loop**. The org admin must restart the enrollment process later (after admin approval).
+Pending (Manual Approval) Flow
 
-* CertRequestor                 Certificate Service              Admin
-* ─────────────                 ───────────────────              ─────
-*      │
-*      │  1-3. Same as above
-*      │────────────────────────────►│
-*      │                             │
-*      │                             │  4. Validate token (JWT)
-*      │                             │
-*      │                             │  5. Check policy → pending
-*      │                             │
-*      │                             │  6. Store pending request
-*      │  202: { status: pending,    │     key: (name, entity_type)
-*      │         request_id: ... }   │
-*      │◄────────────────────────────┤
-*      │                             │
-*      │  Return EnrollmentPending   │
-*      │  (site startup fails)       │
-*      ▼                             │
-*                                    │          GET /pending
-* \[Site operator waits for admin\]    │◄─────────────────────────────┤
-*                                    │  \[List pending requests\]     │
-*                                    │─────────────────────────────►│
-*                                    │                              │
-*                                    │    POST /pending/{name}/approve
-*                                    │◄─────────────────────────────┤
-*                                    │                              │
-*                                    │  Sign certificate            │
-*                                    │  Mark site as enrolled       │
-* \[Site operator restarts\]           │
-*      │                             │
-*      │  POST /api/v1/enroll        │
-*      │  (new token or same)        │
-*      │────────────────────────────►│
-*      │                             │  Lookup by name:
-*      │  200: { certificate,        │  already enrolled → return cert
-*      │         ca_cert }           │
-*      │◄────────────────────────────┤
-*      │
-*      │  8-9. Save + return result
-*      ▼
+When the approval policy evaluates to pending, the Certificate Service stores the request and returns 202 Accepted (no certificate yet). The client exits with `EnrollmentPending`; there is no polling loop. After an admin approves the request, the Site Admin restarts the client; the client submits again and receives the signed certificate.
 
-**Key Design Decisions:**
+Sequence:
 
-1. **No polling loop**: Client returns immediately with EnrollmentPending error
-2. **Server tracks by site name**: Uses (name, entity_type) as unique key, not token
-3. **Re-submission on restart**: Site operator restarts process after admin approval
-4. **Server matches by site**: Re-submitted request for same site finds existing approved record
-5. **Timeout**: Pending requests expire after 7 days if not approved/rejected
-6. **No token state tracking**: Only enrolled sites and pending requests are tracked (O(sites))
+1. Client: Same as Auto-Approved (generate key, CSR, POST /api/v1/enroll).
+2. Certificate Service: Validates token, evaluates policy → pending, stores request under (name, entity_type), returns 202 with `status: "pending"` and `request_id`.
+3. Client: Returns `EnrollmentPending`, startup fails. Site operator waits.
+4. Admin: Calls GET /api/v1/pending to list requests, then POST /api/v1/pending/{name}/approve (with type) to approve.
+5. Certificate Service: On approve, signs the stored CSR, marks entity enrolled.
+6. Site operator: Restarts the client (e.g. `./startup/start.sh` again).
+7. Client: POST /api/v1/enroll again (same or new token). Certificate Service looks up (name, entity_type), finds already enrolled, returns 200 with the signed certificate and ca_cert.
+8. Client: Saves cert/key/rootCA, returns `EnrollmentResult`, startup continues.
 
-**Return Values:**
+```
+CertRequestor              Certificate Service                    Admin
+─────────────              ──────────────────                    ─────
+     │
+     │  1. Keys + CSR, POST /api/v1/enroll
+     │────────────────────────────────────>│
+     │                                     │  2. Validate token, policy → pending
+     │                                     │     Store (name, entity_type)
+     │  3. 202 { status: pending }         │
+     │<────────────────────────────────────│
+     │  EnrollmentPending, exit            │
+     ▼                                     │
+                                           │  4. GET /api/v1/pending
+     [Site operator waits]                 │<─────────────────────────────────>
+     [Admin lists, then approves]          │  POST /api/v1/pending/{name}/approve
+                                           │  5. Sign CSR, mark enrolled
+     [Site operator restarts]              │
+     │                                     │
+     │  7. POST /api/v1/enroll (retry)     │  7. Lookup (name, entity_type),
+     │────────────────────────────────────>│     already enrolled → return cert
+     │  8. 200 { certificate, ca_cert }    │
+     │<────────────────────────────────────│
+     │  Save files, EnrollmentResult
+     ▼
+```
 
-* status: approved → Return EnrollmentResult (success)
-* status: pending → Raise EnrollmentPending(request_id, message)
-* status: rejected → Raise EnrollmentError(reason)
+Key Design Decisions:
 
-**Org Admin Workflow (Pending):**
+1. No polling loop: Client returns immediately with EnrollmentPending error
+2. Server tracks by site name: Uses (name, entity_type) as unique key, not token
+3. Re-submission on restart: Site operator restarts process after admin approval
+4. Server matches by site: Re-submitted request for same site finds existing approved record
+5. Timeout: Pending requests expire after 7 days if not approved/rejected
+6. No token state tracking: Only enrolled sites and pending requests are tracked (O(sites))
 
-* # First attempt - returns pending
-* $ cd hospital-1 && ./startup/start.sh
-* Enrollment pending: Request abc123 queued **for** admin approval.
-* Contact your Project Admin to approve this request.
+Return Values:
 
-* # ... Admin approves via CLI ...
+- `status: approved` → Return EnrollmentResult (success)
+- `status: pending` → Raise EnrollmentPending(request_id, message)
+- `status: rejected` → Raise EnrollmentError(reason)
 
-* # Second attempt - succeeds
-* $ cd hospital-1 && ./startup/start.sh
-* Enrollment successful. Certificate saved to startup/client.crt
+Site Admin Workflow (Pending):
+
+First attempt returns pending; after the admin approves, run start again:
+
+```bash
+# First attempt - returns pending
+$ cd hospital-1 && ./startup/start.sh
+Enrollment pending: Request abc123 queued for admin approval.
+Contact your Project Admin to approve this request.
+
+# ... Admin approves via CLI ...
+
+# Second attempt - succeeds
+$ cd hospital-1 && ./startup/start.sh
+Enrollment successful. Certificate saved to startup/client.crt
+```
 
 ### EnrollmentResult
 
 The request_certificate() method returns an EnrollmentResult:
 
-* @dataclass
-* **class** **EnrollmentResult**:
-*     # In-memory (use directly, no reload needed)
-*     private_key: Any           # RSA private key object
-*     certificate_pem: str       # PEM-encoded certificate
-*     ca_cert_pem: str           # PEM-encoded root CA
+```python
+@dataclass
+class EnrollmentResult:
+    # In-memory (use directly, no reload needed)
+    private_key: Any           # RSA private key object
+    certificate_pem: str       # PEM-encoded certificate
+    ca_cert_pem: str           # PEM-encoded root CA
 
-*     # File paths (saved for restart persistence)
-*     cert_path: str             # Path to client.crt
-*     key_path: str              # Path to client.key
-*     ca_path: str               # Path to rootCA.pem
+    # File paths (saved for restart persistence)
+    cert_path: str             # Path to client.crt
+    key_path: str              # Path to client.key
+    ca_path: str               # Path to rootCA.pem
+```
 
-**Design Note**: Files are saved for persistence across restarts, but in-memory certificates can be used directly without reloading.
+Design Note: Files are saved for persistence across restarts, but in-memory certificates can be used directly without reloading.
 
 ## Server Enrollment
 
@@ -2468,67 +2595,74 @@ The FL Server is also a site that requires certificates. In the Auto-Scale workf
 
 ### Server Enrollment Flow
 
-* **from** **nvflare.private.fed.client.enrollment** **import** (
-*     CertRequestor,
-*     EnrollmentIdentity,
-*     EnrollmentOptions,
-* )
 
-* # Create server identity
-* identity = EnrollmentIdentity.for_server(
-*     name="server1",
-*     org="My Organization",
-*     host="server.example.com",    # Server hostname for certificate CN/SAN
-* )
+```python
+from nvflare.private.fed.client.enrollment import (
+    CertRequestor,
+    EnrollmentIdentity,
+    EnrollmentOptions,
+)
 
-* # Configure options
-* options = EnrollmentOptions(
-*     timeout=30.0,
-*     output_dir="/workspace/startup",
-* )
+# Create server identity
+identity = EnrollmentIdentity.for_server(
+    name="server1",
+    org="My Organization",
+    host="server.example.com",    # Server hostname for certificate CN/SAN
+)
 
-* # Create requestor
-* requestor = CertRequestor(
-*     cert_service_url="https://cert-service.example.com:8443",
-*     enrollment_token="eyJhbGciOiJSUzI1NiIs...",
-*     identity=identity,
-*     options=options,
-* )
+# Configure options
+options = EnrollmentOptions(
+    timeout=30.0,
+    output_dir="/workspace/startup",
+)
 
-* # Perform enrollment
-* result = requestor.request_certificate()
+# Create requestor
+requestor = CertRequestor(
+    cert_service_url="https://cert-service.example.com:8443",
+    enrollment_token="eyJhbGciOiJSUzI1NiIs...",
+    identity=identity,
+    options=options,
+)
 
-* # Result contains:
-* # - result.cert_path → server.crt
-* # - result.key_path → server.key
-* # - result.ca_path → rootCA.pem
+# Perform enrollment
+result = requestor.request_certificate()
+
+# Result contains:
+# - result.cert_path → server.crt
+# - result.key_path → server.key
+# - result.ca_path → rootCA.pem
+```
 
 ### Server Package with Enrollment
 
 Using nvflare package with enrollment options:
 
-* nvflare package  \
-*     -n server1  \
-*     -e grpc://0.0.0.0:8002:8003  \
-*     -t server  \
-*     --cert-service https://cert-service.example.com:8443  \
-*     --token eyJhbGciOiJSUzI1NiIs...  \
-*     -w ./packages
+```bash
+
+nvflare package  \
+    -n server1  \
+    -e grpc://0.0.0.0:8002:8003  \
+    -t server  \
+    --cert-service https://cert-service.example.com:8443  \
+    --token eyJhbGciOiJSUzI1NiIs...  \
+    -w ./packages
 
 This generates:
 
-* ./packages/server1/
-* ├── startup/
-* │   ├── fed_server.json
-* │   ├── enrollment.json         \# Certificate Service URL
-* │   ├── enrollment_token        \# Server enrollment token
-* │   ├── start.sh
-* │   └── ...
-* └── ...
+./packages/server1/
+├── startup/
+│   ├── fed_server.json
+│   ├── enrollment.json         # Certificate Service URL
+│   ├── enrollment_token        # Server enrollment token
+│   ├── start.sh
+│   └── ...
+└── ...
 
 Start the server:
 
-* cd server1 && ./startup/start.sh
+cd server1 && ./startup/start.sh
+
+```
 
 The server will:
 
@@ -2542,124 +2676,148 @@ The server will:
 
 Project Admin generates a server token via Certificate Service:
 
-* nvflare token generate  \
-*     -n server1  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key $API_KEY  \
-*     -o server1.token
+
+```bash
+nvflare token generate  \
+    -n server1  \
+    --cert-service https://cert-service:8443  \
+    --api-key $API_KEY  \
+    -o server1.token
+
+```
 
 ### Workflow Comparison
 
-* Manual Workflow (Small Scale)
-* ─────────────────────────────
 
-* Site Admin (server operator):
-*     nvflare cert csr -n server1 -t server -o ./csr
-*     \# Send server1.csr to Project Admin (private key stays local)
+```
+Manual Workflow (Small Scale)
+─────────────────────────────
 
-* Project Admin:
-*     nvflare cert init -n "Project" -o ./ca          \# one-time setup
-*     nvflare cert sign -r ./csr/server1.csr -c ./ca -o ./signed
-*     \# Send signed server.crt, rootCA.pem, and Server URI to site admin
+Site Admin (server operator):
+    nvflare cert csr -n server1 -t server -o ./csr
+    # Send server1.csr to Project Admin (private key stays local)
 
-* Site Admin:
-*     nvflare package -n server1 -e grpc://0.0.0.0:8002:8003 -t server \
-*         --cert ./signed/server.crt --rootca ./signed/rootCA.pem
-*     cd server1 && ./startup/start.sh
+Project Admin:
+    nvflare cert init -n "Project" -o ./ca          # one-time setup
+    nvflare cert sign -r ./csr/server1.csr -c ./ca -o ./signed
+    # Send signed server.crt, rootCA.pem, and Server URI to site admin
 
-* ─────────────────────────────
+Site Admin:
+    nvflare package -n server1 -e grpc://0.0.0.0:8002:8003 -t server \
+        --cert ./signed/server.crt --rootca ./signed/rootCA.pem
+    cd server1 && ./startup/start.sh
 
-* Auto-Scale Workflow (Large Scale)
-* ─────────────────────────────────
+─────────────────────────────
 
-* Project Admin:
-*     nvflare cert init -n "Project" -o ./ca
-*     \# Deploy Certificate Service with rootCA
-*     nvflare token generate -n server1 \\
-*         --cert-service https://cert-service:8443 \\
-*         --api-key $API_KEY
-*     \# Send token + Cert Service URL to server operator
+Auto-Scale Workflow (Large Scale)
+─────────────────────────────────
 
-* Server Operator:
-*     nvflare package \\
-*         -n server1 \\
-*         -e grpc://0.0.0.0:8002:8003 \\
-*         -t server \\
-*         --cert-service https://cert-service:8443 \\
-*         --token "eyJhbGciOiJSUzI1NiIs..."
-*     cd server1 && ./startup/start.sh
-*     \# Auto-enrollment happens, server starts with obtained certs
+Project Admin:
+    nvflare cert init -n "Project" -o ./ca
+    # Deploy Certificate Service with rootCA
+    nvflare token generate -n server1 \\
+        --cert-service https://cert-service:8443 \\
+        --api-key $API_KEY
+    # Send token + Cert Service URL to server operator
+
+Server Operator:
+    nvflare package \\
+        -n server1 \\
+        -e grpc://0.0.0.0:8002:8003 \\
+        -t server \\
+        --cert-service https://cert-service:8443 \\
+        --token "eyJhbGciOiJSUzI1NiIs..."
+    cd server1 && ./startup/start.sh
+    # Auto-enrollment happens, server starts with obtained certs
+
+```
 
 ## Security Analysis
 
 ### Trust Model
 
-* ┌───────────────────────────────────────────────────────────────────┐
-* │                    ROOT OF TRUST                                  │
-* │                                                                   │
-* │    Root CA (rootCA.pem + rootCA.key)                             │
-* │    - Created by Project Admin                                     │
-* │    - Private key held ONLY by Certificate Service                │
-* │    - Public cert distributed to all participants                 │
-* │                                                                   │
-* └───────────────────────────────────────────────────────────────────┘
 
-> **Note:** In the Auto-Scale Workflow, the root CA private key is held by the Certificate Service. In the Manual Workflow (no Certificate Service), the root CA private key is held by the Project Admin who signs CSRs locally.
-*                                 │
-*                  Signs all certificates
-*                                 │
-*        ┌────────────────────────┼────────────────────────┐
-*        │                        │                        │
-*        ▼                        ▼                        ▼
-* ┌─────────────┐          ┌─────────────┐          ┌─────────────┐
-* │   Server    │          │   Client    │          │   Client    │
-* │ Certificate │          │ Certificate │          │ Certificate │
-* │             │          │             │          │             │
-* │ Signed by   │          │ Signed by   │          │ Signed by   │
-* │ Root CA     │          │ Root CA     │          │ Root CA     │
-* └─────────────┘          └─────────────┘          └─────────────┘
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                    ROOT OF TRUST                                  │
+│                                                                   │
+│    Root CA (rootCA.pem + rootCA.key)                             │
+│    - Created by Project Admin                                     │
+│    - Private key held ONLY by Certificate Service                │
+│    - Public cert distributed to all participants                 │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+> Note: In the Auto-Scale Workflow, the root CA private key is held by the Certificate Service. In the Manual Workflow (no Certificate Service), the root CA private key is held by the Project Admin who signs CSRs locally.
+
+```
+                                │
+                 Signs all certificates
+                                │
+       ┌────────────────────────┼────────────────────────┐
+       │                        │                        │
+       ▼                        ▼                        ▼
+┌─────────────┐          ┌─────────────┐          ┌─────────────┐
+│   Server    │          │   Client    │          │   Client    │
+│ Certificate │          │ Certificate │          │ Certificate │
+│             │          │             │          │             │
+│ Signed by   │          │ Signed by   │          │ Signed by   │
+│ Root CA     │          │ Root CA     │          │ Root CA     │
+└─────────────┘          └─────────────┘          └─────────────┘
+```
 
 ### Key Security Properties
 
 | Property | How It’s Achieved |
 | --- | ----- |
-| **Private keys never transit** | Generated locally by each participant |
-| **Root CA key protected** | Only held by Certificate Service (not FL Server) |
-| **Tokens are tamper-proof** | RS256 signature with root CA private key |
-| **Tokens are single-use** | Tracked by Certificate Service (optional) |
-| **Tokens expire** | Built-in expiration (exp claim) |
-| **mTLS between participants** | All certificates signed by same root CA |
-| **Audit trail** | All enrollments logged by Certificate Service |
+| Private keys never transit | Generated locally by each participant |
+| Root CA key protected | Only held by Certificate Service (not FL Server) |
+| Tokens are tamper-proof | RS256 signature with root CA private key |
+| Tokens are single-use | Tracked by Certificate Service (optional) |
+| Tokens expire | Built-in expiration (exp claim) |
+| mTLS between participants | All certificates signed by same root CA |
+| Audit trail | All enrollments logged by Certificate Service |
 
 ### Threat Analysis
 
-**Threat 1: Compromised FL Server**
+Threat 1: Compromised FL Server
 
-* **Impact**: Cannot issue new certificates (no root CA key)
-* **Detection**: Unusual network patterns, failed auth attempts
-* **Response**: Revoke server certificate, re-issue
+Impact: Cannot issue new certificates (no root CA key)
+Detection: Unusual network patterns, failed auth attempts
+Response: Revoke server certificate, re-issue
 
-**Threat 2: Stolen Enrollment Token**
+Threat 2: Stolen Enrollment Token
 
-* **Impact**: Attacker could enroll as the legitimate participant
-* **Mitigations**: - Short token expiry (hours, not days) - Name binding (token locked to specific name) - IP restrictions (optional, for static environments) - Single-use enforcement
+Impact: Attacker could enroll as the legitimate participant
+Mitigations:
+  - Short token expiry (hours, not days)
+  - Name binding (token locked to specific name)
+  - IP restrictions (optional, for static environments)
+  - Single-use enforcement
 
-**Threat 3: Compromised Certificate Service**
+Threat 3: Compromised Certificate Service
 
-* **Impact**: Attacker could issue arbitrary certificates
-* **Mitigations**: - Network isolation - HSM for root CA key (production) - Audit logging - Access controls
+Impact: Attacker could issue arbitrary certificates
+Mitigations:
+  - Network isolation
+  - HSM for root CA key (production)
+  - Audit logging
+  - Access controls
 
-**Threat 4: Man-in-the-Middle**
+Threat 4: Man-in-the-Middle
 
-* **Impact**: Intercept enrollment requests
-* **Mitigations**: - TLS for all communication - Certificate pinning (optional)
+Impact: Intercept enrollment requests
+Mitigations:
+  - TLS for all communication
+  - Certificate pinning (optional)
 
 ### Comparison: Provisioning vs Token-Based
 
 | Aspect | Current (Provisioning) | Token-Based Enrollment |
 | --- | ----- | --- |
 | Private key generation | Centralized (Project Admin) | Distributed (each participant) |
-| Private keys in transit | Yes (in startup kit) | **Never** |
+| Private keys in transit | Yes (in startup kit) | Never |
 | Root CA key location | Project Admin workstation | Certificate Service only |
 | Adding new participants | Re-provision, redistribute | Generate token only |
 | Startup kit distribution | Full kit via secure channel | Token + package command |
@@ -2673,9 +2831,9 @@ This section documents the four new CLI commands for the simplified enrollment s
 
 Generate and manage certificates for the manual workflow.
 
-**Location:** nvflare/tool/enrollment/cert_cli.py
+Location: nvflare/tool/enrollment/cert_cli.py
 
-**Subcommands:**
+Subcommands:
 
 | Subcommand | Description |
 | --- | ----- |
@@ -2685,25 +2843,30 @@ Generate and manage certificates for the manual workflow.
 | site | Generate site certificate signed by root CA (legacy; prefer csr + sign) |
 | api-key | Generate a secure API key for Certificate Service authentication |
 
-**nvflare cert init**
+nvflare cert init
 
 Create a new root Certificate Authority.
 
-* nvflare cert init  \
-*     -n "My Project"  \             # Project/CA name (required)
-*     -o ./ca  \                      # Output directory (required)
-*     --org "My Organization"  \      # Organization name (optional)
-*     --validity 365                  # CA validity in days (default: 365)
+```bash
+nvflare cert init  \
+    -n "My Project"  \             # Project/CA name (required)
+    -o ./ca  \                      # Output directory (required)
+    --org "My Organization"  \      # Organization name (optional)
+    --validity 365                  # CA validity in days (default: 365)
 
-*Output:
+```
 
-* ./ca/
-* ├── rootCA.pem        \# Public certificate (distribute to all sites)
-* ├── rootCA.key        \# Private key (keep secure, for signing only)
-* └── state/
-*     └── cert.json     \# Certificate state for TokenService
+Output:
 
-**nvflare cert csr**
+```
+./ca/
+├── rootCA.pem        # Public certificate (distribute to all sites)
+├── rootCA.key        # Private key (keep secure, for signing only)
+└── state/
+    └── cert.json     # Certificate state for TokenService
+```
+
+nvflare cert csr
 
 Generate a private key and CSR locally. The private key never leaves the Site Admin's machine.
 
@@ -2722,7 +2885,7 @@ Output:
 └── hospital-1.csr        # Certificate signing request (send to Project Admin)
 ```
 
-**nvflare cert sign**
+nvflare cert sign
 
 Sign a CSR with the root CA. Used by the Project Admin.
 
@@ -2741,41 +2904,45 @@ Output:
 └── rootCA.pem             # Root CA cert (send back to Site Admin)
 ```
 
-**nvflare cert site** *(legacy)*
+nvflare cert site *(legacy)*
 
-Generate a certificate for any site type (server, client, relay, admin) signed by the root CA. This command generates both the private key and signed certificate on the Project Admin's machine. **Prefer `nvflare cert csr` + `nvflare cert sign`** so that private keys are generated locally by the Site Admin and never transmitted.
+Generate a certificate for any site type (server, client, relay, admin) signed by the root CA. This command generates both the private key and signed certificate on the Project Admin's machine. Prefer `nvflare cert csr` + `nvflare cert sign` so that private keys are generated locally by the Site Admin and never transmitted.
 
-* # Generate server certificate
-* nvflare cert site  \
-*     -n server1  \                   # Site name (required)
-*     -t server  \                    # Type: server|client|relay|admin
-*     -c ./ca  \                      # CA directory (required)
-*     --host server.example.com  \    # Server hostname for SAN (optional)
-*     --additional_hosts localhost  \ # Additional hosts for SAN (optional)
-*     -o ./certs                      # Output directory (optional)
 
-* # Generate client certificate
-* nvflare cert site  \
-*     -n hospital-1  \                # Site name (required)
-*     -t client  \                    # Type: client
-*     -c ./ca  \                      # CA directory (required)
-*     --org "Hospital A"  \           # Organization (optional)
-*     -o ./certs                      # Output directory (optional)
+```bash
+# Generate server certificate
+nvflare cert site  \
+    -n server1  \                   # Site name (required)
+    -t server  \                    # Type: server|client|relay|admin
+    -c ./ca  \                      # CA directory (required)
+    --host server.example.com  \    # Server hostname for SAN (optional)
+    --additional_hosts localhost  \ # Additional hosts for SAN (optional)
+    -o ./certs                      # Output directory (optional)
 
-* # Generate admin certificate
-* nvflare cert site  \
-*     -n admin@org.com  \             # Admin email (required)
-*     -t admin  \                     # Type: admin
-*     -c ./ca  \                      # CA directory (required)
-*     --role lead  \                  # Role: lead|member|org_admin (optional)
-*     -o ./certs                      # Output directory (optional)
+# Generate client certificate
+nvflare cert site  \
+    -n hospital-1  \                # Site name (required)
+    -t client  \                    # Type: client
+    -c ./ca  \                      # CA directory (required)
+    --org "Hospital A"  \           # Organization (optional)
+    -o ./certs                      # Output directory (optional)
 
-* # Generate relay certificate
-* nvflare cert site  \
-*     -n relay-1  \                   # Relay name (required)
-*     -t relay  \                     # Type: relay
-*     -c ./ca  \                      # CA directory (required)
-*     -o ./certs                      # Output directory (optional)
+# Generate admin certificate
+nvflare cert site  \
+    -n admin@org.com  \             # Admin email (required)
+    -t admin  \                     # Type: admin
+    -c ./ca  \                      # CA directory (required)
+    --role lead  \                  # Role: lead|member|org_admin (optional)
+    -o ./certs                      # Output directory (optional)
+
+# Generate relay certificate
+nvflare cert site  \
+    -n relay-1  \                   # Relay name (required)
+    -t relay  \                     # Type: relay
+    -c ./ca  \                      # CA directory (required)
+    -o ./certs                      # Output directory (optional)
+
+```
 
 *Options:
 
@@ -2791,36 +2958,41 @@ Generate a certificate for any site type (server, client, relay, admin) signed b
 | --additional_hosts | Additional hostnames for server SAN extension |
 | --role | Role for admin type: lead, member, org_admin, project_admin |
 
-*Output (depends on type):
 
-* \# For server (-t server):
-* ./certs/
-* ├── server.crt        \# Server certificate
-* ├── server.key        \# Server private key (DO NOT DISTRIBUTE)
-* └── rootCA.pem        \# Root CA (for distribution)
+Output (depends on type):
 
-* \# For client/relay/admin (-t client|relay|admin):
-* ./certs/
-* ├── client.crt        \# Client certificate
-* ├── client.key        \# Client private key (DO NOT DISTRIBUTE)
-* └── rootCA.pem        \# Root CA (for distribution)
+```
+# For server (-t server):
+./certs/
+├── server.crt        # Server certificate
+├── server.key        # Server private key (DO NOT DISTRIBUTE)
+└── rootCA.pem        # Root CA (for distribution)
 
-> **Security warning:** `nvflare cert site` generates private keys on the Project Admin's machine. In the legacy workflow these keys would need to be distributed to sites, which is a security risk. Use `nvflare cert csr` + `nvflare cert sign` instead so that private keys are generated locally at each site and never transmitted.
+# For client/relay/admin (-t client|relay|admin):
+./certs/
+├── client.crt        # Client certificate
+├── client.key        # Client private key (DO NOT DISTRIBUTE)
+└── rootCA.pem        # Root CA (for distribution)
+```
 
-**nvflare cert api-key**
+> Security warning: `nvflare cert site` generates private keys on the Project Admin's machine. In the legacy workflow these keys would need to be distributed to sites, which is a security risk. Use `nvflare cert csr` + `nvflare cert sign` instead so that private keys are generated locally at each site and never transmitted.
+
+nvflare cert api-key
 
 Generate a secure API key for Certificate Service authentication.
 
-* # Generate and print to stdout (default: 32 bytes / 256 bits, hex format)
-* nvflare cert api-key
+```bash
+# Generate and print to stdout (default: 32 bytes / 256 bits, hex format)
+nvflare cert api-key
 
-* # Generate with custom length and save to file
-* nvflare cert api-key -l 64 -o api_key.txt
+# Generate with custom length and save to file
+nvflare cert api-key -l 64 -o api_key.txt
 
-* # Generate in base64 format
-* nvflare cert api-key --format base64
+# Generate in base64 format
+nvflare cert api-key --format base64
+```
 
-*Options:
+Options:
 
 | Option | Description |
 | --- | ----- |
@@ -2828,33 +3000,35 @@ Generate a secure API key for Certificate Service authentication.
 | -o, --output | Output file path (default: print to stdout) |
 | --format | Output format: hex (default), base64, or urlsafe |
 
-*Usage:
+Usage:
 
 After generating, use the API key with the Certificate Service:
 
-* # Set as environment variable
-* export NVFLARE_API_KEY='\<generated-key\>'
+```bash
+# Set as environment variable
+export NVFLARE_API_KEY='<generated-key>'
 
-* # Or use with CLI commands
-* nvflare token generate -n site-1 --cert-service https://... --api-key '\<generated-key\>'
+# Or use with CLI commands
+nvflare token generate -n site-1 --cert-service https://... --api-key '<generated-key>'
+```
 
 ### nvflare token
 
-Generate enrollment tokens for the **Auto-Scale Workflow only**.
+Generate enrollment tokens for the Auto-Scale Workflow only.
 
-**Location:** nvflare/tool/enrollment/token_cli.py
+Location: nvflare/tool/enrollment/token_cli.py
 
-**Note**
+Note
 
-**Manual Workflow does NOT use tokens.** In the Manual Workflow, Site Admins generate private keys and CSRs locally using `nvflare cert csr`, send the CSR to the Project Admin who signs it with `nvflare cert sign`, and returns the signed certificate.
+Manual Workflow does NOT use tokens. In the Manual Workflow, Site Admins generate private keys and CSRs locally using `nvflare cert csr`, send the CSR to the Project Admin who signs it with `nvflare cert sign`, and returns the signed certificate.
 
 Tokens are only needed in the Auto-Scale Workflow where sites enroll dynamically via the Certificate Service.
 
-**How Token Generation Works:**
+How Token Generation Works:
 
 In the Auto-Scale Workflow, the rootCA private key resides on the Certificate Service, not with the Project Admin. Therefore, nvflare token calls the Certificate Service API to generate signed tokens.
 
-**Subcommands:**
+Subcommands:
 
 | Subcommand | Description |
 | --- | ----- |
@@ -2862,246 +3036,276 @@ In the Auto-Scale Workflow, the rootCA private key resides on the Certificate Se
 | batch | Generate multiple tokens at once |
 | info | Inspect and decode a token |
 
-**nvflare token generate**
+nvflare token generate
 
 Generate a single enrollment token via the Certificate Service API.
 
-* nvflare token generate  \
-*     -n hospital-1  \                # Site/user name (required)
-*     --cert-service https://cert-service:8443  \ # Certificate Service URL
-*     --api-key "admin-jwt..."  \ # Admin authentication token
-*     -o hospital-1.token             # Output file (optional)
 
-*Examples:
+```bash
+nvflare token generate  \
+    -n hospital-1  \                # Site/user name (required)
+    --cert-service https://cert-service:8443  \ # Certificate Service URL
+    --api-key "admin-jwt..."  \ # Admin authentication token
+    -o hospital-1.token             # Output file (optional)
 
-* # Client token
-* nvflare token generate -n hospital-1  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key "$NVFLARE_API_KEY"
+```
 
-* # Relay token
-* nvflare token generate -n relay-east --relay  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key "$NVFLARE_API_KEY"
 
-* # User token (default role: lead)
-* nvflare token generate -n admin@org.com --user  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key "$NVFLARE_API_KEY"
+Examples:
 
-* # Using environment variables
-* export NVFLARE_CERT_SERVICE_URL=https://cert-service:8443
-* export NVFLARE_API_KEY=eyJhbGciOiJSUzI1NiIs...
-* nvflare token generate -n hospital-1
+```bash
+# Client token
+nvflare token generate -n hospital-1  \
+    --cert-service https://cert-service:8443  \
+    --api-key "$NVFLARE_API_KEY"
 
-**nvflare token batch**
+# Relay token
+nvflare token generate -n relay-east --relay  \
+    --cert-service https://cert-service:8443  \
+    --api-key "$NVFLARE_API_KEY"
+
+# User token (default role: lead)
+nvflare token generate -n admin@org.com --user  \
+    --cert-service https://cert-service:8443  \
+    --api-key "$NVFLARE_API_KEY"
+
+# Using environment variables
+export NVFLARE_CERT_SERVICE_URL=https://cert-service:8443
+export NVFLARE_API_KEY=eyJhbGciOiJSUzI1NiIs...
+nvflare token generate -n hospital-1
+```
+
+nvflare token batch
 
 Generate multiple tokens at once via the Certificate Service API.
 
-* # Using pattern
-* nvflare token batch  \
-*     --pattern "site-{001..100}"  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key $NVFLARE_API_KEY  \
-*     -o ./tokens/
 
-* # Using names file
-* nvflare token batch  \
-*     --names-file sites.txt  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key $NVFLARE_API_KEY  \
-*     -o ./tokens/
+```bash
+# Using pattern
+nvflare token batch  \
+    --pattern "site-{001..100}"  \
+    --cert-service https://cert-service:8443  \
+    --api-key $NVFLARE_API_KEY  \
+    -o ./tokens/
 
-* # Using prefix and count
-* nvflare token batch  \
-*     --prefix site-  \
-*     --count 100  \
-*     --pad 3  \
-*     --cert-service https://cert-service:8443  \
-*     --api-key $NVFLARE_API_KEY  \
-*     -o ./tokens/
+# Using names file
+nvflare token batch  \
+    --names-file sites.txt  \
+    --cert-service https://cert-service:8443  \
+    --api-key $NVFLARE_API_KEY  \
+    -o ./tokens/
 
-*Output:
+# Using prefix and count
+nvflare token batch  \
+    --prefix site-  \
+    --count 100  \
+    --pad 3  \
+    --cert-service https://cert-service:8443  \
+    --api-key $NVFLARE_API_KEY  \
+    -o ./tokens/
 
-* ./tokens/
-* ├── site-001.token
-* ├── site-002.token
-* ├── ...
-* └── site-100.token
+```
 
-**nvflare token info**
+Output:
+
+./tokens/
+├── site-001.token
+├── site-002.token
+├── ...
+└── site-100.token
+
+nvflare token info
 
 Inspect and decode a token without verification.
 
-* nvflare token info -t eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 
-*Output:
+```bash
+nvflare token info -t eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 
-* Token Information:
-*   Subject:      hospital-1
-*   Subject Type: client
-*   Issuer:       My Project
-*   Issued At:    2025-01-04 10:00:00 UTC
-*   Expires At:   2025-01-05 10:00:00 UTC
-*   Token ID:     abc123-def456-789
+Output:
+
+Token Information:
+  Subject:      hospital-1
+  Subject Type: client
+  Issuer:       My Project
+  Issued At:    2025-01-04 10:00:00 UTC
+  Expires At:   2025-01-05 10:00:00 UTC
+  Token ID:     abc123-def456-789
+
+```
 
 ### nvflare package
 
 Generate startup kit without certificates (for token-based enrollment).
 
-**Location:** nvflare/lighter/startup_kit.py
+Location: nvflare/lighter/startup_kit.py
 
-**Modes:**
+Modes:
 
-1. **Single participant mode**: Generate one package from CLI arguments
-2. **Project file mode**: Generate all packages from project.yml (without certs)
+1. Single participant mode: Generate one package from CLI arguments
+2. Project file mode: Generate all packages from project.yml (without certs)
 
-**Single Participant Mode**
+Single Participant Mode
 
-* nvflare package  \
-*     -n hospital-1  \                # Participant name (required)
-*     -e grpc://server:8002  \        # Server endpoint URI (required)
-*     -t client  \                    # Type: client|relay|server|admin (default: client)
-*     -w ./packages  \                # Output workspace directory (optional)
-*     --org "Hospital A"  \           # Organization (optional)
-*     --cert-service URL  \           # Certificate Service URL (optional)
-*     --token TOKEN                   # Enrollment token (optional)
 
-**Enrollment Options (for Auto-Scale workflow):**
+```bash
+nvflare package  \
+    -n hospital-1  \                # Participant name (required)
+    -e grpc://server:8002  \        # Server endpoint URI (required)
+    -t client  \                    # Type: client|relay|server|admin (default: client)
+    -w ./packages  \                # Output workspace directory (optional)
+    --org "Hospital A"  \           # Organization (optional)
+    --cert-service URL  \           # Certificate Service URL (optional)
+    --token TOKEN                   # Enrollment token (optional)
+```
+
+
+Enrollment Options (for Auto-Scale workflow):
 
 The Certificate Service URL and enrollment token can be configured in two ways:
 
 | Option | When to Use | How |
 | --- | ----- | --- |
-| **At Package Time** | When URL and token are known upfront | nvflare package --cert-service URL --token TOKEN |
-| **At Startup Time** | For K8s/Docker or when token generated later | K8s Secrets (recommended), environment variables, or files |
+| At Package Time | When URL and token are known upfront | nvflare package --cert-service URL --token TOKEN |
+| At Startup Time | For K8s/Docker or when token generated later | K8s Secrets (recommended), environment variables, or files |
 
-**Option 1: Embed at Package Time (Recommended for simplicity)**
+Option 1: Embed at Package Time (Recommended for simplicity)
 
 When --cert-service and/or --token are provided, the package includes:
 
-* startup/enrollment.json with the Certificate Service URL
-* startup/enrollment_token with the enrollment token
+startup/enrollment.json with the Certificate Service URL
+startup/enrollment_token with the enrollment token
 
 This consolidates the package generation and enrollment setup into one command. The Site Admin just runs: cd hospital-1 && ./startup/start.sh
 
-**Option 2: Provide at Startup Time (Recommended for K8s/containers)**
+Option 2: Provide at Startup Time (Recommended for K8s/containers)
 
-Generate package without enrollment options, then inject at runtime via K8s Secrets:
+Generate package without enrollment options, then inject at runtime via K8s Secrets (e.g. in the startup directory or via env):
 
-* # Generate package (URL and token not known yet)
-* nvflare package -n hospital-1 -e grpc://server:8002 -t client
+```bash
+# Generate package (URL and token not known yet)
+nvflare package -n hospital-1 -e grpc://server:8002 -t client
 
-* # Store token and URL in a K8s Secret
-* kubectl create secret generic hospital-1-enrollment \
-*     --from-literal=NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443 \
-*     --from-literal=NVFLARE_ENROLLMENT_TOKEN=eyJhbGciOiJSUzI1NiIs...
+# Store token and URL in a K8s Secret
+kubectl create secret generic hospital-1-enrollment \
+    --from-literal=NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com:8443 \
+    --from-literal=NVFLARE_ENROLLMENT_TOKEN=eyJhbGciOiJSUzI1NiIs...
 
-* # In pod spec, inject from Secret:
-* #   envFrom:
-* #     - secretRef:
-* #         name: hospital-1-enrollment
-* cd hospital-1 && ./startup/start.sh
+# In pod spec, inject from Secret:
+#   envFrom:
+#     - secretRef:
+#         name: hospital-1-enrollment
+cd hospital-1 && ./startup/start.sh
+```
 
 For production, use an External Secrets Operator to manage the Secret from your cloud secret manager.
 
 Or place files in the startup directory:
 
-* startup/enrollment.json: {"cert_service_url": "https://..."}
-* startup/enrollment_token: The JWT token string
+- `startup/enrollment.json`: `{"cert_service_url": "https://..."}`
+- `startup/enrollment_token`: The JWT token string
 
-**Priority Order** (highest to lowest):
+Priority Order (highest to lowest):
 
 1. Environment variables (NVFLARE_CERT_SERVICE_URL, NVFLARE_ENROLLMENT_TOKEN)
 2. Files in startup directory (enrollment.json, enrollment_token)
 
 Environment variables always override embedded files, allowing flexibility for multi-environment deployments (dev, staging, prod).
 
-*Endpoint URI Formats:
+Endpoint URI Formats:
 
 | Format | Description |
 | --- | ----- |
-| grpc://host:port | gRPC with single port (admin port = fl_port + 1\) |
+| grpc://host:port | gRPC with single port (admin port = fl_port + 1) |
 | grpc://host:fl_port:admin_port | gRPC with explicit ports |
 | http://host:port | HTTP/HTTPS protocol |
 | tcp://host:port | TCP protocol |
 
-*Examples:
+Examples:
 
-* # Client package
-* nvflare package  \
-*     -n hospital-1  \
-*     -e grpc://server.example.com:8002  \
-*     -t client  \
-*     -w ./packages
+```bash
+# Client package
+nvflare package  \
+    -n hospital-1  \
+    -e grpc://server.example.com:8002  \
+    -t client  \
+    -w ./packages
 
-* # Server package (two-port format)
-* nvflare package  \
-*     -n server1  \
-*     -e grpc://0.0.0.0:8002:8003  \
-*     -t server  \
-*     -w ./packages
+# Server package (two-port format)
+nvflare package  \
+    -n server1  \
+    -e grpc://0.0.0.0:8002:8003  \
+    -t server  \
+    -w ./packages
 
-* # Relay package
-* nvflare package  \
-*     -n relay-east  \
-*     -e grpc://server:8002  \
-*     -t relay  \
-*     --listening-host 0.0.0.0  \
-*     --listening-port 8102  \
-*     -w ./packages
+# Relay package
+nvflare package  \
+    -n relay-east  \
+    -e grpc://server:8002  \
+    -t relay  \
+    --listening-host 0.0.0.0  \
+    --listening-port 8102  \
+    -w ./packages
 
-* # Admin package
-* nvflare package  \
-*     -n admin@org.com  \
-*     -e grpc://server:8003  \
-*     -t admin  \
-*     --role lead  \
-*     -w ./packages
+# Admin package
+nvflare package  \
+    -n admin@org.com  \
+    -e grpc://server:8003  \
+    -t admin  \
+    --role lead  \
+    -w ./packages
 
-* # Client package with enrollment (Auto-Scale workflow)
-* nvflare package  \
-*     -n hospital-1  \
-*     -e grpc://server:8002  \
-*     -t client  \
-*     --cert-service https://cert-service.example.com:8443  \
-*     --token eyJhbGciOiJSUzI1NiIs...  \
-*     -w ./packages
+# Client package with enrollment (Auto-Scale workflow)
+nvflare package  \
+    -n hospital-1  \
+    -e grpc://server:8002  \
+    -t client  \
+    --cert-service https://cert-service.example.com:8443  \
+    --token eyJhbGciOiJSUzI1NiIs...  \
+    -w ./packages
+```
 
-*Output (without enrollment options):
+Output (without enrollment options):
 
-* ./packages/hospital-1/
-* ├── local/
-* │   ├── authorization.json.default
-* │   └── ...
-* ├── startup/
-* │   ├── fed_client.json
-* │   ├── start.sh
-* │   └── ...
-* └── transfer/
+```
+./packages/hospital-1/
+├── local/
+│   ├── authorization.json.default
+│   └── ...
+├── startup/
+│   ├── fed_client.json
+│   ├── start.sh
+│   └── ...
+└── transfer/
+```
 
-*Output (with –cert-service and –token):
+Output (with --cert-service and --token):
 
-* ./packages/hospital-1/
-* ├── local/
-* │   ├── authorization.json.default
-* │   ├── log_config.json.default
-* │   ├── privacy.json.sample
-* │   └── resources.json.default
-* ├── startup/
-* │   ├── fed_client.json
-* │   ├── enrollment.json         \# ← Certificate Service URL
-* │   ├── enrollment_token        \# ← Enrollment token
-* │   ├── start.sh
-* │   ├── stop_fl.sh
-* │   └── sub_start.sh
-* └── transfer/
+```
+./packages/hospital-1/
+├── local/
+│   ├── authorization.json.default
+│   ├── log_config.json.default
+│   ├── privacy.json.sample
+│   └── resources.json.default
+├── startup/
+│   ├── fed_client.json
+│   ├── enrollment.json         # ← Certificate Service URL
+│   ├── enrollment_token        # ← Enrollment token
+│   ├── start.sh
+│   ├── stop_fl.sh
+│   └── sub_start.sh
+└── transfer/
+```
 
-**Project File Mode**
+Project File Mode
 
 Generate packages for all participants defined in a project.yml:
 
-* nvflare package -p project.yml -w ./packages
+```bash
+nvflare package -p project.yml -w ./packages
+```
+
 
 This filters out CertBuilder and SignatureBuilder from the project, generating packages without certificates (ready for token-based enrollment).
 
@@ -3109,9 +3313,9 @@ This filters out CertBuilder and SignatureBuilder from the project, generating p
 
 Manage pending enrollment requests (Admin CLI for Certificate Service).
 
-**Location:** nvflare/tool/enrollment/enrollment_cli.py
+Location: nvflare/tool/enrollment/enrollment_cli.py
 
-**Subcommands:**
+Subcommands:
 
 | Subcommand | Description |
 | --- | ----- |
@@ -3121,79 +3325,119 @@ Manage pending enrollment requests (Admin CLI for Certificate Service).
 | reject | Reject a pending request |
 | enrolled | List enrolled entities |
 
-**Environment Variables:**
+Environment Variables:
 
-* NVFLARE_CERT_SERVICE_URL: Certificate Service URL
-* NVFLARE_API_KEY: Admin authentication token
+- NVFLARE_CERT_SERVICE_URL: Certificate Service URL
+- NVFLARE_API_KEY: Admin authentication token
 
-**nvflare enrollment list**
+nvflare enrollment list
 
 List pending enrollment requests.
 
-* nvflare enrollment list                    # All pending
-* nvflare enrollment list --type client      # Sites only
-* nvflare enrollment list --type user        # Users only
 
-*Output:
+```bash
+nvflare enrollment list                    # All pending
+nvflare enrollment list --type client      # Sites only
+nvflare enrollment list --type user        # Users only
+```
 
-* Name           Type      Org          Submitted             Status
-* ──────────────────────────────────────────────────────────────────
-* hospital-1     client    Hospital A   2025-01-04 10:15:00   pending
-* hospital-2     client    Hospital B   2025-01-04 10:20:00   pending
-* admin@org.com  user      Org Inc      2025-01-04 11:00:00   pending
 
-**nvflare enrollment info**
+Output:
+
+
+```bash
+Name           Type      Org          Submitted             Status
+──────────────────────────────────────────────────────────────────
+hospital-1     client    Hospital A   2025-01-04 10:15:00   pending
+hospital-2     client    Hospital B   2025-01-04 10:20:00   pending
+admin@org.com  user      Org Inc      2025-01-04 11:00:00   pending
+```
+
+
+nvflare enrollment info
 
 View details of a specific pending request.
 
-* nvflare enrollment info hospital-1 --type client
 
-*Output:
+```bash
+nvflare enrollment info hospital-1 --type client
+```
 
-* Name:            hospital-1
-* Type:            client
-* Organization:    Hospital A
-* Submitted:       2025-01-04 10:15:00 UTC
-* Expires:         2025-01-11 10:15:00 UTC
-* Token Subject:   hospital-\
-* Source IP:       10.2.3.4
-* CSR Subject:     CN=hospital-1, O=Hospital A
 
-**nvflare enrollment approve**
+Output:
+
+
+```bash
+Name:            hospital-1
+Type:            client
+Organization:    Hospital A
+Submitted:       2025-01-04 10:15:00 UTC
+Expires:         2025-01-11 10:15:00 UTC
+Token Subject:   hospital-*
+Source IP:       10.2.3.4
+CSR Subject:     CN=hospital-1, O=Hospital A
+```
+
+
+nvflare enrollment approve
 
 Approve pending enrollment requests.
 
-* # Approve single request
-* nvflare enrollment approve hospital-1 --type client
 
-* # Approve user request
-* nvflare enrollment approve admin@org.com --type user
+```bash
+# Approve single request
+nvflare enrollment approve hospital-1 --type client
+```
 
-* # Bulk approve by pattern
-* nvflare enrollment approve --pattern "hospital-\*" --type client
 
-**nvflare enrollment reject**
+
+```bash
+# Approve user request
+nvflare enrollment approve admin@org.com --type user
+```
+
+
+
+```bash
+# Bulk approve by pattern
+nvflare enrollment approve --pattern "hospital-*" --type client
+```
+
+
+nvflare enrollment reject
 
 Reject pending enrollment requests.
 
-* nvflare enrollment reject hospital-2 --type client  \
-*     --reason "Site not authorized for this project"
 
-**nvflare enrollment enrolled**
+```bash
+nvflare enrollment reject hospital-2 --type client  \
+    --reason "Site not authorized for this project"
+```
+
+
+nvflare enrollment enrolled
 
 List enrolled entities.
 
-* nvflare enrollment enrolled                # All enrolled
-* nvflare enrollment enrolled --type client  # Sites only
-* nvflare enrollment enrolled --type user    # Users only
 
-*Output:
+```bash
+nvflare enrollment enrolled                # All enrolled
+nvflare enrollment enrolled --type client  # Sites only
+nvflare enrollment enrolled --type user    # Users only
+```
 
-* Name           Type      Org          Enrolled At
-* ────────────────────────────────────────────────────
-* hospital-1     client    Hospital A   2025-01-04 12:00:00
-* hospital-3     client    Hospital C   2025-01-04 12:30:00
-* admin@org.com  user      Org Inc      2025-01-04 13:00:00
+
+Output:
+
+
+```bash
+Name           Type      Org          Enrolled At
+────────────────────────────────────────────────────
+hospital-1     client    Hospital A   2025-01-04 12:00:00
+hospital-3     client    Hospital C   2025-01-04 12:30:00
+admin@org.com  user      Org Inc      2025-01-04 13:00:00
+```
+
 
 ### CLI Summary
 
@@ -3242,65 +3486,69 @@ Output:                                                           ▼           
 
 For 10+ participants or dynamic environments.
 
-* Phase 1: Setup (Project Admin)
-* ──────────────────────────────
 
-* 1. nvflare cert init -n "Project" -o ./ca
+```
+Phase 1: Setup (Project Admin)
+──────────────────────────────
 
-* 2. Deploy Certificate Service:
-*    - Configure with rootCA.pem + rootCA.key
-*    - Start on https://cert-service.example.com
+1. nvflare cert init -n "Project" -o ./ca
 
-* Phase 2: Generate Tokens (Project Admin)
-* ────────────────────────────────────────
+2. Deploy Certificate Service:
+   - Configure with rootCA.pem + rootCA.key
+   - Start on https://cert-service.example.com
 
-* \# Tokens are generated via Certificate Service API
-* \# (rootCA private key is on the service, not local)
+Phase 2: Generate Tokens (Project Admin)
+────────────────────────────────────────
 
-* nvflare token generate -n hospital-1 \\
-*     --cert-service https://cert-service.example.com \\
-*     --api-key $API_KEY
+# Tokens are generated via Certificate Service API
+# (rootCA private key is on the service, not local)
 
-* \# Or batch generate:
-* nvflare token batch \\
-*     --pattern "hospital-{001..100}" \\
-*     --cert-service https://cert-service.example.com \\
-*     --api-key $API_KEY
+nvflare token generate -n hospital-1 \\
+    --cert-service https://cert-service.example.com \\
+    --api-key $API_KEY
 
-* Distribute to each site:
-*    - Token string
-*    - Certificate Service URL
+# Or batch generate:
+nvflare token batch \\
+    --pattern "hospital-{001..100}" \\
+    --cert-service https://cert-service.example.com \\
+    --api-key $API_KEY
 
-* Phase 3: Site Enrollment (Org Admin)
-* ────────────────────────────────────────
+Distribute to each site:
+   - Token string
+   - Certificate Service URL
 
-* Option A: Consolidated command (recommended)
+Phase 3: Site Enrollment (Site Admin)
+────────────────────────────────────────
 
-*     nvflare package \\
-*         -n hospital-1 \\
-*         -e grpc://server:8002 \\
-*         -t client \\
-*         --cert-service https://cert-service.example.com \\
-*         --token "eyJhbGciOiJSUzI1NiIs..."
+Option A: Consolidated command (recommended)
 
-*     cd hospital-1 && ./startup/start.sh
+    nvflare package \\
+        -n hospital-1 \\
+        -e grpc://server:8002 \\
+        -t client \\
+        --cert-service https://cert-service.example.com \\
+        --token "eyJhbGciOiJSUzI1NiIs..."
 
-* Option B: K8s Secret injection (for K8s/containers)
+    cd hospital-1 && ./startup/start.sh
 
-*     nvflare package -n hospital-1 -e grpc://server:8002 -t client
+Option B: K8s Secret injection (for K8s/containers)
 
-*     # Store token and URL in K8s Secret:
-*     #   kubectl create secret generic hospital-1-enrollment \
-*     #       --from-literal=NVFLARE_ENROLLMENT_TOKEN=eyJ... \
-*     #       --from-literal=NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com
-*     #
-*     # Pod spec: envFrom: [{secretRef: {name: hospital-1-enrollment}}]
+    nvflare package -n hospital-1 -e grpc://server:8002 -t client
 
-*     cd hospital-1 && ./startup/start.sh
+    # Store token and URL in K8s Secret:
+    #   kubectl create secret generic hospital-1-enrollment \
+    #       --from-literal=NVFLARE_ENROLLMENT_TOKEN=eyJ... \
+    #       --from-literal=NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com
+    #
+    # Pod spec: envFrom: [{secretRef: {name: hospital-1-enrollment}}]
 
-* (Auto-enrollment happens at startup)
+    cd hospital-1 && ./startup/start.sh
+
+(Auto-enrollment happens at startup)
 
 ## Implementation Details
+```
+
 
 This section provides an overview of all implementation components. Detailed API documentation and code examples are in the sections referenced below.
 
@@ -3308,147 +3556,156 @@ This section provides an overview of all implementation components. Detailed API
 
 | Component | Location | Purpose |
 | --- | ----- | --- |
-| **Certificate Service** | nvflare/cert_service/ | HTTP service for token generation and CSR signing |
+| Certificate Service | nvflare/cert_service/ | HTTP service for token generation and CSR signing |
 | CertService | cert_service.py | Core logic: token validation, policy evaluation, CSR signing |
 | CertServiceApp | app.py | HTTP/Flask wrapper for CertService |
 | EnrollmentStore | store.py | Tracks enrolled entities and pending requests (SQLite/PostgreSQL) |
-| **Client Enrollment** | nvflare/security/enrollment/ | Client-side enrollment components |
+| Client Enrollment | nvflare/security/enrollment/ | Client-side enrollment components |
 | CertRequestor | cert_requestor.py | Generates keys, creates CSR, submits to Certificate Service via HTTP |
 | EnrollmentIdentity | cert_requestor.py | Pydantic model for client/server/relay/admin identity with validation |
 | EnrollmentOptions | cert_requestor.py | Pydantic model for configuration options (timeout, retry_count, output_dir) |
 | EnrollmentResult | cert_requestor.py | Return value containing cert paths and in-memory objects |
 | Helper functions | __init__.py | get_enrollment_token(), get_cert_service_url(), enroll() |
-| **CLI Tools** | nvflare/tool/enrollment/ | Command-line interfaces |
+| CLI Tools | nvflare/tool/enrollment/ | Command-line interfaces |
 | token_cli | token_cli.py | nvflare token command |
 | cert_cli | cert_cli.py | nvflare cert command |
 | enrollment_cli | enrollment_cli.py | nvflare enrollment command |
 | TokenService | token_service.py | JWT token generation logic |
-| **Package Generator** | nvflare/lighter/ | Startup kit generation |
+| Package Generator | nvflare/lighter/ | Startup kit generation |
 | startup_kit | startup_kit.py | nvflare package command |
 
 ### Certificate Service Components
 
 See Certificate Service section for:
 
-* HTTP API endpoints
-* Configuration file format
-* EnrollmentStore interface
-* Deployment options
+HTTP API endpoints
+Configuration file format
+EnrollmentStore interface
+Deployment options
 
 ### Client Enrollment Components
 
 See Client Enrollment and Server Enrollment sections for:
 
-* CertRequestor usage
-* EnrollmentOptions configuration
-* EnrollmentResult dataclass
-* Auto-enrollment flow
+CertRequestor usage
+EnrollmentOptions configuration
+EnrollmentResult dataclass
+Auto-enrollment flow
 
 ### CLI Components
 
 See CLI Commands section for:
 
-* nvflare cert - Certificate generation (Manual Workflow)
-* nvflare token - Token generation via Certificate Service API
-* nvflare package - Startup kit generation
-* nvflare enrollment - Pending request management
+nvflare cert - Certificate generation (Manual Workflow)
+nvflare token - Token generation via Certificate Service API
+nvflare package - Startup kit generation
+nvflare enrollment - Pending request management
 
 ### FLARE Integration
 
-**Auto-Enrollment Integration Points**
+### Auto-Enrollment Integration Points
 
 Auto-enrollment is integrated into three FLARE components:
 
-1. **FederatedClientBase** (nvflare/private/fed/client/fed_client_base.py)
-2. **FederatedServer** (nvflare/private/fed/server/fed_server.py)
-3. **AdminAPI** (nvflare/fuel/hci/client/api.py)
+1. FederatedClientBase (nvflare/private/fed/client/fed_client_base.py)
+2. FederatedServer (nvflare/private/fed/server/fed_server.py)
+3. AdminAPI (nvflare/fuel/hci/client/api.py)
 
 Each component calls _auto_enroll_if_needed() at startup.
 
 **Client/Server Auto-Enrollment Flow:**
 
-* # In FederatedClientBase._auto_enroll_if_needed() and FederatedServer._auto_enroll_if_needed()
 
-* **from** **nvflare.security.enrollment** **import** (
-*     get_enrollment_token, get_cert_service_url, enroll, EnrollmentIdentity
-* )
+```python
+# In FederatedClientBase._auto_enroll_if_needed() and FederatedServer._auto_enroll_if_needed()
 
-* **def** _auto_enroll_if_needed(self) -\> bool:
-*     *"""Perform automatic enrollment if certificates don't exist but token is available."""
 
-*     # 1. Check for existing certificates
-*     cert_path = self.client_args.get(SecureTrainConst.SSL_CERT)
-*     **if** cert_path **and** os.path.exists(cert_path):
-*         **return** **False**  # Already enrolled
+from nvflare.security.enrollment import (
+    get_enrollment_token, get_cert_service_url, enroll, EnrollmentIdentity
+)
 
-*     # 2. Get token (from env var or file)
-*     token = get_enrollment_token(startup_dir)
-*     **if** **not** token:
-*         self.logger.debug("No enrollment token found, skipping auto-enrollment")
-*         **return** **False**
+def _auto_enroll_if_needed(self) -> bool:
+    """Perform automatic enrollment if certificates don't exist but token is available."""
 
-*     # 3. Get Certificate Service URL (from env var or enrollment.json)
-*     cert_service_url = get_cert_service_url(startup_dir)
-*     **if** **not** cert_service_url:
-*         **raise** **RuntimeError**("Certificate Service URL required for enrollment")
+    # 1. Check for existing certificates
+    cert_path = self.client_args.get(SecureTrainConst.SSL_CERT)
+    if cert_path and os.path.exists(cert_path):
+        return False  # Already enrolled
 
-*     # 4. Perform enrollment
-*     identity = EnrollmentIdentity.for_client(name=self.client_name, org=self.org)
-*     result = enroll(cert_service_url, token, identity, startup_dir)
+    # 2. Get token (from env var or file)
+    token = get_enrollment_token(startup_dir)
+    if not token:
+        self.logger.debug("No enrollment token found, skipping auto-enrollment")
+        return False
 
-*     # 5. Update runtime args with new certificate paths
-*     self.client_args\[SecureTrainConst.SSL_CERT\] = result.cert_path
-*     self.client_args\[SecureTrainConst.PRIVATE_KEY\] = result.key_path
-*     self.client_args\[SecureTrainConst.SSL_ROOT_CERT\] = result.ca_path
-*     **return** **True**
+    # 3. Get Certificate Service URL (from env var or enrollment.json)
+    cert_service_url = get_cert_service_url(startup_dir)
+    if not cert_service_url:
+        raise RuntimeError("Certificate Service URL required for enrollment")
 
-**Helper Functions (\`\`nvflare/security/enrollment/__init__.py\`\`):**
+    # 4. Perform enrollment
+    identity = EnrollmentIdentity.for_client(name=self.client_name, org=self.org)
+    result = enroll(cert_service_url, token, identity, startup_dir)
 
-* **def** get_enrollment_token(startup_dir: str = **None**) -\> str:
-*     *"""Get token from NVFLARE_ENROLLMENT_TOKEN env var or enrollment_token file."""
-*     token = os.environ.get("NVFLARE_ENROLLMENT_TOKEN")
-*     **if** token:
-*         **return** token.strip()
-*     **if** startup_dir:
-*         token_file = os.path.join(startup_dir, "enrollment_token")
-*         **if** os.path.exists(token_file):
-*             **with** open(token_file, "r") **as** f:
-*                 **return** f.read().strip()
-*     **return** **None**
+    # 5. Update runtime args with new certificate paths
+    self.client_args[SecureTrainConst.SSL_CERT] = result.cert_path
+    self.client_args[SecureTrainConst.PRIVATE_KEY] = result.key_path
+    self.client_args[SecureTrainConst.SSL_ROOT_CERT] = result.ca_path
+    return True
 
-* **def** get_cert_service_url(startup_dir: str = **None**) -\> str:
-*     *"""Get URL from NVFLARE_CERT_SERVICE_URL env var or enrollment.json file."""
-*     url = os.environ.get("NVFLARE_CERT_SERVICE_URL")
-*     **if** url:
-*         **return** url.strip()
-*     **if** startup_dir:
-*         config_file = os.path.join(startup_dir, "enrollment.json")
-*         **if** os.path.exists(config_file):
-*             **with** open(config_file, "r") **as** f:
-*                 config = json.load(f)
-*                 **return** config.get("cert_service_url")
-*     **return** **None**
+**Helper Functions** (`nvflare/security/enrollment/__init__.py`):
 
-* **def** enroll(cert_service_url: str, token: str, identity: EnrollmentIdentity,
-*            output_dir: str = ".") -\> EnrollmentResult:
-*     *"""Convenience function to perform enrollment."""
-*     options = EnrollmentOptions(output_dir=output_dir)
-*     requestor = CertRequestor(
-*         cert_service_url=cert_service_url,
-*         enrollment_token=token,
-*         identity=identity,
-*         options=options,
-*     )
-*     **return** requestor.request_certificate()
+
+```python
+def get_enrollment_token(startup_dir: str = None) -> str:
+    """Get token from NVFLARE_ENROLLMENT_TOKEN env var or enrollment_token file."""
+    token = os.environ.get("NVFLARE_ENROLLMENT_TOKEN")
+    if token:
+        return token.strip()
+    if startup_dir:
+        token_file = os.path.join(startup_dir, "enrollment_token")
+        if os.path.exists(token_file):
+            with open(token_file, "r") as f:
+                return f.read().strip()
+    return None
+```
+
+
+```python
+def get_cert_service_url(startup_dir: str = None) -> str:
+    """Get URL from NVFLARE_CERT_SERVICE_URL env var or enrollment.json file."""
+    url = os.environ.get("NVFLARE_CERT_SERVICE_URL")
+    if url:
+        return url.strip()
+    if startup_dir:
+        config_file = os.path.join(startup_dir, "enrollment.json")
+        if os.path.exists(config_file):
+            with open(config_file, "r") as f:
+                config = json.load(f)
+                return config.get("cert_service_url")
+    return None
+
+def enroll(cert_service_url: str, token: str, identity: EnrollmentIdentity,
+           output_dir: str = ".") -> EnrollmentResult:
+    """Convenience function to perform enrollment."""
+    options = EnrollmentOptions(output_dir=output_dir)
+    requestor = CertRequestor(
+        cert_service_url=cert_service_url,
+        enrollment_token=token,
+        identity=identity,
+        options=options,
+    )
+    return requestor.request_certificate()
+```
 
 **No Changes to Existing FLARE Code**
 
 The token-based enrollment is **additive** and does not modify:
 
-* Existing authentication mechanisms
-* CellNet communication
-* FL training workflows
-* Job execution
+- Existing authentication mechanisms
+- CellNet communication
+- FL training workflows
+- Job execution
 
 It simply provides an alternative way to obtain certificates before normal FLARE operations begin.
 
