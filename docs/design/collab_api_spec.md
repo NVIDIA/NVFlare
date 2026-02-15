@@ -659,8 +659,8 @@ The user **explicitly chooses** which environment to use. There is no automatic 
 | Environment | No Collab API (standard recipe) | With Collab API (`CollabRecipe`) |
 |------------|------|------|
 | **Simulation** | `SimEnv` -- uses the existing FLARE simulator (multi-threaded, full simulator infrastructure) | `CollabSimEnv` -- pure function calls within the same process; **much faster** than the old simulator, no simulator overhead |
-| **POC** | `PocEnv` -- uses existing FLARE multi-process infrastructure (CellNet) | `PocEnv` + `CollabBackend` -- instantiates Collab Backend to handle `@collab.main`/`@collab.publish` dispatch over CellNet |
-| **Production** | `ProdEnv` -- uses existing FLARE deployment | `ProdEnv` + `CollabBackend` -- instantiates Collab Backend within the deployed FLARE infrastructure |
+| **POC** | `PocEnv` -- uses existing FLARE multi-process infrastructure (CellNet) | `PocEnv` + Collab FLARE Backend -- same `PocEnv`, backend handles `@collab.main`/`@collab.publish` dispatch over CellNet |
+| **Production** | `ProdEnv` -- uses existing FLARE deployment | `ProdEnv` + Collab FLARE Backend -- same `ProdEnv`, backend handles Collab API within deployed FLARE infrastructure |
 
 ### 5.3 Usage Examples
 
@@ -861,14 +861,14 @@ The following table captures the development tasks required to deliver the Colla
 | # | Requirement | Description | Dependencies | Priority |
 |---|-------------|-------------|--------------|----------|
 | 1 | **CollabSimEnv** | Create a simulation environment (`CollabSimEnv`) that combines `SimEnv` with a Collab Simulation Backend. Must support all Collab API usage patterns: single file, multiple files, with classes, without classes (standalone functions). Pure function call execution within the same process -- no old simulator overhead. | -- | P0 |
-| 2 | **CollabPocEnv / CollabProdEnv** | Create POC and Production environments that combine `PocEnv`/`ProdEnv` with a Collab FLARE Backend. Must support all Collab API usage patterns (single file, multiple files, with/without classes) over CellNet multi-process communication. | 1 | P0 |
+| 2 | **Collab FLARE Backend (POC / Production)** | Implement the Collab FLARE Backend that enables `PocEnv`/`ProdEnv` to support Collab API. Dispatches `@collab.main` and `@collab.publish` calls over CellNet (multi-process / multi-node). Must support all Collab API usage patterns (single file, multiple files, with/without classes). Must integrate with existing FLARE communication infrastructure. There is no separate `CollabPocEnv`/`CollabProdEnv` -- the Collab FLARE Backend is what makes `PocEnv`/`ProdEnv` Collab-aware. | 8 | P0 |
 | 3 | **CollabClientAPI bridge (Simulation)** | In `CollabSimEnv`, support Collab API on the server side (`@collab.main`) with Client API on the client side (`flare.receive()`/`flare.send()`), connected via the `CollabClientAPI` bridge. Must support both in-process (single GPU) and subprocess (`launch_external_process=True` for DDP) modes. | 1 | P0 |
 | 4 | **CollabClientAPI bridge (POC / Production)** | In `PocEnv`/`ProdEnv`, support Collab API on the server side with Client API on the client side, connected via the `CollabClientAPI` bridge over CellNet. Must support subprocess mode for multi-GPU / multi-node DDP. | 2, 3 | P0 |
 | 5 | **Recipe packaging utility** | Create a utility, base class, or tooling that makes it easy to package Collab API server logic + Client API client into a new named recipe (e.g. `SplitLearningRecipe`) via the Job API. Today this requires building every piece from scratch. The tool should let researchers turn their `@collab.main` server + `train_script` client into a reusable recipe without re-implementing all the wiring manually. Design is an open question (see Section 4.4). | 3, 4 | P1 |
 | 6 | **CollabRecipe** | Create `CollabRecipe` that works in both simulation (`CollabSimEnv`) and POC/Production environments. Should support all usage patterns: Collab API on both sides, and Collab API server + Client API client (via `train_script`). This is the primary recipe researchers use during the research and hybrid phases. | 1, 2, 3, 4 | P0 |
 | 7 | **ExecEnv enhancement** | Enhance `ExecEnv` to support Collab API while remaining backward compatible. Existing recipes (no Collab API) must work exactly as before. When Collab API is involved, the environment must instantiate the Collab Backend. Requires an explicit mechanism for the recipe/job to indicate API type (not code scanning). Design is an open question (see Section 5.1). | 1, 2 | P0 |
 | 8 | **Collab Simulation Backend** | Implement the Collab Simulation Backend that dispatches `@collab.main` and `@collab.publish` calls as pure function calls within the same process. Handles `collab.clients` proxy, `collab.site_name` injection, and result aggregation. | -- | P0 |
-| 9 | **Collab FLARE Backend** | Implement the Collab FLARE Backend that dispatches `@collab.main` and `@collab.publish` calls over CellNet (multi-process / multi-node). Must integrate with existing FLARE communication infrastructure. | 8 | P0 |
+| 9 | *(merged into #2)* | | | |
 | 10 | **Decorator and runtime infrastructure** | Implement `@collab.main`, `@collab.publish`, `@collab.init` decorators and the runtime infrastructure: `collab.clients` (ProxyList), `collab.site_name`, `contextvars`-based thread isolation, error handling for client failures. | -- | P0 |
 | 11 | **Multi-GPU / DDP support** | Support `launch_external_process=True` with `torchrun` (or equivalent) for multi-GPU DDP training. The subprocess launcher spawns the training script; rank 0 communicates with the server via `CollabClientAPI`; other ranks sync via `dist.broadcast`. | 3, 4 | P1 |
 
@@ -878,7 +878,7 @@ The following table captures the development tasks required to deliver the Colla
 Phase 1 (Foundation):   #10 (decorators/runtime) + #8 (Sim Backend) + #1 (CollabSimEnv)
 Phase 2 (Research):     #6 (CollabRecipe) + #7 (ExecEnv enhancement)
 Phase 3 (Bridge):       #3 (CollabClientAPI in Sim) + #11 (multi-GPU/DDP)
-Phase 4 (Production):   #9 (FLARE Backend) + #2 (PocEnv/ProdEnv) + #4 (CollabClientAPI in Poc/Prod)
+Phase 4 (Production):   #2 (Collab FLARE Backend for Poc/Prod) + #4 (CollabClientAPI in Poc/Prod)
 Phase 5 (Packaging):    #5 (Recipe packaging utility)
 ```
 
