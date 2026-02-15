@@ -61,7 +61,7 @@ This design was created with the following goals in mind:
 | Add 1 new client | 4 steps | 3 steps (CSR + sign + package) | **1 command** |
 | Add 100 clients (K8s) | 100 kits + distribution | 100 CSRs + sign + distribute certs | **1 batch token + deploy** |
 | Site operator setup | Receive kit, extract, start | Generate CSR, receive signed cert, run package, start | **1 command + start** |
-| Project admin effort | Manage all kits | Sign CSRs, return certs + Server URI | **Generate tokens only** |
+| Project admin effort | Manage all kits | Sign CSRs, return cert + rootCA + Server URI | **Generate tokens only** |
 
 ### Quick Start
 
@@ -73,9 +73,9 @@ nvflare token generate -n hospital-1 \
     --cert-service https://cert-service.example.com:8443 \
     --api-key $API_KEY
 
-# Send token + cert-service URL to org admin
+# Send token to Site Admin
 
-# Org Admin: Package with embedded enrollment info
+# Site Admin: Package with embedded enrollment info
 nvflare package -n hospital-1 -e grpc://server:8002 -t client \
     --cert-service https://cert-service.example.com:8443 \
     --token "eyJhbGciOiJSUzI1NiIs..."
@@ -86,7 +86,7 @@ cd hospital-1 && ./startup/start.sh  # Auto-enrolls!
 **Alternative: K8s / Container Deployment**
 
 ```bash
-# Org Admin: Generate package without enrollment info
+# Site Admin: Generate package without enrollment info
 nvflare package -n hospital-1 -e grpc://server:8002 -t client
 ```
 
@@ -173,7 +173,7 @@ Compared with frameworks like OpenFL or Flower, which support dynamic joining of
 
 **FLARE Dashboard**
 
-Flare Dashboard simplifies the startup kit distribution. But still requires users to sign up the site, get approval (manual) and download the startup kit. The process is still pretty rigid.
+Flare Dashboard simplifies the startup kit distribution, but still requires users to sign up the site, get approval (manual) and download the startup kit. The process is still pretty rigid.
 
 **Summary of Limitations**
 
@@ -191,9 +191,9 @@ The following table shows how each limitation is addressed by the new workflows:
 
 | Concern | Manual Workflow | Auto-Scale Workflow |
 | --- | ----- | --- |
-| **Adding client mid-project** | Site Admin generates private key and CSR locally, sends CSR to Project Admin for signing. Project Admin signs and returns the signed certificate + Server URI. | Same CSR model, automated: Project Admin generates a token for the invited participant. Site generates CSR locally and submits it to the Certificate Service with the token for automatic signing. |
+| **Adding client mid-project** | Site Admin generates private key and CSR locally, sends CSR to Project Admin for signing. Project Admin signs and returns the signed certificate + rootCA.pem + Server URI. | Same CSR model, automated: Project Admin generates a token for the invited participant. Site generates CSR locally and submits it to the Certificate Service with the token for automatic signing. |
 | **Private keys in transit** | **Keys generated locally, never transmitted** (only CSR/signed cert exchanged) | **Keys generated locally, never transmitted** |
-| **Manual distribution** | Exchange CSR and signed certificate only (smaller, simpler) | **Distribute tokens only** (short strings, can be sent via any channel) |
+| **Manual distribution** | Exchange CSR and signed certificate + rootCA only (smaller, simpler) | **Distribute tokens only** (short strings, can be sent via any channel) |
 | **Static pre-shared trust** | New participants added by signing their CSR on demand | **Dynamic enrollment** - sites join on-demand with tokens |
 | **Scalability** | Better for 5-10 participants  | **Scales to 100+ participants** with automated enrollment |
 | **DevOps expertise** | Simple CLI commands | Simple CLI + one-time Certificate Service setup |
@@ -1863,14 +1863,16 @@ Located in nvflare/app_opt/cert_service/postgres_store.py:
 *         **with** self._connect() **as** conn:
 *             **with** conn.cursor() **as** cur:
 *                 cur.execute('''
-*                     CREATE TABLE IF NOT EXISTS enrolled_sites (
-*                         site_name TEXT PRIMARY KEY,
-*                         enrolled_at TIMESTAMP NOT NULL
+*                     CREATE TABLE IF NOT EXISTS enrolled_entities (
+*                         name TEXT NOT NULL,
+*                         entity_type TEXT NOT NULL,
+*                         enrolled_at TIMESTAMP NOT NULL,
+*                         PRIMARY KEY (name, entity_type)
 *                     );
 
 *                     CREATE TABLE IF NOT EXISTS pending_requests (
-*                         site_name TEXT PRIMARY KEY,
-*                         participant_type TEXT NOT NULL,
+*                         name TEXT NOT NULL,
+*                         entity_type TEXT NOT NULL,
 *                         org TEXT NOT NULL,
 *                         csr_pem TEXT NOT NULL,
 *                         submitted_at TIMESTAMP NOT NULL,
@@ -2086,7 +2088,7 @@ This generates:
 * ├── startup/
 * │   ├── fed_client.json
 * │   ├── enrollment.json         \# Created with cert_service_url
-* │   ├── enrollment.token        \# Created with token
+* │   ├── enrollment_token        \# Created with token
 * │   ├── start.sh
 * │   └── ...
 * └── ...
@@ -2103,7 +2105,7 @@ If the package was already generated without enrollment info:
 * EOF
 
 * # Place token
-* echo "eyJhbGciOiJSUzI1..." \> ./hospital-1/startup/enrollment.token
+* echo "eyJhbGciOiJSUzI1..." \> ./hospital-1/startup/enrollment_token
 
 **File contents:**
 
@@ -2194,7 +2196,7 @@ When integrating with FLARE client startup:
 *     token = os.getenv("NVFLARE_ENROLLMENT_TOKEN")
 
 *     **if** **not** token:
-*         token_file = os.path.join(startup_dir, "enrollment.token")
+*         token_file = os.path.join(startup_dir, "enrollment_token")
 *         **if** os.path.exists(token_file):
 *             **with** open(token_file) **as** f:
 *                 token = f.read().strip()
@@ -2202,7 +2204,7 @@ When integrating with FLARE client startup:
 *     **if** **not** token:
 *         **raise** **ValueError**(
 *             "No enrollment token found. Set NVFLARE_ENROLLMENT_TOKEN "
-*             "or place token in startup/enrollment.token"
+*             "or place token in startup/enrollment_token"
 *         )
 
 *     # 3. Get timeout options
@@ -2267,7 +2269,7 @@ When integrating with FLARE client startup:
 | Configuration | When Known | Where Specified |
 | --- | ----- | --- |
 | cert_service_url | **After** Certificate Service is deployed | Environment variable or enrollment.json |
-| enrollment_token | **After** token is generated by Project Admin | Environment variable or enrollment.token file |
+| enrollment_token | **After** token is generated by Project Admin | Environment variable or enrollment_token file |
 | timeout, max_retries | At package generation time (optional) | fed_client.json or environment |
 | client_name, org | At package generation time | fed_client.json |
 
@@ -2280,7 +2282,7 @@ When integrating with FLARE client startup:
 
 * enrollment_token:
 *     1. NVFLARE_ENROLLMENT_TOKEN (env)
-*     2. enrollment.token (file)
+*     2. enrollment_token (file)
 
 * timeout, max_retries, retry_delay:
 *     1. Environment variables (highest)
@@ -2375,7 +2377,7 @@ When policy action is pending, the request is queued for admin approval. The cli
 *      │                             │  5. Check policy → pending
 *      │                             │
 *      │                             │  6. Store pending request
-*      │  202: { status: pending,    │     key: (site_name, type)
+*      │  202: { status: pending,    │     key: (name, entity_type)
 *      │         request_id: ... }   │
 *      │◄────────────────────────────┤
 *      │                             │
@@ -2397,7 +2399,7 @@ When policy action is pending, the request is queued for admin approval. The cli
 *      │  POST /api/v1/enroll        │
 *      │  (new token or same)        │
 *      │────────────────────────────►│
-*      │                             │  Lookup by site_name:
+*      │                             │  Lookup by name:
 *      │  200: { certificate,        │  already enrolled → return cert
 *      │         ca_cert }           │
 *      │◄────────────────────────────┤
@@ -2519,7 +2521,7 @@ This generates:
 * ├── startup/
 * │   ├── fed_server.json
 * │   ├── enrollment.json         \# Certificate Service URL
-* │   ├── enrollment.token        \# Server enrollment token
+* │   ├── enrollment_token        \# Server enrollment token
 * │   ├── start.sh
 * │   └── ...
 * └── ...
@@ -2601,6 +2603,8 @@ Project Admin generates a server token via Certificate Service:
 * │    - Public cert distributed to all participants                 │
 * │                                                                   │
 * └───────────────────────────────────────────────────────────────────┘
+
+> **Note:** In the Auto-Scale Workflow, the root CA private key is held by the Certificate Service. In the Manual Workflow (no Certificate Service), the root CA private key is held by the Project Admin who signs CSRs locally.
 *                                 │
 *                  Signs all certificates
 *                                 │
@@ -2689,7 +2693,7 @@ Create a new root Certificate Authority.
 *     -n "My Project"  \             # Project/CA name (required)
 *     -o ./ca  \                      # Output directory (required)
 *     --org "My Organization"  \      # Organization name (optional)
-*     --validity 365                  # CA validity in days (default: 365\)
+*     --validity 365                  # CA validity in days (default: 365)
 
 *Output:
 
@@ -2782,7 +2786,7 @@ Generate a certificate for any site type (server, client, relay, admin) signed b
 | -c, --ca_path | Path to CA directory containing rootCA.pem/rootCA.key or state/cert.json |
 | -o, --output | Output directory (default: current directory) |
 | --org | Organization name (default: org) |
-| --valid_days | Certificate validity in days (default: 365\) |
+| --valid_days | Certificate validity in days (default: 365) |
 | --host | Default hostname for server SAN extension |
 | --additional_hosts | Additional hostnames for server SAN extension |
 | --role | Role for admin type: lead, member, org_admin, project_admin |
@@ -2979,7 +2983,7 @@ When --cert-service and/or --token are provided, the package includes:
 * startup/enrollment.json with the Certificate Service URL
 * startup/enrollment_token with the enrollment token
 
-This consolidates the package generation and enrollment setup into one command. The org admin just runs: cd hospital-1 && ./startup/start.sh
+This consolidates the package generation and enrollment setup into one command. The Site Admin just runs: cd hospital-1 && ./startup/start.sh
 
 **Option 2: Provide at Startup Time (Recommended for K8s/containers)**
 
@@ -3087,7 +3091,7 @@ Environment variables always override embedded files, allowing flexibility for m
 * ├── startup/
 * │   ├── fed_client.json
 * │   ├── enrollment.json         \# ← Certificate Service URL
-* │   ├── enrollment.token        \# ← Enrollment token
+* │   ├── enrollment_token        \# ← Enrollment token
 * │   ├── start.sh
 * │   ├── stop_fl.sh
 * │   └── sub_start.sh
@@ -3281,12 +3285,16 @@ For 10+ participants or dynamic environments.
 
 *     cd hospital-1 && ./startup/start.sh
 
-* Option B: Environment variables (for K8s/containers)
+* Option B: K8s Secret injection (for K8s/containers)
 
 *     nvflare package -n hospital-1 -e grpc://server:8002 -t client
 
-*     export NVFLARE_ENROLLMENT_TOKEN="eyJ..."
-*     export NVFLARE_CERT_SERVICE_URL="https://cert-service.example.com"
+*     # Store token and URL in K8s Secret:
+*     #   kubectl create secret generic hospital-1-enrollment \
+*     #       --from-literal=NVFLARE_ENROLLMENT_TOKEN=eyJ... \
+*     #       --from-literal=NVFLARE_CERT_SERVICE_URL=https://cert-service.example.com
+*     #
+*     # Pod spec: envFrom: [{secretRef: {name: hospital-1-enrollment}}]
 
 *     cd hospital-1 && ./startup/start.sh
 
