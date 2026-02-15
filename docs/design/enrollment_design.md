@@ -3725,7 +3725,6 @@ The token-based enrollment system is fully backward compatible:
 
 1. **Certificate rotation**: Automatic renewal before expiry
 2. **Revocation**: CRL or OCSP support
-3. **HSM integration**: Hardware security module for root CA
-4. **Dashboard integration**: Web UI for token and enrollment management
-5. **Notification webhooks**: Alert admin when requests are pending
+3. **Dashboard integration**: Web UI for token and enrollment management
+4. **Notification webhooks**: Alert admin when requests are pending
 
