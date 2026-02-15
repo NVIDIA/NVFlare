@@ -41,7 +41,7 @@ Same CSR-based model, but automated via a Certificate Service + enrollment token
 2. **No centralized participant gathering**: Project Admin no longer needs to collect all participants' information before provisioning
 3. **Lightweight distribution**: Startup kits can be large; now only a signed certificate (Manual) or a short token (Auto-Scale) needs to be delivered instead of the full kit
 
-**Design goals addressed**
+**Design goals addressed:**
 
 This design was created with the following goals in mind:
 
@@ -393,13 +393,13 @@ Before diving into the design, here are the key PKI concepts:
 
 **Root CA (Certificate Authority)**
 
-* **rootCA.pem**: Public certificate - distributed to all participants for verification
-* **rootCA.key**: Private key - used to sign other certificates, must be protected
+- **rootCA.pem**: Public certificate - distributed to all participants for verification
+- **rootCA.key**: Private key - used to sign other certificates, must be protected
 
 **Participant Certificates**
 
-* **client.crt / server.crt**: Public certificate signed by root CA
-* **client.key / server.key**: Private key for the participant
+- **client.crt / server.crt**: Public certificate signed by root CA
+- **client.key / server.key**: Private key for the participant
 
 **CSR (Certificate Signing Request)**
 
@@ -426,7 +426,7 @@ The token-based enrollment system consists of:
                               | HTTPS API (tokens)
                               v
 +-------------------------------------------------------------------------------+
-|                     CERTIFICATE SERVICE                                        |
+|                     CERTIFICATE SERVICE                                       |
 |  +-------------------------------------------------------------------------+  |
 |  | CertServiceApp (HTTP)                                                    |  |
 |  |   POST /api/v1/token   Token generation (nvflare token CLI)              |  |
@@ -434,7 +434,7 @@ The token-based enrollment system consists of:
 |  |   POST /api/v1/enroll  CSR signing (CertRequestor)                       |  |
 |  |   GET  /api/v1/pending List pending requests (admin)                     |  |
 |  +-------------------------------------------------------------------------+  |
-|  | CertService (core)  TokenService (JWT+policy)  rootCA.key (here)            |  |
+|  | CertService (core)  TokenService (JWT+policy)  rootCA.key (here)             |  |
 |  +-------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------+
                               | HTTPS (TLS)
@@ -442,7 +442,7 @@ The token-based enrollment system consists of:
               v               v               v
       +-------------+ +-------------+ +-------------+
       |  FL Server  | |  FL Client  | |  FL Client  |
-      |  CertReqs   |<--mTLS-->|  CertReqs   | |  CertReqs   |
+      |  CertReqs   | <--mTLS--> |  CertReqs   | |  CertReqs   |
       | 1-4 flow    | | 1-4 flow    | | 1-4 flow    |
       +-------------+ +-------------+ +-------------+
        1.Gen keys    1.Gen keys    1.Gen keys
@@ -596,10 +596,10 @@ cert_service = CertService(
 
 When to use separate keys:
 
-* **Key rotation**: Rotate JWT signing key without changing root CA
-* **Security isolation**: Limit blast radius if JWT key is compromised
-* **Compliance**: Some security policies require key separation
-* **Distributed systems**: Different services hold different keys
+- **Key rotation**: Rotate JWT signing key without changing root CA
+- **Security isolation**: Limit blast radius if JWT key is compromised
+- **Compliance**: Some security policies require key separation
+- **Distributed systems**: Different services hold different keys
 
 For most deployments, the **default single-key approach is recommended**.
 
@@ -663,51 +663,48 @@ approval:
 
 Identifies the policy scope and version.
 
-* **metadata**:
-*   **project**: "my-fl-project"
-*   **description**: "Policy description"
-*   **version**: "1.0"
+- **metadata**:
+  - **project**: "my-fl-project"
+  - **description**: "Policy description"
+  - **version**: "1.0"
 
 **Token Configuration**
 
 Controls token lifetime.
 
-* **token**:
-  **validity**: "7d"     # Supports: 30m, 2h, 7d, etc.
+- **token**:
+  - **validity**: "7d" (supports: 30m, 2h, 7d, etc.)
 
 **Site Constraints**
 
 Restricts which site names are allowed.
 
-* **site**:
-*   **name_pattern**: "^hospital-[0-9]+$"   # Regex pattern
+- **site**:
+  - **name_pattern**: "^hospital-[0-9]+$" (regex pattern)
 
 **User Constraints**
 
 For admin tokens, controls allowed roles.
 
-* **user**:
-*   **allowed_roles**:
-    - lead
-    - member
-*   **default_role**: lead
+- **user**:
+  - **allowed_roles**: lead, member
+  - **default_role**: lead
 
 **Approval Rules**
 
-Rules are evaluated in order - first match wins.
+Rules are evaluated in order — first match wins.
 
-* **approval**:
-*   **method**: policy
-*   **rules**:
+- **approval**:
+  - **method**: policy
+  - **rules** (list of rule objects):
     - **name**: rule_name
-      **description**: "Human-readable description"
-      **match**:
-        **site_name_pattern**: "^pattern-.\*"   # Optional
-        **source_ips**:                        # Optional
-          - "10.0.0.0/8"
-      **action**: approve | reject | pending
-      **message**: "Reason message"
-      **log**: true
+    - **description**: Human-readable description
+    - **match** (optional):
+      - **site_name_pattern**: "^pattern-.*"
+      - **source_ips**: e.g. "10.0.0.0/8"
+    - **action**: approve | reject | pending
+    - **message**: Reason message (for reject/pending)
+    - **log**: true
 
 **Match Conditions**
 
