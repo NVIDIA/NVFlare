@@ -108,7 +108,8 @@ def train(weights=None):
     model = SimpleModel()
     if weights is not None:
         model.load_state_dict(weights)
-    # ... training loop (computes loss) ...
+    # ... training loop omitted for brevity ...
+    loss = criterion(model(x), y)  # computed in training loop above
     return model.state_dict(), loss.item()
 
 
@@ -668,7 +669,7 @@ The mechanism by which the recipe indicates its API type (e.g. a flag, a base cl
 
 The user writes the **same environment** (`SimEnv`, `PocEnv`, `ProdEnv`) regardless of recipe type. Behind the scenes, the environment consults the recipe to choose the appropriate backend.
 
-| Environment | Standard Recipe (e.g. `FedAvgRecipe`) | Collab Recipe (`CollabRecipe`) |
+| Environment | Standard Recipe (e.g. `FedAvgRecipe`) | Collab Recipe (e.g. `CollabRecipe`) |
 |------------|------|------|
 | **`SimEnv`** | Uses the existing FLARE simulator (multi-threaded, full simulator infrastructure) | Uses the **Collab simulation backend**: pure function calls within the same process -- much faster, no simulator overhead |
 | **`PocEnv`** | Uses existing FLARE multi-process infrastructure (CellNet) | Same `PocEnv` + **Collab FLARE Backend**: handles `@collab.main`/`@collab.publish` dispatch over CellNet |
