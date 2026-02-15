@@ -32,7 +32,7 @@ Both patterns use the **same server-side code** (`@collab.main`) and the **same 
 | `collab.clients` | Built-in proxy list; calls methods on all clients in parallel |
 | `collab.site_name` | The current client's site name (injected by framework) |
 | `CollabRecipe` | Job configuration -- ties server and client together |
-| `SimEnv` | In-process simulation environment (threads) |
+| `CollabSimEnv` | In-process simulation environment (pure function calls, no simulator overhead) |
 | `PocEnv` | Multi-process local environment (CellNet) |
 
 ---
@@ -41,14 +41,14 @@ Both patterns use the **same server-side code** (`@collab.main`) and the **same 
 
 ### 2.1 In-Process -- Single File (Single GPU)
 
-The simplest pattern: server and client logic in a single Python file. Everything runs in-process via `SimEnv`.
+The simplest pattern: server and client logic in a single Python file. Everything runs in-process via `CollabSimEnv` (pure function calls, no simulator overhead).
 
 **Single file with classes:**
 
 ```python
 # fedavg_train.py -- server + client + execution in one file
 from nvflare.collab import collab
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 # --- Client ---
@@ -76,7 +76,7 @@ class FedAvg:
 # --- Execute ---
 if __name__ == "__main__":
     recipe = CollabRecipe(job_name="fedavg", server=FedAvg(num_rounds=5), client=Trainer(), min_clients=5)
-    run = recipe.execute(SimEnv(num_clients=5))
+    run = recipe.execute(CollabSimEnv(num_clients=5))
 ```
 
 **Single file with standalone functions (no classes):**
@@ -90,7 +90,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 
@@ -126,7 +126,7 @@ def fed_avg():
 if __name__ == "__main__":
     # CollabRecipe auto-detects @collab.main and @collab.publish in the caller's module
     recipe = CollabRecipe(job_name="fedavg", min_clients=5)
-    run = recipe.execute(SimEnv(num_clients=5))
+    run = recipe.execute(CollabSimEnv(num_clients=5))
 ```
 
 ### 2.2 In-Process -- Separate Files (Single GPU)
@@ -177,7 +177,7 @@ def fed_avg():
 ```python
 import server as server_module
 import client as client_module
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 recipe = CollabRecipe(
@@ -186,7 +186,7 @@ recipe = CollabRecipe(
     client=client_module,    # auto-wrapped with ModuleWrapper
     min_clients=5,
 )
-run = recipe.execute(SimEnv(num_clients=5))
+run = recipe.execute(CollabSimEnv(num_clients=5))
 ```
 
 ### 2.3 Using Job Recipe (Recipe API)
@@ -195,12 +195,12 @@ The `CollabRecipe` extends the base `Recipe` class, so it supports all Recipe AP
 
 ```python
 from nvflare.collab.sys.recipe import CollabRecipe
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys import PocEnv
 
-# Simulation (in-process threads, fast iteration)
+# Simulation (pure function calls, fast iteration)
 recipe = CollabRecipe(job_name="fedavg", server=server, client=client, min_clients=5)
-run = recipe.execute(SimEnv(num_clients=5))
+run = recipe.execute(CollabSimEnv(num_clients=5))
 
 # POC (multi-process, CellNet communication, more realistic)
 recipe = CollabRecipe(job_name="fedavg", server=server, client=client, min_clients=5)
@@ -258,7 +258,7 @@ collab.clients.stop()                       flare.is_running() -> False
 
 | Mode | When | How the bridge works |
 |------|------|---------------------|
-| **In-process** (`launch_external_process=False`) | Single GPU, `SimEnv` | `CollabRecipe` sets `train_script` on `CollabClientAPI`. On first `execute()` call, the script is launched in a background thread. The script calls `flare.receive()` / `flare.send()` which route to the `CollabClientAPI` instance via `contextvars`. Queue-based handshake between `execute()` and `receive()`/`send()`. |
+| **In-process** (`launch_external_process=False`) | Single GPU, `CollabSimEnv` | `CollabRecipe` sets `train_script` on `CollabClientAPI`. On first `execute()` call, the script is launched in a background thread. The script calls `flare.receive()` / `flare.send()` which route to the `CollabClientAPI` instance via `contextvars`. Queue-based handshake between `execute()` and `receive()`/`send()`. |
 | **Subprocess** (`launch_external_process=True`) | Multi-GPU (torchrun DDP) | `SubprocessLauncher` spawns the training script as a child process (e.g. via `torchrun`). Communication between the `CollabClientAPI` (in the parent FLARE process) and the client script (in the subprocess) uses CellNet channels. Only rank 0 communicates with the server; other ranks sync via `dist.broadcast`. |
 
 **How `CollabRecipe` wires it up:**
@@ -321,7 +321,7 @@ def training_loop():
 
 ```python
 from server import FedAvg
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 recipe = CollabRecipe(
@@ -330,7 +330,7 @@ recipe = CollabRecipe(
     train_script="client.py",   # Client API pattern (not client= object)
     min_clients=2,
 )
-run = recipe.execute(SimEnv(num_clients=2))
+run = recipe.execute(CollabSimEnv(num_clients=2))
 ```
 
 **Key points:**
@@ -369,7 +369,8 @@ def main():
         # Load global weights (rank 0), broadcast to all ranks
         if rank == 0 and input_model.params:
             net.load_state_dict(input_model.params)
-        dist.broadcast(net.state_dict(), src=0)
+        for _, param in net.state_dict().items():
+            dist.broadcast(param, src=0)
 
         # Standard DDP training
         ddp_model = DDP(net)
@@ -386,7 +387,7 @@ def main():
 
 ```python
 from server import FedAvg
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import CollabSimEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 recipe = CollabRecipe(
@@ -398,7 +399,7 @@ recipe = CollabRecipe(
     command="torchrun --nproc_per_node=4",       # 4 GPUs per client
     subprocess_timeout=600.0,                    # 10 min timeout for DDP
 )
-run = recipe.execute(SimEnv(num_clients=2))
+run = recipe.execute(CollabSimEnv(num_clients=2))
 ```
 
 **Key differences from 3.1:**
@@ -480,7 +481,7 @@ from nvflare.collab.sys.recipe import CollabRecipe
 server = FedAvg(num_rounds=5)
 client = Trainer()
 recipe = CollabRecipe(job_name="fedavg", server=server, client=client, min_clients=5)
-run = recipe.execute(SimEnv(num_clients=5))
+run = recipe.execute(CollabSimEnv(num_clients=5))
 ```
 
 After (FedAvgRecipe):
@@ -600,7 +601,7 @@ There is no need to "translate down" to the Controller API. The Collab API is bu
 
 #### Why Not Use Collab API for Both Server and Client?
 
-For **single-process / single-GPU** training, you absolutely can -- and should -- use Collab API on both sides. This is the fastest way to prototype (`SimEnv` runs everything as threads in one process).
+For **single-process / single-GPU** training, you absolutely can -- and should -- use Collab API on both sides. This is the fastest way to prototype (`CollabSimEnv` runs everything as pure function calls in one process).
 
 However, for **multi-GPU (DDP) and multi-node GPU** training, this becomes challenging:
 
@@ -635,7 +636,7 @@ recipe = CollabRecipe(
 )
 
 # Works in any environment
-run = recipe.execute(SimEnv(num_clients=5))   # or PocEnv, ProdEnv
+run = recipe.execute(CollabSimEnv(num_clients=5))   # or PocEnv, ProdEnv
 ```
 
 ---
