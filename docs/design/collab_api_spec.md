@@ -642,17 +642,19 @@ run = recipe.execute(CollabSimEnv(num_clients=5))   # or PocEnv, ProdEnv
 
 ## 5. Execution Environments
 
-### 5.1 Backward Compatibility and API Type Detection
+### 5.1 Backward Compatibility and Explicit API Specification
 
 **Requirements:**
 
 1. **Backward compatible:** Existing recipes that do not use the Collab API must continue to work exactly as before with no changes.
 2. **Collab Backend instantiation:** When the Collab API is involved, the execution environment must instantiate a **Collab Backend** to handle `@collab.main` / `@collab.publish` dispatch.
-3. **Explicit API type indication:** The `ExecEnv` needs a way to determine whether the Collab Backend is required. Scanning source code for Collab annotations is **not** acceptable (fragile, unreliable). There must be an explicit mechanism for the recipe or job to indicate what type of API is in use.
+3. **Explicit, not automatic:** There is **no auto-matching or auto-detection magic**. The use of Collab API must be **explicitly specified** by the user (not inferred by scanning code for annotations or matching recipe types to environments). The user explicitly chooses the appropriate environment (`CollabSimEnv` for Collab simulation, `SimEnv` for standard simulation, etc.) or explicitly indicates that Collab API is in use via a flag or configuration.
 
-The design of how API type is indicated (e.g. recipe type, a flag, metadata in the job, or another mechanism) is an **open question**.
+The design of exactly how this explicit indication works (e.g. separate environment classes like `CollabSimEnv`, a flag on the recipe, metadata in the job, or another mechanism) is an **open question**. What is **not** acceptable: any form of implicit detection or code scanning.
 
 ### 5.2 Expected Environment Behavior
+
+The user **explicitly chooses** which environment to use. There is no automatic selection based on recipe type.
 
 | Environment | No Collab API (standard recipe) | With Collab API (`CollabRecipe`) |
 |------------|------|------|
@@ -674,7 +676,7 @@ run = recipe.execute(SimEnv(num_clients=5))
 run = recipe.execute(PocEnv(num_clients=5))
 
 
-# --- Collab API recipes -- Collab Backend is instantiated (mechanism TBD) ---
+# --- Collab API recipes -- user explicitly chooses Collab-aware environment ---
 
 recipe = CollabRecipe(job_name="split_learning", server=server, client=client, min_clients=5)
 
@@ -850,3 +852,40 @@ CollabRecipe (research / experiment)
 - **Path A is the primary goal** of the Collab API: enable researchers to develop novel FL algorithms and turn them into reusable, production-ready recipes. Using Collab API on the server and Client API on the client requires wiring them together with a recipe -- this **is** developing a new recipe. The packaging step currently requires using the Job API directly; a higher-level packaging tool is an **open design requirement** (see Section 4.4).
 - **Path B** is for when the algorithm turns out to match an existing built-in workflow.
 
+---
+
+## 7. Development Requirements
+
+The following table captures the development tasks required to deliver the Collab API as described in this specification.
+
+| # | Requirement | Description | Dependencies | Priority |
+|---|-------------|-------------|--------------|----------|
+| 1 | **CollabSimEnv** | Create a simulation environment (`CollabSimEnv`) that combines `SimEnv` with a Collab Simulation Backend. Must support all Collab API usage patterns: single file, multiple files, with classes, without classes (standalone functions). Pure function call execution within the same process -- no old simulator overhead. | -- | P0 |
+| 2 | **CollabPocEnv / CollabProdEnv** | Create POC and Production environments that combine `PocEnv`/`ProdEnv` with a Collab FLARE Backend. Must support all Collab API usage patterns (single file, multiple files, with/without classes) over CellNet multi-process communication. | 1 | P0 |
+| 3 | **CollabClientAPI bridge (Simulation)** | In `CollabSimEnv`, support Collab API on the server side (`@collab.main`) with Client API on the client side (`flare.receive()`/`flare.send()`), connected via the `CollabClientAPI` bridge. Must support both in-process (single GPU) and subprocess (`launch_external_process=True` for DDP) modes. | 1 | P0 |
+| 4 | **CollabClientAPI bridge (POC / Production)** | In `PocEnv`/`ProdEnv`, support Collab API on the server side with Client API on the client side, connected via the `CollabClientAPI` bridge over CellNet. Must support subprocess mode for multi-GPU / multi-node DDP. | 2, 3 | P0 |
+| 5 | **Recipe packaging utility** | Create a utility, base class, or tooling that makes it easy to package Collab API server logic + Client API client into a new named recipe (e.g. `SplitLearningRecipe`) via the Job API. Today this requires building every piece from scratch. The tool should let researchers turn their `@collab.main` server + `train_script` client into a reusable recipe without re-implementing all the wiring manually. Design is an open question (see Section 4.4). | 3, 4 | P1 |
+| 6 | **CollabRecipe** | Create `CollabRecipe` that works in both simulation (`CollabSimEnv`) and POC/Production environments. Should support all usage patterns: Collab API on both sides, and Collab API server + Client API client (via `train_script`). This is the primary recipe researchers use during the research and hybrid phases. | 1, 2, 3, 4 | P0 |
+| 7 | **ExecEnv enhancement** | Enhance `ExecEnv` to support Collab API while remaining backward compatible. Existing recipes (no Collab API) must work exactly as before. When Collab API is involved, the environment must instantiate the Collab Backend. Requires an explicit mechanism for the recipe/job to indicate API type (not code scanning). Design is an open question (see Section 5.1). | 1, 2 | P0 |
+| 8 | **Collab Simulation Backend** | Implement the Collab Simulation Backend that dispatches `@collab.main` and `@collab.publish` calls as pure function calls within the same process. Handles `collab.clients` proxy, `collab.site_name` injection, and result aggregation. | -- | P0 |
+| 9 | **Collab FLARE Backend** | Implement the Collab FLARE Backend that dispatches `@collab.main` and `@collab.publish` calls over CellNet (multi-process / multi-node). Must integrate with existing FLARE communication infrastructure. | 8 | P0 |
+| 10 | **Decorator and runtime infrastructure** | Implement `@collab.main`, `@collab.publish`, `@collab.init` decorators and the runtime infrastructure: `collab.clients` (ProxyList), `collab.site_name`, `contextvars`-based thread isolation, error handling for client failures. | -- | P0 |
+| 11 | **Multi-GPU / DDP support** | Support `launch_external_process=True` with `torchrun` (or equivalent) for multi-GPU DDP training. The subprocess launcher spawns the training script; rank 0 communicates with the server via `CollabClientAPI`; other ranks sync via `dist.broadcast`. | 3, 4 | P1 |
+
+### Suggested Implementation Order
+
+```
+Phase 1 (Foundation):   #10 (decorators/runtime) + #8 (Sim Backend) + #1 (CollabSimEnv)
+Phase 2 (Research):     #6 (CollabRecipe) + #7 (ExecEnv enhancement)
+Phase 3 (Bridge):       #3 (CollabClientAPI in Sim) + #11 (multi-GPU/DDP)
+Phase 4 (Production):   #9 (FLARE Backend) + #2 (PocEnv/ProdEnv) + #4 (CollabClientAPI in Poc/Prod)
+Phase 5 (Packaging):    #5 (Recipe packaging utility)
+```
+
+### Open Design Questions
+
+| # | Question | See Section |
+|---|----------|-------------|
+| OQ-1 | How does the user explicitly specify Collab API usage? (separate env classes like `CollabSimEnv`, a flag on the recipe, metadata, or other mechanism -- no auto-detection) | 5.1 |
+| OQ-2 | What does the recipe packaging utility look like? (base class, builder, code generator, or other) | 4.4 |
+| OQ-3 | How are Collab server + Client API client wired in Phase 2 (hybrid)? (`CollabRecipe`, per-algorithm recipe, or new mechanism) | 4.4 |
