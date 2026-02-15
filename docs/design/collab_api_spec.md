@@ -369,8 +369,8 @@ def main():
         # Load global weights (rank 0), broadcast to all ranks
         if rank == 0 and input_model.params:
             net.load_state_dict(input_model.params)
-        for _, param in net.state_dict().items():
-            dist.broadcast(param, src=0)
+        for param in net.parameters():
+            dist.broadcast(param.data, src=0)
 
         # Standard DDP training
         ddp_model = DDP(net)
@@ -487,8 +487,8 @@ run = recipe.execute(CollabSimEnv(num_clients=5))
 After (FedAvgRecipe):
 
 ```python
-from nvflare.app_common.np.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe.spec import SimEnv
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe.sim_env import SimEnv
 
 recipe = FedAvgRecipe(
     name="fedavg",
