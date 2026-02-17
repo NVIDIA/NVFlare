@@ -134,7 +134,7 @@ class CyclicRecipe(Recipe):
         self.name = v.name
         self.initial_model = v.initial_model
         self.num_rounds = v.num_rounds
-        self.initial_model = v.initial_model
+        self.min_clients = v.min_clients
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.launch_external_process = v.launch_external_process

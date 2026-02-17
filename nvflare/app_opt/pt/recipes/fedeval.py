@@ -112,7 +112,7 @@ class FedEvalRecipe(Recipe):
         self.per_site_config = per_site_config
         self.client_memory_gc_rounds = client_memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
-        self.source_checkpoint = initial_model.checkpoint
+        self.source_checkpoint = getattr(initial_model, "checkpoint", None)
         if self.source_checkpoint is None:
             raise ValueError("initial_model must have a checkpoint attribute")
 

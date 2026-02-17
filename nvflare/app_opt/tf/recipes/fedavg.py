@@ -138,7 +138,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
             name=name,
-            initial_model=initial_model,
+            model=initial_model,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
