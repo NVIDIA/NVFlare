@@ -53,7 +53,7 @@ def main():
         num_rounds=num_rounds,
         # Model can be specified as class instance or dict config:
         model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),  # Credit card fraud: 29 features, 2 classes
-        # Alternative: model={"path": "model.TabularMLP", "args": {"input_dim": 29, "hidden_dims": [64, 32], "output_dim": 2}},
+        # Alternative: model={"class_path": "model.TabularMLP", "args": {"input_dim": 29, "hidden_dims": [64, 32], "output_dim": 2}},
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size} --epochs {epochs} --target_epsilon {args.target_epsilon} --n_clients {n_clients}",
