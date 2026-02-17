@@ -110,8 +110,6 @@ class TestRecipeSystemIntegration:
             pytest.skip("PyTorch not available")
 
         # Add hello-pt example to path for model import
-        import os
-
         examples_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-pt")
         sys.path.insert(0, examples_dir)
 
@@ -119,7 +117,7 @@ class TestRecipeSystemIntegration:
 
         # Use dict config instead of class instance
         model_config = {
-            "path": "model.SimpleNetwork",
+            "class_path": "model.SimpleNetwork",
             "args": {},
         }
 
