@@ -313,7 +313,7 @@ Full list and code samples: **`user_guide/data_scientist_guide/available_recipes
 
 **Server-side memory management:** Several recipes expose **server_memory_gc_rounds** (constructor parameter) so the server runs memory cleanup every N rounds. The recipe passes this value to the server controller as **memory_gc_rounds**; the controller (e.g. `BaseFedAvg`, `ScatterAndGather`, `CyclicController`, `Cyclic`) calls `nvflare.fuel.utils.memory_utils.cleanup_memory()` at the end of each round when the round index is a multiple of N. That function runs `gc.collect()`, `malloc_trim` (Linux/glibc), and does not use PyTorch CUDA on the server. Set **server_memory_gc_rounds** to **0** to disable.
 
-**Recipes that support server_memory_gc_rounds:** FedAvgRecipe (unified and PT/TF variants; default **0**), CyclicRecipe (PT/TF; default **1**), FedOptRecipe (PT default **1**, TF default **0**), ScaffoldRecipe (PT/TF; default **0**), FedAvgRecipeWithHE (PT; default **1**).
+**Recipes that support server_memory_gc_rounds:** FedAvgRecipe (unified and PT/TF variants; default **0**), CyclicRecipe (base, PT, and TF variants; default **1**), FedOptRecipe (PT default **1**, TF default **0**), ScaffoldRecipe (PT/TF; default **0**), FedAvgRecipeWithHE (PT; default **1**).
 
 **Best practice for long-running server jobs:** set `server_memory_gc_rounds` (e.g. 5) and use `MALLOC_ARENA_MAX=4` in the server environment.
 
@@ -392,7 +392,7 @@ The following are **proposed** API changes to address the requirements in Sectio
 - When generating the job, the recipe writes this deploy_map into the job's **meta.json** (not into any other structure).
 
 ```python
-# Deploy map only (app to sites)
+# Proposed (Option A) - deploy_map parameter does not exist yet; see Requirement 6
 recipe = FedAvgRecipe(
     name="multi_app",
     min_clients=2,
@@ -420,7 +420,7 @@ recipe = FedAvgRecipe(
 Concrete recipes document how `client_scripts` and `client_launcher` are applied (e.g. which executor or launcher class is used) so that Slurm or other cluster mechanisms are supported without dropping to raw job config.
 
 ```python
-# Option A: base Recipe method (works with any recipe)
+# Proposed (Option A) - add_client_scripts() does not exist yet; use add_client_file() today
 recipe = FedAvgRecipe(name="slurm_job", min_clients=2, train_script="client.py", model=model)
 recipe.add_client_scripts(["submit.sh", "run_wrapper.sh", "env_setup.sh"])
 # Same method works with any recipe:
