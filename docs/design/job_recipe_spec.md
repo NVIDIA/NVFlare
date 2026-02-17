@@ -122,6 +122,24 @@ recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": 600})
 #   get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
 ```
 
+#### File bundling
+
+`add_client_file(file_path, clients=None)` and `add_server_file(file_path)` bundle extra files or directories (scripts, configs, resources) into generated client/server apps. Use these for launcher wrappers, helper scripts, and static assets needed at runtime.
+
+| Method | Scope | Purpose |
+|--------|-------|---------|
+| `add_client_file(file_path, clients=None)` | All or specific clients | Bundle files into client app `custom/` |
+| `add_server_file(file_path)` | Server | Bundle files into server app `custom/` |
+
+**Example:**
+
+```python
+recipe = FedAvgRecipe(name="fedavg", min_clients=2, train_script="train.py", ...)
+recipe.add_client_file("submit.sh")
+recipe.add_client_file("env_setup.sh", clients=["site-1"])
+recipe.add_server_file("server_hooks.py")
+```
+
 #### Decomposers
 
 `add_decomposers(decomposers: List[Union[str, Decomposer]])` registers custom serialization decomposers on both server and clients. Pass class name strings or `Decomposer` instances.
@@ -277,7 +295,7 @@ run.get_result()
 
 **Edge applications** (hierarchical/edge) are not supported by the simulator; use ProdEnv. See `examples/advanced/edge`.
 
-**Kubernetes (k8s):** The same recipe runs in a Kubernetes environment with **no recipe changes**. Use an ExecEnv that deploys to k8s (e.g. a K8sEnv or k8s-backed deployment). The existing recipe parameters - **deploy_map** (app→site placement), **resource_spec** in the job’s **meta.json** (GPU/resource requirements per site; see below), and **client_scripts** / **client_launcher** - should be defined in an environment-agnostic way so a k8s backend can translate them to Pod/Job specs, resource requests/limits, and node selectors. See **Section 9** (requirements 6 and 8) and **Sections 10.6 and 10.8** for the corresponding API design.
+**Kubernetes (k8s):** The same recipe should run in a Kubernetes environment with **no recipe changes**. Use an ExecEnv that deploys to k8s (e.g. a K8sEnv or k8s-backed deployment). **Note:** `deploy_map`, `resource_spec`, `client_scripts`, and `client_launcher` are discussed here as **proposed enhancements** (see Sections **10.6**, **10.7**, **10.8**, and **10.11**) and are not all available in the current Recipe API.
 
 **Secrets and credentials (dataset access, API keys, etc.):** Recipe parameters such as **train_args**, **per_site_config**, and **add_client_config** / **add_server_config** are part of the job definition and may be written to disk or logs. **Do not put actual credentials or secrets there.** Use environment variables, mounted secrets (e.g. k8s Secrets, vault), or the execution environment's secret-injection mechanism so that the training script receives credentials at runtime. The recipe can reference secret *identifiers* (e.g. env var names or secret keys) rather than values; the runtime resolves them when the job runs.
 
