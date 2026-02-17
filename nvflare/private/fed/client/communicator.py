@@ -368,8 +368,13 @@ class Communicator:
         )
         job_id = fl_ctx.get_job_id()
 
+        # Use at least the server-required minimum (e.g. for tensor streaming). When the server
+        # sends MIN_GET_TASK_TIMEOUT we update self.timeout; the caller may still pass a smaller
+        # config value, so ensure we never use less than the required minimum.
         if not timeout:
             timeout = self.timeout
+        else:
+            timeout = max(timeout, self.timeout)
 
         parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
         self.logger.debug(f"pulling task from parent FQCN: {parent_fqcn}")
