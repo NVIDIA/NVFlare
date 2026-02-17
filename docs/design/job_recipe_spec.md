@@ -49,7 +49,6 @@ recipe = FedAvgRecipe(
 
 Optional **`per_site_config`** lets you override the training script and/or arguments (e.g. learning rate, batch size) per site; see **3.4 Per-site config** below.
 
-Custom recipe subclasses currently receive an internal job type; see **API Enhancements** (Section 9) for planned improvements.
 
 ### 3.2 Export and execute
 
@@ -336,17 +335,12 @@ recipe = FedAvgRecipe(
 
 ## 9. API Enhancements
 
-Requirements so users never need to know about the internal job type (for implementers; not prescriptive). Grouped by target release.
+Feature enhancements for the Recipe API, grouped by target release.
 
 ### Release 2.7.2
 
 | # | Requirement | Current exposure |
 |---|-------------|------------------|
-| 1 | Recipe constructor should not require users to pass an internal job. | `Recipe.__init__(self, job: FedJob)` in `nvflare.recipe.spec`. |
-| 2 | Recipe should not expose an internal job attribute. | `Recipe.job` public. |
-| 3 | ExecEnv.deploy should not force implementers to depend on the internal job type. | `ExecEnv.deploy(self, job: FedJob) -> str`; SimEnv and other envs use FedJob. |
-| 4 | Docs and examples should not tell users to build or pass an internal job. | Examples using `BaseFedJob` / `Recipe(job=job)`. |
-| 5 | Concrete recipes (e.g. FedAvgRecipe) remain the primary entry point. | Already the case; base `Recipe(job)` and `ExecEnv.deploy(job: FedJob)` need abstraction. |
 | 9 | **Algorithm-specific config (timeouts, concurrency).** Recipes for Swarm, Cyclic, and similar workflows should expose or allow overriding of controller/config parameters (e.g. Swarm: learn_task_timeout, max_concurrent_submissions; server/client timeouts) so users do not need to drop to the Job API. | Swarm/Cyclic configs (SwarmClientConfig, SwarmServerConfig, etc.) exist in Job API; SimpleSwarmLearningRecipe and Cyclic recipe do not expose them. |
 | 14 | **Client-side memory management in the Recipe API.** Clients need configurable memory cleanup (e.g. gc.collect + malloc_trim, and optionally torch.cuda.empty_cache) every N rounds to control RSS. Recipe API should expose **client_memory_gc_rounds** (and related options) so client executors/runners are configured for cleanup without dropping to job config. Align with `nvflare.fuel.utils.memory_utils` best practices (e.g. cleanup every round on client, MALLOC_ARENA_MAX=2). | memory_utils.cleanup_memory exists; client executors need recipe-level config. |
 
@@ -364,85 +358,9 @@ Requirements so users never need to know about the internal job type (for implem
 
 ---
 
-## 10. Proposed API changes (for the 14 requirements)
+## 10. Proposed API changes
 
-The following are **proposed** API changes to address the requirements in Section 9 (14 requirements). These are design proposals, not commitments.
-
-### 10.1 Requirement 1  -  Recipe constructor without internal job
-
-**Proposal:** Base `Recipe` does not take a `job` in its public constructor. Concrete recipes (e.g. `FedAvgRecipe`) accept only recipe-level parameters and construct the internal job inside. Custom recipes that need to extend behavior do so via a **factory** or **builder** API, e.g. `Recipe.from_parameters(...)` or a dedicated builder class that returns a recipe, so users never pass or see the internal job type.
-
-```python
-# User only passes recipe-level parameters; no job object
-recipe = FedAvgRecipe(
-    name="my_fedavg",
-    min_clients=2,
-    num_rounds=5,
-    train_script="train.py",
-    train_args="--epochs 2",
-    model=my_model,
-)
-```
-
-**Recommendation (ease of use):** Prefer **constructor-only for concrete recipes** (e.g. `FedAvgRecipe(...)` with no `job=`). Users see one clear entry point and all parameters in one place. For custom recipes, a **factory** (e.g. `MyRecipe.from_parameters(...)`) is easier than a builder: one call returns a ready-to-use recipe, with no separate "build" step and less room for misuse.
-
-### 10.2 Requirement 2  -  No exposed job attribute
-
-**Proposal:** Remove or make private the `Recipe.job` attribute. If code needs to pass "the job" to `ExecEnv.deploy()`, the recipe exposes an opaque descriptor or the deploy signature accepts the recipe itself and the env calls an internal recipe method (e.g. `_get_job_for_deploy()`) that is not part of the public API.
-
-```python
-# User code never touches .job
-recipe = FedAvgRecipe(name="x", min_clients=2, ...)
-recipe.export("/tmp/job")   # or recipe.execute(env)
-# recipe.job  # not part of public API (removed or private)
-```
-
-**Recommendation (ease of use):** **Remove or make `.job` private.** Users then have a single mental model: "recipe = job definition; I export or execute it." They are not tempted to depend on internal structure, so the API stays stable and docs stay simple.
-
-### 10.3 Requirement 3  -  ExecEnv.deploy not tied to FedJob
-
-**Proposal:** Change `ExecEnv.deploy(self, job: FedJob) -> str` to `ExecEnv.deploy(self, recipe: Recipe) -> str` (or an opaque type like `JobPackage`). The env receives the recipe (or a serialized job package produced by the recipe) and does not depend on the FedJob type. Implementations that need to generate or run a job do so via recipe API (e.g. `recipe.export(job_dir)` to a temp dir, then submit that directory).
-
-```python
-# ExecEnv implementer: deploy takes Recipe, not FedJob
-class SimEnv(ExecEnv):
-    def deploy(self, recipe: Recipe) -> str:
-        with tempfile.TemporaryDirectory() as job_dir:
-            recipe.export(job_dir)
-            return self._submit_job_dir(job_dir)
-# User: unchanged
-run = recipe.execute(env)
-```
-
-**Recommendation (ease of use):** **`deploy(recipe: Recipe)`** (or opaque `JobPackage`) is easier for env implementers: one type to support, no FedJob coupling. For users, nothing changes - they still call `recipe.execute(env)` - so adoption is friction-free.
-
-### 10.4 Requirement 4  -  Docs and examples without internal job
-
-**Proposal:** All user-facing docs and examples use only concrete recipe constructors (e.g. `FedAvgRecipe(name=..., min_clients=..., train_script=..., model=...)`) and `recipe.export()` / `recipe.execute(env)`. Remove or relocate any examples that construct `BaseFedJob` or pass `job=...` into a recipe to an "advanced / internals" section that is clearly not the recommended path.
-
-```python
-# Recommended (only recipe + export/execute)
-recipe = FedAvgRecipe(name="x", min_clients=2, train_script="train.py", model=m)
-recipe.export("/path/to/job_root")
-run = recipe.execute(SimEnv(num_clients=2))
-
-# Not in main docs: job = BaseFedJob(...); recipe = FedAvgRecipe(job=job)
-```
-
-**Recommendation (ease of use):** **One recommended path in docs and examples** (recipe constructor + `export` / `execute` only) reduces confusion. Advanced users who need the internal job can be directed to a separate "Internals" or "Extending recipes" section, so the main flow stays obvious for most users.
-
-### 10.5 Requirement 5  -  Concrete recipes as primary entry point
-
-**Proposal:** No API change; reinforce in docs and naming that `FedAvgRecipe`, `CyclicRecipe`, etc. are the primary entry points. Ensure base `Recipe` is documented as an advanced base for custom recipe authors, and that the internal job type is not part of the public contract (covered by 10.1–10.3).
-
-```python
-# Primary entry: concrete recipe only
-recipe = FedAvgRecipe(name="x", min_clients=2, num_rounds=5, train_script="train.py", model=m)
-# or CyclicRecipe(...), FedOptRecipe(...), etc.
-recipe.execute(SimEnv(num_clients=2))
-```
-
-**Recommendation (ease of use):** No API change here; **keep concrete recipes as the primary entry point**. Documenting this clearly avoids users digging into the base `Recipe` or job type. Least friction for the common case.
+The following are **proposed** API changes to address the requirements in Section 9. These are design proposals, not commitments.
 
 ### 10.6 Requirement 6  -  Deploy map in the Recipe API
 
