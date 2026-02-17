@@ -153,8 +153,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self._current_num_targets = num_targets
         self._current_failed_clients = set()
 
-        self.set_fl_context(data)
-
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
         if targets:
@@ -438,17 +436,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.info(f"Sampled clients: {clients}")
 
         return clients
-
-    def set_fl_context(self, data: FLModel):
-        """Set up the fl_ctx information based on the passed in FLModel data."""
-        if data and data.current_round is not None:
-            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=False)
-        else:
-            self.debug("The FLModel data does not contain the current_round information.")
-        if data and data.total_rounds is not None:
-            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=False)
-        else:
-            self.debug("The FLModel data does not contain the total_rounds information.")
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
