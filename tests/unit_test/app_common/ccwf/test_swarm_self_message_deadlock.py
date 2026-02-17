@@ -34,7 +34,17 @@ import random
 import threading
 import time
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
+from nvflare.apis.fl_constant import ReturnCode as FLReturnCode
+from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.learnable import Learnable
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.ccwf.common import Constant
+from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, Message, MessageHeaderKey, TargetMessage
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -413,6 +423,80 @@ class TestBroadcastMultiRequestsToSelf(unittest.TestCase):
         self.assertTrue(handler_completed.wait(timeout=5.0), "Handler should have completed")
 
         self.assertTrue(deadlock_detected.is_set(), "Deadlock should be detected - tensor wait timed out")
+
+
+class TestSwarmResultSubmissionFix(unittest.TestCase):
+    def test_local_submit_when_aggregator_is_self(self):
+        class _DummyGatherer:
+            def __init__(self, **kwargs):
+                self.for_round = kwargs.get("for_round", 0)
+
+        class _DummyEngine:
+            def __init__(self):
+                self.submit_req_calls = 0
+
+            def send_aux_request(self, **kwargs):
+                self.submit_req_calls += 1
+                return {"site-1": make_reply(FLReturnCode.OK)}
+
+            def new_context(self):
+                return FLContextManager(engine=self, identity_name="site-1", job_id="job").new_context()
+
+        engine = _DummyEngine()
+        fl_ctx = FLContextManager(engine=engine, identity_name="site-1", job_id="job").new_context()
+        abort_signal = Signal()
+
+        task_data = Shareable()
+        task_data.set_header(AppConstants.CURRENT_ROUND, 1)
+        task_data.set_header(Constant.AGGREGATOR, "site-1")
+
+        learn_result = make_reply(FLReturnCode.OK)
+
+        ctl = object.__new__(SwarmClientController)
+        ctl.me = "site-1"
+        ctl.is_trainer = True
+        ctl.gatherer = None
+        ctl.gatherer_waiter = threading.Event()
+        ctl.metric_comparator = object()
+        ctl.trainers = ["site-1"]
+        ctl.learn_task_timeout = 10
+        ctl.min_responses_required = 1
+        ctl.wait_time_after_min_resps_received = 0
+        ctl.aggregator = object()
+        ctl.max_concurrent_submissions = 1
+        ctl.request_to_submit_result_max_wait = 10
+        ctl.request_to_submit_result_msg_timeout = 1
+        ctl.request_to_submit_result_interval = 0
+        ctl.request_to_submit_learn_result_task_name = "request_submit"
+        ctl.report_learn_result_task_name = "report_result"
+        ctl.learn_task_ack_timeout = 5
+        ctl.shareable_generator = SimpleNamespace(shareable_to_learnable=lambda _task_data, _ctx: Learnable())
+        ctl.get_config_prop = lambda key, default=None: ["site-1"] if key == Constant.CLIENTS else default
+        ctl.execute_learn_task = lambda _task_data, _ctx, _abort_signal: learn_result
+        ctl.is_task_secure = lambda _ctx: False
+        ctl.update_status = lambda **kwargs: None
+        ctl.fire_event = lambda *_args, **_kwargs: None
+        ctl.log_info = lambda *_args, **_kwargs: None
+        ctl.log_debug = lambda *_args, **_kwargs: None
+        ctl.log_warning = lambda *_args, **_kwargs: None
+        ctl.log_error = lambda *_args, **_kwargs: None
+        ctl.broadcast_and_wait = mock.Mock(
+            side_effect=AssertionError("broadcast_and_wait must not be called for local result submission")
+        )
+        ctl._process_learn_result = mock.Mock(return_value=make_reply(FLReturnCode.OK))
+
+        with mock.patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer", _DummyGatherer):
+            ctl.do_learn_task("train", task_data, fl_ctx, abort_signal)
+
+        ctl.broadcast_and_wait.assert_not_called()
+        ctl._process_learn_result.assert_called_once()
+        self.assertEqual(engine.submit_req_calls, 1, "submission permission request should still be sent once")
+
+        called_result, called_fl_ctx, called_abort_signal = ctl._process_learn_result.call_args[0]
+        self.assertIs(called_result, learn_result)
+        self.assertIs(called_abort_signal, abort_signal)
+        self.assertIsNot(called_fl_ctx, fl_ctx)
+        self.assertEqual(called_fl_ctx.get_peer_context().get_identity_name(), "site-1")
 
 
 if __name__ == "__main__":
