@@ -427,6 +427,10 @@ recipe.add_client_scripts(["submit.sh", "run_wrapper.sh", "env_setup.sh"])
 recipe = SimpleSwarmLearningRecipe(name="swarm", model=model_config, num_rounds=10, train_script="train.py")
 recipe.add_client_scripts(["submit.sh", "env_setup.sh"])
 
+# Note: current SimpleSwarmLearningRecipe expects train_args as a dict
+# (expanded into ScriptRunner via **train_args), unlike FedAvgRecipe's
+# commonly used string-style train_args.
+
 # Option B: launcher type (separate concern, can be added later)
 recipe = FedAvgRecipe(name="slurm_job", min_clients=2, train_script="client.py", model=model)
 recipe.add_client_scripts(["submit.sh", "env_setup.sh"])  # bundle scripts
@@ -580,8 +584,8 @@ recipe.set_resource_spec({"site-1": {"num_gpus": 2}})
 **Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
 
 **Proposal:** Expose **client_memory_gc_rounds** (and optionally **client_cuda_empty_cache**) at the recipe level so client executors/runners run memory cleanup every N rounds (and optionally clear CUDA cache).
-- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = True` for PyTorch GPU. Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(cuda_empty_cache=...)` at the end of each round when configured.
+- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = False` (enable for PyTorch GPU). Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(cuda_empty_cache=...)` at the end of each round when configured.
 - **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_cuda_empty_cache` so some sites can disable or use different values.
 
-**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default True when PyTorch is used) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
+**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default False; enable for PyTorch GPU) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
 
