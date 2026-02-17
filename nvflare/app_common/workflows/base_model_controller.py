@@ -153,6 +153,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self._current_num_targets = num_targets
         self._current_failed_clients = set()
 
+        self.set_fl_context(data)
+
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
         if targets:
@@ -436,6 +438,20 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.info(f"Sampled clients: {clients}")
 
         return clients
+
+    def set_fl_context(self, data: FLModel):
+        """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel when not already set.
+
+        Only sets when the prop is missing so we do not overwrite workflow-set values or
+        change stickiness (which would trigger warnings). Required for flows like FedAvg
+        that do not set CURRENT_ROUND in fl_ctx before send; aggregators may rely on it.
+        """
+        if not data:
+            return
+        if data.current_round is not None and self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is None:
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=False)
+        if data.total_rounds is not None and self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is None:
+            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=False)
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
