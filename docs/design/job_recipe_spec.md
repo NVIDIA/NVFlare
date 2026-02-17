@@ -216,7 +216,7 @@ Do not put secrets (e.g. credentials to download checkpoints) in paths or config
 
 Best for quick experiments and debugging. Result under `/tmp/nvflare/simulation/<job_name>`.
 
-**Arguments:** `num_clients`, `clients` (list; length must match `num_clients` if both set), `num_threads`, `gpu_config` (comma-separated), `log_config`.
+**Arguments:** `num_clients`, `clients` (list; length must match `num_clients` if both set), `num_threads`, `gpu_config` (comma-separated), `log_config`, `workspace_root` (default `/tmp/nvflare/simulation`).
 
 ```python
 from nvflare.recipe.sim_env import SimEnv
@@ -312,7 +312,7 @@ recipe = FedAvgRecipe(
 )
 ```
 
-**Client-side memory management:** Client-side memory options (e.g. **client_memory_gc_rounds** to run cleanup every N rounds on each client, with optional PyTorch CUDA cache clear) are not yet uniformly exposed on recipes. They are covered as **requirement 14** in Section 9 and proposed in Section 10.14. Best practice for clients: cleanup every round when possible; use `MALLOC_ARENA_MAX=2` and `torch_cuda_empty_cache=True` for PyTorch GPU clients (see `nvflare.fuel.utils.memory_utils`).
+**Client-side memory management:** Client-side memory options (e.g. **client_memory_gc_rounds**, **cuda_empty_cache**) are **not yet exposed on recipes**. They are covered as **requirement 14** in Section 9 and proposed in Section 10.14. In the meantime, use `MALLOC_ARENA_MAX=2` in the client environment and call `nvflare.fuel.utils.memory_utils.cleanup_memory(cuda_empty_cache=True)` directly in your training script if needed.
 
 ---
 
@@ -362,6 +362,8 @@ Feature enhancements for the Recipe API, grouped by target release.
 
 The following are **proposed** API changes to address the requirements in Section 9. These are design proposals, not commitments.
 
+> **Note:** Sections 10.1-10.5 were removed; original requirements 1-5 (hiding the internal job type) were deemed unnecessary after re-evaluation.
+
 ### 10.6 Requirement 6  -  Deploy map in the Recipe API
 
 **Clarification:** **deploy_map** (in meta.json) only defines *which apps are deployed to which sites* (app name to list of site names). It does **not** carry GPU or resource information; see Requirement 11 (resource_spec) for that.
@@ -392,10 +394,9 @@ recipe = FedAvgRecipe(
 
 **Proposal:** Support **extra scripts** and/or a **launcher type** so client execution can use Slurm or similar mechanisms.
 
-- **Option A  -  Base Recipe method:** `recipe.add_client_scripts(scripts: List[str])` defined on the **base `Recipe` class**
+- **Option A  -  Base Recipe method:** `recipe.add_client_scripts(scripts: List[str])` defined on the **base `Recipe` class** so it works with **all** recipes without each concrete recipe needing its own constructor parameter. The base method stores the script paths and bundles them into the client app at export/execute time. Script bundling is a cross-cutting concern (not algorithm-specific) — it should be handled once in the base class rather than duplicated across every recipe's constructor.
 
   > **Implementation note:** The current base `Recipe` class has `add_client_file(file_path, clients=None)` which adds a single file. This proposal extends the concept to a batch method `add_client_scripts(scripts: List[str])` for convenience. The final API may unify these (e.g. keep `add_client_file` and add `add_client_scripts` as a batch wrapper, or rename to a single method). Verify the implementation matches this proposal before release.
- so it works with **all** recipes without each concrete recipe needing its own constructor parameter. The base method stores the script paths and bundles them into the client app at export/execute time. Script bundling is a cross-cutting concern (not algorithm-specific) — it should be handled once in the base class rather than duplicated across every recipe's constructor.
 - **Option B  -  Launcher type:** `client_launcher: Optional[Union[str, LauncherConfig]] = None` where `str` is a preset (e.g. `"subprocess"`, `"slurm"`, `"custom"`) and `LauncherConfig` (or dict) specifies `type="slurm"` plus options (e.g. `submit_script`, `wrapper_script`). This configures the client to run via `sbatch` (or similar) instead of directly invoking `train_script`. This is a separate concern from script bundling and can be added later.
 
 Concrete recipes document how `client_scripts` and `client_launcher` are applied (e.g. which executor or launcher class is used) so that Slurm or other cluster mechanisms are supported without dropping to raw job config.
@@ -479,8 +480,6 @@ recipe.set_client_job_config({
 
 **Recommendation (ease of use):** **Option A** (explicit constructor parameters) is best for the top 3-5 most commonly tuned settings (`learn_task_timeout`, `max_concurrent_submissions`, `progress_timeout`) — it is discoverable, type-safe, and IDE-friendly. **Option B** (`set_server_job_config` / `set_client_job_config`) complements Option A by providing an escape hatch for less common settings without bloating the constructor. Option B rejects any key that Option A already exposes (raises `ValueError`), so there is no ambiguity about which value takes effect. Start with Option A for the common settings; add Option B if users need to override additional job-level parameters.
 
-
-
 ### 10.10 Requirement 10  -  Optional integrations (contribution estimation, personal model, etc.)
 
 **Proposal:** For selected recipes (primarily **FedAvg-related** and other commonly used DL recipes), support **flags or config** to turn on optional features that the recipe integrates behind the scenes by auto-adding the corresponding default component/algorithm. Consider multiple integration points under one design:
@@ -509,10 +508,9 @@ recipe = FedAvgRecipe(..., contribution_estimation="fed_ce", personal_model="Dit
 
 **Proposal:** Expose **resource_spec** at the recipe level so users can specify GPU (or other resource) requirements per site.
 - **Option A  -  Constructor parameter:** e.g. `resource_spec: Optional[Dict[str, Dict]] = None` on each concrete recipe. Convenient when resource requirements are known at construction time, but must be duplicated across every recipe class.
-- **Option B  -  Base Recipe method (proposed):** `recipe.set_resource_spec(resource_spec: Dict[str, Dict])` defined on the **base `Recipe` class**
+- **Option B  -  Base Recipe method (proposed):** `recipe.set_resource_spec(resource_spec: Dict[str, Dict])` defined on the **base `Recipe` class** so it works with **all** recipes (FedAvg, Cyclic, Swarm, XGBoost, etc.) without each concrete recipe needing its own constructor parameter. The base method stores resource_spec and writes it into the job's **meta.json** at export/execute time. This keeps constructors focused on algorithm parameters and makes resource_spec a cross-cutting concern handled once.
 
   > **Implementation note:** `set_resource_spec()` does not exist in the current `Recipe` base class. This is a **design proposal** for future implementation, not current API documentation. The method name and signature may change during implementation.
- so it works with **all** recipes (FedAvg, Cyclic, Swarm, XGBoost, etc.) without each concrete recipe needing its own constructor parameter. The base method stores resource_spec and writes it into the job's **meta.json** at export/execute time. This keeps constructors focused on algorithm parameters and makes resource_spec a cross-cutting concern handled once.
 - When generating the job, the recipe writes resource_spec into the job's **meta.json** alongside deploy_map.
 
 ```python
@@ -561,11 +559,11 @@ recipe.set_resource_spec({"site-1": {"num_gpus": 2}})
 
 ### 10.14 Requirement 14  -  Client-side memory management in the Recipe API
 
-**Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(torch_cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `torch_cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
+**Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
 
-**Proposal:** Expose **client_memory_gc_rounds** (and optionally **client_torch_cuda_empty_cache**) at the recipe level so client executors/runners run memory cleanup every N rounds (and optionally clear CUDA cache).
-- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_torch_cuda_empty_cache: bool = True` for PyTorch GPU. Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(torch_cuda_empty_cache=...)` at the end of each round when configured.
-- **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_torch_cuda_empty_cache` so some sites can disable or use different values.
+**Proposal:** Expose **client_memory_gc_rounds** (and optionally **client_cuda_empty_cache**) at the recipe level so client executors/runners run memory cleanup every N rounds (and optionally clear CUDA cache).
+- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = True` for PyTorch GPU. Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(cuda_empty_cache=...)` at the end of each round when configured.
+- **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_cuda_empty_cache` so some sites can disable or use different values.
 
-**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_torch_cuda_empty_cache** (default True when PyTorch is used) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
+**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default True when PyTorch is used) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
 
