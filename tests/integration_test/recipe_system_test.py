@@ -117,7 +117,7 @@ class TestRecipeSystemIntegration:
 
         # Use dict config instead of class instance
         model_config = {
-            "path": "model.SimpleNetwork",
+            "class_path": "model.SimpleNetwork",
             "args": {},
         }
 
