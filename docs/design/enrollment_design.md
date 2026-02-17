@@ -125,7 +125,7 @@ Environment variables and Secret-mounted files take priority over embedded files
 Today, NVIDIA FLARE uses nvflare provision to create startup kits:
 
 ```
-Project Admin                    Distribution              Org Admin
+Project Admin                    Distribution              Site Admin
 ─────────────                    ────────────              ─────────────
 
 1. Create project.yml
@@ -195,7 +195,7 @@ The following table shows how each limitation is addressed by the new workflows:
 | **Private keys in transit** | **Keys generated locally, never transmitted** (only CSR/signed cert exchanged) | **Keys generated locally, never transmitted** |
 | **Manual distribution** | Exchange CSR and signed certificate + rootCA only (smaller, simpler) | **Distribute tokens only** (short strings, can be sent via any channel) |
 | **Static pre-shared trust** | New participants added by signing their CSR on demand | **Dynamic enrollment** - sites join on-demand with tokens |
-| **Scalability** | Better for 5-10 participants  | **Scales to 100+ participants** with automated enrollment |
+| **Scalability** | Better for 5-10 participants | **Scales to 100+ participants** with automated enrollment |
 | **DevOps expertise** | Simple CLI commands | Simple CLI + one-time Certificate Service setup |
 
 **Example: Adding a Client Mid-Project**
@@ -1117,7 +1117,7 @@ List all enrolled entities.
 
 #### POST /api/v1/token (Admin Only)
 
-Generate an enrollment token. Used by `nvflare token generate` when the root CA private key is on the Certificate Service.
+Generates an enrollment token. Used by `nvflare token generate` when the root CA private key is on the Certificate Service.
 
 **Request**
 
@@ -1211,8 +1211,8 @@ Health check endpoint.
 - POST /api/v1/token — Token generation
 - GET /api/v1/pending — List pending requests
 - GET /api/v1/pending/{name} — Get pending request details
-- GET /api/v1/pending/{name}/approve — Approve single request
-- GET /api/v1/pending/{name}/reject — Reject single request
+- POST /api/v1/pending/{name}/approve — Approve single request
+- POST /api/v1/pending/{name}/reject — Reject single request
 - POST /api/v1/pending/approve_batch — Bulk approve by pattern
 - POST /api/v1/pending/reject_batch — Bulk reject by pattern
 - GET /api/v1/enrolled — List enrolled entities
@@ -1243,6 +1243,8 @@ Health check endpoint.
    export NVFLARE_API_KEY="<the-key>"
    nvflare token generate -n site-1 --cert-service https://...
    ```
+
+   For Kubernetes, inject the API key via a Secret (e.g. `env[].valueFrom.secretKeyRef`) instead of embedding in config.
 
 **HTTP Header Format:** `Authorization: Bearer <api-key>`
 
@@ -1914,7 +1916,7 @@ class SQLiteEnrollmentStore(EnrollmentStore):
         now = datetime.utcnow().isoformat()
         with self._connect() as conn:
             cursor = conn.execute(
-                "DELETE FROM pending_requests WHERE expires_at \< ?",
+                "DELETE FROM pending_requests WHERE expires_at < ?",
                 (now,)
             )
         return cursor.rowcount
@@ -1981,6 +1983,8 @@ class PostgreSQLEnrollmentStore(EnrollmentStore):
                         name TEXT NOT NULL,
                         entity_type TEXT NOT NULL,
                         enrolled_at TIMESTAMP NOT NULL,
+                        org TEXT,
+                        role TEXT,
                         PRIMARY KEY (name, entity_type)
                     );
 
@@ -1992,6 +1996,7 @@ class PostgreSQLEnrollmentStore(EnrollmentStore):
                         submitted_at TIMESTAMP NOT NULL,
                         expires_at TIMESTAMP NOT NULL,
                         token_subject TEXT NOT NULL,
+                        role TEXT,
                         source_ip TEXT,
                         signed_cert TEXT,
                         approved BOOLEAN DEFAULT FALSE,
@@ -1999,6 +2004,8 @@ class PostgreSQLEnrollmentStore(EnrollmentStore):
                         approved_by TEXT
                     );
 
+                    CREATE INDEX IF NOT EXISTS idx_pending_type
+                        ON pending_requests(entity_type);
                     CREATE INDEX IF NOT EXISTS idx_expires
                         ON pending_requests(expires_at);
                 ''')
@@ -2769,7 +2776,7 @@ Server Operator:
 | Property | How It’s Achieved |
 | --- | ----- |
 | Private keys never transit | Generated locally by each participant |
-| Root CA key protected | Only held by Certificate Service (not FL Server) |
+| Root CA key protected | Certificate Service (Auto-Scale) or Project Admin (Manual); not on FL Server |
 | Tokens are tamper-proof | RS256 signature with root CA private key |
 | Tokens are single-use | Tracked by Certificate Service (optional) |
 | Tokens expire | Built-in expiration (exp claim) |
@@ -2780,14 +2787,14 @@ Server Operator:
 
 Threat 1: Compromised FL Server
 
-Impact: Cannot issue new certificates (no root CA key)
-Detection: Unusual network patterns, failed auth attempts
-Response: Revoke server certificate, re-issue
+- **Impact:** Cannot issue new certificates (no root CA key)
+- **Detection:** Unusual network patterns, failed auth attempts
+- **Response:** Revoke server certificate, re-issue
 
 Threat 2: Stolen Enrollment Token
 
-Impact: Attacker could enroll as the legitimate participant
-Mitigations:
+- **Impact:** Attacker could enroll as the legitimate participant
+- **Mitigations:**
   - Short token expiry (hours, not days)
   - Name binding (token locked to specific name)
   - IP restrictions (optional, for static environments)
@@ -2795,8 +2802,8 @@ Mitigations:
 
 Threat 3: Compromised Certificate Service
 
-Impact: Attacker could issue arbitrary certificates
-Mitigations:
+- **Impact:** Attacker could issue arbitrary certificates
+- **Mitigations:**
   - Network isolation
   - HSM for root CA key (production)
   - Audit logging
@@ -2804,8 +2811,8 @@ Mitigations:
 
 Threat 4: Man-in-the-Middle
 
-Impact: Intercept enrollment requests
-Mitigations:
+- **Impact:** Intercept enrollment requests
+- **Mitigations:**
   - TLS for all communication
   - Certificate pinning (optional)
 
@@ -3173,7 +3180,7 @@ When --cert-service and/or --token are provided, the package includes:
 startup/enrollment.json with the Certificate Service URL
 startup/enrollment_token with the enrollment token
 
-This consolidates the package generation and enrollment setup into one command. The Site Admin just runs: cd hospital-1 && ./startup/start.sh
+This consolidates the package generation and enrollment setup into one command. At startup, the client generates its key and CSR locally and submits the CSR to the Certificate Service; the token authorizes signing. The Site Admin just runs: cd hospital-1 && ./startup/start.sh
 
 Option 2: Provide at Startup Time (Recommended for K8s/containers)
 
