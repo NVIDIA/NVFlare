@@ -142,7 +142,7 @@ recipe.add_server_file("server_hooks.py")
 
 #### Decomposers
 
-`add_decomposers(decomposers: List[Union[str, Decomposer]])` registers custom serialization decomposers on both server and clients. Pass class name strings or `Decomposer` instances.
+`add_decomposers(decomposers: List[Union[str, Decomposer]])` registers custom serialization decomposers on both server and clients. Prefer class name strings. `Decomposer` instances are accepted, but only their class is used when registering (instance constructor args/state are not preserved).
 
 **Example (PyTorch tensor decomposer for BioNeMo-style jobs):**
 
@@ -330,7 +330,7 @@ recipe = FedAvgRecipe(
 )
 ```
 
-**Client-side memory management:** Client-side memory options (e.g. **client_memory_gc_rounds**, **cuda_empty_cache**) are **not yet exposed on recipes**. They are covered as **requirement 14** in Section 9 and proposed in Section 10.14. In the meantime, use `MALLOC_ARENA_MAX=2` in the client environment and call `nvflare.fuel.utils.memory_utils.cleanup_memory(cuda_empty_cache=True)` directly in your training script if needed.
+**Client-side memory management:** Client-side memory options (e.g. **client_memory_gc_rounds**, **client_cuda_empty_cache**) are **not yet exposed on recipes**. They are covered as **requirement 14** in Section 9 and proposed in Section 10.14. In the meantime, use `MALLOC_ARENA_MAX=2` in the client environment and call `nvflare.fuel.utils.memory_utils.cleanup_memory(torch_cuda_empty_cache=True)` directly in your training script if needed.
 
 ---
 
@@ -581,10 +581,10 @@ recipe.set_resource_spec({"site-1": {"num_gpus": 2}})
 
 ### 10.14 Requirement 14  -  Client-side memory management in the Recipe API
 
-**Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
+**Context:** Long-running client tasks can grow RSS. `nvflare.fuel.utils.memory_utils.cleanup_memory(torch_cuda_empty_cache=True)` runs `gc.collect`, `malloc_trim` (Linux/glibc), and optionally `torch.cuda.empty_cache()`. Best practice: run cleanup every round on clients; use `MALLOC_ARENA_MAX=2` and `torch_cuda_empty_cache=True` for PyTorch GPU clients. Server-side **server_memory_gc_rounds** is already exposed on FedAvgRecipe; client-side equivalent is not yet exposed on recipes.
 
 **Proposal:** Expose **client_memory_gc_rounds** (and optionally **client_cuda_empty_cache**) at the recipe level so client executors/runners run memory cleanup every N rounds (and optionally clear CUDA cache).
-- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = False` (enable for PyTorch GPU). Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(cuda_empty_cache=...)` at the end of each round when configured.
+- **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = False` (enable for PyTorch GPU). Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(torch_cuda_empty_cache=...)` at the end of each round when configured.
 - **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_cuda_empty_cache` so some sites can disable or use different values.
 
 **Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default False; enable for PyTorch GPU) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). This intentionally differs from many server-side defaults (`server_memory_gc_rounds=0`) because clients are usually more memory-constrained. Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
