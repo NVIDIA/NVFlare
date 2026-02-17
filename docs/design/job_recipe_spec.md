@@ -247,7 +247,7 @@ run.get_result()
 
 Server and clients as separate processes on one machine. Good for demos and validation before production.
 
-**Arguments:** `num_clients`, `clients`, `gpu_ids`, `use_he`, `docker_image`, `project_conf_path`, `username`. Set `NVFLARE_POC_WORKSPACE` if needed.
+**Arguments:** `num_clients`, `clients`, `gpu_ids`, `use_he`, `docker_image`, `project_conf_path`, `username`, `extra`. Set `NVFLARE_POC_WORKSPACE` if needed. To configure admin-session login timeout, pass `extra={"login_timeout": 30}` (default: 10).
 
 ```python
 from nvflare.recipe.poc_env import PocEnv
@@ -360,7 +360,7 @@ Feature enhancements for the Recipe API, grouped by target release.
 | # | Requirement | Current exposure |
 |---|-------------|------------------|
 | 9 | **Algorithm-specific config (timeouts, concurrency).** Recipes for Swarm, Cyclic, and similar workflows should expose or allow overriding of controller/config parameters (e.g. Swarm: learn_task_timeout, max_concurrent_submissions; server/client timeouts) so users do not need to drop to the Job API. | Swarm/Cyclic configs (SwarmClientConfig, SwarmServerConfig, etc.) exist in Job API; SimpleSwarmLearningRecipe and Cyclic recipe do not expose them. |
-| 14 | **Client-side memory management in the Recipe API.** Clients need configurable memory cleanup (e.g. gc.collect + malloc_trim, and optionally torch.cuda.empty_cache) every N rounds to control RSS. Recipe API should expose **client_memory_gc_rounds** (and related options) so client executors/runners are configured for cleanup without dropping to job config. Align with `nvflare.fuel.utils.memory_utils` best practices (e.g. cleanup every round on client, MALLOC_ARENA_MAX=2). | memory_utils.cleanup_memory exists; client executors need recipe-level config. |
+| 14 | **Client-side memory management in the Recipe API.** Clients need configurable memory cleanup (e.g. gc.collect + malloc_trim, and optionally torch.cuda.empty_cache) every N rounds to control RSS. Recipe API should expose **client_memory_gc_rounds** (and related options) so client executors/runners are configured for cleanup without dropping to job config. Align with `nvflare.fuel.utils.memory_utils` best practices (e.g. cleanup every round on client, MALLOC_ARENA_MAX=2); this is intentionally stricter than many server-side defaults. | memory_utils.cleanup_memory exists; client executors need recipe-level config. |
 
 ### Release 2.8.0
 
@@ -587,5 +587,5 @@ recipe.set_resource_spec({"site-1": {"num_gpus": 2}})
 - **Constructor parameter:** e.g. `client_memory_gc_rounds: int = 1` (0 = disable), `client_cuda_empty_cache: bool = False` (enable for PyTorch GPU). Recipe passes these into client config or script-runner so the client executor calls `cleanup_memory(cuda_empty_cache=...)` at the end of each round when configured.
 - **Per-site override:** Allow `per_site_config[site]["client_memory_gc_rounds"]` and `client_cuda_empty_cache` so some sites can disable or use different values.
 
-**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default False; enable for PyTorch GPU) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
+**Recommendation (ease of use):** Add **client_memory_gc_rounds** (default 1 for every round) and **client_cuda_empty_cache** (default False; enable for PyTorch GPU) to recipes that run client training (e.g. FedAvgRecipe, CyclicRecipe). This intentionally differs from many server-side defaults (`server_memory_gc_rounds=0`) because clients are usually more memory-constrained. Document in Section 7.1 (Memory management) and align with `memory_utils` best practices. Implementation can wire these into the client executor or script-runner config used by the recipe.
 
