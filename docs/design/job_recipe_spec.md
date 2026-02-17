@@ -200,7 +200,7 @@ Typical patterns:
 - **Resume from a previous FL run:** Pass `initial_ckpt` with the path to the saved global model (e.g. from a previous job's workspace). For PyTorch, you still usually need the model architecture: use `model=model_config` (Section 3.5) and `initial_ckpt=path_to_weights`.
 - **Save location:** Use `save_filename` to control where the aggregated model is written each round or at the end.
 
-Do not put secrets (e.g. credentials to download checkpoints) in paths or config; use environment variables or runtime secret injection (see Section 6 and 10.9).
+Do not put secrets (e.g. credentials to download checkpoints) in paths or config; use environment variables or runtime secret injection (see Section 6).
 
 ---
 
@@ -229,7 +229,7 @@ run.get_result()
 
 Server and clients as separate processes on one machine. Good for demos and validation before production.
 
-**Arguments:** `num_clients`, `clients`, `gpu_ids`, `auto_stop`, `use_he`, `docker_image`, `project_conf_path`. Set `NVFLARE_POC_WORKSPACE` if needed.
+**Arguments:** `num_clients`, `clients`, `gpu_ids`, `use_he`, `docker_image`, `project_conf_path`, `username`. Set `NVFLARE_POC_WORKSPACE` if needed.
 
 ```python
 from nvflare.recipe.poc_env import PocEnv
@@ -242,7 +242,7 @@ run.get_result()
 
 Uses an existing NVFlare deployment; connects via the admin startup kit.
 
-**Arguments:** `startup_kit_location`, `login_timeout`, `monitor_job_duration`.
+**Arguments:** `startup_kit_location`, `login_timeout`, `username`.
 
 ```python
 from nvflare.recipe.prod_env import ProdEnv
