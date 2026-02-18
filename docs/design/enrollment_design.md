@@ -288,7 +288,7 @@ Enrollment tokens are JWTs signed with the root CA private key. They are used **
 | --- | --- |
 | jti | Unique token identifier (UUID) |
 | sub | Participant name or pattern |
-| subject_type | client, server, relay, or admin |
+| subject_type | client, server, relay, or user |
 | iss | Issuer (from root CA certificate) |
 | iat / exp | Issued-at and expiration timestamps |
 | policy | Embedded approval policy |
@@ -301,14 +301,14 @@ Enrollment tokens are JWTs signed with the root CA private key. They are used **
 | Cannot be forged | Signed with root CA private key (RS256) |
 | Cannot be tampered | Signature verification detects modification |
 | Time-limited | Expiration time (exp claim) |
-| Single-use | Certificate Service tracks used tokens |
+| Replay-controlled | Token usage is bound to identity and enrollment state, and always constrained by expiration |
 | Scoped | Subject (sub) specifies who can use it |
 
 | Attack | Mitigation |
 | --- | --- |
-| Token theft | Short expiry + single-use + name binding |
+| Token theft | Short expiry + name binding + policy checks |
 | Token forgery | RS256 signature verification |
-| Replay attack | Single-use tracking + expiration |
+| Replay attack | Identity/state checks + expiration |
 | Brute force | UUID-based JTI + rate limiting |
 
 ### Token Signing Key
@@ -431,7 +431,7 @@ Reasons for separation from FL Server:
 | Endpoint | Auth | Description |
 | --- | --- | --- |
 | `POST /api/v1/enroll` | Token | Submit CSR for signing. Returns certificate (200), pending (202), or error |
-| `GET /api/v1/enroll/{request_id}` | Token | Poll pending request status |
+| `GET /api/v1/enroll/{request_id}` | Token | Optional polling endpoint for external automation; standard client flow does not poll |
 | `POST /api/v1/token` | API Key | Generate enrollment tokens (single or batch) |
 | `GET /api/v1/pending` | API Key | List pending requests (filter by `?type=`) |
 | `POST /api/v1/pending/{name}/approve` | API Key | Approve single request |
@@ -584,7 +584,7 @@ CertRequestor                          Certificate Service
 
 **Pending (Manual Approval via Certificate Service):**
 
-When the approval policy evaluates to `pending`, the Certificate Service stores the request and returns 202. The client exits with `EnrollmentPending` (no polling loop). After an admin approves via `nvflare enrollment approve`, the Site Admin restarts the client, which re-submits and receives the signed certificate.
+When the approval policy evaluates to `pending`, the Certificate Service stores the request and returns 202. The standard client exits with `EnrollmentPending` (no polling loop). After an admin approves via `nvflare enrollment approve`, the Site Admin restarts the client, which re-submits and receives the signed certificate. The `GET /api/v1/enroll/{request_id}` endpoint is provided for optional external automation/observability, not for the default client startup flow.
 
 Key decisions: no polling loop (client exits immediately), server tracks by `(name, entity_type)`, pending requests expire after 7 days.
 
