@@ -73,7 +73,7 @@ nvflare cert sign -r ./incoming/hospital-1.csr -c ./ca -o ./signed
 # Site Admin: generate startup kit with the signed certificate
 # Current compatibility command:
 nvflare package -n hospital-1 -e grpc://server:8002 -t client \
-    --cert ./signed/client.crt --rootca ./signed/rootCA.pem
+    --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem
 
 # UX simplification target (design intent):
 # nvflare package -n hospital-1 -e grpc://server:8002 -t client --cert-dir ./signed
@@ -158,7 +158,8 @@ Output:                         ◄═══════════════
   ./csr/                        Send back:                     client.crt                     -e grpc://server:8002 \
   hospital-1.key                • client.crt                   rootCA.pem                     -t client \
   (STAYS LOCAL)                 • rootCA.pem                                                  --cert client.crt \
-  hospital-1.csr                • Server URI                                                  --rootca rootCA.pem
+  hospital-1.csr                • Server URI                                                  --key hospital-1.key \
+                                                                                               --rootca rootCA.pem
                                   (host + ports)
                                                                                             cd hospital-1 && \
                                                                                               ./startup/start.sh
@@ -327,7 +328,12 @@ By default, the root CA private key signs both participant certificates and JWT 
 
 ## Approval Policy (Auto-Scale Only)
 
-The approval policy is embedded in the token and evaluated by the Certificate Service during enrollment. Rules are evaluated in order (first match wins).
+The effective approval policy is embedded in the token and evaluated by the Certificate Service during enrollment. Rules are evaluated in order (first match wins).
+
+Policy-source interaction:
+- The server-side `policy.file` is the issuer-side template/default used when minting tokens.
+- At enrollment time, the token-embedded policy is authoritative for that request.
+- Deployments may still enforce additional global guardrails server-side (for example, hard deny rules), but these should be explicitly documented to avoid ambiguity.
 
 ```yaml
 metadata:
@@ -358,6 +364,12 @@ approval:
         site_name_pattern: "^datacenter-.*"
         source_ips: ["10.0.0.0/8", "192.168.1.0/24"]
       action: approve
+
+    - name: manual_review_required
+      match:
+        site_name_pattern: "^external-.*"
+      action: pending
+      message: "External sites require manual approval"
 
     - name: reject_unknown
       action: reject
@@ -443,7 +455,7 @@ Reasons for separation from FL Server:
 | Endpoint | Auth | Description |
 | --- | --- | --- |
 | `POST /api/v1/enroll` | Token | Submit CSR for signing. Returns certificate (200), pending (202), or error |
-| `GET /api/v1/enroll/{request_id}` | Token | Optional polling endpoint for external automation; standard client flow does not poll |
+| `GET /api/v1/enroll/{request_id}` | Token | Optional polling endpoint for request-owner automation; standard client flow does not poll |
 | `POST /api/v1/token` | API Key | Generate enrollment tokens (single or batch) |
 | `GET /api/v1/pending` | API Key | List pending requests (filter by `?type=`) |
 | `POST /api/v1/pending/{name}/approve` | API Key | Approve single request |
@@ -456,6 +468,8 @@ Reasons for separation from FL Server:
 | `GET /health` | None | Health check |
 
 Admin API key: generate with `nvflare cert api-key`, configure via `NVFLARE_API_KEY` env var or config file. Sent as `Authorization: Bearer <api-key>`.
+
+Auth intent note: `GET /api/v1/enroll/{request_id}` intentionally uses token auth to scope visibility to the request owner. Admin/ops observability should use API-key-protected endpoints such as `/api/v1/pending` and `/api/v1/enrolled`.
 
 ### Configuration
 
@@ -492,6 +506,11 @@ audit:
 ```
 
 The service TLS certificate (`server.tls`) is for HTTPS and is separate from the FLARE root CA (`ca`), which is used only for signing FL participant certificates. On first start, if rootCA files don't exist in `data_dir`, they are auto-generated.
+
+Production safety note:
+- Auto-generation is bootstrap convenience only.
+- In production, root CA material should be pre-provisioned and persistence-protected.
+- If expected root CA files are missing after bootstrap, the service should fail fast with a prominent warning rather than silently rotating trust roots.
 
 ### Enrollment Store
 
@@ -600,9 +619,17 @@ When the approval policy evaluates to `pending`, the Certificate Service stores 
 
 Key decisions: no polling loop (client exits immediately), strict single-use tokens (no re-use), server tracks by `(name, entity_type)`, pending requests expire after 7 days.
 
+Operational handoff (current design):
+1. Admin approves the pending request.
+2. Project Admin (or authorized operator) issues a new token for that identity.
+3. Token is delivered out-of-band to the Site Admin.
+4. Site Admin restarts with the newly issued token.
+
+This handoff is currently manual/out-of-band; webhook/notification automation is listed under Future Enhancements.
+
 ## Server Enrollment
 
-**Manual Workflow:** Same as client -- Site Admin generates CSR (`nvflare cert csr -t server`), sends to Project Admin for signing via email/USB, receives signed `server.crt` + `rootCA.pem`, runs `nvflare package -t server --cert ... --rootca ...`.
+**Manual Workflow:** Same as client -- Site Admin generates CSR (`nvflare cert csr -t server`), sends to Project Admin for signing via email/USB, receives signed `server.crt` + `rootCA.pem`, and packages with its local private key via `nvflare package -t server --cert ... --key ... --rootca ...`.
 
 **Auto-Scale Workflow:** Server enrolls the same way as clients, using `EnrollmentIdentity.for_server()`. Output files are `server.crt` and `server.key`.
 
@@ -709,7 +736,7 @@ Current compatibility commands:
 ```bash
 # Manual Workflow: package with pre-signed certificates (received from Project Admin)
 nvflare package -n hospital-1 -e grpc://server:8002 -t client \
-    --cert ./signed/client.crt --rootca ./signed/rootCA.pem
+    --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem
 
 # Proposed simplified Manual workflow UX (design target)
 # nvflare package -n hospital-1 -e grpc://server:8002 -t client --cert-dir ./signed
@@ -752,7 +779,7 @@ Requires `NVFLARE_CERT_SERVICE_URL` and `NVFLARE_API_KEY` environment variables.
 | `nvflare cert site` | Optional legacy path (prefer csr + sign) | Not in standard flow |
 | `nvflare cert api-key` | Not required | Required (admin auth for service operations) |
 | `nvflare token` | Not used | Required (generate/batch/info) |
-| `nvflare package` | Required (current: `--cert` + `--rootca`; target: single-folder/default UX) | Required (with `--cert-service` and `--token`) |
+| `nvflare package` | Required (current: `--cert` + `--key` + `--rootca`; target: single-folder/default UX) | Required (with `--cert-service` and `--token`) |
 | `nvflare enrollment` | Not used | Admin operation (used when pending approvals are enabled) |
 
 ## FLARE Integration (Auto-Scale Only)
@@ -766,6 +793,16 @@ Auto-enrollment hooks into three components at startup via `_auto_enroll_if_need
 Logic: check for existing certs → look for token (env or file) → look for cert service URL (env or file) → enroll via CertRequestor → update runtime certificate paths.
 
 In the Manual workflow, certificates are already in place before startup, so auto-enrollment is not triggered.
+
+### Startup Failure Behavior (Auto-Scale Only)
+
+If auto-enrollment fails (for example: Certificate Service unreachable, token expired, timeout, or 5xx):
+
+- Retry according to configured `max_retries` and `retry_delay`.
+- If enrollment still fails after retries, log a fatal error and exit startup.
+- Do not continue startup without valid certificates.
+
+This keeps failure mode explicit and avoids confusing downstream mTLS connection errors.
 
 **Key Design Notes:**
 
