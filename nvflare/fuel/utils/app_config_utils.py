@@ -40,11 +40,3 @@ def get_int_var(var_name, default):
         return default
     else:
         return value
-
-
-def get_bool_var(var_name, default):
-    value = ConfigService.get_bool_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
-    if value is None:
-        return default
-    else:
-        return value

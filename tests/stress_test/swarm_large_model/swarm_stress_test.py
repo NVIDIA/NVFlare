@@ -173,7 +173,7 @@ class LargePTTrainer(Executor):
         return outgoing_dxo.to_shareable()
 
 
-def build_job(model_size_gb: float, num_rounds: int) -> CCWFJob:
+def build_job(model_size_gb: float, num_rounds: int, disk_streaming: bool = True) -> CCWFJob:
     job = CCWFJob(name="swarm_pt_stress_test", min_clients=3)
 
     job.add_swarm(
@@ -191,6 +191,7 @@ def build_job(model_size_gb: float, num_rounds: int) -> CCWFJob:
             final_result_ack_timeout=3600,
             min_responses_required=3,
             wait_time_after_min_resps_received=30.0,
+            download_to_disk=disk_streaming,
         ),
     )
     return job
@@ -203,11 +204,6 @@ def _find_result_file(workdir: str) -> str | None:
 
 
 def run_one(model_size_gb: float, num_rounds: int, workdir: str, disk_streaming: bool):
-    if disk_streaming:
-        os.environ["NVFLARE_TENSOR_DOWNLOAD_TO_DISK"] = "true"
-    else:
-        os.environ.pop("NVFLARE_TENSOR_DOWNLOAD_TO_DISK", None)
-
     mode = "DISK" if disk_streaming else "MEMORY"
     print(f"\n{'='*60}")
     print(f"  Mode: {mode}")
@@ -217,7 +213,7 @@ def run_one(model_size_gb: float, num_rounds: int, workdir: str, disk_streaming:
     if os.path.exists(workdir):
         shutil.rmtree(workdir)
 
-    job = build_job(model_size_gb=model_size_gb, num_rounds=num_rounds)
+    job = build_job(model_size_gb=model_size_gb, num_rounds=num_rounds, disk_streaming=disk_streaming)
     job.simulator_run(workdir, n_clients=3)
 
     result_file = _find_result_file(workdir)

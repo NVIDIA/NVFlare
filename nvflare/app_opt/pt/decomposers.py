@@ -17,9 +17,7 @@ from typing import Tuple, Union
 import torch
 from safetensors.torch import load, save
 
-import nvflare.fuel.utils.app_config_utils as acu
 import nvflare.fuel.utils.fobs.dots as dots
-from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
@@ -59,10 +57,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
-        use_disk = acu.get_bool_var(
-            self._config_var_name(ConfigVarName.DOWNLOAD_TO_DISK),
-            False,
-        )
+        use_disk = cell.get_fobs_context().get("download_to_disk", False)
         if use_disk:
             return download_tensors_to_disk(
                 from_fqcn,

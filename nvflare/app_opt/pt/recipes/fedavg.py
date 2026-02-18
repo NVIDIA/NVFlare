@@ -124,6 +124,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
+        download_to_disk: bool = False,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -155,6 +156,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            download_to_disk=download_to_disk,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
