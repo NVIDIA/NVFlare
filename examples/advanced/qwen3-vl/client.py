@@ -19,18 +19,27 @@ Requires QWEN3VL_ROOT and (for site data) a "fl_site" dataset entry in the Qwen 
 that reads FL_SITE_DATA_DIR (see README).
 """
 import argparse
+import gc
 import os
 import subprocess
 import sys
 import tempfile
 
 import nvflare.client as flare
+import torch
 
 from model import Qwen3VLModel, load_qwen_vl_from_pretrained, load_state_dict_from_checkpoint
 
 
 def _abs_path(p: str) -> str:
     return os.path.abspath(os.path.expanduser(p))
+
+
+def _free_memory_after_send() -> None:
+    """Run GC and clear CUDA cache to reduce OOM risk before the next round."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def main():
@@ -142,6 +151,8 @@ def main():
                 meta={"ERROR": str(e)},
             )
             flare.send(output_model)
+            del params, output_model
+            _free_memory_after_send()
             continue
 
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
@@ -155,6 +166,10 @@ def main():
         )
         print(f"site={client_name}, round={input_model.current_round}, sent updated weights")
         flare.send(output_model)
+
+        # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)
+        del raw, params, output_model
+        _free_memory_after_send()
 
     if use_temp and os.path.isdir(work_dir):
         import shutil
