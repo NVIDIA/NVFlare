@@ -16,15 +16,7 @@
 import os
 import warnings
 from collections import OrderedDict
-from typing import List, NamedTuple, Optional
-
-
-class _IncompatibleKeys(NamedTuple):
-    """Compatible with PyTorch's load_state_dict return type (missing_keys, unexpected_keys)."""
-
-    missing_keys: List[str]
-    unexpected_keys: List[str]
-
+from typing import Optional
 
 import torch
 
@@ -93,7 +85,7 @@ class ESM2ModuleForServer(torch.nn.Module):
 
     def load_state_dict(self, state_dict, strict: bool = True):
         self._state_dict = OrderedDict((self._stored_key(k), v) for k, v in state_dict.items())
-        return _IncompatibleKeys(missing_keys=[], unexpected_keys=[])
+        return None
 
 
 def _flatten_state_dict(d: dict, prefix: str = "") -> OrderedDict:
