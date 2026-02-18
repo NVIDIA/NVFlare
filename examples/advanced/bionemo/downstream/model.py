@@ -156,6 +156,17 @@ def _load_nemo_distributed_checkpoint(path: str) -> Optional[OrderedDict]:
 
 
 def load_state_dict_from_checkpoint_path(checkpoint_path: str) -> Optional[OrderedDict]:
+    """Load a state dict from a NeMo/Megatron checkpoint file or directory.
+
+    Supports single-file checkpoints and NeMo distributed checkpoint directories.
+    Uses ``torch.load(..., weights_only=False)`` so that non-tensor objects in
+    NeMo/Megatron checkpoints are restored correctly.
+
+    .. note::
+        ``weights_only=False`` uses Python's pickle module, which can execute
+        arbitrary code during deserialization. Only load checkpoints from
+        trusted sources.
+    """
     path = os.path.abspath(checkpoint_path)
     loaded = None
     if os.path.isfile(path):
