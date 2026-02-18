@@ -1,3 +1,5 @@
+:orphan:
+
 .. _extra_270:
 
 Extra Features in v2.7.0

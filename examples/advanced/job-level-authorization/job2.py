@@ -45,7 +45,7 @@ def main():
         name="FL-Demo-Job2",  # This name is BLOCKED by site_a's security handler
         min_clients=1,
         num_rounds=1,
-        initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         train_script="client.py",
     )
 

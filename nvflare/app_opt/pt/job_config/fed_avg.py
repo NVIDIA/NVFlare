@@ -37,7 +37,7 @@ class FedAvgJob(BaseFedJob):
         User must add executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model
+            initial_model (nn.Module): Initial PyTorch model.
             n_clients (int): number of clients for this job
             num_rounds (int): number of rounds for FedAvg
             name (name, optional): name of the job. Defaults to "fed_job"
@@ -48,7 +48,7 @@ class FedAvgJob(BaseFedJob):
                 Defaults to "accuracy".
         """
         if not isinstance(initial_model, nn.Module):
-            raise ValueError(f"Expected initial model to be nn.Module, but got type f{type(initial_model)}.")
+            raise ValueError(f"Expected initial model to be nn.Module, but got type {type(initial_model)}.")
 
         super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
 

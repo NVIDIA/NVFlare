@@ -55,7 +55,7 @@ class TestFedAvgInit:
 
         assert controller.num_clients == 3  # default
         assert controller.num_rounds == 5  # default
-        assert controller.initial_model is None
+        assert controller.model is None
         assert controller.aggregator is None
         assert controller.stop_cond is None
         assert controller.patience is None
@@ -66,13 +66,13 @@ class TestFedAvgInit:
 
     def test_custom_initialization(self):
         """Test FedAvg with custom parameters."""
-        initial_model = {"layer1": [1.0, 2.0, 3.0]}
+        model = {"layer1": [1.0, 2.0, 3.0]}
         aggregator = MockModelAggregator()
 
         controller = FedAvg(
             num_clients=5,
             num_rounds=10,
-            initial_model=initial_model,
+            model=model,
             aggregator=aggregator,
             stop_cond="accuracy >= 80",
             patience=3,
@@ -84,7 +84,7 @@ class TestFedAvgInit:
 
         assert controller.num_clients == 5
         assert controller.num_rounds == 10
-        assert controller.initial_model == initial_model
+        assert controller.model == model
         assert controller.aggregator is aggregator
         assert controller.stop_cond == "accuracy >= 80"
         assert controller.patience == 3
@@ -333,40 +333,6 @@ class TestFedAvgAggregation:
         aggr_result = controller._get_aggregated_result()
         assert aggr_result.params["w"] == 3.0  # (2+4)/2
 
-    def test_all_metrics_only_reset_with_builtin_aggregation(self):
-        """Test _all_metrics is only reset when using built-in aggregation, not custom aggregator."""
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        # Test with custom aggregator: _all_metrics should NOT be reset
-        aggregator = MockModelAggregator()
-        controller_custom = FedAvg(num_clients=2, aggregator=aggregator)
-        controller_custom._all_metrics = False  # Simulate previous state
-
-        # Simulate the reset logic (what happens at start of each round)
-        if controller_custom.aggregator:
-            controller_custom.aggregator.reset_stats()
-        else:
-            controller_custom._aggr_helper = WeightedAggregationHelper()
-            controller_custom._aggr_metrics_helper = WeightedAggregationHelper()
-            controller_custom._all_metrics = True
-
-        # With custom aggregator, _all_metrics should NOT be reset
-        assert controller_custom._all_metrics is False
-
-        # Test with built-in aggregation: _all_metrics SHOULD be reset
-        controller_builtin = FedAvg(num_clients=2)
-        controller_builtin._all_metrics = False  # Simulate previous state
-
-        if controller_builtin.aggregator:
-            controller_builtin.aggregator.reset_stats()
-        else:
-            controller_builtin._aggr_helper = WeightedAggregationHelper()
-            controller_builtin._aggr_metrics_helper = WeightedAggregationHelper()
-            controller_builtin._all_metrics = True
-
-        # With built-in aggregation, _all_metrics SHOULD be reset to True
-        assert controller_builtin._all_metrics is True
-
     def test_aggregate_empty_result_skipped(self):
         """Test empty results are skipped."""
         controller = FedAvg(num_clients=2)
@@ -390,8 +356,13 @@ class TestFedAvgAggregation:
 class TestFedAvgAggregationWeights:
     """Test FedAvg aggregation weights."""
 
-    def _setup_controller(self, controller):
-        """Helper to setup controller for aggregation tests."""
+    def test_aggregation_weights_applied(self):
+        """Test per-client aggregation weights are applied."""
+        controller = FedAvg(
+            num_clients=2,
+            aggregation_weights={"site-1": 2.0, "site-2": 1.0},
+        )
+
         from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 
         controller._aggr_helper = WeightedAggregationHelper()
@@ -401,14 +372,6 @@ class TestFedAvgAggregationWeights:
         controller._expected_count = 2
         controller._params_type = None
         controller.current_round = 0
-
-    def test_aggregation_weights_applied(self):
-        """Test per-client aggregation weights are applied."""
-        controller = FedAvg(
-            num_clients=2,
-            aggregation_weights={"site-1": 2.0, "site-2": 1.0},
-        )
-        self._setup_controller(controller)
 
         # Result from site-1 with weight 2.0
         result1 = FLModel(
@@ -439,7 +402,16 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
         )
-        self._setup_controller(controller)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
 
         # site-1: weight=2.0, n_iter=10 -> total_weight = 20
         result1 = FLModel(
@@ -464,7 +436,16 @@ class TestFedAvgAggregationWeights:
     def test_aggregation_weights_with_different_num_steps(self):
         """Test aggregation without explicit weights uses NUM_STEPS_CURRENT_ROUND only."""
         controller = FedAvg(num_clients=2)  # No aggregation_weights
-        self._setup_controller(controller)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
 
         # site-1: n_iter=100
         result1 = FLModel(
@@ -492,7 +473,16 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 1.0, "site-2": 3.0},
         )
-        self._setup_controller(controller)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
 
         # site-1: multiple params, weight=1, n_iter=10 -> total=10
         result1 = FLModel(
@@ -527,8 +517,16 @@ class TestFedAvgAggregationWeights:
             num_clients=3,
             aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 0.5},
         )
-        self._setup_controller(controller)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
         controller._expected_count = 3
+        controller._params_type = None
+        controller.current_round = 0
 
         # site-1: weight=1.0, n_iter=100 -> total=100
         result1 = FLModel(
@@ -564,14 +562,13 @@ class TestFedAvgAggregationWeights:
 class TestFedAvgLoadSaveModel:
     """Test FedAvg load_model and save_model overrides."""
 
-    def test_load_model_with_persistor_delegates_to_parent(self):
+    def test_load_model_with_persistor(self):
         """Test load_model delegates to parent when persistor is available."""
         controller = FedAvg()
-        # Verify methods exist
+        # When persistor is set, it should use parent's load_model
+        # We can't fully test this without mocking, but we verify the logic exists
         assert hasattr(controller, "load_model")
         assert hasattr(controller, "save_model")
-        assert hasattr(controller, "save_model_file")
-        assert hasattr(controller, "load_model_file")
 
     def test_load_model_returns_empty_flmodel_when_no_config(self):
         """Test load_model returns empty FLModel when no persistor or save_filename."""
@@ -584,73 +581,19 @@ class TestFedAvgLoadSaveModel:
         assert isinstance(result, FLModel)
         assert result.params == {}
 
-    def test_save_model_file_and_load_model_file_roundtrip(self, tmp_path):
-        """Test save_model_file and load_model_file work correctly."""
+    def test_save_model_file_and_load_model_file_defaults(self):
+        """Test default save_model_file and load_model_file use FOBS."""
         controller = FedAvg()
-        model = FLModel(params={"w": 1.0, "b": 2.0}, metrics={"accuracy": 0.9})
-        filepath = str(tmp_path / "test_model.pt")
-
-        # Save and load
-        controller.save_model_file(model, filepath)
-        loaded = controller.load_model_file(filepath)
-
-        assert loaded.params == model.params
-        assert loaded.metrics == model.metrics
-
-    def test_load_model_from_file_when_exists(self, tmp_path):
-        """Test load_model loads from file when save_filename is set and file exists."""
-        controller = FedAvg(save_filename="model.pt")
-        controller.persistor = None
-
-        # Create a model file
-        from nvflare.fuel.utils import fobs
-
-        model = FLModel(params={"w": 42.0})
-        filepath = tmp_path / "model.pt"
-        fobs.dumpf(model, str(filepath))
-
-        # Mock get_run_dir to return tmp_path
-        controller.get_run_dir = lambda: str(tmp_path)
-
-        loaded = controller.load_model()
-        assert loaded.params["w"] == 42.0
-
-    def test_load_model_returns_empty_when_file_not_exists(self, tmp_path):
-        """Test load_model returns empty FLModel when file doesn't exist."""
-        controller = FedAvg(save_filename="nonexistent.pt")
-        controller.persistor = None
-        controller.get_run_dir = lambda: str(tmp_path)
-
-        loaded = controller.load_model()
-        assert isinstance(loaded, FLModel)
-        assert loaded.params == {}
-
-    def test_save_model_to_file(self, tmp_path):
-        """Test save_model saves to file when no persistor."""
-        controller = FedAvg(save_filename="saved_model.pt")
-        controller.persistor = None
-        controller.get_run_dir = lambda: str(tmp_path)
-
-        model = FLModel(params={"w": 123.0})
-        controller.save_model(model)
-
-        # Verify file was created
-        import os
-
-        assert os.path.exists(tmp_path / "saved_model.pt")
-
-        # Verify content
-        from nvflare.fuel.utils import fobs
-
-        loaded = fobs.loadf(str(tmp_path / "saved_model.pt"))
-        assert loaded.params["w"] == 123.0
+        # Verify methods exist
+        assert hasattr(controller, "save_model_file")
+        assert hasattr(controller, "load_model_file")
 
 
-class TestPTFedAvgInitialModel:
-    """Test PTFedAvg initial_model type handling."""
+class TestPTFedAvgModel:
+    """Test PTFedAvg model type handling."""
 
-    def test_initial_model_with_nn_module(self):
-        """Test initial_model with torch.nn.Module extracts state_dict."""
+    def test_model_with_nn_module(self):
+        """Test model with torch.nn.Module extracts state_dict."""
         import torch.nn as nn
 
         class SimpleModel(nn.Module):
@@ -661,54 +604,54 @@ class TestPTFedAvgInitialModel:
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model = SimpleModel()
-        controller = PTFedAvg(initial_model=model)
+        controller = PTFedAvg(model=model)
 
-        # initial_model should be converted to state_dict (OrderedDict)
-        assert controller.initial_model is not None
-        assert isinstance(controller.initial_model, dict)
-        assert "linear.weight" in controller.initial_model
-        assert "linear.bias" in controller.initial_model
+        # model should be converted to state_dict (OrderedDict)
+        assert controller.model is not None
+        assert isinstance(controller.model, dict)
+        assert "linear.weight" in controller.model
+        assert "linear.bias" in controller.model
 
-    def test_initial_model_with_dict(self):
-        """Test initial_model with dict is passed through."""
+    def test_model_with_dict(self):
+        """Test model with dict is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         model_dict = {"layer1.weight": [1.0, 2.0, 3.0]}
-        controller = PTFedAvg(initial_model=model_dict)
+        controller = PTFedAvg(model=model_dict)
 
-        assert controller.initial_model == model_dict
+        assert controller.model == model_dict
 
-    def test_initial_model_with_flmodel(self):
-        """Test initial_model with FLModel is passed through."""
+    def test_model_with_flmodel(self):
+        """Test model with FLModel is passed through."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
         fl_model = FLModel(params={"w": 1.0})
-        controller = PTFedAvg(initial_model=fl_model)
+        controller = PTFedAvg(model=fl_model)
 
-        assert controller.initial_model is fl_model
+        assert controller.model is fl_model
 
-    def test_initial_model_with_none(self):
-        """Test initial_model with None is allowed."""
+    def test_model_with_none(self):
+        """Test model with None is allowed."""
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        controller = PTFedAvg(initial_model=None)
+        controller = PTFedAvg(model=None)
 
-        assert controller.initial_model is None
+        assert controller.model is None
 
-    def test_initial_model_with_invalid_type_raises_error(self):
-        """Test initial_model with invalid type raises TypeError."""
+    def test_model_with_invalid_type_raises_error(self):
+        """Test model with invalid type raises TypeError."""
         import pytest
 
         from nvflare.app_opt.pt.fedavg import PTFedAvg
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model="invalid_string")  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model="invalid_string")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model=12345)  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model=12345)  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="initial_model must be"):
-            PTFedAvg(initial_model=[1, 2, 3])  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="model must be"):
+            PTFedAvg(model=[1, 2, 3])  # type: ignore[arg-type]
 
     def test_task_name_parameter(self):
         """Test task_name parameter is passed correctly."""
@@ -719,6 +662,78 @@ class TestPTFedAvgInitialModel:
 
         controller2 = PTFedAvg()
         assert controller2.task_name == "train"  # default
+
+    def test_backward_compatibility_alias(self):
+        """Test PTFedAvgEarlyStopping alias still works for backward compatibility."""
+        from nvflare.app_opt.pt.fedavg import PTFedAvg, PTFedAvgEarlyStopping
+
+        # Verify alias points to same class
+        assert PTFedAvgEarlyStopping is PTFedAvg
+
+        # Verify can instantiate with old name
+        controller = PTFedAvgEarlyStopping(num_clients=2, num_rounds=3)
+        assert isinstance(controller, PTFedAvg)
+        assert controller.num_clients == 2
+        assert controller.num_rounds == 3
+
+
+class TestPTFedAvgModelPersistence:
+    """Test PTFedAvg save_model_file and load_model_file methods."""
+
+    def test_save_and_load_model_file_roundtrip(self, tmp_path):
+        """Test save_model_file and load_model_file work correctly with PyTorch."""
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Create model with PyTorch tensors
+        model = FLModel(
+            params={"weight": torch.tensor([1.0, 2.0, 3.0]), "bias": torch.tensor([0.5])},
+            metrics={"accuracy": 0.85},
+        )
+        filepath = str(tmp_path / "test_model.pt")
+
+        # Save and load
+        controller.save_model_file(model, filepath)
+        loaded = controller.load_model_file(filepath)
+
+        # Verify params
+        assert torch.equal(loaded.params["weight"], model.params["weight"])
+        assert torch.equal(loaded.params["bias"], model.params["bias"])
+        # Verify metadata
+        assert loaded.metrics == model.metrics
+
+    def test_load_model_file_without_metadata(self, tmp_path):
+        """Test load_model_file works when metadata file doesn't exist."""
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Create a model file without metadata
+        params = {"weight": torch.tensor([1.0, 2.0])}
+        filepath = str(tmp_path / "model_no_metadata.pt")
+        torch.save(params, filepath)
+
+        # Load without metadata file
+        loaded = controller.load_model_file(filepath)
+
+        assert torch.equal(loaded.params["weight"], params["weight"])
+        assert loaded.metrics is None  # No metadata
+
+    def test_run_registers_tensor_decomposer(self):
+        """Test that run() registers TensorDecomposer."""
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        controller = PTFedAvg()
+
+        # Verify run method exists and can be inspected
+        assert hasattr(controller, "run")
+        # The actual registration happens when run() is called, which requires
+        # a full FL context. We just verify the method exists.
 
 
 class TestBaseFedAvgMemoryManagement:

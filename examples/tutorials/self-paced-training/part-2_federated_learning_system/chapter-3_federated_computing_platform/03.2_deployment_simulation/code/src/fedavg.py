@@ -33,7 +33,7 @@ class FedAvg(BaseFedAvg):
         stop_cond (str, optional): early stopping condition based on metric.
             string literal in the format of "<key> <op> <value>" (e.g. "accuracy >= 80")
         save_filename (str, optional): filename for saving model
-        initial_model (nn.Module, optional): initial PyTorch model
+        model (nn.Module, optional): initial PyTorch model
         start_round (int, optional): The starting round number.
     """
 
@@ -42,7 +42,7 @@ class FedAvg(BaseFedAvg):
         stop_cond: str,
         num_rounds: int,
         save_filename: str = "FL_global_model.pt",
-        initial_model=None,
+        model=None,
         num_clients: int = 3,
         start_round: int = 0,
     ):
@@ -54,17 +54,17 @@ class FedAvg(BaseFedAvg):
         else:
             self.stop_condition = None
         self.save_filename = save_filename
-        self.initial_model = initial_model
+        self.model = model
         self.best_model: Optional[FLModel] = None
 
     def run(self) -> None:
         self.info("Start FedAvg.")
 
-        if self.initial_model:
-            # Use FOBS for serializing/deserializing PyTorch tensors (self.initial_model)
+        if self.model:
+            # Use FOBS for serializing/deserializing PyTorch tensors (self.model)
             fobs.register(TensorDecomposer)
             # PyTorch weights
-            initial_weights = self.initial_model.state_dict()
+            initial_weights = self.model.state_dict()
         else:
             initial_weights = {}
 

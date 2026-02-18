@@ -121,9 +121,14 @@ def main():
         per_site_config=per_site_config,
     )
 
-    # Run simulation
-    env = SimEnv()
-    env.run(recipe, work_dir=f"/tmp/nvflare/workspace/works/{job_name}")
+    # Run simulation with explicit client list (required when using per_site_config)
+    clients = list(per_site_config.keys())
+    env = SimEnv(clients=clients)
+    run = recipe.execute(env)
+    print()
+    print("Job Status:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
 
 
 if __name__ == "__main__":

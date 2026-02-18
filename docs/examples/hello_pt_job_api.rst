@@ -9,7 +9,7 @@ The complete example code can be found in the :github_nvflare_link:`hello-pt dir
 Before You Start
 ----------------
 
-Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
+Feel free to refer to the :doc:`detailed documentation <../developer_guide>` at any point
 to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
 We recommend you first finish the :doc:`Hello NumPy <hello_numpy>` exercise since it introduces the
@@ -85,11 +85,9 @@ Neural Network
 The training procedure and network architecture are modified from 
 `Training a Classifier <https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html>`_.
 
-Let's see what an extremely simplified CIFAR10 training looks like:
+Let's see the simplified CIFAR10 model used in this example:
 
-.. literalinclude:: ../examples/hello-world/hello-pt/model.py
-   :language: python
-   :caption: model.py
+- :github_nvflare_link:`model.py <examples/hello-world/hello-pt/model.py>`
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
 This is not related to NVIDIA FLARE, so we implement it in a file called ``simple_network.py``.

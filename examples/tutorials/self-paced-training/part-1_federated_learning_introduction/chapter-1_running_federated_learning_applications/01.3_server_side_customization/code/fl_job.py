@@ -32,7 +32,7 @@ if __name__ == "__main__":
     controller = FedAvgV2(
         stop_cond="accuracy > 25",
         save_filename="global_model.pt",
-        initial_model=SimpleNetwork(),
+        model=SimpleNetwork(),
         num_clients=num_clients,
         num_rounds=num_rounds,
     )

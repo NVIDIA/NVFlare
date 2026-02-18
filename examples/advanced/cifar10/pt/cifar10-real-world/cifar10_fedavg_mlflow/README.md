@@ -194,30 +194,42 @@ In the MLFlow UI, you can view:
 
 ## Switching Tracking Systems
 
-You can easily switch to other tracking systems by changing `tracking_type`:
+You can easily switch to other tracking systems by changing `tracking_type`. If provided, the `tracking_config` keys must match each receiver's constructor arguments.
 
 ### TensorBoard
 
+The TensorBoard receiver accepts `tb_folder` (directory name under the job run directory, default `"tb_events"`):
+
 ```python
 add_experiment_tracking(
-    recipe, 
-    tracking_type="tensorboard", 
-    tracking_config={"log_dir": "/tmp/nvflare/tensorboard"}
+    recipe,
+    tracking_type="tensorboard",
+    tracking_config={"tb_folder": "tb_events"}  # Directory name where TensorBoard event files are stored (relative to job run directory on the server)
 )
 ```
 
 ### Weights & Biases
 
+The WandB receiver requires `wandb_args` with `project`, `group`, `job_type`, and `name` (base run name). Optional top-level `mode` (e.g. `"online"` or `"offline"`):
+
 ```python
 add_experiment_tracking(
-    recipe, 
-    tracking_type="wandb", 
+    recipe,
+    tracking_type="wandb",
     tracking_config={
-        "project": "cifar10-federated",
-        "entity": "your-wandb-username"
+        "wandb_args": {
+            "name": "cifar10-fedavg",  # base run name (receiver appends site and job id)
+            "project": "nvflare",
+            "group": "nvidia",
+            "job_type": "training",
+            "entity": "your-wandb-username",  # optional
+        },
+        "mode": "online",  # optional, default "offline"
     }
 )
 ```
+
+**Authentication:** WandB reads the `WANDB_API_KEY` environment variable. The WandB receiver runs on the FL server, so the variable must be set in the **server's** environment (e.g. in the script or systemd unit that starts the server)—setting it in your local shell before `python job.py` does not apply, since the job is submitted to a remote server. In small POCs where you have shell access to the server, you can `export WANDB_API_KEY=...` there or run `wandb.login()` once on that machine; in production, the site operator must configure the key where the server process runs (e.g. via startup env, secrets manager, or container config). Get your key from [wandb.ai/authorize](https://wandb.ai/authorize).
 
 **No changes needed in client code!** The same `SummaryWriter` API works with all tracking systems.
 

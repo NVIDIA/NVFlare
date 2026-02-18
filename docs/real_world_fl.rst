@@ -21,16 +21,7 @@ You can also see some :github_nvflare_link:`example applications <examples>` int
 `MONAI <https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare>`_
 to see the capabilities of the system and how it can be operated.
 
-.. toctree::
-   :maxdepth: 1
+.. note::
 
-   real_world_fl/overview
-   real_world_fl/operation
-   real_world_fl/application
-   real_world_fl/job
-   real_world_fl/workspace
-   real_world_fl/cloud_deployment
-   real_world_fl/containerized_deployment
-   real_world_fl/kubernetes
-   real_world_fl/notes_on_large_models
-   user_guide/security/identity_security
+   This page has been reorganized. See the :ref:`Deployment <deployment_overview>` and
+   :ref:`Security <security>` sections for updated content.
