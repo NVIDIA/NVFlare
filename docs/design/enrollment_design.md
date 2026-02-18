@@ -311,14 +311,14 @@ Example (user token excerpt):
 | Cannot be forged | Signed with root CA private key (RS256) |
 | Cannot be tampered | Signature verification detects modification |
 | Time-limited | Expiration time (exp claim) |
-| Replay-controlled | Token usage is bound to identity and enrollment state, and always constrained by expiration |
+| Single-use | Token is invalid after one enrollment submission; no token re-use |
 | Scoped | Subject (sub) specifies who can use it |
 
 | Attack | Mitigation |
 | --- | --- |
-| Token theft | Short expiry + name binding + policy checks |
+| Token theft | Short expiry + name binding + single-use |
 | Token forgery | RS256 signature verification |
-| Replay attack | Identity/state checks + expiration |
+| Replay attack | Single-use enforcement + expiration |
 | Brute force | UUID-based JTI + rate limiting |
 
 ### Token Signing Key
@@ -596,9 +596,9 @@ CertRequestor                          Certificate Service
 
 **Pending (Manual Approval via Certificate Service):**
 
-When the approval policy evaluates to `pending`, the Certificate Service stores the request and returns 202. The standard client exits with `EnrollmentPending` (no polling loop). After an admin approves via `nvflare enrollment approve`, the Site Admin restarts the client, which re-submits and receives the signed certificate. The `GET /api/v1/enroll/{request_id}` endpoint is provided for optional external automation/observability, not for the default client startup flow.
+When the approval policy evaluates to `pending`, the Certificate Service stores the request and returns 202. The standard client exits with `EnrollmentPending` (no polling loop). Because tokens are single-use, the original token is not re-used after this submission. After admin approval via `nvflare enrollment approve`, the Site Admin restarts with a newly issued token and receives the signed certificate. The `GET /api/v1/enroll/{request_id}` endpoint is provided for optional external automation/observability, not for the default client startup flow.
 
-Key decisions: no polling loop (client exits immediately), server tracks by `(name, entity_type)`, pending requests expire after 7 days.
+Key decisions: no polling loop (client exits immediately), strict single-use tokens (no re-use), server tracks by `(name, entity_type)`, pending requests expire after 7 days.
 
 ## Server Enrollment
 
@@ -640,7 +640,7 @@ cd server1 && ./startup/start.sh  # Auto-enrolls
 | --- | --- | --- |
 | Private keys never transit | Yes (CSR/cert exchanged via email) | Yes (CSR submitted over HTTPS) |
 | Root CA key protected | On Project Admin machine | On Certificate Service (not FL Server) |
-| Token security | N/A (no tokens) | RS256 signed, replay-controlled, time-limited |
+| Token security | N/A (no tokens) | RS256 signed, single-use, time-limited |
 | mTLS between participants | All certs signed by same root CA | All certs signed by same root CA |
 | Audit trail | Manual tracking | Automated logging by Certificate Service |
 
