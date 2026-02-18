@@ -292,7 +292,17 @@ Enrollment tokens are JWTs signed with the root CA private key. They are used **
 | iss | Issuer (from root CA certificate) |
 | iat / exp | Issued-at and expiration timestamps |
 | policy | Embedded approval policy |
-| roles | Roles for admin tokens |
+| roles | Roles for user/admin identities (when applicable) |
+
+Example (user token excerpt):
+
+```json
+{
+  "sub": "admin@org.com",
+  "subject_type": "user",
+  "roles": ["lead"]
+}
+```
 
 ### Token Security
 
@@ -410,8 +420,10 @@ Both workflows use the same CSR-based model, but the signing step differs fundam
 | --- | --- |
 | Common Name (CN) | Participant name (e.g., "hospital-1") |
 | Organization (O) | Organization name (optional) |
-| Organizational Unit (OU) | Participant type (client, server, relay, admin) |
-| Unstructured Name | Role for admin tokens |
+| Organizational Unit (OU) | Participant type (client, server, relay, user) -- new in enrollment cert profile |
+| Unstructured Name | Role for user/admin tokens (legacy-compatible fallback) |
+
+Backward-compatibility note: existing provisioned certificates may not carry OU in the same way. Enrollment consumers should remain tolerant by falling back to existing identity fields (including unstructured name where applicable).
 
 ## Certificate Service (Auto-Scale Only)
 
@@ -628,7 +640,7 @@ cd server1 && ./startup/start.sh  # Auto-enrolls
 | --- | --- | --- |
 | Private keys never transit | Yes (CSR/cert exchanged via email) | Yes (CSR submitted over HTTPS) |
 | Root CA key protected | On Project Admin machine | On Certificate Service (not FL Server) |
-| Token security | N/A (no tokens) | RS256 signed, single-use, time-limited |
+| Token security | N/A (no tokens) | RS256 signed, replay-controlled, time-limited |
 | mTLS between participants | All certs signed by same root CA | All certs signed by same root CA |
 | Audit trail | Manual tracking | Automated logging by Certificate Service |
 
@@ -637,7 +649,7 @@ cd server1 && ./startup/start.sh  # Auto-enrolls
 | Threat | Impact | Mitigation |
 | --- | --- | --- |
 | Compromised FL Server | Cannot issue new certs (no root CA key in either workflow) | Revoke server cert |
-| Stolen token (Auto-Scale) | Attacker could enroll as participant | Short expiry + name binding + single-use |
+| Stolen token (Auto-Scale) | Attacker could enroll as participant | Short expiry + name binding + policy checks |
 | Compromised Cert Service (Auto-Scale) | Could issue arbitrary certs | Network isolation, audit, access controls |
 | MITM | Intercept enrollment | TLS (Auto-Scale); secure channel for CSR/cert exchange (Manual) |
 
@@ -674,10 +686,10 @@ Generate enrollment tokens via the Certificate Service API. Not used in the Manu
 | `info` | Inspect and decode a token |
 
 ```bash
-nvflare token generate -n hospital-1 \
+nvflare token generate -n hospital-1 --type client \
     --cert-service https://cert-service:8443 --api-key "$NVFLARE_API_KEY"
 
-nvflare token batch --pattern "site-{001..100}" \
+nvflare token batch --pattern "site-{001..100}" --type client \
     --cert-service https://cert-service:8443 --api-key $NVFLARE_API_KEY -o ./tokens/
 
 nvflare token info -t eyJhbGciOiJSUzI1NiIs...
