@@ -110,8 +110,8 @@ def _flatten_state_dict(d: dict, prefix: str = "") -> OrderedDict:
 def _extract_state_dict(loaded: dict) -> Optional[OrderedDict]:
     d = loaded
     for key in ("model", "state_dict", "weights", "checkpoint"):
-        if key in loaded and isinstance(loaded[key], (dict, OrderedDict)):
-            d = loaded[key]
+        if key in d and isinstance(d[key], (dict, OrderedDict)):
+            d = d[key]
             break
     if d is None or not d:
         return None
