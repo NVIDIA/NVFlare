@@ -376,15 +376,18 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         return clients
 
     def set_fl_context(self, data: FLModel):
-        """Set up the fl_ctx information based on the passed in FLModel data."""
-        if data and data.current_round is not None:
-            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=True)
-        else:
-            self.debug("The FLModel data does not contain the current_round information.")
-        if data and data.total_rounds is not None:
-            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=True)
-        else:
-            self.debug("The FLModel data does not contain the total_rounds information.")
+        """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel when not already set.
+
+        Only sets when the prop is missing so we do not overwrite workflow-set values or
+        change stickiness (which would trigger warnings). Required for flows like FedAvg
+        that do not set CURRENT_ROUND in fl_ctx before send; aggregators may rely on it.
+        """
+        if not data:
+            return
+        if data.current_round is not None and self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is None:
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=False)
+        if data.total_rounds is not None and self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is None:
+            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=False)
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
