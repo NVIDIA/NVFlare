@@ -224,39 +224,46 @@ class FedAvg(BaseFedAvg):
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
 
         if self.aggregator:
-            # Use custom aggregator
+            # Custom aggregator — may defer consumption, so no cleanup here.
+            # Temp files are cleaned via _TempDirRef GC when refs are no longer held.
             self.aggregator.accept_model(result)
         else:
-            # Use built-in InTime aggregation with weighted averaging
-            # Get weight: use aggregation_weights if specified, else use NUM_STEPS
-            if self.aggregation_weights and client_name in self.aggregation_weights:
-                aggregation_weight = self.aggregation_weights[client_name]
-            else:
-                aggregation_weight = 1.0
+            # Built-in InTime aggregation: add() resolves lazy refs one-at-a-time,
+            # so temp files can be cleaned immediately after.
+            try:
+                # Get weight: use aggregation_weights if specified, else use NUM_STEPS
+                if self.aggregation_weights and client_name in self.aggregation_weights:
+                    aggregation_weight = self.aggregation_weights[client_name]
+                else:
+                    aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
-            # Handle None case (e.g., first round of some algorithms like K-Means)
-            if n_iter is None:
-                n_iter = 1.0
-            weight = aggregation_weight * float(n_iter)
+                n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
+                # Handle None case (e.g., first round of some algorithms like K-Means)
+                if n_iter is None:
+                    n_iter = 1.0
+                weight = aggregation_weight * float(n_iter)
 
-            self._aggr_helper.add(
-                data=result.params,
-                weight=weight,
-                contributor_name=client_name,
-                contribution_round=self.current_round,
-            )
-
-            # Add to metrics aggregation if available
-            if not result.metrics:
-                self._all_metrics = False
-            if self._all_metrics and result.metrics:
-                self._aggr_metrics_helper.add(
-                    data=result.metrics,
+                self._aggr_helper.add(
+                    data=result.params,
                     weight=weight,
                     contributor_name=client_name,
                     contribution_round=self.current_round,
                 )
+
+                # Add to metrics aggregation if available
+                if not result.metrics:
+                    self._all_metrics = False
+                if self._all_metrics and result.metrics:
+                    self._aggr_metrics_helper.add(
+                        data=result.metrics,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
+                    )
+            finally:
+                from nvflare.app_opt.pt.lazy_tensor_dict import cleanup_lazy_refs
+
+                cleanup_lazy_refs(result.params)
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
