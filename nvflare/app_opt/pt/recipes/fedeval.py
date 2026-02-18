@@ -85,6 +85,8 @@ class FedEvalRecipe(Recipe):
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
             If not provided, the same configuration will be used for all clients. Defaults to None.
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         Basic usage with model instance:
@@ -130,6 +132,8 @@ class FedEvalRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
         per_site_config: Optional[Dict[str, Dict]] = None,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate eval_ckpt
         _FedEvalValidator(eval_ckpt=eval_ckpt)
@@ -145,6 +149,8 @@ class FedEvalRecipe(Recipe):
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         self.per_site_config = per_site_config
+        self.client_memory_gc_rounds = client_memory_gc_rounds
+        self.cuda_empty_cache = cuda_empty_cache
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -197,6 +203,8 @@ class FedEvalRecipe(Recipe):
                     command=cmd,
                     framework=FrameworkType.PYTORCH,
                     server_expected_format=expected_format,
+                    memory_gc_rounds=self.client_memory_gc_rounds,
+                    cuda_empty_cache=self.cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
@@ -207,6 +215,8 @@ class FedEvalRecipe(Recipe):
                 command=self.command,
                 framework=FrameworkType.PYTORCH,
                 server_expected_format=self.server_expected_format,
+                memory_gc_rounds=self.client_memory_gc_rounds,
+                cuda_empty_cache=self.cuda_empty_cache,
             )
             job.to_clients(executor)
 

@@ -27,9 +27,8 @@ from nvflare.app_opt.he.model_shareable_generator import HEModelShareableGenerat
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -52,6 +51,8 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     params_transfer_type: TransferType = TransferType.FULL
     encrypt_layers: Optional[Union[List[str], str]] = None
     server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class FedAvgRecipeWithHE(Recipe):
@@ -145,6 +146,8 @@ class FedAvgRecipeWithHE(Recipe):
         params_transfer_type: TransferType = TransferType.FULL,
         encrypt_layers: Optional[Union[List[str], str]] = None,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
@@ -163,6 +166,8 @@ class FedAvgRecipeWithHE(Recipe):
             params_transfer_type=params_transfer_type,
             encrypt_layers=encrypt_layers,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -188,6 +193,8 @@ class FedAvgRecipeWithHE(Recipe):
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Create BaseFedJob without model first (model setup done manually below for HE)
         job = BaseFedJob(
@@ -254,6 +261,8 @@ class FedAvgRecipeWithHE(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 

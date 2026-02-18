@@ -25,8 +25,7 @@ from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -47,6 +46,8 @@ class _FedOptValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     device: Optional[str] = None
     server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class FedOptRecipe(Recipe):
@@ -89,6 +90,8 @@ class FedOptRecipe(Recipe):
             Defaults to None; will default to cuda if available and no device is specified.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 1 (every round).
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         ```python
@@ -135,6 +138,8 @@ class FedOptRecipe(Recipe):
         optimizer_args: Optional[dict] = None,
         lr_scheduler_args: Optional[dict] = None,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -151,6 +156,8 @@ class FedOptRecipe(Recipe):
             server_expected_format=server_expected_format,
             device=device,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -177,6 +184,8 @@ class FedOptRecipe(Recipe):
         self.optimizer_args = optimizer_args
         self.lr_scheduler_args = lr_scheduler_args
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Replace {num_rounds} placeholder if present in lr_scheduler_args
         processed_lr_scheduler_args = None
@@ -274,6 +283,8 @@ class FedOptRecipe(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=TransferType.DIFF,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 

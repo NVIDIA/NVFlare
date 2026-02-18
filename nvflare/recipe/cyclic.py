@@ -20,8 +20,7 @@ from nvflare import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -41,7 +40,10 @@ class _CyclicValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     framework: FrameworkType = FrameworkType.NUMPY
+    # Memory management
     server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class CyclicRecipe(Recipe):
@@ -80,6 +82,10 @@ class CyclicRecipe(Recipe):
             Defaults to TransferType.FULL.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 1 (every round).
+        client_memory_gc_rounds: Run memory cleanup every N rounds on client after sending model.
+            Set to 0 to disable. Defaults to 0.
+        cuda_empty_cache: If True, call torch.cuda.empty_cache() during client memory cleanup.
+            Only applicable to PyTorch GPU training. Defaults to False.
 
     Raises:
         ValidationError: If min_clients < 2 or other parameter validation fails.
@@ -112,6 +118,8 @@ class CyclicRecipe(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _CyclicValidator(
@@ -128,6 +136,8 @@ class CyclicRecipe(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -150,6 +160,8 @@ class CyclicRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Validate that we have at least one model source
         if self.model is None and self.initial_ckpt is None:
@@ -181,6 +193,9 @@ class CyclicRecipe(Recipe):
         shareable_generator = FullModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")
 
+        # Define the initial global model and send to server
+        job.to(self.model, "server")
+
         executor = ScriptRunner(
             script=self.train_script,
             script_args=self.train_args,
@@ -188,6 +203,8 @@ class CyclicRecipe(Recipe):
             framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 
