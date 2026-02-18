@@ -28,12 +28,16 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 os.environ.setdefault("NUMEXPR_MAX_THREADS", "64")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
 
-# Use an available port for PyTorch distributed to avoid EADDRINUSE and PID collisions.
-if "MASTER_PORT" not in os.environ:
-    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
-if "MASTER_ADDR" not in os.environ:
-    os.environ["MASTER_ADDR"] = "localhost"
+from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
+from megatron.core.distributed import DistributedDataParallelConfig
+from megatron.core.optimizer import OptimizerConfig
+from nemo import lightning as nl
+from nemo.collections import llm
+from nemo.lightning.pytorch import callbacks as nl_callbacks
+from nemo.lightning.pytorch.optim import MegatronOptimizerModule
 
+# (1) import nvflare lightning client API
+import nvflare.client.lightning as flare
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
@@ -45,16 +49,17 @@ from bionemo.llm.model.biobert.model import BioBertConfig
 from bionemo.llm.model.config import TorchmetricsConfig
 from bionemo.llm.utils.datamodule_utils import infer_global_batch_size
 from bionemo.llm.utils.logger_utils import WandbConfig, setup_nemo_lightning_logger
-from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
-from megatron.core.distributed import DistributedDataParallelConfig
-from megatron.core.optimizer import OptimizerConfig
-from nemo import lightning as nl
-from nemo.collections import llm
-from nemo.lightning.pytorch import callbacks as nl_callbacks
-from nemo.lightning.pytorch.optim import MegatronOptimizerModule
 
-# (1) import nvflare lightning client API
-import nvflare.client.lightning as flare
+
+def _ensure_distributed_env() -> None:
+    """Set MASTER_PORT and MASTER_ADDR for PyTorch distributed if not already set.
+    Called immediately before training so the acquired port is still available when
+    the training subprocess binds, avoiding races in multi-client simulations.
+    """
+    if "MASTER_PORT" not in os.environ:
+        os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
+    if "MASTER_ADDR" not in os.environ:
+        os.environ["MASTER_ADDR"] = "localhost"
 
 
 def train_model(
@@ -419,8 +424,7 @@ def train_model(
     )
 
     # perform local training starting with the received global model
-    # Set MASTER_PORT so the training subprocess (spawned by Lightning) inherits an available port.
-    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
+    _ensure_distributed_env()
     llm.train(
         model=module,
         data=data_module,
