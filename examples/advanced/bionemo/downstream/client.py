@@ -32,7 +32,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
 if "MASTER_PORT" not in os.environ:
     os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
 if "MASTER_ADDR" not in os.environ:
-    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ.setdefault("MASTER_ADDR", "localhost")
 
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
