@@ -56,6 +56,9 @@ class WeightedAggregationHelper(object):
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
 
+                if hasattr(v, "resolve"):
+                    v = v.resolve()
+
                 current_total = self.total.get(k, None)
 
                 if current_total is None:
