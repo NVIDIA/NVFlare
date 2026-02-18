@@ -440,17 +440,17 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         return clients
 
     def set_fl_context(self, data: FLModel):
-        """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel when not already set.
+        """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
-        Only sets when the prop is missing so we do not overwrite workflow-set values or
-        change stickiness (which would trigger warnings). Required for flows like FedAvg
-        that do not set CURRENT_ROUND in fl_ctx before send; aggregators may rely on it.
+        Uses private=True, sticky=False to match FedAvg/ScatterAndGather; re-setting with the
+        same attributes updates the value (no stickiness warning). Required for flows like FedAvg
+        that do not set CURRENT_ROUND in fl_ctx before send; downstream (e.g. aggregators) rely on it.
         """
         if not data:
             return
-        if data.current_round is not None and self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is None:
+        if data.current_round is not None:
             self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=False)
-        if data.total_rounds is not None and self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is None:
+        if data.total_rounds is not None:
             self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=False)
 
     def get_component(self, component_id: str):
