@@ -58,6 +58,7 @@ class _FedAvgValidator(BaseModel):
     aggregation_weights: Optional[Dict[str, float]] = None
     # Memory management
     server_memory_gc_rounds: int = 0
+    download_to_disk: bool = False
 
 
 class FedAvgRecipe(Recipe):
@@ -169,6 +170,7 @@ class FedAvgRecipe(Recipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
+        download_to_disk: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -196,6 +198,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            download_to_disk=download_to_disk,
         )
 
         self.name = v.name
@@ -222,6 +225,7 @@ class FedAvgRecipe(Recipe):
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.download_to_disk = v.download_to_disk
 
         # Validate RAW framework requirements
         if self.framework == FrameworkType.RAW:
@@ -266,6 +270,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            download_to_disk=self.download_to_disk,
         )
         job.to_server(controller)
 

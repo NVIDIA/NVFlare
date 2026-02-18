@@ -559,9 +559,6 @@ class ConfigVarName:
     # SJ and CJ: min file size for streaming. If file size is less than this, it will be attached to msg directly.
     MIN_FILE_SIZE_FOR_STREAMING = "min_file_size_for_streaming"
 
-    # SJ and CJ: download tensors to disk instead of memory during FOBS deserialization
-    DOWNLOAD_TO_DISK = "download_to_disk"
-
 
 class SystemVarName:
     """

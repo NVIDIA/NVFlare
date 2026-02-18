@@ -50,9 +50,19 @@ Client sends tensors (safetensors chunks)
 
 **`cleanup_lazy_refs(data)`** (`lazy_tensor_dict.py`) — Explicit cleanup: finds any `_TempDirRef` in the dict values and deletes the temp directory.
 
+### Configuration
+
+Disk streaming is configured **per-job** via controller parameters, not global config or env vars.
+
+**FedAvg path** — `FedAvg(download_to_disk=True)` sets a flag on the server Cell's `fobs_ctx` at the start of `run()` and clears it in a `finally` block. Only the server Cell is affected; clients have separate Cell instances.
+
+**Swarm/CCWF path** — `SwarmClientConfig(download_to_disk=True)` passes through to `SwarmClientController`, which sets the flag on the client Cell in `start_run()` and clears it in `finalize()`.
+
+**How it works** — `TensorDecomposer.download()` reads `cell.get_fobs_context().get("download_to_disk", False)`. The Cell is already a parameter to `download()`, so no interface changes are needed. Each Cell has its own `fobs_ctx`, so server and client flags are independent even in the simulator.
+
 ### Integration Points
 
-**`TensorDecomposer.download()`** (`decomposers.py`) — Checks `download_to_disk` config var. If true, calls `download_tensors_to_disk()` returning a `LazyTensorDict`.
+**`TensorDecomposer.download()`** (`decomposers.py`) — Reads `download_to_disk` from the Cell's fobs_ctx. If true, calls `download_tensors_to_disk()` returning a `LazyTensorDict`.
 
 **`ViaDownloaderDecomposer.recompose()`** (`via_downloader.py`) — When items is a `LazyTensorDict`, returns `_LazyRef` via `make_lazy_ref()`. Otherwise returns the item directly.
 
@@ -62,13 +72,9 @@ Client sends tensors (safetensors chunks)
 
 **`FedAvg._aggregate_one_result()`** (`fedavg.py`) — Built-in InTime aggregation path calls `cleanup_lazy_refs(result.params)` after `add()`. Custom aggregator path does not force cleanup and relies on `_TempDirRef` lifetime or aggregator-managed cleanup.
 
-**`ConfigVarName.DOWNLOAD_TO_DISK`** (`fl_constant.py`) — Config variable controlling disk download. Defaults to `False`. Enable via env var `NVFLARE_TENSOR_DOWNLOAD_TO_DISK=true`.
-
-**`get_bool_var()`** (`app_config_utils.py`) — Utility matching existing `get_int_var` pattern.
-
 ## Client-Side Behavior
 
-When disk streaming is enabled, clients also download tensors to disk and receive `_LazyRef` objects. Trainers must resolve all refs before use:
+In the swarm path, disk streaming is enabled on the client Cell, so both aggregation and training downloads go to disk. Trainers must resolve all refs before use:
 
 ```python
 for k, v in list(dxo.data.items()):
@@ -76,7 +82,7 @@ for k, v in list(dxo.data.items()):
         dxo.data[k] = v.resolve()
 ```
 
-This is a one-time bulk resolve. After this, the trainer sees normal `torch.Tensor` objects. Peak memory is 1× model size (same as without disk streaming), but the download phase benefits from not deserializing into memory.
+In the FedAvg path, disk streaming is only enabled on the server Cell. Clients use separate Cell instances and are unaffected — they receive normal tensors.
 
 ## Memory Analysis
 
@@ -128,7 +134,7 @@ Persistors are orthogonal to disk streaming. In the CCWF path, the aggregated re
 
 4. **Duck typing** — `hasattr(v, 'resolve')` avoids coupling `app_common` to `app_opt/pt`.
 
-5. **Opt-in via config** — `download_to_disk` config variable defaults to `false`. Set `NVFLARE_TENSOR_DOWNLOAD_TO_DISK=true` to enable disk streaming.
+5. **Per-job opt-in** — `download_to_disk` is a controller parameter (FedAvg, SwarmClientController), not a global config. The flag is set on the Cell's `fobs_ctx` for the duration of the job and cleared on completion.
 
 ## Files Changed
 
@@ -136,13 +142,15 @@ Persistors are orthogonal to disk streaming. In the CCWF path, the aggregated re
 |------|--------|
 | `nvflare/app_opt/pt/lazy_tensor_dict.py` | **New.** `_LazyRef`, `_TempDirRef`, `LazyTensorDict`, `cleanup_lazy_refs()` |
 | `nvflare/app_opt/pt/tensor_downloader.py` | `DiskTensorConsumer`, `download_tensors_to_disk()`, `_extract_safetensors_keys()` |
-| `nvflare/app_opt/pt/decomposers.py` | `TensorDecomposer.download()` dispatches to disk path |
+| `nvflare/app_opt/pt/decomposers.py` | `TensorDecomposer.download()` reads `download_to_disk` from Cell's fobs_ctx |
 | `nvflare/fuel/utils/fobs/decomposers/via_downloader.py` | `recompose()` returns `_LazyRef` via `make_lazy_ref()` |
 | `nvflare/app_common/aggregators/weighted_aggregation_helper.py` | `add()`: resolve lazy refs per tensor |
 | `nvflare/app_common/aggregators/dxo_aggregator.py` | `accept()`: cleanup after `add()` |
-| `nvflare/app_common/workflows/fedavg.py` | `_aggregate_one_result()`: cleanup via `cleanup_lazy_refs()` |
-| `nvflare/apis/fl_constant.py` | `DOWNLOAD_TO_DISK` config var |
-| `nvflare/fuel/utils/app_config_utils.py` | `get_bool_var()` utility |
+| `nvflare/app_common/workflows/fedavg.py` | `download_to_disk` param; sets/clears Cell flag in `run()` |
+| `nvflare/app_common/ccwf/swarm_client_ctl.py` | `download_to_disk` param; sets/clears Cell flag in `start_run()`/`finalize()` |
+| `nvflare/app_common/ccwf/ccwf_job.py` | `SwarmClientConfig.download_to_disk` param |
+| `nvflare/recipe/fedavg.py` | `download_to_disk` param passthrough |
+| `nvflare/app_opt/pt/recipes/fedavg.py` | `download_to_disk` param passthrough |
 
 ## Tests
 

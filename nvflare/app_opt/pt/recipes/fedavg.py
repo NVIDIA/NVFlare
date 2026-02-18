@@ -143,6 +143,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        download_to_disk: bool = False,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -172,6 +173,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            download_to_disk=download_to_disk,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
