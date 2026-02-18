@@ -89,7 +89,7 @@ from model import LitNet
 
 recipe = FedEvalRecipe(
     min_clients=n_clients,
-    model=LitNet(checkpoint="pretrained_model.pt"),
+    model=LitNet(),
     eval_script="client.py",
     eval_args=f"--batch_size {batch_size}",
 )
