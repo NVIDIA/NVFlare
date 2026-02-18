@@ -53,41 +53,72 @@ def main():
 
     print(f"Client {client_name} initialized")
 
+    # Track last trained params so we can submit them when CSE asks for our local model.
+    last_params = None
+
     while flare.is_running():
-        # Receive model from server
         input_model = flare.receive()
         print(f"Client {client_name}, current_round={input_model.current_round}")
 
-        # Get model parameters
-        input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
-        print(f"Received weights: {input_np_arr}")
+        if flare.is_train():
+            # Training task: receive global model, train, send update.
+            if input_model.params is None or NPConstants.NUMPY_KEY not in input_model.params:
+                raise RuntimeError(
+                    "Train task received no model params (params is None or missing numpy_key). "
+                    "Server requires a valid initial model; empty response would break aggregation."
+                )
+            input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
+            print(f"Received weights: {input_np_arr}")
+            new_params = train(input_np_arr)
+            last_params = new_params
+            metrics = evaluate(new_params)
+            print(f"Client {client_name} evaluation metrics: {metrics}")
+            print(f"Client {client_name} finished training for round {input_model.current_round}")
+            if args.update_type == "diff":
+                params_to_send = new_params - input_np_arr
+                params_type = flare.ParamsType.DIFF
+            else:
+                params_to_send = new_params
+                params_type = flare.ParamsType.FULL
+            print(f"Sending weights: {params_to_send}")
+            flare.send(
+                flare.FLModel(
+                    params={NPConstants.NUMPY_KEY: params_to_send},
+                    params_type=params_type,
+                    metrics=metrics,
+                    current_round=input_model.current_round,
+                )
+            )
 
-        # Train the model
-        new_params = train(input_np_arr)
+        elif flare.is_evaluate():
+            # Validate task: evaluate the received model and send metrics only (no params).
+            if input_model.params is None or NPConstants.NUMPY_KEY not in input_model.params:
+                flare.send(flare.FLModel(metrics={}))
+                continue
+            input_np_arr = input_model.params[NPConstants.NUMPY_KEY]
+            metrics = evaluate(input_np_arr)
+            print(f"Client {client_name} validation metrics: {metrics}")
+            flare.send(flare.FLModel(metrics=metrics))
 
-        # Evaluate the model
-        metrics = evaluate(new_params)
-        print(f"Client {client_name} evaluation metrics: {metrics}")
-        print(f"Client {client_name} finished training for round {input_model.current_round}")
+        elif flare.is_submit_model():
+            # Submit local model for cross-site evaluation (must be WEIGHTS DXO).
+            if last_params is None:
+                raise RuntimeError(
+                    "submit_model called but no local model (last_params) available. "
+                    "CSE expects client weights; run training first or fix job order."
+                )
+            print(f"Client {client_name} submitting local model")
+            flare.send(
+                flare.FLModel(
+                    params={NPConstants.NUMPY_KEY: last_params},
+                    params_type=flare.ParamsType.FULL,
+                )
+            )
 
-        # Prepare parameters to send
-        if args.update_type == "diff":
-            params_to_send = new_params - input_np_arr
-            params_type = flare.ParamsType.DIFF
         else:
-            params_to_send = new_params
-            params_type = flare.ParamsType.FULL
-
-        # Send updated model back to server
-        print(f"Sending weights: {params_to_send}")
-        output_model = flare.FLModel(
-            params={NPConstants.NUMPY_KEY: params_to_send},
-            params_type=params_type,
-            metrics=metrics,
-            current_round=input_model.current_round,
-        )
-
-        flare.send(output_model)
+            # Task is not train, evaluate, or submit_model (e.g. future task type or different job config).
+            # Send empty metrics so we always reply and the protocol does not hang.
+            flare.send(flare.FLModel(metrics={}))
 
 
 if __name__ == "__main__":
