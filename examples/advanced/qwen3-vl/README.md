@@ -9,9 +9,8 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | File | Role |
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
-| `client.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
-| `client_wrapper.sh` | Wrapper script (same pattern as [llm_hf MULTINODE](../llm_hf/MULTINODE.md)): job runs `bash custom/client_wrapper.sh` with script + args; wrapper launches `client_sft_runner.py`. |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; always uses the Qwen SFT script via the runner. |
+| `client.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round (via `run_train_with_cleanup.py`), sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches `client.py` with the default command (`python3 -u`). |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards |
 
 ## Prerequisites
@@ -123,7 +122,7 @@ You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB
 
 ## 5. Run the federated job
 
-Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen.py`) as a subprocess per round, following the same pattern as [llm_hf MULTINODE](../llm_hf/MULTINODE.md): the FL client runs `client_wrapper.sh`, which launches `client_sft_runner.py`; the runner receives the global model, runs `train_qwen.py`, and sends the updated weights back.
+Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen.py`) as a subprocess per round: the FL client (`client.py`) receives the global model, runs `train_qwen.py` via the `run_train_with_cleanup.py` wrapper, and sends the updated weights back.
 
 1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
 
@@ -149,6 +148,11 @@ For testing, we can run a single client
    With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` (one GPU per client). For a different mapping, pass `--gpu` explicitly (e.g. `"[1],[2],[3]"`).
 
    `--max_steps` limits steps per round (if not provided, the client trains for a full epoch).
+
+## Checkpoints and disk space
+
+By default, the client saves received and trained model checkpoints under the **NVFlare client workspace** (a `qwen3vl_checkpoints` subdir of the current working directory). When you run with SimEnv, that workspace is cleared every run, so you don't need to clean up manually. If you see **"No space left on device"**, the partition containing the SimEnv workspace (e.g. `/tmp/nvflare/simulation`) is full—use a different `workspace_root` in SimEnv or pass `--work_dir /path/to/large/disk` in the client's train_args to override the default.
+
 
 ## Timeouts and long runs
 

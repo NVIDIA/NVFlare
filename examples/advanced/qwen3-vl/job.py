@@ -79,7 +79,6 @@ def main():
             train_args = f"--qwen_root {qwen_root} " + train_args
         per_site_config[site_name] = {
             "train_args": train_args,
-            "command": "bash custom/client_wrapper.sh",
         }
 
     # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
@@ -98,13 +97,11 @@ def main():
         train_script="client.py",
         train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
-        launch_external_process=True,
         server_expected_format="pytorch",
         key_metric="loss",
     )
 
-    # Add additional files to clients
-    recipe.add_client_file("client_wrapper.sh", clients=client_names)
+    # Add additional files to clients (run_train_with_cleanup.py is invoked by client.py)
     recipe.add_client_file("run_train_with_cleanup.py", clients=client_names)
 
     # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for

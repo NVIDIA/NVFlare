@@ -93,8 +93,11 @@ def main():
     flare.init()
     client_name = flare.system_info().get("site_name", "unknown")
 
-    use_temp = args.work_dir is None
-    work_dir = tempfile.mkdtemp(prefix="qwen3vl_fl_") if use_temp else _abs_path(args.work_dir)
+    # When --work_dir is not set, use a subdir of cwd (NVFlare client workspace); SimEnv clears it every run
+    if args.work_dir is None:
+        work_dir = os.path.join(os.getcwd(), "qwen3vl_checkpoints")
+    else:
+        work_dir = _abs_path(args.work_dir)
     os.makedirs(work_dir, exist_ok=True)
     input_model_dir = os.path.join(work_dir, "input_model")
     output_model_dir = os.path.join(work_dir, "output")
@@ -153,7 +156,7 @@ def main():
             "--tune_mm_mlp", "True",
             "--tune_mm_llm", "True",
             "--bf16",
-            "--per_device_train_batch_size", "4",
+            "--per_device_train_batch_size", "8",
             "--gradient_accumulation_steps", "2",
             "--learning_rate", args.learning_rate,
             "--save_strategy", "no",
@@ -209,12 +212,7 @@ def main():
         del raw, params, output_model
         _free_memory_after_send()
 
-    if use_temp and os.path.isdir(work_dir):
-        import shutil
-        try:
-            shutil.rmtree(work_dir, ignore_errors=True)
-        except Exception:
-            pass
+    # When using default work_dir, checkpoints live under the NVFlare client workspace; SimEnv clears it every run.
 
 
 if __name__ == "__main__":
