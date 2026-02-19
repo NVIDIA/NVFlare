@@ -14,7 +14,6 @@
 
 import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -67,7 +66,8 @@ def run_command_in_subprocess(command):
     python_path = ":".join(sys.path)[1:]  # strip leading colon
     new_env["PYTHONPATH"] = python_path
     process = subprocess.Popen(
-        shlex.split(command),
+        command,
+        shell=True,
         preexec_fn=os.setsid,
         env=new_env,
     )
