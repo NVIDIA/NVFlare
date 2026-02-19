@@ -42,6 +42,21 @@ def _free_memory_after_send() -> None:
         torch.cuda.empty_cache()
 
 
+def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
+    """Align model config and generation_config with tokenizer PAD/EOS/BOS so loading does not warn."""
+    cfg = hf_model.config
+    for key in ("pad_token_id", "eos_token_id", "bos_token_id"):
+        tid = getattr(tokenizer, key, None)
+        if tid is not None and hasattr(cfg, key):
+            setattr(cfg, key, tid)
+    if hasattr(hf_model, "generation_config") and hf_model.generation_config is not None:
+        gcfg = hf_model.generation_config
+        for key in ("pad_token_id", "eos_token_id", "bos_token_id"):
+            tid = getattr(tokenizer, key, None)
+            if tid is not None and hasattr(gcfg, key):
+                setattr(gcfg, key, tid)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run Qwen3-VL SFT script as subprocess per FL round")
     parser.add_argument("--data_path", type=str, default="./data/site-1", help="Site data dir (train.json here)")
@@ -120,9 +135,11 @@ def main():
         # Save received global model to HF format for train_qwen.py
         os.makedirs(input_model_dir, exist_ok=True)
         model.load_state_dict(input_model.params, strict=False)
-        model.model.save_pretrained(input_model_dir)
         from transformers import AutoProcessor
         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+        tokenizer = getattr(processor, "tokenizer", processor)
+        _align_model_config_to_tokenizer(model.model, tokenizer)
+        model.model.save_pretrained(input_model_dir)
         processor.save_pretrained(input_model_dir)
 
         # Run Qwen3-VL training via wrapper so we can call destroy_process_group() on exit (avoids PyTorch warning)
