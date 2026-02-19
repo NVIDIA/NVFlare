@@ -31,7 +31,7 @@ def define_parser():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="Qwen/Qwen3-VL-4B-Instruct",
+        default="Qwen/Qwen3-VL-2B-Instruct",
         help="HuggingFace model ID (must be Qwen3-VL when using Qwen3-VL repo train_qwen.py)",
     )
     parser.add_argument("--max_steps", type=int, default=50, help="Max steps per round (passed to train_qwen.py)")
@@ -82,8 +82,9 @@ def main():
         key_metric="loss",
     )
 
-    for site_name in client_names:
-        recipe.job.to("client_wrapper.sh", site_name)
+    # Add additional files to clients
+    recipe.add_client_file("client_wrapper.sh", clients=client_names)
+    recipe.add_client_file("run_train_with_cleanup.py", clients=client_names)
 
     # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
     # sending results (when unset, framework uses communication_timeout default 300s).

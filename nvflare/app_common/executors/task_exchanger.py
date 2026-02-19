@@ -43,7 +43,7 @@ class TaskExchanger(Executor):
         heartbeat_timeout: Optional[float] = 60.0,
         resend_interval: float = 2.0,
         max_resends: Optional[int] = None,
-        peer_read_timeout: Optional[float] = 60.0,
+        peer_read_timeout: Optional[float] = 1200.0,
         task_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.5,
         pipe_channel_name=PipeChannelName.TASK,

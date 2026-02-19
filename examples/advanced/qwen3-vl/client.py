@@ -50,7 +50,7 @@ def main():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="Qwen/Qwen3-VL-4B-Instruct",
+        default="Qwen/Qwen3-VL-2B-Instruct",
         help="HuggingFace model ID (must be Qwen3-VL to match train_qwen.py)",
     )
     parser.add_argument("--max_steps", type=int, default=50, help="Max steps per FL round for Qwen script")
@@ -105,14 +105,16 @@ def main():
         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
         processor.save_pretrained(input_model_dir)
 
-        # Run Qwen3-VL training script with torchrun (nproc_per_node=1) so process group is initialized
+        # Run Qwen3-VL training via wrapper so we can call destroy_process_group() on exit (avoids PyTorch warning)
+        wrapper_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_train_with_cleanup.py")
+        env["QWEN_FINETUNE_DIR"] = finetune_dir
         cmd = [
             sys.executable,
             "-m",
             "torch.distributed.run",
             "--nproc_per_node=1",
             "--nnodes=1",
-            train_script,
+            wrapper_script,
             "--model_name_or_path", input_model_dir,
             "--output_dir", output_model_dir,
             "--dataset_use", args.dataset_use,
@@ -126,6 +128,7 @@ def main():
             "--learning_rate", "2e-7",
             "--save_strategy", "no",
             "--report_to", "none",
+            "--ddp_find_unused_parameters", "False",
         ]
         cwd = finetune_dir
         # Allow Qwen package to be imported

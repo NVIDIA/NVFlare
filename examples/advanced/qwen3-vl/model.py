@@ -77,12 +77,12 @@ def load_qwen_vl_from_pretrained(model_name_or_path: str, **kwargs):
 class Qwen3VLModel(nn.Module):
     """Qwen3-VL model wrapper for use as initial_model in FedAvgRecipe.
 
-    Model configuration uses the HuggingFace model ID (e.g. Qwen/Qwen3-VL-4B-Instruct).
+    Model configuration uses the HuggingFace model ID (e.g. Qwen/Qwen3-VL-2B-Instruct).
     Supports both Qwen2.5-VL and Qwen3-VL checkpoints; the correct class is chosen from config.
     Use a Qwen3-VL model when training with the Qwen3-VL repo's train_qwen.py.
     """
 
-    def __init__(self, model_name_or_path: str = "Qwen/Qwen3-VL-4B-Instruct", **kwargs):
+    def __init__(self, model_name_or_path: str = "Qwen/Qwen3-VL-2B-Instruct", **kwargs):
         super().__init__()
 
         self.model_name_or_path = model_name_or_path
