@@ -131,15 +131,24 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 
 3. **Run the job**:
 
+For testing, we can run a single client
    ```bash
    export QWEN3VL_ROOT=/path/to/Qwen3-VL
    export WANDB_API_KEY=your_key_here   # optional
    # If train.json is in ./data/site-* but images live in a PubMedVision clone:
    export PUBMEDVISION_IMAGE_ROOT=/path/to/PubMedVision
-   python job.py --data_dir ./data --max_steps 50
+   python job.py --data_dir ./data --max_steps 1000 --n_clients 1
    ```
 
-   `--max_steps` limits steps per round (default: 50).
+   To run each client on a separate GPU (recommended when you have multiple GPUs):
+
+   ```bash
+   python job.py --data_dir ./data --max_steps 1000 --gpu "[0],[1],[2]"
+   ```
+
+   With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` (one GPU per client). For a different mapping, pass `--gpu` explicitly (e.g. `"[1],[2],[3]"`).
+
+   `--max_steps` limits steps per round (if not provided, the client trains for a full epoch).
 
 ## Timeouts and long runs
 
@@ -153,7 +162,7 @@ After each round the client sends the updated model weights back to the server; 
 | 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
 | 3 | Download PubMedVision (clone or Hub) and run `prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` for online experiment tracking |
-| 5 | Run `python job.py --data_dir ./data` (optionally `--max_steps N`) |
+| 5 | Run `python job.py --data_dir ./data` (optionally `--max_steps N`, `--gpu "[0],[1],[2]"` for one GPU per client) |
 
 ## References
 

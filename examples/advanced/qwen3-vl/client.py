@@ -53,7 +53,24 @@ def main():
         default="Qwen/Qwen3-VL-2B-Instruct",
         help="HuggingFace model ID (must be Qwen3-VL to match train_qwen.py)",
     )
-    parser.add_argument("--max_steps", type=int, default=50, help="Max steps per FL round for Qwen script")
+    parser.add_argument(
+        "--max_steps",
+        type=int,
+        default=None,
+        help="Max steps per FL round (omit to train one epoch per round)",
+    )
+    parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=1,
+        help="Train epochs per round when --max_steps is not set (default 1)",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=str,
+        default="5e-7",
+        help="Peak learning rate for Qwen script (default 5e-7; use 2e-7 for more stable, slower convergence)",
+    )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
 
@@ -108,24 +125,37 @@ def main():
         # Run Qwen3-VL training via wrapper so we can call destroy_process_group() on exit (avoids PyTorch warning)
         wrapper_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_train_with_cleanup.py")
         env["QWEN_FINETUNE_DIR"] = finetune_dir
+        # Unique master port per client to avoid TCPStore port conflict when multiple clients run on same host (simulator)
+        try:
+            site_num = int(client_name.split("-")[-1])
+        except (ValueError, IndexError):
+            site_num = 0
+        master_port = 29500 + (site_num if site_num > 0 else 0)
+        train_limit = (
+            ["--max_steps", str(args.max_steps)]
+            if args.max_steps is not None
+            else ["--num_train_epochs", str(args.num_train_epochs)]
+        )
         cmd = [
             sys.executable,
             "-m",
             "torch.distributed.run",
             "--nproc_per_node=1",
             "--nnodes=1",
+            "--master_port",
+            str(master_port),
             wrapper_script,
             "--model_name_or_path", input_model_dir,
             "--output_dir", output_model_dir,
             "--dataset_use", args.dataset_use,
-            "--max_steps", str(args.max_steps),
+            *train_limit,
             "--data_flatten", "True",
             "--tune_mm_mlp", "True",
             "--tune_mm_llm", "True",
             "--bf16",
-            "--per_device_train_batch_size", "2",
+            "--per_device_train_batch_size", "4",
             "--gradient_accumulation_steps", "2",
-            "--learning_rate", "2e-7",
+            "--learning_rate", args.learning_rate,
             "--save_strategy", "no",
             "--report_to", "none",
             "--ddp_find_unused_parameters", "False",
@@ -162,10 +192,15 @@ def main():
         # Checkpoint has inner model keys; prefix with "model." to match wrapper state_dict format.
         raw = load_state_dict_from_checkpoint(output_model_dir)
         params = {"model." + k: v for k, v in raw.items()}
+        meta = (
+            {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
+            if args.max_steps is not None
+            else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
+        )
         output_model = flare.FLModel(
             params=params,
             metrics={"loss": 0.0},
-            meta={"NUM_STEPS_CURRENT_ROUND": args.max_steps},
+            meta=meta,
         )
         print(f"site={client_name}, round={input_model.current_round}, sent updated weights")
         flare.send(output_model)

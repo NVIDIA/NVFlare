@@ -27,6 +27,12 @@ def define_parser():
     parser = argparse.ArgumentParser(description="Federated Qwen2.5-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=2, help="FL rounds")
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        help='GPU IDs per client, e.g. "[0],[1],[2]" for 3 clients on GPUs 0,1,2 (default: one GPU per client, [0],[1],...)',
+    )
     parser.add_argument("--data_dir", type=str, default="./data", help="Root dir for site-1, site-2, site-3 data")
     parser.add_argument(
         "--model_name_or_path",
@@ -34,7 +40,18 @@ def define_parser():
         default="Qwen/Qwen3-VL-2B-Instruct",
         help="HuggingFace model ID (must be Qwen3-VL when using Qwen3-VL repo train_qwen.py)",
     )
-    parser.add_argument("--max_steps", type=int, default=50, help="Max steps per round (passed to train_qwen.py)")
+    parser.add_argument(
+        "--max_steps",
+        type=int,
+        default=None,
+        help="Max steps per round (omit to train one epoch per round)",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=str,
+        default="5e-7",
+        help="Peak learning rate for training (default 5e-7; try 1e-6 for faster convergence)",
+    )
     return parser.parse_args()
 
 
@@ -48,11 +65,15 @@ def main():
     per_site_config = {}
     for site_name in client_names:
         site_data_path = os.path.join(data_dir, site_name)
+        step_or_epoch = (
+            f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
+        )
         train_args = (
             f"--data_path {site_data_path} "
             f"--dataset_use fl_site "
             f"--model_name_or_path {args.model_name_or_path} "
-            f"--max_steps {args.max_steps}"
+            f"{step_or_epoch}"
+            f"--learning_rate {args.learning_rate}"
         )
         if qwen_root:
             train_args = f"--qwen_root {qwen_root} " + train_args
@@ -108,7 +129,10 @@ def main():
         },
     )
 
-    env = SimEnv(clients=client_names, num_threads=n_clients)
+    gpu_config = (
+        args.gpu if args.gpu is not None else ",".join(f"[{i}]" for i in range(n_clients))
+    )
+    env = SimEnv(clients=client_names, num_threads=n_clients, gpu_config=gpu_config)
     run = recipe.execute(env)
     print()
     print("Job Status is:", run.get_status())
