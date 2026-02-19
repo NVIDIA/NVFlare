@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Client script that runs the Qwen3-VL fine-tuning script as an external process per FL round.
-Receives global model from NVFlare, saves to a dir, invokes train_qwen.py (from Qwen3-VL repo),
-loads the saved checkpoint, and sends updated weights back.
+Client script for federated Qwen3-VL fine-tuning. Launched by NVFlare as an external process
+(via torchrun from the job command). Receives global model, saves to a dir, runs Qwen train_qwen
+in-process, then loads the checkpoint and sends updated weights back.
 Requires QWEN3VL_ROOT and (for site data) a "fl_site" dataset entry in the Qwen repo's data_list
 that reads FL_SITE_DATA_DIR (see README).
 """
 import argparse
 import gc
 import os
-import subprocess
 import sys
-import tempfile
+from typing import Optional
 
 import nvflare.client as flare
 import torch
@@ -55,6 +54,55 @@ def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
             tid = getattr(tokenizer, key, None)
             if tid is not None and hasattr(gcfg, key):
                 setattr(gcfg, key, tid)
+
+
+def _run_qwen_train_inprocess(
+    finetune_dir: str,
+    input_model_dir: str,
+    output_model_dir: str,
+    dataset_use: str,
+    max_steps: Optional[int],
+    num_train_epochs: int,
+    learning_rate: str,
+) -> None:
+    """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
+    # Ensure Qwen finetune package is importable (train_qwen uses "from trainer import ...")
+    finetune_dir = os.path.abspath(finetune_dir)
+    if finetune_dir not in sys.path:
+        sys.path.insert(0, finetune_dir)
+    train_dir = os.path.join(finetune_dir, "qwenvl", "train")
+    if train_dir not in sys.path:
+        sys.path.insert(0, train_dir)
+
+    train_limit = (
+        ["--max_steps", str(max_steps)] if max_steps is not None else ["--num_train_epochs", str(num_train_epochs)]
+    )
+    argv = (
+        ["train_qwen.py", "--model_name_or_path", input_model_dir, "--output_dir", output_model_dir]
+        + ["--dataset_use", dataset_use]
+        + train_limit
+        + [
+            "--data_flatten", "True",
+            "--tune_mm_mlp", "True",
+            "--tune_mm_llm", "True",
+            "--bf16",
+            "--per_device_train_batch_size", "8",
+            "--gradient_accumulation_steps", "2",
+            "--learning_rate", learning_rate,
+            "--save_strategy", "no",
+            "--report_to", "none",
+            "--ddp_find_unused_parameters", "False",
+        ]
+    )
+    old_argv = sys.argv
+    sys.argv = argv
+    try:
+        from qwenvl.train import train_qwen
+        train_qwen.train(attn_implementation="flash_attention_2")
+    finally:
+        sys.argv = old_argv
+        if torch.distributed.is_initialized():
+            torch.distributed.destroy_process_group()
 
 
 def main():
@@ -117,9 +165,9 @@ def main():
     input_model_dir = os.path.join(work_dir, "input_model")
     output_model_dir = os.path.join(work_dir, "output")
 
-    # So that Qwen data_list can resolve "fl_site" from FL_SITE_DATA_DIR
-    env = os.environ.copy()
-    env["FL_SITE_DATA_DIR"] = data_path
+    # So that Qwen data_list and imports can resolve paths (in-process training reads os.environ)
+    os.environ["FL_SITE_DATA_DIR"] = data_path
+    os.environ["QWEN_FINETUNE_DIR"] = finetune_dir
 
     model = Qwen3VLModel(model_name_or_path=args.model_name_or_path)
 
@@ -142,50 +190,18 @@ def main():
         model.model.save_pretrained(input_model_dir)
         processor.save_pretrained(input_model_dir)
 
-        # Run Qwen3-VL training via wrapper so we can call destroy_process_group() on exit (avoids PyTorch warning)
-        wrapper_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_train_with_cleanup.py")
-        env["QWEN_FINETUNE_DIR"] = finetune_dir
-        # Unique master port per client to avoid TCPStore port conflict when multiple clients run on same host (simulator)
+        # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
         try:
-            site_num = int(client_name.split("-")[-1])
-        except (ValueError, IndexError):
-            site_num = 0
-        master_port = 29500 + (site_num if site_num > 0 else 0)
-        train_limit = (
-            ["--max_steps", str(args.max_steps)]
-            if args.max_steps is not None
-            else ["--num_train_epochs", str(args.num_train_epochs)]
-        )
-        cmd = [
-            sys.executable,
-            "-m",
-            "torch.distributed.run",
-            "--nproc_per_node=1",
-            "--nnodes=1",
-            "--master_port",
-            str(master_port),
-            wrapper_script,
-            "--model_name_or_path", input_model_dir,
-            "--output_dir", output_model_dir,
-            "--dataset_use", args.dataset_use,
-            *train_limit,
-            "--data_flatten", "True",
-            "--tune_mm_mlp", "True",
-            "--tune_mm_llm", "True",
-            "--bf16",
-            "--per_device_train_batch_size", "8",
-            "--gradient_accumulation_steps", "2",
-            "--learning_rate", args.learning_rate,
-            "--save_strategy", "no",
-            "--report_to", "none",
-            "--ddp_find_unused_parameters", "False",
-        ]
-        cwd = finetune_dir
-        # Allow Qwen package to be imported
-        env["PYTHONPATH"] = finetune_dir + os.pathsep + env.get("PYTHONPATH", "")
-        try:
-            subprocess.run(cmd, cwd=cwd, env=env, check=True)
-        except subprocess.CalledProcessError as e:
+            _run_qwen_train_inprocess(
+                finetune_dir=finetune_dir,
+                input_model_dir=input_model_dir,
+                output_model_dir=output_model_dir,
+                dataset_use=args.dataset_use,
+                max_steps=args.max_steps,
+                num_train_epochs=args.num_train_epochs,
+                learning_rate=args.learning_rate,
+            )
+        except Exception as e:
             print(f"Qwen SFT script failed: {e}", file=sys.stderr)
             # Send last checkpoint so round does not block; fallback to input model state_dict
             load_dir = output_model_dir if os.path.isdir(output_model_dir) else input_model_dir

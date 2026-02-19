@@ -63,7 +63,7 @@ def main():
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
     per_site_config = {}
-    for site_name in client_names:
+    for idx, site_name in enumerate(client_names):
         site_data_path = os.path.join(data_dir, site_name)
         step_or_epoch = (
             f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
@@ -77,8 +77,14 @@ def main():
         )
         if qwen_root:
             train_args = f"--qwen_root {qwen_root} " + train_args
+        # Per-site torchrun command so each client runs as external process with a unique master_port
+        master_port = 29500 + (idx + 1)
+        command = (
+            f"torchrun --nproc_per_node=1 --nnodes=1 --master_port {master_port}"
+        )
         per_site_config[site_name] = {
             "train_args": train_args,
+            "command": command,
         }
 
     # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
@@ -97,12 +103,12 @@ def main():
         train_script="client.py",
         train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
+        launch_external_process=True,
         server_expected_format="pytorch",
         key_metric="loss",
     )
 
-    # Add additional files to clients (run_train_with_cleanup.py is invoked by client.py)
-    recipe.add_client_file("run_train_with_cleanup.py", clients=client_names)
+    # Client script is the only custom file; it runs Qwen train in-process
 
     # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
     # sending results (when unset, framework uses communication_timeout default 300s).

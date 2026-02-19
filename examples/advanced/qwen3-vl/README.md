@@ -9,7 +9,7 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | File | Role |
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
-| `client.py` | Client entry point: receives global model, runs the official Qwen3-VL `train_qwen.py` script as a subprocess per round (via `run_train_with_cleanup.py`), sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `client.py` | Client entry point (launched by NVFlare via torchrun): receives global model, runs Qwen3-VL `train_qwen` in-process per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
 | `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches `client.py` with the default command (`python3 -u`). |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards |
 
@@ -122,7 +122,7 @@ You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB
 
 ## 5. Run the federated job
 
-Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen.py`) as a subprocess per round: the FL client (`client.py`) receives the global model, runs `train_qwen.py` via the `run_train_with_cleanup.py` wrapper, and sends the updated weights back.
+Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
 1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
 
