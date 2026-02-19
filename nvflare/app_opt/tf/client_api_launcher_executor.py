@@ -31,7 +31,7 @@ class TFClientAPILauncherExecutor(ClientAPILauncherExecutor):
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
         external_pre_init_timeout: float = 300.0,
-        peer_read_timeout: Optional[float] = 1200.0,
+        peer_read_timeout: Optional[float] = 300.0,
         monitor_interval: float = 0.01,
         read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
