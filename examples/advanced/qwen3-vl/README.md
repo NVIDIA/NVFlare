@@ -122,7 +122,7 @@ You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB
 
 ## 5. Run the federated job
 
-Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
+Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun (so Qwen gets a proper distributed env), receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
 1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
 

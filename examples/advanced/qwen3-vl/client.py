@@ -21,6 +21,7 @@ that reads FL_SITE_DATA_DIR (see README).
 import argparse
 import gc
 import os
+import signal
 import sys
 from typing import Optional
 
@@ -136,6 +137,12 @@ def main():
     )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
+
+    # Exit cleanly on SIGTERM (e.g. when NVFlare stops the job) so torchrun does not log SignalException
+    def _sigterm_handler(_signum, _frame):
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
 
     qwen_root = args.qwen_root or os.environ.get("QWEN3VL_ROOT", "")
     if not qwen_root or not os.path.isdir(qwen_root):

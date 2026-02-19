@@ -77,15 +77,10 @@ def main():
         )
         if qwen_root:
             train_args = f"--qwen_root {qwen_root} " + train_args
-        # Per-site torchrun command so each client runs as external process with a unique master_port
+        # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
         master_port = 29500 + (idx + 1)
-        command = (
-            f"torchrun --nproc_per_node=1 --nnodes=1 --master_port {master_port}"
-        )
-        per_site_config[site_name] = {
-            "train_args": train_args,
-            "command": command,
-        }
+        command = f"torchrun --nproc_per_node=1 --nnodes=1 --master_port {master_port}"
+        per_site_config[site_name] = {"train_args": train_args, "command": command}
 
     # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
     model = {
