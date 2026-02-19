@@ -46,6 +46,48 @@ class MockModelAggregator(ModelAggregator):
         self.reset_count += 1
 
 
+class LazyAwareMockModelAggregator(MockModelAggregator):
+    accepts_lazy_tensors = True
+
+
+class _FakeTempRef:
+    def __init__(self):
+        self.cleaned = False
+
+    def cleanup(self):
+        self.cleaned = True
+
+
+class _FakeLazyRef:
+    def __init__(self, value, temp_ref: _FakeTempRef):
+        self._value = value
+        self._temp_ref = temp_ref
+        self.resolve_calls = 0
+
+    def resolve(self):
+        self.resolve_calls += 1
+        return self._value
+
+
+class _MockCell:
+    def __init__(self, stream_to_disk: bool):
+        self.ctx = {"stream_to_disk": stream_to_disk}
+
+    def get_fobs_context(self):
+        return dict(self.ctx)
+
+    def update_fobs_context(self, props: dict):
+        self.ctx.update(props)
+
+
+class _MockEngine:
+    def __init__(self, cell):
+        self.cell = cell
+
+    def get_cell(self):
+        return self.cell
+
+
 class TestFedAvgInit:
     """Test FedAvg controller initialization."""
 
@@ -351,6 +393,78 @@ class TestFedAvgAggregation:
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
         controller._aggregate_one_result(empty_result)
         assert controller._received_count == 0  # Not counted
+
+
+class TestFedAvgLazyCompatibility:
+    def test_custom_aggregator_materialized_when_not_lazy_aware(self):
+        aggregator = MockModelAggregator()
+        controller = FedAvg(num_clients=1, aggregator=aggregator, stream_to_disk=True)
+        controller._received_count = 0
+        controller._expected_count = 1
+        controller.current_round = 0
+        controller._params_type = None
+
+        temp_ref = _FakeTempRef()
+        lazy_ref = _FakeLazyRef(value=2.5, temp_ref=temp_ref)
+        result = FLModel(
+            params={"w": lazy_ref},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result)
+
+        accepted_model = aggregator.models[0]
+        assert accepted_model.params["w"] == 2.5
+        assert temp_ref.cleaned is True
+        assert lazy_ref.resolve_calls == 1
+
+    def test_custom_aggregator_keeps_lazy_when_lazy_aware(self):
+        aggregator = LazyAwareMockModelAggregator()
+        controller = FedAvg(num_clients=1, aggregator=aggregator, stream_to_disk=True)
+        controller._received_count = 0
+        controller._expected_count = 1
+        controller.current_round = 0
+        controller._params_type = None
+
+        temp_ref = _FakeTempRef()
+        lazy_ref = _FakeLazyRef(value=3.5, temp_ref=temp_ref)
+        result = FLModel(
+            params={"w": lazy_ref},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result)
+
+        accepted_model = aggregator.models[0]
+        assert accepted_model.params["w"] is lazy_ref
+        assert temp_ref.cleaned is False
+        assert lazy_ref.resolve_calls == 0
+
+
+class TestFedAvgDownloadToDiskContext:
+    def test_set_and_restore_stream_to_disk(self):
+        controller = FedAvg(stream_to_disk=True)
+        cell = _MockCell(stream_to_disk=False)
+        controller.engine = _MockEngine(cell)
+
+        active_cell, previous = controller._set_stream_to_disk()
+        assert active_cell is cell
+        assert previous is False
+        assert cell.ctx["stream_to_disk"] is True
+
+        controller._restore_stream_to_disk(active_cell, previous)
+        assert cell.ctx["stream_to_disk"] is False
+
+    def test_set_stream_to_disk_without_cell(self):
+        controller = FedAvg(stream_to_disk=True)
+        controller.engine = _MockEngine(cell=None)
+
+        active_cell, previous = controller._set_stream_to_disk()
+
+        assert active_cell is None
+        assert previous is None
 
 
 class TestFedAvgAggregationWeights:

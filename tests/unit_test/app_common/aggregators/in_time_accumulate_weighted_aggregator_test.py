@@ -27,6 +27,9 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class TestInTimeAccumulateWeightedAggregator:
+    def test_accepts_lazy_tensors_marker(self):
+        assert getattr(InTimeAccumulateWeightedAggregator, "accepts_lazy_tensors", False) is True
+
     @pytest.mark.parametrize(
         "exclude_vars,aggregation_weights,expected_data_kind,error,error_msg,is_regex",
         [

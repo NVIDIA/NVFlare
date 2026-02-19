@@ -221,6 +221,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                     if job_id not in self.exception_run_processes:
                         self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
+
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
@@ -448,6 +449,8 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             self.run_manager.add_handler(widget)
 
     def get_cell(self):
+        if self.run_manager and self.run_manager.cell:
+            return self.run_manager.cell
         return self.cell
 
     def initialize_comm(self, cell: Cell):

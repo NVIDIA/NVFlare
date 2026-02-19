@@ -57,7 +57,7 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         optional=False,
         abort_signal=None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
-        use_disk = cell.get_fobs_context().get("download_to_disk", False)
+        use_disk = cell.get_fobs_context().get("stream_to_disk", False)
         if use_disk:
             return download_tensors_to_disk(
                 from_fqcn,

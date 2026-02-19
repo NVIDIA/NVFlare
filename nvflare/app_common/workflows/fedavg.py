@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 from typing import Any, Dict, Optional, Union
 
@@ -21,8 +20,8 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.utils.lazy_payload import cleanup_inplace, contains_lazy, resolve_inplace
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
 from .base_fedavg import BaseFedAvg
@@ -71,7 +70,7 @@ class FedAvg(BaseFedAvg):
             aggregation. Defaults to None. Only used when no custom aggregator is provided.
         aggregation_weights (dict, optional): Per-client aggregation weights.
             Defaults to None (equal weights). Only used when no custom aggregator is provided.
-        download_to_disk (bool, optional): Download tensors to disk during FOBS streaming
+        stream_to_disk (bool, optional): Download tensors to disk during FOBS streaming
             instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
             model size during aggregation. Defaults to False.
     """
@@ -87,7 +86,7 @@ class FedAvg(BaseFedAvg):
         task_name: Optional[str] = "train",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
-        download_to_disk: bool = False,
+        stream_to_disk: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -107,7 +106,7 @@ class FedAvg(BaseFedAvg):
         # Aggregation configuration (used only when no custom aggregator)
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
-        self.download_to_disk = download_to_disk
+        self.stream_to_disk = stream_to_disk
 
         # Parse stop condition
         if self.stop_cond:
@@ -127,18 +126,45 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
 
-    def _set_download_to_disk(self, enabled: bool):
-        cell = self.engine.get_cell()
-        if cell:
-            cell.update_fobs_context({"download_to_disk": enabled})
+    def _aggregator_accepts_lazy_tensors(self) -> bool:
+        return bool(self.aggregator and getattr(self.aggregator, "accepts_lazy_tensors", False))
+
+    def _set_stream_to_disk(self):
+        engine = getattr(self, "engine", None)
+        if not engine or not hasattr(engine, "get_cell"):
+            if self.stream_to_disk:
+                self.warning("stream_to_disk is enabled but engine has no get_cell(); using in-memory download path")
+            return None, None
+
+        cell = engine.get_cell()
+        if not cell:
+            if self.stream_to_disk:
+                self.warning("stream_to_disk is enabled but no active cell is available; using in-memory download path")
+            return None, None
+
+        previous = bool(cell.get_fobs_context().get("stream_to_disk", False))
+        desired = bool(self.stream_to_disk)
+        if previous != desired:
+            cell.update_fobs_context({"stream_to_disk": desired})
+            self.info(f"_set_stream_to_disk: {previous} -> {desired}")
+        return cell, previous
+
+    def _restore_stream_to_disk(self, cell, previous):
+        if not cell or previous is None:
+            return
+
+        current = bool(cell.get_fobs_context().get("stream_to_disk", False))
+        if current != previous:
+            cell.update_fobs_context({"stream_to_disk": previous})
+            self.info(f"_restore_stream_to_disk: {current} -> {previous}")
 
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
-
-        if self.download_to_disk:
-            self._set_download_to_disk(True)
-
+        cell, previous_stream_to_disk = self._set_stream_to_disk()
         try:
+            # Keep NUM_ROUNDS available in FL context for persistor/widgets.
+            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+
             # Load initial model - prefer model if provided, else use persistor
             if self.model is not None:
                 if isinstance(self.model, FLModel):
@@ -221,8 +247,7 @@ class FedAvg(BaseFedAvg):
 
             self.info(center_message("Finished FedAvg."))
         finally:
-            if self.download_to_disk:
-                self._set_download_to_disk(False)
+            self._restore_stream_to_disk(cell, previous_stream_to_disk)
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
@@ -236,10 +261,15 @@ class FedAvg(BaseFedAvg):
             self._params_type = result.params_type
 
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
-
         if self.aggregator:
-            # Custom aggregator — may defer consumption, so no cleanup here.
-            # Temp files are cleaned via _TempDirRef GC when refs are no longer held.
+            # For backward compatibility, custom aggregators that are not lazy-aware
+            # always receive fully materialized tensors.
+            if self.stream_to_disk and not self._aggregator_accepts_lazy_tensors() and contains_lazy(result.params):
+                try:
+                    resolve_inplace(result.params, cleanup_resolved=True)
+                finally:
+                    # Best-effort final sweep in case resolve failed mid-way.
+                    cleanup_inplace(result.params)
             self.aggregator.accept_model(result)
         else:
             # Built-in InTime aggregation: add() resolves lazy refs one-at-a-time,
@@ -275,9 +305,7 @@ class FedAvg(BaseFedAvg):
                         contribution_round=self.current_round,
                     )
             finally:
-                from nvflare.app_opt.pt.lazy_tensor_dict import cleanup_lazy_refs
-
-                cleanup_lazy_refs(result.params)
+                cleanup_inplace(result.params)
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
