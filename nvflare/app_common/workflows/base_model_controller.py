@@ -378,16 +378,45 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
-        Uses private=True, sticky=False to match FedAvg/ScatterAndGather; re-setting with the
-        same attributes updates the value (no stickiness warning). Required for flows like FedAvg
-        that do not set CURRENT_ROUND in fl_ctx before send; downstream (e.g. aggregators) rely on it.
+        Uses existing (private, sticky) attributes when the prop is already set so set_prop()
+        accepts the update without warning; otherwise uses private=True, sticky=False. Required
+        for flows like FedAvg that do not set CURRENT_ROUND in fl_ctx before send; downstream
+        (e.g. aggregators) rely on it.
         """
         if not data:
             return
         if data.current_round is not None:
-            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, data.current_round, private=True, sticky=False)
+            detail = self.fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+            if detail is not None:
+                self.fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND,
+                    data.current_round,
+                    private=detail["private"],
+                    sticky=detail["sticky"],
+                )
+            else:
+                self.fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND,
+                    data.current_round,
+                    private=True,
+                    sticky=False,
+                )
         if data.total_rounds is not None:
-            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, data.total_rounds, private=True, sticky=False)
+            detail = self.fl_ctx.get_prop_detail(AppConstants.NUM_ROUNDS)
+            if detail is not None:
+                self.fl_ctx.set_prop(
+                    AppConstants.NUM_ROUNDS,
+                    data.total_rounds,
+                    private=detail["private"],
+                    sticky=detail["sticky"],
+                )
+            else:
+                self.fl_ctx.set_prop(
+                    AppConstants.NUM_ROUNDS,
+                    data.total_rounds,
+                    private=True,
+                    sticky=False,
+                )
 
     def get_component(self, component_id: str):
         return self.engine.get_component(component_id)
