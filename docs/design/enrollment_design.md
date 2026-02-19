@@ -322,6 +322,11 @@ Example (user token excerpt):
 | Replay attack | Single-use enforcement + expiration |
 | Brute force | UUID-based JTI + rate limiting |
 
+Token validity operational note:
+- Very short token TTLs reduce theft window, but can fail if deployment/startup is delayed (for example, delayed K8s pod scheduling).
+- Recommended pattern: issue tokens just-in-time (close to rollout), store them in short-lived secrets, and re-issue on expiration instead of extending TTL excessively.
+- A practical baseline is environment-specific (for example, hours for fast CI/K8s rollouts, longer windows for manual operations), with strict single-use still enforced.
+
 ### Token Signing Key
 
 By default, the root CA private key signs both participant certificates and JWT tokens. For advanced deployments, a separate JWT signing key pair can be used for key rotation or security isolation. Both TokenService and CertService must share the same JWT key pair.
@@ -500,12 +505,18 @@ pending:
   timeout: 604800                  # 7 days
   cleanup_interval: 3600
 
+rate_limit:
+  enroll_requests_per_minute: 60   # Per source identity/IP (implementation-defined)
+  token_requests_per_minute: 30    # Admin API path guardrail
+
 audit:
   enabled: true
   log_file: /var/log/cert_service/audit.log
 ```
 
 The service TLS certificate (`server.tls`) is for HTTPS and is separate from the FLARE root CA (`ca`), which is used only for signing FL participant certificates. On first start, if rootCA files don't exist in `data_dir`, they are auto-generated.
+
+Rate-limiting note: if service-level rate limiting is not enabled, equivalent controls should be enforced at the ingress/gateway layer (for example, NGINX, API Gateway, or WAF).
 
 Production safety note:
 - Auto-generation is bootstrap convenience only.
@@ -524,7 +535,7 @@ The `EnrollmentStore` ABC provides: `is_enrolled`, `add_enrolled`, `get_enrolled
 | --- | --- | --- |
 | Deployment | Single node | Multi-node / HA |
 | Dependencies | Built-in | Requires psycopg2 |
-| Concurrency | Limited | Full ACID |
+| Concurrency model | Single-writer | Multi-writer / concurrent |
 | Use Case | Dev, small production | Large production |
 
 ## Client Enrollment (Auto-Scale Only)
@@ -745,8 +756,13 @@ nvflare package -n hospital-1 -e grpc://server:8002 -t client \
 nvflare package -n hospital-1 -e grpc://server:8002 -t client \
     --cert-service https://cert-service:8443 --token eyJhbGciOiJSUzI1NiIs...
 
-# Server package (either workflow)
-nvflare package -n server1 -e grpc://0.0.0.0:8002:8003 -t server
+# Server package - Manual workflow (pre-signed cert files)
+nvflare package -n server1 -e grpc://0.0.0.0:8002:8003 -t server \
+    --cert ./signed/server.crt --key ./csr/server1.key --rootca ./signed/rootCA.pem
+
+# Server package - Auto-Scale workflow (runtime auto-enrollment)
+nvflare package -n server1 -e grpc://0.0.0.0:8002:8003 -t server \
+    --cert-service https://cert-service:8443 --token eyJhbGciOiJSUzI1NiIs...
 
 # From project file
 nvflare package -p project.yml -w ./packages
