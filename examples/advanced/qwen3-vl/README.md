@@ -10,14 +10,16 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
 | `client.py` | Client entry point (launched by NVFlare via torchrun): receives global model, runs Qwen3-VL `train_qwen` in-process per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches `client.py` with the default command (`python3 -u`). |
-| `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches each client with a per-site torchrun command (unique `--master_port` per client). |
+| `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
 
 ## Prerequisites
 
 - Python 3.10+
-- CUDA-capable GPU (recommended: 18GB+ VRAM for the 4B model)
+- CUDA-capable GPU with substantial VRAM. Training has been tested on **3× NVIDIA H100** (one GPU per client; 94GB available VRAM per GPU).
 - [Git LFS](https://git-lfs.com/) (for cloning dataset repos)
+
+**Note:** Training has been tested on 3 × NVIDIA H100 (one GPU per client).
 
 ## 1. Virtual environment and dependencies
 
@@ -93,6 +95,7 @@ Optional flags:
 
 - `--subset_size 5000` — use at most 5000 samples per client (for a quick run).
 - `--num_clients 3` — number of client shards (default: 3).
+- `--image_root /path/to/PubMedVision` — resolve relative image paths and exclude samples whose image file(s) do not exist.
 
 Output layout (same JSON format as the source, one file per client):
 
@@ -112,7 +115,7 @@ export WANDB_API_KEY=your_key_here
 
 Get your API key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
 
-**Configuration:** The `job.py` script configures WandB with (see `job.py` around lines 95–98):
+**Configuration:** The `job.py` script configures WandB with (see `job.py` add_experiment_tracking call):
 - `name`: "qwen3-vl-fedavg"
 - `project`: "nvflare"
 - `group`: "nvidia"
@@ -126,7 +129,7 @@ Training uses the official [Qwen3-VL fine-tuning script](https://github.com/Qwen
 
 1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
 
-2. **Dataset config for training**: The example's Qwen3-VL clone already registers a `fl_site` dataset in `qwen-vl-finetune/qwenvl/data/__init__.py` following the [official Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) (dataset definition + `data_dict`). The runner sets `FL_SITE_DATA_DIR` to each site's data dir (e.g. `./data/site-1`) before calling the script; `fl_site` paths are resolved at runtime from that and, optionally, `PUBMEDVISION_IMAGE_ROOT`. If you use a fresh Qwen3-VL clone, add the same `FL_SITE` definition and `"fl_site": FL_SITE` in `data_dict`, and in `data_list()` resolve `annotation_path` and `data_path` for `fl_site` from those env vars. If images live in a separate PubMedVision repo, set `PUBMEDVISION_IMAGE_ROOT` to that repo path (the folder containing `images/`).
+2. **Dataset config for training**: The example's Qwen3-VL clone already registers a `fl_site` dataset in `qwen-vl-finetune/qwenvl/data/__init__.py` following the [official Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) (dataset definition + `data_dict`). The client sets `FL_SITE_DATA_DIR` to its site data dir (e.g. `./data/site-1`); `fl_site` paths are resolved at runtime from that and, optionally, `PUBMEDVISION_IMAGE_ROOT`. If you use a fresh Qwen3-VL clone, add the same `FL_SITE` definition and `"fl_site": FL_SITE` in `data_dict`, and in `data_list()` resolve `annotation_path` and `data_path` for `fl_site` from those env vars. If images live in a separate PubMedVision repo, set `PUBMEDVISION_IMAGE_ROOT` to that repo path (the folder containing `images/`).
 
 3. **Run the job**:
 
