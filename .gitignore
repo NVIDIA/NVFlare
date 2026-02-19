@@ -174,3 +174,6 @@ docs/apidocs/
 
 # dependency marker
 .deps_marker
+
+# local test temp dir
+.tmp/
