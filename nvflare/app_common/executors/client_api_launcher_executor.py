@@ -22,6 +22,7 @@ from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.utils.configs import get_client_config_value
 
 
@@ -114,6 +115,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
+        # Enable PASS_THROUGH mode on the engine's communication cell so that
+        # large tensors arriving from the FL server are NOT downloaded here at
+        # the CJ.  ViaDownloaderDecomposer will instead create LazyDownloadRef
+        # placeholders that carry the original server FQCN and ref_id.  When CJ
+        # forwards the task to the subprocess agent via the task pipe, those
+        # placeholders are re-emitted as-is, causing the subprocess to download
+        # each tensor directly from the server — one tensor at a time, with no
+        # size limit and no tensor copy at CJ.
+        engine = fl_ctx.get_engine()
+        cell = engine.get_cell()
+        if cell is not None:
+            cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
+            self.log_info(
+                fl_ctx,
+                "PASS_THROUGH enabled: task tensors will be downloaded by the subprocess "
+                "agent directly from the source, bypassing CJ memory.",
+            )
         super().initialize(fl_ctx)
 
         # Check for top-level config override for external_pre_init_timeout

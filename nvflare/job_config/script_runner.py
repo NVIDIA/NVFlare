@@ -224,7 +224,14 @@ class BaseScriptRunner:
         comp_ids = {}
 
         if self._launch_external_process:
-            task_pipe = self._task_pipe if self._task_pipe else self._create_local_cell_pipe()
+            # Task pipe uses CellPipe (routed through the FL network) so that the
+            # subprocess agent's pipe cell has FL-network connectivity.  This is
+            # required for the B1 pass-through architecture: the CJ forwards
+            # LazyDownloadRef placeholders (not tensor data) to the subprocess,
+            # and the subprocess must be able to resolve those refs by sending
+            # download requests back to the originating server cell via the FL
+            # network.
+            task_pipe = self._task_pipe if self._task_pipe else self._create_cell_pipe()
             task_pipe_id = job.add_component("pipe", task_pipe, ctx)
             comp_ids["pipe_id"] = task_pipe_id
 
@@ -255,6 +262,10 @@ class BaseScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
+            # Metric pipe uses LocalCellPipe (direct local TCP).  Metric payloads
+            # are small (scalars / short strings) and do not require FL-network
+            # routing, TLS certificates, or auth tokens.  LocalCellPipe gives a
+            # faster, simpler channel for the subprocess → CJ metric stream.
             metric_pipe = self._metric_pipe if self._metric_pipe else self._create_local_cell_pipe()
             metric_pipe_id = job.add_component("metrics_pipe", metric_pipe, ctx)
             comp_ids["metric_pipe_id"] = metric_pipe_id

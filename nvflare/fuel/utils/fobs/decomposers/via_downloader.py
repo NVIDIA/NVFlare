@@ -31,6 +31,41 @@ from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 _MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
 
 
+class LazyDownloadRef:
+    """Placeholder created in PASS_THROUGH mode instead of downloading a tensor.
+
+    When a cell is configured as a pure forwarder (``FOBSContextKey.PASS_THROUGH``
+    is set in its FOBS context), incoming download references from the source are
+    not resolved.  Instead a ``LazyDownloadRef`` is created for each tensor item
+    in the received batch so that the original source FQCN and batch ref_id are
+    preserved.
+
+    When the forwarding node (CJ) later serialises the task for its subprocess,
+    ``ViaDownloaderDecomposer.decompose()`` detects ``LazyDownloadRef`` targets
+    and re-emits the *original* download datum (pointing back to the server)
+    instead of creating a new datum that would point to the CJ.  The subprocess
+    agent then resolves the references directly from the originating source,
+    downloading each tensor individually without any copy passing through the CJ.
+
+    Attributes:
+        fqcn:    FQCN of the originating cell that owns the download transaction.
+        ref_id:  UUID of the batch download transaction on that cell.
+        item_id: Intra-batch item placeholder (e.g. ``"T0"``, ``"T1"``).
+    """
+
+    __slots__ = ("fqcn", "ref_id", "item_id")
+
+    def __init__(self, fqcn: str, ref_id: str, item_id: str):
+        self.fqcn = fqcn
+        self.ref_id = ref_id
+        self.item_id = item_id
+
+
+# fobs_ctx key used to carry the (fqcn, ref_id) batch tuple in PASS_THROUGH mode
+# so that recompose() can build per-item LazyDownloadRefs from a single datum.
+_LAZY_BATCH_CTX_SUFFIX = "_lazy_batch"
+
+
 class EncKey:
     TYPE = "type"
     DATA = "data"
@@ -178,6 +213,28 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # this should never happen
             raise RuntimeError("FOBS System Error: missing DatumManager")
 
+        # ── LazyDownloadRef: re-emit the original server datum verbatim ────────
+        # A LazyDownloadRef was created in PASS_THROUGH mode when CJ received the
+        # task from the server.  Instead of creating a *new* download transaction
+        # on *this* cell (which would make the subprocess download from CJ), we
+        # re-emit the exact datum that the server originally sent.  The subprocess
+        # agent therefore downloads each tensor directly from the server, with no
+        # tensor data ever materialised on CJ.
+        if isinstance(target, LazyDownloadRef):
+            fobs_ctx = manager.fobs_ctx
+            lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
+            if lazy_batch_key not in fobs_ctx:
+                # First LazyDownloadRef of this batch: register a post-callback
+                # that will add the single shared datum (fqcn + ref_id) after all
+                # items have been serialised.
+                fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id}
+                manager.register_post_cb(self._finalize_lazy_batch)
+
+            self.logger.debug(
+                f"ViaDownloader: re-emitting LazyDownloadRef {target.item_id=} " f"{target.fqcn=} {target.ref_id=}"
+            )
+            return {EncKey.TYPE: EncType.REF, EncKey.DATA: target.item_id}
+
         max_chunk_size = acu.get_int_var(
             self._config_var_name(ConfigVarName.DOWNLOAD_CHUNK_SIZE),
             self.max_chunk_size,
@@ -320,6 +377,26 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: deleting download transaction associated with {msg_root_id=}")
         downloader.delete_transaction()
 
+    def _finalize_lazy_batch(self, mgr: DatumManager):
+        """Post-callback used when re-emitting a LazyDownloadRef batch.
+
+        Adds a single datum containing the *original* source FQCN and ref_id so
+        that the downstream consumer (subprocess agent) can download the tensors
+        directly from the originating cell (typically the FL server) without
+        involving the CJ at all.
+        """
+        fobs_ctx = mgr.fobs_ctx
+        lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
+        lazy_batch = fobs_ctx.get(lazy_batch_key)
+        if not lazy_batch:
+            return
+        ref = {_RefKey.FQCN: lazy_batch["fqcn"], _RefKey.REF_ID: lazy_batch["ref_id"]}
+        datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
+        self.logger.debug(
+            f"ViaDownloader: finalized lazy batch datum for {lazy_batch['fqcn']=} {lazy_batch['ref_id']=}"
+        )
+        mgr.add_datum(datum)
+
     def process_datum(self, datum: Datum, manager: DatumManager):
         """This is called by the manager to process a datum that has a DOT.
         This happens before the recompose processing.
@@ -339,6 +416,17 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         """
         self.logger.debug(f"ViaDownloader: pre-processing datum {datum.dot=} before recompose")
         fobs_ctx = manager.fobs_ctx
+
+        if fobs_ctx.get(fobs.FOBSContextKey.PASS_THROUGH):
+            # PASS_THROUGH mode: do NOT download tensors at this intermediate hop.
+            # Store the batch (fqcn, ref_id) so that recompose() can build a
+            # LazyDownloadRef for each item_id it encounters.  The downstream
+            # consumer (subprocess agent) will resolve the references directly
+            # from the originating source cell.
+            ref = json.loads(datum.value)
+            self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
+            fobs_ctx[self.items_key] = (ref[_RefKey.FQCN], ref[_RefKey.REF_ID])
+            return
 
         # data is to be downloaded
         ref = json.loads(datum.value)
@@ -377,6 +465,15 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         item_id = data
         fobs_ctx = manager.fobs_ctx
         items = fobs_ctx.get(self.items_key)
+
+        # PASS_THROUGH mode: items_key holds a (fqcn, ref_id) tuple, not a dict.
+        # Build a LazyDownloadRef so the reference can be forwarded verbatim.
+        if isinstance(items, tuple):
+            fqcn, ref_id = items
+            lazy = LazyDownloadRef(fqcn=fqcn, ref_id=ref_id, item_id=item_id)
+            self.logger.debug(f"ViaDownloader PASS_THROUGH: created LazyDownloadRef {item_id=} {fqcn=} {ref_id=}")
+            return lazy
+
         self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
         item = items.get(item_id)
         self.logger.debug(f"{tid=} found item {item_id}: {type(item)}")
