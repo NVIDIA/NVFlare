@@ -25,6 +25,8 @@ from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 
 log = logging.getLogger(__name__)
+SEND_LOCK_WARN_SECS = 2.0
+SEND_FRAME_WARN_SECS = 2.0
 
 
 class SfmConnection:
@@ -144,8 +146,22 @@ class SfmConnection:
 
         log.debug(f"Sending frame: {prefix} on {self.conn}")
         # Only one thread can send data on a connection. Otherwise, the frames may interleave.
-        with self.lock:
-            self.conn.send_frame(buffer)
+        lock_wait_start = time.perf_counter()
+        send_start = None
+        lock_wait_secs = 0.0
+        try:
+            with self.lock:
+                lock_wait_secs = time.perf_counter() - lock_wait_start
+                send_start = time.perf_counter()
+                self.conn.send_frame(buffer)
+        finally:
+            if send_start is not None:
+                send_secs = time.perf_counter() - send_start
+                if lock_wait_secs > SEND_LOCK_WARN_SECS or send_secs > SEND_FRAME_WARN_SECS:
+                    log.warning(
+                        f"Slow frame send on {self.conn}: lock_wait={lock_wait_secs:.3f}s "
+                        f"send={send_secs:.3f}s bytes={length} frame={prefix}"
+                    )
 
     @staticmethod
     def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:
