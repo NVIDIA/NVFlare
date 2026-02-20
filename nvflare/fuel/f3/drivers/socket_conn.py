@@ -57,6 +57,9 @@ class SocketConnection(Connection):
     def send_frame(self, frame: BytesAlike):
         try:
             self._send_with_timeout(frame, self.send_timeout)
+        except CommError:
+            if not self.closing:
+                raise
         except Exception as ex:
             if not self.closing:
                 raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")

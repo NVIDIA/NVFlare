@@ -87,7 +87,7 @@ class TestSocketConnectionSendTimeout:
         with pytest.raises(CommError) as ex:
             conn.send_frame(b"abc")
 
-        assert ex.value.code == CommError.ERROR
+        assert ex.value.code == CommError.TIMEOUT
         assert "timeout" in str(ex.value).lower()
 
     def test_send_frame_error_when_send_returns_zero(self, monkeypatch):
@@ -101,8 +101,22 @@ class TestSocketConnectionSendTimeout:
         with pytest.raises(CommError) as ex:
             conn.send_frame(b"abc")
 
-        assert ex.value.code == CommError.ERROR
+        assert ex.value.code == CommError.CLOSED
         assert "closed while sending" in str(ex.value).lower()
+
+    def test_send_frame_wraps_unexpected_exception_as_error(self, monkeypatch):
+        conn, _ = self._make_conn(monkeypatch, timeout_sec=1.0)
+
+        def _raise_unexpected(*_args, **_kwargs):
+            raise ValueError("boom")
+
+        monkeypatch.setattr(conn, "_send_with_timeout", _raise_unexpected)
+
+        with pytest.raises(CommError) as ex:
+            conn.send_frame(b"abc")
+
+        assert ex.value.code == CommError.ERROR
+        assert "error sending frame" in str(ex.value).lower()
 
     def test_send_frame_suppresses_error_when_closing(self, monkeypatch):
         conn, sock = self._make_conn(monkeypatch, timeout_sec=1.0, send_returns=[0])
