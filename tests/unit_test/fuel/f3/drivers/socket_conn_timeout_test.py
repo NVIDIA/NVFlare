@@ -149,6 +149,56 @@ class TestSocketConnectionSendTimeout:
         assert close_calls["count"] == 0
         assert conn.closing is False
 
+    def test_send_frame_maps_timeouterror_to_timeout_and_closes(self, monkeypatch):
+        conn, _ = self._make_conn(monkeypatch, timeout_sec=1.0)
+
+        def _raise_timeout(*_args, **_kwargs):
+            raise TimeoutError("socket timed out")
+
+        monkeypatch.setattr(conn, "_send_with_timeout", _raise_timeout)
+
+        close_calls = {"count": 0}
+        original_close = conn.close
+
+        def _close_spy():
+            close_calls["count"] += 1
+            original_close()
+
+        monkeypatch.setattr(conn, "close", _close_spy)
+
+        with pytest.raises(CommError) as ex:
+            conn.send_frame(b"abc")
+
+        assert ex.value.code == CommError.TIMEOUT
+        assert "timeout" in str(ex.value).lower()
+        assert close_calls["count"] == 1
+        assert conn.closing is True
+
+    def test_send_frame_maps_broken_pipe_to_closed(self, monkeypatch):
+        conn, _ = self._make_conn(monkeypatch, timeout_sec=1.0)
+
+        def _raise_closed(*_args, **_kwargs):
+            raise BrokenPipeError("broken pipe")
+
+        monkeypatch.setattr(conn, "_send_with_timeout", _raise_closed)
+
+        close_calls = {"count": 0}
+        original_close = conn.close
+
+        def _close_spy():
+            close_calls["count"] += 1
+            original_close()
+
+        monkeypatch.setattr(conn, "close", _close_spy)
+
+        with pytest.raises(CommError) as ex:
+            conn.send_frame(b"abc")
+
+        assert ex.value.code == CommError.CLOSED
+        assert "closed while sending" in str(ex.value).lower()
+        assert close_calls["count"] == 0
+        assert conn.closing is False
+
     def test_send_frame_wraps_unexpected_exception_as_error(self, monkeypatch):
         conn, _ = self._make_conn(monkeypatch, timeout_sec=1.0)
 

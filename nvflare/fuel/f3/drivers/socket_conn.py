@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import errno
 import logging
 import select
 import socket
@@ -66,7 +67,39 @@ class SocketConnection(Connection):
                 raise
         except Exception as ex:
             if not self.closing:
+                if self._is_timeout_exception(ex):
+                    self.close()
+                    raise CommError(
+                        CommError.TIMEOUT,
+                        f"send_frame timeout on conn {self}: {secure_format_exception(ex)}",
+                    )
+                if self._is_closed_socket_exception(ex):
+                    raise CommError(
+                        CommError.CLOSED,
+                        f"Connection {self.name} is closed while sending: {secure_format_exception(ex)}",
+                    )
                 raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")
+
+    @staticmethod
+    def _is_timeout_exception(ex: Exception) -> bool:
+        return isinstance(ex, (TimeoutError, socket.timeout))
+
+    @staticmethod
+    def _is_closed_socket_exception(ex: Exception) -> bool:
+        if isinstance(ex, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return True
+
+        if isinstance(ex, OSError):
+            return ex.errno in {
+                errno.EPIPE,
+                errno.ECONNRESET,
+                errno.ENOTCONN,
+                errno.ECONNABORTED,
+                errno.EBADF,
+                errno.ESHUTDOWN,
+            }
+
+        return False
 
     def _send_with_timeout(self, frame: BytesAlike, timeout_sec: float):
         view = memoryview(frame)
