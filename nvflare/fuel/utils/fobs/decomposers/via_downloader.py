@@ -41,7 +41,7 @@ class LazyDownloadRef:
     preserved.
 
     When the forwarding node (CJ) later serialises the task for its subprocess,
-    ``ViaDownloaderDecomposer.decompose()`` detects ``LazyDownloadRef`` targets
+    ``LazyDownloadRefDecomposer.decompose()`` detects ``LazyDownloadRef`` targets
     and re-emits the *original* download datum (pointing back to the server)
     instead of creating a new datum that would point to the CJ.  The subprocess
     agent then resolves the references directly from the originating source,
@@ -51,31 +51,38 @@ class LazyDownloadRef:
         fqcn:    FQCN of the originating cell that owns the download transaction.
         ref_id:  UUID of the batch download transaction on that cell.
         item_id: Intra-batch item placeholder (e.g. ``"T0"``, ``"T1"``).
+        dot:     Datum Object Type of the original download datum.  Identifies
+                 which ``ViaDownloaderDecomposer`` subclass owns this ref (e.g.
+                 ``NUMPY_DOWNLOAD`` or ``TENSOR_DOWNLOAD``).  Required by
+                 ``LazyDownloadRefDecomposer`` to route serialisation and
+                 deserialisation to the correct handler.
     """
 
-    __slots__ = ("fqcn", "ref_id", "item_id")
+    __slots__ = ("fqcn", "ref_id", "item_id", "dot")
 
-    def __init__(self, fqcn: str, ref_id: str, item_id: str):
+    def __init__(self, fqcn: str, ref_id: str, item_id: str, dot: int = 0):
         self.fqcn = fqcn
         self.ref_id = ref_id
         self.item_id = item_id
+        self.dot = dot
 
 
 class _LazyBatchInfo:
     """Sentinel stored in fobs_ctx[items_key] during PASS_THROUGH mode.
 
-    Carries the (fqcn, ref_id) of the *original* download batch so that
+    Carries the (fqcn, ref_id, dot) of the *original* download batch so that
     ``recompose()`` can build a ``LazyDownloadRef`` for each item_id it
     encounters.  Using a named sentinel class (rather than a plain tuple)
     makes the PASS_THROUGH path unambiguous and robust against accidental
     type collisions.
     """
 
-    __slots__ = ("fqcn", "ref_id")
+    __slots__ = ("fqcn", "ref_id", "dot")
 
-    def __init__(self, fqcn: str, ref_id: str):
+    def __init__(self, fqcn: str, ref_id: str, dot: int = 0):
         self.fqcn = fqcn
         self.ref_id = ref_id
+        self.dot = dot
 
 
 # fobs_ctx key used to carry the fqcn/ref_id batch info in PASS_THROUGH mode
@@ -442,7 +449,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # from the originating source cell.
             ref = json.loads(datum.value)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
-            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID])
+            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID], datum.dot)
             return
 
         # data is to be downloaded
@@ -485,10 +492,14 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         # PASS_THROUGH mode: items_key holds a _LazyBatchInfo sentinel, not a dict.
         # Build a LazyDownloadRef so the reference can be forwarded verbatim.
+        # Carry items.dot so that LazyDownloadRefDecomposer can route back to the
+        # correct ViaDownloaderDecomposer subclass during subprocess recompose().
         if isinstance(items, _LazyBatchInfo):
-            fqcn, ref_id = items.fqcn, items.ref_id
-            lazy = LazyDownloadRef(fqcn=fqcn, ref_id=ref_id, item_id=item_id)
-            self.logger.debug(f"ViaDownloader PASS_THROUGH: created LazyDownloadRef {item_id=} {fqcn=} {ref_id=}")
+            lazy = LazyDownloadRef(fqcn=items.fqcn, ref_id=items.ref_id, item_id=item_id, dot=items.dot)
+            self.logger.debug(
+                f"ViaDownloader PASS_THROUGH: created LazyDownloadRef {item_id=} "
+                f"{items.fqcn=} {items.ref_id=} {items.dot=}"
+            )
             return lazy
 
         self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
@@ -538,3 +549,56 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             self.logger.debug(f"downloaded {len(items)} items successfully")
         return items
+
+
+class LazyDownloadRefDecomposer(fobs.Decomposer):
+    """Decomposer that serialises and deserialises :class:`LazyDownloadRef` objects.
+
+    ``LazyDownloadRef`` objects are created at a forwarding hop (e.g. the CJ
+    process) when ``FOBSContextKey.PASS_THROUGH`` is set.  Instead of
+    downloading tensors from the FL server, each tensor is represented as a
+    lightweight placeholder that carries the original server FQCN, batch
+    ref_id, item_id, and the Datum Object Type (``dot``) of the originating
+    ``ViaDownloaderDecomposer`` subclass.
+
+    When the forwarding node re-serialises the task for the subprocess agent,
+    FOBS routes each ``LazyDownloadRef`` to this decomposer.
+
+    **decompose()**
+        Delegates to the ``ViaDownloaderDecomposer`` subclass identified by
+        ``lazy.dot``.  That handler's ``decompose()`` re-emits the original
+        server batch datum (fqcn / ref_id) via a post-callback so the
+        subprocess knows exactly where to download from.  ``lazy_dot`` is
+        appended to the returned encoding dict so ``recompose()`` can route
+        back to the same handler.
+
+    **recompose()**
+        Uses ``lazy_dot`` to look up the original handler and delegates to
+        ``handler.recompose()``.  At the subprocess, ``process_datum()`` has
+        already populated ``fobs_ctx[handler.items_key]`` with the downloaded
+        tensors, so the call returns the real tensor value directly.
+    """
+
+    def supported_type(self):
+        return LazyDownloadRef
+
+    def decompose(self, lazy: LazyDownloadRef, manager: DatumManager = None) -> dict:
+        handler = fobs.get_dot_handler(lazy.dot)
+        if not handler:
+            raise RuntimeError(
+                f"LazyDownloadRefDecomposer: no DOT handler registered for dot={lazy.dot!r}. "
+                "Ensure the original ViaDownloaderDecomposer subclass (e.g. NumpyArrayDecomposer) "
+                "is registered before serialising LazyDownloadRef objects."
+            )
+        result = handler.decompose(lazy, manager)
+        result["lazy_dot"] = lazy.dot
+        return result
+
+    def recompose(self, data: dict, manager: DatumManager = None) -> Any:
+        lazy_dot = data.get("lazy_dot")
+        if lazy_dot is None:
+            raise RuntimeError("LazyDownloadRefDecomposer: missing 'lazy_dot' in encoded data")
+        handler = fobs.get_dot_handler(lazy_dot)
+        if not handler:
+            raise RuntimeError(f"LazyDownloadRefDecomposer: no DOT handler registered for lazy_dot={lazy_dot!r}")
+        return handler.recompose(data, manager)
