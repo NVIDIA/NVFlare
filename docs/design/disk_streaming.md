@@ -2,7 +2,7 @@
 
 ## Objective
 
-Reduce server peak memory for large PyTorch model updates by streaming tensor payloads to disk and resolving tensors lazily, while preserving backward compatibility for existing custom aggregators.
+Reduce server peak memory for large PyTorch model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
 
 ## Problem
 
@@ -10,8 +10,8 @@ Without disk streaming, each incoming client model is deserialized directly into
 
 ## Design Principles
 
-1. Compatibility-first by default.
-2. Lazy handling is capability-gated, not forced globally.
+1. `stream_to_disk=True` is strict lazy mode (no compatibility materialization path).
+2. Lazy refs are passed through to aggregators unchanged.
 3. `stream_to_disk` is run-scoped policy, not message metadata.
 4. Existing decomposer interfaces remain stable.
 
@@ -34,33 +34,19 @@ ViaDownloaderDecomposer.recompose()
         v
 Lazy refs in payload tree
         |
-        +--> lazy-aware aggregator: resolve on demand
-        |
-        +--> non-lazy-aware aggregator: materialize before accept()
+        +--> aggregator consumes lazy refs (resolve on demand)
 ```
 
-## Capability Model
-
-Aggregators that can consume lazy refs declare:
-
-```python
-accepts_lazy_tensors = True
-```
-
-If this marker is absent, the aggregator is treated as non-lazy-aware and receives regular tensors.
-
-## Compatibility Behavior
+## Runtime Behavior
 
 ### FedAvg
 
-In `nvflare/app_common/workflows/fedavg.py`, before `accept_model(result)`:
+In `nvflare/app_common/workflows/fedavg.py`:
 
-- if `stream_to_disk=True` and aggregator is non-lazy-aware:
-  - materialize `result.params` via `resolve_inplace(..., cleanup_resolved=True)`
-  - run best-effort `cleanup_inplace(...)`
-  - pass regular tensors to aggregator
-- if aggregator is lazy-aware:
-  - pass lazy refs through
+- custom aggregators receive `result.params` as-is
+- with `stream_to_disk=True`, this means lazy refs are passed through directly
+- built-in weighted aggregation resolves per tensor inside `WeightedAggregationHelper.add()`
+  and runs `cleanup_inplace(result.params)` in a `finally` block
 
 The built-in weighted path remains lazy-friendly and memory-efficient.
 
@@ -68,18 +54,16 @@ The built-in weighted path remains lazy-friendly and memory-efficient.
 
 In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 
-- non-lazy-aware aggregators receive materialized payloads
-- lazy-aware aggregators receive lazy refs
+- shareables are passed to the aggregator as-is
+- with `stream_to_disk=True`, aggregator inputs include lazy refs
 
 ## Lazy Payload Utilities
 
 `nvflare/app_common/utils/lazy_payload.py` provides duck-typed helpers so `app_common` does not depend on PyTorch lazy internals:
 
-- `contains_lazy(data)`
-- `resolve_inplace(data, cleanup_resolved=False)`
 - `cleanup_inplace(data)`
 
-Detection is based on `hasattr(x, "resolve")` and optional cleanup hooks.
+Lazy resolution itself happens where tensor math is performed (for example in weighted aggregation).
 
 ## FOBS Context Scope
 
@@ -98,7 +82,7 @@ Cleanup is done through:
 1. explicit cleanup hooks (`cleanup_inplace`, DXO cleanup)
 2. `_TempDirRef` lifetime fallback on GC
 
-For compatibility materialization, `resolve_inplace(..., cleanup_resolved=True)` defers deletion until all refs resolve, avoiding early removal of shared temp dirs.
+There is no centralized compatibility materialization pass in workflows/controllers.
 
 ## Design-Relevant Files
 

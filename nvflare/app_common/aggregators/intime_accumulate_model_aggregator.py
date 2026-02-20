@@ -44,9 +44,6 @@ def _get_missing_keys(ref_dict: dict, dict_to_check: dict):
 
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
-    # This aggregator can handle lazy tensor references directly.
-    accepts_lazy_tensors = True
-
     def __init__(
         self,
         exclude_vars: Union[str, Dict[str, str], None] = None,

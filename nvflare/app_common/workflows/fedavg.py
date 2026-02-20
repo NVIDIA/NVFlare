@@ -20,7 +20,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.utils.lazy_payload import cleanup_inplace, contains_lazy, resolve_inplace
+from nvflare.app_common.utils.lazy_payload import cleanup_inplace
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils.log_utils import center_message
 
@@ -72,7 +72,8 @@ class FedAvg(BaseFedAvg):
             Defaults to None (equal weights). Only used when no custom aggregator is provided.
         stream_to_disk (bool, optional): Download tensors to disk during FOBS streaming
             instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
-            model size during aggregation. Defaults to False.
+            model size during aggregation. When used with a custom aggregator, lazy refs are
+            passed through directly and must be handled by that aggregator. Defaults to False.
     """
 
     def __init__(
@@ -125,9 +126,6 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
-
-    def _aggregator_accepts_lazy_tensors(self) -> bool:
-        return bool(self.aggregator and getattr(self.aggregator, "accepts_lazy_tensors", False))
 
     def _set_stream_to_disk(self):
         cell = self.engine.get_cell()
@@ -243,14 +241,7 @@ class FedAvg(BaseFedAvg):
 
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
         if self.aggregator:
-            # For backward compatibility, custom aggregators that are not lazy-aware
-            # always receive fully materialized tensors.
-            if self.stream_to_disk and not self._aggregator_accepts_lazy_tensors() and contains_lazy(result.params):
-                try:
-                    resolve_inplace(result.params, cleanup_resolved=True)
-                finally:
-                    # Best-effort final sweep in case resolve failed mid-way.
-                    cleanup_inplace(result.params)
+            # In stream_to_disk mode, custom aggregators receive lazy refs directly.
             self.aggregator.accept_model(result)
         else:
             # Built-in InTime aggregation: add() resolves lazy refs one-at-a-time,

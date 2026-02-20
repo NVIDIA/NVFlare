@@ -12,35 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable, get_leaf_dxos
-from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController, _materialize_shareable_for_aggregator
-
-
-class _Aggregator:
-    pass
-
-
-class _LazyAwareAggregator:
-    accepts_lazy_tensors = True
-
-
-class _TempRef:
-    def __init__(self):
-        self.cleaned = False
-
-    def cleanup(self):
-        self.cleaned = True
-
-
-class _LazyRef:
-    def __init__(self, value, temp_ref: _TempRef):
-        self.value = value
-        self._temp_ref = temp_ref
-        self.resolve_calls = 0
-
-    def resolve(self):
-        self.resolve_calls += 1
-        return self.value
+from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 
 
 class _MockCell:
@@ -60,73 +32,6 @@ class _MockEngine:
 
     def get_cell(self):
         return self.cell
-
-
-class TestSwarmLazyCompatibility:
-    def test_materialize_for_non_lazy_aware_aggregator(self):
-        temp_ref = _TempRef()
-        lazy_ref = _LazyRef(4.2, temp_ref)
-        shareable = DXO(data_kind=DataKind.WEIGHTS, data={"w": lazy_ref}).to_shareable()
-
-        changed = _materialize_shareable_for_aggregator(result=shareable, aggregator=_Aggregator(), stream_to_disk=True)
-
-        dxo = from_shareable(shareable)
-        assert changed is True
-        assert dxo.data["w"] == 4.2
-        assert lazy_ref.resolve_calls == 1
-        assert temp_ref.cleaned is True
-
-    def test_keep_lazy_for_lazy_aware_aggregator(self):
-        temp_ref = _TempRef()
-        lazy_ref = _LazyRef(5.5, temp_ref)
-        shareable = DXO(data_kind=DataKind.WEIGHTS, data={"w": lazy_ref}).to_shareable()
-
-        changed = _materialize_shareable_for_aggregator(
-            result=shareable, aggregator=_LazyAwareAggregator(), stream_to_disk=True
-        )
-
-        dxo = from_shareable(shareable)
-        assert changed is False
-        assert dxo.data["w"] is lazy_ref
-        assert lazy_ref.resolve_calls == 0
-        assert temp_ref.cleaned is False
-
-    def test_materialize_collection_dxo(self):
-        temp_ref = _TempRef()
-        lazy_ref = _LazyRef(9.0, temp_ref)
-        collection = DXO(
-            data_kind=DataKind.COLLECTION,
-            data={
-                "weights": DXO(data_kind=DataKind.WEIGHTS, data={"w": lazy_ref}),
-                "metrics": DXO(data_kind=DataKind.METRICS, data={"acc": 1.0}),
-            },
-        )
-        shareable = collection.to_shareable()
-
-        changed = _materialize_shareable_for_aggregator(result=shareable, aggregator=_Aggregator(), stream_to_disk=True)
-
-        dxo = from_shareable(shareable)
-        leaves, errors = get_leaf_dxos(dxo)
-        assert errors == []
-        assert changed is True
-        assert leaves[".weights"].data["w"] == 9.0
-        assert lazy_ref.resolve_calls == 1
-        assert temp_ref.cleaned is True
-
-    def test_no_materialize_when_disk_streaming_disabled(self):
-        temp_ref = _TempRef()
-        lazy_ref = _LazyRef(1.5, temp_ref)
-        shareable = DXO(data_kind=DataKind.WEIGHTS, data={"w": lazy_ref}).to_shareable()
-
-        changed = _materialize_shareable_for_aggregator(
-            result=shareable, aggregator=_Aggregator(), stream_to_disk=False
-        )
-
-        dxo = from_shareable(shareable)
-        assert changed is False
-        assert dxo.data["w"] is lazy_ref
-        assert lazy_ref.resolve_calls == 0
-        assert temp_ref.cleaned is False
 
 
 class TestSwarmStreamToDiskContext:

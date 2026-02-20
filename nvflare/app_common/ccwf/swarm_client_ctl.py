@@ -18,7 +18,6 @@ import threading
 import time
 
 from nvflare.apis.controller_spec import Task
-from nvflare.apis.dxo import from_shareable, get_leaf_dxos
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -31,7 +30,6 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
-from nvflare.app_common.utils.lazy_payload import cleanup_inplace, contains_lazy, resolve_inplace
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -42,38 +40,6 @@ class _TrainerStatus:
         self.last_submit_req_time = None  # the last time this trainer requested to submit result
         self.busy = False  # whether this trainer is busy
         self.reply_time = None  # the time this trainer's result is received
-
-
-def _aggregator_accepts_lazy_tensors(aggregator: Aggregator) -> bool:
-    return bool(getattr(aggregator, "accepts_lazy_tensors", False))
-
-
-def _materialize_shareable_for_aggregator(result: Shareable, aggregator: Aggregator, stream_to_disk: bool) -> bool:
-    """Materialize lazy refs in a Shareable for non-lazy-aware aggregators."""
-
-    if not stream_to_disk or _aggregator_accepts_lazy_tensors(aggregator):
-        return False
-
-    try:
-        dxo = from_shareable(result)
-    except Exception:
-        # Non-DXO payloads are out of scope for this compatibility path.
-        return False
-
-    leaf_dxos, errors = get_leaf_dxos(dxo)
-    if errors:
-        return False
-
-    materialized = False
-    for leaf in leaf_dxos.values():
-        if contains_lazy(leaf.data):
-            materialized = True
-            try:
-                resolve_inplace(leaf.data, cleanup_resolved=True)
-            finally:
-                # Best-effort final sweep in case resolve failed mid-way.
-                cleanup_inplace(leaf.data)
-    return materialized
 
 
 class Gatherer(FLComponent):
@@ -228,13 +194,6 @@ class Gatherer(FLComponent):
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
         self.fire_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
 
-        if _materialize_shareable_for_aggregator(
-            result=result,
-            aggregator=self.aggregator,
-            stream_to_disk=bool(getattr(self.executor, "stream_to_disk", False)),
-        ):
-            self.log_debug(fl_ctx, "materialized lazy payload for non-lazy-aware aggregator")
-
         accepted = self.aggregator.accept(result, fl_ctx)
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
         self.log_info(
@@ -361,7 +320,7 @@ class SwarmClientController(ClientSideController):
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
             stream_to_disk: download tensors to disk during FOBS streaming instead of into memory.
-                Reduces peak memory during aggregation. Trainers must resolve lazy refs.
+                Reduces peak memory during aggregation. Aggregators must handle lazy refs.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on

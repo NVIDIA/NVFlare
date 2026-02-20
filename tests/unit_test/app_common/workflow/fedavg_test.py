@@ -46,10 +46,6 @@ class MockModelAggregator(ModelAggregator):
         self.reset_count += 1
 
 
-class LazyAwareMockModelAggregator(MockModelAggregator):
-    accepts_lazy_tensors = True
-
-
 class _FakeTempRef:
     def __init__(self):
         self.cleaned = False
@@ -396,7 +392,7 @@ class TestFedAvgAggregation:
 
 
 class TestFedAvgLazyCompatibility:
-    def test_custom_aggregator_materialized_when_not_lazy_aware(self):
+    def test_custom_aggregator_keeps_lazy_payload_in_stream_to_disk_mode(self):
         aggregator = MockModelAggregator()
         controller = FedAvg(num_clients=1, aggregator=aggregator, stream_to_disk=True)
         controller._received_count = 0
@@ -406,29 +402,6 @@ class TestFedAvgLazyCompatibility:
 
         temp_ref = _FakeTempRef()
         lazy_ref = _FakeLazyRef(value=2.5, temp_ref=temp_ref)
-        result = FLModel(
-            params={"w": lazy_ref},
-            params_type=ParamsType.FULL,
-            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
-        )
-
-        controller._aggregate_one_result(result)
-
-        accepted_model = aggregator.models[0]
-        assert accepted_model.params["w"] == 2.5
-        assert temp_ref.cleaned is True
-        assert lazy_ref.resolve_calls == 1
-
-    def test_custom_aggregator_keeps_lazy_when_lazy_aware(self):
-        aggregator = LazyAwareMockModelAggregator()
-        controller = FedAvg(num_clients=1, aggregator=aggregator, stream_to_disk=True)
-        controller._received_count = 0
-        controller._expected_count = 1
-        controller.current_round = 0
-        controller._params_type = None
-
-        temp_ref = _FakeTempRef()
-        lazy_ref = _FakeLazyRef(value=3.5, temp_ref=temp_ref)
         result = FLModel(
             params={"w": lazy_ref},
             params_type=ParamsType.FULL,
