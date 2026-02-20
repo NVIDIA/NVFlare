@@ -538,6 +538,12 @@ class ConfigVarName:
     # server: wait this long since job schedule time before starting to check dead/disconnected clients
     DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
+    # server: require all start-job replies to be non-timeout and OK before considering the run started
+    STRICT_START_JOB_REPLY_CHECK = "strict_start_job_reply_check"
+
+    # server: require prior positive job observation before reporting "missing job on client" as dead-job
+    SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
+
     # customized nvflare decomposers module name
     DECOMPOSER_MODULE = "nvflare_decomposers"
 
