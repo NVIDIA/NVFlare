@@ -112,6 +112,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._config_file_name = config_file_name
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
+        self._cell_with_pass_through = None
+        self._prev_pass_through = None
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -126,13 +128,20 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
         if cell is not None:
+            self._cell_with_pass_through = cell
+            prev_ctx = cell.core_cell.get_fobs_context()
+            self._prev_pass_through = prev_ctx.get(FOBSContextKey.PASS_THROUGH, None)
             cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
             self.log_info(
                 fl_ctx,
                 "PASS_THROUGH enabled: task tensors will be downloaded by the subprocess "
                 "agent directly from the source, bypassing CJ memory.",
             )
-        super().initialize(fl_ctx)
+        try:
+            super().initialize(fl_ctx)
+        except Exception:
+            self._restore_pass_through(fl_ctx)
+            raise
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()
@@ -147,6 +156,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {timeout_value}s",
             )
             self._external_pre_init_timeout = timeout_value
+
+    def finalize(self, fl_ctx: FLContext) -> None:
+        try:
+            super().finalize(fl_ctx)
+        finally:
+            self._restore_pass_through(fl_ctx)
+
+    def _restore_pass_through(self, fl_ctx: FLContext):
+        if self._cell_with_pass_through is None:
+            return
+
+        self._cell_with_pass_through.core_cell.update_fobs_context(
+            {FOBSContextKey.PASS_THROUGH: self._prev_pass_through}
+        )
+        self.log_info(fl_ctx, f"PASS_THROUGH restored to {self._prev_pass_through}.")
+        self._cell_with_pass_through = None
+        self._prev_pass_through = None
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
