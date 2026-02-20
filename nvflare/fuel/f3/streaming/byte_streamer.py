@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -87,8 +88,13 @@ class TxTask(StreamTaskSpec):
         self.stream_future = StreamFuture(self.sid, task_handle=self)
         self.stream_future.set_size(stream.get_size())
 
-        self.window_size = CommConfigurator().get_streaming_window_size(STREAM_WINDOW_SIZE)
-        self.ack_wait = CommConfigurator().get_streaming_ack_wait(STREAM_ACK_WAIT)
+        config = CommConfigurator()
+        self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
+        self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
+        self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
+        # Guard against zero/negative config to avoid wait(0) busy-spin loops.
+        self.ack_progress_check_interval = max(0.01, config.get_streaming_ack_progress_check_interval(5.0))
+        self.last_ack_progress_ts = time.monotonic()
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
@@ -109,13 +115,23 @@ class TxTask(StreamTaskSpec):
             # It may take several ACKs to clear up the window
             while window > self.window_size:
                 log.debug(f"{self} window size {window} exceeds limit: {self.window_size}")
-                self.ack_waiter.clear()
+                wait_start = time.monotonic()
 
-                if not self.ack_waiter.wait(timeout=self.ack_wait):
-                    self.stop(StreamError(f"{self} ACK timeouts after {self.ack_wait} seconds"))
-                    return
+                while window > self.window_size:
+                    now = time.monotonic()
+                    if now - self.last_ack_progress_ts >= self.ack_progress_timeout:
+                        self.stop(StreamError(f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"))
+                        return
 
-                window = self.offset - self.offset_ack
+                    elapsed = now - wait_start
+                    if elapsed >= self.ack_wait:
+                        self.stop(StreamError(f"{self} ACK timeouts after {self.ack_wait} seconds"))
+                        return
+
+                    self.ack_waiter.clear()
+                    wait_timeout = min(self.ack_progress_check_interval, self.ack_wait - elapsed)
+                    self.ack_waiter.wait(timeout=wait_timeout)
+                    window = self.offset - self.offset_ack
 
             size = len(buf)
             if size > self.chunk_size:
@@ -231,6 +247,7 @@ class TxTask(StreamTaskSpec):
 
         if offset > self.offset_ack:
             self.offset_ack = offset
+            self.last_ack_progress_ts = time.monotonic()
 
         if not self.ack_waiter.is_set():
             self.ack_waiter.set()

@@ -224,6 +224,78 @@ Via Configuration Files
    }
 
 
+Streaming Stall Guardrail (``comm_config.json``)
+------------------------------------------------
+
+For large payload/model transfers, configure F3 stream stall detection in
+``comm_config.json`` (server and client startup kits).
+
+**Runtime defaults** (if not set explicitly):
+
+- ``streaming_send_timeout``: ``30.0`` seconds
+- ``streaming_ack_progress_timeout``: ``60.0`` seconds
+- ``streaming_ack_progress_check_interval``: ``5.0`` seconds
+- ``sfm_send_stall_timeout``: ``45.0`` seconds
+- ``sfm_close_stalled_connection``: ``false`` (warn-only)
+- ``sfm_send_stall_consecutive_checks``: ``3``
+
+**Recommended deployment guideline**:
+
+1. Start with **warn-only** to observe behavior safely.
+2. If repeated stall warnings are observed during large-model streaming, enable auto-close.
+3. Keep the guard enabled with consecutive checks to reduce false alarms.
+
+Warn-only baseline:
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": false,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+Auto-recovery mode (when needed):
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": true,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+**Timing relationship (important)**:
+
+- ``sfm_send_stall_timeout`` is compared against the total continuous blocked-send duration.
+- ``sfm_send_stall_consecutive_checks`` counts consecutive heartbeat monitor ticks (every 5 seconds),
+  not multiples of ``sfm_send_stall_timeout``.
+
+Approximate auto-close window (when ``sfm_close_stalled_connection=true``):
+
+.. code-block:: text
+
+   close_lower_bound ~= sfm_send_stall_timeout
+   close_upper_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * sfm_send_stall_consecutive_checks)
+
+With ``sfm_send_stall_timeout=75`` and ``sfm_send_stall_consecutive_checks=3``, close typically occurs
+around ``75``-``90`` seconds of continuous stall (not 225 seconds).
+
+**Outer-timeout guideline**:
+
+Set higher-layer timeouts (for example ``communication_timeout`` or task/request timeouts that include
+message transfer time) greater than ``close_upper_bound`` plus a safety margin.
+
+Example: ``communication_timeout=300`` is safely larger than the ~``90`` second stall auto-close window.
+
+**How to interpret logs**:
+
+- Expected warning on real stalls:
+  ``Detected stalled send on ... (N/3)``
+- In healthy/normal streaming, no stall warning should be emitted.
+- Intermittent stalls should not close the connection unless the threshold is reached in consecutive checks.
+
+
 Recommended Settings by Scenario
 ================================
 
