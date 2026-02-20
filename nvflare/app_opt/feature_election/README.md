@@ -337,7 +337,7 @@ logging.basicConfig(level=logging.DEBUG)
 ```bash
 pytest tests/unit_test/app_opt/feature_election/test_feature_election.py -v
 ```
-
+pytest tests/unit_test/app_opt/feature_election/test.py -v
 ## Acknowledgments
 
 - NVIDIA FLARE team for the federated learning framework
