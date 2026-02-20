@@ -134,120 +134,107 @@ class FedAvg(BaseFedAvg):
         if not engine or not hasattr(engine, "get_cell"):
             if self.stream_to_disk:
                 self.warning("stream_to_disk is enabled but engine has no get_cell(); using in-memory download path")
-            return None, None
+            return
 
         cell = engine.get_cell()
         if not cell:
             if self.stream_to_disk:
                 self.warning("stream_to_disk is enabled but no active cell is available; using in-memory download path")
-            return None, None
-
-        previous = bool(cell.get_fobs_context().get("stream_to_disk", False))
-        desired = bool(self.stream_to_disk)
-        if previous != desired:
-            cell.update_fobs_context({"stream_to_disk": desired})
-            self.info(f"_set_stream_to_disk: {previous} -> {desired}")
-        return cell, previous
-
-    def _restore_stream_to_disk(self, cell, previous):
-        if not cell or previous is None:
             return
 
+        desired = bool(self.stream_to_disk)
         current = bool(cell.get_fobs_context().get("stream_to_disk", False))
-        if current != previous:
-            cell.update_fobs_context({"stream_to_disk": previous})
-            self.info(f"_restore_stream_to_disk: {current} -> {previous}")
+        if current != desired:
+            cell.update_fobs_context({"stream_to_disk": desired})
+            self.info(f"_set_stream_to_disk: {current} -> {desired}")
 
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
-        cell, previous_stream_to_disk = self._set_stream_to_disk()
-        try:
-            # Keep NUM_ROUNDS available in FL context for persistor/widgets.
-            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+        self._set_stream_to_disk()
+        # Keep NUM_ROUNDS available in FL context for persistor/widgets.
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
-            # Load initial model - prefer model if provided, else use persistor
-            if self.model is not None:
-                if isinstance(self.model, FLModel):
-                    model = self.model
-                else:
-                    # Assume dict of params
-                    model = FLModel(params=self.model)
-                self.info("Using provided model")
+        # Load initial model - prefer model if provided, else use persistor
+        if self.model is not None:
+            if isinstance(self.model, FLModel):
+                model = self.model
             else:
-                model = self.load_model()
+                # Assume dict of params
+                model = FLModel(params=self.model)
+            self.info("Using provided model")
+        else:
+            model = self.load_model()
 
-            model.start_round = self.start_round
-            model.total_rounds = self.num_rounds
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
 
-            for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-                self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
-                model.current_round = self.current_round
+            model.current_round = self.current_round
 
-                clients = self.sample_clients(self.num_clients)
+            clients = self.sample_clients(self.num_clients)
 
-                # Reset aggregation state for this round
-                if self.aggregator:
-                    # Use custom aggregator
-                    self.aggregator.reset_stats()
-                else:
-                    # Use built-in InTime aggregation
-                    self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
-                    self._aggr_metrics_helper = WeightedAggregationHelper()
-                    self._all_metrics = True  # Only used by built-in aggregation
-                # Shared state for both aggregator types
-                self._received_count = 0
-                self._expected_count = len(clients)
-                self._params_type = None
+            # Reset aggregation state for this round
+            if self.aggregator:
+                # Use custom aggregator
+                self.aggregator.reset_stats()
+            else:
+                # Use built-in InTime aggregation
+                self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
+                self._aggr_metrics_helper = WeightedAggregationHelper()
+                self._all_metrics = True  # Only used by built-in aggregation
+            # Shared state for both aggregator types
+            self._received_count = 0
+            self._expected_count = len(clients)
+            self._params_type = None
 
-                # Non-blocking send with callback for streaming aggregation
-                self.send_model(
-                    task_name=self.task_name,
-                    targets=clients,
-                    data=model,
-                    callback=self._aggregate_one_result,
-                )
+            # Non-blocking send with callback for streaming aggregation
+            self.send_model(
+                task_name=self.task_name,
+                targets=clients,
+                data=model,
+                callback=self._aggregate_one_result,
+            )
 
-                # Wait for all results to be processed
-                while self.get_num_standing_tasks():
-                    if self.abort_signal.triggered:
-                        self.info("Abort signal triggered. Finishing FedAvg.")
-                        return
-                    time.sleep(self._task_check_period)
+            # Wait for all results to be processed
+            while self.get_num_standing_tasks():
+                if self.abort_signal.triggered:
+                    self.info("Abort signal triggered. Finishing FedAvg.")
+                    return
+                time.sleep(self._task_check_period)
 
-                # Get final aggregated result
-                aggregate_results = self._get_aggregated_result()
+            # Get final aggregated result
+            aggregate_results = self._get_aggregated_result()
 
-                model = self.update_model(model, aggregate_results)
+            model = self.update_model(model, aggregate_results)
 
-                # Early stopping: check if current model is better
-                if self.stop_condition:
-                    self.info(f"Round {self.current_round} global metrics: {model.metrics}")
+            # Early stopping: check if current model is better
+            if self.stop_condition:
+                self.info(f"Round {self.current_round} global metrics: {model.metrics}")
 
-                    if self.is_curr_model_better(model):
-                        self.info("New best model found.")
-                        self.save_model(model)
-                    else:
-                        if self.patience:
-                            self.info(
-                                f"No metric improvement, num of FL rounds without improvement: "
-                                f"{self.num_fl_rounds_without_improvement}"
-                            )
-
-                    # Check if we should stop early
-                    if self.should_stop(model.metrics):
-                        self.info(f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}.")
-                        break
-                else:
-                    # No early stopping: save model every round
+                if self.is_curr_model_better(model):
+                    self.info("New best model found.")
                     self.save_model(model)
+                else:
+                    if self.patience:
+                        self.info(
+                            f"No metric improvement, num of FL rounds without improvement: "
+                            f"{self.num_fl_rounds_without_improvement}"
+                        )
 
-                # Memory cleanup at end of round (if configured)
-                self._maybe_cleanup_memory()
+                # Check if we should stop early
+                if self.should_stop(model.metrics):
+                    self.info(f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}.")
+                    break
+            else:
+                # No early stopping: save model every round
+                self.save_model(model)
 
-            self.info(center_message("Finished FedAvg."))
-        finally:
-            self._restore_stream_to_disk(cell, previous_stream_to_disk)
+            # Memory cleanup at end of round (if configured)
+            self._maybe_cleanup_memory()
+
+        self.info(center_message("Finished FedAvg."))
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""

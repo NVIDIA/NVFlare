@@ -444,27 +444,20 @@ class TestFedAvgLazyCompatibility:
 
 
 class TestFedAvgDownloadToDiskContext:
-    def test_set_and_restore_stream_to_disk(self):
+    def test_set_stream_to_disk(self):
         controller = FedAvg(stream_to_disk=True)
         cell = _MockCell(stream_to_disk=False)
         controller.engine = _MockEngine(cell)
 
-        active_cell, previous = controller._set_stream_to_disk()
-        assert active_cell is cell
-        assert previous is False
+        controller._set_stream_to_disk()
         assert cell.ctx["stream_to_disk"] is True
-
-        controller._restore_stream_to_disk(active_cell, previous)
-        assert cell.ctx["stream_to_disk"] is False
 
     def test_set_stream_to_disk_without_cell(self):
         controller = FedAvg(stream_to_disk=True)
         controller.engine = _MockEngine(cell=None)
 
-        active_cell, previous = controller._set_stream_to_disk()
-
-        assert active_cell is None
-        assert previous is None
+        controller._set_stream_to_disk()
+        assert controller.engine.get_cell() is None
 
 
 class TestFedAvgAggregationWeights:

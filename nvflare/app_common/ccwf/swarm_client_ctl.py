@@ -422,7 +422,6 @@ class SwarmClientController(ClientSideController):
         self.is_aggr = False
         self.last_aggr_round_done = -1
         self.stream_to_disk = stream_to_disk
-        self._previous_stream_to_disk = None
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -448,40 +447,18 @@ class SwarmClientController(ClientSideController):
         )
 
     def _set_stream_to_disk(self):
-        if not self.stream_to_disk:
-            self._previous_stream_to_disk = None
+        engine = getattr(self, "engine", None)
+        if not engine or not hasattr(engine, "get_cell"):
             return
 
-        cell = self.engine.get_cell()
-        if not cell:
-            self._previous_stream_to_disk = None
-            return
-
-        previous = bool(cell.get_fobs_context().get("stream_to_disk", False))
-        self._previous_stream_to_disk = previous
-        if not previous:
-            cell.update_fobs_context({"stream_to_disk": True})
-
-    def _restore_stream_to_disk(self):
-        if not self.stream_to_disk:
-            return
-
-        previous = self._previous_stream_to_disk
-        self._previous_stream_to_disk = None
-        if previous is None:
-            return
-
-        cell = self.engine.get_cell()
+        cell = engine.get_cell()
         if not cell:
             return
 
+        desired = bool(self.stream_to_disk)
         current = bool(cell.get_fobs_context().get("stream_to_disk", False))
-        if current != previous:
-            cell.update_fobs_context({"stream_to_disk": previous})
-
-    def finalize(self, fl_ctx: FLContext):
-        self._restore_stream_to_disk()
-        super().finalize(fl_ctx)
+        if current != desired:
+            cell.update_fobs_context({"stream_to_disk": desired})
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:

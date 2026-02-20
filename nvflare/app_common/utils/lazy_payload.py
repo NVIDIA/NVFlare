@@ -15,19 +15,22 @@ from collections.abc import Mapping
 from typing import Any
 
 
+def _iter_children(x: Any):
+    if isinstance(x, Mapping):
+        return x.values()
+    if isinstance(x, (list, tuple, set)):
+        return x
+    return ()
+
+
 def _cleanup_obj(x: Any) -> bool:
     cleaned = False
 
-    cleanup_fn = getattr(x, "cleanup", None)
-    if callable(cleanup_fn):
-        cleanup_fn()
-        cleaned = True
-
-    temp_ref = getattr(x, "_temp_ref", None)
-    temp_cleanup = getattr(temp_ref, "cleanup", None)
-    if callable(temp_cleanup):
-        temp_cleanup()
-        cleaned = True
+    for target in (x, getattr(x, "_temp_ref", None)):
+        cleanup_fn = getattr(target, "cleanup", None)
+        if callable(cleanup_fn):
+            cleanup_fn()
+            cleaned = True
 
     return cleaned
 
@@ -39,50 +42,40 @@ def _collect_cleanup_entities(
     temp_refs: list[Any],
     temp_ref_ids: set[int],
 ) -> None:
-    cleanup_fn = getattr(x, "cleanup", None)
-    if callable(cleanup_fn):
-        oid = id(x)
-        if oid not in cleanup_obj_ids:
-            cleanup_obj_ids.add(oid)
-            cleanup_objs.append(x)
-
-    temp_ref = getattr(x, "_temp_ref", None)
-    temp_cleanup = getattr(temp_ref, "cleanup", None)
-    if callable(temp_cleanup):
-        tid = id(temp_ref)
-        if tid not in temp_ref_ids:
-            temp_ref_ids.add(tid)
-            temp_refs.append(temp_ref)
+    for target, target_ids, targets in (
+        (x, cleanup_obj_ids, cleanup_objs),
+        (getattr(x, "_temp_ref", None), temp_ref_ids, temp_refs),
+    ):
+        cleanup_fn = getattr(target, "cleanup", None)
+        if not callable(cleanup_fn):
+            continue
+        tid = id(target)
+        if tid not in target_ids:
+            target_ids.add(tid)
+            targets.append(target)
 
 
 def contains_lazy(data: Any) -> bool:
     """Return whether the payload contains any lazy refs (duck-typed via resolve())."""
 
     visited = set()
+    stack = [data]
 
-    def _contains(x: Any) -> bool:
+    while stack:
+        x = stack.pop()
         if x is None:
-            return False
+            continue
 
         oid = id(x)
         if oid in visited:
-            return False
+            continue
         visited.add(oid)
 
         if callable(getattr(x, "resolve", None)):
             return True
 
-        if isinstance(x, Mapping):
-            return any(_contains(v) for v in x.values())
-        if isinstance(x, list):
-            return any(_contains(v) for v in x)
-        if isinstance(x, tuple):
-            return any(_contains(v) for v in x)
-        if isinstance(x, set):
-            return any(_contains(v) for v in x)
-        return False
-
-    return _contains(data)
+        stack.extend(_iter_children(x))
+    return False
 
 
 def resolve_inplace(data: Any, cleanup_resolved: bool = False) -> Any:
@@ -162,36 +155,20 @@ def cleanup_inplace(data: Any) -> bool:
 
     visited = set()
     cleaned = False
+    stack = [data]
 
-    def _cleanup_recursive(x: Any):
-        nonlocal cleaned
+    while stack:
+        x = stack.pop()
         if x is None:
-            return
+            continue
 
         oid = id(x)
         if oid in visited:
-            return
+            continue
         visited.add(oid)
 
         if _cleanup_obj(x):
             cleaned = True
 
-        if isinstance(x, Mapping):
-            for v in x.values():
-                _cleanup_recursive(v)
-            return
-        if isinstance(x, list):
-            for v in x:
-                _cleanup_recursive(v)
-            return
-        if isinstance(x, tuple):
-            for v in x:
-                _cleanup_recursive(v)
-            return
-        if isinstance(x, set):
-            for v in x:
-                _cleanup_recursive(v)
-            return
-
-    _cleanup_recursive(data)
+        stack.extend(_iter_children(x))
     return cleaned
