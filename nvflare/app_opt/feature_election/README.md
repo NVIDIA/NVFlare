@@ -271,14 +271,12 @@ class FeatureElectionController(Controller):
 
 Client-side executor for NVIDIA FLARE.
 
-```python
 class FeatureElectionExecutor(Executor):
     def __init__(
         self,
         fs_method: str = "lasso",
         fs_params: Optional[Dict] = None,
         eval_metric: str = "f1",
-        quick_eval: bool = True,
         task_name: str = "feature_election"
     )
     
