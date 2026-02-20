@@ -49,7 +49,7 @@ class ConfigKey:
     METRICS_EXCHANGE = "METRICS_EXCHANGE"
     HEARTBEAT_TIMEOUT = "HEARTBEAT_TIMEOUT"
     MEMORY_GC_ROUNDS = "memory_gc_rounds"
-    TORCH_CUDA_EMPTY_CACHE = "cuda_empty_cache"
+    CUDA_EMPTY_CACHE = "cuda_empty_cache"
 
 
 class ClientConfig:

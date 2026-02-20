@@ -208,7 +208,7 @@ For external process execution (``launch_external_process=True``), memory settin
 are passed via environment variables:
 
 - ``NVFLARE_CLIENT_MEMORY_GC_ROUNDS``: Cleanup interval
-- ``NVFLARE_TORCH_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
+- ``NVFLARE_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
 
 Recommended Settings
 ====================

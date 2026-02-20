@@ -27,13 +27,13 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
         # Clear any existing env vars
         env = os.environ.copy()
         env.pop("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", None)
-        env.pop("NVFLARE_TORCH_CUDA_EMPTY_CACHE", None)
+        env.pop("NVFLARE_CUDA_EMPTY_CACHE", None)
 
         with patch.dict(os.environ, env, clear=True):
             # We need to test the __init__ logic without actually initializing
             # the full ExProcessClientAPI (which requires config files)
             gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
+            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
 
             assert gc_rounds == 0
             assert cuda_empty is False
@@ -42,12 +42,12 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
         """Test that memory settings are read from environment variables."""
         env = {
             "NVFLARE_CLIENT_MEMORY_GC_ROUNDS": "5",
-            "NVFLARE_TORCH_CUDA_EMPTY_CACHE": "true",
+            "NVFLARE_CUDA_EMPTY_CACHE": "true",
         }
 
         with patch.dict(os.environ, env, clear=False):
             gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
+            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
 
             assert gc_rounds == 5
             assert cuda_empty is True
@@ -56,12 +56,12 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
         """Test that cuda_empty_cache=false is parsed correctly."""
         env = {
             "NVFLARE_CLIENT_MEMORY_GC_ROUNDS": "1",
-            "NVFLARE_TORCH_CUDA_EMPTY_CACHE": "false",
+            "NVFLARE_CUDA_EMPTY_CACHE": "false",
         }
 
         with patch.dict(os.environ, env, clear=False):
             gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
+            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
 
             assert gc_rounds == 1
             assert cuda_empty is False
@@ -69,9 +69,9 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
     def test_memory_settings_env_case_insensitive(self):
         """Test that TRUE/True/true all work for cuda_empty_cache."""
         for value in ["TRUE", "True", "true", "TrUe"]:
-            env = {"NVFLARE_TORCH_CUDA_EMPTY_CACHE": value}
+            env = {"NVFLARE_CUDA_EMPTY_CACHE": value}
             with patch.dict(os.environ, env, clear=False):
-                cuda_empty = os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", "").lower() == "true"
+                cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
                 assert cuda_empty is True, f"Failed for value: {value}"
 
 

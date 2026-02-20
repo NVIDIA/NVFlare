@@ -146,7 +146,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             },
             ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
             ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
-            ConfigKey.TORCH_CUDA_EMPTY_CACHE: self._cuda_empty_cache,
+            ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
         }
 
         config_data = {
