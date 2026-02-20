@@ -25,6 +25,7 @@ from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-exported for backward compatibility
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
+from nvflare.fuel.utils.pipe.local_cell_pipe import LocalCellPipe
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
 
@@ -194,6 +195,20 @@ class BaseScriptRunner:
             workspace_dir="{" + SystemVarName.WORKSPACE + "}",
         )
 
+    def _create_local_cell_pipe(self):
+        """Create a LocalCellPipe for direct CJ-to-subprocess communication.
+
+        LocalCellPipe establishes a direct local TCP connection on 127.0.0.1
+        (random port) instead of routing through the external FL cellnet.
+        This eliminates auth-token requirements, TLS certificate lookups, and
+        relay round-trips for the CJ ↔ subprocess channel.
+        """
+        return LocalCellPipe(
+            mode=Mode.PASSIVE,
+            site_name="{" + SystemVarName.SITE_NAME + "}",
+            token="{" + SystemVarName.JOB_ID + "}",
+        )
+
     def add_to_fed_job(self, job: FedJob, ctx, **kwargs):
         """This method is used by Job API.
 
@@ -209,7 +224,7 @@ class BaseScriptRunner:
         comp_ids = {}
 
         if self._launch_external_process:
-            task_pipe = self._task_pipe if self._task_pipe else self._create_cell_pipe()
+            task_pipe = self._task_pipe if self._task_pipe else self._create_local_cell_pipe()
             task_pipe_id = job.add_component("pipe", task_pipe, ctx)
             comp_ids["pipe_id"] = task_pipe_id
 
@@ -240,7 +255,7 @@ class BaseScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-            metric_pipe = self._metric_pipe if self._metric_pipe else self._create_cell_pipe()
+            metric_pipe = self._metric_pipe if self._metric_pipe else self._create_local_cell_pipe()
             metric_pipe_id = job.add_component("metrics_pipe", metric_pipe, ctx)
             comp_ids["metric_pipe_id"] = metric_pipe_id
 
