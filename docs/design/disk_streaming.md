@@ -81,26 +81,9 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 
 Detection is based on `hasattr(x, "resolve")` and optional cleanup hooks.
 
-## Policy Propagation
-
-### Why not message-level flags
-
-`stream_to_disk` is execution policy for a run context. It should not travel with every payload.
-
-### FedAvg path
-
-1. Recipe passes `stream_to_disk` into controller construction.
-2. `FedAvg.run()` sets run policy on entry and restores previous value on exit.
-3. `TensorDecomposer.download()` reads policy from the active cell FOBS context.
-4. `ServerEngine.get_cell()` prefers the active run cell (`run_manager.cell`) and falls back to parent cell.
-
-### Swarm path
-
-Swarm controller sets policy in `start_run()` and restores the previous value in `finalize()` for its local cell context.
-
 ## FOBS Context Scope
 
-`Cell.get_fobs_context()` is process-local runtime state (`CoreCell.fobs_ctx`) used by FOBS encode/decode behavior. It is not serialized into user payload data.
+`Cell.get_fobs_context()` is process-local runtime state (`CoreCell.fobs_ctx`) used by FOBS encode/decode behavior.
 
 Implications:
 
@@ -137,6 +120,3 @@ For compatibility materialization, `resolve_inplace(..., cleanup_resolved=True)`
 - `tests/unit_test/private/fed/server/server_runner_test.py`
 - `tests/stress_test/fedavg_large_model/fedavg_stress_test.py`
 
-## Run Commands
-
-Operational and stress-test commands are documented in `docs/design/disk_streaming_runbook.md`.
