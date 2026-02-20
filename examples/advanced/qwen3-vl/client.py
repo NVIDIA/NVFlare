@@ -72,7 +72,7 @@ def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
                 setattr(gcfg, key, tid)
 
 
-def _run_qwen_train_inprocess(
+def train(
     finetune_dir: str,
     input_model_dir: str,
     output_model_dir: str,
@@ -82,6 +82,8 @@ def _run_qwen_train_inprocess(
     learning_rate: str,
 ) -> None:
     """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
+    # train_qwen.train() only reads from sys.argv via HfArgumentParser.parse_args_into_dataclasses()
+    # and does not accept training args as parameters, so we set sys.argv before calling it.
     # Ensure Qwen finetune package is importable (train_qwen uses "from trainer import ...")
     finetune_dir = os.path.abspath(finetune_dir)
     if finetune_dir not in sys.path:
@@ -217,7 +219,7 @@ def main():
 
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
         try:
-            _run_qwen_train_inprocess(
+            train(
                 finetune_dir=finetune_dir,
                 input_model_dir=input_model_dir,
                 output_model_dir=output_model_dir,
