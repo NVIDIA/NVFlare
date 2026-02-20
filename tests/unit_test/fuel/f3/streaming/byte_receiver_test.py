@@ -87,12 +87,12 @@ def _pre_fix_find_or_create_task(message: Message, cell):
     error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
     with RxTask.map_lock:
-        task = RxTask.rx_task_map.get((origin, sid), None)
+        task = RxTask.rx_task_map.get(sid, None)
         if not task:
             if error:
                 return None
             task = RxTask(sid, origin, cell)
-            RxTask.rx_task_map[(origin, sid)] = task
+            RxTask.rx_task_map[sid] = task
         else:
             if error:
                 task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
