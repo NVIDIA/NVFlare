@@ -56,19 +56,19 @@ Tests:
 
 import json
 import time
+import uuid
 
 import numpy as np
 import pytest
 
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, _RefKey
 from nvflare.fuel.utils.fobs.lobs import dump_to_bytes, load_from_bytes
 from nvflare.fuel.utils.network_utils import get_open_ports
 
-_SERVER_FQCN = "server"
-_SUBPROCESS_FQCN = "subprocess"
-_CONNECT_WAIT = 2.0  # seconds to wait for TCP cell connection
+CONNECT_WAIT = 2.0  # seconds to wait for TCP cell connection
 
 
 def _register_numpy():
@@ -112,16 +112,22 @@ class TestPassThroughE2E:
     @pytest.fixture(scope="class")
     def cells(self):
         port = get_open_ports(1)[0]
-        server = Cell(_SERVER_FQCN, f"tcp://localhost:{port}", secure=False, credentials={})
+        server_fqcn = f"server-{uuid.uuid4().hex[:8]}"
+        subproc_fqcn = f"subprocess-{uuid.uuid4().hex[:8]}"
+        server = Cell(server_fqcn, f"tcp://localhost:{port}", secure=False, credentials={})
         server.core_cell.start()
-        subproc = Cell(_SUBPROCESS_FQCN, f"tcp://localhost:{port}", secure=False, credentials={})
+        subproc = Cell(subproc_fqcn, f"tcp://localhost:{port}", secure=False, credentials={})
         subproc.core_cell.start()
-        time.sleep(_CONNECT_WAIT)
+        time.sleep(CONNECT_WAIT)
         try:
             yield server, subproc
         finally:
+            subproc_name = subproc.get_fqcn()
+            server_name = server.get_fqcn()
             subproc.core_cell.stop()
             server.core_cell.stop()
+            CoreCell.ALL_CELLS.pop(subproc_name, None)
+            CoreCell.ALL_CELLS.pop(server_name, None)
 
     # ------------------------------------------------------------------
     # Test 1 — full round-trip correctness
@@ -255,8 +261,9 @@ class TestPassThroughE2E:
                 text = body.decode("utf-8")
                 ref = json.loads(text)
                 if _RefKey.FQCN in ref and _RefKey.REF_ID in ref:
-                    assert ref[_RefKey.FQCN] == _SERVER_FQCN, (
-                        f"Forwarded datum fqcn must be '{_SERVER_FQCN}' (FL server), "
+                    expected_server = server.get_fqcn()
+                    assert ref[_RefKey.FQCN] == expected_server, (
+                        f"Forwarded datum fqcn must be '{expected_server}' (FL server), "
                         f"but got '{ref[_RefKey.FQCN]}'. Subprocess would download from wrong source."
                     )
                     assert ref[_RefKey.REF_ID], "Forwarded datum must have a non-empty ref_id."
