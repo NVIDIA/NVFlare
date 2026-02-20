@@ -142,8 +142,23 @@ def _extract_safetensors_keys(data: bytes) -> list[str]:
     """Extract tensor key names from safetensors header without deserializing tensors."""
     if len(data) < 8:
         raise ValueError("Invalid safetensors data: too short")
+
     header_size = struct.unpack("<Q", data[:8])[0]
-    header = json.loads(data[8 : 8 + header_size])
+    if header_size <= 0:
+        raise ValueError("Invalid safetensors data: empty header")
+
+    header_end = 8 + header_size
+    if header_end > len(data):
+        raise ValueError("Invalid safetensors data: header size exceeds payload length")
+
+    try:
+        header = json.loads(data[8:header_end])
+    except Exception as e:
+        raise ValueError("Invalid safetensors data: invalid JSON header") from e
+
+    if not isinstance(header, dict):
+        raise ValueError("Invalid safetensors data: header must be JSON object")
+
     return [k for k in header.keys() if k != "__metadata__"]
 
 

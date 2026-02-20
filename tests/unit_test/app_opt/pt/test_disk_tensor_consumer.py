@@ -46,6 +46,22 @@ class TestExtractSafetensorsKeys:
         with pytest.raises(ValueError, match="too short"):
             _extract_safetensors_keys(b"short")
 
+    def test_header_size_exceeds_payload(self):
+        # Header says 100 bytes of JSON, but payload only has 2.
+        data = (100).to_bytes(8, byteorder="little") + b"{}"
+        with pytest.raises(ValueError, match="header size exceeds payload length"):
+            _extract_safetensors_keys(data)
+
+    def test_invalid_json_header(self):
+        data = (4).to_bytes(8, byteorder="little") + b"nope"
+        with pytest.raises(ValueError, match="invalid JSON header"):
+            _extract_safetensors_keys(data)
+
+    def test_non_object_json_header(self):
+        data = (2).to_bytes(8, byteorder="little") + b"[]"
+        with pytest.raises(ValueError, match="header must be JSON object"):
+            _extract_safetensors_keys(data)
+
 
 class TestDiskTensorConsumer:
     def test_writes_to_disk(self, temp_dir):
