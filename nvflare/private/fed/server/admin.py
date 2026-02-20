@@ -32,7 +32,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.sec.audit import Auditor, AuditService
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 from nvflare.private.fed.server.message_send import ClientReply, send_requests
 
@@ -77,7 +77,7 @@ class _ClientReq(object):
         self.req = req
 
 
-def check_client_replies(replies: List[ClientReply], client_sites: List[str], command: str):
+def check_client_replies(replies: List[ClientReply], client_sites: List[str], command: str, strict: bool = False):
     display_sites = ", ".join(client_sites)
     if not replies:
         raise RuntimeError(f"Failed to {command} to the clients {display_sites}: no replies.")
@@ -85,12 +85,36 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
         raise RuntimeError(f"Failed to {command} to the clients {display_sites}: not enough replies.")
 
     error_msg = ""
-    for r, client_name in zip(replies, client_sites):
-        if r.reply and ERROR_MSG_PREFIX in r.reply.body:
-            error_msg += f"\t{client_name}: {r.reply.body}\n"
+    if strict:
+        replies_by_client = {r.client_name: r for r in replies}
+        missing_clients = [c for c in client_sites if c not in replies_by_client]
+        if missing_clients:
+            display_missing = ", ".join(missing_clients)
+            raise RuntimeError(
+                f"Failed to {command} to the clients {display_sites}: missing replies from {display_missing}."
+            )
+
+        for client_name in client_sites:
+            r = replies_by_client[client_name]
+            if not r.reply:
+                error_msg += f"	{client_name}: no reply (timeout)\n"
+                continue
+
+            return_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+            if return_code != ReturnCode.OK:
+                detail = r.reply.body if r.reply.body else f"return code {return_code}"
+                error_msg += f"	{client_name}: {detail}\n"
+                continue
+
+            if isinstance(r.reply.body, str) and ERROR_MSG_PREFIX in r.reply.body:
+                error_msg += f"	{client_name}: {r.reply.body}\n"
+    else:
+        for r, client_name in zip(replies, client_sites):
+            if r.reply and ERROR_MSG_PREFIX in r.reply.body:
+                error_msg += f"	{client_name}: {r.reply.body}\n"
+
     if error_msg != "":
         raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")
-
 
 class FedAdminServer(AdminServer):
     def __init__(
