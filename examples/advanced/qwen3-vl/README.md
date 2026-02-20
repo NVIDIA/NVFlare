@@ -12,14 +12,13 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | `client.py` | Client entry point (launched by NVFlare via torchrun): receives global model, runs Qwen3-VL `train_qwen` in-process per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
 | `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches each client with a per-site torchrun command (unique `--master_port` per client). |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
+| `run_inference.py` | Inference on PubMedVision-style samples; compares base vs fine-tuned (HuggingFace checkpoint or NVFlare `FL_global_model.pt`). Prints question, ground truth, model answer, and image path. |
 
 ## Prerequisites
 
 - Python 3.10+
 - CUDA-capable GPU with substantial VRAM. Training has been tested on **3× NVIDIA H100** (one GPU per client; 94GB available VRAM per GPU).
 - [Git LFS](https://git-lfs.com/) (for cloning dataset repos)
-
-**Note:** Training has been tested on 3 × NVIDIA H100 (one GPU per client).
 
 ## 1. Virtual environment and dependencies
 
@@ -174,6 +173,8 @@ python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct \
 ```
 **Expected output**
 ```
+--- Sample 1 ---
+Image: /path/to/PubMedVision/images/...
 Q: <image>
 What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
 Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...
@@ -192,6 +193,8 @@ python run_inference.py --model_path /tmp/nvflare/simulation/qwen3-vl/server/sim
 
 **Expected output** (fine-tuned): same format as base; compare the "Model" line to the base run.
 ```
+--- Sample 1 ---
+Image: /path/to/PubMedVision/images/...
 Q: <image>
 What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
 Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...

@@ -25,7 +25,7 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def define_parser():
-    parser = argparse.ArgumentParser(description="Federated Qwen2.5-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
+    parser = argparse.ArgumentParser(description="Federated Qwen3-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients (default 3)")
     parser.add_argument("--num_rounds", type=int, default=5, help="FL rounds (default 5)")
     parser.add_argument(
