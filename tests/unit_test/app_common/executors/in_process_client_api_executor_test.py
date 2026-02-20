@@ -54,10 +54,10 @@ class TestInProcessClientAPIExecutorMemory:
     @pytest.mark.parametrize(
         "gc_rounds,cuda_empty",
         [
-            (0, False),   # Disabled
-            (1, True),    # Every round with CUDA
-            (1, False),   # Every round without CUDA
-            (5, True),    # Every 5 rounds with CUDA
+            (0, False),  # Disabled
+            (1, True),  # Every round with CUDA
+            (1, False),  # Every round without CUDA
+            (5, True),  # Every 5 rounds with CUDA
             (10, False),  # Every 10 rounds without CUDA
         ],
     )
