@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import select
 import socket
+import time
 from socketserver import BaseRequestHandler
 from typing import Any, Union
 
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
@@ -35,6 +38,7 @@ class SocketConnection(Connection):
         self.secure = secure
         self.closing = False
         self.conn_props = self._get_socket_properties()
+        self.send_timeout = CommConfigurator().get_streaming_send_timeout(30.0)
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -52,10 +56,28 @@ class SocketConnection(Connection):
 
     def send_frame(self, frame: BytesAlike):
         try:
-            self.sock.sendall(frame)
+            self._send_with_timeout(frame, self.send_timeout)
         except Exception as ex:
             if not self.closing:
                 raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")
+
+    def _send_with_timeout(self, frame: BytesAlike, timeout_sec: float):
+        view = memoryview(frame)
+        deadline = time.monotonic() + timeout_sec
+        while view:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CommError(CommError.TIMEOUT, f"send_frame timeout after {timeout_sec} seconds on {self.name}")
+
+            _, writable, _ = select.select([], [self.sock], [], remaining)
+            if not writable:
+                raise CommError(CommError.TIMEOUT, f"send_frame timeout after {timeout_sec} seconds on {self.name}")
+
+            sent = self.sock.send(view)
+            if sent <= 0:
+                raise CommError(CommError.CLOSED, f"Connection {self.name} is closed while sending")
+
+            view = view[sent:]
 
     def read_loop(self):
         try:

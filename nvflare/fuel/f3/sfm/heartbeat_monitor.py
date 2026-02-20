@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 HEARTBEAT_TICK = 5
 DEFAULT_HEARTBEAT_INTERVAL = 60
+DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS = 3
 
 
 class HeartbeatMonitor(Thread):
@@ -33,7 +34,14 @@ class HeartbeatMonitor(Thread):
         self.conns = conns
         self.stopped = Event()
         self.curr_time = 0
-        self.interval = CommConfigurator().get_heartbeat_interval(DEFAULT_HEARTBEAT_INTERVAL)
+        config = CommConfigurator()
+        self.interval = config.get_heartbeat_interval(DEFAULT_HEARTBEAT_INTERVAL)
+        self.send_stall_timeout = config.get_sfm_send_stall_timeout(45.0)
+        self.close_stalled_connection = config.get_sfm_close_stalled_connection(False)
+        self.stall_consecutive_checks = max(
+            1, config.get_sfm_send_stall_consecutive_checks(DEFAULT_SEND_STALL_CONSECUTIVE_CHECKS)
+        )
+        self.stall_counts = {}
         if self.interval < HEARTBEAT_TICK:
             log.warning(f"Heartbeat interval is too small ({self.interval} < {HEARTBEAT_TICK})")
 
@@ -55,7 +63,24 @@ class HeartbeatMonitor(Thread):
 
     def _check_heartbeat(self):
 
+        active_keys = set()
         for sfm_conn in self.conns.values():
+            conn_key = sfm_conn.get_name() if hasattr(sfm_conn, "get_name") else str(id(sfm_conn))
+            active_keys.add(conn_key)
+
+            stall_sec = sfm_conn.get_send_stall_seconds()
+            if stall_sec > self.send_stall_timeout:
+                count = self.stall_counts.get(conn_key, 0) + 1
+                self.stall_counts[conn_key] = count
+                log.warning(
+                    f"Detected stalled send on {sfm_conn.conn}: blocked {stall_sec:.1f}s "
+                    f"({count}/{self.stall_consecutive_checks})"
+                )
+                if self.close_stalled_connection and count >= self.stall_consecutive_checks:
+                    sfm_conn.conn.close()
+                continue
+
+            self.stall_counts[conn_key] = 0
 
             driver = sfm_conn.conn.connector.driver
             caps = driver.capabilities()
@@ -65,3 +90,7 @@ class HeartbeatMonitor(Thread):
             if self.curr_time - sfm_conn.last_activity > self.interval:
                 sfm_conn.send_heartbeat(Types.PING)
                 log.debug(f"Heartbeat sent to connection: {sfm_conn.conn}")
+
+        stale_keys = [k for k in self.stall_counts.keys() if k not in active_keys]
+        for k in stale_keys:
+            self.stall_counts.pop(k, None)

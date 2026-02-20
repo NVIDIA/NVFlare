@@ -63,6 +63,8 @@ class SfmConnection:
         self.last_activity = 0
         self.sequence = 0
         self.lock = threading.Lock()
+        self.send_state_lock = threading.Lock()
+        self.send_started_at = 0.0
 
     def get_name(self) -> str:
         return self.conn.name
@@ -145,7 +147,19 @@ class SfmConnection:
         log.debug(f"Sending frame: {prefix} on {self.conn}")
         # Only one thread can send data on a connection. Otherwise, the frames may interleave.
         with self.lock:
-            self.conn.send_frame(buffer)
+            with self.send_state_lock:
+                self.send_started_at = time.time()
+            try:
+                self.conn.send_frame(buffer)
+            finally:
+                with self.send_state_lock:
+                    self.send_started_at = 0.0
+
+    def get_send_stall_seconds(self) -> float:
+        with self.send_state_lock:
+            if self.send_started_at <= 0.0:
+                return 0.0
+            return time.time() - self.send_started_at
 
     @staticmethod
     def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:

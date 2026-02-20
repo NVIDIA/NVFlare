@@ -224,6 +224,55 @@ Via Configuration Files
    }
 
 
+Streaming Stall Guardrail (``comm_config.json``)
+------------------------------------------------
+
+For large payload/model transfers, configure F3 stream stall detection in
+``comm_config.json`` (server and client startup kits).
+
+**Runtime defaults** (if not set explicitly):
+
+- ``streaming_send_timeout``: ``30.0`` seconds
+- ``streaming_ack_progress_timeout``: ``60.0`` seconds
+- ``streaming_ack_progress_check_interval``: ``5.0`` seconds
+- ``sfm_send_stall_timeout``: ``45.0`` seconds
+- ``sfm_close_stalled_connection``: ``false`` (warn-only)
+- ``sfm_send_stall_consecutive_checks``: ``3``
+
+**Recommended deployment guideline**:
+
+1. Start with **warn-only** to observe behavior safely.
+2. If repeated stall warnings are observed during large-model streaming, enable auto-close.
+3. Keep the guard enabled with consecutive checks to reduce false alarms.
+
+Warn-only baseline:
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": false,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+Auto-recovery mode (when needed):
+
+.. code-block:: json
+
+   {
+     "sfm_close_stalled_connection": true,
+     "sfm_send_stall_timeout": 75,
+     "sfm_send_stall_consecutive_checks": 3
+   }
+
+**How to interpret logs**:
+
+- Expected warning on real stalls:
+  ``Detected stalled send on ... (N/3)``
+- In healthy/normal streaming, no stall warning should be emitted.
+- Intermittent stalls should not close the connection unless the threshold is reached in consecutive checks.
+
+
 Recommended Settings by Scenario
 ================================
 
