@@ -100,7 +100,7 @@ def main():
         name=recipe_name,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=BratsSegResNet(),
+        model=BratsSegResNet(),
         train_script="client.py",
         train_args=train_args,
         key_metric="val_dice",

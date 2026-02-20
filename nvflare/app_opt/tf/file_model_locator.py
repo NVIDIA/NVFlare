@@ -44,7 +44,7 @@ class TFFileModelLocator(ModelLocator):
         if not self.tf_persistor_id:
             raise ValueError(
                 "TFFileModelLocator requires a valid tf_persistor_id, but got empty string. "
-                "Ensure your TensorFlow recipe includes an initial_model to create a persistor."
+                "Ensure your TensorFlow recipe includes a model to create a persistor."
             )
 
         engine = fl_ctx.get_engine()

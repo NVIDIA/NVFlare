@@ -22,19 +22,13 @@ from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-exported for backward compatibility
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
-
-
-class FrameworkType(str, Enum):
-    RAW = "raw"
-    NUMPY = "numpy"
-    PYTORCH = "pytorch"
-    TENSORFLOW = "tensorflow"
 
 
 class PipeConnectType(str, Enum):
@@ -65,7 +59,7 @@ class BaseScriptRunner:
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
-        pipe_connect_type: Optional[str] = None,
+        pipe_connect_type: str = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
     ):

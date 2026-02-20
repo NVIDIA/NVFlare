@@ -49,12 +49,12 @@ def main():
         raise ValueError("Alpha must be greater than 0 for federated settings")
 
     # Create initial model
-    initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
+    model = ModerateTFNet(input_shape=(None, 32, 32, 3))
 
     # Create SCAFFOLD recipe
     recipe = ScaffoldRecipe(
         name=job_name,
-        initial_model=initial_model,
+        model=model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),

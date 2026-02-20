@@ -96,11 +96,13 @@ Example: Using PyTorch FedAvg Recipe
     from nvflare.recipe import SimEnv
 
     # TensorDownloader is automatically used - no configuration needed
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="my-fedavg-job",
         min_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),  # Even multi-GB models work efficiently
+        model=MyLargeModel(),  # Even multi-GB models work efficiently
         train_script="client.py",
     )
 
@@ -118,10 +120,11 @@ Example: Using PTFedAvg Controller Directly
     job = FedJob(name="pt-fedavg")
 
     # TensorDownloader is automatically enabled
+    # Model can be class instance or dict config
     controller = PTFedAvg(
         num_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),
+        model=MyLargeModel(),
     )
     job.to(controller, "server")
 

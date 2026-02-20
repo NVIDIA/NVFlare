@@ -1,8 +1,8 @@
 .. _memory_management:
 
-#############################
-Memory Management Best Practices
-#############################
+###################
+Memory Management
+###################
 
 This guide describes memory management techniques for long-running federated learning jobs
 using Python, PyTorch, and glibc.
@@ -142,11 +142,11 @@ measured and confirmed RSS is stable without cleanup.
 Recommended Settings
 ====================
 
-+--------+-----------------------------+--------------------+
-| Role   | ``server_memory_gc_rounds`` | ``MALLOC_ARENA_MAX`` |
-+========+=============================+====================+
-| Server | 5                           | 4                  |
-+--------+-----------------------------+--------------------+
++--------+-------------------------------+----------------------+
+| Role   | ``server_memory_gc_rounds``   | ``MALLOC_ARENA_MAX``   |
++========+===============================+======================+
+| Server | 5                             | 4                    |
++--------+-------------------------------+----------------------+
 
 API Reference
 =============

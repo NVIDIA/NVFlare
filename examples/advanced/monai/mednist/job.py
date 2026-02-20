@@ -46,7 +46,7 @@ def main():
         name="mednist_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=FLDenseNet121(
+        model=FLDenseNet121(
             spatial_dims=2, in_channels=1, out_channels=6
         ),  # We wrap the DenseNet121 into FLDenseNet121 to preserve the configuration when sending the model to the server.
         train_script="client.py",

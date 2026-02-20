@@ -170,6 +170,7 @@ __pycache__
 .pyc
 
 docs/apidocs/
+!docs/apidocs/modules.rst
 
 # Claude Code personal config
 CLAUDE.local.md

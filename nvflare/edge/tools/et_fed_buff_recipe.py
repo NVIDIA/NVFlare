@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import json
-from typing import Dict
+from typing import Dict, Optional
 
 from nvflare.edge.models.model import DeviceModel
 from nvflare.edge.tools.edge_fed_buff_recipe import (
@@ -31,6 +31,24 @@ _DEVICE_CONFIG_FILE_NAME = "device_config.json"
 
 
 class ETFedBuffRecipe(EdgeFedBuffRecipe):
+    """Edge Training FedBuff Recipe for embedded/edge device training.
+
+    This recipe extends EdgeFedBuffRecipe for edge devices with DeviceModel wrapper.
+
+    Args:
+        job_name: Name of the federated learning job.
+        device_model: DeviceModel wrapping the PyTorch model for edge devices.
+        input_shape: Input shape for the model.
+        output_shape: Output shape for the model.
+        model_manager_config: Configuration for the model manager.
+        device_manager_config: Configuration for the device manager.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
+            The file may not exist locally (server-side path).
+        evaluator_config: Configuration for the global evaluator (optional).
+        simulation_config: Configuration for simulated devices settings (optional).
+        device_training_params: Training parameters for device (optional).
+        custom_source_root: Path to custom source code (optional).
+    """
 
     def __init__(
         self,
@@ -40,6 +58,7 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         output_shape,
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
+        initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         device_training_params: Dict = None,
@@ -57,6 +76,7 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
             model=pt_model,
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
+            initial_ckpt=initial_ckpt,
             evaluator_config=evaluator_config,
             simulation_config=simulation_config,
             custom_source_root=custom_source_root,

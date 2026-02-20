@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional, Union
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 
 
@@ -39,8 +39,13 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        model: Initial model to start federated training with. Can be:
+            - nn.Module instance
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -57,56 +62,30 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             DIFF means that only the difference is sent. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
-            train_script, train_args, launch_external_process, command, framework,
-            server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
-            If not provided, the same configuration will be used for all clients.
-        launch_once: Controls the lifecycle of the external process. If True (default), the process
-            is launched once at startup and persists throughout all rounds, handling multiple training
-            requests. If False, a new process is launched and torn down for each individual request
-            from the server (e.g., each train or validate request). Only used if `launch_external_process`
-            is True. Defaults to True.
-        shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
-            Only used if `launch_external_process` is True. Defaults to 0.0.
-        key_metric: Metric used to determine if the model is globally best. If validation metrics are a dict,
-            key_metric selects the metric used for global model selection by the IntimeModelSelector.
-            Defaults to "accuracy".
+        per_site_config: Per-site configuration for the federated learning job.
+        launch_once: Whether external process is launched once or per task. Defaults to True.
+        shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
+        key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
         stop_cond: Early stopping condition based on metric. String literal in the format of
             '<key> <op> <value>' (e.g. "accuracy >= 80"). If None, early stopping is disabled.
         patience: Number of rounds with no improvement after which FL will be stopped.
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+
     Example:
         Basic usage with early stopping:
 
         ```python
         recipe = FedAvgRecipe(
             name="my_fedavg_job",
-            initial_model=pretrained_model,
+            model=pretrained_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
             train_args="--epochs 5 --batch_size 32",
             stop_cond="accuracy >= 95",
             patience=3
-        )
-        ```
-
-        Using launch_once=False to restart the external process for each request:
-
-        ```python
-        recipe = FedAvgRecipe(
-            name="my_fedavg_job",
-            initial_model=pretrained_model,
-            min_clients=2,
-            num_rounds=10,
-            train_script="client.py",
-            train_args="--epochs 5 --batch_size 32",
-            launch_external_process=True,
-            launch_once=False,  # Process restarts for each server request
-            shutdown_timeout=10.0  # Wait 10 seconds before shutdown
         )
         ```
 
@@ -120,7 +99,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         self,
         *,
         name: str = "fedavg",
-        initial_model: Any = None,
+        model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -133,7 +113,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
-        per_site_config: Optional[Dict[str, Dict]] = None,
+        per_site_config: Optional[dict[str, dict]] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
@@ -142,7 +122,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         patience: Optional[int] = None,
         save_filename: str = "FL_global_model.pt",
         exclude_vars: Optional[str] = None,
-        aggregation_weights: Optional[Dict[str, float]] = None,
+        aggregation_weights: Optional[dict[str, float]] = None,
+        server_memory_gc_rounds: int = 0,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -150,7 +131,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         # Call the unified FedAvgRecipe with PyTorch-specific settings
         super().__init__(
             name=name,
-            initial_model=initial_model,
+            model=model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -172,18 +154,22 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             save_filename=save_filename,
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
-        if self.initial_model is not None:
+        if self.model is not None or self.initial_ckpt is not None:
             from nvflare.app_opt.pt.job_config.model import PTModel
+            from nvflare.recipe.utils import prepare_initial_ckpt
 
             # Disable numpy conversion when using tensor format to keep PyTorch tensors
             allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
 
+            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
             pt_model = PTModel(
-                model=self.initial_model,
+                model=self.model,
+                initial_ckpt=ckpt_path,
                 persistor=self.model_persistor,
                 locator=self._pt_model_locator,
                 allow_numpy_conversion=allow_numpy_conversion,
