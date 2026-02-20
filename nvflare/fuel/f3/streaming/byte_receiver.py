@@ -92,6 +92,7 @@ class RxTask:
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
+        task_to_stop = None
 
         with cls.map_lock:
             task = cls.rx_task_map.get(sid, None)
@@ -104,8 +105,11 @@ class RxTask:
                 cls.rx_task_map[sid] = task
             else:
                 if error:
-                    task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
-                    return None
+                    task_to_stop = task
+
+        if task_to_stop:
+            task_to_stop.stop(StreamError(f"{task_to_stop} Received error from {origin}: {error}"), notify=False)
+            return None
 
         return task
 
