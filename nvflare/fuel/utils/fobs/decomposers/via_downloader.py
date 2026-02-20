@@ -61,7 +61,24 @@ class LazyDownloadRef:
         self.item_id = item_id
 
 
-# fobs_ctx key used to carry the (fqcn, ref_id) batch tuple in PASS_THROUGH mode
+class _LazyBatchInfo:
+    """Sentinel stored in fobs_ctx[items_key] during PASS_THROUGH mode.
+
+    Carries the (fqcn, ref_id) of the *original* download batch so that
+    ``recompose()`` can build a ``LazyDownloadRef`` for each item_id it
+    encounters.  Using a named sentinel class (rather than a plain tuple)
+    makes the PASS_THROUGH path unambiguous and robust against accidental
+    type collisions.
+    """
+
+    __slots__ = ("fqcn", "ref_id")
+
+    def __init__(self, fqcn: str, ref_id: str):
+        self.fqcn = fqcn
+        self.ref_id = ref_id
+
+
+# fobs_ctx key used to carry the fqcn/ref_id batch info in PASS_THROUGH mode
 # so that recompose() can build per-item LazyDownloadRefs from a single datum.
 _LAZY_BATCH_CTX_SUFFIX = "_lazy_batch"
 
@@ -425,7 +442,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             # from the originating source cell.
             ref = json.loads(datum.value)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: preserving lazy ref {ref} instead of downloading")
-            fobs_ctx[self.items_key] = (ref[_RefKey.FQCN], ref[_RefKey.REF_ID])
+            fobs_ctx[self.items_key] = _LazyBatchInfo(ref[_RefKey.FQCN], ref[_RefKey.REF_ID])
             return
 
         # data is to be downloaded
@@ -466,10 +483,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         fobs_ctx = manager.fobs_ctx
         items = fobs_ctx.get(self.items_key)
 
-        # PASS_THROUGH mode: items_key holds a (fqcn, ref_id) tuple, not a dict.
+        # PASS_THROUGH mode: items_key holds a _LazyBatchInfo sentinel, not a dict.
         # Build a LazyDownloadRef so the reference can be forwarded verbatim.
-        if isinstance(items, tuple):
-            fqcn, ref_id = items
+        if isinstance(items, _LazyBatchInfo):
+            fqcn, ref_id = items.fqcn, items.ref_id
             lazy = LazyDownloadRef(fqcn=fqcn, ref_id=ref_id, item_id=item_id)
             self.logger.debug(f"ViaDownloader PASS_THROUGH: created LazyDownloadRef {item_id=} {fqcn=} {ref_id=}")
             return lazy
