@@ -137,8 +137,6 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
-        client_memory_gc_rounds: int = 0,
-        cuda_empty_cache: bool = False,
     ):
         v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
@@ -174,8 +172,6 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
-            client_memory_gc_rounds=client_memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
         )
 
         # Add the SVMAssembler as a component to the job

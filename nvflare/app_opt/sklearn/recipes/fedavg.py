@@ -133,8 +133,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         key_metric: str = "accuracy",
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
-        client_memory_gc_rounds: int = 0,
-        cuda_empty_cache: bool = False,
     ):
         validate_model_path(model_path)
 
@@ -163,6 +161,4 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             key_metric=key_metric,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
-            client_memory_gc_rounds=client_memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
         )

@@ -140,8 +140,6 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "metrics",  # Matches client's metric key
-        client_memory_gc_rounds: int = 0,
-        cuda_empty_cache: bool = False,
     ):
         v = _KMeansValidator(n_clusters=n_clusters, model_path=model_path)
         self.n_clusters = v.n_clusters
@@ -176,7 +174,5 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             model_persistor=persistor,
             per_site_config=per_site_config,
             key_metric=key_metric,
-            client_memory_gc_rounds=client_memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
         )
         self.job.to_server(assembler, id=assembler_id)
