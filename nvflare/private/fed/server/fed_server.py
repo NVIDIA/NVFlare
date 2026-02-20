@@ -794,22 +794,55 @@ class FederatedServer(BaseServer):
 
     def _sync_client_jobs(self, request, client_token):
         # jobs that are running on client but not on server need to be aborted!
-        client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS)
-        server_jobs = self.engine.run_processes.keys()
-        jobs_need_abort = list(set(client_jobs).difference(server_jobs))
+        client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS) or []
+        if not isinstance(client_jobs, (list, tuple, set)):
+            client_jobs = []
 
-        # also check jobs that are running on server but not on the client
-        jobs_on_server_but_not_on_client = list(set(server_jobs).difference(client_jobs))
+        client_jobs = set(client_jobs)
+        server_jobs = set(self.engine.run_processes.keys())
+        jobs_need_abort = list(client_jobs.difference(server_jobs))
+
+        require_previous_report = ConfigService.get_bool_var(
+            name=ConfigVarName.SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=False,
+        )
+
+        # Record jobs that this client has reported at least once.
+        # If require_previous_report is enabled, we only treat "missing job on client"
+        # as dead-job after first positive observation.
+        for job_id in server_jobs.intersection(client_jobs):
+            job_info = self.engine.run_processes.get(job_id)
+            if not job_info:
+                continue
+
+            participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
+            if not participating_clients or client_token not in participating_clients:
+                continue
+
+            reported_clients = job_info.setdefault("_reported_clients", set())
+            reported_clients.add(client_token)
+
+        # Also check jobs that are running on server but not on the client.
+        jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
         if jobs_on_server_but_not_on_client:
-            # notify all the participating clients these jobs are not running on server anymore
             for job_id in jobs_on_server_but_not_on_client:
-                job_info = self.engine.run_processes[job_id]
+                job_info = self.engine.run_processes.get(job_id)
+                if not job_info:
+                    continue
+
                 participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
-                if participating_clients:
-                    # this is a dict: token => nvflare.apis.client.Client
-                    client = participating_clients.get(client_token, None)
-                    if client:
-                        self._notify_dead_job(client, job_id, "missing job on client")
+                if not participating_clients:
+                    continue
+
+                # this is a dict: token => nvflare.apis.client.Client
+                client = participating_clients.get(client_token, None)
+                if not client:
+                    continue
+
+                reported_clients = job_info.setdefault("_reported_clients", set())
+                if (not require_previous_report) or (client_token in reported_clients):
+                    self._notify_dead_job(client, job_id, "missing job on client")
 
         return jobs_need_abort
 

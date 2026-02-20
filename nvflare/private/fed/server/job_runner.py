@@ -21,12 +21,21 @@ from typing import Dict, List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SiteType, SystemComponents
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConfigVarName,
+    FLContextKey,
+    RunProcessKey,
+    SiteType,
+    SystemComponents,
+    SystemConfigs,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -255,7 +264,17 @@ class JobRunner(FLComponent):
 
         replies = engine.start_client_job(job, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
-        check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
+        strict_start_reply_check = ConfigService.get_bool_var(
+            name=ConfigVarName.STRICT_START_JOB_REPLY_CHECK,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=False,
+        )
+        check_client_replies(
+            replies=replies,
+            client_sites=client_sites_names,
+            command=f"start job ({job_id})",
+            strict=strict_start_reply_check,
+        )
         display_sites = ",".join(client_sites_names)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
