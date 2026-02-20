@@ -49,9 +49,7 @@ class TestSwarmLazyCompatibility:
         lazy_ref = _LazyRef(4.2, temp_ref)
         shareable = DXO(data_kind=DataKind.WEIGHTS, data={"w": lazy_ref}).to_shareable()
 
-        changed = _materialize_shareable_for_aggregator(
-            result=shareable, aggregator=_Aggregator(), stream_to_disk=True
-        )
+        changed = _materialize_shareable_for_aggregator(result=shareable, aggregator=_Aggregator(), stream_to_disk=True)
 
         dxo = from_shareable(shareable)
         assert changed is True
@@ -86,9 +84,7 @@ class TestSwarmLazyCompatibility:
         )
         shareable = collection.to_shareable()
 
-        changed = _materialize_shareable_for_aggregator(
-            result=shareable, aggregator=_Aggregator(), stream_to_disk=True
-        )
+        changed = _materialize_shareable_for_aggregator(result=shareable, aggregator=_Aggregator(), stream_to_disk=True)
 
         dxo = from_shareable(shareable)
         leaves, errors = get_leaf_dxos(dxo)
