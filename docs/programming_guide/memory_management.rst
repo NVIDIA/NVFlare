@@ -160,7 +160,7 @@ Client-Side Memory Cleanup
 ==========================
 
 The FedAvg recipe and ScriptRunner support automatic memory cleanup on clients via
-``client_memory_gc_rounds`` and ``torch_cuda_empty_cache`` parameters.
+``client_memory_gc_rounds`` and ``cuda_empty_cache`` parameters.
 
 Configuration
 -------------
@@ -180,13 +180,13 @@ Configuration
         
         # Client-side cleanup
         client_memory_gc_rounds=1,   # Cleanup every round
-        torch_cuda_empty_cache=True, # Clear GPU cache
+        cuda_empty_cache=True, # Clear GPU cache
     )
 
 **Parameters:**
 
 - ``client_memory_gc_rounds``: Run cleanup every N rounds on client (0 = disabled)
-- ``torch_cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
+- ``cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
 
 What It Does
 ------------
@@ -266,9 +266,9 @@ cleanup_memory
 
     from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-    cleanup_memory(torch_cuda_empty_cache=True)
+    cleanup_memory(cuda_empty_cache=True)
 
-**Signature:** ``cleanup_memory(torch_cuda_empty_cache: bool = False) -> None``
+**Signature:** ``cleanup_memory(cuda_empty_cache: bool = False) -> None``
 
 Performs allocator-aware memory cleanup:
 
@@ -325,7 +325,7 @@ High RSS on Client
 
 1. Check ``MALLOC_ARENA_MAX=2`` is set
 2. Enable ``client_memory_gc_rounds=1``
-3. Enable ``torch_cuda_empty_cache=True`` for GPU
+3. Enable ``cuda_empty_cache=True`` for GPU
 4. Consider using jemalloc
 
 OOM Errors

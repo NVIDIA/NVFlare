@@ -53,7 +53,7 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
             assert cuda_empty is True
 
     def test_memory_settings_env_false(self):
-        """Test that torch_cuda_empty_cache=false is parsed correctly."""
+        """Test that cuda_empty_cache=false is parsed correctly."""
         env = {
             "NVFLARE_CLIENT_MEMORY_GC_ROUNDS": "1",
             "NVFLARE_TORCH_CUDA_EMPTY_CACHE": "false",
@@ -67,7 +67,7 @@ class TestExProcessClientAPIMemory(unittest.TestCase):
             assert cuda_empty is False
 
     def test_memory_settings_env_case_insensitive(self):
-        """Test that TRUE/True/true all work for torch_cuda_empty_cache."""
+        """Test that TRUE/True/true all work for cuda_empty_cache."""
         for value in ["TRUE", "True", "true", "TrUe"]:
             env = {"NVFLARE_TORCH_CUDA_EMPTY_CACHE": value}
             with patch.dict(os.environ, env, clear=False):

@@ -12,13 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Union
+
+from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import validate_ckpt
+
+
+# Internal validator
+class _FedEvalValidator(BaseModel):
+    eval_ckpt: str
+
+    @field_validator("eval_ckpt")
+    @classmethod
+    def validate_eval_ckpt(cls, v):
+        # eval_ckpt is required for evaluation, validate it
+        validate_ckpt(v)
+        return v
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class EvalController(ModelController):
@@ -49,8 +66,12 @@ class FedEvalRecipe(Recipe):
 
     Args:
         name: Name of the federated evaluation job. Defaults to "eval".
-        initial_model: Model structure to evaluate (nn.Module). Required.
-            required to have a checkpoint attribute.
+        model: Model structure to evaluate. Can be:
+            - An instantiated nn.Module (e.g., Net())
+            - A dict config: {"class_path": "module.ClassName", "args": {...}}
+        eval_ckpt: Absolute path to pre-trained checkpoint file (.pt, .pth, etc.).
+            Required for evaluation - specifies which weights to evaluate.
+            The file may not exist locally (server-side path).
         min_clients: Minimum number of clients required to start evaluation.
         eval_script: Path to the evaluation script that will be executed on each client.
         eval_args: Command line arguments to pass to the evaluation script. Defaults to "".
@@ -64,22 +85,33 @@ class FedEvalRecipe(Recipe):
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
             If not provided, the same configuration will be used for all clients. Defaults to None.
-        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
-        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
-        Basic usage:
+        Basic usage with model instance:
 
         ```python
         from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
-        from model import LitNet
+        from model import Net
 
         recipe = FedEvalRecipe(
             name="eval_job",
-            initial_model=LitNet(checkpoint="pretrained_model.pt"),
+            model=Net(),
+            eval_ckpt="/path/to/pretrained_model.pt",
             min_clients=2,
             eval_script="client.py",
             eval_args="--batch_size 32",
+        )
+        ```
+
+        Using dict config:
+
+        ```python
+        recipe = FedEvalRecipe(
+            name="eval_job",
+            model={"class_path": "my_module.Net", "args": {"num_classes": 10}},
+            eval_ckpt="/path/to/pretrained_model.pt",
+            min_clients=2,
+            eval_script="client.py",
         )
         ```
     """
@@ -88,7 +120,8 @@ class FedEvalRecipe(Recipe):
         self,
         *,
         name: str = "eval",
-        initial_model: Any,
+        model: Union[Any, Dict[str, Any]],
+        eval_ckpt: str,
         min_clients: int,
         eval_script: str,
         eval_args: str = "",
@@ -96,12 +129,14 @@ class FedEvalRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         validation_timeout: int = 6000,
-        per_site_config: Optional[dict[str, dict]] = None,
-        client_memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        per_site_config: Optional[Dict[str, Dict]] = None,
     ):
+        # Validate eval_ckpt
+        _FedEvalValidator(eval_ckpt=eval_ckpt)
+
         self.name = name
-        self.initial_model = initial_model
+        self.model = model
+        self.eval_ckpt = eval_ckpt
         self.min_clients = min_clients
         self.eval_script = eval_script
         self.eval_args = eval_args
@@ -110,11 +145,6 @@ class FedEvalRecipe(Recipe):
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         self.per_site_config = per_site_config
-        self.client_memory_gc_rounds = client_memory_gc_rounds
-        self.torch_cuda_empty_cache = torch_cuda_empty_cache
-        self.source_checkpoint = initial_model.checkpoint
-        if self.source_checkpoint is None:
-            raise ValueError("initial_model must have a checkpoint attribute")
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -122,21 +152,30 @@ class FedEvalRecipe(Recipe):
             min_clients=self.min_clients,
         )
 
-        # Setup model and persistor using PTModel (handles serialization properly)
+        # Setup model and persistor using PTModel (handles both nn.Module and dict config)
         import torch.nn as nn
 
-        from nvflare.app_opt.pt import PTFileModelPersistor
         from nvflare.app_opt.pt.job_config.model import PTModel
 
-        if not isinstance(self.initial_model, nn.Module):
-            raise ValueError(f"initial_model must be nn.Module, got {type(self.initial_model)}")
+        # Validate model type and normalize dict (class_path -> path for job API)
+        if not isinstance(self.model, (nn.Module, dict)):
+            raise ValueError(f"model must be nn.Module or dict config, got {type(self.model)}")
+        if isinstance(self.model, dict):
+            from nvflare.recipe.utils import recipe_model_to_job_model
 
-        persistor = PTFileModelPersistor(model=self.initial_model, source_ckpt_file_full_name=self.source_checkpoint)
+            self.model = recipe_model_to_job_model(self.model)
 
-        # Use PTModel to add model and persistor properly
-        pt_model = PTModel(model=self.initial_model, persistor=persistor)
-        job.comp_ids.update(job.to_server(pt_model))
-        persistor_id = job.comp_ids.get("persistor_id", "")
+        # PTModel handles both nn.Module and dict config uniformly
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.eval_ckpt, job)
+        pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
+
+        result = job.to_server(pt_model)
+        job.comp_ids.update(result)
+        persistor_id = job.comp_ids.get("persistor_id")
+        if not persistor_id:
+            raise ValueError("Failed to obtain persistor_id from PTModel configuration")
 
         # Simple controller
         controller = EvalController(persistor_id=persistor_id, timeout=self.validation_timeout)
@@ -158,8 +197,6 @@ class FedEvalRecipe(Recipe):
                     command=cmd,
                     framework=FrameworkType.PYTORCH,
                     server_expected_format=expected_format,
-                    memory_gc_rounds=self.client_memory_gc_rounds,
-                    torch_cuda_empty_cache=self.torch_cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
@@ -170,8 +207,6 @@ class FedEvalRecipe(Recipe):
                 command=self.command,
                 framework=FrameworkType.PYTORCH,
                 server_expected_format=self.server_expected_format,
-                memory_gc_rounds=self.client_memory_gc_rounds,
-                torch_cuda_empty_cache=self.torch_cuda_empty_cache,
             )
             job.to_clients(executor)
 

@@ -151,7 +151,7 @@ class ExProcessClientAPI(APISpec):
 
             # Environment variables override config values
             self._memory_gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", str(config_gc_rounds)))
-            self._torch_cuda_empty_cache = (
+            self._cuda_empty_cache = (
                 os.environ.get("NVFLARE_TORCH_CUDA_EMPTY_CACHE", str(config_cuda_cache)).lower() == "true"
             )
 

@@ -32,7 +32,7 @@ class APISpec(ABC):
     def __init__(self):
         """Initialize memory management attributes."""
         self._memory_gc_rounds = 0
-        self._torch_cuda_empty_cache = False
+        self._cuda_empty_cache = False
         self._round_count = 0
         self._memory_logger = logging.getLogger(self.__class__.__name__)
 
@@ -50,7 +50,7 @@ class APISpec(ABC):
         if self._round_count % self._memory_gc_rounds == 0:
             from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-            cleanup_memory(torch_cuda_empty_cache=self._torch_cuda_empty_cache)
+            cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
             self._memory_logger.debug(f"Memory cleanup performed at round {self._round_count}")
 
     @abstractmethod

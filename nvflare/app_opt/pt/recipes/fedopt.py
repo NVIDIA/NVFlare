@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -25,7 +25,8 @@ from nvflare.app_opt.pt.fedopt import PTFedOptModelShareableGenerator
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -34,7 +35,8 @@ class _FedOptValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -44,8 +46,7 @@ class _FedOptValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     device: Optional[str] = None
-    client_memory_gc_rounds: int = 0
-    torch_cuda_empty_cache: bool = False
+    server_memory_gc_rounds: int = 1
 
 
 class FedOptRecipe(Recipe):
@@ -59,8 +60,13 @@ class FedOptRecipe(Recipe):
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        model: Initial model to start federated training with (REQUIRED). Can be:
+            - nn.Module instance
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+            Note: FedOpt requires a model for the server-side optimizer to work.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file. The file may not
+            exist locally as it could be on the server. Used to load initial weights.
+            Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -81,14 +87,14 @@ class FedOptRecipe(Recipe):
             - config_type: Type of configuration, typically "dict"
         device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
             Defaults to None; will default to cuda if available and no device is specified.
-        client_memory_gc_rounds: Run memory cleanup every N rounds on client. Defaults to 0 (disabled).
-        torch_cuda_empty_cache: If True, call torch.cuda.empty_cache() during cleanup. Defaults to False.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 1 (every round).
 
     Example:
         ```python
         recipe = FedOptRecipe(
             name="my_fedopt_job",
-            initial_model=pretrained_model,
+            model=pretrained_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -114,7 +120,8 @@ class FedOptRecipe(Recipe):
         self,
         *,
         name: str = "fedopt",
-        initial_model: Any = None,
+        model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -127,13 +134,13 @@ class FedOptRecipe(Recipe):
         source_model: str = "model",
         optimizer_args: Optional[dict] = None,
         lr_scheduler_args: Optional[dict] = None,
-        client_memory_gc_rounds: int = 0,
-        torch_cuda_empty_cache: bool = False,
+        server_memory_gc_rounds: int = 1,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -143,12 +150,20 @@ class FedOptRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             device=device,
-            client_memory_gc_rounds=client_memory_gc_rounds,
-            torch_cuda_empty_cache=torch_cuda_empty_cache,
+            server_memory_gc_rounds=server_memory_gc_rounds,
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
+
+        validate_ckpt(self.initial_ckpt)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -161,8 +176,7 @@ class FedOptRecipe(Recipe):
         self.source_model = source_model
         self.optimizer_args = optimizer_args
         self.lr_scheduler_args = lr_scheduler_args
-        self.client_memory_gc_rounds = v.client_memory_gc_rounds
-        self.torch_cuda_empty_cache = v.torch_cuda_empty_cache
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Replace {num_rounds} placeholder if present in lr_scheduler_args
         processed_lr_scheduler_args = None
@@ -181,11 +195,40 @@ class FedOptRecipe(Recipe):
             min_clients=self.min_clients,
         )
 
-        # Add initial model as a separate component
-        job.to_server(self.initial_model, id=self.source_model)
+        # FedOpt requires a model (either model or initial_ckpt must be provided)
+        # The PTFedOptModelShareableGenerator needs source_model to exist
+        if self.model is None:
+            raise ValueError(
+                "FedOpt requires model. Provide either:\n"
+                "  - nn.Module instance\n"
+                "  - Dict config: {'class_path': 'module.ClassName', 'args': {...}}\n"
+                "Note: initial_ckpt alone is not sufficient for PyTorch (model architecture needed)."
+            )
 
-        # Add the persisted model to the job
-        persistor = PTFileModelPersistor(model=self.source_model)
+        # Handle dict config: instantiate model before registering as component
+        # PTFileModelPersistor expects component ID to resolve to nn.Module, not dict
+        model_to_register = self.model
+        if isinstance(self.model, dict):
+            from nvflare.fuel.utils.class_utils import instantiate_class
+
+            class_path = self.model.get("path")
+            class_args = self.model.get("args", {})
+            try:
+                model_to_register = instantiate_class(class_path, class_args)
+            except Exception as e:
+                raise RuntimeError(f"Failed to instantiate model from dict config: {e}")
+
+        # Add initial model as a separate component
+        job.to_server(model_to_register, id=self.source_model)
+
+        # Add the persisted model to the job with checkpoint support
+        from nvflare.recipe.utils import prepare_initial_ckpt
+
+        ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+        persistor = PTFileModelPersistor(
+            model=self.source_model,
+            source_ckpt_file_full_name=ckpt_path,
+        )
         persistor_id = job.to_server(persistor, id="persistor")
 
         locator = PTFileModelLocator(pt_persistor_id=persistor_id)
@@ -217,6 +260,7 @@ class FedOptRecipe(Recipe):
             aggregator_id=aggregator_id,
             persistor_id="persistor",
             shareable_generator_id=shareable_generator_id,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)
@@ -230,8 +274,6 @@ class FedOptRecipe(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=TransferType.DIFF,
-            memory_gc_rounds=self.client_memory_gc_rounds,
-            torch_cuda_empty_cache=self.torch_cuda_empty_cache,
         )
         job.to_clients(executor)
 
