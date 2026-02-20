@@ -118,6 +118,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         shutdown_timeout: float = 0.0,
         key_metric: str = "accuracy",
         server_memory_gc_rounds: int = 0,
+        client_memory_gc_rounds: int = 0,
     ):
         # Call the unified FedAvgRecipe with TensorFlow-specific settings
         super().__init__(
@@ -141,6 +142,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             shutdown_timeout=shutdown_timeout,
             key_metric=key_metric,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=False,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

@@ -40,6 +40,8 @@ class _CrossSiteEvalValidator(BaseModel):
     model_name: Optional[dict] = None
     submit_model_timeout: int = 600
     validation_timeout: int = 6000
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
     @field_validator("initial_ckpt")
     @classmethod
@@ -118,6 +120,8 @@ class NumpyCrossSiteEvalRecipe(Recipe):
         model_name: Optional[dict] = None,
         submit_model_timeout: int = 600,
         validation_timeout: int = 6000,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate all inputs
         _CrossSiteEvalValidator(
@@ -132,6 +136,8 @@ class NumpyCrossSiteEvalRecipe(Recipe):
             model_name=model_name,
             submit_model_timeout=submit_model_timeout,
             validation_timeout=validation_timeout,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         job = FedJob(name=name, min_clients=min_clients)
@@ -173,6 +179,8 @@ class NumpyCrossSiteEvalRecipe(Recipe):
                 launch_external_process=launch_external_process,
                 command=command,
                 framework=FrameworkType.RAW,
+                memory_gc_rounds=client_memory_gc_rounds,
+                cuda_empty_cache=cuda_empty_cache,
             )
             job.to_clients(executor, tasks=[AppConstants.TASK_VALIDATION])
         else:

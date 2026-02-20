@@ -37,6 +37,8 @@ class _FedAvgValidator(BaseModel):
     train_args: str
     launch_external_process: bool = False
     command: str
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
     @field_validator("initial_ckpt")
     @classmethod
@@ -97,6 +99,8 @@ class FedAvgLrRecipe(Recipe):
         train_args: str = "",
         launch_external_process=False,
         command: str = "python3 -u",
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -110,6 +114,8 @@ class FedAvgLrRecipe(Recipe):
             train_args=train_args,
             launch_external_process=launch_external_process,
             command=command,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
@@ -122,6 +128,8 @@ class FedAvgLrRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.num_features = v.num_features
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
         # Create FedJob.
         job = FedJob(name=self.name, min_clients=self.min_clients)
@@ -152,6 +160,8 @@ class FedAvgLrRecipe(Recipe):
             framework=FrameworkType.RAW,
             server_expected_format=ExchangeFormat.RAW,
             params_transfer_type=TransferType.FULL,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
 
         job.to_clients(runner)

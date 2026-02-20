@@ -42,6 +42,7 @@ class _FedOptValidator(BaseModel):
     optimizer_args: Optional[dict] = None
     lr_scheduler_args: Optional[dict] = None
     server_memory_gc_rounds: int = 0
+    client_memory_gc_rounds: int = 0
 
 
 class FedOptRecipe(Recipe):
@@ -130,6 +131,7 @@ class FedOptRecipe(Recipe):
         optimizer_args: Optional[dict] = None,
         lr_scheduler_args: Optional[dict] = None,
         server_memory_gc_rounds: int = 0,
+        client_memory_gc_rounds: int = 0,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -147,6 +149,7 @@ class FedOptRecipe(Recipe):
             optimizer_args=optimizer_args,
             lr_scheduler_args=lr_scheduler_args,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
         )
 
         self.name = v.name
@@ -171,6 +174,7 @@ class FedOptRecipe(Recipe):
         self.optimizer_args = v.optimizer_args
         self.lr_scheduler_args = v.lr_scheduler_args
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -207,6 +211,8 @@ class FedOptRecipe(Recipe):
             framework=FrameworkType.TENSORFLOW,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=False,
         )
         job.to_clients(executor)
 
