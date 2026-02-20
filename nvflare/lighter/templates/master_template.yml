@@ -568,17 +568,20 @@ sub_start_sh: |
   echo "PYTHONPATH is $PYTHONPATH"
 
   # Memory management configuration
-  # Try to use jemalloc if available (recommended for PyTorch workloads)
-  for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
-                  /usr/lib64/libjemalloc.so.2 \
-                  /usr/local/lib/libjemalloc.so; do
-      if [ -f "$JEMALLOC" ]; then
-          export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
-          export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
-          echo "Using jemalloc: $JEMALLOC"
-          break
-      fi
-  done
+  # Opt-in jemalloc preload for PyTorch workloads.
+  # Enable by setting NVFLARE_ENABLE_JEMALLOC_PRELOAD=true.
+  if [ "${NVFLARE_ENABLE_JEMALLOC_PRELOAD:-false}" = "true" ]; then
+    for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                    /usr/lib64/libjemalloc.so.2 \
+                    /usr/local/lib/libjemalloc.so; do
+        if [ -f "$JEMALLOC" ]; then
+            export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
+            export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
+            echo "Using jemalloc: $JEMALLOC"
+            break
+        fi
+    done
+  fi
 
   # Limit glibc memory arenas to reduce RSS fragmentation (ignored by jemalloc)
   # Recommended: MALLOC_ARENA_MAX=2 for clients, MALLOC_ARENA_MAX=4 for servers

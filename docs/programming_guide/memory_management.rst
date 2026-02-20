@@ -183,10 +183,35 @@ Configuration
         cuda_empty_cache=True, # Clear GPU cache
     )
 
+Swarm Learning Configuration
+----------------------------
+
+Swarm Learning uses ``memory_gc_rounds`` (not ``memory_gc_counts``) and
+``cuda_empty_cache`` on ``SimpleSwarmLearningRecipe``:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+    recipe = SimpleSwarmLearningRecipe(
+        name="swarm_job",
+        model=MyModel(),
+        num_rounds=10,
+        train_script="train.py",
+        memory_gc_rounds=1,   # Cleanup every round on trainer and aggregator roles
+        cuda_empty_cache=True,
+    )
+
+.. note::
+
+   ``memory_gc_rounds`` and ``cuda_empty_cache`` are top-level Swarm recipe arguments.
+   Do not pass them inside ``train_args`` (they are reserved keys).
+
 **Parameters:**
 
 - ``client_memory_gc_rounds``: Run cleanup every N rounds on client (0 = disabled)
 - ``cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
+- ``memory_gc_rounds`` (Swarm): Run cleanup every N rounds (0 = disabled)
 
 What It Does
 ------------
