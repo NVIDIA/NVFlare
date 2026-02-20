@@ -148,7 +148,7 @@ class SfmConnection:
         # Only one thread can send data on a connection. Otherwise, the frames may interleave.
         with self.lock:
             with self.send_state_lock:
-                self.send_started_at = time.time()
+                self.send_started_at = time.monotonic()
             try:
                 self.conn.send_frame(buffer)
             finally:
@@ -159,7 +159,7 @@ class SfmConnection:
         with self.send_state_lock:
             if self.send_started_at <= 0.0:
                 return 0.0
-            return time.time() - self.send_started_at
+            return time.monotonic() - self.send_started_at
 
     @staticmethod
     def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:

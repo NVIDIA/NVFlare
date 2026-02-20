@@ -92,7 +92,8 @@ class TxTask(StreamTaskSpec):
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
-        self.ack_progress_check_interval = config.get_streaming_ack_progress_check_interval(5.0)
+        # Guard against zero/negative config to avoid wait(0) busy-spin loops.
+        self.ack_progress_check_interval = max(0.01, config.get_streaming_ack_progress_check_interval(5.0))
         self.last_ack_progress_ts = time.monotonic()
 
     def __str__(self):

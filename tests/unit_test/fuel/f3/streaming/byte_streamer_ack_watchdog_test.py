@@ -2,6 +2,15 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import time
 from unittest.mock import MagicMock
@@ -64,6 +73,18 @@ class TestByteStreamerAckWatchdog:
             optional=False,
         )
         return task, cell
+
+    def test_ack_progress_check_interval_is_clamped_to_prevent_busy_spin(self, monkeypatch):
+        task, _ = self._make_task(
+            monkeypatch,
+            window_size=0,
+            ack_wait=0.5,
+            ack_progress_timeout=2.0,
+            ack_progress_check_interval=0.0,
+            chunks=[b""],
+        )
+
+        assert task.ack_progress_check_interval == 0.01
 
     def test_handle_ack_updates_ack_progress_timestamp(self, monkeypatch):
         task, _ = self._make_task(
