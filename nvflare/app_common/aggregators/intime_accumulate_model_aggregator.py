@@ -44,7 +44,7 @@ def _get_missing_keys(ref_dict: dict, dict_to_check: dict):
 
 
 class InTimeAccumulateWeightedAggregator(Aggregator):
-    # Optional capability marker: this aggregator can consume lazy tensor payloads.
+    # This aggregator can handle lazy tensor references directly.
     accepts_lazy_tensors = True
 
     def __init__(

@@ -246,6 +246,30 @@ class TestWeightedAggregationHelper:
         assert torch.allclose(result["w2"], torch.tensor([2.5]))
         assert torch.allclose(result["w3"], torch.tensor([4.0]))
 
+    def test_non_callable_resolve_attribute_is_ignored(self):
+        """Test objects with non-callable resolve attribute are not treated as lazy refs."""
+        helper = WeightedAggregationHelper()
+
+        class _ValueWithNonCallableResolve:
+            def __init__(self, value: float):
+                self.resolve = "not-callable"
+                self.value = value
+
+            def __mul__(self, other):
+                return self.value * other
+
+            def __rmul__(self, other):
+                return self.__mul__(other)
+
+            def __add__(self, other):
+                return self.value + other
+
+        data = {"w": _ValueWithNonCallableResolve(3.0)}
+        helper.add(data, weight=2.0, contributor_name="site-1", contribution_round=0)
+
+        result = helper.get_result()
+        assert result["w"] == pytest.approx(3.0)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
