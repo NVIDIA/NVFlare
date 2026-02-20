@@ -174,10 +174,10 @@ Configuration
         min_clients=4,
         num_rounds=100,
         train_script="client.py",
-        
+
         # Server-side cleanup
         server_memory_gc_rounds=5,
-        
+
         # Client-side cleanup
         client_memory_gc_rounds=1,   # Cleanup every round
         cuda_empty_cache=True, # Clear GPU cache
@@ -252,7 +252,7 @@ Installing jemalloc
 
     # Ubuntu/Debian
     apt-get install libjemalloc2
-    
+
     # RHEL/CentOS
     yum install jemalloc
 

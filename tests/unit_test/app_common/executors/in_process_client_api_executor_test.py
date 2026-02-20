@@ -88,4 +88,3 @@ class TestInProcessClientAPIExecutorMemory:
         assert executor._task_wait_time == 30.0
         assert executor._result_pull_interval == 1.0
         assert executor._train_with_evaluation is True
-
