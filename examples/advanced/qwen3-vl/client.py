@@ -35,6 +35,21 @@ def _abs_path(p: str) -> str:
     return os.path.abspath(os.path.expanduser(p))
 
 
+def _params_size_mb(params) -> float:
+    """Return size of params dict (state_dict) in MB. Handles torch tensors and numpy arrays."""
+    if not params:
+        return 0.0
+    nbytes = 0
+    for v in params.values():
+        if isinstance(v, torch.Tensor):
+            nbytes += v.numel() * v.element_size()
+        elif hasattr(v, "nbytes"):  # numpy array
+            nbytes += v.nbytes
+        else:
+            nbytes += 0
+    return nbytes / (1024.0 * 1024.0)
+
+
 def _free_memory_after_send() -> None:
     """Run GC and clear CUDA cache to reduce OOM risk before the next round."""
     gc.collect()
@@ -91,7 +106,7 @@ def _run_qwen_train_inprocess(
             "--gradient_accumulation_steps", "2",
             "--learning_rate", learning_rate,
             "--save_strategy", "no",
-            "--report_to", "none",
+            "--report_to", "wandb",
             "--ddp_find_unused_parameters", "False",
         ]
     )
@@ -180,10 +195,13 @@ def main():
 
     while flare.is_running():
         input_model = flare.receive()
-        print(f"site={client_name}, round={input_model.current_round}")
+        received_mb = _params_size_mb(input_model.params)
+        print(f"site={client_name}, round={input_model.current_round}, received model size: {received_mb:.2f} MB")
 
         if flare.is_evaluate():
             output_model = flare.FLModel(metrics={"loss": 0.0})
+            sent_mb = _params_size_mb(getattr(output_model, "params", None) or {})
+            print(f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB")
             flare.send(output_model)
             continue
 
@@ -226,6 +244,8 @@ def main():
                 metrics={"loss": float("nan")},
                 meta={"ERROR": str(e)},
             )
+            sent_mb = _params_size_mb(params)
+            print(f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error)")
             flare.send(output_model)
             del params, output_model
             _free_memory_after_send()
@@ -245,7 +265,8 @@ def main():
             metrics={"loss": 0.0},
             meta=meta,
         )
-        print(f"site={client_name}, round={input_model.current_round}, sent updated weights")
+        sent_mb = _params_size_mb(params)
+        print(f"site={client_name}, round={input_model.current_round}, sent updated weights, model size: {sent_mb:.2f} MB")
         flare.send(output_model)
 
         # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)

@@ -161,6 +161,52 @@ By default, the client saves received and trained model checkpoints under the **
 
 After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the script must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so the script can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
 
+## Inference (before/after comparison)
+
+Use `run_inference.py` to compare base vs fine-tuned checkpoints on PubMedVision-style samples. Run from this directory (`examples/advanced/qwen3-vl`):
+
+`--image_root` should be the directory that contains the `images/` folder (e.g. your PubMedVision repo). Output prints each question, ground-truth answer, and model answer so you can compare base vs fine-tuned runs.
+
+### Base model (no fine-tuning)
+```bash
+python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct \
+  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+```
+**Expected output**
+```
+Q: <image>
+What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
+Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...
+Model:        Based on the provided CT angiography scan, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm.
+```
+
+### Fine-tuned checkpoint
+
+**Option A — NVFlare global model** (single `.pt` file saved by the server, e.g. `FL_global_model.pt`). You must pass `--base_model` so the script can load the architecture and processor, then apply the saved weights:
+
+```bash
+python run_inference.py --model_path /tmp/nvflare/simulation/qwen3-vl/server/simulate_job/app_server/FL_global_model.pt \
+  --base_model Qwen/Qwen3-VL-2B-Instruct \
+  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+```
+
+**Expected output** (fine-tuned): same format as base; compare the "Model" line to the base run.
+```
+Q: <image>
+What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
+Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...
+Model:        The inferior mesenteric artery aneurysm (IMAA) measures 4.87 cm in length.
+```
+
+**Option B — HuggingFace-style checkpoint directory** (e.g. from the FL client workspace or a saved `checkpoint-xxx` folder):
+
+```bash
+python run_inference.py --model_path ./path/to/checkpoint-xxx \
+  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+```
+
+> The example output above may look similar for base and fine-tuned checkpoints because the baseline is already strong; the intent here is to demonstrate federated fine-tuning and inference on the global checkpoint. Note that we use the same training data (e.g. `site-1/train.json`) only for illustration -- for real evaluation you should use a held-out validation or test set.
+
 ## Summary
 
 | Step | Action |
