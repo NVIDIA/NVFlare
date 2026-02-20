@@ -36,12 +36,12 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     _LAZY_BATCH_CTX_SUFFIX,
-    _CtxKey,
-    _RefKey,
     EncKey,
     EncType,
     LazyDownloadRef,
+    _CtxKey,
     _LazyBatchInfo,
+    _RefKey,
 )
 
 # ---------------------------------------------------------------------------
@@ -144,9 +144,9 @@ class TestProcessDatumPassThrough:
             mock_dl.assert_not_called()
 
         items = fobs_ctx.get(decomposer.items_key)
-        assert isinstance(items, _LazyBatchInfo), (
-            f"Expected _LazyBatchInfo in fobs_ctx[{decomposer.items_key!r}], got {type(items)}"
-        )
+        assert isinstance(
+            items, _LazyBatchInfo
+        ), f"Expected _LazyBatchInfo in fobs_ctx[{decomposer.items_key!r}], got {type(items)}"
         assert items.fqcn == _SERVER_FQCN
         assert items.ref_id == _REF_ID
 
@@ -275,9 +275,7 @@ class TestDecomposeWithLazyDownloadRef:
 
         # Still only ONE _finalize_lazy_batch CB, regardless of number of items
         finalize_cbs = [cb for cb, _ in mgr.post_cbs if cb.__name__ == "_finalize_lazy_batch"]
-        assert len(finalize_cbs) == 1, (
-            f"Expected exactly 1 _finalize_lazy_batch CB, got {len(finalize_cbs)}"
-        )
+        assert len(finalize_cbs) == 1, f"Expected exactly 1 _finalize_lazy_batch CB, got {len(finalize_cbs)}"
 
     def test_finalize_lazy_batch_adds_exactly_one_datum(self):
         """_finalize_lazy_batch post-CB must add exactly one datum per batch."""

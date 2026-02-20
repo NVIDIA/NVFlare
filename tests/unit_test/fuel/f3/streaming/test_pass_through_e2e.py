@@ -143,9 +143,9 @@ class TestPassThroughE2E:
         result = load_from_bytes(forwarded_bytes, fobs_ctx={FOBSContextKey.CELL: subproc})
 
         assert isinstance(result, dict), f"Expected dict from subprocess, got {type(result)}"
-        assert set(result.keys()) == set(original.keys()), (
-            f"Key mismatch: expected {set(original.keys())}, got {set(result.keys())}"
-        )
+        assert set(result.keys()) == set(
+            original.keys()
+        ), f"Key mismatch: expected {set(original.keys())}, got {set(result.keys())}"
         for key in original:
             np.testing.assert_array_almost_equal(
                 result[key],
@@ -178,9 +178,9 @@ class TestPassThroughE2E:
                 f"CJ got {type(val).__name__} for '{key}' instead of LazyDownloadRef. "
                 "B1 pass-through requires that no tensor data is materialised at CJ."
             )
-            assert not isinstance(val, np.ndarray), (
-                f"Key '{key}': numpy array must NOT be present at CJ in PASS_THROUGH mode."
-            )
+            assert not isinstance(
+                val, np.ndarray
+            ), f"Key '{key}': numpy array must NOT be present at CJ in PASS_THROUGH mode."
 
     # ------------------------------------------------------------------
     # Test 3 — no download transaction created at CJ
@@ -227,11 +227,7 @@ class TestPassThroughE2E:
         from io import BytesIO
 
         from nvflare.fuel.utils.fobs import get_dot_handler
-        from nvflare.fuel.utils.fobs.lobs import (
-            HEADER_LEN,
-            MARKER_DATUM_TEXT,
-            _Header,
-        )
+        from nvflare.fuel.utils.fobs.lobs import HEADER_LEN, MARKER_DATUM_TEXT, _Header
 
         server, _ = cells
         original = {"w": np.zeros((8, 8), dtype=np.float32)}
@@ -289,6 +285,4 @@ class TestPassThroughE2E:
 
         assert set(result.keys()) == set(original.keys())
         for key in original:
-            np.testing.assert_array_almost_equal(
-                result[key], original[key], err_msg=f"Mismatch for '{key}'"
-            )
+            np.testing.assert_array_almost_equal(result[key], original[key], err_msg=f"Mismatch for '{key}'")
