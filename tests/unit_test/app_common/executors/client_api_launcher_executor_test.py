@@ -49,11 +49,27 @@ class _FakeEngine:
 
 
 class _FakeFLContext:
-    def __init__(self, cell):
+    def __init__(self, cell, identity_name="test_site", job_id="test_job"):
         self._engine = _FakeEngine(cell)
+        self._identity_name = identity_name
+        self._job_id = job_id
+        self._props = {}
+        self._peer_ctx = None
 
     def get_engine(self):
         return self._engine
+
+    def get_identity_name(self):
+        return self._identity_name
+
+    def get_job_id(self):
+        return self._job_id
+
+    def get_prop(self, key, default=None):
+        return self._props.get(key, default)
+
+    def get_peer_context(self):
+        return self._peer_ctx
 
 
 @pytest.fixture
