@@ -58,10 +58,10 @@ class _FakeFLContext:
 
 @pytest.fixture
 def base_executor(monkeypatch):
-    monkeypatch.setattr(ClientAPILauncherExecutor, 'prepare_config_for_launch', lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, 'initialize', lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, 'finalize', lambda self, fl_ctx: None)
-    return ClientAPILauncherExecutor(pipe_id='test_pipe')
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "finalize", lambda self, fl_ctx: None)
+    return ClientAPILauncherExecutor(pipe_id="test_pipe")
 
 
 def test_pass_through_restored_to_previous_value(base_executor):
@@ -89,18 +89,18 @@ def test_pass_through_restored_to_none_when_previously_absent(base_executor):
 
 
 def test_initialize_failure_restores_pass_through(monkeypatch):
-    monkeypatch.setattr(ClientAPILauncherExecutor, 'prepare_config_for_launch', lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
 
     def _raise(*_args, **_kwargs):
-        raise RuntimeError('boom')
+        raise RuntimeError("boom")
 
-    monkeypatch.setattr(LauncherExecutor, 'initialize', _raise)
+    monkeypatch.setattr(LauncherExecutor, "initialize", _raise)
 
-    executor = ClientAPILauncherExecutor(pipe_id='test_pipe')
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
-    with pytest.raises(RuntimeError, match='boom'):
+    with pytest.raises(RuntimeError, match="boom"):
         executor.initialize(fl_ctx)
 
     assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
