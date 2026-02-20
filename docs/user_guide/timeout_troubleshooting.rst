@@ -265,6 +265,29 @@ Auto-recovery mode (when needed):
      "sfm_send_stall_consecutive_checks": 3
    }
 
+**Timing relationship (important)**:
+
+- ``sfm_send_stall_timeout`` is compared against the total continuous blocked-send duration.
+- ``sfm_send_stall_consecutive_checks`` counts consecutive heartbeat monitor ticks (every 5 seconds),
+  not multiples of ``sfm_send_stall_timeout``.
+
+Approximate auto-close window (when ``sfm_close_stalled_connection=true``):
+
+.. code-block:: text
+
+   close_lower_bound ~= sfm_send_stall_timeout
+   close_upper_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * sfm_send_stall_consecutive_checks)
+
+With ``sfm_send_stall_timeout=75`` and ``sfm_send_stall_consecutive_checks=3``, close typically occurs
+around ``75``-``90`` seconds of continuous stall (not 225 seconds).
+
+**Outer-timeout guideline**:
+
+Set higher-layer timeouts (for example ``communication_timeout`` or task/request timeouts that include
+message transfer time) greater than ``close_upper_bound`` plus a safety margin.
+
+Example: ``communication_timeout=300`` is safely larger than the ~``90`` second stall auto-close window.
+
 **How to interpret logs**:
 
 - Expected warning on real stalls:

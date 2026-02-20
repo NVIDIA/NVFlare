@@ -75,6 +75,8 @@ class TestSocketConnectionSendTimeout:
 
         conn.send_frame(b"abcde")
         assert len(sock.sent_chunks) == 2
+        # Negative path for close-on-timeout change: success send must not close.
+        assert conn.closing is False
 
     def test_send_frame_timeout_when_socket_not_writable(self, monkeypatch):
         conn, sock = self._make_conn(monkeypatch, timeout_sec=0.01)
@@ -90,6 +92,37 @@ class TestSocketConnectionSendTimeout:
         assert ex.value.code == CommError.TIMEOUT
         assert "timeout" in str(ex.value).lower()
 
+    def test_send_frame_timeout_closes_connection_to_avoid_frame_desync(self, monkeypatch):
+        conn, sock = self._make_conn(monkeypatch, timeout_sec=0.01, send_returns=[2])
+
+        select_calls = {"count": 0}
+
+        def _select(_r, _w, _x, _t):
+            select_calls["count"] += 1
+            if select_calls["count"] == 1:
+                return ([], [sock], [])
+            return ([], [], [])
+
+        monkeypatch.setattr("nvflare.fuel.f3.drivers.socket_conn.select.select", _select)
+
+        close_calls = {"count": 0}
+        original_close = conn.close
+
+        def _close_spy():
+            close_calls["count"] += 1
+            original_close()
+
+        monkeypatch.setattr(conn, "close", _close_spy)
+
+        with pytest.raises(CommError) as ex:
+            conn.send_frame(b"abcde")
+
+        assert ex.value.code == CommError.TIMEOUT
+        assert close_calls["count"] == 1
+        assert conn.closing is True
+        # First send() wrote partial bytes before timing out.
+        assert len(sock.sent_chunks) == 1
+
     def test_send_frame_error_when_send_returns_zero(self, monkeypatch):
         conn, sock = self._make_conn(monkeypatch, timeout_sec=1.0, send_returns=[0])
 
@@ -98,11 +131,23 @@ class TestSocketConnectionSendTimeout:
             lambda _r, _w, _x, _t: ([], [sock], []),
         )
 
+        close_calls = {"count": 0}
+        original_close = conn.close
+
+        def _close_spy():
+            close_calls["count"] += 1
+            original_close()
+
+        monkeypatch.setattr(conn, "close", _close_spy)
+
         with pytest.raises(CommError) as ex:
             conn.send_frame(b"abc")
 
         assert ex.value.code == CommError.CLOSED
         assert "closed while sending" in str(ex.value).lower()
+        # Negative path for close-on-timeout change: non-timeout comm errors should not force close.
+        assert close_calls["count"] == 0
+        assert conn.closing is False
 
     def test_send_frame_wraps_unexpected_exception_as_error(self, monkeypatch):
         conn, _ = self._make_conn(monkeypatch, timeout_sec=1.0)
@@ -168,7 +213,8 @@ class TestSocketConnectionSendTimeout:
         t1.join(timeout=0.5)
         t2.join(timeout=0.5)
 
-        # Both sends should return quickly (timeout), rather than hanging for long periods.
+        # Both sends should return quickly, rather than hanging for long periods.
         assert not t1.is_alive()
         assert not t2.is_alive()
-        assert len(errors) == 2
+        # First timeout closes the connection; subsequent send may be suppressed while closing.
+        assert len(errors) == 1

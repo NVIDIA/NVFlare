@@ -57,8 +57,12 @@ class SocketConnection(Connection):
     def send_frame(self, frame: BytesAlike):
         try:
             self._send_with_timeout(frame, self.send_timeout)
-        except CommError:
+        except CommError as error:
             if not self.closing:
+                # A send timeout may occur after partial bytes are already written to the stream.
+                # Close the connection to avoid frame-boundary desync on subsequent sends.
+                if error.code == CommError.TIMEOUT:
+                    self.close()
                 raise
         except Exception as ex:
             if not self.closing:
