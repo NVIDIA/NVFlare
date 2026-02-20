@@ -116,6 +116,10 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         train_args: Additional arguments for the training script.
         do_cross_site_eval: Whether to perform cross-site evaluation.
         cross_site_eval_timeout: Timeout for cross-site evaluation.
+        memory_gc_rounds: Run gc.collect() + malloc_trim every N FL rounds on both the trainer
+            and aggregator roles. Defaults to 1 (every round) to match legacy behavior where
+            gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
+        cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
 
     Example:
         Using nn.Module instance:
@@ -151,7 +155,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         train_args: dict = None,
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
-        client_memory_gc_rounds: int = 0,
+        memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
@@ -197,13 +201,15 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         client_config = SwarmClientConfig(
             executor=ScriptRunner(
                 script=train_script,
-                memory_gc_rounds=client_memory_gc_rounds,
+                memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
                 **train_args,
             ),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=ckpt_path),
             shareable_generator=SimpleModelShareableGenerator(),
+            memory_gc_rounds=memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
