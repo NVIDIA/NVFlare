@@ -61,7 +61,6 @@ import numpy as np
 import pytest
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef, _RefKey
 from nvflare.fuel.utils.fobs.lobs import dump_to_bytes, load_from_bytes
@@ -226,7 +225,6 @@ class TestPassThroughE2E:
         """
         from io import BytesIO
 
-        from nvflare.fuel.utils.fobs import get_dot_handler
         from nvflare.fuel.utils.fobs.lobs import HEADER_LEN, MARKER_DATUM_TEXT, _Header
 
         server, _ = cells

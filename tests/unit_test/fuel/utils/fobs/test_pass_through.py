@@ -35,7 +35,6 @@ import pytest
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
-    _LAZY_BATCH_CTX_SUFFIX,
     EncKey,
     EncType,
     LazyDownloadRef,
