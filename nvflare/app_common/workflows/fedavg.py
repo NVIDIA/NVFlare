@@ -130,13 +130,7 @@ class FedAvg(BaseFedAvg):
         return bool(self.aggregator and getattr(self.aggregator, "accepts_lazy_tensors", False))
 
     def _set_stream_to_disk(self):
-        engine = getattr(self, "engine", None)
-        if not engine or not hasattr(engine, "get_cell"):
-            if self.stream_to_disk:
-                self.warning("stream_to_disk is enabled but engine has no get_cell(); using in-memory download path")
-            return
-
-        cell = engine.get_cell()
+        cell = self.engine.get_cell()
         if not cell:
             if self.stream_to_disk:
                 self.warning("stream_to_disk is enabled but no active cell is available; using in-memory download path")

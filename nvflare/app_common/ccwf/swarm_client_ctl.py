@@ -447,11 +447,7 @@ class SwarmClientController(ClientSideController):
         )
 
     def _set_stream_to_disk(self):
-        engine = getattr(self, "engine", None)
-        if not engine or not hasattr(engine, "get_cell"):
-            return
-
-        cell = engine.get_cell()
+        cell = self.engine.get_cell()
         if not cell:
             return
 
