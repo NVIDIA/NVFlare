@@ -177,3 +177,6 @@ docs/apidocs/
 
 # local test temp dir
 .tmp/
+
+# memory profiler output
+tests/memory_profile/**/*.dat

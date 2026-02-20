@@ -249,26 +249,29 @@ Recommended Settings
 Using jemalloc
 ==============
 
-For PyTorch workloads, jemalloc is recommended over glibc malloc. NVFlare's startup
-scripts automatically detect and use jemalloc if available.
+For PyTorch workloads, jemalloc is recommended over glibc malloc. NVFlare startup
+scripts preload jemalloc only when explicitly enabled via
+``NVFLARE_ENABLE_JEMALLOC_PRELOAD=true`` and jemalloc is available.
 
 Startup Script
 --------------
 
-The generated ``sub_start.sh`` script includes jemalloc auto-detection:
+The generated ``sub_start.sh`` script includes opt-in jemalloc preload:
 
 .. code-block:: bash
 
-    # Auto-detects jemalloc at standard locations
-    for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
-                    /usr/lib64/libjemalloc.so.2 \
-                    /usr/local/lib/libjemalloc.so; do
-        if [ -f "$JEMALLOC" ]; then
-            export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
-            export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
-            break
-        fi
-    done
+    # Enable jemalloc preload only when opted in
+    if [ "${NVFLARE_ENABLE_JEMALLOC_PRELOAD:-false}" = "true" ]; then
+        for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                        /usr/lib64/libjemalloc.so.2 \
+                        /usr/local/lib/libjemalloc.so; do
+            if [ -f "$JEMALLOC" ]; then
+                export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
+                export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
+                break
+            fi
+        done
+    fi
 
 Installing jemalloc
 -------------------
