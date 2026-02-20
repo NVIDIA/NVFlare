@@ -102,7 +102,7 @@ class SocketConnection(Connection):
         return False
 
     def _send_with_timeout(self, frame: BytesAlike, timeout_sec: float):
-        view = frame if isinstance(frame, memoryview) else memoryview(frame)
+        view = memoryview(frame)
         deadline = time.monotonic() + timeout_sec
         while view:
             remaining = deadline - time.monotonic()
@@ -158,7 +158,11 @@ class SocketConnection(Connection):
         return frame
 
     def read_into(self, buffer: BytesAlike, offset: int, length: int):
-        view = buffer if isinstance(buffer, memoryview) else memoryview(buffer)
+        if isinstance(buffer, memoryview):
+            view = buffer
+        else:
+            view = memoryview(buffer)
+
         if offset:
             view = view[offset:]
 
