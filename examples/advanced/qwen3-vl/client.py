@@ -18,6 +18,7 @@ in-process, then loads the checkpoint and sends updated weights back.
 Requires QWEN3VL_ROOT and (for site data) a "fl_site" dataset entry in the Qwen repo's data_list
 that reads FL_SITE_DATA_DIR (see README).
 """
+
 import argparse
 import gc
 import os
@@ -25,10 +26,10 @@ import signal
 import sys
 from typing import Optional
 
-import nvflare.client as flare
 import torch
-
 from model import Qwen3VLModel, load_qwen_vl_from_pretrained, load_state_dict_from_checkpoint
+
+import nvflare.client as flare
 
 
 def _abs_path(p: str) -> str:
@@ -100,22 +101,32 @@ def train(
         + ["--dataset_use", dataset_use]
         + train_limit
         + [
-            "--data_flatten", "True",
-            "--tune_mm_mlp", "True",
-            "--tune_mm_llm", "True",
+            "--data_flatten",
+            "True",
+            "--tune_mm_mlp",
+            "True",
+            "--tune_mm_llm",
+            "True",
             "--bf16",
-            "--per_device_train_batch_size", "8",
-            "--gradient_accumulation_steps", "2",
-            "--learning_rate", learning_rate,
-            "--save_strategy", "no",
-            "--report_to", "wandb",
-            "--ddp_find_unused_parameters", "False",
+            "--per_device_train_batch_size",
+            "8",
+            "--gradient_accumulation_steps",
+            "2",
+            "--learning_rate",
+            learning_rate,
+            "--save_strategy",
+            "no",
+            "--report_to",
+            "wandb",
+            "--ddp_find_unused_parameters",
+            "False",
         ]
     )
     old_argv = sys.argv
     sys.argv = argv
     try:
         from qwenvl.train import train_qwen
+
         train_qwen.train(attn_implementation="flash_attention_2")
     finally:
         sys.argv = old_argv
@@ -127,7 +138,12 @@ def main():
     parser = argparse.ArgumentParser(description="Run Qwen3-VL SFT script as subprocess per FL round")
     parser.add_argument("--data_path", type=str, default="./data/site-1", help="Site data dir (train.json here)")
     parser.add_argument("--qwen_root", type=str, default=None, help="Qwen3-VL repo root (or set QWEN3VL_ROOT)")
-    parser.add_argument("--dataset_use", type=str, default="fl_site", help="Dataset name for train_qwen.py (must exist in Qwen data_list)")
+    parser.add_argument(
+        "--dataset_use",
+        type=str,
+        default="fl_site",
+        help="Dataset name for train_qwen.py (must exist in Qwen data_list)",
+    )
     parser.add_argument(
         "--model_name_or_path",
         type=str,
@@ -211,6 +227,7 @@ def main():
         os.makedirs(input_model_dir, exist_ok=True)
         model.load_state_dict(input_model.params, strict=False)
         from transformers import AutoProcessor
+
         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
         tokenizer = getattr(processor, "tokenizer", processor)
         _align_model_config_to_tokenizer(model.model, tokenizer)
@@ -247,7 +264,9 @@ def main():
                 meta={"ERROR": str(e)},
             )
             sent_mb = _params_size_mb(params)
-            print(f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error)")
+            print(
+                f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error)"
+            )
             flare.send(output_model)
             del params, output_model
             _free_memory_after_send()
@@ -268,7 +287,9 @@ def main():
             meta=meta,
         )
         sent_mb = _params_size_mb(params)
-        print(f"site={client_name}, round={input_model.current_round}, sent updated weights, model size: {sent_mb:.2f} MB")
+        print(
+            f"site={client_name}, round={input_model.current_round}, sent updated weights, model size: {sent_mb:.2f} MB"
+        )
         flare.send(output_model)
 
         # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)

@@ -16,6 +16,7 @@ NVFlare job recipe for federated Qwen3-VL fine-tuning with PubMedVision.
 Uses FedAvg with 3 clients; each client gets a site-specific data path.
 Requires a Qwen3-VL base model when using the Qwen3-VL repo's train_qwen.py.
 """
+
 import argparse
 import os
 
@@ -65,9 +66,7 @@ def main():
     per_site_config = {}
     for idx, site_name in enumerate(client_names):
         site_data_path = os.path.join(data_dir, site_name)
-        step_or_epoch = (
-            f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
-        )
+        step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
         train_args = (
             f"--data_path {site_data_path} "
             f"--dataset_use fl_site "
@@ -127,9 +126,7 @@ def main():
         },
     )
 
-    gpu_config = (
-        args.gpu if args.gpu is not None else ",".join(f"[{i}]" for i in range(n_clients))
-    )
+    gpu_config = args.gpu if args.gpu is not None else ",".join(f"[{i}]" for i in range(n_clients))
     env = SimEnv(clients=client_names, num_threads=n_clients, gpu_config=gpu_config)
     run = recipe.execute(env)
     print()

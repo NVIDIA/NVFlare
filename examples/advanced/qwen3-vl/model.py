@@ -39,6 +39,7 @@ def load_state_dict_from_checkpoint(checkpoint_dir: str) -> dict:
     if safetensor_files:
         try:
             from safetensors.torch import load_file
+
             for path in safetensor_files:
                 state_dict.update(load_file(path, device="cpu"))
             return state_dict
@@ -62,6 +63,7 @@ def _get_qwen_vl_model_class(model_name_or_path: str):
     if getattr(config, "model_type", None) == "qwen3_vl":
         try:
             from transformers import Qwen3VLForConditionalGeneration
+
             return Qwen3VLForConditionalGeneration
         except ImportError:
             pass

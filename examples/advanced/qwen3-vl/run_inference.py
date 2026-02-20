@@ -35,10 +35,10 @@ import os
 import sys
 
 import torch
-from transformers import AutoProcessor
 
 # Use example's model loader (supports both Qwen2.5-VL and Qwen3-VL)
 from model import load_qwen_vl_from_pretrained
+from transformers import AutoProcessor
 
 # Key used by NVFlare PT persistor when saving FL_global_model.pt
 NVFLARE_PT_MODEL_KEY = "model"
@@ -59,6 +59,7 @@ def _align_ckpt_to_model(state_dict: dict, model_keys: set) -> dict:
     """Map checkpoint keys to model keys. FL saves wrapper state_dict ('model.xxx' or 'model.model.xxx')."""
     if not state_dict or not model_keys:
         return dict(state_dict)
+
     # Try mappings and pick the one that matches the most model keys
     def strip_one(k):
         return k.replace("model.", "", 1) if k.startswith("model.") else k
@@ -71,7 +72,7 @@ def _align_ckpt_to_model(state_dict: dict, model_keys: set) -> dict:
     candidates = [
         state_dict,  # as-is
         {strip_one(k): v for k, v in state_dict.items()},  # strip one "model."
-        {strip_two(k): v for k, v in state_dict.items()},   # strip "model.model."
+        {strip_two(k): v for k, v in state_dict.items()},  # strip "model.model."
     ]
     best = max(candidates, key=lambda d: len(model_keys & set(d.keys())))
     return best
@@ -212,8 +213,7 @@ def main():
         if torch.equal(base_sample, ckpt_sample):
             print(
                 "  Note: checkpoint weight sample matches base model (key=%s). "
-                "FL_global_model.pt may be the initial save or the global model was never updated."
-                % (_sample_key,)
+                "FL_global_model.pt may be the initial save or the global model was never updated." % (_sample_key,)
             )
         else:
             diff = (ckpt_sample.float() - base_sample.float()).abs().max().item()
