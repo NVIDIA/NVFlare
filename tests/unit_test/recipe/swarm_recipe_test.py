@@ -177,3 +177,68 @@ class TestSimpleSwarmLearningRecipe:
         )
 
         assert recipe.job is not None
+
+
+class TestSimpleSwarmLearningRecipeMemoryGC:
+    """Test memory GC parameters on SimpleSwarmLearningRecipe."""
+
+    def test_default_memory_gc_rounds_is_one(self):
+        """Default memory_gc_rounds=1 for backward compatibility with legacy GC behavior."""
+        import inspect
+
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        sig = inspect.signature(SimpleSwarmLearningRecipe.__init__)
+        assert sig.parameters["memory_gc_rounds"].default == 1
+
+    def test_old_param_name_rejected(self, mock_file_system, simple_pt_model):
+        """client_memory_gc_rounds (old name) is no longer accepted."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        with pytest.raises(TypeError, match="client_memory_gc_rounds"):
+            SimpleSwarmLearningRecipe(
+                name="test_swarm",
+                model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                client_memory_gc_rounds=2,
+            )
+
+    def test_memory_gc_rounds_custom_accepted(self, mock_file_system, simple_pt_model):
+        """Custom memory_gc_rounds is accepted."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            memory_gc_rounds=2,
+        )
+        assert recipe.job is not None
+
+    def test_memory_gc_disabled_accepted(self, mock_file_system, simple_pt_model):
+        """memory_gc_rounds=0 disables GC."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            memory_gc_rounds=0,
+        )
+        assert recipe.job is not None
+
+    def test_cuda_empty_cache_accepted(self, mock_file_system, simple_pt_model):
+        """cuda_empty_cache=True is accepted and wired through."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            cuda_empty_cache=True,
+        )
+        assert recipe.job is not None
