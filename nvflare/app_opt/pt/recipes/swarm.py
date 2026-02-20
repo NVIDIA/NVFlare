@@ -151,6 +151,8 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         train_args: dict = None,
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
@@ -173,7 +175,14 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             train_args = {}
         else:
             # Validate train_args doesn't conflict with ScriptRunner reserved parameters
-            reserved_keys = {"script", "launch_external_process", "command", "framework"}
+            reserved_keys = {
+                "script",
+                "launch_external_process",
+                "command",
+                "framework",
+                "memory_gc_rounds",
+                "cuda_empty_cache",
+            }
             conflicts = set(train_args.keys()) & reserved_keys
             if conflicts:
                 raise ValueError(f"train_args contains reserved keys that conflict with ScriptRunner: {conflicts}")
@@ -186,7 +195,12 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
 
         server_config = SwarmServerConfig(num_rounds=num_rounds)
         client_config = SwarmClientConfig(
-            executor=ScriptRunner(script=train_script, **train_args),
+            executor=ScriptRunner(
+                script=train_script,
+                memory_gc_rounds=client_memory_gc_rounds,
+                cuda_empty_cache=cuda_empty_cache,
+                **train_args,
+            ),
             aggregator=aggregator,
             persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=ckpt_path),
             shareable_generator=SimpleModelShareableGenerator(),
