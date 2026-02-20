@@ -268,6 +268,7 @@ class FeatureElection:
         )
 
         client_selections = {}
+        executors = []
         for i, (X, y) in enumerate(client_data):
             X_np = X.values if isinstance(X, pd.DataFrame) else X
             y_np = y.values if isinstance(y, pd.Series) else y
@@ -276,6 +277,7 @@ class FeatureElection:
 
             executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric="f1")
             executor.set_data(X_np, y_np, feature_names=feature_names)
+            executors.append(executor)
 
             # Local Selection
 
@@ -298,7 +300,59 @@ class FeatureElection:
                 "fs_score": fs_score,
             }
 
-        # Simulate Controller Aggregation
+        # Simulate Controller Aggregation with optional auto-tuning
+        if self.auto_tune and self.tuning_rounds > 0:
+            logger.info(f"Starting local auto-tuning ({self.tuning_rounds} rounds)...")
+            tuning_history = []
+            search_step = 0.1
+            current_direction = 1
+
+            for t in range(self.tuning_rounds):
+                # Generate mask at current freedom_degree
+                candidate_mask = controller.aggregate_selections(client_selections)
+
+                # Evaluate across all clients
+                if np.sum(candidate_mask) == 0:
+                    score = 0.0
+                else:
+                    scores = []
+                    for exec_i in executors:
+                        X_masked = exec_i.X_train[:, candidate_mask]
+                        X_val_masked = exec_i.X_val[:, candidate_mask]
+                        s = exec_i.evaluate_model(X_masked, exec_i.y_train, X_val_masked, exec_i.y_val)
+                        scores.append(s)
+                    score = sum(scores) / len(scores) if scores else 0.0
+
+                logger.info(
+                    f"Tuning Round {t + 1}/{self.tuning_rounds}: "
+                    f"FD={controller.freedom_degree:.4f} -> Score={score:.4f}"
+                )
+                tuning_history.append((controller.freedom_degree, score))
+
+                # Calculate next FD (mirrors controller._calculate_next_fd)
+                if t < self.tuning_rounds - 1:
+                    min_fd, max_fd = 0.05, 1.0
+                    if t == 0:
+                        new_fd = np.clip(controller.freedom_degree + search_step, min_fd, max_fd)
+                    else:
+                        curr_fd, curr_score = tuning_history[-1]
+                        prev_fd, prev_score = tuning_history[-2]
+                        if curr_score > prev_score:
+                            new_fd = curr_fd + (current_direction * search_step)
+                        else:
+                            current_direction *= -1
+                            search_step *= 0.5
+                            new_fd = prev_fd + (current_direction * search_step)
+                        new_fd = np.clip(new_fd, min_fd, max_fd)
+                    controller.freedom_degree = new_fd
+
+            # Select best FD
+            if tuning_history:
+                best_fd, best_score = max(tuning_history, key=lambda x: x[1])
+                controller.freedom_degree = best_fd
+                self.freedom_degree = best_fd
+                logger.info(f"Tuning Complete. Optimal Freedom Degree: {best_fd:.4f} (Score: {best_score:.4f})")
+
         self.global_mask = controller.aggregate_selections(client_selections)
 
         # Build Stats
@@ -309,8 +363,9 @@ class FeatureElection:
             "num_features_selected": int(np.sum(self.global_mask)),
             "reduction_ratio": 1 - (np.sum(self.global_mask) / len(self.global_mask)),
             "freedom_degree": self.freedom_degree,
-            "fs_method": self.fs_method,  # <--- FIXED: Added this missing key
+            "fs_method": self.fs_method,
             "auto_tune": self.auto_tune,
+            "tuning_history": tuning_history if self.auto_tune and self.tuning_rounds > 0 else [],
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
             "union_features": int(np.sum(np.any(masks, axis=0))),
             "client_stats": client_selections,
