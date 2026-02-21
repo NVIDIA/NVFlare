@@ -27,10 +27,10 @@ class _LazyRef:
     def __init__(self, value, temp_ref: _TempRef):
         self.value = value
         self._temp_ref = temp_ref
-        self.resolve_calls = 0
+        self.materialize_calls = 0
 
-    def resolve(self):
-        self.resolve_calls += 1
+    def materialize(self):
+        self.materialize_calls += 1
         return self.value
 
 

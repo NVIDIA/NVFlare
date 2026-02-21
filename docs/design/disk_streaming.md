@@ -34,7 +34,7 @@ ViaDownloaderDecomposer.recompose()
         v
 Lazy refs in payload tree
         |
-        +--> aggregator consumes lazy refs (resolve on demand)
+        +--> aggregator consumes lazy refs (materialize on demand)
 ```
 
 ## Runtime Behavior
@@ -45,7 +45,7 @@ In `nvflare/app_common/workflows/fedavg.py`:
 
 - custom aggregators receive `result.params` as-is
 - with `stream_to_disk=True`, this means lazy refs are passed through directly
-- built-in weighted aggregation resolves per tensor inside `WeightedAggregationHelper.add()`
+- built-in weighted aggregation materializes per tensor inside `WeightedAggregationHelper.add()`
   and runs `cleanup_inplace(result.params)` in a `finally` block
 
 The built-in weighted path remains lazy-friendly and memory-efficient.

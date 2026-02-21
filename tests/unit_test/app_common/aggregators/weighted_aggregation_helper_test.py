@@ -246,13 +246,13 @@ class TestWeightedAggregationHelper:
         assert torch.allclose(result["w2"], torch.tensor([2.5]))
         assert torch.allclose(result["w3"], torch.tensor([4.0]))
 
-    def test_non_callable_resolve_attribute_is_ignored(self):
-        """Test objects with non-callable resolve attribute are not treated as lazy refs."""
+    def test_non_callable_materialize_attribute_is_ignored(self):
+        """Test objects with non-callable materialize attribute are not treated as lazy refs."""
         helper = WeightedAggregationHelper()
 
-        class _ValueWithNonCallableResolve:
+        class _ValueWithNonCallableMaterialize:
             def __init__(self, value: float):
-                self.resolve = "not-callable"
+                self.materialize = "not-callable"
                 self.value = value
 
             def __mul__(self, other):
@@ -264,7 +264,7 @@ class TestWeightedAggregationHelper:
             def __add__(self, other):
                 return self.value + other
 
-        data = {"w": _ValueWithNonCallableResolve(3.0)}
+        data = {"w": _ValueWithNonCallableMaterialize(3.0)}
         helper.add(data, weight=2.0, contributor_name="site-1", contribution_round=0)
 
         result = helper.get_result()

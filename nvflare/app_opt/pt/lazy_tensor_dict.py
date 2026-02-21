@@ -44,7 +44,7 @@ class _LazyRef:
     """Lightweight placeholder for an on-disk tensor.
 
     Carries only file_path + key (~100 bytes). The tensor is loaded from disk
-    only when resolve() is called, keeping memory near zero until then.
+    only when materialize() is called, keeping memory near zero until then.
 
     Holds a reference to _TempDirRef to prevent premature cleanup.
     """
@@ -54,7 +54,7 @@ class _LazyRef:
         self.key = key
         self._temp_ref = temp_ref
 
-    def resolve(self):
+    def materialize(self):
         """Load tensor from safetensors file. Opens mmap, copies data out, closes mmap."""
         with safe_open(self.file_path, framework="pt") as f:
             return f.get_tensor(self.key)

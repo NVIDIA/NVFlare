@@ -58,10 +58,10 @@ class _FakeLazyRef:
     def __init__(self, value, temp_ref: _FakeTempRef):
         self._value = value
         self._temp_ref = temp_ref
-        self.resolve_calls = 0
+        self.materialize_calls = 0
 
-    def resolve(self):
-        self.resolve_calls += 1
+    def materialize(self):
+        self.materialize_calls += 1
         return self._value
 
 
@@ -413,7 +413,7 @@ class TestFedAvgLazyCompatibility:
         accepted_model = aggregator.models[0]
         assert accepted_model.params["w"] is lazy_ref
         assert temp_ref.cleaned is False
-        assert lazy_ref.resolve_calls == 0
+        assert lazy_ref.materialize_calls == 0
 
 
 class TestFedAvgDownloadToDiskContext:

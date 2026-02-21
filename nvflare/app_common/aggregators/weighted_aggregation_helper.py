@@ -56,9 +56,9 @@ class WeightedAggregationHelper(object):
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
 
-                resolve_fn = getattr(v, "resolve", None)
-                if callable(resolve_fn):
-                    v = resolve_fn()
+                materialize_fn = getattr(v, "materialize", None)
+                if callable(materialize_fn):
+                    v = materialize_fn()
 
                 current_total = self.total.get(k, None)
 

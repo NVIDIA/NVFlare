@@ -46,12 +46,12 @@ def temp_safetensors():
 
 
 class TestLazyRef:
-    def test_resolve_loads_tensor(self, temp_safetensors):
+    def test_materialize_loads_tensor(self, temp_safetensors):
         key_to_file, temp_dir, tensors = temp_safetensors
         file_path, st_key = key_to_file["layer1.weight"]
         ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
 
-        result = ref.resolve()
+        result = ref.materialize()
         assert torch.allclose(result, tensors["layer1.weight"])
 
     def test_repr(self, temp_safetensors):
@@ -78,7 +78,7 @@ class TestTempDirRef:
         del ltd  # LazyTensorDict gone, but _LazyRef holds _TempDirRef
         assert os.path.exists(temp_dir)
 
-        result = lazy_ref.resolve()  # should still work
+        result = lazy_ref.materialize()  # should still work
         assert torch.allclose(result, tensors["layer1.weight"])
 
         del lazy_ref  # last reference gone → _TempDirRef.__del__ fires
@@ -129,7 +129,7 @@ class TestLazyTensorDict:
 
         ref = ltd.make_lazy_ref("layer2.weight")
         assert isinstance(ref, _LazyRef)
-        assert torch.allclose(ref.resolve(), tensors["layer2.weight"])
+        assert torch.allclose(ref.materialize(), tensors["layer2.weight"])
 
     def test_cleanup(self, temp_safetensors):
         key_to_file, temp_dir, _ = temp_safetensors
@@ -168,8 +168,8 @@ class TestCleanupLazyRefs:
 
 
 class TestAggregationHelperWithLazyRefs:
-    def test_helper_resolves_lazy_refs(self, temp_safetensors):
-        """WeightedAggregationHelper resolves _LazyRef via duck-typed resolve()."""
+    def test_helper_materializes_lazy_refs(self, temp_safetensors):
+        """WeightedAggregationHelper materializes _LazyRef via duck-typed materialize()."""
         key_to_file, temp_dir, tensors = temp_safetensors
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
 
