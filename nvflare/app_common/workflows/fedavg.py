@@ -143,7 +143,7 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
         self._set_stream_to_disk()
-        # Keep NUM_ROUNDS available in FL context for persistor/widgets.
+        # Set NUM_ROUNDS in FL context for persistor and other components.
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
         # Load initial model - prefer model if provided, else use persistor

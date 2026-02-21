@@ -157,11 +157,7 @@ class DXOAggregator(FLComponent):
             aggregation_weight = 1.0
 
         # aggregate
-        try:
-            self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
-        finally:
-            if hasattr(data, "cleanup"):
-                data.cleanup()
+        self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
         self.log_debug(fl_ctx, "End accept")
         return True
 

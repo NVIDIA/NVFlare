@@ -8,12 +8,6 @@ Reduce server peak memory for large PyTorch model updates by streaming tensor pa
 
 Without disk streaming, each incoming client model is deserialized directly into memory during FOBS recompose. For large models and multiple concurrent submissions, peak server RSS grows with the number of in-flight updates.
 
-## Design Principles
-
-1. `stream_to_disk=True` is strict lazy mode (no compatibility materialization path).
-2. Lazy refs are passed through to aggregators unchanged.
-3. `stream_to_disk` is run-scoped policy, not message metadata.
-4. Existing decomposer interfaces remain stable.
 
 ## Data Flow
 
@@ -82,7 +76,6 @@ Cleanup is done through:
 1. explicit cleanup hooks (`cleanup_inplace`, DXO cleanup)
 2. `_TempDirRef` lifetime fallback on GC
 
-There is no centralized compatibility materialization pass in workflows/controllers.
 
 ## Design-Relevant Files
 
