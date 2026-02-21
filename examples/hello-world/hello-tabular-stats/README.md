@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 ### Install Optional Quantile Dependency -- fastdigest
 
-If you intend to calculate quantiles, you need to install fastdigest. 
+If you intend to calculate quantiles, install `fastdigest==0.4.0`. 
 
 Skip this step if you don't need quantile statistics. 
 
