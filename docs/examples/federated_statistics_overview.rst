@@ -214,7 +214,7 @@ To calculate federated quantiles, we use the fastdigest package, which satisfies
 * Avoids transmitting large amounts of data
 * No system-level dependency
 
-For the ``2.7`` branch, pin ``fastdigest`` to ``0.4.0``:
+Pin ``fastdigest`` to ``0.4.0``:
 
 .. code-block:: text
 

@@ -36,7 +36,7 @@ Install the dependency
 Install Optional Quantile Dependency -- fastdigest
 ------------------------------------------------------------
 
-If you intend to calculate quantiles on the ``2.7`` branch, install ``fastdigest==0.4.0``.
+If you intend to calculate quantiles, install ``fastdigest==0.4.0``.
 
 Skip this step if you don't need quantile statistics.
 
