@@ -108,14 +108,3 @@ class LazyTensorDict:
 
     def cleanup(self):
         self._temp_ref.cleanup()
-
-
-def cleanup_lazy_refs(data):
-    """Explicitly delete temp directories referenced by _LazyRef values in a dict."""
-    if not data or not isinstance(data, dict):
-        return
-    for v in data.values():
-        temp_ref = getattr(v, "_temp_ref", None)
-        if temp_ref is not None:
-            temp_ref.cleanup()
-            return  # all refs share the same _TempDirRef

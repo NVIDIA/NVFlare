@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import time
 from typing import Any, Dict, Optional, Union
 
@@ -22,6 +23,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.lazy_payload import cleanup_inplace
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
 from .base_fedavg import BaseFedAvg

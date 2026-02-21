@@ -16,7 +16,6 @@ import os
 import shutil
 import struct
 import tempfile
-import uuid
 from typing import Any, List, Optional, Tuple
 
 import torch
@@ -59,7 +58,8 @@ class TensorConsumer(ItemConsumer):
             raise ValueError("tensors_received_cb must be callable")
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
-        assert isinstance(items, list)
+        if not isinstance(items, list):
+            raise TypeError(f"items must be list but got {type(items)}")
         if result is None:
             result = {}
 
@@ -171,7 +171,8 @@ class DiskTensorConsumer(ItemConsumer):
         self._file_counter = 0
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
-        assert isinstance(items, list)
+        if not isinstance(items, list):
+            raise TypeError(f"items must be list but got {type(items)}")
         if result is None:
             result = {}
 
@@ -204,8 +205,7 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
     """
-    temp_dir = os.path.join(tempfile.gettempdir(), f"nvflare_tensors_{uuid.uuid4().hex}")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
 
     consumer = DiskTensorConsumer(temp_dir)
     download_object(
@@ -222,5 +222,5 @@ def download_tensors_to_disk(
     if consumer.error:
         return consumer.error, None
 
-    key_to_file = consumer.result if consumer.result else {}
+    key_to_file = consumer.result if consumer.result is not None else {}
     return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
