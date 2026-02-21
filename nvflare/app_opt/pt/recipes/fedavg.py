@@ -72,6 +72,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         save_filename: Filename for saving the best model. Defaults to "FL_global_model.pt".
         exclude_vars: Regex pattern for variables to exclude from aggregation.
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
+        enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
 
     Example:
         Basic usage with early stopping:
@@ -124,7 +125,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
-        stream_to_disk: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         # Store PyTorch-specific model_locator before calling parent
         self._pt_model_locator = model_locator
@@ -156,7 +157,7 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
-            stream_to_disk=stream_to_disk,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

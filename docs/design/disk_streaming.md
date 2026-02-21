@@ -16,8 +16,8 @@ TensorDownloadable chunks
         |
         v
 TensorDecomposer.download()
-  - stream_to_disk=False -> deserialize in memory
-  - stream_to_disk=True  -> write safetensors temp files
+  - enable_tensor_disk_offload=False (runtime stream_to_disk=False) -> deserialize in memory
+  - enable_tensor_disk_offload=True  (runtime stream_to_disk=True)  -> write safetensors temp files
         |
         v
 LazyTensorDict
@@ -38,7 +38,7 @@ Lazy refs in payload tree
 In `nvflare/app_common/workflows/fedavg.py`:
 
 - custom aggregators receive `result.params` as-is
-- with `stream_to_disk=True`, this means lazy refs are passed through directly
+- with `enable_tensor_disk_offload=True` (runtime `stream_to_disk=True`), lazy refs are passed through directly
 - built-in weighted aggregation materializes per tensor inside `WeightedAggregationHelper.add()`
   and runs `cleanup_inplace(result.params)` in a `finally` block
 
@@ -49,7 +49,7 @@ The built-in weighted path remains lazy-friendly and memory-efficient.
 In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 
 - shareables are passed to the aggregator as-is
-- with `stream_to_disk=True`, aggregator inputs include lazy refs
+- with `enable_tensor_disk_offload=True` (runtime `stream_to_disk=True`), aggregator inputs include lazy refs
 
 ## Lazy Payload Utilities
 
