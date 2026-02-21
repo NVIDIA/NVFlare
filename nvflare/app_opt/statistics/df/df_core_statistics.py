@@ -94,6 +94,36 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         return df[feature_name].min()
 
+    @staticmethod
+    def _create_tdigest(TDigest, data, max_bin: int):
+        values = data.tolist() if hasattr(data, "tolist") else list(data)
+
+        # Old fastdigest API: TDigest(values)
+        try:
+            return TDigest(values)
+        except TypeError:
+            pass
+
+        # Newer fastdigest API: constructor takes max_centroids, data added via update/batch_update.
+        try:
+            digest = TDigest(max_centroids=max_bin)
+        except TypeError:
+            digest = TDigest(max_bin)
+
+        if hasattr(digest, "batch_update"):
+            digest.batch_update(values)
+            return digest
+
+        if hasattr(digest, "update"):
+            try:
+                digest.update(values)
+            except TypeError:
+                for v in values:
+                    digest.update(v)
+            return digest
+
+        raise RuntimeError("Unsupported TDigest API: no update or batch_update method")
+
     def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
         TDigest, flag = optional_import("fastdigest", name="TDigest")
         results = {}
@@ -104,8 +134,12 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         data = df[feature_name]
         max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))
-        digest = TDigest(data)
-        digest.compress(max_bin)
+        digest = self._create_tdigest(TDigest, data, max_bin)
+        if hasattr(digest, "compress"):
+            try:
+                digest.compress(max_bin)
+            except TypeError:
+                digest.compress()
 
         p_results = {}
         for p in percents:
