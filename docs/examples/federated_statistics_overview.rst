@@ -214,6 +214,14 @@ To calculate federated quantiles, we use the fastdigest package, which satisfies
 * Avoids transmitting large amounts of data
 * No system-level dependency
 
+For the ``2.7`` branch, pin ``fastdigest`` to ``0.4.0``:
+
+.. code-block:: text
+
+    pip install fastdigest==0.4.0
+
+Newer ``fastdigest`` releases changed the TDigest API and are planned to be adopted in a later branch.
+
 The tdigest algorithm only carries the cluster coordinates, initially each data point is in its own cluster. By default, we compress with max_bin = sqrt(datasize) to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
 
 For detailed implementation instructions and configuration examples, please refer to the :github_nvflare_link:`Federated Statistics README <examples/advanced/federated-statistics/README.md>`.

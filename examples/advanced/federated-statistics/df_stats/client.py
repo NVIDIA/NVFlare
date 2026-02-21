@@ -21,8 +21,8 @@ from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 
 class AdultStatistics(DFStatisticsCore):
-    def __init__(self, filename, data_root_dir="/tmp/nvflare/df_stats/data", tdigest_max_centroids: Optional[int] = None):
-        super().__init__(max_bin=tdigest_max_centroids)
+    def __init__(self, filename, data_root_dir="/tmp/nvflare/df_stats/data"):
+        super().__init__()
         self.data_root_dir = data_root_dir
         self.filename = filename
         self.data: Optional[dict[str, pd.DataFrame]] = None

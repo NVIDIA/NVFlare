@@ -62,9 +62,7 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
                     if feature_name not in g_digest[ds_name]:
                         g_digest[ds_name][feature_name] = feature_digest
                     else:
-                        merged = g_digest[ds_name][feature_name].merge(feature_digest)
-                        if merged is not None:
-                            g_digest[ds_name][feature_name] = merged
+                        g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
                 else:
                     g_digest[ds_name][feature_name] = {}
 

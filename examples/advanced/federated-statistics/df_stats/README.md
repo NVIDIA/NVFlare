@@ -53,6 +53,12 @@ We chose the fastdigest Python package, a Rust-based package. The digest only ca
 initially, each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) 
 to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
 
+For the ``2.7`` branch, install and pin:
+
+```bash
+pip install fastdigest==0.4.0
+```
+
  
 ## Configuration and Code
 

@@ -24,7 +24,6 @@ def define_parser():
     parser.add_argument("-n", "--n_clients", type=int, default=2)
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/df_stats/data")
     parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adults_stats.json")
-    parser.add_argument("--tdigest_max_centroids", type=int, nargs="?", default=None)
 
     return parser.parse_args()
 
@@ -35,7 +34,6 @@ def main():
     n_clients = args.n_clients
     data_root_dir = args.data_root_dir
     output_path = args.stats_output_path
-    tdigest_max_centroids = args.tdigest_max_centroids
 
     statistic_configs = {
         "count": {},
@@ -46,11 +44,7 @@ def main():
         "quantile": {"*": [0.1, 0.5, 0.9]},
     }
     # define local stats generator
-    df_stats_generator = AdultStatistics(
-        filename="data.csv",
-        data_root_dir=data_root_dir,
-        tdigest_max_centroids=tdigest_max_centroids,
-    )
+    df_stats_generator = AdultStatistics(filename="data.csv", data_root_dir=data_root_dir)
 
     sites = [f"site-{i + 1}" for i in range(n_clients)]
 
