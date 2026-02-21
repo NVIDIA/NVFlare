@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 from typing import Any, Dict, Optional, Union
 
@@ -21,8 +20,8 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.utils.lazy_payload import cleanup_inplace
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
 from .base_fedavg import BaseFedAvg
@@ -71,6 +70,10 @@ class FedAvg(BaseFedAvg):
             aggregation. Defaults to None. Only used when no custom aggregator is provided.
         aggregation_weights (dict, optional): Per-client aggregation weights.
             Defaults to None (equal weights). Only used when no custom aggregator is provided.
+        stream_to_disk (bool, optional): Download tensors to disk during FOBS streaming
+            instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
+            model size during aggregation. When used with a custom aggregator, lazy refs are
+            passed through directly and must be handled by that aggregator. Defaults to False.
     """
 
     def __init__(
@@ -84,6 +87,7 @@ class FedAvg(BaseFedAvg):
         task_name: Optional[str] = "train",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        stream_to_disk: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -103,6 +107,7 @@ class FedAvg(BaseFedAvg):
         # Aggregation configuration (used only when no custom aggregator)
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
+        self.stream_to_disk = stream_to_disk
 
         # Parse stop condition
         if self.stop_cond:
@@ -122,9 +127,22 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
 
+    def _set_stream_to_disk(self):
+        cell = self.engine.get_cell()
+        if not cell:
+            if self.stream_to_disk:
+                self.warning("stream_to_disk is enabled but no active cell is available; using in-memory download path")
+            return
+
+        desired = bool(self.stream_to_disk)
+        current = bool(cell.get_fobs_context().get("stream_to_disk", False))
+        if current != desired:
+            cell.update_fobs_context({"stream_to_disk": desired})
+            self.info(f"_set_stream_to_disk: {current} -> {desired}")
+
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
-
+        self._set_stream_to_disk()
         # Set NUM_ROUNDS in FL context for persistor and other components
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
@@ -222,41 +240,44 @@ class FedAvg(BaseFedAvg):
             self._params_type = result.params_type
 
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
-
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
         else:
-            # Use built-in InTime aggregation with weighted averaging
-            # Get weight: use aggregation_weights if specified, else use NUM_STEPS
-            if self.aggregation_weights and client_name in self.aggregation_weights:
-                aggregation_weight = self.aggregation_weights[client_name]
-            else:
-                aggregation_weight = 1.0
+            # Built-in InTime aggregation: add() resolves lazy refs one-at-a-time,
+            # so temp files can be cleaned immediately after.
+            try:
+                # Get weight: use aggregation_weights if specified, else use NUM_STEPS
+                if self.aggregation_weights and client_name in self.aggregation_weights:
+                    aggregation_weight = self.aggregation_weights[client_name]
+                else:
+                    aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
-            # Handle None case (e.g., first round of some algorithms like K-Means)
-            if n_iter is None:
-                n_iter = 1.0
-            weight = aggregation_weight * float(n_iter)
+                n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
+                # Handle None case (e.g., first round of some algorithms like K-Means)
+                if n_iter is None:
+                    n_iter = 1.0
+                weight = aggregation_weight * float(n_iter)
 
-            self._aggr_helper.add(
-                data=result.params,
-                weight=weight,
-                contributor_name=client_name,
-                contribution_round=self.current_round,
-            )
-
-            # Add to metrics aggregation if available
-            if not result.metrics:
-                self._all_metrics = False
-            if self._all_metrics and result.metrics:
-                self._aggr_metrics_helper.add(
-                    data=result.metrics,
+                self._aggr_helper.add(
+                    data=result.params,
                     weight=weight,
                     contributor_name=client_name,
                     contribution_round=self.current_round,
                 )
+
+                # Add to metrics aggregation if available
+                if not result.metrics:
+                    self._all_metrics = False
+                if self._all_metrics and result.metrics:
+                    self._aggr_metrics_helper.add(
+                        data=result.metrics,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
+                    )
+            finally:
+                cleanup_inplace(result.params)
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")

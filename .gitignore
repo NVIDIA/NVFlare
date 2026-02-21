@@ -174,3 +174,6 @@ docs/apidocs/
 
 # Claude Code personal config
 CLAUDE.local.md
+
+# Agent sandbox files
+.tmp
