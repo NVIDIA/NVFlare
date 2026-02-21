@@ -143,7 +143,7 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
         self._set_stream_to_disk()
-        # Set NUM_ROUNDS in FL context for persistor and other components.
+        # Set NUM_ROUNDS in FL context for persistor and other components
         self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
 
         # Load initial model - prefer model if provided, else use persistor
@@ -241,7 +241,7 @@ class FedAvg(BaseFedAvg):
 
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
         if self.aggregator:
-            # In stream_to_disk mode, custom aggregators receive lazy refs directly.
+            # Use custom aggregator
             self.aggregator.accept_model(result)
         else:
             # Built-in InTime aggregation: add() resolves lazy refs one-at-a-time,
