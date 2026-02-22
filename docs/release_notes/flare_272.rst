@@ -241,11 +241,6 @@ Large-scale hierarchical FL deployments (many clients across relay tiers) are su
 startup race conditions that can abort jobs before training begins. FLARE 2.7.2 addresses
 these with a set of coordinated fixes and new configuration controls.
 
-.. note::
-
-    This fix set is particularly relevant for HPC deployments where 100+ FL clients start
-    via a batch scheduler (e.g., Slurm) under shared filesystem (e.g., Lustre) load.
-
 Deployment Timeout Now Treated as Failure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
