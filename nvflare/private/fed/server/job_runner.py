@@ -293,6 +293,10 @@ class JobRunner(FLComponent):
                 f"{active_count} of {len(client_sites_names)} clients started successfully.",
             )
             client_sites_names = [c for c in client_sites_names if c not in timed_out]
+
+            # Keep job metadata aligned with actual active participants.
+            active_sites = set(client_sites_names)
+            job.meta[JobMetaKey.JOB_CLIENTS] = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
         display_sites = ",".join(client_sites_names)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")

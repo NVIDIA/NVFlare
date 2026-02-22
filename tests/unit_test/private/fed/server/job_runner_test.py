@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.fed.server.job_runner import JobRunner
 
 
@@ -108,3 +109,48 @@ def test_start_run_raises_when_timed_out_clients_breach_min_sites(mock_get_bool,
 
     with pytest.raises(RuntimeError, match="min_sites"):
         runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies")
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_updates_job_clients_meta_after_timeout_exclusion(mock_get_bool, mock_check_replies):
+    mock_check_replies.return_value = ["site-2"]
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    job.min_sites = 1
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}]
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies")
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_keeps_job_clients_meta_when_no_timeouts(mock_get_bool, mock_check_replies):
+    mock_check_replies.return_value = []
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}, {"name": "site-2"}]

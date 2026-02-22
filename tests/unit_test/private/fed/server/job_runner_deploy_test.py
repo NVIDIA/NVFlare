@@ -68,7 +68,7 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
     client_objects = []
     sites = {}
     for i, token in enumerate(token_to_reply):
-        client_name = f"site-{i+1}"
+        client_name = f"site-{i + 1}"
         c = MagicMock(spec=Client)
         c.token = token
         c.name = client_name
@@ -311,8 +311,13 @@ class TestDeployAndStartIntegration:
         # site-1 must not be in failed
         assert "site-1" not in failed
 
-        # In the real run() loop, deployable_clients = client_sites - failed_clients
-        # Verify that if we then call _start_run with only site-1, it works:
+        # In the real run() loop, deployable_clients = client_sites - failed_clients.
+        # Verify _start_run actually uses only deployable clients.
         deployable = {k: v for k, v in client_sites.items() if k not in failed}
         assert "site-1" in deployable
         assert "site-2" not in deployable
+
+        runner._start_run(job_id=job_id, job=job, client_sites=deployable, fl_ctx=fl_ctx)
+
+        engine.start_client_job.assert_called_once_with(job, deployable, fl_ctx)
+        assert mock_check_replies.call_args.kwargs["client_sites"] == ["site-1"]
