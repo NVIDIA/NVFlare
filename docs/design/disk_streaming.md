@@ -1,4 +1,4 @@
-# Disk-Streamed Tensor Aggregation
+# Tensor Disk Offload
 
 ## Objective
 
@@ -59,21 +59,11 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 
 Lazy resolution itself happens where tensor math is performed (for example in weighted aggregation).
 
-## FOBS Context Scope
-
-`Cell.get_fobs_context()` is process-local runtime state (`CoreCell.fobs_ctx`) used by FOBS encode/decode behavior.
-
-Implications:
-
-- scope is per-process, per-cell runtime
-- affects subsequent FOBS operations in that process
-- fits run-scoped policy
-
 ## Cleanup Semantics
 
 Cleanup is done through:
 
-1. explicit cleanup hooks (`cleanup_inplace`, DXO cleanup)
+1. explicit cleanup hooks (`cleanup_inplace`)
 2. `_TempDirRef` lifetime fallback on GC
 
 
