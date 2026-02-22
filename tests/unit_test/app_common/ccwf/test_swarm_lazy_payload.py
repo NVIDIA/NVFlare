@@ -16,8 +16,8 @@ from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 
 
 class _MockCell:
-    def __init__(self, stream_to_disk: bool):
-        self.ctx = {"stream_to_disk": stream_to_disk}
+    def __init__(self, enable_tensor_disk_offload: bool):
+        self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
 
     def get_fobs_context(self):
         return dict(self.ctx)
@@ -34,29 +34,29 @@ class _MockEngine:
         return self.cell
 
 
-class TestSwarmStreamToDiskContext:
-    def test_set_stream_to_disk_true(self):
+class TestSwarmTensorDiskOffloadContext:
+    def test_set_enable_tensor_disk_offload_true(self):
         ctl = object.__new__(SwarmClientController)
-        ctl.stream_to_disk = True
-        cell = _MockCell(stream_to_disk=False)
+        ctl.enable_tensor_disk_offload = True
+        cell = _MockCell(enable_tensor_disk_offload=False)
         ctl.engine = _MockEngine(cell)
 
-        ctl._set_stream_to_disk()
-        assert cell.ctx["stream_to_disk"] is True
+        ctl._set_enable_tensor_disk_offload()
+        assert cell.ctx["enable_tensor_disk_offload"] is True
 
-    def test_set_stream_to_disk_false(self):
+    def test_set_enable_tensor_disk_offload_false(self):
         ctl = object.__new__(SwarmClientController)
-        ctl.stream_to_disk = False
-        cell = _MockCell(stream_to_disk=True)
+        ctl.enable_tensor_disk_offload = False
+        cell = _MockCell(enable_tensor_disk_offload=True)
         ctl.engine = _MockEngine(cell)
 
-        ctl._set_stream_to_disk()
-        assert cell.ctx["stream_to_disk"] is False
+        ctl._set_enable_tensor_disk_offload()
+        assert cell.ctx["enable_tensor_disk_offload"] is False
 
-    def test_set_stream_to_disk_without_cell(self):
+    def test_set_enable_tensor_disk_offload_without_cell(self):
         ctl = object.__new__(SwarmClientController)
-        ctl.stream_to_disk = True
+        ctl.enable_tensor_disk_offload = True
         ctl.engine = _MockEngine(cell=None)
 
-        ctl._set_stream_to_disk()
+        ctl._set_enable_tensor_disk_offload()
         assert ctl.engine.get_cell() is None

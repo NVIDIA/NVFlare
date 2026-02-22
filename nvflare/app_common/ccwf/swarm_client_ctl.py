@@ -290,7 +290,7 @@ class SwarmClientController(ClientSideController):
         request_to_submit_result_msg_timeout=5.0,
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
-        stream_to_disk: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -319,7 +319,7 @@ class SwarmClientController(ClientSideController):
                 Since submission req is a tiny message, this timeout value should be small.
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
-            stream_to_disk: download tensors to disk during FOBS streaming instead of into memory.
+            enable_tensor_disk_offload: download tensors to disk during FOBS streaming instead of into memory.
                 Reduces peak memory during aggregation. Aggregators must handle lazy refs.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
@@ -380,7 +380,7 @@ class SwarmClientController(ClientSideController):
         self.is_trainer = False
         self.is_aggr = False
         self.last_aggr_round_done = -1
-        self.stream_to_disk = stream_to_disk
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -405,15 +405,15 @@ class SwarmClientController(ClientSideController):
             message_handle_func=self._process_submission_request,
         )
 
-    def _set_stream_to_disk(self):
+    def _set_enable_tensor_disk_offload(self):
         cell = self.engine.get_cell()
         if not cell:
             return
 
-        desired = bool(self.stream_to_disk)
-        current = bool(cell.get_fobs_context().get("stream_to_disk", False))
+        desired = bool(self.enable_tensor_disk_offload)
+        current = bool(cell.get_fobs_context().get("enable_tensor_disk_offload", False))
         if current != desired:
-            cell.update_fobs_context({"stream_to_disk": desired})
+            cell.update_fobs_context({"enable_tensor_disk_offload": desired})
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:
@@ -422,7 +422,7 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
-        self._set_stream_to_disk()
+        self._set_enable_tensor_disk_offload()
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(

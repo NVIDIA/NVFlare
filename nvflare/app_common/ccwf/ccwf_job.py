@@ -83,7 +83,7 @@ class SwarmClientConfig:
         request_to_submit_result_max_wait=None,
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
-        stream_to_disk: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         # the executor could be a wrapper object that adds real Executor when added to job!
         validate_object_for_job("executor", executor, Executor)
@@ -114,7 +114,7 @@ class SwarmClientConfig:
         self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
         self.request_to_submit_result_interval = request_to_submit_result_interval
         self.max_concurrent_submissions = max_concurrent_submissions
-        self.stream_to_disk = stream_to_disk
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
 
 
 class CyclicServerConfig:
@@ -274,7 +274,7 @@ class CCWFJob(FedJob):
             request_to_submit_result_max_wait=client_config.request_to_submit_result_max_wait,
             request_to_submit_result_interval=client_config.request_to_submit_result_interval,
             max_concurrent_submissions=client_config.max_concurrent_submissions,
-            stream_to_disk=client_config.stream_to_disk,
+            enable_tensor_disk_offload=client_config.enable_tensor_disk_offload,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
         if not self.executor:

@@ -291,7 +291,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
             memory_gc_rounds=self.server_memory_gc_rounds,
-            stream_to_disk=self.enable_tensor_disk_offload,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         job.to_server(controller)
 

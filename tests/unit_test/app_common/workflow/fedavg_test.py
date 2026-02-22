@@ -66,8 +66,8 @@ class _FakeLazyRef:
 
 
 class _MockCell:
-    def __init__(self, stream_to_disk: bool):
-        self.ctx = {"stream_to_disk": stream_to_disk}
+    def __init__(self, enable_tensor_disk_offload: bool):
+        self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
 
     def get_fobs_context(self):
         return dict(self.ctx)
@@ -392,9 +392,9 @@ class TestFedAvgAggregation:
 
 
 class TestFedAvgLazyCompatibility:
-    def test_custom_aggregator_keeps_lazy_payload_in_stream_to_disk_mode(self):
+    def test_custom_aggregator_keeps_lazy_payload_in_tensor_disk_offload_mode(self):
         aggregator = MockModelAggregator()
-        controller = FedAvg(num_clients=1, aggregator=aggregator, stream_to_disk=True)
+        controller = FedAvg(num_clients=1, aggregator=aggregator, enable_tensor_disk_offload=True)
         controller._received_count = 0
         controller._expected_count = 1
         controller.current_round = 0
@@ -417,19 +417,19 @@ class TestFedAvgLazyCompatibility:
 
 
 class TestFedAvgDownloadToDiskContext:
-    def test_set_stream_to_disk(self):
-        controller = FedAvg(stream_to_disk=True)
-        cell = _MockCell(stream_to_disk=False)
+    def test_set_enable_tensor_disk_offload(self):
+        controller = FedAvg(enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
         controller.engine = _MockEngine(cell)
 
-        controller._set_stream_to_disk()
-        assert cell.ctx["stream_to_disk"] is True
+        controller._set_enable_tensor_disk_offload()
+        assert cell.ctx["enable_tensor_disk_offload"] is True
 
-    def test_set_stream_to_disk_without_cell(self):
-        controller = FedAvg(stream_to_disk=True)
+    def test_set_enable_tensor_disk_offload_without_cell(self):
+        controller = FedAvg(enable_tensor_disk_offload=True)
         controller.engine = _MockEngine(cell=None)
 
-        controller._set_stream_to_disk()
+        controller._set_enable_tensor_disk_offload()
         assert controller.engine.get_cell() is None
 
 
