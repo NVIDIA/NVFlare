@@ -98,32 +98,6 @@ Based on our internal testing with a 5GB model and 4 clients using FedAvg, we ob
 
     Your results may vary depending on model size, number of clients, network conditions, and different FL algorithms and workflows.
 
-How It Works
-^^^^^^^^^^^^
-
-The TensorDownloader operates transparently behind the scenes:
-
-1. **Server prepares tensors**: Model state dict is automatically registered with the downloader, generating a reference ID (RID).
-2. **RID broadcast**: The server broadcasts the RID to all clients via a lightweight message.
-3. **Client-side download**: Each client downloads tensors incrementally, reconstructing the model state dict.
-
-For advanced users who need direct control, the low-level API is available:
-
-.. code-block:: python
-
-    from nvflare.app_opt.pt.tensor_downloader import add_tensors, download_tensors
-
-    # Server side: Register tensors for download
-    ref_id = add_tensors(downloader, model.state_dict())
-
-    # Client side: Download tensors incrementally
-    status, state_dict = download_tensors(
-        from_fqcn=server_fqcn,
-        ref_id=ref_id,
-        per_request_timeout=30.0,
-        cell=cell,
-    )
-
 Benefits for LLM Training
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -221,25 +195,15 @@ FLARE 2.7.2 eliminates this with a multi-layer guard:
   ``SFM_SEND_STALL_CONSECUTIVE_CHECKS``) can optionally trigger connection reset
   (``SFM_CLOSE_STALLED_CONNECTION``), unblocking all pending traffic.
 
-.. code-block:: text
-
-    # Recommended server environment settings for large hierarchical deployments
-    STREAMING_SEND_TIMEOUT=30
-    STREAMING_ACK_PROGRESS_TIMEOUT=60
-    SFM_SEND_STALL_TIMEOUT=75
-    SFM_SEND_STALL_CONSECUTIVE_CHECKS=3
-    SFM_CLOSE_STALLED_CONNECTION=true   # enable after confirming no false positives
+For recommended settings, see :ref:`timeout_troubleshooting` — *Streaming Stall Guardrail* section.
 
 Stream Pool Starvation Fix
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A thread pool deadlock in blob streaming caused ``handle_blob_cb`` to be dispatched on the
-same stream worker pool that it was waiting to resolve — exhausting the pool and preventing
-any concurrent downloads from completing.
-
-The fix dispatches blob callbacks to a dedicated ``callback_thread_pool``, keeping stream
-workers free. An end-to-end test validates that 8 concurrent downloads complete without
-starvation.
+Concurrent model downloads could stall indefinitely when streaming callbacks were dispatched
+on the same thread pool they depended on, exhausting it. The fix routes callbacks to a
+dedicated pool, keeping stream workers free. An end-to-end test validates that 8 concurrent
+downloads complete without starvation.
 
 Streaming Download Retry on Timeout
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -255,22 +219,17 @@ retry semantics:
 RxTask Self-Deadlock Fix
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A self-deadlock in the receiver path occurred when ``find_or_create_task()`` called
-``task.stop()`` while holding ``RxTask.map_lock``, and ``stop()`` also acquired
-``map_lock``. This was triggered by stream error signals arriving for an active task.
-
-The fix defers the ``stop()`` call until after ``map_lock`` is released, eliminating the
-deadlock without changing the correctness of stream error handling.
+Stream error signals arriving during an active receive could cause a self-deadlock in the
+receiver cleanup path. The fix defers cleanup until after the critical section is exited,
+eliminating the deadlock without changing error-handling correctness.
 
 Lock Contention Reduction in Model Downloads
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``produce_item()`` call in the cacheable streaming layer previously ran inside
-``self.lock``, serializing all concurrent clients needing the same model chunk behind a
-single slow operation. The lock scope has been reduced so that item production occurs
-outside the lock, with a compare-and-store pattern for the cache write. This significantly
-reduces model-download latency when many clients (e.g., 24 per relay) request the same
-chunk concurrently.
+In the cacheable streaming layer, cache-miss production previously serialized all concurrent
+clients behind a single lock, increasing model-download latency at high client counts (e.g.,
+24 per relay). The lock scope has been reduced so production runs concurrently, significantly
+improving throughput when many clients request the same model chunk at once.
 
 .. Changes in this section are introduced by PR #4209 (https://github.com/NVIDIA/NVFlare/pull/4209).
 .. Merge this release notes PR only after PR #4209 has landed on the 2.7 branch.
@@ -336,29 +295,8 @@ opaque ``TypeError: 'NoneType' object is not iterable`` when reading job client 
 FLARE 2.7.2 replaces this with an explicit ``RuntimeError`` that names the missing field,
 making the failure actionable in logs.
 
-Recommended Configuration for Large-Scale Hierarchical Deployments
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: json
-
-    // config_fed_server.json — relax FedAvg tolerance
-    {
-      "workflows": [{
-        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
-        "args": {
-          "num_clients": 144,
-          "min_clients": 138
-        }
-      }]
-    }
-
-.. code-block:: json
-
-    // config_fed_client.json — extend sync timeout for Lustre/HPC
-    {
-      "runner_sync_timeout": 120,
-      "max_runner_sync_timeout": 7200
-    }
+For recommended configuration settings for HPC environments (Slurm, Lustre filesystems),
+see :ref:`timeout_troubleshooting` — *Large-Scale Hierarchical / HPC Deployments* scenario.
 
 Comprehensive Timeout Documentation
 ------------------------------------
