@@ -17,7 +17,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner
+from nvflare.private.fed.server.message_send import ClientReply
 
 
 def _make_runner_inputs(num_clients=1):
@@ -154,3 +156,39 @@ def test_start_run_keeps_job_clients_meta_when_no_timeouts(mock_get_bool, mock_c
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_integration_real_reply_check_updates_meta(mock_get_bool):
+    """Integration-style check: _start_run + real check_client_replies timeout path."""
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+
+    ok_reply = Message(topic="reply", body="ok")
+    ok_reply.set_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+    req1 = Message(topic="req", body="")
+    req2 = Message(topic="req", body="")
+    engine.start_client_job.return_value = [
+        ClientReply(client_token="token-site-1", client_name="site-1", req=req1, reply=ok_reply),
+        ClientReply(client_token="token-site-2", client_name="site-2", req=req2, reply=None),
+    ]
+
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    job.min_sites = 1
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}]
+    runner.log_warning.assert_called_once()
+    warning_msg = runner.log_warning.call_args[0][1]
+    assert "site-2" in warning_msg
+    assert "timed out" in warning_msg
