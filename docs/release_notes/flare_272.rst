@@ -272,6 +272,9 @@ outside the lock, with a compare-and-store pattern for the cache write. This sig
 reduces model-download latency when many clients (e.g., 24 per relay) request the same
 chunk concurrently.
 
+.. Changes in this section are introduced by PR #4209 (https://github.com/NVIDIA/NVFlare/pull/4209).
+.. Merge this release notes PR only after PR #4209 has landed on the 2.7 branch.
+
 Hierarchical FL Startup Stability
 -----------------------------------
 
