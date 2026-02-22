@@ -243,9 +243,8 @@ these with a set of coordinated fixes and new configuration controls.
 
 .. note::
 
-    This fix set is particularly relevant for HPC deployments such as Frontier (ORNL) and
-    similar supercomputers where 100+ FL clients start via a batch scheduler (e.g., Slurm)
-    under shared filesystem (Lustre) load.
+    This fix set is particularly relevant for HPC deployments where 100+ FL clients start
+    via a batch scheduler (e.g., Slurm) under shared filesystem (e.g., Lustre) load.
 
 Deployment Timeout Now Treated as Failure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
