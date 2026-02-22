@@ -77,7 +77,27 @@ class _ClientReq(object):
         self.req = req
 
 
-def check_client_replies(replies: List[ClientReply], client_sites: List[str], command: str, strict: bool = False):
+def check_client_replies(
+    replies: List[ClientReply], client_sites: List[str], command: str, strict: bool = False
+) -> List[str]:
+    """Check client replies for errors.
+
+    Args:
+        replies: list of client replies
+        client_sites: list of expected client names
+        command: command description for error messages
+        strict: if True, detect timed-out clients (reply=None) and return them as a list
+                rather than raising.  Explicit errors (non-OK return code or error body)
+                always raise regardless of this flag.
+
+    Returns:
+        List of client names whose reply was None (timed out).  Only populated when
+        strict=True; always empty when strict=False.
+
+    Raises:
+        RuntimeError: if no replies were received, reply count mismatches, structurally
+                      missing replies (strict mode), or any client returned an explicit error.
+    """
     display_sites = ", ".join(client_sites)
     if not replies:
         raise RuntimeError(f"Failed to {command} to the clients {display_sites}: no replies.")
@@ -85,8 +105,10 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
         raise RuntimeError(f"Failed to {command} to the clients {display_sites}: not enough replies.")
 
     error_msg = ""
+    timed_out_clients = []
+    replies_by_client = {r.client_name: r for r in replies}
+
     if strict:
-        replies_by_client = {r.client_name: r for r in replies}
         missing_clients = [c for c in client_sites if c not in replies_by_client]
         if missing_clients:
             display_missing = ", ".join(missing_clients)
@@ -97,24 +119,29 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
         for client_name in client_sites:
             r = replies_by_client[client_name]
             if not r.reply:
-                error_msg += f"	{client_name}: no reply (timeout)\n"
+                # Timeout: record and continue — caller decides whether to exclude or abort.
+                timed_out_clients.append(client_name)
                 continue
 
             return_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
             if return_code != ReturnCode.OK:
                 detail = r.reply.body if r.reply.body else f"return code {return_code}"
-                error_msg += f"	{client_name}: {detail}\n"
+                error_msg += f"\t{client_name}: {detail}\n"
                 continue
 
             if isinstance(r.reply.body, str) and ERROR_MSG_PREFIX in r.reply.body:
-                error_msg += f"	{client_name}: {r.reply.body}\n"
+                error_msg += f"\t{client_name}: {r.reply.body}\n"
     else:
-        for r, client_name in zip(replies, client_sites):
-            if r.reply and ERROR_MSG_PREFIX in r.reply.body:
-                error_msg += f"	{client_name}: {r.reply.body}\n"
+        for client_name in client_sites:
+            r = replies_by_client.get(client_name)
+            if r and r.reply and isinstance(r.reply.body, str) and ERROR_MSG_PREFIX in r.reply.body:
+                error_msg += f"\t{client_name}: {r.reply.body}\n"
 
-    if error_msg != "":
+    if error_msg:
         raise RuntimeError(f"Failed to {command} to the following clients: \n{error_msg}")
+
+    return timed_out_clients
+
 
 class FedAdminServer(AdminServer):
     def __init__(

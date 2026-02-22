@@ -343,6 +343,12 @@ class FederatedServer(BaseServer):
         self.name_to_reg = {}
         self.cred_keeper = CredKeeper()
 
+        # Tracks per-job which client tokens have been positively observed running the job.
+        # Keyed by job_id -> set of client tokens.  Used by _sync_client_jobs() to require
+        # a prior positive heartbeat before classifying a client's missing job as "dead".
+        # Entries are cleaned up as soon as the job is no longer in run_processes.
+        self._job_reported_clients: Dict[str, set] = {}
+
         # these are used when the server sends a message to itself.
         self.my_own_auth_client_name = "server"
         self.my_own_token = "server"
@@ -805,8 +811,13 @@ class FederatedServer(BaseServer):
         require_previous_report = ConfigService.get_bool_var(
             name=ConfigVarName.SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT,
             conf=SystemConfigs.APPLICATION_CONF,
-            default=False,
+            default=True,
         )
+
+        # Remove stale tracking entries for jobs that are no longer running.
+        for stale_job_id in list(self._job_reported_clients.keys()):
+            if stale_job_id not in server_jobs:
+                del self._job_reported_clients[stale_job_id]
 
         # Record jobs that this client has reported at least once.
         # If require_previous_report is enabled, we only treat "missing job on client"
@@ -820,8 +831,7 @@ class FederatedServer(BaseServer):
             if not participating_clients or client_token not in participating_clients:
                 continue
 
-            reported_clients = job_info.setdefault("_reported_clients", set())
-            reported_clients.add(client_token)
+            self._job_reported_clients.setdefault(job_id, set()).add(client_token)
 
         # Also check jobs that are running on server but not on the client.
         jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
@@ -840,7 +850,7 @@ class FederatedServer(BaseServer):
                 if not client:
                     continue
 
-                reported_clients = job_info.setdefault("_reported_clients", set())
+                reported_clients = self._job_reported_clients.get(job_id, set())
                 if (not require_previous_report) or (client_token in reported_clients):
                     self._notify_dead_job(client, job_id, "missing job on client")
 

@@ -223,7 +223,12 @@ class JobRunner(FLComponent):
                     else:
                         deploy_detail.append(f"{client_name}: OK")
                 else:
-                    deploy_detail.append(f"{client_name}: unknown")
+                    # No reply means the client timed out during deployment.
+                    # Count this as a failure so the min_sites / required_sites check
+                    # can decide whether to abort, rather than silently treating a
+                    # timed-out client as successfully deployed.
+                    failed_clients.append(client_name)
+                    deploy_detail.append(f"{client_name}: no reply (deployment timeout)")
 
             # see whether any of the failed clients are required
             if failed_clients:
@@ -269,12 +274,25 @@ class JobRunner(FLComponent):
             conf=SystemConfigs.APPLICATION_CONF,
             default=False,
         )
-        check_client_replies(
+        timed_out = check_client_replies(
             replies=replies,
             client_sites=client_sites_names,
             command=f"start job ({job_id})",
             strict=strict_start_reply_check,
         )
+        if timed_out:
+            active_count = len(client_sites_names) - len(timed_out)
+            if job.min_sites and active_count < job.min_sites:
+                raise RuntimeError(
+                    f"start job ({job_id}): {len(timed_out)} client(s) timed out and remaining "
+                    f"{active_count} < min_sites {job.min_sites}: {timed_out}"
+                )
+            self.log_warning(
+                fl_ctx,
+                f"start job ({job_id}): {len(timed_out)} client(s) timed out at start-job: {timed_out}; "
+                f"{active_count} of {len(client_sites_names)} clients started successfully.",
+            )
+            client_sites_names = [c for c in client_sites_names if c not in timed_out]
         display_sites = ",".join(client_sites_names)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
