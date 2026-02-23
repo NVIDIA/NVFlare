@@ -144,7 +144,7 @@ def _extract_safetensors_keys(data: bytes) -> list[str]:
         raise ValueError("Invalid safetensors data: too short")
 
     header_size = struct.unpack("<Q", data[:8])[0]
-    if header_size <= 0:
+    if header_size == 0:
         raise ValueError("Invalid safetensors data: empty header")
 
     header_end = 8 + header_size
@@ -208,16 +208,20 @@ def download_tensors_to_disk(
     temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
 
     consumer = DiskTensorConsumer(temp_dir)
-    download_object(
-        from_fqcn=from_fqcn,
-        ref_id=ref_id,
-        consumer=consumer,
-        per_request_timeout=per_request_timeout,
-        cell=cell,
-        secure=secure,
-        optional=optional,
-        abort_signal=abort_signal,
-    )
+    try:
+        download_object(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            consumer=consumer,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+        )
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
     if consumer.error:
         return consumer.error, None

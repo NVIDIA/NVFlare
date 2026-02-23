@@ -20,6 +20,7 @@ import pytest
 import torch
 from safetensors.torch import save as save_tensors
 
+import nvflare.app_opt.pt.tensor_downloader as tensor_downloader
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict
 from nvflare.app_opt.pt.tensor_downloader import DiskTensorConsumer, _extract_safetensors_keys
 
@@ -50,6 +51,11 @@ class TestExtractSafetensorsKeys:
         # Header says 100 bytes of JSON, but payload only has 2.
         data = (100).to_bytes(8, byteorder="little") + b"{}"
         with pytest.raises(ValueError, match="header size exceeds payload length"):
+            _extract_safetensors_keys(data)
+
+    def test_zero_header_size(self):
+        data = (0).to_bytes(8, byteorder="little")
+        with pytest.raises(ValueError, match="empty header"):
             _extract_safetensors_keys(data)
 
     def test_invalid_json_header(self):
@@ -141,3 +147,27 @@ class TestDiskTensorConsumer:
         ltd = LazyTensorDict(key_to_file=result, temp_dir=temp_dir)
         loaded = ltd["param"]
         assert torch.allclose(loaded, original["param"])
+
+
+def test_download_tensors_to_disk_cleans_temp_dir_on_exception(monkeypatch, tmp_path):
+    temp_dir = tmp_path / "nvflare_tensors_exception"
+
+    def fake_mkdtemp(prefix):
+        os.makedirs(temp_dir, exist_ok=False)
+        return str(temp_dir)
+
+    def raise_download_error(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(tensor_downloader.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(tensor_downloader, "download_object", raise_download_error)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        tensor_downloader.download_tensors_to_disk(
+            from_fqcn="server",
+            ref_id="ref",
+            per_request_timeout=1.0,
+            cell=None,
+        )
+
+    assert not temp_dir.exists()
