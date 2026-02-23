@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
@@ -177,6 +178,9 @@ class FedAvg(BaseFedAvg):
                     self.info("Abort signal triggered. Finishing FedAvg.")
                     return
                 time.sleep(self._task_check_period)
+
+            # Fire BEFORE_AGGREGATION so widgets (e.g. IntimeModelSelector) can run and fire GLOBAL_BEST_MODEL_AVAILABLE
+            self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
 
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()
