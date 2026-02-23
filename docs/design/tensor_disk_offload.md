@@ -87,16 +87,7 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 
 - Disk offload writes safetensors chunks under a temp dir (`nvflare_tensors_*`).
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
-- Cleanup paths:
-  1. explicit cleanup (`_LazyRef.cleanup()`/`LazyTensorDict.cleanup()`, or equivalent app-level traversal that calls `cleanup()`)
-  2. fallback GC cleanup via `_TempDirRef.__del__`
-
-## Cleanup Semantics
-
-Cleanup is done through:
-
-1. explicit cleanup hooks (`cleanup()`)
-2. `_TempDirRef` lifetime fallback on GC
+- Runtime cleanup relies on GC: when lazy refs are released, `_TempDirRef.__del__` removes the temp dir.
 
 ## Failure Behavior
 
