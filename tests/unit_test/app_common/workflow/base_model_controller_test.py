@@ -78,3 +78,43 @@ def test_process_result_falls_back_to_result_round_before_accept_event():
 
     assert engine.events[0] == (AppEventType.BEFORE_CONTRIBUTION_ACCEPT, 3)
     assert fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 3
+
+
+def test_process_result_sets_non_sticky_round_by_default():
+    engine = _MockEngine()
+    fl_ctx = engine.fl_ctx_mgr.new_context()
+    controller = _TestController()
+
+    task_data = Shareable()
+    task_data.set_header(AppConstants.CURRENT_ROUND, 5)
+    task = Task(name=AppConstants.TASK_TRAIN, data=task_data)
+    client_task = ClientTask(client=Client("site-1", "token"), task=task)
+    client_task.result = _make_result_shareable(current_round=None)
+
+    controller._process_result(client_task, fl_ctx)
+
+    detail = fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+    assert detail is not None
+    assert detail["private"] is True
+    assert detail["sticky"] is False
+
+
+def test_process_result_preserves_existing_round_prop_attributes():
+    engine = _MockEngine()
+    fl_ctx = engine.fl_ctx_mgr.new_context()
+    controller = _TestController()
+
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=True)
+    task_data = Shareable()
+    task_data.set_header(AppConstants.CURRENT_ROUND, 8)
+    task = Task(name=AppConstants.TASK_TRAIN, data=task_data)
+    client_task = ClientTask(client=Client("site-1", "token"), task=task)
+    client_task.result = _make_result_shareable(current_round=None)
+
+    controller._process_result(client_task, fl_ctx)
+
+    detail = fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+    assert detail is not None
+    assert detail["value"] == 8
+    assert detail["private"] is True
+    assert detail["sticky"] is True

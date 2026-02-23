@@ -240,7 +240,21 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if task_round is None and result:
             task_round = result.get_header(AppConstants.CURRENT_ROUND, None)
         if task_round is not None:
-            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, task_round, private=True, sticky=True)
+            detail = fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+            if detail is not None:
+                fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND,
+                    task_round,
+                    private=detail["private"],
+                    sticky=detail["sticky"],
+                )
+            else:
+                fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND,
+                    task_round,
+                    private=True,
+                    sticky=False,
+                )
 
         # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
