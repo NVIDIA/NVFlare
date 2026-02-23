@@ -160,6 +160,11 @@ By default, the client saves received and trained model checkpoints under the **
 
 After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the script must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so the script can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
 
+### Client errors and model size
+
+- **One site shows "(after error)" every round:** Training failed on that client (e.g. OOM, missing data, GPU). Check that site’s log (e.g. `.../site-1/log.txt`) for `Qwen SFT script failed:` and the exception message; the client also prints a short error hint next to `(after error)`.
+- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). On **error** the client sends the in-memory model (same dtype as received), so sent size matches received.
+
 ## Inference (before/after comparison)
 
 Use `run_inference.py` to compare base vs fine-tuned checkpoints on PubMedVision-style samples. Run from this directory (`examples/advanced/qwen3-vl`):

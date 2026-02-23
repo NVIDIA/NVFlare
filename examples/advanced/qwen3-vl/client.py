@@ -246,6 +246,7 @@ def main():
                 learning_rate=args.learning_rate,
             )
         except Exception as e:
+            err_msg = str(e)
             print(f"Qwen SFT script failed: {e}", file=sys.stderr)
             # Send last checkpoint so round does not block; fallback to input model state_dict
             load_dir = output_model_dir if os.path.isdir(output_model_dir) else input_model_dir
@@ -261,11 +262,13 @@ def main():
             output_model = flare.FLModel(
                 params=params,
                 metrics={"loss": float("nan")},
-                meta={"ERROR": str(e)},
+                meta={"ERROR": err_msg},
             )
             sent_mb = _params_size_mb(params)
+            # On error we send in-memory model (same dtype as received); success path sends bf16 checkpoint (smaller).
+            err_hint = (err_msg[:80] + "…") if len(err_msg) > 80 else err_msg
             print(
-                f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error)"
+                f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error: {err_hint})"
             )
             flare.send(output_model)
             del params, output_model
@@ -287,6 +290,7 @@ def main():
             meta=meta,
         )
         sent_mb = _params_size_mb(params)
+        # Sent size is smaller than received because we send the bf16 checkpoint; server sends full-precision.
         print(
             f"site={client_name}, round={input_model.current_round}, sent updated weights, model size: {sent_mb:.2f} MB"
         )
