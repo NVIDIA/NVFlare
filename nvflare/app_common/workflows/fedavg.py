@@ -29,6 +29,25 @@ from nvflare.fuel.utils.log_utils import center_message
 from .base_fedavg import BaseFedAvg
 
 
+def _is_aggregatable_metric_value(v: Any) -> bool:
+    """Return True if the metric value supports weighted aggregation (v * weight and addition)."""
+    if v is None:
+        return False
+    if isinstance(v, (dict, list, set, tuple, str)):
+        return False
+    if isinstance(v, (int, float, bool)):
+        return True
+    # NumPy array, NumPy scalar, or tensor (has shape and supports * and +)
+    if hasattr(v, "shape"):
+        return True
+    try:
+        _ = v * 1.0
+        _ = v + v
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 class FedAvg(BaseFedAvg):
     """Controller for FedAvg Workflow with optional Early Stopping and Model Selection.
 
@@ -248,16 +267,24 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-            # Add to metrics aggregation if available
+            # Add to metrics aggregation if available (only aggregatable values;
+            # non-aggregatable metrics like dicts are still in result.metrics for collection)
             if not result.metrics:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                self._aggr_metrics_helper.add(
-                    data=result.metrics,
-                    weight=weight,
-                    contributor_name=client_name,
-                    contribution_round=self.current_round,
-                )
+                aggregatable = {}
+                for k, v in result.metrics.items():
+                    if _is_aggregatable_metric_value(v):
+                        aggregatable[k] = v
+                    else:
+                        self.warning(f"Metric '{k}' ({type(v).__name__}) skipped for aggregation.")
+                if aggregatable:
+                    self._aggr_metrics_helper.add(
+                        data=aggregatable,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
+                    )
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
