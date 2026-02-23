@@ -198,6 +198,9 @@ class FedAvg(BaseFedAvg):
                     return
                 time.sleep(self._task_check_period)
 
+            # Fire BEFORE_AGGREGATION so widgets (e.g. IntimeModelSelector) can run and fire GLOBAL_BEST_MODEL_AVAILABLE
+            self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
+
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()
 
@@ -291,8 +294,6 @@ class FedAvg(BaseFedAvg):
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
-        # Fire BEFORE_AGGREGATION so widgets (e.g. IntimeModelSelector) can run and fire GLOBAL_BEST_MODEL_AVAILABLE
-        self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
         if self.aggregator:
             # Use custom aggregator
             result: FLModel = self.aggregator.aggregate_model()
