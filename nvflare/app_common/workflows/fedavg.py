@@ -41,6 +41,7 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
         return True
     try:
         _ = v * 1.0
+        _ = v + v
         return True
     except (TypeError, ValueError):
         return False
