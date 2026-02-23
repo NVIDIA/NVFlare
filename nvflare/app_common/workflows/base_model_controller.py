@@ -232,6 +232,16 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         result = client_task.result
         client_name = client_task.client.name
 
+        # Populate CURRENT_ROUND in callback context so BEFORE_CONTRIBUTION_ACCEPT handlers
+        # (e.g. model selectors) can validate round-sensitive contributions.
+        task_round = None
+        if client_task.task and client_task.task.data:
+            task_round = client_task.task.data.get_header(AppConstants.CURRENT_ROUND, None)
+        if task_round is None and result:
+            task_round = result.get_header(AppConstants.CURRENT_ROUND, None)
+        if task_round is not None:
+            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, task_round, private=True, sticky=True)
+
         # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
