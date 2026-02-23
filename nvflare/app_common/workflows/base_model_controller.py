@@ -154,6 +154,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self._current_failed_clients = set()
 
         self.set_fl_context(data)
+        self.fire_event(AppEventType.ROUND_STARTED, self.fl_ctx)
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
@@ -231,6 +232,12 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         result = client_task.result
         client_name = client_task.client.name
+
+        # Set CURRENT_ROUND in fl_ctx so widgets (e.g. IntimeModelSelector) and aggregators
+        # see the correct round; the callback fl_ctx may not have it.
+        current_round = client_task.task.data.get_header(AppConstants.CURRENT_ROUND, None)
+        if current_round is not None:
+            fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=False)
 
         # Check return code and handle errors first
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
