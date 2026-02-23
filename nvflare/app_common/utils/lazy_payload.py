@@ -11,6 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Helpers for lazy payload cleanup used by tensor disk offloading.
+
+When tensor disk offload is enabled, payload trees can include lazy reference objects
+instead of in-memory tensors. These lazy refs commonly carry a `_temp_ref` attribute:
+
+- `_temp_ref` is a shared cleanup owner for temporary on-disk tensor data.
+- Each lazy ref holds `_temp_ref` to keep temp files alive while refs are still in use.
+- `_temp_ref.cleanup()` removes those temporary resources.
+
+`cleanup_inplace()` traverses nested payload containers and calls `cleanup()` either on
+the object itself or on its `_temp_ref` when present.
+"""
+
 from collections.abc import Mapping
 from typing import Any
 

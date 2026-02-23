@@ -379,8 +379,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         items = fobs_ctx.get(self.items_key)
         self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
 
-        if hasattr(items, "make_lazy_ref") and item_id in items:
-            item = items.make_lazy_ref(item_id)
+        make_lazy_ref_fn = getattr(items, "make_lazy_ref", None)
+        if callable(make_lazy_ref_fn) and item_id in items:
+            item = make_lazy_ref_fn(item_id)
             self.logger.debug(f"{tid=} created lazy ref for {item_id}")
             return item
 
