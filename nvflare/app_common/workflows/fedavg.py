@@ -263,7 +263,6 @@ class FedAvg(BaseFedAvg):
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
 
     def _get_aggregated_result(self) -> FLModel:
-    def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
         # Fire BEFORE_AGGREGATION so widgets (e.g. IntimeModelSelector) can run and fire GLOBAL_BEST_MODEL_AVAILABLE
         self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
