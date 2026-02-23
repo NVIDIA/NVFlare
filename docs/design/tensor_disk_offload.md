@@ -30,12 +30,6 @@ Swarm/CCWF:
 
 If no active Cell is available, FedAvg logs a warning and falls back to in-memory download.
 
-## Migration Note
-
-- Prior naming in this branch history used `stream_to_disk`.
-- Current name is `enable_tensor_disk_offload` (same intent, clearer behavior scope).
-
-
 ## Data Flow
 
 ```
@@ -69,7 +63,7 @@ In `nvflare/app_common/workflows/fedavg.py`:
 - custom aggregators receive `result.params` as-is
 - with `enable_tensor_disk_offload=True`, lazy refs are passed through directly
 - built-in weighted aggregation materializes per tensor inside `WeightedAggregationHelper.add()`
-  and runs `cleanup_inplace(result.params)` in a `finally` block
+  and relies on lazy-ref object lifetime / GC for temp-resource cleanup
 
 The built-in weighted path remains lazy-friendly and memory-efficient.
 
@@ -80,9 +74,7 @@ When a custom aggregator is used, payload params may contain lazy refs (duck-typ
 Custom aggregators are responsible for:
 
 1. materializing refs when tensor math is required
-2. cleaning temporary resources after use (for example with `cleanup_inplace(...)`)
-
-The built-in FedAvg cleanup hook is only executed on the built-in weighted aggregation path.
+2. cleaning temporary resources after use (for example by calling `cleanup()` on lazy refs)
 
 ### Swarm/CCWF
 
@@ -91,27 +83,19 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 - shareables are passed to the aggregator as-is
 - with `enable_tensor_disk_offload=True`, aggregator inputs include lazy refs
 
-## Lazy Payload Utilities
-
-`nvflare/app_common/utils/lazy_payload.py` provides duck-typed helpers so `app_common` does not depend on PyTorch lazy internals:
-
-- `cleanup_inplace(data)`
-
-Lazy resolution itself happens where tensor math is performed (for example in weighted aggregation).
-
 ## Temp File Lifecycle
 
 - Disk offload writes safetensors chunks under a temp dir (`nvflare_tensors_*`).
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
 - Cleanup paths:
-  1. explicit cleanup (`cleanup_inplace(...)` or `LazyTensorDict.cleanup()`)
+  1. explicit cleanup (`_LazyRef.cleanup()`/`LazyTensorDict.cleanup()`, or equivalent app-level traversal that calls `cleanup()`)
   2. fallback GC cleanup via `_TempDirRef.__del__`
 
 ## Cleanup Semantics
 
 Cleanup is done through:
 
-1. explicit cleanup hooks (`cleanup_inplace`)
+1. explicit cleanup hooks (`cleanup()`)
 2. `_TempDirRef` lifetime fallback on GC
 
 ## Failure Behavior
@@ -126,7 +110,6 @@ Cleanup is done through:
 - `nvflare/app_opt/pt/lazy_tensor_dict.py`
 - `nvflare/app_opt/pt/tensor_downloader.py`
 - `nvflare/fuel/utils/fobs/decomposers/via_downloader.py`
-- `nvflare/app_common/utils/lazy_payload.py`
 - `nvflare/app_common/workflows/fedavg.py`
 - `nvflare/app_common/ccwf/swarm_client_ctl.py`
 - `nvflare/private/fed/server/server_engine.py`
@@ -136,7 +119,6 @@ Cleanup is done through:
 
 - `tests/unit_test/app_common/workflow/fedavg_test.py`
 - `tests/unit_test/app_common/ccwf/test_swarm_lazy_payload.py`
-- `tests/unit_test/app_common/utils/lazy_payload_test.py`
 - `tests/unit_test/app_opt/pt/test_lazy_tensor_dict.py`
 - `tests/unit_test/app_opt/pt/test_disk_tensor_consumer.py`
 - `tests/unit_test/app_common/aggregators/weighted_aggregation_helper_test.py`

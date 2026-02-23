@@ -12,6 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""PT lazy tensor references used by tensor disk offload.
+
+When `enable_tensor_disk_offload=True`, incoming streamed tensor payloads are written
+to temporary safetensors files instead of being fully deserialized into memory.
+`LazyTensorDict` maps item IDs to on-disk files, and `_LazyRef` defers loading until
+`materialize()` is called by aggregation code.
+
+This keeps peak memory lower for large models while still allowing deterministic
+explicit cleanup via `cleanup()`, with GC as a fallback through `_TempDirRef`.
+"""
+
 import logging
 import shutil
 
@@ -58,6 +69,10 @@ class _LazyRef:
         """Load tensor from safetensors file. Opens mmap, copies data out, closes mmap."""
         with safe_open(self.file_path, framework="pt") as f:
             return f.get_tensor(self.key)
+
+    def cleanup(self):
+        """Cleanup backing temp resources for this lazy ref."""
+        self._temp_ref.cleanup()
 
     def __repr__(self):
         return f"_LazyRef({self.file_path!r}, key={self.key!r})"

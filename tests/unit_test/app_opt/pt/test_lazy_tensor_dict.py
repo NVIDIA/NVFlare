@@ -19,7 +19,6 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
-from nvflare.app_common.utils.lazy_payload import cleanup_inplace
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, _LazyRef, _TempDirRef
 
 
@@ -60,6 +59,14 @@ class TestLazyRef:
         file_path, st_key = key_to_file["layer1.bias"]
         ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
         assert "layer1.bias" in repr(ref)
+
+    def test_cleanup_cleans_temp_dir(self, temp_safetensors):
+        key_to_file, temp_dir, _ = temp_safetensors
+        file_path, st_key = key_to_file["layer1.bias"]
+        ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
+        assert os.path.exists(temp_dir)
+        ref.cleanup()
+        assert not os.path.exists(temp_dir)
 
 
 class TestTempDirRef:
@@ -146,30 +153,6 @@ class TestLazyTensorDict:
 
         with pytest.raises(KeyError):
             _ = ltd["nonexistent"]
-
-
-class TestCleanupInplaceWithLazyRefs:
-    def test_cleanup_dict_with_lazy_refs(self, temp_safetensors):
-        key_to_file, temp_dir, _ = temp_safetensors
-        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
-
-        refs = {k: ltd.make_lazy_ref(k) for k in ltd.keys()}
-        assert os.path.exists(temp_dir)
-        cleaned = cleanup_inplace(refs)
-        assert cleaned is True
-        assert not os.path.exists(temp_dir)
-
-    def test_cleanup_noop_on_plain_dict(self):
-        cleaned = cleanup_inplace({"a": 1, "b": 2})
-        assert cleaned is False
-
-    def test_cleanup_noop_on_none(self):
-        cleaned = cleanup_inplace(None)
-        assert cleaned is False
-
-    def test_cleanup_noop_on_empty(self):
-        cleaned = cleanup_inplace({})
-        assert cleaned is False
 
 
 class TestAggregationHelperWithLazyRefs:
