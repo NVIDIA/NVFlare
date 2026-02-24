@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
-from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
@@ -413,6 +413,45 @@ class TestFedAvgRecipeValidation:
                 aggregator=invalid_aggregator,  # type: ignore[arg-type]
                 **base_recipe_params,
             )
+
+    def test_per_site_config_rejects_reserved_server_target(self, mock_file_system, base_recipe_params, simple_model):
+        """Reserved target 'server' must not be allowed in per_site_config."""
+        with pytest.raises(ValueError, match="reserved target name"):
+            FedAvgRecipe(
+                name="test_reserved_server_target",
+                model=simple_model,
+                per_site_config={"server": {}},
+                **base_recipe_params,
+            )
+
+    def test_per_site_config_rejects_reserved_all_sites_target(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Reserved target '@ALL' must not be allowed in per_site_config."""
+        with pytest.raises(ValueError, match="reserved target name"):
+            FedAvgRecipe(
+                name="test_reserved_all_sites_target",
+                model=simple_model,
+                per_site_config={ALL_SITES: {}},
+                **base_recipe_params,
+            )
+
+    def test_per_site_empty_command_override_is_preserved(self, mock_file_system, base_recipe_params, simple_model):
+        """Falsy per-site override values (e.g. command='') must not be replaced by defaults."""
+        recipe = FedAvgRecipe(
+            name="test_empty_command_override",
+            model=simple_model,
+            launch_external_process=True,
+            per_site_config={"site-1": {"command": ""}},
+            **base_recipe_params,
+        )
+
+        site_app = recipe.job._deploy_map.get("site-1")
+        assert site_app is not None
+        launcher = site_app.app_config.components.get("launcher")
+        assert launcher is not None
+        assert "python3 -u" not in launcher._script
+        assert launcher._script.startswith(" custom/")
 
     def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
         """Test that dict config without 'class_path' key raises error."""

@@ -34,3 +34,9 @@ def test_sim_env_validation():
     # Test with empty clients list and zero num_clients (invalid)
     with pytest.raises(ValueError, match="Either 'num_clients' must be > 0 or 'clients' list must be provided"):
         SimEnv(num_clients=0, clients=[])
+
+    # BUG-3 regression: when clients list is provided and num_clients=0,
+    # env should derive client/thread counts from the list.
+    env = SimEnv(num_clients=0, clients=["client1", "client2", "client3"])
+    assert env.num_clients == 3
+    assert env.num_threads == 3

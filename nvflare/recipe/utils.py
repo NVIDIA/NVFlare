@@ -18,6 +18,8 @@ import os
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -57,6 +59,27 @@ MODEL_LOCATOR_REGISTRY = {
         "persistor_param": "tf_persistor_id",
     },
 }
+
+
+def _has_cross_site_eval_workflow(job: FedJob) -> bool:
+    """Check if CrossSiteModelEval workflow is already configured on server."""
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+    deploy_map = getattr(job, "_deploy_map", {})
+    server_app = deploy_map.get("server")
+    if not server_app or not hasattr(server_app, "app_config"):
+        return False
+
+    workflows = getattr(server_app.app_config, "workflows", [])
+    for w in workflows:
+        # Server stores workflow definitions as wrapper objects (e.g. WorkFlow)
+        # with the actual controller on `controller`.
+        if isinstance(w, CrossSiteModelEval):
+            return True
+        controller = getattr(w, "controller", None)
+        if controller is not None and isinstance(controller, CrossSiteModelEval):
+            return True
+    return False
 
 
 def add_experiment_tracking(
@@ -250,8 +273,10 @@ def add_cross_site_evaluation(
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.job_config.script_runner import FrameworkType
 
-    # Idempotency check: prevent multiple calls on the same recipe
-    if hasattr(recipe, "_cse_added") and recipe._cse_added:
+    # Idempotency check: prevent multiple calls on the same recipe.
+    # Keep the explicit flag fast-path, but also verify server workflow state so
+    # protection remains effective even if dynamic attributes are lost.
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
         name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
             f"Cross-site evaluation has already been added to recipe '{name}'. "
@@ -468,6 +493,99 @@ def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
     # Relative path: bundle local file into server app's custom/ directory
     job.add_file_to_server(initial_ckpt)
     return os.path.basename(initial_ckpt)
+
+
+def _extract_persistor_id(result: Any) -> str:
+    if isinstance(result, dict):
+        persistor_id = result.get("persistor_id", "")
+        return persistor_id if isinstance(persistor_id, str) else ""
+    if isinstance(result, str):
+        return result
+    return ""
+
+
+def setup_framework_model_persistor(
+    *,
+    job,
+    framework: FrameworkType,
+    model: Any,
+    initial_ckpt: Optional[str],
+    server_expected_format: ExchangeFormat,
+    model_persistor=None,
+    support_numpy: bool = False,
+    raise_on_unsupported: bool = False,
+    recipe_name: str = "Recipe",
+    unsupported_framework_message: Optional[str] = None,
+    prepared_initial_ckpt: Optional[str] = None,
+) -> str:
+    """Setup framework-specific model persistor and return persistor_id.
+
+    This consolidates common PT/TF/NumPy persistor setup shared by recipes.
+    """
+    if model_persistor is not None:
+        return _extract_persistor_id(job.to_server(model_persistor, id="persistor"))
+
+    ckpt_path = prepared_initial_ckpt
+    if ckpt_path is None:
+        ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
+
+    if framework == FrameworkType.PYTORCH:
+        if model is None and ckpt_path:
+            raise ValueError(
+                f"FrameworkType.PYTORCH requires 'model' when using initial_ckpt in {recipe_name}. "
+                "PyTorch checkpoints need model architecture for loading."
+            )
+        if model is not None:
+            from nvflare.app_opt.pt.job_config.model import PTModel
+
+            allow_numpy_conversion = server_expected_format != ExchangeFormat.PYTORCH
+            pt_model = PTModel(
+                model=model,
+                initial_ckpt=ckpt_path,
+                allow_numpy_conversion=allow_numpy_conversion,
+            )
+            return _extract_persistor_id(job.to_server(pt_model, id="persistor"))
+        return ""
+
+    if framework == FrameworkType.TENSORFLOW:
+        if model is not None or ckpt_path:
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            tf_model = TFModel(model=model, initial_ckpt=ckpt_path)
+            return _extract_persistor_id(job.to_server(tf_model, id="persistor"))
+        return ""
+
+    if support_numpy and framework == FrameworkType.NUMPY:
+        if model is not None or ckpt_path:
+            import numpy as np
+
+            from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+
+            model_list = None
+            if model is not None:
+                if isinstance(model, np.ndarray):
+                    model_list = model.tolist()
+                elif isinstance(model, list):
+                    model_list = model
+                else:
+                    raise TypeError(
+                        f"For FrameworkType.NUMPY in {recipe_name}, model must be list or np.ndarray, "
+                        f"got {type(model).__name__}."
+                    )
+
+            persistor = NPModelPersistor(
+                model=model_list,
+                source_ckpt_file_full_name=ckpt_path,
+            )
+            return _extract_persistor_id(job.to_server(persistor, id="persistor"))
+        return ""
+
+    if raise_on_unsupported:
+        if unsupported_framework_message:
+            raise ValueError(unsupported_framework_message)
+        raise ValueError(f"Unsupported framework '{framework}' for {recipe_name} model persistence.")
+
+    return ""
 
 
 def validate_dict_model_config(model: Any) -> None:

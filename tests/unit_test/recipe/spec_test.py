@@ -171,7 +171,6 @@ class TestRecipeConfigMethods:
 
     def test_add_server_config(self, temp_script):
         """Test add_server_config adds params to server app."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -179,8 +178,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,  # NUMPY can load from ckpt without model
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         config = {"np_download_chunk_size": 2097152}
@@ -193,7 +191,6 @@ class TestRecipeConfigMethods:
     def test_add_client_config(self, temp_script):
         """Test add_client_config applies to all clients and specific clients."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         # Test all clients
@@ -202,8 +199,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
         config = {"timeout": 600}
         recipe.add_client_config(config)
@@ -215,7 +211,6 @@ class TestRecipeConfigMethods:
     def test_add_client_file_adds_to_ext_scripts_and_ext_dirs(self, temp_script):
         """Test add_client_file stores file paths in ext_scripts and dirs in ext_dirs."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -223,8 +218,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -239,7 +233,6 @@ class TestRecipeConfigMethods:
     def test_add_client_file_preserves_per_site_clients_without_all_sites(self, temp_script):
         """Test add_client_file keeps per-site topology and does not create ALL_SITES app."""
         from nvflare.apis.job_def import ALL_SITES
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -247,8 +240,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
             per_site_config={"site-1": {}, "site-2": {}},
         )
 
@@ -264,7 +256,6 @@ class TestRecipeConfigMethods:
 
     def test_add_client_file_with_specific_clients_only_updates_selected_sites(self, temp_script):
         """Test add_client_file(..., clients=[...]) only adds file to specified sites."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -272,8 +263,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
             per_site_config={"site-1": {}, "site-2": {}, "site-3": {}},
         )
 
@@ -298,7 +288,6 @@ class TestRecipeConfigMethods:
 
     def test_add_server_file_adds_to_server_ext_scripts_and_ext_dirs(self, temp_script):
         """Test add_server_file stores file paths in ext_scripts and dirs in ext_dirs."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -306,8 +295,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -321,7 +309,6 @@ class TestRecipeConfigMethods:
 
     def test_config_in_generated_json(self, temp_script):
         """Test that configs appear in generated JSON files."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -329,8 +316,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         recipe.add_server_config({"server_param": 123})
@@ -352,7 +338,6 @@ class TestRecipeConfigMethods:
 
     def test_config_type_error(self, temp_script):
         """Test TypeError is raised for non-dict arguments."""
-        from nvflare.fuel.utils.constants import FrameworkType
         from nvflare.recipe.fedavg import FedAvgRecipe
 
         recipe = FedAvgRecipe(
@@ -360,8 +345,7 @@ class TestRecipeConfigMethods:
             num_rounds=2,
             min_clients=2,
             train_script=temp_script,
-            initial_ckpt="/abs/path/to/model.npy",
-            framework=FrameworkType.NUMPY,
+            model={"class_path": "model.DummyModel", "args": {}},
         )
 
         with pytest.raises(TypeError, match="config must be a dict"):
@@ -369,3 +353,86 @@ class TestRecipeConfigMethods:
 
         with pytest.raises(TypeError, match="config must be a dict"):
             recipe.add_client_config(123)  # type: ignore[arg-type]
+
+
+class _DummyExecEnv:
+    def __init__(self):
+        self.extra = {}
+
+    def get_extra_prop(self, prop_name, default=None):
+        return self.extra.get(prop_name, default)
+
+    def deploy(self, job):
+        return "dummy-job-id"
+
+    def get_job_status(self, job_id):
+        return None
+
+    def abort_job(self, job_id):
+        return None
+
+    def get_job_result(self, job_id, timeout: float = 0.0):
+        return None
+
+
+class TestRecipeExecuteExportParamIsolation:
+    """Test that execute/export do not permanently mutate recipe additional_params."""
+
+    @pytest.fixture
+    def temp_script(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("# Test training script\n")
+            temp_path = f.name
+        yield temp_path
+        os.unlink(temp_path)
+
+    def test_execute_server_params_do_not_accumulate(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_param_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert server_app.app_config.additional_params == {}
+
+        recipe.execute(env, server_exec_params={"param_a": 1})
+        assert server_app.app_config.additional_params == {}
+
+        recipe.execute(env, server_exec_params={"param_b": 2})
+        assert server_app.app_config.additional_params == {}
+
+    def test_execute_then_export_no_cross_contamination(self, temp_script):
+        from nvflare.recipe.fedavg import FedAvgRecipe
+
+        recipe = FedAvgRecipe(
+            name="test_execute_export_isolation",
+            num_rounds=2,
+            min_clients=2,
+            train_script=temp_script,
+            model={"class_path": "model.DummyModel", "args": {}},
+        )
+
+        env = _DummyExecEnv()
+        recipe.execute(env, server_exec_params={"from_execute": 1})
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recipe.export(job_dir=tmpdir, server_exec_params={"from_export": 2})
+            server_cfg_path = os.path.join(
+                tmpdir, "test_execute_export_isolation", "app", "config", "config_fed_server.json"
+            )
+            with open(server_cfg_path) as f:
+                server_cfg = json.load(f)
+
+        assert "from_execute" not in server_cfg
+        assert server_cfg.get("from_export") == 2
+
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert server_app.app_config.additional_params == {}

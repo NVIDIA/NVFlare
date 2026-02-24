@@ -66,7 +66,7 @@ class _PocEnvValidator(BaseModel):
             )
 
         # Check if num_clients is valid when clients is None
-        if self.clients is None and self.num_clients <= 0:
+        if self.clients is None and (self.num_clients is None or self.num_clients <= 0):
             raise ValueError("num_clients must be greater than 0")
 
         return self
