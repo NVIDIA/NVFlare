@@ -16,7 +16,6 @@ import json
 from typing import List, Optional
 
 import numpy as np
-import pandas as pd
 from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_float_dtype, is_integer_dtype
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType
