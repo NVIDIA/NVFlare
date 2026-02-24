@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 from typing import Optional
 
@@ -24,6 +25,8 @@ from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOU
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.utils.configs import get_client_config_value
+
+logger = logging.getLogger(__name__)
 
 
 class ClientAPILauncherExecutor(LauncherExecutor):

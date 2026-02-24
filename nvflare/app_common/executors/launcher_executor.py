@@ -154,10 +154,6 @@ class LauncherExecutor(TaskExchanger):
         if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if self._from_nvflare_converter is not None:
-            # Convert from server (NVFlare) format to client's local format
-            shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
-
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
         if result.get_return_code() != ReturnCode.OK:
@@ -166,10 +162,6 @@ class LauncherExecutor(TaskExchanger):
                 method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        if self._to_nvflare_converter is not None:
-            # Convert from client's local format back to server (NVFlare) format
-            result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
 
         self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 

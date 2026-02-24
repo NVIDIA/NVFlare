@@ -50,8 +50,8 @@ def _make_agent(from_converter=None, to_converter=None):
 
 def test_shareable_to_task_data_applies_from_converter():
     shareable = FLModelUtils.to_shareable(_make_model(1))
-    shareable.set_header(FLContextKey.TASK_NAME, "train")
     agent = _make_agent(from_converter=_AddOneConverter(["train"]))
+    agent.current_task = SimpleNamespace(task_name="train")
 
     model = agent.shareable_to_task_data(shareable)
     np.testing.assert_array_equal(model.params["w"], np.asarray([2], dtype=np.float32))
