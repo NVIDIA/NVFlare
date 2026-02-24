@@ -111,7 +111,7 @@ class BaseFedAvg(ModelController):
             if not _result.metrics:
                 all_metrics = False
             if all_metrics:
-                aggr_metrics_helper.add(
+                aggr_metrics_helper.add_metrics(
                     data=_result.metrics,
                     weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
                     contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),

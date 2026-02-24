@@ -14,7 +14,26 @@
 
 import re
 import threading
-from typing import Optional
+from typing import Any, Optional
+
+
+def _is_aggregatable_metric_value(v: Any) -> bool:
+    """Return True if the metric value supports weighted aggregation (v * weight and addition)."""
+    if v is None:
+        return False
+    if isinstance(v, (dict, list, set, tuple, str)):
+        return False
+    if isinstance(v, (int, float, bool)):
+        return True
+    # NumPy array, NumPy scalar, or tensor (has shape and supports * and +)
+    if hasattr(v, "shape"):
+        return True
+    try:
+        _ = v * 1.0
+        _ = v + v
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 class WeightedAggregationHelper(object):
@@ -48,6 +67,14 @@ class WeightedAggregationHelper(object):
     def _is_pytorch_tensor(tensor):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
+
+    def add_metrics(self, data, weight, contributor_name, contribution_round):
+        """Add only aggregatable metric values (skips dicts, lists, strings, etc.). No-op if data is None or empty."""
+        if not data:
+            return
+        filtered = {k: v for k, v in data.items() if _is_aggregatable_metric_value(v)}
+        if filtered:
+            self.add(filtered, weight, contributor_name, contribution_round)
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
