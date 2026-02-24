@@ -16,7 +16,72 @@ import numpy as np
 import pytest
 import torch
 
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+    _is_aggregatable_metric_value,
+)
+
+
+class TestIsAggregatableMetricValue:
+    """Test _is_aggregatable_metric_value predicate."""
+
+    def test_none_is_not_aggregatable(self):
+        assert _is_aggregatable_metric_value(None) is False
+
+    def test_dict_list_set_tuple_str_not_aggregatable(self):
+        assert _is_aggregatable_metric_value({}) is False
+        assert _is_aggregatable_metric_value({"a": 1}) is False
+        assert _is_aggregatable_metric_value([]) is False
+        assert _is_aggregatable_metric_value([1, 2]) is False
+        assert _is_aggregatable_metric_value(set()) is False
+        assert _is_aggregatable_metric_value((1, 2)) is False
+        assert _is_aggregatable_metric_value("") is False
+        assert _is_aggregatable_metric_value("hello") is False
+
+    def test_int_float_bool_aggregatable(self):
+        assert _is_aggregatable_metric_value(0) is True
+        assert _is_aggregatable_metric_value(1) is True
+        assert _is_aggregatable_metric_value(1.0) is True
+        assert _is_aggregatable_metric_value(True) is True
+        assert _is_aggregatable_metric_value(False) is True
+
+    def test_numpy_array_aggregatable(self):
+        assert _is_aggregatable_metric_value(np.array([1.0, 2.0])) is True
+        assert _is_aggregatable_metric_value(np.float64(3.14)) is True
+
+    def test_torch_tensor_aggregatable(self):
+        assert _is_aggregatable_metric_value(torch.tensor([1.0, 2.0])) is True
+        assert _is_aggregatable_metric_value(torch.tensor(3.14)) is True
+
+    def test_object_with_shape_aggregatable(self):
+        class FakeArray:
+            shape = (2, 3)
+
+        assert _is_aggregatable_metric_value(FakeArray()) is True
+
+    def test_object_supporting_mul_add_aggregatable(self):
+        class Scalelike:
+            def __mul__(self, other):
+                return self
+
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(Scalelike()) is True
+
+    def test_object_not_supporting_mul_not_aggregatable(self):
+        class NoMul:
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(NoMul()) is False
+
+    def test_object_not_supporting_add_not_aggregatable(self):
+        class NoAdd:
+            def __mul__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(NoAdd()) is False
 
 
 class TestWeightedAggregationHelper:
@@ -245,6 +310,126 @@ class TestWeightedAggregationHelper:
         assert torch.allclose(result["w1"], torch.tensor([1.0]))
         assert torch.allclose(result["w2"], torch.tensor([2.5]))
         assert torch.allclose(result["w3"], torch.tensor([4.0]))
+
+    def test_add_metrics_no_op_for_none_or_empty(self):
+        """add_metrics with None or empty data does nothing."""
+        helper = WeightedAggregationHelper()
+        helper.add_metrics(None, 1.0, "site-1", 0)
+        helper.add_metrics({}, 1.0, "site-1", 0)
+        result = helper.get_result()
+        assert len(result) == 0
+
+    def test_add_metrics_filters_non_aggregatable(self):
+        """add_metrics only aggregates scalar/array-like values; skips dict, list, str."""
+        helper = WeightedAggregationHelper()
+        data = {
+            "loss": 0.5,
+            "accuracy": 0.9,
+            "config": {"lr": 0.01},  # skipped
+            "tags": ["a", "b"],  # skipped
+            "name": "run1",  # skipped
+        }
+        helper.add_metrics(data, weight=1.0, contributor_name="site-1", contribution_round=0)
+        result = helper.get_result()
+        assert "loss" in result
+        assert "accuracy" in result
+        assert result["loss"] == 0.5
+        assert result["accuracy"] == 0.9
+        assert "config" not in result
+        assert "tags" not in result
+        assert "name" not in result
+
+    def test_add_metrics_aggregates_like_add(self):
+        """add_metrics passes filtered data to add(); weighted average is correct."""
+        helper = WeightedAggregationHelper()
+        helper.add_metrics(
+            {"loss": 0.2, "acc": 0.8},
+            weight=2.0,
+            contributor_name="site-1",
+            contribution_round=0,
+        )
+        helper.add_metrics(
+            {"loss": 0.6, "acc": 0.4},
+            weight=1.0,
+            contributor_name="site-2",
+            contribution_round=0,
+        )
+        result = helper.get_result()
+        # loss: (0.2*2 + 0.6*1)/3 = 1.0/3, acc: (0.8*2 + 0.4*1)/3 = 2.0/3
+        assert abs(result["loss"] - 1.0 / 3) < 1e-9
+        assert abs(result["acc"] - 2.0 / 3) < 1e-9
+
+    def test_add_metrics_warn_skipped_called(self):
+        """warn_skipped is invoked for each skipped metric key (key, type_name)."""
+        helper = WeightedAggregationHelper()
+        warned = []
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        data = {"loss": 0.5, "meta": {"x": 1}, "label": "train"}
+        helper.add_metrics(
+            data,
+            weight=1.0,
+            contributor_name="site-1",
+            contribution_round=0,
+            warn_skipped=capture,
+        )
+        assert len(warned) == 2
+        assert ("meta", "dict") in warned
+        assert ("label", "str") in warned
+        result = helper.get_result()
+        assert result["loss"] == 0.5
+
+    def test_add_metrics_warned_metric_keys_only_warn_once(self):
+        """With warned_metric_keys, each key triggers warn_skipped at most once."""
+        helper = WeightedAggregationHelper()
+        warned = []
+        warned_keys = set()
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        # First call: skip "meta" and "name" -> both warned
+        helper.add_metrics(
+            {"loss": 0.1, "meta": {}, "name": "x"},
+            weight=1.0,
+            contributor_name="site-1",
+            contribution_round=0,
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+        # Second call: same keys skipped -> no additional warnings
+        helper.add_metrics(
+            {"acc": 0.2, "meta": {}, "name": "y"},
+            weight=1.0,
+            contributor_name="site-2",
+            contribution_round=0,
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+        result = helper.get_result()
+        assert result["loss"] == 0.1
+        assert result["acc"] == 0.2
+
+    def test_add_metrics_all_skipped_no_add(self):
+        """When all values are non-aggregatable, add() is not called (no history)."""
+        helper = WeightedAggregationHelper()
+        helper.add_metrics(
+            {"a": [], "b": "x"},
+            weight=1.0,
+            contributor_name="site-1",
+            contribution_round=0,
+        )
+        assert len(helper.history) == 0
+        result = helper.get_result()
+        assert len(result) == 0
 
 
 if __name__ == "__main__":
