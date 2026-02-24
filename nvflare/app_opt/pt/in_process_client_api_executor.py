@@ -16,8 +16,8 @@ from typing import Optional
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.converter_utils import create_default_params_converters
 from nvflare.fuel.utils import fobs
 
 
@@ -60,16 +60,15 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             cuda_empty_cache=cuda_empty_cache,
         )
         fobs.register(TensorDecomposer)
-        if (
-            self._server_expected_format == ExchangeFormat.NUMPY
-            and self._params_exchange_format == ExchangeFormat.PYTORCH
-        ):
-            if self._from_nvflare_converter is None:
-                self._from_nvflare_converter = NumpyToPTParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
+        from_nvflare_converter, to_nvflare_converter = create_default_params_converters(
+            server_expected_format=self._server_expected_format,
+            params_exchange_format=self._params_exchange_format,
+            train_task_name=self._train_task_name,
+            eval_task_name=self._evaluate_task_name,
+            submit_model_task_name=self._submit_model_task_name,
+        )
+        if self._from_nvflare_converter is None:
+            self._from_nvflare_converter = from_nvflare_converter
 
-            if self._to_nvflare_converter is None:
-                self._to_nvflare_converter = PTToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )
+        if self._to_nvflare_converter is None:
+            self._to_nvflare_converter = to_nvflare_converter

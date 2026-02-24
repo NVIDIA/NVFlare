@@ -1,7 +1,9 @@
 import argparse
 import logging
 
-from nvflare.client.flare_agent import AgentClosed, FlareAgentWithCellPipe
+from nvflare.client.flare_agent import AgentClosed, FlareAgent
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+from nvflare.fuel.utils.pipe.pipe import Mode
 
 NUMPY_KEY = "numpy_key"
 
@@ -18,13 +20,17 @@ def main():
 
     args = parser.parse_args()
 
-    # 1. create the agent
-    agent = FlareAgentWithCellPipe(
-        root_url="grpc://server:8002",
+    # 1. create the pipe and agent
+    pipe = CellPipe(
+        mode=Mode.ACTIVE,
+        token=args.agent_id,
         site_name=args.site_name,
-        agent_id=args.agent_id,
+        root_url="grpc://server:8002",
         workspace_dir=args.workspace,
         secure_mode=True,
+    )
+    agent = FlareAgent(
+        pipe=pipe,
         submit_result_timeout=2.0,
         heartbeat_timeout=120.0,
     )

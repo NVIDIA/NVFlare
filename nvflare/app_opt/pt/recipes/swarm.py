@@ -108,14 +108,19 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         model: PyTorch model to use as the initial model. Can be:
             - An nn.Module instance (e.g., MyModel())
             - A dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+        num_rounds: Number of training rounds.
+        train_script: Path to the training script.
+        min_clients: Minimum number of clients required to start the job. Defaults to 1.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
-        num_rounds: Number of training rounds.
-        train_script: Path to the training script.
         train_args: Additional arguments for the training script.
         do_cross_site_eval: Whether to perform cross-site evaluation.
         cross_site_eval_timeout: Timeout for cross-site evaluation.
+        launch_external_process: Whether to launch the training script in an external process.
+            Defaults to False (in-process execution).
+        command: Shell command used to launch the script when launch_external_process=True.
+            Defaults to "python3 -u".
         memory_gc_rounds: Run gc.collect() + malloc_trim every N FL rounds on both the trainer
             and aggregator roles. Defaults to 1 (every round) to match legacy behavior where
             gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
@@ -128,6 +133,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         recipe = SimpleSwarmLearningRecipe(
             name="swarm_job",
             model=MyModel(),
+            min_clients=3,
             num_rounds=5,
             train_script="train.py",
         )
@@ -139,6 +145,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         recipe = SimpleSwarmLearningRecipe(
             name="swarm_job",
             model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
+            min_clients=3,
             num_rounds=5,
             train_script="train.py",
         )
@@ -151,10 +158,13 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         model: Union[Any, Dict[str, Any]],
         num_rounds: int,
         train_script: str,
+        min_clients: int = 1,
         initial_ckpt: Optional[str] = None,
         train_args: dict = None,
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
     ):
@@ -194,13 +204,15 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         # Create job early so prepare_initial_ckpt can bundle files into it
         from nvflare.recipe.utils import prepare_initial_ckpt
 
-        job = CCWFJob(name=name)
+        job = CCWFJob(name=name, min_clients=min_clients)
         ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
 
         server_config = SwarmServerConfig(num_rounds=num_rounds)
         client_config = SwarmClientConfig(
             executor=ScriptRunner(
                 script=train_script,
+                launch_external_process=launch_external_process,
+                command=command,
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
                 **train_args,

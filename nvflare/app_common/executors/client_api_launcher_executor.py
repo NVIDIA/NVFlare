@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 from typing import Optional
 
@@ -24,6 +25,8 @@ from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOU
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.utils.configs import get_client_config_value
+
+logger = logging.getLogger(__name__)
 
 
 class ClientAPILauncherExecutor(LauncherExecutor):
@@ -179,6 +182,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         task_exchange_attributes = {
             ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
             ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
+            ConfigKey.SERVER_EXPECTED_FORMAT: self._server_expected_format,
             ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
             ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
             ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
