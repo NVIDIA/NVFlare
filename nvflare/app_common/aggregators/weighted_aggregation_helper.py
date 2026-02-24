@@ -14,7 +14,7 @@
 
 import re
 import threading
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 
 def _is_aggregatable_metric_value(v: Any) -> bool:
@@ -68,11 +68,37 @@ class WeightedAggregationHelper(object):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
 
-    def add_metrics(self, data, weight, contributor_name, contribution_round):
-        """Add only aggregatable metric values (skips dicts, lists, strings, etc.). No-op if data is None or empty."""
+    def add_metrics(
+        self,
+        data,
+        weight,
+        contributor_name,
+        contribution_round,
+        warn_skipped=None,
+        warned_metric_keys: Optional[Set[str]] = None,
+    ):
+        """Add only aggregatable metric values (skips dicts, lists, strings, etc.). No-op if data is None or empty.
+
+        Args:
+            data: Dict of metric name -> value.
+            weight: Weight for this contribution.
+            contributor_name: Name of the contributor (for history).
+            contribution_round: Round number (for history).
+            warn_skipped: Optional callable(key, type_name) invoked for each skipped metric.
+            warned_metric_keys: Optional set of metric keys already warned about; skipped keys are added
+                so the warning is emitted at most once per key (reduces log noise across clients/rounds).
+        """
         if not data:
             return
-        filtered = {k: v for k, v in data.items() if _is_aggregatable_metric_value(v)}
+        filtered = {}
+        for k, v in data.items():
+            if _is_aggregatable_metric_value(v):
+                filtered[k] = v
+            elif warn_skipped is not None:
+                if warned_metric_keys is None or k not in warned_metric_keys:
+                    warn_skipped(k, type(v).__name__)
+                    if warned_metric_keys is not None:
+                        warned_metric_keys.add(k)
         if filtered:
             self.add(filtered, weight, contributor_name, contribution_round)
 

@@ -14,7 +14,7 @@
 
 import os
 import time
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -118,6 +118,7 @@ class FedAvg(BaseFedAvg):
         self._aggr_helper: Optional[WeightedAggregationHelper] = None
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
+        self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -257,6 +258,8 @@ class FedAvg(BaseFedAvg):
                     weight=weight,
                     contributor_name=client_name,
                     contribution_round=self.current_round,
+                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                    warned_metric_keys=self._warned_metric_keys,
                 )
 
         self._received_count += 1
