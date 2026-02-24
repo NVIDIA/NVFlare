@@ -20,7 +20,7 @@ from pydantic import BaseModel, PositiveFloat, model_validator
 
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
-from nvflare.recipe.utils import _collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts
 
 from .session_mgr import SessionManager
 
@@ -85,7 +85,7 @@ class ProdEnv(ExecEnv):
     def deploy(self, job: FedJob):
         """Deploy a job using SessionManager."""
         # Log warnings for non-local scripts (assumed pre-installed on production)
-        non_local_scripts = _collect_non_local_scripts(job)
+        non_local_scripts = collect_non_local_scripts(job)
         for script in non_local_scripts:
             logger.warning(
                 f"Script '{script}' not found locally. " f"Assuming it is pre-installed on the production system."
