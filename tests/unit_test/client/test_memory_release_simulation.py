@@ -86,8 +86,21 @@ class TestInProcessMemoryRelease(unittest.TestCase):
     NUM_ROUNDS = 5
 
     def setUp(self):
+        # Reset the DataBus singleton before each test to prevent stale
+        # subscriptions from other tests contaminating refcount measurements.
+        from nvflare.fuel.data_event.data_bus import DataBus
+
+        with DataBus._lock:
+            DataBus._instance = None
         self.api = InProcessClientAPI(_task_metadata())
         self.api.init()
+
+    def tearDown(self):
+        # Clean up singleton so subsequent tests start fresh.
+        from nvflare.fuel.data_event.data_bus import DataBus
+
+        with DataBus._lock:
+            DataBus._instance = None
 
     def _one_round(self, round_num: int):
         """Simulate one FL round: receive → train → send."""
