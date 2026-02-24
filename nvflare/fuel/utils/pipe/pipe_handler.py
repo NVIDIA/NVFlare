@@ -19,7 +19,6 @@ from typing import Optional
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
@@ -276,9 +275,6 @@ class PipeHandler(object):
         except BrokenPipeError:
             self._add_message(self._make_event_message(Topic.PEER_GONE, "send failed"))
             return False
-        finally:
-            # the msg_id is also used as msg_root_id
-            delete_msg_root(msg.msg_id)
 
     def notify_end(self, data):
         """Notifies the peer that the communication is ended normally."""

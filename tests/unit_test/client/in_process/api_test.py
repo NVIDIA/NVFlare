@@ -15,6 +15,7 @@
 import unittest
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -163,5 +164,103 @@ class TestInProcessClientAPI(unittest.TestCase):
             mock_cleanup.reset_mock()
             client_api._maybe_cleanup_memory()
             mock_cleanup.assert_called_with(cuda_empty_cache=True)
+
+    # ------------------------------------------------------------------ #
+    #  release_params behaviour inside send()                             #
+    # ------------------------------------------------------------------ #
+
+    def _fire_global_model(self, client_api, params):
+        """Simulate the executor publishing a global model to the data bus."""
+        from nvflare.apis.dxo import DXO, DataKind
+        from nvflare.apis.shareable import Shareable
+
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
+        shareable = dxo.to_shareable()
+        client_api.data_bus.publish([TOPIC_GLOBAL_RESULT], shareable)
+
+    def test_send_nulls_sent_model_params_when_clear_cache(self):
+        """model.params is None after send() with clear_cache=True (default)."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+
+        params = {"w": np.ones((50, 50))}
+        self._fire_global_model(client_api, params)
+        input_model = client_api.receive()
+        self.assertIsNotNone(input_model.params)
+
+        output_model = FLModel(params={"w": np.zeros((50, 50))})
+        client_api.send(output_model, clear_cache=True)
+
+        self.assertIsNone(output_model.params)
+        self.assertIsNone(output_model.optimizer_params)
+
+    def test_send_nulls_received_model_params_when_clear_cache(self):
+        """input_model.params is None after send() with clear_cache=True."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+
+        params = {"w": np.ones((50, 50))}
+        self._fire_global_model(client_api, params)
+        input_model = client_api.receive()
+        self.assertIsNotNone(input_model.params)
+
+        output_model = FLModel(params={"w": np.zeros((50, 50))})
+        client_api.send(output_model, clear_cache=True)
+
+        # fl_model is set to None by clear_cache, but the object's params
+        # must have been nulled before the reference was dropped
+        self.assertIsNone(input_model.params)
+
+    def test_send_preserves_params_when_clear_cache_false(self):
+        """model.params is NOT None after send() with clear_cache=False."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+
+        params = {"w": np.ones((50, 50))}
+        self._fire_global_model(client_api, params)
+        client_api.receive()
+
+        output_model = FLModel(params={"w": np.zeros((50, 50))})
+        client_api.send(output_model, clear_cache=False)
+
+        self.assertIsNotNone(output_model.params)
+
+    def test_send_preserves_received_params_when_clear_cache_false(self):
+        """input_model.params is NOT None after send() with clear_cache=False."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+
+        params = {"w": np.ones((50, 50))}
+        self._fire_global_model(client_api, params)
+        input_model = client_api.receive()
+
+        output_model = FLModel(params={"w": np.zeros((50, 50))})
+        client_api.send(output_model, clear_cache=False)
+
+        self.assertIsNotNone(input_model.params)
+
+    def test_send_metrics_preserved_after_release(self):
+        """metrics are not affected by release_params logic."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata)
+        client_api.init()
+
+        self._fire_global_model(client_api, {"w": np.ones((10,))})
+        client_api.receive()
+
+        output_model = FLModel(params={"w": np.zeros((10,))}, metrics={"loss": 0.42})
+        client_api.send(output_model, clear_cache=True)
+
+        self.assertIsNone(output_model.params)
+        self.assertEqual(output_model.metrics, {"loss": 0.42})
 
     # Add more test methods for other functionalities in the class

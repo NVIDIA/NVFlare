@@ -186,9 +186,12 @@ class ExProcessClientAPI(APISpec):
             raise RuntimeError('"receive" needs to be called before sending model!')
         model_registry.submit_model(model=model)
         if clear_cache:
+            # Serialization is complete. Release the sent model's params and the
+            # received model's params — both are dead weight after flare.send().
+            # NOTE: model.params and input_model.params will be None after this.
+            model_registry.release_params(model)
             self.clear()
 
-        # Perform memory cleanup if configured
         self._maybe_cleanup_memory()
 
     def system_info(self) -> Dict:

@@ -59,6 +59,26 @@ class ModelRegistry(TaskRegistry):
 
         self.submit_task(model)
 
+    def release_params(self, sent_model: FLModel) -> None:
+        """Release large parameter arrays after serialization is complete.
+
+        Called by the API layer (conditioned on clear_cache) after submit_model()
+        has serialized and sent the model via pipe. Nulls both the sent model's
+        params and the received model's params — neither is needed on the client
+        after flare.send() returns.
+
+        After this call, sent_model.params and the received model's params will
+        be None. Callers must not access these fields after flare.send().
+
+        Args:
+            sent_model: The FLModel that was just submitted.
+        """
+        sent_model.params = None
+        sent_model.optimizer_params = None
+        if self.received_task and self.received_task.data:
+            self.received_task.data.params = None
+            self.received_task.data.optimizer_params = None
+
     def _prepare_param_diff(self, model: FLModel) -> FLModel:
         exchange_format = self.config.get_exchange_format()
         diff_func = DIFF_FUNCS.get(exchange_format, None)

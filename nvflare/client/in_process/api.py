@@ -150,10 +150,17 @@ class InProcessClientAPI(APISpec):
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
+            # Serialization is complete. Release the sent model's params and the
+            # received model's params — both are dead weight after flare.send().
+            # NOTE: model.params and input_model.params will be None after this.
+            model.params = None
+            model.optimizer_params = None
+            if self.fl_model:
+                self.fl_model.params = None
+                self.fl_model.optimizer_params = None
             self.fl_model = None
             self.receive_called = False
 
-        # Perform memory cleanup if configured
         self._maybe_cleanup_memory()
 
     def system_info(self) -> Dict:

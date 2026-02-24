@@ -51,7 +51,7 @@ class APISpec(ABC):
             from nvflare.fuel.utils.memory_utils import cleanup_memory
 
             cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
-            self._memory_logger.debug(f"Memory cleanup performed at round {self._round_count}")
+            self._memory_logger.info(f"Memory cleanup performed at round {self._round_count}")
 
     @abstractmethod
     def init(self, rank: Optional[str] = None):
