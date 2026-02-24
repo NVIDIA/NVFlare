@@ -230,7 +230,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]
         result_model.meta["client_name"] = client_name
 
-
         self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
         self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
         self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
