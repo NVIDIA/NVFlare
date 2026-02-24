@@ -800,7 +800,7 @@ class FederatedServer(BaseServer):
 
     def _sync_client_jobs(self, request, client_token):
         # jobs that are running on client but not on server need to be aborted!
-        client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS) or []
+        client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS)
         if not isinstance(client_jobs, (list, tuple, set)):
             client_jobs = []
 
