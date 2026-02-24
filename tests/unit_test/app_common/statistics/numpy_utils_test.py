@@ -49,3 +49,15 @@ class TestDtypeToDataType:
         # Simulate pandas 3.0 behavior where read_csv infers string columns as StringDtype
         s = pd.array(["a", "b", "c"], dtype=pd.StringDtype())
         assert dtype_to_data_type(s.dtype) == DataType.STRING
+
+    def test_pandas_nullable_int_dtype(self):
+        # pd.Int64Dtype is a nullable ExtensionDtype — must map to INT, not STRING
+        assert dtype_to_data_type(pd.Int64Dtype()) == DataType.INT
+
+    def test_pandas_nullable_float_dtype(self):
+        # pd.Float64Dtype is a nullable ExtensionDtype — must map to FLOAT, not STRING
+        assert dtype_to_data_type(pd.Float64Dtype()) == DataType.FLOAT
+
+    def test_pandas_nullable_bool_dtype(self):
+        # pd.BooleanDtype is a nullable ExtensionDtype — must map to INT, not STRING
+        assert dtype_to_data_type(pd.BooleanDtype()) == DataType.INT
