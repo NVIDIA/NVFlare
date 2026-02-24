@@ -376,6 +376,7 @@ Bug Fixes
 - Fixed TensorBoard analytics receiver import error.
 - Improved error handling in FOBS serialization (raise exception on errors).
 - Improved error messages in Client API.
+- Fixed a path traversal vulnerability in ``FileRetriever`` by enforcing source-directory boundary checks on requested files.
 - Updated PEFT/TRL integration for latest API compatibility.
 - Updated HuggingFace LLM integration.
 - Security dependency updates for web components.
