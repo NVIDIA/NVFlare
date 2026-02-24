@@ -401,7 +401,6 @@ class TestRecipeExecuteExportParamIsolation:
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
-
         recipe.execute(env, server_exec_params={"param_a": 1})
         assert server_app.app_config.additional_params == {}
 
