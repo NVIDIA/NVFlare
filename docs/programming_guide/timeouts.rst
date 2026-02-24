@@ -2519,6 +2519,45 @@ application.conf Settings
    # Shutdown
    end_run_readiness_timeout = 10.0
 
+   # Server startup/dead-job safety flags
+   strict_start_job_reply_check = false
+   sync_client_jobs_require_previous_report = true
+
+
+.. _server_startup_dead_job_safety_flags:
+
+Server Startup and Dead-Job Safety Flags
+----------------------------------------
+
+These ``application.conf`` flags are server-side safety controls used during job startup
+and client heartbeat synchronization:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 36 12 52
+
+   * - Parameter
+     - Default
+     - Purpose
+   * - strict_start_job_reply_check
+     - false
+     - Enables strict START_JOB reply validation (detects missing/timeout replies and non-OK return codes).
+   * - sync_client_jobs_require_previous_report
+     - true
+     - Requires a prior positive heartbeat report before treating "missing job on client" as a dead-job signal.
+
+Recommended usage:
+
+- ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
+  Enable it (``true``) for large-scale or hierarchical deployments where startup timeouts
+  are expected and you want the server to proceed with the subset of clients that responded,
+  rather than failing the entire job. With ``false``, a timed-out reply is treated as a
+  silent success, which can mask startup problems.
+- Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
+  dead-job reports during startup races and transient heartbeat delays.
+- Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
+  where the first missing-job heartbeat immediately triggers dead-job detection.
+
 
 Admin Client Session (Python API)
 ---------------------------------
