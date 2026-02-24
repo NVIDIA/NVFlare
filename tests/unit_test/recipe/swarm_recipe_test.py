@@ -178,6 +178,55 @@ class TestSimpleSwarmLearningRecipe:
 
         assert recipe.job is not None
 
+    def test_min_clients_accepted(self, mock_file_system, simple_pt_model):
+        """Test that min_clients is accepted and passed to the job."""
+        import inspect
+
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        sig = inspect.signature(SimpleSwarmLearningRecipe.__init__)
+        assert "min_clients" in sig.parameters
+        assert sig.parameters["min_clients"].default == 1
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_min_clients",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=3,
+        )
+
+        assert recipe.job is not None
+
+    def test_launch_external_process_accepted(self, mock_file_system, simple_pt_model):
+        """Test that launch_external_process=True is accepted."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_ext",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            launch_external_process=True,
+        )
+
+        assert recipe.job is not None
+
+    def test_command_accepted(self, mock_file_system, simple_pt_model):
+        """Test that command is accepted alongside launch_external_process."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        recipe = SimpleSwarmLearningRecipe(
+            name="test_swarm_cmd",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            launch_external_process=True,
+            command="python3 -u",
+        )
+
+        assert recipe.job is not None
+
 
 class TestSimpleSwarmLearningRecipeMemoryGC:
     """Test memory GC parameters on SimpleSwarmLearningRecipe."""

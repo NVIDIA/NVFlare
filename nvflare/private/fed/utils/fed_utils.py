@@ -417,12 +417,46 @@ def get_simulator_app_root(simulator_root, site_name):
 
 
 def extract_participants(participants_list):
+    """Extract participant site names from deploy_map forms.
+
+    Supported forms include:
+      - ["server", "site-1"]
+      - ["@ALL"]
+      - {"targets": ["server", "site-1"]}
+      - {"sites": ["server", "site-1"]}
+      - [{"sites": ["site-1"]}, "site-2"]
+      - [{"targets": ["site-1"]}, "site-2"]
+    """
+
+    targets_key = "targets"
+
+    if isinstance(participants_list, str):
+        participants_list = [participants_list]
+    elif isinstance(participants_list, dict):
+        if targets_key in participants_list:
+            participants_list = participants_list.get(targets_key)
+        elif JobConstants.SITES in participants_list:
+            participants_list = participants_list.get(JobConstants.SITES)
+        else:
+            raise ValueError(
+                f"invalid participant entry keys {list(participants_list.keys())}: expected '{targets_key}' or '{JobConstants.SITES}'"
+            )
+
+    if not isinstance(participants_list, list):
+        raise ValueError(f"participants must be list/str/dict, but got {type(participants_list)}")
+
     participants = []
     for item in participants_list:
         if isinstance(item, str):
             participants.append(item)
         elif isinstance(item, dict):
             sites = item.get(JobConstants.SITES)
+            if sites is None:
+                sites = item.get(targets_key)
+            if not isinstance(sites, list):
+                raise ValueError(
+                    f"site list must be list in participant entry {item}: expected '{targets_key}' or '{JobConstants.SITES}'"
+                )
             participants.extend(sites)
         else:
             raise ValueError(f"Must be type of str or dict, but got {type(item)}")

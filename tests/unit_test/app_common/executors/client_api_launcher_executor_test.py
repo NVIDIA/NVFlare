@@ -121,3 +121,20 @@ def test_initialize_failure_restores_pass_through(monkeypatch):
 
     assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
     assert executor._cell_with_pass_through is None
+
+
+def test_launcher_converter_ids_warn_when_ignored(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(LauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+
+    executor = LauncherExecutor(
+        pipe_id="test_pipe", from_nvflare_converter_id="from_converter", to_nvflare_converter_id="to_converter"
+    )
+    fl_ctx = _FakeFLContext(_FakeCell())
+
+    executor._init_converter(fl_ctx)
+
+    assert len(warnings) == 1
+    assert "ignored in LauncherExecutor" in warnings[0]
+    assert executor._from_nvflare_converter is None
+    assert executor._to_nvflare_converter is None
