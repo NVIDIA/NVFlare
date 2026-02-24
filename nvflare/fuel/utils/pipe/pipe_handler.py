@@ -19,7 +19,7 @@ from typing import Optional
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.pipe.pipe import HEARTBEAT_SEND_TIMEOUT, Message, Pipe, Topic
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
     check_non_negative_number,
@@ -179,10 +179,7 @@ class PipeHandler(object):
 
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
         if self._is_stopped_or_aborted(abort_signal):
-            self.logger.info(
-                f"cannot send '{msg.topic}' to pipe: asked_to_stop={self.asked_to_stop}"
-                f" abort_triggered={abort_signal.triggered if abort_signal else 'N/A'}"
-            )
+            self.logger.debug("cannot send message to pipe since PipeHandler is asked to stop")
             return False
 
         pipe = self.pipe
@@ -193,43 +190,33 @@ class PipeHandler(object):
         if not timeout or not pipe.can_resend() or not self.resend_interval:
             if not timeout:
                 timeout = self.default_request_timeout
-            try:
-                return pipe.send(msg, timeout)
-            finally:
-                pipe.release_send_cache(msg)
+            return pipe.send(msg, timeout)
 
-        # Release any per-message state (e.g. the cached CellMessage)
-        # once the retry loop exits, regardless of the exit path.  This ensures
-        # the serialized payload bytes are freed promptly rather than waiting for
-        # the Message object to go out of scope.
         num_sends = 0
-        try:
-            while not self.asked_to_stop:
-                sent = pipe.send(msg, timeout)
-                num_sends += 1
-                if sent:
-                    return sent
+        while not self.asked_to_stop:
+            sent = pipe.send(msg, timeout)
+            num_sends += 1
+            if sent:
+                return sent
 
-                if self.max_resends is not None and num_sends > self.max_resends:
-                    self.logger.error(f"abort sending after {num_sends} tries")
-                    return False
+            if self.max_resends is not None and num_sends > self.max_resends:
+                self.logger.error(f"abort sending after {num_sends} tries")
+                return False
 
+            if self._is_stopped_or_aborted(abort_signal):
+                return False
+
+            # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
+            self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
+            start_wait = time.time()
+            while True:
                 if self._is_stopped_or_aborted(abort_signal):
                     return False
 
-                # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
-                self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
-                start_wait = time.time()
-                while True:
-                    if self._is_stopped_or_aborted(abort_signal):
-                        return False
-
-                    if time.time() - start_wait > self.resend_interval:
-                        break
-                    time.sleep(0.1)
-            return False
-        finally:
-            pipe.release_send_cache(msg)
+                if time.time() - start_wait > self.resend_interval:
+                    break
+                time.sleep(0.1)
+        return False
 
     def _is_stopped_or_aborted(self, abort_signal: Optional[Signal] = None):
         if self.asked_to_stop:
@@ -326,18 +313,13 @@ class PipeHandler(object):
         try:
             self._try_read()
         except Exception as e:
-            if not self.asked_to_stop:
-                self.logger.error(f"read error: {secure_format_exception(e)}")
-                self._add_message(
-                    self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
-                )
+            self.logger.error(f"read error: {secure_format_exception(e)}")
+            self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
 
     def _try_read(self):
         self._last_heartbeat_received_time = time.time()
         while not self.asked_to_stop:
             time.sleep(self.read_interval)
-            if self.asked_to_stop:
-                break
             if self._pause:
                 continue
 
@@ -349,14 +331,7 @@ class PipeHandler(object):
                 # the pipe handler is most likely stopped, but we leave it for the while loop to decide
                 continue
 
-            try:
-                msg = p.receive()
-            except BrokenPipeError as e:
-                if not self.asked_to_stop:
-                    self._add_message(
-                        self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
-                    )
-                break
+            msg = p.receive()
             now = time.time()
 
             if msg:
@@ -380,11 +355,6 @@ class PipeHandler(object):
                     and now - self._last_heartbeat_received_time > self.heartbeat_timeout
                     and not self.asked_to_stop
                 ):
-                    elapsed = now - self._last_heartbeat_received_time
-                    self.logger.info(
-                        f"peer gone: no heartbeat for {elapsed:.1f}s (timeout={self.heartbeat_timeout}s)"
-                        f" last_active={self._last_heartbeat_received_time:.1f}"
-                    )
                     self._add_message(
                         self._make_event_message(
                             Topic.PEER_GONE, f"missing heartbeat after {self.heartbeat_timeout} secs"
@@ -404,13 +374,7 @@ class PipeHandler(object):
 
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
-                try:
-                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""), timeout=HEARTBEAT_SEND_TIMEOUT)
-                except Exception as ex:
-                    if not self.asked_to_stop:
-                        self.logger.debug(f"heartbeat send failed, stopping heartbeat: {ex}")
-                        self.asked_to_stop = True
-                    break
+                self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
                 last_heartbeat_sent_time = now
 
             time.sleep(self._check_interval)
