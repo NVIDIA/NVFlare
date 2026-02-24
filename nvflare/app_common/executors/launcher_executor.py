@@ -76,10 +76,10 @@ class LauncherExecutor(TaskExchanger):
             train_task_name (str): Task name of train mode.
             evaluate_task_name (str): Task name of evaluate mode.
             submit_model_task_name (str): Task name of submit_model mode.
-            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
-            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
+            from_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
+                Parameter conversion for launcher-based external execution now happens in the subprocess agent.
+            to_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
+                Parameter conversion for launcher-based external execution now happens in the subprocess agent.
         """
         TaskExchanger.__init__(
             self,
@@ -208,16 +208,12 @@ class LauncherExecutor(TaskExchanger):
             raise RuntimeError("Launcher initialize failed.")
 
     def _init_converter(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
-        if from_nvflare_converter is not None:
-            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
-            self._from_nvflare_converter = from_nvflare_converter
-
-        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
-        if to_nvflare_converter is not None:
-            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
-            self._to_nvflare_converter = to_nvflare_converter
+        if self._from_nvflare_converter_id or self._to_nvflare_converter_id:
+            self.log_warning(
+                fl_ctx,
+                "from_nvflare_converter_id/to_nvflare_converter_id are ignored in LauncherExecutor. "
+                "For launcher-based execution, configure converters in the subprocess client API path instead.",
+            )
 
     def _initialize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
