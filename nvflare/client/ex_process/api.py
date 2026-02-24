@@ -118,8 +118,9 @@ class ExProcessClientAPI(APISpec):
             with open(log_config_path) as f:
                 dict_config = json.load(f)
             apply_log_config(dict_config, workspace_dir)
-        except Exception:
-            pass  # Logging setup failure must never crash the training script
+        except Exception as e:
+            # Logging setup failure must never crash the training script.
+            self.logger.warning(f"Unable to configure subprocess logging: {e}")
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""

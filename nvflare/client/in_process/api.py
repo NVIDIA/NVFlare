@@ -159,10 +159,13 @@ class InProcessClientAPI(APISpec):
             # NOTE: model.params and input_model.params will be None after this.
             model.params = None
             model.optimizer_params = None
-            if self.fl_model:
-                self.fl_model.params = None
-                self.fl_model.optimizer_params = None
+            # Keep a local reference so we can clear input_model params before
+            # dropping self.fl_model.
+            received_model = self.fl_model
             self.fl_model = None
+            if received_model:
+                received_model.params = None
+                received_model.optimizer_params = None
             self.receive_called = False
 
         self._maybe_cleanup_memory()
