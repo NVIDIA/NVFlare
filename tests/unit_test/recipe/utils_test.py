@@ -332,6 +332,16 @@ class TestPersistorUtils:
             )
 
 
+class TestRecipePackageExports:
+    """Tests for public API exports from nvflare.recipe."""
+
+    def test_add_cross_site_evaluation_importable_from_recipe(self):
+        """add_cross_site_evaluation must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import add_cross_site_evaluation
+
+        assert callable(add_cross_site_evaluation)
+
+
 class TestCrossSiteEvalIdempotency:
     """Tests for resilient idempotency in add_cross_site_evaluation."""
 

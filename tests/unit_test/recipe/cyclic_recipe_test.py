@@ -145,6 +145,20 @@ class TestBaseCyclicRecipe:
             )
 
 
+class TestBaseCyclicRecipeAttributes:
+    """Test that CyclicRecipe stores validated attributes correctly."""
+
+    def test_min_clients_attribute(self, mock_file_system, base_recipe_params, simple_model):
+        """min_clients must be accessible as an instance attribute after construction."""
+        recipe = BaseCyclicRecipe(
+            name="test_min_clients",
+            model=simple_model,
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+        assert recipe.min_clients == base_recipe_params["min_clients"]
+
+
 class TestPTCyclicRecipe:
     """Test cases for PyTorch CyclicRecipe."""
 
@@ -161,6 +175,22 @@ class TestPTCyclicRecipe:
 
         assert recipe.name == "test_pt_cyclic"
         assert recipe.job is not None
+
+    def test_pt_cyclic_with_ptmodel_wrapper_returns_persistor_id(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """PTModel wrapper path must correctly extract persistor_id from dict return."""
+        from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe as PTCyclicRecipe
+
+        recipe = PTCyclicRecipe(
+            name="test_pt_wrapper",
+            model=PTModel(model=simple_model),
+            **base_recipe_params,
+        )
+
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert "persistor" in server_app.app_config.components
 
 
 class TestTFCyclicRecipe:
