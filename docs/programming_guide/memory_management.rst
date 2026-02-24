@@ -18,6 +18,7 @@ Federated learning jobs can run for hours or days. Without proper memory managem
 RSS (Resident Set Size) can grow continuously due to:
 
 - Python garbage collection delays
+- Long-lived references that keep large tensors alive
 - glibc memory arena fragmentation
 - PyTorch CUDA cache retention
 
@@ -218,13 +219,43 @@ What It Does
 
 When enabled, after each ``flare.send()`` on the client:
 
-1. Runs Python garbage collection (``gc.collect()``)
-2. For glibc: Returns free heap pages to OS (``malloc_trim()``)
-3. For jemalloc: Relies on auto-decay (no manual action needed)
-4. Optionally clears PyTorch CUDA cache
+1. ``flare.send(..., clear_cache=True)`` (default) drops references to sent and received params.
+2. CPython frees tensor objects as soon as the last reference is removed (reference counting).
+3. Runs ``gc.collect()`` as a supplemental sweep (mainly useful for cyclic references).
+4. For glibc: Returns free heap pages to OS (``malloc_trim()``).
+5. For jemalloc: Relies on auto-decay (no manual action needed).
+6. Optionally clears PyTorch CUDA cache.
 
-**Note:** The cleanup is transparent to the user's training script. No code changes
-are required in ``train.py``.
+.. note::
+
+   The primary client-side fix for large-model RSS growth is releasing parameter references
+   after ``flare.send()``. ``gc.collect()`` is not the main mechanism; it is a safeguard for
+   cyclic objects.
+
+.. note::
+
+   RSS may not drop immediately even after objects are freed because allocators can retain
+   memory for reuse. A flat RSS trend across rounds is usually the expected healthy behavior.
+
+Best Practice in Client Script
+------------------------------
+
+No code changes are required when using the default ``clear_cache=True``. For very large
+models, you can also drop script-owned references promptly:
+
+.. code-block:: python
+
+    import nvflare.client as flare
+
+    flare.init()
+    while flare.is_running():
+        input_model = flare.receive()
+        output_model = train(input_model)
+        flare.send(output_model)  # clear_cache=True by default
+
+        # Optional but recommended for very large payloads:
+        del input_model
+        del output_model
 
 External Process Support
 ------------------------
