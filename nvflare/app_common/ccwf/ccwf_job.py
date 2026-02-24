@@ -266,6 +266,7 @@ class CCWFJob(FedJob):
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
             metric_comparator_id=metric_comparator_id,
+            learn_task_check_interval=client_config.learn_task_check_interval,
             learn_task_abort_timeout=client_config.learn_task_abort_timeout,
             learn_task_ack_timeout=client_config.learn_task_ack_timeout,
             learn_task_timeout=client_config.learn_task_timeout,

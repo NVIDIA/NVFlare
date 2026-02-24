@@ -35,6 +35,7 @@ class TransferType(str, Enum):
 
 class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
+    SERVER_EXPECTED_FORMAT = "server_expected_format"
     TRANSFER_TYPE = "transfer_type"
     TRAIN_WITH_EVAL = "train_with_eval"
     TRAIN_TASK_NAME = "train_task_name"
@@ -140,6 +141,9 @@ class ClientConfig:
 
     def get_exchange_format(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EXCHANGE_FORMAT, "")
+
+    def get_server_expected_format(self) -> str:
+        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY)
 
     def get_transfer_type(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRANSFER_TYPE, "FULL")

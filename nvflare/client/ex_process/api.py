@@ -22,6 +22,7 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.converter_utils import create_default_params_converters
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
@@ -131,6 +132,13 @@ class ExProcessClientAPI(APISpec):
                     metric_pipe, metric_channel_name = _create_pipe_using_config(
                         client_config=client_config, section=ConfigKey.METRICS_EXCHANGE
                     )
+                from_nvflare_converter, to_nvflare_converter = create_default_params_converters(
+                    server_expected_format=client_config.get_server_expected_format(),
+                    params_exchange_format=client_config.get_exchange_format(),
+                    train_task_name=client_config.get_train_task(),
+                    eval_task_name=client_config.get_eval_task(),
+                    submit_model_task_name=client_config.get_submit_model_task(),
+                )
 
                 flare_agent = FlareAgentWithFLModel(
                     pipe=pipe,
@@ -138,6 +146,8 @@ class ExProcessClientAPI(APISpec):
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
                     heartbeat_timeout=client_config.get_heartbeat_timeout(),
+                    from_nvflare_converter=from_nvflare_converter,
+                    to_nvflare_converter=to_nvflare_converter,
                 )
                 flare_agent.start()
 
