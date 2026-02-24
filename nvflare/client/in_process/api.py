@@ -28,6 +28,7 @@ from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.mem_utils import log_rss
 
 TOPIC_LOG_DATA = "LOG_DATA"
 TOPIC_STOP = "STOP"
@@ -115,6 +116,9 @@ class InProcessClientAPI(APISpec):
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
+        if result is not None:
+            self._mem_round = result.current_round
+            log_rss(f"round={result.current_round} after_receive")
         return result
 
     def __receive(self) -> Optional[FLModel]:
@@ -162,6 +166,7 @@ class InProcessClientAPI(APISpec):
             self.receive_called = False
 
         self._maybe_cleanup_memory()
+        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
 
     def system_info(self) -> Dict:
         return self.sys_info

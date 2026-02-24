@@ -30,6 +30,7 @@ from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.utils.fobs import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
 
@@ -93,6 +94,33 @@ class ExProcessClientAPI(APISpec):
         self.flare_agent = None
         # Memory settings will be read from config in init()
 
+    def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
+        """Load the site's log_config.json to configure Python logging in the subprocess.
+
+        Without this, logger.info() calls in the subprocess are silently dropped because
+        Python logging has no handlers configured. Loading log_config.json wires up
+        consoleHandler -> sys.stdout so logs flow through SubprocessLauncher to the site's
+        log files, and also directly into log.txt / log.json alongside the main process.
+        """
+        try:
+            import json
+
+            from nvflare.fuel.utils.log_utils import apply_log_config
+
+            task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
+            pipe_args = task_exchange.get(ConfigKey.PIPE, {}).get(ConfigKey.ARG, {})
+            workspace_dir = pipe_args.get("workspace_dir", "")
+            if not workspace_dir:
+                return
+            log_config_path = os.path.join(workspace_dir, "local", "log_config.json")
+            if not os.path.isfile(log_config_path):
+                return
+            with open(log_config_path) as f:
+                dict_config = json.load(f)
+            apply_log_config(dict_config, workspace_dir)
+        except Exception:
+            pass  # Logging setup failure must never crash the training script
+
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
         if self.model_registry is None:
@@ -115,6 +143,12 @@ class ExProcessClientAPI(APISpec):
             return
 
         client_config = _create_client_config(config=self.config_file)
+
+        # Configure logging for the subprocess using the site's log_config.json.
+        # Without this the subprocess Python logging is unconfigured — logger.info()
+        # is silently dropped. With it, all NVFlare loggers write to sys.stdout
+        # (captured by SubprocessLauncher) and to the site's log.txt file.
+        self._configure_subprocess_logging(client_config)
 
         flare_agent = None
         try:
@@ -174,6 +208,9 @@ class ExProcessClientAPI(APISpec):
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
+        if result is not None:
+            self._mem_round = result.current_round
+            log_rss(f"round={result.current_round} after_receive")
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -193,6 +230,7 @@ class ExProcessClientAPI(APISpec):
             self.clear()
 
         self._maybe_cleanup_memory()
+        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()
