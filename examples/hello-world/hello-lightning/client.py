@@ -13,7 +13,6 @@
 # limitations under the License.
 import argparse
 
-import torch
 import torchvision
 import torchvision.transforms as transforms
 from model import LitNet

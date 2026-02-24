@@ -172,7 +172,6 @@ class TestInProcessClientAPI(unittest.TestCase):
     def _fire_global_model(self, client_api, params):
         """Simulate the executor publishing a global model to the data bus."""
         from nvflare.apis.dxo import DXO, DataKind
-        from nvflare.apis.shareable import Shareable
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
         shareable = dxo.to_shareable()
