@@ -12,114 +12,115 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ExProcessClientAPI memory management."""
+"""Tests for ExProcessClientAPI memory management (send/release_params behaviour)."""
 
-import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+
+from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.client.api_spec import APISpec
+from nvflare.client.ex_process.api import ExProcessClientAPI
 
 
-class TestExProcessClientAPIMemory(unittest.TestCase):
-    """Test memory management in ExProcessClientAPI."""
+def _make_api_with_mock_registry() -> tuple:
+    """Create ExProcessClientAPI with a fully mocked ModelRegistry, bypassing init()."""
+    api = ExProcessClientAPI.__new__(ExProcessClientAPI)
+    APISpec.__init__(api)
+    api.config_file = "dummy.json"
+    api.flare_agent = None
+    api.receive_called = True  # pretend receive() was already called
 
-    def test_memory_settings_from_env_disabled(self):
-        """Test that memory settings default to disabled when env vars not set."""
-        # Clear any existing env vars
-        env = os.environ.copy()
-        env.pop("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", None)
-        env.pop("NVFLARE_CUDA_EMPTY_CACHE", None)
-
-        with patch.dict(os.environ, env, clear=True):
-            # We need to test the __init__ logic without actually initializing
-            # the full ExProcessClientAPI (which requires config files)
-            gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
-
-            assert gc_rounds == 0
-            assert cuda_empty is False
-
-    def test_memory_settings_from_env_enabled(self):
-        """Test that memory settings are read from environment variables."""
-        env = {
-            "NVFLARE_CLIENT_MEMORY_GC_ROUNDS": "5",
-            "NVFLARE_CUDA_EMPTY_CACHE": "true",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
-
-            assert gc_rounds == 5
-            assert cuda_empty is True
-
-    def test_memory_settings_env_false(self):
-        """Test that cuda_empty_cache=false is parsed correctly."""
-        env = {
-            "NVFLARE_CLIENT_MEMORY_GC_ROUNDS": "1",
-            "NVFLARE_CUDA_EMPTY_CACHE": "false",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            gc_rounds = int(os.environ.get("NVFLARE_CLIENT_MEMORY_GC_ROUNDS", "0"))
-            cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
-
-            assert gc_rounds == 1
-            assert cuda_empty is False
-
-    def test_memory_settings_env_case_insensitive(self):
-        """Test that TRUE/True/true all work for cuda_empty_cache."""
-        for value in ["TRUE", "True", "true", "TrUe"]:
-            env = {"NVFLARE_CUDA_EMPTY_CACHE": value}
-            with patch.dict(os.environ, env, clear=False):
-                cuda_empty = os.environ.get("NVFLARE_CUDA_EMPTY_CACHE", "").lower() == "true"
-                assert cuda_empty is True, f"Failed for value: {value}"
+    mock_registry = MagicMock()
+    api.model_registry = mock_registry
+    return api, mock_registry
 
 
-class TestMaybeCleanupMemory(unittest.TestCase):
-    """Test _maybe_cleanup_memory logic (extracted from ExProcessClientAPI)."""
+def _make_model() -> FLModel:
+    return FLModel(params={"w": np.ones((50, 50))}, optimizer_params={"lr": np.array([0.01])})
 
-    def test_cleanup_disabled(self):
-        """Test that cleanup is skipped when gc_rounds=0."""
-        memory_gc_rounds = 0
-        round_count = 0
 
-        # Logic from _maybe_cleanup_memory
-        if memory_gc_rounds <= 0:
-            should_cleanup = False
-        else:
-            round_count += 1
-            should_cleanup = round_count % memory_gc_rounds == 0
+class TestExProcessSendReleasesParams(unittest.TestCase):
+    """ExProcessClientAPI.send() calls release_params when clear_cache=True."""
 
-        assert should_cleanup is False
+    def test_release_params_called_with_clear_cache_true(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        model = _make_model()
 
-    def test_cleanup_every_round(self):
-        """Test cleanup every round (gc_rounds=1)."""
-        memory_gc_rounds = 1
-        round_count = 0
+        api.send(model, clear_cache=True)
 
-        results = []
-        for _ in range(5):
-            round_count += 1
-            should_cleanup = round_count % memory_gc_rounds == 0
-            results.append(should_cleanup)
+        mock_registry.submit_model.assert_called_once_with(model=model)
+        mock_registry.release_params.assert_called_once_with(model)
 
-        # Should cleanup every round
-        assert results == [True, True, True, True, True]
+    def test_release_params_before_clear(self):
+        """release_params must be called before clear() so received_task is still available."""
+        api, mock_registry = _make_api_with_mock_registry()
+        model = _make_model()
+        call_order = []
 
-    def test_cleanup_every_n_rounds(self):
-        """Test cleanup every N rounds."""
-        memory_gc_rounds = 3
-        round_count = 0
+        mock_registry.release_params.side_effect = lambda m: call_order.append("release")
+        mock_registry.clear.side_effect = lambda: call_order.append("clear")
 
-        results = []
-        for _ in range(9):
-            round_count += 1
-            should_cleanup = round_count % memory_gc_rounds == 0
-            results.append(should_cleanup)
+        api.send(model, clear_cache=True)
 
-        # Should cleanup on rounds 3, 6, 9
-        expected = [False, False, True, False, False, True, False, False, True]
-        assert results == expected
+        self.assertEqual(call_order, ["release", "clear"])
+
+    def test_release_params_not_called_when_clear_cache_false(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        model = _make_model()
+
+        api.send(model, clear_cache=False)
+
+        mock_registry.submit_model.assert_called_once_with(model=model)
+        mock_registry.release_params.assert_not_called()
+        mock_registry.clear.assert_not_called()
+
+    def test_receive_called_flag_reset_after_send(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        api.send(_make_model(), clear_cache=True)
+        self.assertFalse(api.receive_called)
+
+    def test_receive_called_flag_unchanged_when_no_clear(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        api.receive_called = True
+        api.send(_make_model(), clear_cache=False)
+        self.assertTrue(api.receive_called)
+
+    def test_send_without_receive_raises(self):
+        api, _ = _make_api_with_mock_registry()
+        api.receive_called = False
+        with self.assertRaises(RuntimeError):
+            api.send(_make_model())
+
+
+class TestExProcessMemoryCleanupIntegration(unittest.TestCase):
+    """gc cleanup setting in ExProcessClientAPI (via api_spec._maybe_cleanup_memory)."""
+
+    def test_memory_cleanup_called_every_n_rounds(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        api._memory_gc_rounds = 2
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            # Round 1: no cleanup
+            api.receive_called = True
+            api.send(_make_model())
+            mock_cleanup.assert_not_called()
+
+            # Round 2: cleanup fires
+            api.receive_called = True
+            api.send(_make_model())
+            mock_cleanup.assert_called_once()
+
+    def test_memory_cleanup_not_called_when_disabled(self):
+        api, mock_registry = _make_api_with_mock_registry()
+        api._memory_gc_rounds = 0
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            for _ in range(5):
+                api.receive_called = True
+                api.send(_make_model())
+            mock_cleanup.assert_not_called()
 
 
 if __name__ == "__main__":

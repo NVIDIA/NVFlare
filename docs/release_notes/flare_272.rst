@@ -142,6 +142,10 @@ FLARE 2.7.2 adds automatic server-side memory management to address RSS (Residen
 - **Platform-aware**: Memory cleanup adapts to the runtime platform (Linux/glibc, musl, macOS), with full heap trimming on Linux/glibc and safe fallbacks elsewhere.
 - **Minimal overhead**: Cleanup takes 10-500ms per invocation — negligible compared to typical training round durations.
 
+On the client side, ``flare.send(..., clear_cache=True)`` (default) releases parameter references
+after serialization. This reference-release path is the primary mechanism to reclaim large tensor
+objects; ``gc.collect()`` is a supplemental safeguard mainly for cyclic references.
+
 .. admonition:: Learn More
 
     For configuration details, platform compatibility, recommended settings, and API reference, see :doc:`/programming_guide/memory_management`.
