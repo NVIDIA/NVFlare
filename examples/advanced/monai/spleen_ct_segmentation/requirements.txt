@@ -6,7 +6,7 @@ monai>=1.3.0
 nvflare[PT]>=2.7.2rc
 tensorboard
 scikit-image
-pandas
+pandas~=2.3
 matplotlib
 monai[ignite,tqdm]
 huggingface_hub
