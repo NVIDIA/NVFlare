@@ -161,6 +161,36 @@ def test_start_run_keeps_job_clients_meta_when_no_timeouts(mock_get_bool, mock_c
 
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_sets_job_clients_meta_before_start_client_job(mock_get_bool, mock_check_replies):
+    mock_check_replies.return_value = []
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+
+    seen_job_clients_meta = {}
+
+    def _start_client_job_side_effect(passed_job, passed_client_sites, passed_fl_ctx):
+        seen_job_clients_meta["value"] = passed_job.meta.get(JobMetaKey.JOB_CLIENTS)
+        return [MagicMock()]
+
+    engine.start_client_job.side_effect = _start_client_job_side_effect
+
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert seen_job_clients_meta["value"] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies")
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
 def test_start_run_raises_when_required_site_times_out(mock_get_bool, mock_check_replies):
     """A timed-out required site must abort the job even if active_count >= min_sites."""
     mock_check_replies.return_value = ["site-2"]  # site-2 timed out
