@@ -101,6 +101,36 @@ def test_start_run_proceeds_when_timed_out_clients_within_min_sites(mock_get_boo
     assert "timed out" in warning_msg
 
 
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=False)
+def test_start_run_non_strict_excludes_timed_out_clients_from_meta(mock_get_bool):
+    """Even when strict checking is disabled, JOB_CLIENTS should include only active clients."""
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+
+    ok_reply = Message(topic="reply", body="ok")
+    ok_reply.set_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+    req1 = Message(topic="req", body="")
+    req2 = Message(topic="req", body="")
+    engine.start_client_job.return_value = [
+        ClientReply(client_token="token-site-1", client_name="site-1", req=req1, reply=ok_reply),
+        ClientReply(client_token="token-site-2", client_name="site-2", req=req2, reply=None),
+    ]
+
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}]
+
+
 @patch("nvflare.private.fed.server.job_runner.check_client_replies")
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
 def test_start_run_raises_when_timed_out_clients_breach_min_sites(mock_get_bool, mock_check_replies):

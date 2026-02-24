@@ -270,7 +270,8 @@ class JobRunner(FLComponent):
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
         replies = engine.start_client_job(job, client_sites, fl_ctx)
-        client_sites_names = list(client_sites.keys())
+        all_client_sites = list(client_sites.keys())
+        active_client_sites = list(all_client_sites)
         strict_start_reply_check = ConfigService.get_bool_var(
             name=ConfigVarName.STRICT_START_JOB_REPLY_CHECK,
             conf=SystemConfigs.APPLICATION_CONF,
@@ -278,12 +279,12 @@ class JobRunner(FLComponent):
         )
         timed_out = check_client_replies(
             replies=replies,
-            client_sites=client_sites_names,
+            client_sites=all_client_sites,
             command=f"start job ({job_id})",
             strict=strict_start_reply_check,
         )
         if timed_out:
-            active_count = len(client_sites_names) - len(timed_out)
+            active_count = len(all_client_sites) - len(timed_out)
 
             # A required site timing out is fatal regardless of min_sites, same as deploy phase.
             if job.required_sites:
@@ -299,20 +300,25 @@ class JobRunner(FLComponent):
             self.log_warning(
                 fl_ctx,
                 f"start job ({job_id}): {len(timed_out)} client(s) timed out at start-job: {timed_out}; "
-                f"{active_count} of {len(client_sites_names)} clients started successfully.",
+                f"{active_count} of {len(all_client_sites)} clients started successfully.",
             )
-            client_sites_names = [c for c in client_sites_names if c not in timed_out]
+            active_client_sites = [c for c in all_client_sites if c not in timed_out]
 
-            # Rebuild to reflect only active participants after exclusion.
-            # Note: timed-out clients remain in run_processes[PARTICIPANTS] but
-            # require_previous_report=True (default) ensures _sync_client_jobs will not
-            # fire dead-job for them unless they first positively report the job running.
-            active_sites = set(client_sites_names)
-            participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
+        if not strict_start_reply_check:
+            # In non-strict mode, check_client_replies() does not return timed-out clients.
+            # Build active clients directly from actual replies so JOB_CLIENTS stays accurate.
+            replies_by_client = {r.client_name: r for r in replies}
+            active_client_sites = []
+            for client_name in all_client_sites:
+                client_reply = replies_by_client.get(client_name)
+                if client_reply and client_reply.reply:
+                    active_client_sites.append(client_name)
 
         # Set metadata once, after any timeout exclusion, so it always reflects active participants.
+        active_sites = set(active_client_sites)
+        participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
         job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
-        display_sites = ",".join(client_sites_names)
+        display_sites = ",".join(active_client_sites)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
