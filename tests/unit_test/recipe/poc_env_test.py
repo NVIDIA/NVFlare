@@ -62,6 +62,12 @@ def test_poc_env_validation():
         PocEnv(num_clients=3, clients=["site1", "site2"])
 
 
+def test_poc_env_none_num_clients_raises():
+    """Test that PocEnv(num_clients=None) raises ValueError instead of crashing with TypeError."""
+    with pytest.raises(ValueError, match="num_clients must be greater than 0"):
+        PocEnv(num_clients=None, clients=None)
+
+
 def test_poc_env_client_names():
     """Test PocEnv client name generation and validation."""
     # Test auto-generated client names (delegated to prepare_poc_provision)
