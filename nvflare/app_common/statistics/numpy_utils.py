@@ -32,6 +32,9 @@ class NpEncoder(json.JSONEncoder):
 
 
 def dtype_to_data_type(dtype) -> DataType:
+    if not hasattr(dtype, "char"):
+        # pandas ExtensionDtype (e.g. StringDtype in pandas 3.0+) has no .char attribute
+        return DataType.STRING
     if dtype.char in np.typecodes["AllFloat"]:
         return DataType.FLOAT
     elif dtype.char in np.typecodes["AllInteger"] or dtype == bool:
