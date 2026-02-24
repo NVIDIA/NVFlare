@@ -78,6 +78,13 @@ tests:
         "result":
           "type": "run_state"
           "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.log_pattern_validator.LogPatternValidator
+        args:
+          required_patterns:
+            - "PASS_THROUGH enabled"
+          forbidden_patterns:
+            - "Could not infer dtype of LazyDownloadRef"
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
