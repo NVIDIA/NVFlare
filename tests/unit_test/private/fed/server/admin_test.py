@@ -105,7 +105,7 @@ def test_check_client_replies_strict_raises_for_missing_client_reply():
     """Structurally missing entry (client not in replies dict at all) always raises."""
     replies = [_make_client_reply("C1"), _make_client_reply("CX")]
 
-    with pytest.raises(RuntimeError, match="missing replies from C2"):
+    with pytest.raises(RuntimeError, match=r"missing replies from \["):
         check_client_replies(replies=replies, client_sites=["C1", "C2"], command="start", strict=True)
 
 
@@ -126,3 +126,29 @@ def test_check_client_replies_strict_allows_reordered_success_replies():
     replies = [_make_client_reply("C2"), _make_client_reply("C1")]
 
     check_client_replies(replies=replies, client_sites=["C1", "C2"], command="start", strict=True)
+
+
+# ---------------------------------------------------------------------------
+# Non-strict mode — ERROR_MSG_PREFIX detection
+# ---------------------------------------------------------------------------
+
+
+def test_check_client_replies_legacy_raises_when_body_starts_with_error_prefix():
+    """Non-strict mode raises when reply body starts with ERROR_MSG_PREFIX."""
+    from nvflare.private.defs import ERROR_MSG_PREFIX
+
+    replies = [_make_client_reply("C1", body=f"{ERROR_MSG_PREFIX}: something went wrong")]
+
+    with pytest.raises(RuntimeError, match="something went wrong"):
+        check_client_replies(replies=replies, client_sites=["C1"], command="start", strict=False)
+
+
+def test_check_client_replies_legacy_does_not_raise_when_prefix_not_at_start():
+    """Non-strict mode uses startswith — a body containing the prefix mid-string is NOT an error."""
+    from nvflare.private.defs import ERROR_MSG_PREFIX
+
+    replies = [_make_client_reply("C1", body=f"info: see {ERROR_MSG_PREFIX} for details")]
+
+    result = check_client_replies(replies=replies, client_sites=["C1"], command="start", strict=False)
+
+    assert result == []

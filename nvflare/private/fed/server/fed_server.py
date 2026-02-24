@@ -348,6 +348,7 @@ class FederatedServer(BaseServer):
         # a prior positive heartbeat before classifying a client's missing job as "dead".
         # Entries are cleaned up as soon as the job is no longer in run_processes.
         self._job_reported_clients: Dict[str, set] = {}
+        self._job_reported_clients_lock = threading.Lock()
 
         # these are used when the server sends a message to itself.
         self.my_own_auth_client_name = "server"
@@ -814,45 +815,50 @@ class FederatedServer(BaseServer):
             default=True,
         )
 
-        # Remove stale tracking entries for jobs that are no longer running.
-        for stale_job_id in list(self._job_reported_clients.keys()):
-            if stale_job_id not in server_jobs:
-                del self._job_reported_clients[stale_job_id]
+        with self._job_reported_clients_lock:
+            # Remove stale tracking entries for jobs that are no longer running.
+            for stale_job_id in list(self._job_reported_clients.keys()):
+                if stale_job_id not in server_jobs:
+                    del self._job_reported_clients[stale_job_id]
 
-        # Record jobs that this client has reported at least once.
-        # If require_previous_report is enabled, we only treat "missing job on client"
-        # as dead-job after first positive observation.
-        for job_id in server_jobs.intersection(client_jobs):
-            job_info = self.engine.run_processes.get(job_id)
-            if not job_info:
-                continue
-
-            participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
-            if not participating_clients or client_token not in participating_clients:
-                continue
-
-            self._job_reported_clients.setdefault(job_id, set()).add(client_token)
-
-        # Also check jobs that are running on server but not on the client.
-        jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
-        if jobs_on_server_but_not_on_client:
-            for job_id in jobs_on_server_but_not_on_client:
+            # Record jobs that this client has reported at least once.
+            # If require_previous_report is enabled, we only treat "missing job on client"
+            # as dead-job after first positive observation.
+            for job_id in server_jobs.intersection(client_jobs):
                 job_info = self.engine.run_processes.get(job_id)
                 if not job_info:
                     continue
 
                 participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
-                if not participating_clients:
+                if not participating_clients or client_token not in participating_clients:
                     continue
 
-                # this is a dict: token => nvflare.apis.client.Client
-                client = participating_clients.get(client_token, None)
-                if not client:
-                    continue
+                self._job_reported_clients.setdefault(job_id, set()).add(client_token)
 
-                reported_clients = self._job_reported_clients.get(job_id, set())
-                if (not require_previous_report) or (client_token in reported_clients):
-                    self._notify_dead_job(client, job_id, "missing job on client")
+            # Also check jobs that are running on server but not on the client.
+            jobs_on_server_but_not_on_client = list(server_jobs.difference(client_jobs))
+            dead_job_notifications = []
+            if jobs_on_server_but_not_on_client:
+                for job_id in jobs_on_server_but_not_on_client:
+                    job_info = self.engine.run_processes.get(job_id)
+                    if not job_info:
+                        continue
+
+                    participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
+                    if not participating_clients:
+                        continue
+
+                    # this is a dict: token => nvflare.apis.client.Client
+                    client = participating_clients.get(client_token, None)
+                    if not client:
+                        continue
+
+                    reported_clients = self._job_reported_clients.get(job_id, set())
+                    if (not require_previous_report) or (client_token in reported_clients):
+                        dead_job_notifications.append((client, job_id))
+
+        for client, job_id in dead_job_notifications:
+            self._notify_dead_job(client, job_id, "missing job on client")
 
         return jobs_need_abort
 

@@ -2548,13 +2548,15 @@ and client heartbeat synchronization:
 
 Recommended usage:
 
-- Keep ``strict_start_job_reply_check=false`` for backward-compatible behavior.
-- Set ``strict_start_job_reply_check=true`` when you want stricter startup validation,
-  especially for large/hierarchical deployments.
-- Keep ``sync_client_jobs_require_previous_report=true`` (default) to reduce false dead-job
-  reports during startup and transient sync races.
-- Set ``sync_client_jobs_require_previous_report=false`` only if you explicitly want legacy,
-  more aggressive dead-job detection behavior.
+- ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
+  Enable it (``true``) for large-scale or hierarchical deployments where startup timeouts
+  are expected and you want the server to proceed with the subset of clients that responded,
+  rather than failing the entire job. With ``false``, a timed-out reply is treated as a
+  silent success, which can mask startup problems.
+- Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
+  dead-job reports during startup races and transient heartbeat delays.
+- Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
+  where the first missing-job heartbeat immediately triggers dead-job detection.
 
 
 Admin Client Session (Python API)

@@ -23,38 +23,6 @@ from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
 
 
-def _make_server(get_bool_var_value=None):
-    """Create a FederatedServer with ServerEngine patched out.
-
-    Args:
-        get_bool_var_value: if not None, ConfigService.get_bool_var is patched to
-                            return this value.  If None, the real default is used.
-    """
-    patches = [patch("nvflare.private.fed.server.fed_server.ServerEngine")]
-    if get_bool_var_value is not None:
-        patches.append(
-            patch(
-                "nvflare.private.fed.server.fed_server.ConfigService.get_bool_var",
-                return_value=get_bool_var_value,
-            )
-        )
-    ctx_managers = [p.start() for p in patches]
-    server = FederatedServer(
-        project_name="project_name",
-        min_num_clients=1,
-        max_num_clients=10,
-        cmd_modules=None,
-        heart_beat_timeout=600,
-        args=MagicMock(),
-        secure_train=False,
-        snapshot_persistor=MagicMock(),
-        overseer_agent=MagicMock(),
-    )
-    # Ensure cleanup even if the test doesn't use a context manager.
-    for p in patches:
-        p.stop()
-    return server
-
 
 class TestFederatedServer:
     @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"]), (ColdState(), [])])

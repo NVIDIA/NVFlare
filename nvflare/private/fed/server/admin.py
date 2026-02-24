@@ -128,7 +128,7 @@ def check_client_replies(
                 error_msg += f"\t{client_name}: {detail}\n"
                 continue
 
-            if isinstance(r.reply.body, str) and ERROR_MSG_PREFIX in r.reply.body:
+            if isinstance(r.reply.body, str) and r.reply.body.startswith(ERROR_MSG_PREFIX):
                 error_msg += f"\t{client_name}: {r.reply.body}\n"
     else:
         for client_name in client_sites:

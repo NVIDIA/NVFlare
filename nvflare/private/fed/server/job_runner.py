@@ -295,6 +295,9 @@ class JobRunner(FLComponent):
             client_sites_names = [c for c in client_sites_names if c not in timed_out]
 
             # Keep job metadata aligned with actual active participants.
+            # Note: timed-out clients remain in run_processes[PARTICIPANTS] but
+            # require_previous_report=True (default) ensures _sync_client_jobs will not
+            # fire dead-job for them unless they first positively report the job running.
             active_sites = set(client_sites_names)
             job.meta[JobMetaKey.JOB_CLIENTS] = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
         display_sites = ",".join(client_sites_names)

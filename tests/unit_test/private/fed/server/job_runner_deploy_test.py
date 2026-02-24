@@ -105,10 +105,6 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
     job.get_deployment.return_value = deployment
     job.get_application.return_value = b"app_data"
 
-    # Patch server-side app deployment (not exercised here)
-    with patch.object(runner, "_make_deploy_message", return_value=MagicMock()):
-        pass
-
     return runner, fl_ctx, engine, job, sites
 
 
