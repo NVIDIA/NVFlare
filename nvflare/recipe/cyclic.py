@@ -208,17 +208,15 @@ class CyclicRecipe(Recipe):
         super().__init__(job)
 
     def _setup_model_and_persistor(self, job) -> str:
-        """Setup framework-specific model components and persistor.
+        """Setup model wrapper persistor.
 
         Handles the following model inputs:
-        - framework-specific wrappers (objects with add_to_fed_job)
-        - dict model config for FrameworkType.PYTORCH / FrameworkType.TENSORFLOW
-        - framework-native model objects for FrameworkType.PYTORCH / FrameworkType.TENSORFLOW
+        - framework-specific wrappers (objects with ``add_to_fed_job``)
 
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        from nvflare.recipe.utils import _extract_persistor_id, prepare_initial_ckpt, setup_framework_model_persistor
+        from nvflare.recipe.utils import extract_persistor_id, prepare_initial_ckpt
 
         ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
 
@@ -239,21 +237,10 @@ class CyclicRecipe(Recipe):
                 setattr(self.model, "initial_ckpt", ckpt_path)
 
             result = job.to_server(self.model, id="persistor")
-            return _extract_persistor_id(result)
+            return extract_persistor_id(result)
 
-        return setup_framework_model_persistor(
-            job=job,
-            framework=self.framework,
-            model=self.model,
-            initial_ckpt=self.initial_ckpt,
-            prepared_initial_ckpt=ckpt_path,
-            server_expected_format=self.server_expected_format,
-            support_numpy=False,
-            raise_on_unsupported=True,
-            recipe_name="base CyclicRecipe",
-            unsupported_framework_message=(
-                f"Unsupported framework '{self.framework}' for base CyclicRecipe model persistence. "
-                "Use FrameworkType.PYTORCH or FrameworkType.TENSORFLOW, "
-                "or pass a framework-specific model wrapper with add_to_fed_job()."
-            ),
+        raise ValueError(
+            f"Unsupported framework '{self.framework}' for base CyclicRecipe model persistence. "
+            "Use a framework-specific CyclicRecipe subclass, or pass a framework-specific "
+            "model wrapper with add_to_fed_job()."
         )

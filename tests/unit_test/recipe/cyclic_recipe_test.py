@@ -84,23 +84,19 @@ class TestBaseCyclicRecipe:
                 **base_recipe_params,
             )
 
-    def test_supports_dict_model_for_pytorch(self, mock_file_system, base_recipe_params):
-        """Base CyclicRecipe should accept dict model config for PyTorch framework."""
-        recipe = BaseCyclicRecipe(
-            name="test_base_pt_dict",
-            model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
-            framework=FrameworkType.PYTORCH,
-            **base_recipe_params,
-        )
-
-        server_app = recipe.job._deploy_map.get("server")
-        components = server_app.app_config.components
-        assert "persistor" in components
-        assert "locator" in components
+    def test_rejects_non_wrapper_model_for_base_recipe(self, mock_file_system, base_recipe_params):
+        """Base CyclicRecipe no longer owns PT/TF model persistence for raw model inputs."""
+        with pytest.raises(ValueError, match="Use a framework-specific CyclicRecipe subclass"):
+            BaseCyclicRecipe(
+                name="test_base_pt_dict",
+                model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
 
     def test_rejects_pytorch_checkpoint_without_model(self, mock_file_system, base_recipe_params):
-        """PyTorch checkpoints need model architecture and must fail fast when model is missing."""
-        with pytest.raises(ValueError, match="FrameworkType.PYTORCH requires 'model'"):
+        """Base recipe requires framework-specific subclass for PT checkpoint-only setup."""
+        with pytest.raises(ValueError, match="Use a framework-specific CyclicRecipe subclass"):
             BaseCyclicRecipe(
                 name="test_base_pt_ckpt_no_model",
                 model=None,
@@ -152,7 +148,7 @@ class TestBaseCyclicRecipeAttributes:
         """min_clients must be accessible as an instance attribute after construction."""
         recipe = BaseCyclicRecipe(
             name="test_min_clients",
-            model=simple_model,
+            model=PTModel(model=simple_model),
             framework=FrameworkType.PYTORCH,
             **base_recipe_params,
         )

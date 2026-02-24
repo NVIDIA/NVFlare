@@ -444,23 +444,14 @@ class FedAvgRecipe(Recipe):
             return None
 
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
-        """Setup framework-specific model components and persistor.
+        """Setup generic custom persistor only.
 
-        Base implementation handles custom persistor. Framework-specific subclasses
-        should override this to use PTModel/TFModel for their model types.
+        Framework-specific recipes (PT/TF/NumPy) override this method to build and
+        register their model wrappers and default persistors.
 
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        from nvflare.recipe.utils import setup_framework_model_persistor
+        from nvflare.recipe.utils import setup_custom_persistor
 
-        return setup_framework_model_persistor(
-            job=job,
-            framework=self.framework,
-            model=self.model,
-            initial_ckpt=self.initial_ckpt,
-            server_expected_format=self.server_expected_format,
-            model_persistor=self.model_persistor,
-            support_numpy=True,
-            recipe_name="FedAvgRecipe",
-        )
+        return setup_custom_persistor(job=job, model_persistor=self.model_persistor)

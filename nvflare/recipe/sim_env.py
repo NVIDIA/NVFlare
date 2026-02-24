@@ -20,7 +20,7 @@ from pydantic import BaseModel, model_validator
 from nvflare.job_config.api import FedJob
 
 from .spec import ExecEnv
-from .utils import _collect_non_local_scripts
+from .utils import collect_non_local_scripts
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
@@ -97,7 +97,7 @@ class SimEnv(ExecEnv):
 
     def deploy(self, job: FedJob):
         # Validate scripts exist locally for simulation
-        non_local_scripts = _collect_non_local_scripts(job)
+        non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
             raise ValueError(
                 f"The following scripts do not exist locally: {non_local_scripts}. "

@@ -23,11 +23,11 @@ import pytest
 
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
-from nvflare.recipe.utils import _collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts
 
 
 class TestCollectNonLocalScriptsUtility:
-    """Test the _collect_non_local_scripts utility function."""
+    """Test the collect_non_local_scripts utility function."""
 
     def setup_method(self):
         self.job = FedJob(name="test_job", min_clients=1)
@@ -36,7 +36,7 @@ class TestCollectNonLocalScriptsUtility:
 
     def test_no_scripts_returns_empty_list(self):
         """Test with no scripts added."""
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert result == []
 
     def test_local_script_not_included(self):
@@ -47,7 +47,7 @@ class TestCollectNonLocalScriptsUtility:
 
         try:
             self.client_app.add_external_script(temp_path)
-            result = _collect_non_local_scripts(self.job)
+            result = collect_non_local_scripts(self.job)
             assert result == []
         finally:
             os.unlink(temp_path)
@@ -57,7 +57,7 @@ class TestCollectNonLocalScriptsUtility:
         non_local_script = "/preinstalled/remote_script.py"
         self.client_app.add_external_script(non_local_script)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert non_local_script in result
 
     def test_multiple_non_local_scripts(self):
@@ -70,7 +70,7 @@ class TestCollectNonLocalScriptsUtility:
         for script in scripts:
             self.client_app.add_external_script(script)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         for script in scripts:
             assert script in result
 
@@ -86,7 +86,7 @@ class TestCollectNonLocalScriptsUtility:
             non_local_script = "/preinstalled/remote_script.py"
             self.client_app.add_external_script(non_local_script)
 
-            result = _collect_non_local_scripts(self.job)
+            result = collect_non_local_scripts(self.job)
             assert non_local_script in result
             assert local_script not in result
         finally:
@@ -102,7 +102,7 @@ class TestCollectNonLocalScriptsUtility:
         self.client_app.add_external_script(script1)
         client_app2.add_external_script(script2)
 
-        result = _collect_non_local_scripts(self.job)
+        result = collect_non_local_scripts(self.job)
         assert script1 in result
         assert script2 in result
 
@@ -436,3 +436,4 @@ class TestRecipeExecuteExportParamIsolation:
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
+

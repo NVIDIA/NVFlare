@@ -163,21 +163,25 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
     def _setup_model_and_persistor(self, job) -> str:
         """Override to handle PyTorch-specific model setup."""
-        if self.model is not None or self.initial_ckpt is not None:
-            from nvflare.app_opt.pt.job_config.model import PTModel
-            from nvflare.recipe.utils import prepare_initial_ckpt
+        from nvflare.app_opt.pt.job_config.model import PTModel
+        from nvflare.recipe.utils import extract_persistor_id, resolve_initial_ckpt, setup_custom_persistor
 
-            # Disable numpy conversion when using tensor format to keep PyTorch tensors
-            allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
+        persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
+        if persistor_id:
+            return persistor_id
 
-            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
-            pt_model = PTModel(
-                model=self.model,
-                initial_ckpt=ckpt_path,
-                persistor=self.model_persistor,
-                locator=self._pt_model_locator,
-                allow_numpy_conversion=allow_numpy_conversion,
-            )
-            job.comp_ids.update(job.to_server(pt_model))
-            return job.comp_ids.get("persistor_id", "")
-        return ""
+        ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
+        if self.model is None and ckpt_path:
+            raise ValueError("FrameworkType.PYTORCH requires 'model' when using initial_ckpt.")
+        if self.model is None:
+            return ""
+
+        # Disable numpy conversion when using tensor format to keep PyTorch tensors.
+        allow_numpy_conversion = self.server_expected_format != ExchangeFormat.PYTORCH
+        pt_model = PTModel(
+            model=self.model,
+            initial_ckpt=ckpt_path,
+            locator=self._pt_model_locator,
+            allow_numpy_conversion=allow_numpy_conversion,
+        )
+        return extract_persistor_id(job.to_server(pt_model, id="persistor"))

@@ -13,19 +13,16 @@
 # limitations under the License.
 
 import os
-import sys
 import tempfile
-import types
 from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.client.config import ExchangeFormat
-from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.utils import (
-    _extract_persistor_id,
+    extract_persistor_id,
     prepare_initial_ckpt,
-    setup_framework_model_persistor,
+    resolve_initial_ckpt,
+    setup_custom_persistor,
     validate_ckpt,
 )
 
@@ -161,175 +158,73 @@ class TestPrepareInitialCkpt:
 
 
 class TestPersistorUtils:
-    """Tests for extract_persistor_id and setup_framework_model_persistor."""
+    """Tests for persistor utility helpers."""
 
-    def test__extract_persistor_id(self):
-        assert _extract_persistor_id({"persistor_id": "persistor_a"}) == "persistor_a"
-        assert _extract_persistor_id({"persistor_id": 123}) == ""
-        assert _extract_persistor_id("persistor_b") == "persistor_b"
-        assert _extract_persistor_id(None) == ""
+    def test_extract_persistor_id(self):
+        assert extract_persistor_id({"persistor_id": "persistor_a"}) == "persistor_a"
+        assert extract_persistor_id({"persistor_id": 123}) == ""
+        assert extract_persistor_id("persistor_b") == "persistor_b"
+        assert extract_persistor_id(None) == ""
 
-    def test_setup_uses_custom_model_persistor_first(self):
+    def test_setup_custom_persistor_returns_empty_when_not_provided(self):
+        job = MagicMock()
+
+        result = setup_custom_persistor(job=job, model_persistor=None)
+
+        assert result == ""
+        job.to_server.assert_not_called()
+
+    def test_setup_custom_persistor_registers_component(self):
         job = MagicMock()
         custom_persistor = object()
         job.to_server.return_value = "custom_persistor"
 
-        result = setup_framework_model_persistor(
-            job=job,
-            framework=FrameworkType.PYTORCH,
-            model=None,
-            initial_ckpt=None,
-            server_expected_format=ExchangeFormat.NUMPY,
-            model_persistor=custom_persistor,
-            recipe_name="TestRecipe",
-        )
+        result = setup_custom_persistor(job=job, model_persistor=custom_persistor)
 
         assert result == "custom_persistor"
         job.to_server.assert_called_once_with(custom_persistor, id="persistor")
+
+    def test_setup_custom_persistor_extracts_dict_result(self):
+        job = MagicMock()
+        custom_persistor = object()
+        job.to_server.return_value = {"persistor_id": "custom_from_dict"}
+
+        result = setup_custom_persistor(job=job, model_persistor=custom_persistor)
+
+        assert result == "custom_from_dict"
+
+    def test_resolve_initial_ckpt_prefers_prepared_value(self):
+        job = MagicMock()
+
+        result = resolve_initial_ckpt(
+            initial_ckpt="relative/path/model.pt",
+            prepared_initial_ckpt="already_prepared.pt",
+            job=job,
+        )
+
+        assert result == "already_prepared.pt"
         job.add_file_to_server.assert_not_called()
 
-    def test_setup_pytorch_ckpt_without_model_raises(self):
+    def test_resolve_initial_ckpt_uses_prepare_when_prepared_missing(self, monkeypatch):
+        calls = {}
+
+        def fake_prepare(initial_ckpt, job):
+            calls["initial_ckpt"] = initial_ckpt
+            calls["job"] = job
+            return "prepared_by_helper.pt"
+
+        monkeypatch.setattr("nvflare.recipe.utils.prepare_initial_ckpt", fake_prepare)
         job = MagicMock()
-        with pytest.raises(ValueError, match="requires 'model'"):
-            setup_framework_model_persistor(
-                job=job,
-                framework=FrameworkType.PYTORCH,
-                model=None,
-                initial_ckpt="/abs/path/model.pt",
-                server_expected_format=ExchangeFormat.NUMPY,
-                recipe_name="FedAvgRecipe",
-            )
 
-    def test_setup_pytorch_with_model_uses_pt_model(self, monkeypatch):
-        fake_mod = types.ModuleType("fake_pt_model")
-
-        class FakePTModel:
-            def __init__(self, model, initial_ckpt, allow_numpy_conversion):
-                self.model = model
-                self.initial_ckpt = initial_ckpt
-                self.allow_numpy_conversion = allow_numpy_conversion
-
-        fake_mod.PTModel = FakePTModel
-        monkeypatch.setitem(sys.modules, "nvflare.app_opt.pt.job_config.model", fake_mod)
-
-        job = MagicMock()
-        job.to_server.return_value = "pt_persistor"
-
-        result = setup_framework_model_persistor(
+        result = resolve_initial_ckpt(
+            initial_ckpt="relative/path/model.pt",
+            prepared_initial_ckpt=None,
             job=job,
-            framework=FrameworkType.PYTORCH,
-            model={"path": "m.Model", "args": {}},
-            initial_ckpt=None,
-            prepared_initial_ckpt="bundled.pt",
-            server_expected_format=ExchangeFormat.PYTORCH,
-            recipe_name="FedAvgRecipe",
         )
 
-        assert result == "pt_persistor"
-        sent_obj = job.to_server.call_args.args[0]
-        assert isinstance(sent_obj, FakePTModel)
-        assert sent_obj.initial_ckpt == "bundled.pt"
-        assert sent_obj.allow_numpy_conversion is False
-
-    def test_setup_tensorflow_with_ckpt_only_uses_tf_model(self, monkeypatch):
-        fake_mod = types.ModuleType("fake_tf_model")
-
-        class FakeTFModel:
-            def __init__(self, model, initial_ckpt):
-                self.model = model
-                self.initial_ckpt = initial_ckpt
-
-        fake_mod.TFModel = FakeTFModel
-        monkeypatch.setitem(sys.modules, "nvflare.app_opt.tf.job_config.model", fake_mod)
-
-        job = MagicMock()
-        job.to_server.return_value = {"persistor_id": "tf_persistor"}
-
-        result = setup_framework_model_persistor(
-            job=job,
-            framework=FrameworkType.TENSORFLOW,
-            model=None,
-            initial_ckpt=None,
-            prepared_initial_ckpt="server/model.h5",
-            server_expected_format=ExchangeFormat.NUMPY,
-            recipe_name="FedAvgRecipe",
-        )
-
-        assert result == "tf_persistor"
-        sent_obj = job.to_server.call_args.args[0]
-        assert isinstance(sent_obj, FakeTFModel)
-        assert sent_obj.model is None
-        assert sent_obj.initial_ckpt == "server/model.h5"
-
-    def test_setup_numpy_with_bad_model_type_raises(self):
-        job = MagicMock()
-        with pytest.raises(TypeError, match="model must be list or np.ndarray"):
-            setup_framework_model_persistor(
-                job=job,
-                framework=FrameworkType.NUMPY,
-                model={"bad": "type"},
-                initial_ckpt=None,
-                server_expected_format=ExchangeFormat.NUMPY,
-                support_numpy=True,
-                recipe_name="FedAvgRecipe",
-            )
-
-    def test_setup_numpy_with_list_model(self, monkeypatch):
-        fake_mod = types.ModuleType("fake_np_persistor")
-
-        class FakeNPModelPersistor:
-            def __init__(self, model, source_ckpt_file_full_name):
-                self.model = model
-                self.source_ckpt_file_full_name = source_ckpt_file_full_name
-
-        fake_mod.NPModelPersistor = FakeNPModelPersistor
-        monkeypatch.setitem(sys.modules, "nvflare.app_common.np.np_model_persistor", fake_mod)
-
-        job = MagicMock()
-        job.to_server.return_value = "np_persistor"
-
-        result = setup_framework_model_persistor(
-            job=job,
-            framework=FrameworkType.NUMPY,
-            model=[1.0, 2.0],
-            initial_ckpt=None,
-            prepared_initial_ckpt="model.npy",
-            server_expected_format=ExchangeFormat.NUMPY,
-            support_numpy=True,
-            recipe_name="FedAvgRecipe",
-        )
-
-        assert result == "np_persistor"
-        sent_obj = job.to_server.call_args.args[0]
-        assert isinstance(sent_obj, FakeNPModelPersistor)
-        assert sent_obj.model == [1.0, 2.0]
-        assert sent_obj.source_ckpt_file_full_name == "model.npy"
-
-    def test_setup_unsupported_framework_returns_empty_by_default(self):
-        job = MagicMock()
-        result = setup_framework_model_persistor(
-            job=job,
-            framework=FrameworkType.RAW,
-            model=None,
-            initial_ckpt=None,
-            server_expected_format=ExchangeFormat.NUMPY,
-            recipe_name="SomeRecipe",
-        )
-        assert result == ""
-
-    def test_setup_unsupported_framework_raises_with_custom_message(self):
-        job = MagicMock()
-        with pytest.raises(ValueError, match="custom unsupported message"):
-            setup_framework_model_persistor(
-                job=job,
-                framework=FrameworkType.RAW,
-                model=None,
-                initial_ckpt=None,
-                server_expected_format=ExchangeFormat.NUMPY,
-                raise_on_unsupported=True,
-                unsupported_framework_message="custom unsupported message",
-                recipe_name="SomeRecipe",
-            )
+        assert result == "prepared_by_helper.pt"
+        assert calls["initial_ckpt"] == "relative/path/model.pt"
+        assert calls["job"] is job
 
 
 class TestRecipePackageExports:

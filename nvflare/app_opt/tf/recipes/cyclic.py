@@ -18,7 +18,7 @@ from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
-from nvflare.recipe.utils import _extract_persistor_id
+from nvflare.recipe.utils import extract_persistor_id
 
 
 class CyclicRecipe(BaseCyclicRecipe):
@@ -107,11 +107,11 @@ class CyclicRecipe(BaseCyclicRecipe):
         # If model is already a TFModel wrapper (user passed TFModel directly), use as-is
         if hasattr(self.model, "add_to_fed_job"):
             result = job.to_server(self.model, id="persistor")
-            return _extract_persistor_id(result)
+            return extract_persistor_id(result)
 
-        from nvflare.recipe.utils import prepare_initial_ckpt
+        from nvflare.recipe.utils import resolve_initial_ckpt
 
-        ckpt_path = prepare_initial_ckpt(self._tf_initial_ckpt, job)
+        ckpt_path = resolve_initial_ckpt(self._tf_initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
         tf_model = TFModel(model=self.model, initial_ckpt=ckpt_path)
         result = job.to_server(tf_model, id="persistor")
-        return _extract_persistor_id(result)
+        return extract_persistor_id(result)
