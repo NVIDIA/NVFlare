@@ -23,7 +23,6 @@ from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
 
 
-
 class TestFederatedServer:
     @pytest.mark.parametrize("server_state, expected", [(HotState(), ["extra_job"]), (ColdState(), [])])
     def test_heart_beat_abort_jobs(self, server_state, expected):
