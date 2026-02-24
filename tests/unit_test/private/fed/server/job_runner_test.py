@@ -42,6 +42,7 @@ def _make_runner_inputs(num_clients=1):
     job.job_id = "job-1"
     job.meta = {}
     job.min_sites = 0  # no minimum by default
+    job.required_sites = None  # no required sites by default
 
     client_sites = {"site-1": MagicMock()}
     return runner, fl_ctx, engine, job, client_sites
@@ -156,6 +157,54 @@ def test_start_run_keeps_job_clients_meta_when_no_timeouts(mock_get_bool, mock_c
     runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
 
     assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}, {"name": "site-2"}]
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies")
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_raises_when_required_site_times_out(mock_get_bool, mock_check_replies):
+    """A timed-out required site must abort the job even if active_count >= min_sites."""
+    mock_check_replies.return_value = ["site-2"]  # site-2 timed out
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    job.min_sites = 1  # still satisfied after site-2 drops out
+    job.required_sites = ["site-2"]  # but site-2 is required
+
+    with pytest.raises(RuntimeError, match="required client site-2 timed out"):
+        runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+
+@patch("nvflare.private.fed.server.job_runner.check_client_replies")
+@patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)
+def test_start_run_proceeds_when_non_required_site_times_out(mock_get_bool, mock_check_replies):
+    """A timed-out non-required site proceeds normally when min_sites is still satisfied."""
+    mock_check_replies.return_value = ["site-2"]  # site-2 timed out but is not required
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+
+    site1 = MagicMock()
+    site1.name = "site-1"
+    site1.to_dict.return_value = {"name": "site-1"}
+    site2 = MagicMock()
+    site2.name = "site-2"
+    site2.to_dict.return_value = {"name": "site-2"}
+    engine.get_job_clients.return_value = {"token-1": site1, "token-2": site2}
+
+    client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
+    job.min_sites = 1
+    job.required_sites = ["site-1"]  # site-1 is required, site-2 is not
+
+    runner._start_run(job_id=job.job_id, job=job, client_sites=client_sites, fl_ctx=fl_ctx)
+
+    assert job.meta[JobMetaKey.JOB_CLIENTS] == [{"name": "site-1"}]
+    runner.log_warning.assert_called_once()
 
 
 @patch("nvflare.private.fed.server.job_runner.ConfigService.get_bool_var", return_value=True)

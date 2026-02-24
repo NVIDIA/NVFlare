@@ -262,7 +262,6 @@ class JobRunner(FLComponent):
         # job_clients is a dict of: token => Client
         assert isinstance(job_clients, dict)
         participating_clients = [c.to_dict() for c in job_clients.values()]
-        job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
         err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
@@ -282,6 +281,13 @@ class JobRunner(FLComponent):
         )
         if timed_out:
             active_count = len(client_sites_names) - len(timed_out)
+
+            # A required site timing out is fatal regardless of min_sites, same as deploy phase.
+            if job.required_sites:
+                for c in timed_out:
+                    if c in job.required_sites:
+                        raise RuntimeError(f"start job ({job_id}): required client {c} timed out")
+
             if job.min_sites and active_count < job.min_sites:
                 raise RuntimeError(
                     f"start job ({job_id}): {len(timed_out)} client(s) timed out and remaining "
@@ -294,12 +300,15 @@ class JobRunner(FLComponent):
             )
             client_sites_names = [c for c in client_sites_names if c not in timed_out]
 
-            # Keep job metadata aligned with actual active participants.
+            # Rebuild to reflect only active participants after exclusion.
             # Note: timed-out clients remain in run_processes[PARTICIPANTS] but
             # require_previous_report=True (default) ensures _sync_client_jobs will not
             # fire dead-job for them unless they first positively report the job running.
             active_sites = set(client_sites_names)
-            job.meta[JobMetaKey.JOB_CLIENTS] = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
+            participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
+
+        # Set metadata once, after any timeout exclusion, so it always reflects active participants.
+        job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
         display_sites = ",".join(client_sites_names)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
