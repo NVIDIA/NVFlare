@@ -435,4 +435,3 @@ class TestRecipeExecuteExportParamIsolation:
         server_app = recipe.job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
-

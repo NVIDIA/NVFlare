@@ -168,6 +168,12 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
 
         persistor_id = setup_custom_persistor(job=job, model_persistor=self.model_persistor)
         if persistor_id:
+            if hasattr(job, "comp_ids"):
+                job.comp_ids["persistor_id"] = persistor_id
+                if self._pt_model_locator is not None:
+                    locator_id = job.to_server(self._pt_model_locator, id="locator")
+                    if isinstance(locator_id, str) and locator_id:
+                        job.comp_ids["locator_id"] = locator_id
             return persistor_id
 
         ckpt_path = resolve_initial_ckpt(self.initial_ckpt, getattr(self, "_prepared_initial_ckpt", None), job)
@@ -184,4 +190,10 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             locator=self._pt_model_locator,
             allow_numpy_conversion=allow_numpy_conversion,
         )
-        return extract_persistor_id(job.to_server(pt_model, id="persistor"))
+        result = job.to_server(pt_model, id="persistor")
+        if isinstance(result, dict) and hasattr(job, "comp_ids"):
+            job.comp_ids.update(result)
+        persistor_id = extract_persistor_id(result)
+        if persistor_id and hasattr(job, "comp_ids"):
+            job.comp_ids.setdefault("persistor_id", persistor_id)
+        return persistor_id
