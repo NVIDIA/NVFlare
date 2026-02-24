@@ -15,7 +15,7 @@
 """Tests for ExProcessClientAPI memory management (send/release_params behaviour)."""
 
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
