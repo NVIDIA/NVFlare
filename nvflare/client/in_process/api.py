@@ -28,6 +28,7 @@ from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.mem_utils import log_rss
 
 TOPIC_LOG_DATA = "LOG_DATA"
 TOPIC_STOP = "STOP"
@@ -115,6 +116,9 @@ class InProcessClientAPI(APISpec):
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
+        if result is not None:
+            self._mem_round = result.current_round
+            log_rss(f"round={result.current_round} after_receive")
         return result
 
     def __receive(self) -> Optional[FLModel]:
@@ -150,11 +154,22 @@ class InProcessClientAPI(APISpec):
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
+            # Serialization is complete. Release the sent model's params and the
+            # received model's params — both are dead weight after flare.send().
+            # NOTE: model.params and input_model.params will be None after this.
+            model.params = None
+            model.optimizer_params = None
+            # Keep a local reference so we can clear input_model params before
+            # dropping self.fl_model.
+            received_model = self.fl_model
             self.fl_model = None
+            if received_model:
+                received_model.params = None
+                received_model.optimizer_params = None
             self.receive_called = False
 
-        # Perform memory cleanup if configured
         self._maybe_cleanup_memory()
+        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
 
     def system_info(self) -> Dict:
         return self.sys_info
