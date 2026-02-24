@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Union
 from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -237,6 +238,7 @@ class FedAvgRecipe(Recipe):
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
         self.per_site_config = v.per_site_config
+        self._validate_per_site_config(self.per_site_config)
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
@@ -276,6 +278,12 @@ class FedAvgRecipe(Recipe):
         has_persistor = persistor_id != ""
         model_params = None if has_persistor else self._get_model_params()
 
+        if not has_persistor and model_params is None:
+            raise ValueError(
+                "Unable to configure a model source for FedAvgRecipe: no persistor and no model parameters. "
+                "Use a framework-specific recipe for checkpoint-only initialization, or provide model/model_persistor."
+            )
+
         # Prepare aggregator for controller - must be ModelAggregator for FLModel-based aggregation
         model_aggregator = self._get_model_aggregator()
 
@@ -312,10 +320,18 @@ class FedAvgRecipe(Recipe):
                     if site_config.get("launch_external_process") is not None
                     else self.launch_external_process
                 )
-                command = site_config.get("command") or self.command
-                framework = site_config.get("framework") or self.framework
-                expected_format = site_config.get("server_expected_format") or self.server_expected_format
-                transfer_type = site_config.get("params_transfer_type") or self.params_transfer_type
+                command = site_config.get("command") if site_config.get("command") is not None else self.command
+                framework = site_config.get("framework") if site_config.get("framework") is not None else self.framework
+                expected_format = (
+                    site_config.get("server_expected_format")
+                    if site_config.get("server_expected_format") is not None
+                    else self.server_expected_format
+                )
+                transfer_type = (
+                    site_config.get("params_transfer_type")
+                    if site_config.get("params_transfer_type") is not None
+                    else self.params_transfer_type
+                )
                 launch_once = (
                     site_config.get("launch_once") if site_config.get("launch_once") is not None else self.launch_once
                 )
@@ -356,6 +372,23 @@ class FedAvgRecipe(Recipe):
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    @staticmethod
+    def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
+        if per_site_config is None:
+            return
+
+        reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
+        for site_name, site_config in per_site_config.items():
+            if not isinstance(site_name, str):
+                raise ValueError(f"per_site_config key must be str, got {type(site_name).__name__}")
+            if site_name in reserved_targets:
+                raise ValueError(
+                    f"'{site_name}' is a reserved target name and cannot be used in per_site_config. "
+                    f"Reserved names: {sorted(reserved_targets)}"
+                )
+            if not isinstance(site_config, dict):
+                raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
 
     def _get_model_params(self) -> Optional[Dict]:
         """Convert model to dict of params.
@@ -411,14 +444,14 @@ class FedAvgRecipe(Recipe):
             return None
 
     def _setup_model_and_persistor(self, job: BaseFedJob) -> str:
-        """Setup framework-specific model components and persistor.
+        """Setup generic custom persistor only.
 
-        Base implementation handles custom persistor. Framework-specific subclasses
-        should override this to use PTModel/TFModel for their model types.
+        Framework-specific recipes (PT/TF/NumPy) override this method to build and
+        register their model wrappers and default persistors.
 
         Returns:
             str: The persistor_id to be used by the controller.
         """
-        if self.model_persistor is not None:
-            return job.to_server(self.model_persistor, id="persistor")
-        return ""
+        from nvflare.recipe.utils import setup_custom_persistor
+
+        return setup_custom_persistor(job=job, model_persistor=self.model_persistor)
