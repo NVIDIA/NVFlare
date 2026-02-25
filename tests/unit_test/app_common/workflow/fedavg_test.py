@@ -412,7 +412,10 @@ class TestFedAvgWorkflowEvents:
         controller.fl_ctx = FLContext()
         model = FLModel(params={"w": 1.0}, current_round=2)
 
-        with patch.object(controller, "broadcast") as mock_broadcast, patch.object(controller, "fire_event") as mock_fire:
+        with (
+            patch.object(controller, "broadcast") as mock_broadcast,
+            patch.object(controller, "fire_event") as mock_fire,
+        ):
             controller.broadcast_model(data=model, blocking=False, callback=lambda _: None)
 
         round_started_calls = [c for c in mock_fire.call_args_list if c.args[0] == AppEventType.ROUND_STARTED]
