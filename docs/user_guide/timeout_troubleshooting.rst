@@ -378,6 +378,7 @@ the job. For a 144-client job, tolerating up to ~4% stragglers is safe:
 
    {
      "workflows": [{
+       "id": "controller",
        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
        "args": {
          "num_clients": 144,
