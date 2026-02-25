@@ -24,6 +24,7 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
+from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -287,26 +288,20 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     @staticmethod
     def _read_cj_memory_profile_enabled(fl_ctx: FLContext) -> bool:
-        profile = get_client_config_value(fl_ctx, "CLIENT_Memory_profile", None)
-        if profile is None:
-            profile = get_client_config_value(fl_ctx, "CLIENT_MEMORY_PROFILE", None)
-        if profile is None:
-            profile = os.environ.get("CLIENT_Memory_profile")
-        if profile is None:
-            profile = os.environ.get("CLIENT_MEMORY_PROFILE")
-        if profile is None:
-            profile = os.environ.get("NVFLARE_CLIENT_MEMORY_PROFILE")
-        return ClientAPILauncherExecutor._to_bool(profile)
+        profile = None
+        for key in ("CLIENT_MEMORY_PROFILE", "CLIENT_Memory_profile"):
+            profile = get_client_config_value(fl_ctx, key, None)
+            if profile is not None:
+                break
 
-    @staticmethod
-    def _to_bool(v) -> bool:
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, (int, float)):
-            return v != 0
-        if isinstance(v, str):
-            return v.strip().lower() in ("1", "true", "yes", "y", "on")
-        return False
+        if profile is None:
+            for key in ("NVFLARE_CLIENT_MEMORY_PROFILE", "CLIENT_MEMORY_PROFILE", "CLIENT_Memory_profile"):
+                profile = os.environ.get(key)
+                if profile is not None:
+                    break
+
+        parsed = str2bool(profile)
+        return parsed if parsed is not None else False
 
     @staticmethod
     def _get_process_rss_mb():
