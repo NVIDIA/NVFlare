@@ -98,9 +98,12 @@ class ExProcessClientAPI(APISpec):
         """Load the site's log_config.json to configure Python logging in the subprocess.
 
         Without this, logger.info() calls in the subprocess are silently dropped because
-        Python logging has no handlers configured. Loading log_config.json wires up
-        consoleHandler -> sys.stdout so logs flow through SubprocessLauncher to the site's
-        log files, and also directly into log.txt / log.json alongside the main process.
+        Python logging has no handlers configured. We keep only the console (stream) handler
+        so logs flow via stdout -> SubprocessLauncher -> parent's file handlers, which is
+        the single path to the site's log files. File handlers are stripped to avoid
+        duplicate log lines: SubprocessLauncher already re-logs everything from subprocess
+        stdout through the parent process, so a direct file write from the subprocess would
+        produce a second copy of every log record in the site log files.
         """
         try:
             import json
@@ -117,6 +120,30 @@ class ExProcessClientAPI(APISpec):
                 return
             with open(log_config_path) as f:
                 dict_config = json.load(f)
+
+            # Strip file handlers to prevent duplicate log lines.
+            # SubprocessLauncher captures subprocess stdout and re-logs it through the
+            # parent process, which already has file handlers attached. Keeping file
+            # handlers here would write every log record twice to the site log files.
+            file_handlers = {
+                name
+                for name, cfg in dict_config.get("handlers", {}).items()
+                if not cfg.get("class", "").endswith("StreamHandler")
+            }
+            if file_handlers:
+                for handler_name in file_handlers:
+                    dict_config["handlers"].pop(handler_name)
+                for logger_cfg in dict_config.get("loggers", {}).values():
+                    logger_cfg["handlers"] = [
+                        h for h in logger_cfg.get("handlers", []) if h not in file_handlers
+                    ]
+
+            # Switch stream handlers to the plain formatter so ANSI color codes are not
+            # written into the log files (subprocess stdout is a pipe, not a TTY).
+            for handler_cfg in dict_config.get("handlers", {}).values():
+                if handler_cfg.get("class", "").endswith("StreamHandler"):
+                    handler_cfg["formatter"] = "baseFormatter"
+
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
