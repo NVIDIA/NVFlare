@@ -122,7 +122,10 @@ class ExProcessClientAPI(APISpec):
             root_level = dict_config.get("loggers", {}).get("root", {}).get("level", "INFO")
             formatters = dict_config.get("formatters", {})
             if "baseFormatter" not in formatters:
-                formatters = {**formatters, "baseFormatter": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}}
+                formatters = {
+                    **formatters,
+                    "baseFormatter": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
+                }
             stdout_only_config = {
                 "version": 1,
                 "disable_existing_loggers": False,
