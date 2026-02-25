@@ -349,6 +349,12 @@ class CellPipe(Pipe):
 
         request = _to_cell_message(msg)
         request.set_header(MessageHeaderKey.MSG_ROOT_ID, msg.msg_id)
+        if msg.msg_type == Message.REPLY:
+            # In reverse pass-through, reply acceptance can happen before the
+            # downstream peer finishes downloading the large payload. Keep the
+            # root transaction alive long enough to avoid missing-ref failures.
+            msg_root_ttl = max(float(timeout) if timeout else 0.0, 300.0)
+            request.set_header(MessageHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
         reply = self.cell.send_request(
             channel=self.channel,
             topic=msg.topic,

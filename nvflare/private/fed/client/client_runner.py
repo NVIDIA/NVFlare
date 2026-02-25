@@ -545,30 +545,35 @@ class ClientRunner(TBI):
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
-        try_count = 1
-        while True:
-            self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
-
-            if self.run_abort_signal.triggered:
-                self.log_info(fl_ctx, "job aborted: stopped trying to send result")
-                return False
-
-            try_count += 1
-            rc = self._try_send_result_once(result, task_id, fl_ctx)
-
-            if rc == _TASK_CHECK_RESULT_OK:
-                return True
-            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
-                return False
-            else:
-                # retry
-                time.sleep(self.task_check_interval)
-
-    def _try_send_result_once(self, result: Shareable, task_id: str, fl_ctx: FLContext):
-        # wait until server is ready to receive
+        # Use one root for all retries so any lazy-download refs stay valid across
+        # check/send retries, then clean up exactly once on every exit path.
         msg_root_id = str(uuid.uuid4())
         result.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
+        try:
+            try_count = 1
+            while True:
+                self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
 
+                if self.run_abort_signal.triggered:
+                    self.log_info(fl_ctx, "job aborted: stopped trying to send result")
+                    return False
+
+                try_count += 1
+                rc = self._wait_task_ready_and_send_once(result, task_id, fl_ctx)
+
+                if rc == _TASK_CHECK_RESULT_OK:
+                    return True
+                elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                    return False
+                else:
+                    # retry
+                    time.sleep(self.task_check_interval)
+        finally:
+            delete_msg_root(msg_root_id)
+
+    def _wait_task_ready_and_send_once(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        # Called by _send_task_result() for one send attempt:
+        # first wait for TASK_CHECK readiness, then attempt one result send.
         while True:
             if self.run_abort_signal.triggered:
                 return _TASK_CHECK_RESULT_TASK_GONE
@@ -587,7 +592,6 @@ class ClientRunner(TBI):
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
-            delete_msg_root(msg_root_id)
             return _TASK_CHECK_RESULT_OK
         else:
             self.log_error(fl_ctx, f"failed to send task result to {self.parent_target} - will try again")

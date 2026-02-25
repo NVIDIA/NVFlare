@@ -16,6 +16,7 @@ import copy
 
 import pytest
 
+import nvflare.app_common.executors.client_api_launcher_executor as client_api_launcher_executor_module
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -72,6 +73,11 @@ class _FakeFLContext:
         return self._peer_ctx
 
 
+class _FakeCellPipe:
+    def __init__(self, cell):
+        self.cell = cell
+
+
 @pytest.fixture
 def base_executor(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
@@ -90,6 +96,7 @@ def test_pass_through_restored_to_previous_value(base_executor):
     base_executor.finalize(fl_ctx)
     assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
     assert base_executor._cell_with_pass_through is None
+    assert base_executor._pipe_cell_with_pass_through is None
 
 
 def test_pass_through_restored_to_none_when_previously_absent(base_executor):
@@ -102,6 +109,25 @@ def test_pass_through_restored_to_none_when_previously_absent(base_executor):
     base_executor.finalize(fl_ctx)
     assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
     assert base_executor._cell_with_pass_through is None
+    assert base_executor._pipe_cell_with_pass_through is None
+
+
+def test_pipe_cell_pass_through_restored_to_previous_value(base_executor, monkeypatch):
+    monkeypatch.setattr(client_api_launcher_executor_module, "CellPipe", _FakeCellPipe)
+    engine_cell = _FakeCell()
+    pipe_cell = _FakeCell({FOBSContextKey.PASS_THROUGH: True})
+    base_executor.pipe = _FakeCellPipe(pipe_cell)
+    fl_ctx = _FakeFLContext(engine_cell)
+
+    base_executor.initialize(fl_ctx)
+    assert engine_cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
+    assert pipe_cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
+
+    base_executor.finalize(fl_ctx)
+    assert engine_cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
+    assert pipe_cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
+    assert base_executor._cell_with_pass_through is None
+    assert base_executor._pipe_cell_with_pass_through is None
 
 
 def test_initialize_failure_restores_pass_through(monkeypatch):
@@ -121,6 +147,7 @@ def test_initialize_failure_restores_pass_through(monkeypatch):
 
     assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
     assert executor._cell_with_pass_through is None
+    assert executor._pipe_cell_with_pass_through is None
 
 
 def test_launcher_converter_ids_warn_when_ignored(monkeypatch):
