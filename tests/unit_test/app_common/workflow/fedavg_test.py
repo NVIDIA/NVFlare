@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
