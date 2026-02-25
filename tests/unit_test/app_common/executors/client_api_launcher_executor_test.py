@@ -196,16 +196,12 @@ def test_cj_memory_cleanup_runs_on_interval(monkeypatch):
 
 def test_cj_memory_profile_logs_rss(monkeypatch):
     monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, task_name, shareable, fl_ctx: True)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "_get_process_rss_mb", staticmethod(lambda: 123.0))
-
-    logged = []
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: logged.append(msg))
+    tags = []
+    monkeypatch.setattr(client_api_launcher_executor_module, "log_rss", lambda tag: tags.append(tag))
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    executor._cj_memory_profile_enabled = True
     fl_ctx = _FakeFLContext(_FakeCell())
     shareable = Shareable()
 
     assert executor.check_output_shareable("train", shareable, fl_ctx) is True
-    assert any("CJ memory profile: stage=result_ready" in m for m in logged)
-    assert any("rss_mb=123.00" in m for m in logged)
+    assert any("stage=result_ready" in t for t in tags)

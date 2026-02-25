@@ -14,7 +14,6 @@
 
 import logging
 import os
-import sys
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
@@ -24,7 +23,7 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
-from nvflare.fuel.utils.argument_utils import str2bool
+from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -125,7 +124,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._pipe_cell_with_pass_through = None
         self._pipe_prev_pass_through = None
         self._cj_round_count = 0
-        self._cj_memory_profile_enabled = False
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -184,10 +182,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {timeout_value}s",
             )
             self._external_pre_init_timeout = timeout_value
-
-        self._cj_memory_profile_enabled = self._read_cj_memory_profile_enabled(fl_ctx)
-        if self._cj_memory_profile_enabled:
-            self.log_info(fl_ctx, "CJ memory profile enabled.")
 
     def finalize(self, fl_ctx: FLContext) -> None:
         try:
@@ -257,7 +251,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         return True
 
     def _maybe_profile_and_cleanup_cj_memory(self, fl_ctx: FLContext, task_name: str, current_round):
-        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="result_ready")
+        # log_rss() is a no-op unless NVFLARE_CLIENT_MEMORY_PROFILE is enabled.
+        log_rss(f"CJ task={task_name} round={current_round} stage=result_ready")
 
         if self._memory_gc_rounds <= 0:
             return
@@ -266,58 +261,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         if self._cj_round_count % self._memory_gc_rounds != 0:
             return
 
-        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="before_cleanup")
+        log_rss(f"CJ task={task_name} round={current_round} stage=before_cleanup")
         cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
         self.log_debug(fl_ctx, f"CJ memory cleanup performed at result #{self._cj_round_count}.")
-        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="after_cleanup")
-
-    def _log_cj_rss(self, fl_ctx: FLContext, task_name: str, current_round, stage: str):
-        if not self._cj_memory_profile_enabled:
-            return
-        rss_mb = self._get_process_rss_mb()
-        if rss_mb is None:
-            self.log_info(
-                fl_ctx,
-                f"CJ memory profile: stage={stage} task={task_name} round={current_round} rss_mb=unavailable",
-            )
-            return
-        self.log_info(
-            fl_ctx,
-            f"CJ memory profile: stage={stage} task={task_name} round={current_round} rss_mb={rss_mb:.2f}",
-        )
-
-    @staticmethod
-    def _read_cj_memory_profile_enabled(fl_ctx: FLContext) -> bool:
-        profile = None
-        for key in ("CLIENT_MEMORY_PROFILE", "CLIENT_Memory_profile"):
-            profile = get_client_config_value(fl_ctx, key, None)
-            if profile is not None:
-                break
-
-        if profile is None:
-            for key in ("NVFLARE_CLIENT_MEMORY_PROFILE", "CLIENT_MEMORY_PROFILE", "CLIENT_Memory_profile"):
-                profile = os.environ.get(key)
-                if profile is not None:
-                    break
-
-        parsed = str2bool(profile)
-        return parsed if parsed is not None else False
-
-    @staticmethod
-    def _get_process_rss_mb():
-        try:
-            import psutil
-
-            return psutil.Process(os.getpid()).memory_info().rss / (1024.0 * 1024.0)
-        except Exception:
-            pass
-
-        try:
-            import resource
-
-            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            if sys.platform == "darwin":
-                return rss / (1024.0 * 1024.0)
-            return rss / 1024.0
-        except Exception:
-            return None
+        log_rss(f"CJ task={task_name} round={current_round} stage=after_cleanup")
