@@ -29,8 +29,8 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
     if hasattr(v, "shape"):
         return True
     try:
-        test_val = v * 1.0
-        test_sum = v + v
+        _ = v * 1.0
+        _ = v + v
         return True
     except (TypeError, AttributeError):
         return False
