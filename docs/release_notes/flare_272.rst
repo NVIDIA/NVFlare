@@ -231,9 +231,6 @@ clients behind a single lock, increasing model-download latency at high client c
 24 per relay). The lock scope has been reduced so production runs concurrently, significantly
 improving throughput when many clients request the same model chunk at once.
 
-.. Changes in this section are introduced by PR #4209 (https://github.com/NVIDIA/NVFlare/pull/4209).
-.. Merge this release notes PR only after PR #4209 has landed on the 2.7 branch.
-
 Hierarchical FL Startup Stability
 -----------------------------------
 
