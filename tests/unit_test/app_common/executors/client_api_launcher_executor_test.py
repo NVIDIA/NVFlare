@@ -204,4 +204,4 @@ def test_cj_memory_profile_logs_rss(monkeypatch):
     shareable = Shareable()
 
     assert executor.check_output_shareable("train", shareable, fl_ctx) is True
-    assert any("stage=result_ready" in t for t in tags)
+    assert any("after_send" in t for t in tags)

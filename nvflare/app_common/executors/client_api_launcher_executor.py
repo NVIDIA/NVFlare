@@ -242,18 +242,21 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         return config_file_path
 
     def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """TaskExchanger hook: validate peer output before returning it to the caller.
+
+        We keep the base check behavior and attach CJ-side memory bookkeeping here,
+        because this is the common post-result hook used by launcher executors.
+        """
         ok = super().check_output_shareable(task_name, shareable, fl_ctx)
         if not ok:
             return False
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
-        self._maybe_profile_and_cleanup_cj_memory(fl_ctx, task_name, current_round)
+        log_rss(f"CJ task={task_name} round={current_round} after_send")
+        self._maybe_cleanup_cj_memory(fl_ctx)
         return True
 
-    def _maybe_profile_and_cleanup_cj_memory(self, fl_ctx: FLContext, task_name: str, current_round):
-        # log_rss() is a no-op unless NVFLARE_CLIENT_MEMORY_PROFILE is enabled.
-        log_rss(f"CJ task={task_name} round={current_round} stage=result_ready")
-
+    def _maybe_cleanup_cj_memory(self, fl_ctx: FLContext):
         if self._memory_gc_rounds <= 0:
             return
 
@@ -261,7 +264,5 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         if self._cj_round_count % self._memory_gc_rounds != 0:
             return
 
-        log_rss(f"CJ task={task_name} round={current_round} stage=before_cleanup")
         cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
-        self.log_debug(fl_ctx, f"CJ memory cleanup performed at result #{self._cj_round_count}.")
-        log_rss(f"CJ task={task_name} round={current_round} stage=after_cleanup")
+        self.log_info(fl_ctx, f"Memory cleanup performed at round {self._cj_round_count}")
