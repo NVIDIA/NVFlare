@@ -120,10 +120,13 @@ class ExProcessClientAPI(APISpec):
                 dict_config = json.load(f)
 
             root_level = dict_config.get("loggers", {}).get("root", {}).get("level", "INFO")
+            formatters = dict_config.get("formatters", {})
+            if "baseFormatter" not in formatters:
+                formatters = {**formatters, "baseFormatter": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}}
             stdout_only_config = {
                 "version": 1,
                 "disable_existing_loggers": False,
-                "formatters": dict_config.get("formatters", {}),
+                "formatters": formatters,
                 "handlers": {
                     "consoleHandler": {
                         "class": "logging.StreamHandler",
