@@ -17,6 +17,8 @@ import copy
 import pytest
 
 import nvflare.app_common.executors.client_api_launcher_executor as client_api_launcher_executor_module
+from nvflare.apis.shareable import Shareable
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -165,3 +167,45 @@ def test_launcher_converter_ids_warn_when_ignored(monkeypatch):
     assert "ignored in LauncherExecutor" in warnings[0]
     assert executor._from_nvflare_converter is None
     assert executor._to_nvflare_converter is None
+
+
+def test_cj_memory_cleanup_runs_on_interval(monkeypatch):
+    monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, task_name, shareable, fl_ctx: True)
+
+    cleanup_calls = []
+    monkeypatch.setattr(
+        client_api_launcher_executor_module,
+        "cleanup_memory",
+        lambda cuda_empty_cache: cleanup_calls.append(cuda_empty_cache),
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", memory_gc_rounds=2, cuda_empty_cache=True)
+    fl_ctx = _FakeFLContext(_FakeCell())
+    shareable = Shareable()
+    shareable.set_header(AppConstants.CURRENT_ROUND, 1)
+
+    assert executor.check_output_shareable("train", shareable, fl_ctx) is True
+    assert cleanup_calls == []
+
+    assert executor.check_output_shareable("train", shareable, fl_ctx) is True
+    assert cleanup_calls == [True]
+
+    assert executor.check_output_shareable("train", shareable, fl_ctx) is True
+    assert cleanup_calls == [True]
+
+
+def test_cj_memory_profile_logs_rss(monkeypatch):
+    monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, task_name, shareable, fl_ctx: True)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "_get_process_rss_mb", staticmethod(lambda: 123.0))
+
+    logged = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: logged.append(msg))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor._cj_memory_profile_enabled = True
+    fl_ctx = _FakeFLContext(_FakeCell())
+    shareable = Shareable()
+
+    assert executor.check_output_shareable("train", shareable, fl_ctx) is True
+    assert any("CJ memory profile: stage=result_ready" in m for m in logged)
+    assert any("rss_mb=123.00" in m for m in logged)

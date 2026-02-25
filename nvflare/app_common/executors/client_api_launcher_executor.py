@@ -14,14 +14,17 @@
 
 import logging
 import os
+import sys
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
+from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
@@ -120,6 +123,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._prev_pass_through = None
         self._pipe_cell_with_pass_through = None
         self._pipe_prev_pass_through = None
+        self._cj_round_count = 0
+        self._cj_memory_profile_enabled = False
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -179,6 +184,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             )
             self._external_pre_init_timeout = timeout_value
 
+        self._cj_memory_profile_enabled = self._read_cj_memory_profile_enabled(fl_ctx)
+        if self._cj_memory_profile_enabled:
+            self.log_info(fl_ctx, "CJ memory profile enabled.")
+
     def finalize(self, fl_ctx: FLContext) -> None:
         try:
             super().finalize(fl_ctx)
@@ -236,3 +245,84 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         app_config_directory = workspace.get_app_config_dir(fl_ctx.get_job_id())
         config_file_path = os.path.join(app_config_directory, self._config_file_name)
         return config_file_path
+
+    def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        ok = super().check_output_shareable(task_name, shareable, fl_ctx)
+        if not ok:
+            return False
+
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
+        self._maybe_profile_and_cleanup_cj_memory(fl_ctx, task_name, current_round)
+        return True
+
+    def _maybe_profile_and_cleanup_cj_memory(self, fl_ctx: FLContext, task_name: str, current_round):
+        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="result_ready")
+
+        if self._memory_gc_rounds <= 0:
+            return
+
+        self._cj_round_count += 1
+        if self._cj_round_count % self._memory_gc_rounds != 0:
+            return
+
+        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="before_cleanup")
+        cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
+        self.log_debug(fl_ctx, f"CJ memory cleanup performed at result #{self._cj_round_count}.")
+        self._log_cj_rss(fl_ctx, task_name=task_name, current_round=current_round, stage="after_cleanup")
+
+    def _log_cj_rss(self, fl_ctx: FLContext, task_name: str, current_round, stage: str):
+        if not self._cj_memory_profile_enabled:
+            return
+        rss_mb = self._get_process_rss_mb()
+        if rss_mb is None:
+            self.log_info(
+                fl_ctx,
+                f"CJ memory profile: stage={stage} task={task_name} round={current_round} rss_mb=unavailable",
+            )
+            return
+        self.log_info(
+            fl_ctx,
+            f"CJ memory profile: stage={stage} task={task_name} round={current_round} rss_mb={rss_mb:.2f}",
+        )
+
+    @staticmethod
+    def _read_cj_memory_profile_enabled(fl_ctx: FLContext) -> bool:
+        profile = get_client_config_value(fl_ctx, "CLIENT_Memory_profile", None)
+        if profile is None:
+            profile = get_client_config_value(fl_ctx, "CLIENT_MEMORY_PROFILE", None)
+        if profile is None:
+            profile = os.environ.get("CLIENT_Memory_profile")
+        if profile is None:
+            profile = os.environ.get("CLIENT_MEMORY_PROFILE")
+        if profile is None:
+            profile = os.environ.get("NVFLARE_CLIENT_MEMORY_PROFILE")
+        return ClientAPILauncherExecutor._to_bool(profile)
+
+    @staticmethod
+    def _to_bool(v) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return v != 0
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "yes", "y", "on")
+        return False
+
+    @staticmethod
+    def _get_process_rss_mb():
+        try:
+            import psutil
+
+            return psutil.Process(os.getpid()).memory_info().rss / (1024.0 * 1024.0)
+        except Exception:
+            pass
+
+        try:
+            import resource
+
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            if sys.platform == "darwin":
+                return rss / (1024.0 * 1024.0)
+            return rss / 1024.0
+        except Exception:
+            return None
