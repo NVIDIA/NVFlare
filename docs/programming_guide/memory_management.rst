@@ -17,10 +17,10 @@ Overview
 Federated learning jobs can run for hours or days. Without proper memory management,
 RSS (Resident Set Size) can grow continuously due to:
 
-- Python garbage collection delays
-- Long-lived references that keep large tensors alive
-- glibc memory arena fragmentation
+- Long-lived references that keep large model params alive between rounds (primary cause on clients)
+- glibc memory arena fragmentation (freed memory not returned to the OS)
 - PyTorch CUDA cache retention
+- Cyclic references delaying Python garbage collection (supplementary; usually not the main driver)
 
 NVFlare provides utilities and configuration options to manage memory effectively on
 both server and client sides. The framework automatically detects the memory allocator
@@ -67,8 +67,9 @@ Not all memory management features work on all platforms. The table below summar
 .. warning::
 
    For maximum memory efficiency, use Linux with glibc. Alpine Linux (musl) and
-   macOS/Windows will still benefit from ``gc.collect()`` but cannot release
-   fragmented heap memory back to the OS.
+   macOS still benefit from client-side parameter reference release (and optional
+   ``gc.collect()``), but cannot release fragmented heap memory back to the OS
+   via ``malloc_trim()``.
 
 Environment Variables
 =====================
@@ -100,8 +101,8 @@ Server-Side Memory Cleanup
 
 The FedAvg controller supports automatic memory cleanup via the ``server_memory_gc_rounds`` parameter.
 
-Configuration
--------------
+Server-Side Configuration
+--------------------------
 
 .. code-block:: python
 
@@ -117,12 +118,12 @@ Configuration
 
 **Values:**
 
-- ``0`` = Disabled (default for BaseFedAvg-based controllers)
-- ``1`` = Cleanup every round (default for legacy controllers like ScatterAndGather)
+- ``0`` = Disabled (default for FedAvg-based recipes)
+- ``1`` = Cleanup every round (default for FedOpt, FedAvgHE, and Cyclic recipes)
 - ``5`` = Cleanup every 5 rounds (recommended for server)
 
-What It Does
-------------
+Server Cleanup Effects
+----------------------
 
 When enabled, at the end of every N rounds:
 
@@ -153,18 +154,24 @@ Memory cleanup has minimal overhead in typical federated learning workloads:
 - Cleanup runs once every 5 rounds
 - Total overhead: < 0.2% of training time
 
-**Recommendation**: The default ``server_memory_gc_rounds=5`` provides good memory
+**Recommendation**: Using ``server_memory_gc_rounds=5`` provides good memory
 management with negligible performance impact. Only disable (``=0``) if you've
 measured and confirmed RSS is stable without cleanup.
 
 Client-Side Memory Cleanup
 ==========================
 
-The FedAvg recipe and ScriptRunner support automatic memory cleanup on clients via
-``client_memory_gc_rounds`` and ``cuda_empty_cache`` parameters.
+The primary client-side memory control is ``clear_cache=True`` (the default) in
+``flare.send()``, which immediately releases parameter references after serialization.
+In CPython, this reference release is what actually frees large tensor/array memory —
+no explicit GC call is needed for that.
 
-Configuration
--------------
+``client_memory_gc_rounds`` and ``cuda_empty_cache`` provide *supplemental* cleanup on
+top of the reference release: periodic ``gc.collect()`` for cyclic objects,
+``malloc_trim()`` to return freed pages to the OS, and optional CUDA cache clearing.
+
+Client-Side Configuration
+--------------------------
 
 .. code-block:: python
 
@@ -187,7 +194,7 @@ Configuration
 Swarm Learning Configuration
 ----------------------------
 
-Swarm Learning uses ``memory_gc_rounds`` (not ``memory_gc_counts``) and
+Swarm Learning uses ``memory_gc_rounds`` (not ``client_memory_gc_rounds``) and
 ``cuda_empty_cache`` on ``SimpleSwarmLearningRecipe``:
 
 .. code-block:: python
@@ -210,52 +217,47 @@ Swarm Learning uses ``memory_gc_rounds`` (not ``memory_gc_counts``) and
 
 **Parameters:**
 
-- ``client_memory_gc_rounds``: Run cleanup every N rounds on client (0 = disabled)
+- ``client_memory_gc_rounds``: Run *supplemental* cleanup (``gc.collect()`` + ``malloc_trim()``) every N rounds on client (0 = disabled). The primary cleanup is reference release via ``clear_cache=True`` in ``flare.send()``.
 - ``cuda_empty_cache``: If True, call ``torch.cuda.empty_cache()`` on cleanup
-- ``memory_gc_rounds`` (Swarm): Run cleanup every N rounds (0 = disabled)
+- ``memory_gc_rounds`` (Swarm): Run supplemental cleanup every N rounds (0 = disabled)
 
-What It Does
-------------
+When to use ``client_memory_gc_rounds > 1``
+-------------------------------------------
 
-When enabled, after each ``flare.send()`` on the client:
+Use values greater than ``1`` only when memory is already stable and you are tuning
+for lower cleanup overhead:
 
-1. ``flare.send(..., clear_cache=True)`` (default) drops references to sent and received params.
-2. CPython frees tensor objects as soon as the last reference is removed (reference counting).
-3. Runs ``gc.collect()`` as a supplemental sweep (mainly useful for cyclic references).
-4. For glibc: Returns free heap pages to OS (``malloc_trim()``).
-5. For jemalloc: Relies on auto-decay (no manual action needed).
+- RSS trend is flat/bounded across rounds
+- No CPU/GPU OOM pressure
+- You want slightly better throughput/latency
+
+Start with ``client_memory_gc_rounds=1``, then tune to ``2`` and optionally ``5`` while monitoring RSS.
+If RSS begins to climb or OOM risk increases, revert to ``1``.
+
+Client Cleanup Effects
+----------------------
+
+After each ``flare.send()`` on the client (with default ``clear_cache=True``):
+
+1. FLARE releases references to sent and received model params.
+2. In CPython, this reference release is the primary mechanism that reclaims large tensors/arrays.
+
+Supplemental cleanup is also available and configurable:
+
+3. Runs Python garbage collection (``gc.collect()``), mainly for cyclic references.
+4. For glibc: returns free heap pages to OS (``malloc_trim()``).
+5. For jemalloc: relies on auto-decay (no manual action needed).
 6. Optionally clears PyTorch CUDA cache.
 
 .. note::
 
-   The primary client-side fix for large-model RSS growth is releasing parameter references
-   after ``flare.send()``. ``gc.collect()`` is not the main mechanism; it is a safeguard for
-   cyclic objects.
+   RSS may not drop immediately even after object release because allocators can retain memory
+   for reuse. A flat RSS trend across rounds is typically the expected healthy behavior.
 
 .. note::
 
-   RSS may not drop immediately even after objects are freed because allocators can retain
-   memory for reuse. A flat RSS trend across rounds is usually the expected healthy behavior.
-
-Best Practice in Client Script
-------------------------------
-
-No code changes are required when using the default ``clear_cache=True``. For very large
-models, you can also drop script-owned references promptly:
-
-.. code-block:: python
-
-    import nvflare.client as flare
-
-    flare.init()
-    while flare.is_running():
-        input_model = flare.receive()
-        output_model = train(input_model)
-        flare.send(output_model)  # clear_cache=True by default
-
-        # Optional but recommended for very large payloads:
-        del input_model
-        del output_model
+   The lifecycle handling is transparent to user training scripts. No code changes are required
+   in ``train.py`` for default behavior.
 
 External Process Support
 ------------------------
@@ -382,15 +384,18 @@ High RSS on Server
 High RSS on Client
 ------------------
 
-1. Check ``MALLOC_ARENA_MAX=2`` is set
-2. Enable ``client_memory_gc_rounds=1``
-3. Enable ``cuda_empty_cache=True`` for GPU
-4. Consider using jemalloc
+1. Confirm ``flare.send()`` uses default ``clear_cache=True`` (or explicitly set it)
+2. Check ``MALLOC_ARENA_MAX=2`` is set
+3. Start with ``client_memory_gc_rounds=1``
+4. Increase to ``2`` or ``5`` only if RSS is already stable and you are tuning performance
+5. Enable ``cuda_empty_cache=True`` for GPU
+6. Consider using jemalloc
 
 OOM Errors
 ----------
 
 1. Reduce batch size
-2. Enable memory cleanup every round (``client_memory_gc_rounds=1`` or ``server_memory_gc_rounds=1``)
-3. Check for memory leaks in training code
-4. Use jemalloc with appropriate decay settings
+2. Confirm ``flare.send()`` uses default ``clear_cache=True`` — this is the primary client fix
+3. Enable supplemental cleanup every round (``client_memory_gc_rounds=1`` or ``server_memory_gc_rounds=1``)
+4. Check for memory leaks in training code
+5. Use jemalloc with appropriate decay settings

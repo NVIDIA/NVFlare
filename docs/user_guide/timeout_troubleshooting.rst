@@ -363,6 +363,47 @@ System-level (``comm_config.json`` in startup kit):
    }
 
 
+Large-Scale Hierarchical / HPC Deployments (Slurm, Lustre)
+------------------------------------------------------------
+
+When running 100+ FL clients in a hierarchical topology on HPC systems with shared
+filesystems (Lustre, GPFS), two settings significantly improve startup reliability:
+
+**1. Set a minimum-client tolerance in** ``config_fed_server.json``
+
+Allow a small number of clients to be late or unavailable at startup without aborting
+the job. For a 144-client job, tolerating up to ~4% stragglers is safe:
+
+.. code-block:: json
+
+   {
+     "workflows": [{
+       "id": "controller",
+       "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+       "args": {
+         "num_clients": 144,
+         "min_clients": 138
+       }
+     }]
+   }
+
+**2. Extend the runner sync timeout in** ``config_fed_client.json``
+
+The default 50-second timeout is too tight when many clients contend for Lustre I/O
+at job launch. Raise it to give each client time to initialize:
+
+.. code-block:: json
+
+   {
+     "runner_sync_timeout": 120,
+     "max_runner_sync_timeout": 7200,
+     "max_runner_sync_tries": 120
+   }
+
+These two changes address the most common startup race conditions in large hierarchical
+deployments and are compatible with the startup stability fixes in FLARE 2.7.2.
+
+
 Debugging Timeout Issues
 ========================
 
