@@ -140,7 +140,6 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             raise TypeError("callback must be defined if blocking is False, but got {}".format(type(callback)))
 
         self.set_fl_context(data)
-        self.fire_event(AppEventType.ROUND_STARTED, self.fl_ctx)
 
         task = self._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
 
