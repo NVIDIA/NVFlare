@@ -147,6 +147,8 @@ class FedAvg(BaseFedAvg):
             self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+            self.event(AppEventType.ROUND_STARTED)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -179,8 +181,7 @@ class FedAvg(BaseFedAvg):
                     return
                 time.sleep(self._task_check_period)
 
-            # Fire BEFORE_AGGREGATION so widgets (e.g. IntimeModelSelector) can run and fire GLOBAL_BEST_MODEL_AVAILABLE
-            self.fire_event(AppEventType.BEFORE_AGGREGATION, self.fl_ctx)
+            self.event(AppEventType.BEFORE_AGGREGATION)
 
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()
