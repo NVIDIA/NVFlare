@@ -15,8 +15,8 @@
 from types import SimpleNamespace
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client import client_runner as client_runner_module
+from nvflare.private.fed.client.client_runner import ClientRunner
 
 
 def _make_runner():

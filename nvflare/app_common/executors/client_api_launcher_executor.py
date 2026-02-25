@@ -23,10 +23,10 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
-from nvflare.fuel.utils.mem_utils import log_rss
-from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.mem_utils import log_rss
+from nvflare.fuel.utils.memory_utils import cleanup_memory
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.utils.configs import get_client_config_value
 
