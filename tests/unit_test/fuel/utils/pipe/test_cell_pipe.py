@@ -77,6 +77,18 @@ def test_reply_preserves_larger_timeout_as_msg_root_ttl():
     assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 900.0
 
 
+def test_reply_with_none_timeout_sets_minimum_msg_root_ttl():
+    fake_cell = _FakeCell()
+    pipe = _make_pipe(fake_cell)
+    msg = Message.new_reply(topic="train", data={}, req_msg_id="req-1", msg_id="msg-4")
+
+    sent = pipe.send(msg, timeout=None)
+
+    assert sent is True
+    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_ID) == "msg-4"
+    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 300.0
+
+
 def test_request_does_not_set_msg_root_ttl():
     fake_cell = _FakeCell()
     pipe = _make_pipe(fake_cell)

@@ -160,8 +160,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 pipe_cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
                 self.log_info(
                     fl_ctx,
-                    "PASS_THROUGH enabled on task pipe cell: reverse task-result tensors "
-                    "will bypass CJ memory.",
+                    "PASS_THROUGH enabled on task pipe cell: reverse task-result tensors " "will bypass CJ memory.",
                 )
         try:
             super().initialize(fl_ctx)
