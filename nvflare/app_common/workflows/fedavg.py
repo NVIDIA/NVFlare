@@ -126,8 +126,9 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
 
-        # Set NUM_ROUNDS in FL context for persistor and other components
-        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+        # Set NUM_ROUNDS in FL context for persistor and other components.
+        # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
 
         # Load initial model - prefer model if provided, else use persistor
         if self.model is not None:

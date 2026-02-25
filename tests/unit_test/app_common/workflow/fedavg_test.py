@@ -422,6 +422,24 @@ class TestFedAvgWorkflowEvents:
         assert len(round_started_calls) == 0
         mock_broadcast.assert_called_once()
 
+    def test_run_sets_num_rounds_sticky_consistently(self):
+        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0})
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model = lambda **kwargs: None
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        with patch.object(controller.fl_ctx, "set_prop", wraps=controller.fl_ctx.set_prop) as mock_set_prop:
+            controller.run()
+
+        num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
+        assert len(num_round_calls) > 0
+        assert all(c.kwargs.get("sticky") is True for c in num_round_calls)
+
 
 class TestFedAvgAggregationWeights:
     """Test FedAvg aggregation weights."""
