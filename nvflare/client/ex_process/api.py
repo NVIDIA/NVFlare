@@ -134,9 +134,7 @@ class ExProcessClientAPI(APISpec):
                 for handler_name in file_handlers:
                     dict_config["handlers"].pop(handler_name)
                 for logger_cfg in dict_config.get("loggers", {}).values():
-                    logger_cfg["handlers"] = [
-                        h for h in logger_cfg.get("handlers", []) if h not in file_handlers
-                    ]
+                    logger_cfg["handlers"] = [h for h in logger_cfg.get("handlers", []) if h not in file_handlers]
 
             # Switch stream handlers to the plain formatter so ANSI color codes are not
             # written into the log files (subprocess stdout is a pipe, not a TTY).
