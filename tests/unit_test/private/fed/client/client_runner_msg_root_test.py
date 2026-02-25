@@ -23,6 +23,8 @@ def _make_runner():
     runner = ClientRunner.__new__(ClientRunner)
     runner.run_abort_signal = SimpleNamespace(triggered=False)
     runner.task_check_interval = 0.0
+    runner.submit_task_result_timeout = None
+    runner.parent_target = "server"
     runner.log_debug = lambda *_args, **_kwargs: None
     runner.log_info = lambda *_args, **_kwargs: None
     runner.log_error = lambda *_args, **_kwargs: None
@@ -37,9 +39,10 @@ def test_send_task_result_reuses_msg_root_id_and_deletes_once(monkeypatch):
         client_runner_module._TASK_CHECK_RESULT_OK,
     ]
 
-    def _fake_try_send(result, task_id, fl_ctx):
+    def _fake_try_send(result, task_id, fl_ctx, submit_timeout):
         _ = task_id
         _ = fl_ctx
+        _ = submit_timeout
         observed_ids.append(result.get_header(ReservedHeaderKey.MSG_ROOT_ID))
         return results.pop(0)
 
@@ -57,6 +60,30 @@ def test_send_task_result_reuses_msg_root_id_and_deletes_once(monkeypatch):
     assert deleted_ids == [observed_ids[0]]
 
 
+def test_send_task_result_success_does_not_delete_msg_root(monkeypatch):
+    runner = _make_runner()
+    observed_ids = []
+
+    def _fake_try_send(result, task_id, fl_ctx, submit_timeout):
+        _ = task_id
+        _ = fl_ctx
+        _ = submit_timeout
+        observed_ids.append(result.get_header(ReservedHeaderKey.MSG_ROOT_ID))
+        return client_runner_module._TASK_CHECK_RESULT_OK
+
+    runner._wait_task_ready_and_send_once = _fake_try_send
+
+    deleted_ids = []
+    monkeypatch.setattr(client_runner_module, "delete_msg_root", lambda msg_root_id: deleted_ids.append(msg_root_id))
+
+    result = Shareable()
+    ok = runner._send_task_result(result=result, task_id="task-0", fl_ctx=None)
+
+    assert ok is True
+    assert len(observed_ids) == 1
+    assert deleted_ids == []
+
+
 def test_send_task_result_cleans_msg_root_when_task_gone(monkeypatch):
     runner = _make_runner()
     observed_ids = []
@@ -65,9 +92,10 @@ def test_send_task_result_cleans_msg_root_when_task_gone(monkeypatch):
         client_runner_module._TASK_CHECK_RESULT_TASK_GONE,
     ]
 
-    def _fake_try_send(result, task_id, fl_ctx):
+    def _fake_try_send(result, task_id, fl_ctx, submit_timeout):
         _ = task_id
         _ = fl_ctx
+        _ = submit_timeout
         observed_ids.append(result.get_header(ReservedHeaderKey.MSG_ROOT_ID))
         return results.pop(0)
 
@@ -83,3 +111,51 @@ def test_send_task_result_cleans_msg_root_when_task_gone(monkeypatch):
     assert len(observed_ids) == 2
     assert observed_ids[0] == observed_ids[1]
     assert deleted_ids == [observed_ids[0]]
+
+
+def test_send_task_result_task_gone_without_retry_cleans_msg_root(monkeypatch):
+    runner = _make_runner()
+    observed_ids = []
+
+    def _fake_try_send(result, task_id, fl_ctx, submit_timeout):
+        _ = task_id
+        _ = fl_ctx
+        _ = submit_timeout
+        observed_ids.append(result.get_header(ReservedHeaderKey.MSG_ROOT_ID))
+        return client_runner_module._TASK_CHECK_RESULT_TASK_GONE
+
+    runner._wait_task_ready_and_send_once = _fake_try_send
+
+    deleted_ids = []
+    monkeypatch.setattr(client_runner_module, "delete_msg_root", lambda msg_root_id: deleted_ids.append(msg_root_id))
+
+    result = Shareable()
+    ok = runner._send_task_result(result=result, task_id="task-3", fl_ctx=None)
+
+    assert ok is False
+    assert len(observed_ids) == 1
+    assert deleted_ids == [observed_ids[0]]
+
+
+def test_send_task_result_uses_3_tries_with_doubling_timeout(monkeypatch):
+    runner = _make_runner()
+    submit_timeouts = []
+
+    def _fake_try_send(result, task_id, fl_ctx, submit_timeout):
+        _ = result
+        _ = task_id
+        _ = fl_ctx
+        submit_timeouts.append(submit_timeout)
+        return client_runner_module._TASK_CHECK_RESULT_TRY_AGAIN
+
+    runner._wait_task_ready_and_send_once = _fake_try_send
+
+    deleted_ids = []
+    monkeypatch.setattr(client_runner_module, "delete_msg_root", lambda msg_root_id: deleted_ids.append(msg_root_id))
+
+    result = Shareable()
+    ok = runner._send_task_result(result=result, task_id="task-4", fl_ctx=None)
+
+    assert ok is False
+    assert submit_timeouts == [300.0, 600.0, 1200.0]
+    assert len(deleted_ids) == 3
