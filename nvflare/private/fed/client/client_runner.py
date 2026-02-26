@@ -556,6 +556,7 @@ class ClientRunner(TBI):
         result.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
         base_submit_timeout = self.submit_task_result_timeout or _SUBMIT_RESULT_DEFAULT_TIMEOUT
         submit_timeouts = [base_submit_timeout * (2**i) for i in range(_SUBMIT_RESULT_MAX_RETRIES)]
+        # Invariant: we only create download transactions after TASK_CHECK succeeds, so abort/TASK_GONE before send has nothing to clean.
         retried = False
         try:
             for try_count, submit_timeout in enumerate(submit_timeouts, start=1):
