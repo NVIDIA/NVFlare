@@ -598,9 +598,7 @@ class ClientRunner(TBI):
             delete_msg_root(msg_root_id)
             raise
 
-    def _wait_task_ready_and_send_once(
-        self, result: Shareable, task_id: str, fl_ctx: FLContext, submit_timeout: float
-    ):
+    def _wait_task_ready_and_send_once(self, result: Shareable, task_id: str, fl_ctx: FLContext, submit_timeout: float):
         # Called by _send_task_result() for one send attempt:
         # first wait for TASK_CHECK readiness, then attempt one result send.
         while True:
