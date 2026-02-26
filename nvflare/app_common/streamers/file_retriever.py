@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from pathlib import Path
 from typing import Any
 
 from nvflare.apis.fl_component import FLComponent
@@ -84,6 +85,11 @@ class FileRetriever(ObjectRetriever):
             self.log_error(fl_ctx, f"bad request: requested file {file_path} is invalid")
             return ReturnCode.BAD_REQUEST_DATA, None
 
+        source_dir = Path(self.source_dir).resolve()
+        normalized_path = Path(file_path).resolve()
+        if source_dir not in normalized_path.parents and source_dir != normalized_path:
+            self.log_error(fl_ctx, f"bad request: requested file {file_path} is outside of {self.source_dir}")
+            return ReturnCode.BAD_REQUEST_DATA, None
         return ReturnCode.OK, file_path
 
     def retrieve_file(self, from_site: str, fl_ctx: FLContext, timeout: float, file_name: str) -> (str, str):
