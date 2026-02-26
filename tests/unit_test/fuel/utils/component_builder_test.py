@@ -18,6 +18,7 @@ from platform import python_version
 import pytest
 
 from nvflare.app_common.np.np_model_locator import NPModelLocator
+from nvflare.fuel.common.excepts import ConfigError
 from tests.unit_test.fuel.utils.mock_component_builder import MockComponentBuilder
 
 
@@ -97,6 +98,17 @@ class TestComponentBuilder:
         builder = MockComponentBuilder()
         b = builder.build_component(config)
         assert isinstance(b, NPModelLocator)
+
+    def test_empty_path_raises_even_when_class_path_present(self):
+        """Empty 'path' is validated and raises ConfigError; we do not silently use class_path."""
+        config = {
+            "path": "",
+            "class_path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+            "args": {},
+        }
+        builder = MockComponentBuilder()
+        with pytest.raises(ConfigError, match="path spec must not be empty"):
+            builder.build_component(config)
 
     def test_component_failure(self):
         config = {"id": "id", "path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {"xyz": 1}}
