@@ -8,7 +8,7 @@
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF KIND, either express or implied.
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
@@ -48,7 +48,7 @@ def wfconf_configurator():
 
 
 class TestWfconfGetClassPathAndBuildComponent:
-    """Test path/class_path behavior in wfconf.Configurator (consistent with component_builder)."""
+    """Test path/class_path/name behavior in wfconf.Configurator (precedence: path → class_path → name)."""
 
     def test_build_component_path_only_backward_compat(self, wfconf_configurator):
         """Backward compat: config with only 'path' (no class_path) works as before."""
@@ -105,6 +105,21 @@ class TestWfconfGetClassPathAndBuildComponent:
         }
         with pytest.raises(ConfigError, match="path spec must not be empty"):
             wfconf_configurator.build_component(config)
+
+    def test_path_none_raises_not_silently_use_name(self, wfconf_configurator):
+        """When 'path' is present but None, raise ConfigError; do not fall through to 'name'."""
+        config = {"path": None, "name": "NPModelLocator"}
+        with pytest.raises(ConfigError, match="path spec must be str but got"):
+            wfconf_configurator.get_class_path(config)
+
+    def test_path_none_raises_not_ignore_class_path(self, wfconf_configurator):
+        """When 'path' is None and 'class_path' is valid, validate path first and raise for None."""
+        config = {
+            "path": None,
+            "class_path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+        }
+        with pytest.raises(ConfigError, match="path spec must be str but got"):
+            wfconf_configurator.get_class_path(config)
 
 
 class TestGetComponentRefs:
