@@ -159,3 +159,27 @@ def test_send_task_result_uses_3_tries_with_doubling_timeout(monkeypatch):
     assert ok is False
     assert submit_timeouts == [300.0, 600.0, 1200.0]
     assert deleted_ids == []
+
+
+def test_send_task_result_exception_cleans_msg_root(monkeypatch):
+    runner = _make_runner()
+
+    def _raise_error(_result, _task_id, _fl_ctx, submit_timeout):
+        _ = submit_timeout
+        raise RuntimeError("boom")
+
+    runner._wait_task_ready_and_send_once = _raise_error
+
+    deleted_ids = []
+    monkeypatch.setattr(client_runner_module, "delete_msg_root", lambda msg_root_id: deleted_ids.append(msg_root_id))
+
+    result = Shareable()
+    try:
+        runner._send_task_result(result=result, task_id="task-5", fl_ctx=None)
+        assert False, "expected RuntimeError"
+    except RuntimeError:
+        pass
+
+    msg_root_id = result.get_header(ReservedHeaderKey.MSG_ROOT_ID)
+    assert msg_root_id
+    assert deleted_ids == [msg_root_id]

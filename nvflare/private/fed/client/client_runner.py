@@ -557,39 +557,43 @@ class ClientRunner(TBI):
         submit_timeouts = [base_submit_timeout * (2**i) for i in range(_SUBMIT_RESULT_MAX_RETRIES)]
         # Invariant: we only create download transactions after TASK_CHECK succeeds, so abort/TASK_GONE before send has nothing to clean.
         retried = False
-        for try_count, submit_timeout in enumerate(submit_timeouts, start=1):
-            self.log_debug(
-                fl_ctx,
-                f"try #{try_count}/{_SUBMIT_RESULT_MAX_RETRIES}: sending task result to server "
-                f"(submit_timeout={submit_timeout})",
-            )
+        try:
+            for try_count, submit_timeout in enumerate(submit_timeouts, start=1):
+                self.log_debug(
+                    fl_ctx,
+                    f"try #{try_count}/{_SUBMIT_RESULT_MAX_RETRIES}: sending task result to server "
+                    f"(submit_timeout={submit_timeout})",
+                )
 
-            if self.run_abort_signal.triggered:
-                self.log_info(fl_ctx, "job aborted: stopped trying to send result")
-                if not retried:
-                    delete_msg_root(msg_root_id)
-                return False
-
-            result.set_header(ReservedHeaderKey.MSG_ROOT_TTL, submit_timeout)
-            rc = self._wait_task_ready_and_send_once(result, task_id, fl_ctx, submit_timeout=submit_timeout)
-
-            if rc == _TASK_CHECK_RESULT_OK:
-                return True
-            elif rc == _TASK_CHECK_RESULT_TASK_GONE:
-                if not retried:
-                    delete_msg_root(msg_root_id)
-                return False
-            else:
-                if try_count >= _SUBMIT_RESULT_MAX_RETRIES:
-                    self.log_error(
-                        fl_ctx,
-                        f"failed to send task result to {self.parent_target} after "
-                        f"{_SUBMIT_RESULT_MAX_RETRIES} tries",
-                    )
+                if self.run_abort_signal.triggered:
+                    self.log_info(fl_ctx, "job aborted: stopped trying to send result")
+                    if not retried:
+                        delete_msg_root(msg_root_id)
                     return False
 
-                retried = True
-                time.sleep(self.task_check_interval)
+                result.set_header(ReservedHeaderKey.MSG_ROOT_TTL, submit_timeout)
+                rc = self._wait_task_ready_and_send_once(result, task_id, fl_ctx, submit_timeout=submit_timeout)
+
+                if rc == _TASK_CHECK_RESULT_OK:
+                    return True
+                elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                    if not retried:
+                        delete_msg_root(msg_root_id)
+                    return False
+                else:
+                    if try_count >= _SUBMIT_RESULT_MAX_RETRIES:
+                        self.log_error(
+                            fl_ctx,
+                            f"failed to send task result to {self.parent_target} after "
+                            f"{_SUBMIT_RESULT_MAX_RETRIES} tries",
+                        )
+                        return False
+
+                    retried = True
+                    time.sleep(self.task_check_interval)
+        except Exception:
+            delete_msg_root(msg_root_id)
+            raise
 
     def _wait_task_ready_and_send_once(self, result: Shareable, task_id: str, fl_ctx: FLContext, submit_timeout: float):
         # Called by _send_task_result() for one send attempt:
