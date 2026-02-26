@@ -137,3 +137,17 @@ class TestGetComponentRefs:
         parts = get_component_refs(component)
         assert parts == ["path.Mod", "ref"]
         assert component["path"] == "path.Mod"
+
+    def test_get_component_refs_null_value_raises(self):
+        """JSON null for path/class_path/name raises ConfigError (no AttributeError)."""
+        for key in ("path", "class_path", "name"):
+            component = {key: None}
+            with pytest.raises(ConfigError, match="must be a non-null string"):
+                get_component_refs(component)
+
+    def test_get_component_refs_empty_string_raises(self):
+        """Empty string for path/class_path/name raises ConfigError."""
+        for key in ("path", "class_path", "name"):
+            component = {key: ""}
+            with pytest.raises(ConfigError, match="must not be empty"):
+                get_component_refs(component)

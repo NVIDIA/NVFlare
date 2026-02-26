@@ -379,6 +379,11 @@ def get_component_refs(component):
     else:
         raise ConfigError('component has no "path", "class_path", or "name"')
 
+    if name is None or not isinstance(name, str):
+        raise ConfigError('component "{}" must be a non-null string, got {}'.format(key, type(name).__name__))
+    if len(name) <= 0:
+        raise ConfigError('component "{}" must not be empty'.format(key))
+
     parts = name.split("#")
     component[key] = parts[0]
     return parts
