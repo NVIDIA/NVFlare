@@ -38,6 +38,7 @@
 # SOFTWARE.
 
 import os
+import warnings
 
 import numpy as np
 import torch
@@ -46,12 +47,17 @@ import torchvision.datasets as datasets
 from data.cifar10_dataset import CIFAR10_Idx
 from torchvision import transforms
 
+# NumPy 2.4 deprecation when torchvision unpickles CIFAR batch files (align= in dtype)
+warnings.filterwarnings("ignore", message=".*align.*")
+
 CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def load_cifar10_data():
-    # load data
-    train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
+    # load data (suppress NumPy 2.4 dtype align deprecation from CIFAR pickle files)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*align.*")
+        train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
 
     # only training label is needed for doing split
     train_label = np.array(train_dataset.targets)
@@ -105,20 +111,22 @@ def create_datasets(site_name, train_idx_root, central=False):
     else:
         site_idx = None  # use whole training dataset if central=True
 
-    train_dataset = CIFAR10_Idx(
-        root=CIFAR10_ROOT,
-        data_idx=site_idx,
-        train=True,
-        download=False,
-        transform=transform_train,
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*align.*")
+        train_dataset = CIFAR10_Idx(
+            root=CIFAR10_ROOT,
+            data_idx=site_idx,
+            train=True,
+            download=False,
+            transform=transform_train,
+        )
 
-    valid_dataset = torchvision.datasets.CIFAR10(
-        root=CIFAR10_ROOT,
-        train=False,
-        download=False,
-        transform=transform_valid,
-    )
+        valid_dataset = torchvision.datasets.CIFAR10(
+            root=CIFAR10_ROOT,
+            train=False,
+            download=False,
+            transform=transform_valid,
+        )
 
     return train_dataset, valid_dataset
 
