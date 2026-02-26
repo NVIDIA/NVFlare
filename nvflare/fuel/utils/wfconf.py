@@ -348,7 +348,7 @@ class Configurator(JsonObjectProcessor):
             path_spec = config_dict["class_path"]
         else:
             path_spec = None
-        if path_spec is not None:
+        if path_spec is not None or "path" in config_dict or "class_path" in config_dict:
             if not isinstance(path_spec, str):
                 raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
 
