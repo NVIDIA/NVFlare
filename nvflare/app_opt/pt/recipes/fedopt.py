@@ -78,13 +78,13 @@ class FedOptRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         source_model (str): ID of the source model component. Defaults to "model".
         optimizer_args (dict): Configuration for server-side optimizer with keys:
-            - path: Path to optimizer class (e.g., "torch.optim.SGD")
+            - class_path: Fully qualified optimizer class (e.g., "torch.optim.SGD"). "path" is also accepted.
             - args: Dictionary of optimizer arguments (e.g., {"lr": 1.0, "momentum": 0.6})
-            - config_type: Type of configuration, typically "dict"
+            - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         lr_scheduler_args (dict): Optional configuration for learning rate scheduler with keys:
-            - path: Path to scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR")
+            - class_path: Fully qualified scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR"). "path" is also accepted.
             - args: Dictionary of scheduler arguments (e.g., {"T_max": 100, "eta_min": 0.9})
-            - config_type: Type of configuration, typically "dict"
+            - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
             Defaults to None; will default to cuda if available and no device is specified.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
@@ -102,12 +102,12 @@ class FedOptRecipe(Recipe):
             device="cpu",
             source_model="model",
             optimizer_args={
-                "path": "torch.optim.SGD",
+                "class_path": "torch.optim.SGD",
                 "args": {"lr": 1.0, "momentum": 0.6},
                 "config_type": "dict"
             },
             lr_scheduler_args={
-                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {"T_max": "{num_rounds}", "eta_min": 0.9},
                 "config_type": "dict"
             }
@@ -158,7 +158,7 @@ class FedOptRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
+        from nvflare.recipe.utils import ensure_config_type_dict, recipe_model_to_job_model, validate_ckpt
 
         validate_ckpt(self.initial_ckpt)
         if isinstance(self.model, dict):
@@ -174,8 +174,10 @@ class FedOptRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.device = device
         self.source_model = source_model
-        self.optimizer_args = optimizer_args
-        self.lr_scheduler_args = lr_scheduler_args
+        # Ensure config_type "dict" so the component builder does not try to instantiate
+        # optimizer/scheduler at config load time (params/optimizer are set at runtime).
+        self.optimizer_args = ensure_config_type_dict(optimizer_args)
+        self.lr_scheduler_args = ensure_config_type_dict(lr_scheduler_args)
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
 
         # Replace {num_rounds} placeholder if present in lr_scheduler_args
