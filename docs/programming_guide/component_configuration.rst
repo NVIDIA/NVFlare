@@ -144,7 +144,7 @@ For example:
             "device": "cpu",
             "source_model": "model",
             "optimizer_args": {
-                "path": "torch.optim.SGD",
+                "class_path": "torch.optim.SGD",
                 "args": {
                     "lr": 1.0,
                     "momentum": 0.6
@@ -152,7 +152,7 @@ For example:
                 "config_type": "dict"
             },
             "lr_scheduler_args": {
-                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {
                     "T_max": "{num_rounds}",
                     "eta_min": 0.9
@@ -166,7 +166,7 @@ Notice the config:
 .. code-block:: json
 
     "optimizer_args": {
-        "path": "torch.optim.SGD",
+        "class_path": "torch.optim.SGD",
         "args": {
             "lr": 1.0,
             "momentum": 0.6
