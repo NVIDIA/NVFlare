@@ -340,8 +340,9 @@ class Configurator(JsonObjectProcessor):
         return instantiate_class(class_path, class_args)
 
     def get_class_path(self, config_dict):
-        if "path" in config_dict.keys():
-            path_spec = config_dict["path"]
+        # Accept "path" or "class_path" for consistency across job/config API (path takes precedence).
+        path_spec = config_dict.get("path") or config_dict.get("class_path")
+        if path_spec is not None:
             if not isinstance(path_spec, str):
                 raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
 
@@ -354,7 +355,7 @@ class Configurator(JsonObjectProcessor):
                 raise ConfigError("invalid class path '{}': missing module name".format(class_path))
         else:
             if "name" not in config_dict:
-                raise ConfigError("class name or path must be specified")
+                raise ConfigError("class name or path or class_path must be specified")
 
             class_name = config_dict["name"]
 

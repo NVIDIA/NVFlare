@@ -49,9 +49,9 @@ class ComponentBuilder:
         if config_type != ConfigType.COMPONENT:
             return False
 
-        # regardless it has args or not. if path/name and valid class path, very likely we have
-        # class config.
-        if ("path" in config_dict or "name" in config_dict) and has_valid_class_path():
+        # regardless it has args or not. if path/class_path/name and valid class path, very likely we have
+        # class config. "class_path" is accepted for consistency with recipe/model config API.
+        if ("path" in config_dict or "class_path" in config_dict or "name" in config_dict) and has_valid_class_path():
             return True
         else:
             return False
@@ -86,8 +86,9 @@ class ComponentBuilder:
         return instantiate_class(class_path, class_args)
 
     def get_class_path(self, config_dict):
-        if "path" in config_dict.keys():
-            path_spec = config_dict["path"]
+        # Accept "path" or "class_path" for consistency across job API (path takes precedence).
+        path_spec = config_dict.get("path") or config_dict.get("class_path")
+        if path_spec is not None:
             if not isinstance(path_spec, str):
                 raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
 
@@ -100,7 +101,7 @@ class ComponentBuilder:
                 raise ConfigError("invalid class path '{}': missing module name".format(class_path))
         else:
             if "name" not in config_dict:
-                raise ConfigError("class name or path must be specified")
+                raise ConfigError("class name or path or class_path must be specified")
 
             class_name = config_dict["name"]
 

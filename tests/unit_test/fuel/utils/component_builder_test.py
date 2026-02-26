@@ -75,6 +75,29 @@ class TestComponentBuilder:
         b = builder.build_component(config)
         assert isinstance(b, NPModelLocator)
 
+    def test_component_with_class_path(self):
+        """Component config can use 'class_path' instead of 'path' for job API consistency."""
+        config = {
+            "id": "id",
+            "class_path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+            "args": {},
+        }
+        builder = MockComponentBuilder()
+        b = builder.build_component(config)
+        assert isinstance(b, NPModelLocator)
+
+    def test_component_path_takes_precedence_over_class_path(self):
+        """When both 'path' and 'class_path' are present, 'path' is used."""
+        config = {
+            "id": "id",
+            "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+            "class_path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs",
+            "args": {},
+        }
+        builder = MockComponentBuilder()
+        b = builder.build_component(config)
+        assert isinstance(b, NPModelLocator)
+
     def test_component_failure(self):
         config = {"id": "id", "path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {"xyz": 1}}
         builder = MockComponentBuilder()
