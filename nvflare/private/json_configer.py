@@ -166,14 +166,22 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
 
 def get_component_refs(component):
-    if "name" in component:
-        name = component["name"]
-        key = "name"
-    elif "path" in component:
+    if "path" in component:
         name = component["path"]
         key = "path"
+    elif "class_path" in component:
+        name = component["class_path"]
+        key = "class_path"
+    elif "name" in component:
+        name = component["name"]
+        key = "name"
     else:
-        raise ConfigError('component has no "name" or "path')
+        raise ConfigError('component has no "path", "class_path", or "name"')
+
+    if name is None or not isinstance(name, str):
+        raise ConfigError('component "{}" must be a non-null string, got {}'.format(key, type(name).__name__))
+    if len(name) <= 0:
+        raise ConfigError('component "{}" must not be empty'.format(key))
 
     parts = name.split("#")
     component[key] = parts[0]

@@ -105,7 +105,7 @@ A FLARE job configuration defines a list of components. Here, we skip many other
 
 The component configuration consists of three parts:
     - component id: for example ``"id": "aggregator"``
-    - component path, the fully qualified class path, for example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",``
+    - component path: the fully qualified class path, specified as ``"path"`` or ``"class_path"`` (for consistency with recipe/model config). Example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"``
     - Component arguments, for example: ``"args": {"expected_data_kind": "WEIGHTS"}``
 
 If we look at this class definition, we will find that this configuration is actually mapped to the class constructor:
@@ -174,7 +174,7 @@ Notice the config:
         "config_type": "dict"
     },
 
-We need to pass a run-time argument to "torch.optim.SDG" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
+We need to pass a run-time argument to "torch.optim.SGD" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
 argument, not as two arguments to the constructor, we specify:
 
 .. code-block:: json
@@ -183,10 +183,10 @@ argument, not as two arguments to the constructor, we specify:
 
 By default ``config_type`` is "Component" if not specified.
 
-Name and Path
-~~~~~~~~~~~~~
+Name, Path, and class_path
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 The class path can be quite long, so NVFLARE allows users to only specify the class name, and NVFLARE will search the specified Python path
-to find the corresponding class path. In the configuration, you can use "name" to do this.
+to find the corresponding class path. In the configuration, you can use ``"name"`` to do this. You may also use ``"class_path"`` instead of ``"path"`` for consistency with recipe and model configuration; when both are present, ``"path"`` takes precedence.
 
 The configuration::
 
@@ -195,6 +195,10 @@ The configuration::
 can be changed to::
 
     "name" : "InTimeAccumulateWeightedAggregator"
+
+or (equivalent to ``path``)::
+
+    "class_path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
 
 .. note::
 
@@ -230,7 +234,7 @@ Workflows define a list of workflows. In the example above, three workflows are 
     - CrossSiteModelEval for validation with cross_site_validate
 
 Each workflow corresponds to a special type of FLComponent (known as a :ref:`Controller <controllers>`), which has the same component structure with an "id",
-"name" (or "path"), and arguments that match the class definitions.
+"name", "path", or "class_path", and arguments that match the class definitions.
 
 The controller arguments can be primitive types (int, str, etc.), or another component id.
 
