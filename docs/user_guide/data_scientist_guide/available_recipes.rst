@@ -258,7 +258,7 @@ PyTorch FedOpt
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -281,7 +281,7 @@ TensorFlow FedOpt
         num_rounds=5,
         model=MyTFModel(),
         train_script="client.py",
-        optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
+        optimizer_args={"class_path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
