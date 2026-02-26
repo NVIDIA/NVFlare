@@ -174,7 +174,7 @@ Notice the config:
         "config_type": "dict"
     },
 
-We need to pass a run-time argument to "torch.optim.SDG" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
+We need to pass a run-time argument to "torch.optim.SGD" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
 argument, not as two arguments to the constructor, we specify:
 
 .. code-block:: json
