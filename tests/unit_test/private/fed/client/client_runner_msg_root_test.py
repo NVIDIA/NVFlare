@@ -31,7 +31,7 @@ def _make_runner():
     return runner
 
 
-def test_send_task_result_reuses_msg_root_id_and_deletes_once(monkeypatch):
+def test_send_task_result_reuses_msg_root_id_and_does_not_delete_on_retry_success(monkeypatch):
     runner = _make_runner()
     observed_ids = []
     results = [
@@ -57,7 +57,7 @@ def test_send_task_result_reuses_msg_root_id_and_deletes_once(monkeypatch):
     assert ok is True
     assert len(observed_ids) == 2
     assert observed_ids[0] == observed_ids[1]
-    assert deleted_ids == [observed_ids[0]]
+    assert deleted_ids == []
 
 
 def test_send_task_result_success_does_not_delete_msg_root(monkeypatch):
@@ -84,7 +84,7 @@ def test_send_task_result_success_does_not_delete_msg_root(monkeypatch):
     assert deleted_ids == []
 
 
-def test_send_task_result_cleans_msg_root_when_task_gone(monkeypatch):
+def test_send_task_result_retry_then_task_gone_keeps_msg_root_alive(monkeypatch):
     runner = _make_runner()
     observed_ids = []
     results = [
@@ -110,7 +110,7 @@ def test_send_task_result_cleans_msg_root_when_task_gone(monkeypatch):
     assert ok is False
     assert len(observed_ids) == 2
     assert observed_ids[0] == observed_ids[1]
-    assert deleted_ids == [observed_ids[0]]
+    assert deleted_ids == []
 
 
 def test_send_task_result_task_gone_without_retry_cleans_msg_root(monkeypatch):
@@ -158,4 +158,4 @@ def test_send_task_result_uses_3_tries_with_doubling_timeout(monkeypatch):
 
     assert ok is False
     assert submit_timeouts == [300.0, 600.0, 1200.0]
-    assert len(deleted_ids) == 3
+    assert deleted_ids == []
