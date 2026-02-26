@@ -62,7 +62,7 @@ def test_reply_sets_minimum_msg_root_ttl():
 
     assert sent is True
     assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_ID) == "msg-1"
-    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 300.0
+    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 600.0
 
 
 def test_reply_preserves_larger_timeout_as_msg_root_ttl():
@@ -86,7 +86,7 @@ def test_reply_with_none_timeout_sets_minimum_msg_root_ttl():
 
     assert sent is True
     assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_ID) == "msg-4"
-    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 300.0
+    assert fake_cell.last_request.get_header(MessageHeaderKey.MSG_ROOT_TTL) == 600.0
 
 
 def test_request_does_not_set_msg_root_ttl():

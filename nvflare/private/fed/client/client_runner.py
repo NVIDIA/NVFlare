@@ -571,6 +571,7 @@ class ClientRunner(TBI):
                         delete_msg_root(msg_root_id)
                     return False
 
+                result.set_header(ReservedHeaderKey.MSG_ROOT_TTL, submit_timeout)
                 rc = self._wait_task_ready_and_send_once(result, task_id, fl_ctx, submit_timeout=submit_timeout)
 
                 if rc == _TASK_CHECK_RESULT_OK:
