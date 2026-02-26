@@ -21,7 +21,7 @@ import pytest
 
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.wfconf import Configurator
+from nvflare.fuel.utils.wfconf import Configurator, get_component_refs
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def wfconf_configurator():
             env_config=None,
             wf_config_file_name=path,
             base_pkgs=["nvflare"],
-            module_names=["api", "app_commons", "app_opt", "fuel", "private", "utils"],
+            module_names=["api", "app_common", "app_opt", "fuel", "private", "utils"],
         )
         yield configurator
     finally:
@@ -49,6 +49,15 @@ def wfconf_configurator():
 
 class TestWfconfGetClassPathAndBuildComponent:
     """Test path/class_path behavior in wfconf.Configurator (consistent with component_builder)."""
+
+    def test_build_component_path_only_backward_compat(self, wfconf_configurator):
+        """Backward compat: config with only 'path' (no class_path) works as before."""
+        config = {
+            "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+            "args": {},
+        }
+        b = wfconf_configurator.build_component(config)
+        assert isinstance(b, NPModelLocator)
 
     def test_get_class_path_with_path(self, wfconf_configurator):
         """get_class_path returns the value when 'path' is specified."""
@@ -96,3 +105,35 @@ class TestWfconfGetClassPathAndBuildComponent:
         }
         with pytest.raises(ConfigError, match="path spec must not be empty"):
             wfconf_configurator.build_component(config)
+
+
+class TestGetComponentRefs:
+    """Backward compat and class_path: get_component_refs accepts path, class_path, or name."""
+
+    def test_get_component_refs_with_path(self):
+        """Backward compat: path-only works as before."""
+        component = {"path": "nvflare.some.Module#ref"}
+        parts = get_component_refs(component)
+        assert parts == ["nvflare.some.Module", "ref"]
+        assert component["path"] == "nvflare.some.Module"
+
+    def test_get_component_refs_with_class_path(self):
+        """class_path-only works for variable refs."""
+        component = {"class_path": "nvflare.other.Class#ref"}
+        parts = get_component_refs(component)
+        assert parts == ["nvflare.other.Class", "ref"]
+        assert component["class_path"] == "nvflare.other.Class"
+
+    def test_get_component_refs_with_name(self):
+        """Backward compat: name-only works as before."""
+        component = {"name": "ShortName#ref"}
+        parts = get_component_refs(component)
+        assert parts == ["ShortName", "ref"]
+        assert component["name"] == "ShortName"
+
+    def test_get_component_refs_path_takes_precedence(self):
+        """When both path and class_path present, path is used (consistent with get_class_path)."""
+        component = {"path": "path.Mod#ref", "class_path": "class_path.Mod"}
+        parts = get_component_refs(component)
+        assert parts == ["path.Mod", "ref"]
+        assert component["path"] == "path.Mod"

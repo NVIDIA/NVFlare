@@ -69,10 +69,18 @@ class TestComponentBuilder:
         assert b is None
 
     def test_component(self):
+        """Backward compat: config with only 'path' (no class_path) works as before."""
         config = {"id": "id", "path": "nvflare.app_common.np.np_model_locator.NPModelLocator", "args": {}}
         builder = MockComponentBuilder()
 
         assert isinstance(config, dict)
+        b = builder.build_component(config)
+        assert isinstance(b, NPModelLocator)
+
+    def test_component_with_name_only(self):
+        """Backward compat: config with only 'name' (short name) still resolves via module scanner."""
+        config = {"id": "id", "name": "NPModelLocator", "args": {}}
+        builder = MockComponentBuilder()
         b = builder.build_component(config)
         assert isinstance(b, NPModelLocator)
 
