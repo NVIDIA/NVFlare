@@ -53,13 +53,15 @@ def get_class_path_from_config(
 ) -> str:
     """Resolve a component config dict to a fully qualified class path.
 
-    Accepts "path" or "class_path" (path takes precedence when present).
-    Uses key presence, not truthiness, so that path="" is validated and raises
-    instead of silently falling through to class_path. When only "name" is
-    present, resolve_name(class_name) is called to get the module name.
+    Config key precedence: path → class_path → name. The first key present
+    is used; the others are ignored. Key presence is used, not truthiness:
+    e.g. path="" or path=None is still "path present", so path is validated
+    and raises ConfigError instead of falling through to class_path or name.
+    When only "name" is present, resolve_name(class_name) is called to get
+    the module name.
 
     Args:
-        config_dict: Config with "path", "class_path", or "name".
+        config_dict: Config with "path", "class_path", or "name" (see precedence above).
         resolve_name: Callable that takes a class name and returns module name or None.
             Required when config uses "name".
 
@@ -71,21 +73,25 @@ def get_class_path_from_config(
     """
     if "path" in config_dict:
         path_spec = config_dict["path"]
-    elif "class_path" in config_dict:
-        path_spec = config_dict["class_path"]
-    else:
-        path_spec = None
-
-    if path_spec is not None:
         if not isinstance(path_spec, str):
             raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
         if len(path_spec) <= 0:
             raise ConfigError("path spec must not be empty")
-        class_path = path_spec
-        parts = class_path.split(".")
+        parts = path_spec.split(".")
         if len(parts) < 2:
-            raise ConfigError("invalid class path '{}': missing module name".format(class_path))
-        return class_path
+            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+        return path_spec
+
+    if "class_path" in config_dict:
+        path_spec = config_dict["class_path"]
+        if not isinstance(path_spec, str):
+            raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
+        if len(path_spec) <= 0:
+            raise ConfigError("path spec must not be empty")
+        parts = path_spec.split(".")
+        if len(parts) < 2:
+            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+        return path_spec
 
     if "name" not in config_dict:
         raise ConfigError("class name or path or class_path must be specified")
