@@ -420,6 +420,34 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
     return non_local_scripts
 
 
+def ensure_config_type_dict(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Ensure a component config dict has config_type 'dict' and is normalized for the config layer.
+
+    Used by FedOpt-style recipes for optimizer_args and lr_scheduler_args: those dicts have 'path' or
+    'class_path' plus 'args', and would otherwise be treated as component configs and instantiated
+    during config scan (e.g. torch.optim.SGD without params). This function:
+    - Accepts either 'path' or 'class_path' (for consistency with recipe model_config); if only
+      'class_path' is set, copies it to 'path' so the component builder and runtime code work unchanged.
+    - Sets config_type to 'dict' when missing so the component builder does not instantiate at load time;
+      the optimizer/scheduler is instantiated at runtime when params/optimizer are available.
+
+    Args:
+        config: A component-style config dict (e.g. {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}}
+                or {'path': '...', 'args': {...}}) or None.
+
+    Returns:
+        A copy of config with config_type 'dict' if missing and path set from class_path if needed; None if config is None.
+    """
+    if config is None:
+        return None
+    out = copy.copy(config)
+    if out.get("path") is None and out.get("class_path") is not None:
+        out["path"] = out["class_path"]
+    if out.get("config_type") is None:
+        out["config_type"] = "dict"
+    return out
+
+
 def validate_ckpt(ckpt: Optional[str]) -> None:
     """Validate a checkpoint path if provided.
 
