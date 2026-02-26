@@ -26,6 +26,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
@@ -341,7 +342,10 @@ class FlareAgent:
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result = self.task_result_to_shareable(result, rc)
         reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result)
-        return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+        try:
+            return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+        finally:
+            delete_msg_root(reply.msg_id)
 
     def log(self, record: DXO) -> bool:
         """Logs a metric record.
