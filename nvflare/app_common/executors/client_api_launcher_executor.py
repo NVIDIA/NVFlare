@@ -17,6 +17,7 @@ import os
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
@@ -24,6 +25,9 @@ from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.mem_utils import log_rss
+from nvflare.fuel.utils.memory_utils import cleanup_memory
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
@@ -117,6 +121,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._cuda_empty_cache = cuda_empty_cache
         self._cell_with_pass_through = None
         self._prev_pass_through = None
+        self._pipe_cell_with_pass_through = None
+        self._pipe_prev_pass_through = None
+        self._cj_round_count = 0
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -140,6 +147,21 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 "PASS_THROUGH enabled: task tensors will be downloaded by the subprocess "
                 "agent directly from the source, bypassing CJ memory.",
             )
+
+        # Enable PASS_THROUGH on task pipe cell for reverse direction
+        # (subprocess -> CJ -> server) so CJ can forward lazy refs instead of
+        # materializing tensors when receiving results from subprocess.
+        if isinstance(self.pipe, CellPipe):
+            pipe_cell = getattr(self.pipe, "cell", None)
+            if pipe_cell is not None and pipe_cell is not cell:
+                self._pipe_cell_with_pass_through = pipe_cell
+                pipe_prev_ctx = pipe_cell.core_cell.get_fobs_context()
+                self._pipe_prev_pass_through = pipe_prev_ctx.get(FOBSContextKey.PASS_THROUGH, None)
+                pipe_cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
+                self.log_info(
+                    fl_ctx,
+                    "PASS_THROUGH enabled on task pipe cell: reverse task-result tensors " "will bypass CJ memory.",
+                )
         try:
             super().initialize(fl_ctx)
         except Exception:
@@ -167,15 +189,21 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             self._restore_pass_through(fl_ctx)
 
     def _restore_pass_through(self, fl_ctx: FLContext):
-        if self._cell_with_pass_through is None:
-            return
+        if self._cell_with_pass_through is not None:
+            self._cell_with_pass_through.core_cell.update_fobs_context(
+                {FOBSContextKey.PASS_THROUGH: self._prev_pass_through}
+            )
+            self.log_info(fl_ctx, f"PASS_THROUGH restored to {self._prev_pass_through}.")
+            self._cell_with_pass_through = None
+            self._prev_pass_through = None
 
-        self._cell_with_pass_through.core_cell.update_fobs_context(
-            {FOBSContextKey.PASS_THROUGH: self._prev_pass_through}
-        )
-        self.log_info(fl_ctx, f"PASS_THROUGH restored to {self._prev_pass_through}.")
-        self._cell_with_pass_through = None
-        self._prev_pass_through = None
+        if self._pipe_cell_with_pass_through is not None:
+            self._pipe_cell_with_pass_through.core_cell.update_fobs_context(
+                {FOBSContextKey.PASS_THROUGH: self._pipe_prev_pass_through}
+            )
+            self.log_info(fl_ctx, f"Task-pipe PASS_THROUGH restored to {self._pipe_prev_pass_through}.")
+            self._pipe_cell_with_pass_through = None
+            self._pipe_prev_pass_through = None
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
@@ -211,3 +239,29 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         app_config_directory = workspace.get_app_config_dir(fl_ctx.get_job_id())
         config_file_path = os.path.join(app_config_directory, self._config_file_name)
         return config_file_path
+
+    def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
+        """TaskExchanger hook: validate peer output before returning it to the caller.
+
+        We keep the base check behavior and attach CJ-side memory bookkeeping here,
+        because this is the common post-result hook used by launcher executors.
+        """
+        ok = super().check_output_shareable(task_name, shareable, fl_ctx)
+        if not ok:
+            return False
+
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
+        log_rss(f"CJ task={task_name} round={current_round} after_send")
+        self._maybe_cleanup_cj_memory(fl_ctx)
+        return True
+
+    def _maybe_cleanup_cj_memory(self, fl_ctx: FLContext):
+        if self._memory_gc_rounds <= 0:
+            return
+
+        self._cj_round_count += 1
+        if self._cj_round_count % self._memory_gc_rounds != 0:
+            return
+
+        cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
+        self.log_info(fl_ctx, f"Memory cleanup performed at round {self._cj_round_count}")
