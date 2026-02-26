@@ -340,8 +340,14 @@ class Configurator(JsonObjectProcessor):
         return instantiate_class(class_path, class_args)
 
     def get_class_path(self, config_dict):
-        # Accept "path" or "class_path" for consistency across job/config API (path takes precedence).
-        path_spec = config_dict.get("path") or config_dict.get("class_path")
+        # Accept "path" or "class_path" for consistency across job/config API (path takes precedence when present).
+        # Use key presence, not truthiness, so that path="" is validated and raises instead of falling through to class_path.
+        if "path" in config_dict:
+            path_spec = config_dict["path"]
+        elif "class_path" in config_dict:
+            path_spec = config_dict["class_path"]
+        else:
+            path_spec = None
         if path_spec is not None:
             if not isinstance(path_spec, str):
                 raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
