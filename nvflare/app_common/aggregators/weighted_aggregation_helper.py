@@ -25,14 +25,11 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
         return False
     if isinstance(v, (int, float, bool)):
         return True
-    # NumPy array, NumPy scalar, or tensor (has shape and supports * and +)
-    if hasattr(v, "shape"):
-        return True
     try:
         _ = v * 1.0
         _ = v + v
         return True
-    except (TypeError, AttributeError):
+    except Exception:
         return False
 
 

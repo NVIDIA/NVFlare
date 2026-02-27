@@ -53,9 +53,15 @@ class TestIsAggregatableMetricValue:
         assert _is_aggregatable_metric_value(torch.tensor([1.0, 2.0])) is True
         assert _is_aggregatable_metric_value(torch.tensor(3.14)) is True
 
-    def test_object_with_shape_aggregatable(self):
+    def test_object_with_shape_and_arithmetic_aggregatable(self):
         class FakeArray:
             shape = (2, 3)
+
+            def __mul__(self, other):
+                return self
+
+            def __add__(self, other):
+                return self
 
         assert _is_aggregatable_metric_value(FakeArray()) is True
 
@@ -82,6 +88,19 @@ class TestIsAggregatableMetricValue:
                 return self
 
         assert _is_aggregatable_metric_value(NoAdd()) is False
+
+    def test_numpy_string_array_not_aggregatable(self):
+        assert _is_aggregatable_metric_value(np.array(["a"])) is False
+
+    def test_object_raising_value_error_not_aggregatable(self):
+        class BadValue:
+            def __mul__(self, other):
+                raise ValueError("unsupported")
+
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(BadValue()) is False
 
 
 class TestWeightedAggregationHelper:
