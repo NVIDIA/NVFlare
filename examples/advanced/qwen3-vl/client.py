@@ -133,6 +133,7 @@ def train(
     max_steps: Optional[int],
     num_train_epochs: int,
     learning_rate: str,
+    report_to: str,
     keep_process_group: bool = False,
 ) -> None:
     """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
@@ -170,7 +171,7 @@ def train(
             "--save_strategy",
             "no",
             "--report_to",
-            "wandb",
+            report_to,
             "--ddp_find_unused_parameters",
             "False",
         ]
@@ -221,6 +222,12 @@ def main():
         type=str,
         default="5e-7",
         help="Peak learning rate for Qwen script (default 5e-7; use 2e-7 for more stable, slower convergence)",
+    )
+    parser.add_argument(
+        "--report_to",
+        type=str,
+        default="none",
+        help='Trainer reporting backend for train_qwen.py (e.g. "none", "wandb", "tensorboard").',
     )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
@@ -321,6 +328,7 @@ def main():
                 max_steps=args.max_steps,
                 num_train_epochs=args.num_train_epochs,
                 learning_rate=args.learning_rate,
+                report_to=args.report_to,
                 keep_process_group=_is_multi_rank(world_size),
             )
         except Exception as e:

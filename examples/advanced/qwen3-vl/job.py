@@ -75,6 +75,7 @@ def main():
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
     per_site_config = {}
+    report_to = "wandb" if args.wandb else "none"
     for idx, site_name in enumerate(client_names):
         site_data_path = os.path.join(data_dir, site_name)
         step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
@@ -83,7 +84,8 @@ def main():
             f"--dataset_use fl_site "
             f"--model_name_or_path {args.model_name_or_path} "
             f"{step_or_epoch}"
-            f"--learning_rate {args.learning_rate}"
+            f"--learning_rate {args.learning_rate} "
+            f"--report_to {report_to}"
         )
         if qwen_root:
             train_args = f"--qwen_root {qwen_root} " + train_args
@@ -110,7 +112,8 @@ def main():
         per_site_config=per_site_config,
         launch_external_process=True,
         server_expected_format="pytorch",
-        key_metric="loss",
+        # train_qwen.train() does not emit structured eval metrics for model selection in this example.
+        key_metric="",
     )
 
     # Client script is the only custom file; it runs Qwen train in-process
