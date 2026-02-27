@@ -9,11 +9,11 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | File | Role |
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
-| `client.py` | Client entry point (launched by NVFlare via torchrun): receives global model, runs Qwen3-VL `train_qwen` in-process per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (--wandb); launches each client with a per-site torchrun command (unique `--master_port` per client). |
+| `client.py` | Client entry point (launched by NVFlare via torchrun): rank 0 receives/sends FL models, all ranks run Qwen3-VL `train_qwen` per round, then rank 0 sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (`--wandb`); launches each client with a per-site torchrun command (unique `--master_port` per client, configurable `--nproc_per_client`). |
 | `download_data.py` | Downloads PubMedVision (git clone) and unzips image archives into `PubMedVision/` for a standard layout. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
-| `run_inference.py` | Inference on PubMedVision-style samples; compares base vs fine-tuned (HuggingFace checkpoint or NVFlare `FL_global_model.pt`). Prints question, ground truth, model answer, and image path. |
+| `run_inference.py` | Inference on PubMedVision-style samples; compares base vs fine-tuned (HuggingFace checkpoint or NVFlare `FL_global_model.pt`). Prints question, ground truth, model answer, and image path(s). |
 
 ## Prerequisites
 
@@ -77,7 +77,7 @@ Optional flags:
 
 - `--subset_size 5000` — use at most 5000 samples per client (for a quick run).
 - `--num_clients 3` — number of client shards (default: 3).
-- `--image_root /path/to/PubMedVision` — resolve relative image paths and exclude samples whose image file(s) do not exist.
+- `--split_name PubMedVision_InstructionTuning_VQA` — choose Hub subset when loading from HuggingFace (`--data_file ''` mode).
 
 Output layout (same JSON format as the source, one file per client):
 
@@ -133,12 +133,12 @@ By default, the client saves received and trained model checkpoints under the **
 
 ## Timeouts and long runs
 
-After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the script must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so the script can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
+After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the rank-0 process must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so rank 0 can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
 
 ### Client errors and model size
 
 - **One site shows "(after error)" every round:** Training failed on that client (e.g. OOM, missing data, GPU). Check that site’s log (e.g. `.../site-1/log.txt`) for `Qwen SFT script failed:` and the exception message; the client also prints a short error hint next to `(after error)`.
-- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). On **error** the client sends the in-memory model (same dtype as received), so sent size matches received.
+- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). On **error** the client first tries the current round checkpoint (if present), and otherwise sends the received global model unchanged.
 
 ## Inference (before/after comparison)
 
@@ -154,7 +154,7 @@ python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct
 **Expected output**
 ```
 --- Sample 1 ---
-Image: /path/to/PubMedVision/images/...
+Images (1): /path/to/PubMedVision/images/...
 Q: <image>
 What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
 Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...
@@ -172,7 +172,7 @@ python run_inference.py --model_path /tmp/nvflare/simulation/qwen3-vl/server/sim
 **Expected output** (fine-tuned): same format as base; compare the "Model" line to the base run.
 ```
 --- Sample 1 ---
-Image: /path/to/PubMedVision/images/...
+Images (1): /path/to/PubMedVision/images/...
 Q: <image>
 What is the size of the inferior mesenteric artery aneurysm (IMAA) based on the CT angiography scan?
 Ground truth: According to the measurements provided in the image, the inferior mesenteric artery aneurysm (IMAA) has a length of 4.87 cm and a width of 5.93 cm. The reference information indicates that this repres...
@@ -191,7 +191,7 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 
 | Step | Action |
 |------|--------|
-| 1 | Create venv, `pip install nvflare`, run `./install_requirements.sh` |
+| 1 | Create venv and run `./install_requirements.sh` |
 | 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
