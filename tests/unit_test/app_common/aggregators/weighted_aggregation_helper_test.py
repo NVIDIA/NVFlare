@@ -390,5 +390,6 @@ class TestWeightedAggregationHelper:
         assert torch.allclose(result["w2"], torch.tensor([2.5]))
         assert torch.allclose(result["w3"], torch.tensor([4.0]))
 
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

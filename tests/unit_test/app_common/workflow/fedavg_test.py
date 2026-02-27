@@ -22,10 +22,10 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
 
 
