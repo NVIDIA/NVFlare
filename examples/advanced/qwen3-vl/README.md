@@ -186,7 +186,7 @@ Use `run_inference.py` to compare base vs fine-tuned checkpoints on PubMedVision
 
 By default the script uses `./data/site-1/train.json` and `./PubMedVision` (the directory that contains the `images/` folder). Override with `--data_file` and `--image_root` if needed. Output prints each question, ground-truth answer, and model answer so you can compare base vs fine-tuned runs.
 
-### Base model (no fine-tuning)
+### Base model (no federated fine-tuning)
 ```bash
 python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct
 ```

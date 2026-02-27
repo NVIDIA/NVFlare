@@ -19,6 +19,7 @@ Requires a Qwen3-VL base model when using the Qwen3-VL repo's train_qwen.py.
 
 import argparse
 import os
+import re
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
@@ -38,7 +39,7 @@ def define_parser():
         "--nproc_per_client",
         type=int,
         default=1,
-        help="Number of torchrun processes (GPUs) per client (default 1).",
+        help="Number of torchrun processes (GPUs) per client when --gpu is not set (default 1). When --gpu is set, processes per client are inferred from each bracket group.",
     )
     parser.add_argument("--data_dir", type=str, default="./data", help="Root dir for site-1, site-2, site-3 data")
     parser.add_argument(
@@ -79,6 +80,15 @@ def define_parser():
     return parser.parse_args()
 
 
+def _parse_gpu_string(gpu_str: str):
+    """Parse --gpu string like '[0,1,2,3]' or '[0],[1],[2]' into list of per-client process counts."""
+    if not gpu_str or not gpu_str.strip():
+        return []
+    # Match each bracket group: [0], [0,1,2], etc.
+    groups = re.findall(r"\[([^\]]*)\]", gpu_str.strip())
+    return [max(1, len(g.split(","))) for g in groups]
+
+
 def main():
     args = define_parser()
     n_clients = args.n_clients
@@ -87,10 +97,22 @@ def main():
     qwen_root = os.environ.get("QWEN3VL_ROOT", "")
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
+    # Per-client process count: from --gpu when set (e.g. "[0,1,2,3]" -> 4), else nproc_per_client
+    if args.gpu is not None:
+        n_procs_per_site = _parse_gpu_string(args.gpu)
+        if len(n_procs_per_site) != n_clients:
+            raise ValueError(
+                f"--gpu has {len(n_procs_per_site)} bracket group(s) but --n_clients={n_clients}; "
+                f'expected one group per client, e.g. "[0,1,2,3]" for 1 client or "[0],[1],[2]" for 3'
+            )
+    else:
+        n_procs_per_site = [args.nproc_per_client] * n_clients
+
     per_site_config = {}
     report_to = "wandb" if args.wandb else "none"
     for idx, site_name in enumerate(client_names):
         site_data_path = os.path.join(data_dir, site_name)
+        n_proc = n_procs_per_site[idx]
         step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
         train_args = (
             f"--data_path {site_data_path} "
@@ -105,7 +127,7 @@ def main():
             train_args = f"--qwen_root {qwen_root} " + train_args
         # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
         master_port = 29500 + (idx + 1)
-        command = f"torchrun --nproc_per_node={args.nproc_per_client} --nnodes=1 --master_port {master_port}"
+        command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
     # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
