@@ -18,7 +18,11 @@ from typing import Any, Callable, Dict, Optional, Set
 
 
 def _is_aggregatable_metric_value(v: Any) -> bool:
-    """Return True if the metric value supports weighted aggregation (v * weight and addition)."""
+    """Return True if the metric value supports weighted aggregation (v * weight and addition).
+
+    Boolean values are considered aggregatable and treated as binary values
+    (`True=1.0`, `False=0.0`) when averaged.
+    """
     if v is None:
         return False
     if isinstance(v, (dict, list, set, tuple, str)):
@@ -40,6 +44,9 @@ def filter_aggregatable_metrics(
     warned_metric_keys: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """Return metric entries that support weighted aggregation.
+
+    Note:
+        Boolean metric values are included and aggregate as binary rates.
 
     Args:
         metrics: Dict of metric name -> value.
