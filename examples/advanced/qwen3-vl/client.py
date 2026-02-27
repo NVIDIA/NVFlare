@@ -353,6 +353,7 @@ def main():
             if rank == 0:
                 # Keep the received global model by default so failed rounds don't contribute stale updates.
                 params = input_model.params
+                raw = None
                 try:
                     raw = load_state_dict_from_checkpoint(output_model_dir)
                     params = {"model." + k: v for k, v in raw.items()}
@@ -370,6 +371,8 @@ def main():
                     f"site={client_name}, round={current_round}, sent model size: {sent_mb:.2f} MB (after error: {err_hint})"
                 )
                 flare.send(output_model)
+                if raw is not None:
+                    del raw
                 del params, output_model
             _dist_barrier(world_size)
             _free_memory_after_send()
