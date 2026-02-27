@@ -90,7 +90,7 @@ def main():
     parser.add_argument(
         "--split_name",
         type=str,
-        default="PubMedVision_Alignment_VQA",
+        default="PubMedVision_InstructionTuning_VQA",
         help="PubMedVision subset when loading from Hub: PubMedVision_Alignment_VQA or "
         "PubMedVision_InstructionTuning_VQA (ignored if --data_file is set)",
     )
