@@ -31,6 +31,7 @@ import json
 import os
 import sys
 
+import numpy as np
 import torch
 
 # Use example's model loader (supports both Qwen2.5-VL and Qwen3-VL)
@@ -45,7 +46,7 @@ def _ensure_tensors(state_dict: dict) -> dict:
     """Convert numpy values to torch tensors so load_state_dict works correctly."""
     out = {}
     for k, v in state_dict.items():
-        if hasattr(v, "numpy"):  # numpy array
+        if isinstance(v, np.ndarray):  # numpy array
             out[k] = torch.as_tensor(v, device="cpu")
         else:
             out[k] = v

@@ -128,6 +128,11 @@ def main():
         )
     if args.subset_size is not None:
         n_per_client = min(n_per_client_full, args.subset_size)
+        if n_per_client == 0:
+            raise ValueError(
+                f"Insufficient data: subset_size={args.subset_size} results in 0 samples per client. "
+                f"Use a larger subset_size (max {n_per_client_full} per client)."
+            )
     else:
         n_per_client = n_per_client_full
 
