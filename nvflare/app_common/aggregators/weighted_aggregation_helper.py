@@ -14,7 +14,7 @@
 
 import re
 import threading
-from typing import Any, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 
 
 def _is_aggregatable_metric_value(v: Any) -> bool:
@@ -31,6 +31,36 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
         return True
     except Exception:
         return False
+
+
+def filter_aggregatable_metrics(
+    metrics: Optional[Dict[str, Any]],
+    warn_skipped: Optional[Callable[[str, str], None]] = None,
+    warned_metric_keys: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    """Return metric entries that support weighted aggregation.
+
+    Args:
+        metrics: Dict of metric name -> value.
+        warn_skipped: Optional callback invoked as warn_skipped(key, type_name) for skipped metrics.
+        warned_metric_keys: Optional set of keys already warned about. If provided, warnings are emitted
+            at most once per key and newly warned keys are added to this set.
+    """
+    if not metrics:
+        return {}
+
+    filtered = {}
+    for key, value in metrics.items():
+        if _is_aggregatable_metric_value(value):
+            filtered[key] = value
+            continue
+        if warn_skipped is None:
+            continue
+        if warned_metric_keys is None or key not in warned_metric_keys:
+            warn_skipped(key, type(value).__name__)
+            if warned_metric_keys is not None:
+                warned_metric_keys.add(key)
+    return filtered
 
 
 class WeightedAggregationHelper(object):
@@ -64,40 +94,6 @@ class WeightedAggregationHelper(object):
     def _is_pytorch_tensor(tensor):
         """Check if tensor is a PyTorch tensor with in-place operation support."""
         return hasattr(tensor, "add_") and hasattr(tensor, "mul_") and hasattr(tensor, "clone")
-
-    def add_metrics(
-        self,
-        data,
-        weight,
-        contributor_name,
-        contribution_round,
-        warn_skipped=None,
-        warned_metric_keys: Optional[Set[str]] = None,
-    ):
-        """Add only aggregatable metric values (skips dicts, lists, strings, etc.). No-op if data is None or empty.
-
-        Args:
-            data: Dict of metric name -> value.
-            weight: Weight for this contribution.
-            contributor_name: Name of the contributor (for history).
-            contribution_round: Round number (for history).
-            warn_skipped: Optional callable(key, type_name) invoked for each skipped metric.
-            warned_metric_keys: Optional set of metric keys already warned about; skipped keys are added
-                so the warning is emitted at most once per key (reduces log noise across clients/rounds).
-        """
-        if not data:
-            return
-        filtered = {}
-        for k, v in data.items():
-            if _is_aggregatable_metric_value(v):
-                filtered[k] = v
-            elif warn_skipped is not None:
-                if warned_metric_keys is None or k not in warned_metric_keys:
-                    warn_skipped(k, type(v).__name__)
-                    if warned_metric_keys is not None:
-                        warned_metric_keys.add(k)
-        if filtered:
-            self.add(filtered, weight, contributor_name, contribution_round)
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""

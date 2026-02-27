@@ -19,6 +19,7 @@ import torch
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
     WeightedAggregationHelper,
     _is_aggregatable_metric_value,
+    filter_aggregatable_metrics,
 )
 
 
@@ -101,6 +102,65 @@ class TestIsAggregatableMetricValue:
                 return self
 
         assert _is_aggregatable_metric_value(BadValue()) is False
+
+
+class TestFilterAggregatableMetrics:
+    def test_none_or_empty_returns_empty_dict(self):
+        assert filter_aggregatable_metrics(None) == {}
+        assert filter_aggregatable_metrics({}) == {}
+
+    def test_filters_non_aggregatable_values(self):
+        data = {
+            "loss": 0.5,
+            "accuracy": 0.9,
+            "config": {"lr": 0.01},
+            "tags": ["a", "b"],
+            "name": "run1",
+        }
+        filtered = filter_aggregatable_metrics(data)
+        assert filtered == {"loss": 0.5, "accuracy": 0.9}
+
+    def test_warn_skipped_called_for_each_skipped_key(self):
+        warned = []
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        data = {"loss": 0.5, "meta": {"x": 1}, "label": "train"}
+        filtered = filter_aggregatable_metrics(data, warn_skipped=capture)
+        assert filtered == {"loss": 0.5}
+        assert len(warned) == 2
+        assert ("meta", "dict") in warned
+        assert ("label", "str") in warned
+
+    def test_warned_metric_keys_only_warn_once(self):
+        warned = []
+        warned_keys = set()
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        filtered = filter_aggregatable_metrics(
+            {"loss": 0.1, "meta": {}, "name": "x"},
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert filtered == {"loss": 0.1}
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+        filtered = filter_aggregatable_metrics(
+            {"acc": 0.2, "meta": {}, "name": "y"},
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert filtered == {"acc": 0.2}
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+    def test_all_skipped_returns_empty_dict(self):
+        filtered = filter_aggregatable_metrics({"a": [], "b": "x"})
+        assert filtered == {}
 
 
 class TestWeightedAggregationHelper:
@@ -329,127 +389,6 @@ class TestWeightedAggregationHelper:
         assert torch.allclose(result["w1"], torch.tensor([1.0]))
         assert torch.allclose(result["w2"], torch.tensor([2.5]))
         assert torch.allclose(result["w3"], torch.tensor([4.0]))
-
-    def test_add_metrics_no_op_for_none_or_empty(self):
-        """add_metrics with None or empty data does nothing."""
-        helper = WeightedAggregationHelper()
-        helper.add_metrics(None, 1.0, "site-1", 0)
-        helper.add_metrics({}, 1.0, "site-1", 0)
-        result = helper.get_result()
-        assert len(result) == 0
-
-    def test_add_metrics_filters_non_aggregatable(self):
-        """add_metrics only aggregates scalar/array-like values; skips dict, list, str."""
-        helper = WeightedAggregationHelper()
-        data = {
-            "loss": 0.5,
-            "accuracy": 0.9,
-            "config": {"lr": 0.01},  # skipped
-            "tags": ["a", "b"],  # skipped
-            "name": "run1",  # skipped
-        }
-        helper.add_metrics(data, weight=1.0, contributor_name="site-1", contribution_round=0)
-        result = helper.get_result()
-        assert "loss" in result
-        assert "accuracy" in result
-        assert result["loss"] == 0.5
-        assert result["accuracy"] == 0.9
-        assert "config" not in result
-        assert "tags" not in result
-        assert "name" not in result
-
-    def test_add_metrics_aggregates_like_add(self):
-        """add_metrics passes filtered data to add(); weighted average is correct."""
-        helper = WeightedAggregationHelper()
-        helper.add_metrics(
-            {"loss": 0.2, "acc": 0.8},
-            weight=2.0,
-            contributor_name="site-1",
-            contribution_round=0,
-        )
-        helper.add_metrics(
-            {"loss": 0.6, "acc": 0.4},
-            weight=1.0,
-            contributor_name="site-2",
-            contribution_round=0,
-        )
-        result = helper.get_result()
-        # loss: (0.2*2 + 0.6*1)/3 = 1.0/3, acc: (0.8*2 + 0.4*1)/3 = 2.0/3
-        assert abs(result["loss"] - 1.0 / 3) < 1e-9
-        assert abs(result["acc"] - 2.0 / 3) < 1e-9
-
-    def test_add_metrics_warn_skipped_called(self):
-        """warn_skipped is invoked for each skipped metric key (key, type_name)."""
-        helper = WeightedAggregationHelper()
-        warned = []
-
-        def capture(key, type_name):
-            warned.append((key, type_name))
-
-        data = {"loss": 0.5, "meta": {"x": 1}, "label": "train"}
-        helper.add_metrics(
-            data,
-            weight=1.0,
-            contributor_name="site-1",
-            contribution_round=0,
-            warn_skipped=capture,
-        )
-        assert len(warned) == 2
-        assert ("meta", "dict") in warned
-        assert ("label", "str") in warned
-        result = helper.get_result()
-        assert result["loss"] == 0.5
-
-    def test_add_metrics_warned_metric_keys_only_warn_once(self):
-        """With warned_metric_keys, each key triggers warn_skipped at most once."""
-        helper = WeightedAggregationHelper()
-        warned = []
-        warned_keys = set()
-
-        def capture(key, type_name):
-            warned.append((key, type_name))
-
-        # First call: skip "meta" and "name" -> both warned
-        helper.add_metrics(
-            {"loss": 0.1, "meta": {}, "name": "x"},
-            weight=1.0,
-            contributor_name="site-1",
-            contribution_round=0,
-            warn_skipped=capture,
-            warned_metric_keys=warned_keys,
-        )
-        assert len(warned) == 2
-        assert warned_keys == {"meta", "name"}
-
-        # Second call: same keys skipped -> no additional warnings
-        helper.add_metrics(
-            {"acc": 0.2, "meta": {}, "name": "y"},
-            weight=1.0,
-            contributor_name="site-2",
-            contribution_round=0,
-            warn_skipped=capture,
-            warned_metric_keys=warned_keys,
-        )
-        assert len(warned) == 2
-        assert warned_keys == {"meta", "name"}
-
-        result = helper.get_result()
-        assert result["loss"] == 0.1
-        assert result["acc"] == 0.2
-
-    def test_add_metrics_all_skipped_no_add(self):
-        """When all values are non-aggregatable, add() is not called (no history)."""
-        helper = WeightedAggregationHelper()
-        helper.add_metrics(
-            {"a": [], "b": "x"},
-            weight=1.0,
-            contributor_name="site-1",
-            contribution_round=0,
-        )
-        assert len(helper.history) == 0
-        result = helper.get_result()
-        assert len(result) == 0
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
