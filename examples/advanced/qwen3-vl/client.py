@@ -280,7 +280,8 @@ def main():
         )
         output_model = flare.FLModel(
             params=params,
-            metrics={"loss": 0.0},
+            # train_qwen.train() does not return structured metrics; avoid reporting a fake loss value.
+            metrics={"loss": float("nan")},
             meta=meta,
         )
         sent_mb = _params_size_mb(params)
