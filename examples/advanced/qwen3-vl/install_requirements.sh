@@ -9,6 +9,11 @@
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REQUIREMENTS_FILE="${1:-$SCRIPT_DIR/requirements.txt}"
+if [[ ! -f "$REQUIREMENTS_FILE" ]]; then
+    echo "requirements.txt not found: $REQUIREMENTS_FILE" >&2
+    exit 1
+fi
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$SCRIPT_DIR/.pip_cache}"
 BUILD_TMP="$SCRIPT_DIR/.tmp_build"
 mkdir -p "$PIP_CACHE_DIR" "$BUILD_TMP"
@@ -25,6 +30,6 @@ echo "==> Installing build-time deps for flash_attn (e.g. psutil)..."
 pip install psutil packaging ninja
 
 echo "==> Installing remaining requirements (flash_attn built with --no-build-isolation)..."
-pip install --no-build-isolation -r requirements.txt
+pip install --no-build-isolation -r "$REQUIREMENTS_FILE"
 
 echo "==> Done."

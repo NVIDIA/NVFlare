@@ -100,17 +100,19 @@ def _abs_image_path(image_path: str, image_root: str) -> str:
 
 
 def load_samples(data_file: str, image_root: str, max_samples: int):
-    """Load PubMedVision-style records (image + conversations with from/value)."""
+    """Load PubMedVision-style records (one or more images + conversations with from/value)."""
     with open(data_file, "r") as f:
         records = json.load(f)
     if not isinstance(records, list):
         records = [records]
     samples = []
     for r in records[:max_samples]:
-        image = r.get("image") or (r.get("images") and r["images"][0])
-        if isinstance(image, list):
-            image = image[0] if image else None
-        if not image:
+        images = r.get("image")
+        if images is None:
+            images = r.get("images")
+        if isinstance(images, str):
+            images = [images]
+        if not images:
             continue
         convs = r.get("conversations", [])
         question = None
@@ -125,20 +127,25 @@ def load_samples(data_file: str, image_root: str, max_samples: int):
                 break
         if question is None:
             continue
-        img_abs = _abs_image_path(image, image_root)
-        if not os.path.isfile(img_abs):
-            print(f"Warning: image not found {img_abs}", file=sys.stderr)
+        image_paths = []
+        missing = False
+        for image in images:
+            img_abs = _abs_image_path(image, image_root)
+            if not os.path.isfile(img_abs):
+                print(f"Warning: image not found {img_abs}", file=sys.stderr)
+                missing = True
+                break
+            image_paths.append(img_abs)
+        if missing:
             continue
-        samples.append({"image_path": img_abs, "question": question, "ground_truth": answer or ""})
+        samples.append({"image_paths": image_paths, "question": question, "ground_truth": answer or ""})
     return samples
 
 
-def build_messages(image_path: str, question: str):
-    """Build chat messages for Qwen: one user turn with image + text."""
-    content = [
-        {"type": "image", "image": image_path},
-        {"type": "text", "text": question},
-    ]
+def build_messages(image_paths, question: str):
+    """Build chat messages for Qwen: one user turn with one or more images + text."""
+    content = [{"type": "image", "image": image_path} for image_path in image_paths]
+    content.append({"type": "text", "text": question})
     return [{"role": "user", "content": content}]
 
 
@@ -252,7 +259,7 @@ def main():
         return 0
 
     for i, s in enumerate(samples):
-        messages = build_messages(s["image_path"], s["question"])
+        messages = build_messages(s["image_paths"], s["question"])
         inputs = processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -268,7 +275,7 @@ def main():
         answer_text = processor.tokenizer.decode(response_ids, skip_special_tokens=True).strip()
 
         print(f"--- Sample {i + 1} ---")
-        print(f"Image: {s['image_path']}")
+        print(f"Images ({len(s['image_paths'])}): {', '.join(s['image_paths'])}")
         print(f"Q: {s['question'][:200]}{'...' if len(s['question']) > 200 else ''}")
         print(f"Ground truth: {s['ground_truth'][:200]}{'...' if len(s['ground_truth']) > 200 else ''}")
         print(f"Model:        {answer_text[:200]}{'...' if len(answer_text) > 200 else ''}")

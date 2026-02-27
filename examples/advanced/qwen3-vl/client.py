@@ -22,12 +22,13 @@ that reads FL_SITE_DATA_DIR (see README).
 import argparse
 import gc
 import os
+import shutil
 import signal
 import sys
 from typing import Optional
 
 import torch
-from model import Qwen3VLModel, load_qwen_vl_from_pretrained, load_state_dict_from_checkpoint
+from model import Qwen3VLModel, load_state_dict_from_checkpoint
 from transformers import AutoProcessor
 
 import nvflare.client as flare
@@ -226,6 +227,10 @@ def main():
         _align_model_config_to_tokenizer(model.model, tokenizer)
         model.model.save_pretrained(input_model_dir)
         processor.save_pretrained(input_model_dir)
+        # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
+        if os.path.isdir(output_model_dir):
+            shutil.rmtree(output_model_dir)
+        os.makedirs(output_model_dir, exist_ok=True)
 
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
         try:
@@ -241,24 +246,20 @@ def main():
         except Exception as e:
             err_msg = str(e)
             print(f"Qwen SFT script failed: {e}", file=sys.stderr)
-            # Send last checkpoint so round does not block; fallback to input model state_dict
-            load_dir = output_model_dir if os.path.isdir(output_model_dir) else input_model_dir
+            # Keep the received global model by default so failed rounds don't contribute stale updates.
+            params = input_model.params
             try:
-                raw = load_state_dict_from_checkpoint(load_dir)
+                raw = load_state_dict_from_checkpoint(output_model_dir)
                 params = {"model." + k: v for k, v in raw.items()}
             except Exception:
-                try:
-                    model.model = load_qwen_vl_from_pretrained(load_dir)
-                    params = model.cpu().state_dict()
-                except Exception:
-                    params = model.cpu().state_dict()  # keep current model (received weights)
+                pass
             output_model = flare.FLModel(
                 params=params,
                 metrics={"loss": float("nan")},
                 meta={"ERROR": err_msg},
             )
             sent_mb = _params_size_mb(params)
-            # On error we send in-memory model (same dtype as received); success path sends bf16 checkpoint (smaller).
+            # On error, send current-round checkpoint if available; otherwise keep the received model unchanged.
             err_hint = (err_msg[:80] + "…") if len(err_msg) > 80 else err_msg
             print(
                 f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error: {err_hint})"
