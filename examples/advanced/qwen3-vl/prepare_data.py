@@ -95,6 +95,10 @@ def main():
         "PubMedVision_InstructionTuning_VQA (ignored if --data_file is set)",
     )
     args = parser.parse_args()
+    if args.num_clients <= 0:
+        raise ValueError(f"--num_clients must be > 0, got {args.num_clients}")
+    if args.subset_size is not None and args.subset_size <= 0:
+        raise ValueError(f"--subset_size must be > 0 when set, got {args.subset_size}")
 
     try:
         from datasets import load_dataset
@@ -128,7 +132,7 @@ def main():
         )
     if args.subset_size is not None:
         n_per_client = min(n_per_client_full, args.subset_size)
-        if n_per_client == 0:
+        if n_per_client <= 0:
             raise ValueError(
                 f"Insufficient data: subset_size={args.subset_size} results in 0 samples per client. "
                 f"Use a larger subset_size (max {n_per_client_full} per client)."
