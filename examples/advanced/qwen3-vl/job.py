@@ -34,6 +34,12 @@ def define_parser():
         default=None,
         help='GPU IDs per client, e.g. "[0],[1],[2]" for 3 clients on GPUs 0,1,2 (default: one GPU per client, [0],[1],...)',
     )
+    parser.add_argument(
+        "--nproc_per_client",
+        type=int,
+        default=1,
+        help="Number of torchrun processes (GPUs) per client (default 1).",
+    )
     parser.add_argument("--data_dir", type=str, default="./data", help="Root dir for site-1, site-2, site-3 data")
     parser.add_argument(
         "--model_name_or_path",
@@ -83,7 +89,7 @@ def main():
             train_args = f"--qwen_root {qwen_root} " + train_args
         # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
         master_port = 29500 + (idx + 1)
-        command = f"torchrun --nproc_per_node=1 --nnodes=1 --master_port {master_port}"
+        command = f"torchrun --nproc_per_node={args.nproc_per_client} --nnodes=1 --master_port {master_port}"
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
     # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
@@ -132,7 +138,15 @@ def main():
             },
         )
 
-    gpu_config = args.gpu if args.gpu is not None else ",".join(f"[{i}]" for i in range(n_clients))
+    if args.gpu is not None:
+        gpu_config = args.gpu
+    else:
+        site_gpu_groups = []
+        for i in range(n_clients):
+            start = i * args.nproc_per_client
+            gpus = ",".join(str(start + j) for j in range(args.nproc_per_client))
+            site_gpu_groups.append(f"[{gpus}]")
+        gpu_config = ",".join(site_gpu_groups)
     env = SimEnv(clients=client_names, num_threads=n_clients, gpu_config=gpu_config)
     run = recipe.execute(env)
     print()

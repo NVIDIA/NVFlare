@@ -28,6 +28,7 @@ import sys
 from typing import Optional
 
 import torch
+import torch.distributed as dist
 from model import Qwen3VLModel, load_state_dict_from_checkpoint
 from transformers import AutoProcessor
 
@@ -75,6 +76,55 @@ def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
                 setattr(gcfg, key, tid)
 
 
+def _setup_distributed_training() -> tuple[int, int, int]:
+    """Initialize distributed runtime when launched with torchrun."""
+    rank = 0
+    world_size = 1
+    local_rank = 0
+
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+
+        if world_size > 1 and not dist.is_initialized():
+            backend = "nccl" if torch.cuda.is_available() else "gloo"
+            dist.init_process_group(backend=backend)
+
+    return rank, world_size, local_rank
+
+
+def _is_multi_rank(world_size: int) -> bool:
+    return world_size > 1 and dist.is_initialized()
+
+
+def _dist_barrier(world_size: int) -> None:
+    if _is_multi_rank(world_size):
+        dist.barrier()
+
+
+def _broadcast_object_from_rank0(value, world_size: int):
+    if not _is_multi_rank(world_size):
+        return value
+    values = [value]
+    dist.broadcast_object_list(values, src=0)
+    return values[0]
+
+
+def _collect_first_error(local_error: Optional[str], world_size: int) -> Optional[str]:
+    if not _is_multi_rank(world_size):
+        return local_error
+    all_errors = [None for _ in range(world_size)]
+    dist.all_gather_object(all_errors, local_error)
+    for err in all_errors:
+        if err:
+            return err
+    return None
+
+
 def train(
     finetune_dir: str,
     input_model_dir: str,
@@ -83,6 +133,7 @@ def train(
     max_steps: Optional[int],
     num_train_epochs: int,
     learning_rate: str,
+    keep_process_group: bool = False,
 ) -> None:
     """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
     # train_qwen.train() only reads from sys.argv via HfArgumentParser.parse_args_into_dataclasses()
@@ -124,6 +175,7 @@ def train(
             "False",
         ]
     )
+    pg_was_initialized = torch.distributed.is_initialized()
     old_argv = sys.argv
     sys.argv = argv
     try:
@@ -132,7 +184,7 @@ def train(
         train_qwen.train(attn_implementation="flash_attention_2")
     finally:
         sys.argv = old_argv
-        if torch.distributed.is_initialized():
+        if torch.distributed.is_initialized() and not keep_process_group and not pg_was_initialized:
             torch.distributed.destroy_process_group()
 
 
@@ -195,8 +247,16 @@ def main():
     if not os.path.isfile(json_path):
         raise FileNotFoundError(f"Expected train.json at {json_path}. Run prepare_data.py first.")
 
-    flare.init()
-    client_name = flare.system_info().get("site_name", "unknown")
+    rank, world_size, local_rank = _setup_distributed_training()
+    if rank == 0:
+        print(f"Distributed setup: rank={rank}, world_size={world_size}, local_rank={local_rank}")
+
+    flare.init(rank=rank)
+    if rank == 0:
+        client_name = flare.system_info().get("site_name", "unknown")
+    else:
+        client_name = "unknown"
+    client_name = _broadcast_object_from_rank0(client_name, world_size)
 
     # When --work_dir is not set, use a subdir of cwd (NVFlare client workspace); SimEnv clears it every run
     if args.work_dir is None:
@@ -211,28 +271,47 @@ def main():
     os.environ["FL_SITE_DATA_DIR"] = data_path
     os.environ["QWEN_FINETUNE_DIR"] = finetune_dir
 
-    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path)
+    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if rank == 0 else None
 
     while flare.is_running():
-        input_model = flare.receive()
-        received_mb = _params_size_mb(input_model.params)
-        print(f"site={client_name}, round={input_model.current_round}, received model size: {received_mb:.2f} MB")
+        input_model = None
+        current_round = None
+        should_continue = True
 
-        # Save received global model to HF format for train_qwen.py
-        os.makedirs(input_model_dir, exist_ok=True)
-        model.load_state_dict(input_model.params, strict=False)
+        if rank == 0:
+            input_model = flare.receive()
+            if input_model is None:
+                should_continue = False
+            else:
+                current_round = input_model.current_round
+                received_mb = _params_size_mb(input_model.params)
+                print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
 
-        processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-        tokenizer = getattr(processor, "tokenizer", processor)
-        _align_model_config_to_tokenizer(model.model, tokenizer)
-        model.model.save_pretrained(input_model_dir)
-        processor.save_pretrained(input_model_dir)
-        # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
-        if os.path.isdir(output_model_dir):
-            shutil.rmtree(output_model_dir)
-        os.makedirs(output_model_dir, exist_ok=True)
+                # Save received global model to HF format for train_qwen.py
+                os.makedirs(input_model_dir, exist_ok=True)
+                model.load_state_dict(input_model.params, strict=False)
+
+                processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                tokenizer = getattr(processor, "tokenizer", processor)
+                _align_model_config_to_tokenizer(model.model, tokenizer)
+                model.model.save_pretrained(input_model_dir)
+                processor.save_pretrained(input_model_dir)
+
+                # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
+                if os.path.isdir(output_model_dir):
+                    shutil.rmtree(output_model_dir)
+                os.makedirs(output_model_dir, exist_ok=True)
+
+        should_continue = _broadcast_object_from_rank0(should_continue, world_size)
+        current_round = _broadcast_object_from_rank0(current_round, world_size)
+        if not should_continue:
+            break
+
+        # Ensure rank 0 has prepared input/output model dirs before training starts.
+        _dist_barrier(world_size)
 
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
+        local_error = None
         try:
             train(
                 finetune_dir=finetune_dir,
@@ -242,58 +321,67 @@ def main():
                 max_steps=args.max_steps,
                 num_train_epochs=args.num_train_epochs,
                 learning_rate=args.learning_rate,
+                keep_process_group=_is_multi_rank(world_size),
             )
         except Exception as e:
-            err_msg = str(e)
-            print(f"Qwen SFT script failed: {e}", file=sys.stderr)
-            # Keep the received global model by default so failed rounds don't contribute stale updates.
-            params = input_model.params
-            try:
-                raw = load_state_dict_from_checkpoint(output_model_dir)
-                params = {"model." + k: v for k, v in raw.items()}
-            except Exception:
-                pass
-            output_model = flare.FLModel(
-                params=params,
-                metrics={"loss": float("nan")},
-                meta={"ERROR": err_msg},
-            )
-            sent_mb = _params_size_mb(params)
-            # On error, send current-round checkpoint if available; otherwise keep the received model unchanged.
-            err_hint = (err_msg[:80] + "…") if len(err_msg) > 80 else err_msg
-            print(
-                f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB (after error: {err_hint})"
-            )
-            flare.send(output_model)
-            del params, output_model
+            local_error = f"rank {rank}: {e}"
+            print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
+
+        round_error = _collect_first_error(local_error, world_size)
+        if round_error:
+            if rank == 0:
+                # Keep the received global model by default so failed rounds don't contribute stale updates.
+                params = input_model.params
+                try:
+                    raw = load_state_dict_from_checkpoint(output_model_dir)
+                    params = {"model." + k: v for k, v in raw.items()}
+                except Exception:
+                    pass
+                output_model = flare.FLModel(
+                    params=params,
+                    metrics={"loss": float("nan")},
+                    meta={"ERROR": round_error},
+                )
+                sent_mb = _params_size_mb(params)
+                # On error, send current-round checkpoint if available; otherwise keep the received model unchanged.
+                err_hint = (round_error[:80] + "…") if len(round_error) > 80 else round_error
+                print(
+                    f"site={client_name}, round={current_round}, sent model size: {sent_mb:.2f} MB (after error: {err_hint})"
+                )
+                flare.send(output_model)
+                del params, output_model
+            _dist_barrier(world_size)
             _free_memory_after_send()
             continue
 
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
         # Checkpoint has inner model keys; prefix with "model." to match wrapper state_dict format.
-        raw = load_state_dict_from_checkpoint(output_model_dir)
-        params = {"model." + k: v for k, v in raw.items()}
-        meta = (
-            {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
-            if args.max_steps is not None
-            else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
-        )
-        output_model = flare.FLModel(
-            params=params,
-            # train_qwen.train() does not return structured metrics; avoid reporting a fake loss value.
-            metrics={"loss": float("nan")},
-            meta=meta,
-        )
-        sent_mb = _params_size_mb(params)
-        # Sent size is smaller than received because we send the bf16 checkpoint; server sends full-precision.
-        print(
-            f"site={client_name}, round={input_model.current_round}, sent updated weights, model size: {sent_mb:.2f} MB"
-        )
-        flare.send(output_model)
+        if rank == 0:
+            raw = load_state_dict_from_checkpoint(output_model_dir)
+            params = {"model." + k: v for k, v in raw.items()}
+            meta = (
+                {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
+                if args.max_steps is not None
+                else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
+            )
+            output_model = flare.FLModel(
+                params=params,
+                # train_qwen.train() does not return structured metrics; avoid reporting a fake loss value.
+                metrics={"loss": float("nan")},
+                meta=meta,
+            )
+            sent_mb = _params_size_mb(params)
+            # Sent size is smaller than received because we send the bf16 checkpoint; server sends full-precision.
+            print(f"site={client_name}, round={current_round}, sent updated weights, model size: {sent_mb:.2f} MB")
+            flare.send(output_model)
 
-        # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)
-        del raw, params, output_model
+            # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)
+            del raw, params, output_model
+        _dist_barrier(world_size)
         _free_memory_after_send()
+
+    if _is_multi_rank(world_size):
+        dist.destroy_process_group()
 
     # When using default work_dir, checkpoints live under the NVFlare client workspace; SimEnv clears it every run.
 

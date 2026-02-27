@@ -121,9 +121,10 @@ python job.py
 
 - Single client (testing): `python job.py --n_clients 1 --max_steps 1000`
 - One GPU per client: `python job.py --gpu "[0],[1],[2]"`
+- Multi-GPU per client (example: 2 GPUs/client): `python job.py --nproc_per_client 2 --gpu "[0,1],[2,3],[4,5]"`
 - WandB: `python job.py --wandb` (and set `WANDB_API_KEY` for online logging)
 
-With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]`. `--max_steps` limits steps per round (omit to train a full epoch per round).
+With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_client 1`, or auto-allocates contiguous groups for larger values (e.g. `[0,1],[2,3],[4,5]` for `--nproc_per_client 2`). `--max_steps` limits steps per round (omit to train a full epoch per round).
 
 ## Checkpoints and disk space
 
@@ -194,7 +195,7 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 | 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
-| 5 | Run `python job.py` (optionally `--wandb`, `--max_steps N`, `--gpu "[0],[1],[2]"`) |
+| 5 | Run `python job.py` (optionally `--wandb`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
 
 Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`.
 
