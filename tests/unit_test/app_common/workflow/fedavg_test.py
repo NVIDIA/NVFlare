@@ -12,10 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import patch
+
+from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows.fedavg import FedAvg
 
 
@@ -447,6 +457,84 @@ class TestFedAvgAggregation:
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
         controller._aggregate_one_result(empty_result)
         assert controller._received_count == 0  # Not counted
+
+
+class TestFedAvgWorkflowEvents:
+    def test_run_fires_round_started_and_before_aggregation_once_per_round(self):
+        controller = FedAvg(num_clients=1, num_rounds=2, model={"w": 1.0})
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model = lambda **kwargs: None
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        with patch.object(controller, "event") as mock_event:
+            controller.run()
+
+        round_started_calls = [c for c in mock_event.call_args_list if c.args[0] == AppEventType.ROUND_STARTED]
+        before_aggr_calls = [c for c in mock_event.call_args_list if c.args[0] == AppEventType.BEFORE_AGGREGATION]
+
+        assert len(round_started_calls) == 2
+        assert len(before_aggr_calls) == 2
+
+    def test_process_result_sets_current_round_on_fl_ctx(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=True)
+
+        task_data = Shareable()
+        task_data.set_header(AppConstants.CURRENT_ROUND, 3)
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        result.set_header(AppConstants.CURRENT_ROUND, 3)
+
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        with patch.object(controller, "event"):
+            controller._process_result(client_task, fl_ctx)
+
+        assert fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 3
+
+    def test_broadcast_model_does_not_fire_round_started(self):
+        controller = FedAvg(num_clients=1)
+        controller.fl_ctx = FLContext()
+        model = FLModel(params={"w": 1.0}, current_round=2)
+
+        with (
+            patch.object(controller, "broadcast") as mock_broadcast,
+            patch.object(controller, "fire_event") as mock_fire,
+        ):
+            controller.broadcast_model(data=model, blocking=False, callback=lambda _: None)
+
+        round_started_calls = [c for c in mock_fire.call_args_list if c.args[0] == AppEventType.ROUND_STARTED]
+        assert len(round_started_calls) == 0
+        mock_broadcast.assert_called_once()
+
+    def test_run_sets_num_rounds_sticky_consistently(self):
+        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0})
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model = lambda **kwargs: None
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        with patch.object(controller.fl_ctx, "set_prop", wraps=controller.fl_ctx.set_prop) as mock_set_prop:
+            controller.run()
+
+        num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
+        assert len(num_round_calls) > 0
+        assert all(c.kwargs.get("sticky") is True for c in num_round_calls)
 
 
 class TestFedAvgAggregationWeights:

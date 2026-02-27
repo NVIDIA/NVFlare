@@ -15,7 +15,7 @@
 from abc import abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.class_utils import get_class_path_from_config, instantiate_class
 from nvflare.security.logging import secure_format_exception
 
 
@@ -49,9 +49,9 @@ class ComponentBuilder:
         if config_type != ConfigType.COMPONENT:
             return False
 
-        # regardless it has args or not. if path/name and valid class path, very likely we have
-        # class config.
-        if ("path" in config_dict or "name" in config_dict) and has_valid_class_path():
+        # regardless it has args or not. if path/class_path/name and valid class path, very likely we have
+        # class config. "class_path" is accepted for consistency with recipe/model config API.
+        if ("path" in config_dict or "class_path" in config_dict or "name" in config_dict) and has_valid_class_path():
             return True
         else:
             return False
@@ -86,32 +86,7 @@ class ComponentBuilder:
         return instantiate_class(class_path, class_args)
 
     def get_class_path(self, config_dict):
-        if "path" in config_dict.keys():
-            path_spec = config_dict["path"]
-            if not isinstance(path_spec, str):
-                raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
-
-            if len(path_spec) <= 0:
-                raise ConfigError("path spec must not be empty")
-
-            class_path = format(path_spec)
-            parts = class_path.split(".")
-            if len(parts) < 2:
-                raise ConfigError("invalid class path '{}': missing module name".format(class_path))
-        else:
-            if "name" not in config_dict:
-                raise ConfigError("class name or path must be specified")
-
-            class_name = config_dict["name"]
-
-            if not isinstance(class_name, str):
-                raise ConfigError("class name must be str but got {}.".format(type(class_name)))
-
-            if len(class_name) <= 0:
-                raise ConfigError("class name must not be empty")
-            module_name = self.get_module_scanner().get_module_name(class_name)
-            if module_name is None:
-                raise ConfigError('Cannot find component class "{}"'.format(class_name))
-            class_path = module_name + ".{}".format(class_name)
-
-        return class_path
+        return get_class_path_from_config(
+            config_dict,
+            resolve_name=lambda cn: self.get_module_scanner().get_module_name(cn),
+        )

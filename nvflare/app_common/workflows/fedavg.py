@@ -24,6 +24,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import (
     filter_aggregatable_metrics,
 )
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
@@ -129,8 +130,9 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
 
-        # Set NUM_ROUNDS in FL context for persistor and other components
-        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+        # Set NUM_ROUNDS in FL context for persistor and other components.
+        # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
 
         # Load initial model - prefer model if provided, else use persistor
         if self.model is not None:
@@ -150,6 +152,8 @@ class FedAvg(BaseFedAvg):
             self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+            self.event(AppEventType.ROUND_STARTED)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -181,6 +185,8 @@ class FedAvg(BaseFedAvg):
                     self.info("Abort signal triggered. Finishing FedAvg.")
                     return
                 time.sleep(self._task_check_period)
+
+            self.event(AppEventType.BEFORE_AGGREGATION)
 
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()
