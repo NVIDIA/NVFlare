@@ -197,6 +197,12 @@ def train(
 def main():
     parser = argparse.ArgumentParser(description="Run Qwen3-VL SFT script as subprocess per FL round")
     parser.add_argument("--data_path", type=str, default="./data/site-1", help="Site data dir (train.json here)")
+    parser.add_argument(
+        "--image_root",
+        type=str,
+        default=None,
+        help="Root for image paths (folder containing images/). Sets PUBMEDVISION_IMAGE_ROOT for fl_site. Default: PubMedVision.",
+    )
     parser.add_argument("--qwen_root", type=str, default=None, help="Qwen3-VL repo root (or set QWEN3VL_ROOT)")
     parser.add_argument(
         "--dataset_use",
@@ -282,6 +288,8 @@ def main():
     # So that Qwen data_list and imports can resolve paths (in-process training reads os.environ)
     os.environ["FL_SITE_DATA_DIR"] = data_path
     os.environ["QWEN_FINETUNE_DIR"] = finetune_dir
+    image_root = _abs_path(args.image_root) if args.image_root else _abs_path("PubMedVision")
+    os.environ["PUBMEDVISION_IMAGE_ROOT"] = image_root
 
     model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if rank == 0 else None
 

@@ -51,6 +51,27 @@ export QWEN3VL_ROOT="${PWD}/Qwen3-VL"
 ```
 (Use the absolute path to your `Qwen3-VL` clone if different.)
 
+### 2.1. Register the `fl_site` dataset in Qwen3-VL
+
+The FL client sets `FL_SITE_DATA_DIR` to each site’s data dir (e.g. `./data/site-1`) before calling the Qwen script. You must add a `fl_site` dataset entry in the Qwen repo so the script can load each site’s `train.json`.
+
+From the **root of your Qwen3-VL clone**, apply the provided patch (use the path to this example’s `patches` directory):
+
+```bash
+cd /path/to/Qwen3-VL
+git apply /path/to/examples/advanced/qwen3-vl/patches/fl_site_data_list.patch
+```
+
+If you cloned Qwen3-VL inside this example (e.g. `examples/advanced/qwen3-vl/Qwen3-VL`):
+
+```bash
+cd Qwen3-VL
+git apply ../patches/fl_site_data_list.patch
+cd ..
+```
+
+The patch adds `import os` and a `fl_site` branch in `data_list()` so that `annotation_path` points to `FL_SITE_DATA_DIR/train.json` and `data_path` uses `PUBMEDVISION_IMAGE_ROOT` (the folder containing `images/`). The job passes `--image_root` so the client sets this for you. If the patch does not apply (e.g. after a Qwen3-VL update), try `git apply --ignore-whitespace ../patches/fl_site_data_list.patch`, or apply the changes manually by adding `import os` and the `fl_site` branch as shown in `patches/fl_site_data_list.patch`.
+
 ## 3. Data: PubMedVision
 
 The example uses the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) medical VQA dataset. First, **download** the dataset and unzip its image archives into a local folder; then **split** it into non-overlapping shards (one per federated client) under `./data/site-1`, `site-2`, `site-3`. Both steps are automated.
@@ -90,6 +111,14 @@ Output layout (same JSON format as the source, one file per client):
 - `./data/site-2/train.json`
 - `./data/site-3/train.json`
 
+The training script resolves image paths in `train.json` (e.g. `images/pmc_xxx.jpg`) against an image root—the directory that contains the `images/` folder. With the default `download_data.py` and `prepare_data.py` layout, that directory is `PubMedVision`. To set it explicitly (e.g. when running the client by hand, or to match the job’s default):
+
+```bash
+export PUBMEDVISION_IMAGE_ROOT="${PWD}/PubMedVision"
+```
+
+If you used `download_data.py --output_dir /path/to/PubMedVision`, use that path instead: `export PUBMEDVISION_IMAGE_ROOT="/path/to/PubMedVision"`. The federated job sets this for you via `--image_root` (see section 5).
+
 ## 4. Weights & Biases setup (optional)
 
 WandB is disabled by default. To enable experiment tracking, pass `--wandb` when running the job and set up logging:
@@ -124,12 +153,13 @@ With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_clie
 
 `job.py` defaults to `--data_dir ./data`. Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
-**Prerequisites for the job:** Clone Qwen3-VL and set `QWEN3VL_ROOT` (see step 2). The example's Qwen3-VL clone registers a `fl_site` dataset; the client sets `FL_SITE_DATA_DIR` to its site data dir (e.g. `./data/site-1`). If images live in a separate path, set `PUBMEDVISION_IMAGE_ROOT` to the folder containing `images/`.
+**Prerequisites for the job:** Clone Qwen3-VL and set `QWEN3VL_ROOT` (see step 2), and add the `fl_site` dataset (step 2.1). The job passes `--image_root` (default `PubMedVision`) so the client sets `PUBMEDVISION_IMAGE_ROOT`; images in `train.json` (e.g. `images/pmc_xxx.jpg`) resolve to `image_root/images/...`. If your images live elsewhere, pass `--image_root /path/to/folder_containing_images`.
 
 **Optional arguments:**
 
 | Option | Description | Example |
 |--------|-------------|--------|
+| `--image_root` | Folder containing the `images/` directory (default: PubMedVision). | `python job.py --image_root /path/to/PubMedVision` |
 | `--workspace` | SimEnv workspace root; use a path on a large disk if the default (e.g. `/tmp/nvflare/simulation`) fills up. | `python job.py --workspace /data/nvflare/sim` |
 | `--n_clients` | Number of federated clients. | `python job.py --n_clients 1 --max_steps 1000` (single client, quick test) |
 | `--gpu` | GPU IDs per client (comma-separated lists in brackets). | `python job.py --gpu "[0],[1],[2]"` (one GPU per client) |

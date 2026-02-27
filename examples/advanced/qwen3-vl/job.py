@@ -42,6 +42,12 @@ def define_parser():
     )
     parser.add_argument("--data_dir", type=str, default="./data", help="Root dir for site-1, site-2, site-3 data")
     parser.add_argument(
+        "--image_root",
+        type=str,
+        default="PubMedVision",
+        help="Folder containing images/ for PubMedVision (default: PubMedVision). Passed to client as --image_root.",
+    )
+    parser.add_argument(
         "--model_name_or_path",
         type=str,
         default="Qwen/Qwen3-VL-2B-Instruct",
@@ -77,6 +83,7 @@ def main():
     args = define_parser()
     n_clients = args.n_clients
     data_dir = os.path.abspath(args.data_dir)
+    image_root = os.path.abspath(args.image_root)
     qwen_root = os.environ.get("QWEN3VL_ROOT", "")
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
@@ -87,6 +94,7 @@ def main():
         step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
         train_args = (
             f"--data_path {site_data_path} "
+            f"--image_root {image_root} "
             f"--dataset_use fl_site "
             f"--model_name_or_path {args.model_name_or_path} "
             f"{step_or_epoch}"

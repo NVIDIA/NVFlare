@@ -1,0 +1,29 @@
+diff --git a/qwen-vl-finetune/qwenvl/data/__init__.py b/qwen-vl-finetune/qwenvl/data/__init__.py
+index 68d3dea..c45e0a0 100755
+--- a/qwen-vl-finetune/qwenvl/data/__init__.py
++++ b/qwen-vl-finetune/qwenvl/data/__init__.py
+@@ -1,3 +1,4 @@
++import os
+ import re
+ 
+ # Define placeholders for dataset paths
+@@ -47,6 +48,19 @@ def data_list(dataset_names):
+     for dataset_name in dataset_names:
+         sampling_rate = parse_sampling_rate(dataset_name)
+         dataset_name = re.sub(r"%(\d+)$", "", dataset_name)
++        if dataset_name == "fl_site":
++            base = os.environ.get("FL_SITE_DATA_DIR", "")
++            if not base:
++                raise ValueError("FL_SITE_DATA_DIR is not set for fl_site dataset")
++            image_root = os.environ.get("PUBMEDVISION_IMAGE_ROOT", base)
++            print(f"[fl_site] FL_SITE_DATA_DIR={base}, data_path (image root)={image_root}")
++            config = {
++                "annotation_path": os.path.join(base, "train.json"),
++                "data_path": image_root,
++                "sampling_rate": sampling_rate,
++            }
++            config_list.append(config)
++            continue
+         if dataset_name in data_dict.keys():
+             config = data_dict[dataset_name].copy()
+             config["sampling_rate"] = sampling_rate
