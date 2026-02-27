@@ -197,7 +197,7 @@ def main():
     if is_nvflare_pt:
         base_path = args.base_model
         print(f"Loading base model and processor from: {base_path}")
-        model = load_qwen_vl_from_pretrained(base_path, torch_dtype=torch.bfloat16)
+        model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
         model_keys = set(model.state_dict().keys())
         # Snapshot one weight from base to detect if .pt is identical to base (global never updated)
         _sample_key = next((k for k in model_keys if "weight" in k and "embed" in k), next(iter(model_keys)))
@@ -236,7 +236,7 @@ def main():
         processor = AutoProcessor.from_pretrained(base_path, trust_remote_code=True)
     else:
         print(f"Loading model and processor from: {args.model_path}")
-        model = load_qwen_vl_from_pretrained(args.model_path, torch_dtype=torch.bfloat16)
+        model = load_qwen_vl_from_pretrained(args.model_path, dtype=torch.bfloat16)
         model = model.to(args.device)
         model.eval()
         processor = AutoProcessor.from_pretrained(args.model_path, trust_remote_code=True)

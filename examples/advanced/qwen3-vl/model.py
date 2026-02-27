@@ -83,7 +83,7 @@ class Qwen3VLModel(nn.Module):
     Supports both Qwen2.5-VL and Qwen3-VL checkpoints; the correct class is chosen from config.
     Use a Qwen3-VL model when training with the Qwen3-VL repo's train_qwen.py.
 
-    Loaded with torch_dtype=torch.bfloat16 so the server sends the global model in bf16
+    Loaded with dtype=torch.bfloat16 so the server sends the global model in bf16
     (~4651 MB for 2B); from_pretrained can otherwise default to float32 (~9302 MB).
     """
 
@@ -91,9 +91,7 @@ class Qwen3VLModel(nn.Module):
         super().__init__()
 
         self.model_name_or_path = model_name_or_path
-        self.model = load_qwen_vl_from_pretrained(
-            model_name_or_path, torch_dtype=torch.bfloat16, **kwargs
-        )
+        self.model = load_qwen_vl_from_pretrained(model_name_or_path, dtype=torch.bfloat16, **kwargs)
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
