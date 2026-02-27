@@ -124,12 +124,13 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         """Capture the recipe instead of executing.
 
         Applies server/client exec params exactly as the real Recipe.execute does
-        so the exported job matches what a real run would produce.
+        (including per-site topology preservation via _add_to_client_apps) so the
+        exported job matches what a real run would produce.
         """
         if server_exec_params:
             self.job.to_server(server_exec_params)
         if client_exec_params:
-            self.job.to_clients(client_exec_params)
+            self._add_to_client_apps(client_exec_params)
         # Match real Recipe.execute behavior so export matches runtime configuration.
         self.process_env(env)
 
