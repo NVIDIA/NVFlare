@@ -114,6 +114,11 @@ def _broadcast_object_from_rank0(value, world_size: int):
     return values[0]
 
 
+def _is_running_from_rank0(rank: int, world_size: int) -> bool:
+    running = flare.is_running() if rank == 0 else None
+    return _broadcast_object_from_rank0(running, world_size)
+
+
 def _collect_first_error(local_error: Optional[str], world_size: int) -> Optional[str]:
     if not _is_multi_rank(world_size):
         return local_error
@@ -280,7 +285,7 @@ def main():
 
     model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if rank == 0 else None
 
-    while flare.is_running():
+    while _is_running_from_rank0(rank, world_size):
         input_model = None
         current_round = None
         should_continue = True
