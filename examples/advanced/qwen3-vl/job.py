@@ -64,6 +64,12 @@ def define_parser():
         action="store_true",
         help="Enable Weights & Biases experiment tracking (optional).",
     )
+    parser.add_argument(
+        "--workspace",
+        type=str,
+        default="/tmp/nvflare/simulation",
+        help="SimEnv workspace root (default: /tmp/nvflare/simulation). Use a path on a large disk if you see 'No space left on device'.",
+    )
     return parser.parse_args()
 
 
@@ -150,7 +156,12 @@ def main():
             gpus = ",".join(str(start + j) for j in range(args.nproc_per_client))
             site_gpu_groups.append(f"[{gpus}]")
         gpu_config = ",".join(site_gpu_groups)
-    env = SimEnv(clients=client_names, num_threads=n_clients, gpu_config=gpu_config)
+    env = SimEnv(
+        clients=client_names,
+        num_threads=n_clients,
+        gpu_config=gpu_config,
+        workspace_root=os.path.abspath(args.workspace),
+    )
     run = recipe.execute(env)
     print()
     print("Job Status is:", run.get_status())

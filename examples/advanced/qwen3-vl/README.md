@@ -42,6 +42,8 @@ The official SFT training scripts and utilities (e.g. `qwen-vl-finetune/scripts/
 git clone https://github.com/QwenLM/Qwen3-VL.git
 ```
 
+> **Tested with:** [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) at commit [`96588727e44c78b25ba03ea03b8e12f7e64fd0da`](https://github.com/QwenLM/Qwen3-VL/commit/96588727e44c78b25ba03ea03b8e12f7e64fd0da).
+
 Set the `QWEN3VL_ROOT` environment variable to the clone path so the example can find the SFT entrypoint and configs. E.g. if you cloned inside this example: 
 
 ```bash
@@ -60,6 +62,8 @@ python download_data.py
 python prepare_data.py
 ```
 
+> **Note:** Both steps can take a while (cloning, Git LFS, and unzipping in particular).
+
 `download_data.py` clones the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) repo into `PubMedVision/` and unzips the image archives (requires [git](https://git-scm.com/) and [Git LFS](https://git-lfs.com/)). Unzipping can take a while. To use a different target directory: `python download_data.py --output_dir /path/to/PubMedVision`.
 
 `prepare_data.py` defaults to `--data_file PubMedVision/PubMedVision_InstructionTuning_VQA.json` and `--output_dir ./data`, so after `download_data.py` no arguments are needed. To load from HuggingFace Hub instead of a local file: `python prepare_data.py --data_file ''`. This produces `./data/site-1`, `site-2`, `site-3` with non-overlapping shards.
@@ -67,6 +71,7 @@ python prepare_data.py
 **Expected output (prepare_data.py):**
 ```
 Loading from local file: PubMedVision/PubMedVision_InstructionTuning_VQA.json
+Generating train split: 646759 examples [00:12, 51835.26 examples/s]
   site-1: 215586 samples -> ./data/site-1/train.json
   site-2: 215586 samples -> ./data/site-2/train.json
   site-3: 215586 samples -> ./data/site-3/train.json
@@ -107,11 +112,15 @@ You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB
 
 ## 5. Run the federated job
 
-With data under `./data/site-{1,2,3}/` (from `prepare_data.py`), run:
+With data under `./data/site-{1,2,3}/` (from `prepare_data.py`), run the following to start a federated learning simulation with three clients by default:
 
 ```bash
 python job.py
 ```
+
+Optionally pass `--workspace /path/to/dir` to set the SimEnv workspace root (e.g. a path on a large disk to avoid "No space left on device").
+
+With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_client 1`, or auto-allocates contiguous groups for larger values (e.g. `[0,1],[2,3],[4,5]` for `--nproc_per_client 2`). `--max_steps` limits steps per round (omit to train a full epoch per round).
 
 `job.py` defaults to `--data_dir ./data`. Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
@@ -119,16 +128,17 @@ python job.py
 
 **Optional arguments:**
 
-- Single client (testing): `python job.py --n_clients 1 --max_steps 1000`
-- One GPU per client: `python job.py --gpu "[0],[1],[2]"`
-- Multi-GPU per client (example: 2 GPUs/client): `python job.py --nproc_per_client 2 --gpu "[0,1],[2,3],[4,5]"`
-- WandB: `python job.py --wandb` (and set `WANDB_API_KEY` for online logging)
-
-With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_client 1`, or auto-allocates contiguous groups for larger values (e.g. `[0,1],[2,3],[4,5]` for `--nproc_per_client 2`). `--max_steps` limits steps per round (omit to train a full epoch per round).
+| Option | Description | Example |
+|--------|-------------|--------|
+| `--workspace` | SimEnv workspace root; use a path on a large disk if the default (e.g. `/tmp/nvflare/simulation`) fills up. | `python job.py --workspace /data/nvflare/sim` |
+| `--n_clients` | Number of federated clients. | `python job.py --n_clients 1 --max_steps 1000` (single client, quick test) |
+| `--gpu` | GPU IDs per client (comma-separated lists in brackets). | `python job.py --gpu "[0],[1],[2]"` (one GPU per client) |
+| `--nproc_per_client` | Number of torchrun processes (GPUs) per client. | `python job.py --nproc_per_client 2 --gpu "[0,1],[2,3],[4,5]"` (2 GPUs per client) |
+| `--wandb` | Enable Weights & Biases logging; set `WANDB_API_KEY` for online logging. | `python job.py --wandb` |
 
 ## Checkpoints and disk space
 
-By default, the client saves received and trained model checkpoints under the **NVFlare client workspace** (a `qwen3vl_checkpoints` subdir of the current working directory). When you run with SimEnv, that workspace is cleared every run, so you don't need to clean up manually. If you see **"No space left on device"**, the partition containing the SimEnv workspace (e.g. `/tmp/nvflare/simulation`) is full—use a different `workspace_root` in SimEnv or pass `--work_dir /path/to/large/disk` in the client's train_args to override the default.
+By default, the client saves received and trained model checkpoints under the **NVFlare client workspace** (a `qwen3vl_checkpoints` subdir of the current working directory). When you run with SimEnv, that workspace is cleared every run, so you don't need to clean up manually. If you see **"No space left on device"**, the partition containing the SimEnv workspace (e.g. `/tmp/nvflare/simulation`) is full—run with `python job.py --workspace /path/to/large/disk`, or pass `--work_dir /path/to/large/disk` in the client's train_args to override the client checkpoint location.
 
 
 ## Timeouts and long runs
