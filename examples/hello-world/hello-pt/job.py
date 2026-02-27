@@ -52,6 +52,8 @@ def main():
         # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size}",
+        # launch_external_process=True,   # run train_script in a separate subprocess
+        # client_memory_gc_rounds=1,      # release model params and run GC every N rounds to keep client RSS flat
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

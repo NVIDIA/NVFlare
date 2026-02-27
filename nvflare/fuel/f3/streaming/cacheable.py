@@ -84,8 +84,12 @@ class CacheableObject(Downloadable):
         self.clear_cache()
 
     def clear_cache(self):
+        # Release both the chunk cache and the source object so the underlying
+        # data (e.g. a 5 GiB numpy dict) is freed as soon as the transaction
+        # is done rather than waiting for CPython's GC to collect the cycle.
         with self.lock:
             self.cache = None
+            self.base_obj = None
 
     def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:

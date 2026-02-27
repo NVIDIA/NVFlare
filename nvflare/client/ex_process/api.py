@@ -181,6 +181,8 @@ class ExProcessClientAPI(APISpec):
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
                     heartbeat_timeout=client_config.get_heartbeat_timeout(),
+                    submit_result_timeout=client_config.get_submit_result_timeout(),
+                    max_resends=client_config.get_max_resends(),
                     from_nvflare_converter=from_nvflare_converter,
                     to_nvflare_converter=to_nvflare_converter,
                 )
@@ -211,7 +213,8 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = True
         if result is not None:
             self._mem_round = result.current_round
-            log_rss(f"round={result.current_round} after_receive")
+            self._mem_site = self.get_site_name()
+            log_rss(f"site={self._mem_site} round={result.current_round} after_receive")
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -231,7 +234,7 @@ class ExProcessClientAPI(APISpec):
             self.clear()
 
         self._maybe_cleanup_memory()
-        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
+        log_rss(f"site={getattr(self, '_mem_site', '?')} round={getattr(self, '_mem_round', None)} after_send")
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()

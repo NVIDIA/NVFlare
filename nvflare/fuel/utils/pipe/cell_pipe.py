@@ -279,7 +279,7 @@ class CellPipe(Pipe):
             raise ValueError(f"invalid mode {mode} - must be 'active' or 'passive'")
 
         self.peer_fqcn = _cell_fqcn(peer_mode, site_name, token, conn_props.get(ConnPropKey.FQCN))
-        self.received_msgs = queue.Queue()  # contains Message(s), not CellMessage(s)!
+        self.received_msgs = queue.Queue()  # contains raw CellMessage objects
         self.channel = None  # the cellnet message channel
         self.pipe_lock = threading.Lock()  # used to ensure no msg to be sent after closed
         self.closed = False
@@ -333,7 +333,8 @@ class CellPipe(Pipe):
             timeout = 5.0  # need to keep the connection for some time; otherwise the msg may not go out
 
         if msg.topic == Topic.HEARTBEAT:
-            # for debugging purpose
+            # Heartbeats are fire-and-forget; always create a fresh CellMessage so
+            # the timestamp header reflects the actual send time.
             extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
             self.hb_seq += 1
 
@@ -347,8 +348,34 @@ class CellPipe(Pipe):
             )
             return True
 
-        request = _to_cell_message(msg)
+        # Serialize the message ONCE and cache the result on the Message object.
+        #
+        # Why: PipeHandler retries the same `msg` object on every failed send.
+        # Without caching, each retry calls _to_cell_message(msg) → FOBS encodes
+        # msg.data (the Shareable/numpy result) → creates a new ArrayDownloadable
+        # transaction in DownloadService.  With a 5 GiB model and 14+ retries this
+        # produces 70–135 GiB of live transactions simultaneously (OOM crash).
+        #
+        # How it works: cell.send_request() calls encode_payload() which checks
+        # whether the CellMessage's encoding header is already set.  On the first
+        # call it encodes (FOBS) and mutates request.payload to bytes, then sets the
+        # header.  On every subsequent call with the same CellMessage object,
+        # encode_payload() sees the header is already set and skips re-serialization,
+        # so no new ArrayDownloadable is created.
+        if not hasattr(msg, "_cached_cell_msg"):
+            msg._cached_cell_msg = _to_cell_message(msg)
+        request = msg._cached_cell_msg
         request.set_header(MessageHeaderKey.MSG_ROOT_ID, msg.msg_id)
+        # For REPLY messages (subprocess→CJ result direction), stamp
+        # MSG_ROOT_TTL so via_downloader._create_downloader() keeps the
+        # subprocess's download transaction alive long enough for the server
+        # to pull the tensors directly from the subprocess.  We reuse
+        # `timeout` (= submit_result_timeout, already operator-configurable)
+        # — it is already sized for the full large-model transfer.
+        # No new constant is needed; same reasoning as the forward direction
+        # where the server uses task.timeout for its MSG_ROOT_TTL.
+        if msg.msg_type == Message.REPLY and timeout:
+            request.set_header(MessageHeaderKey.MSG_ROOT_TTL, float(timeout))
         reply = self.cell.send_request(
             channel=self.channel,
             topic=msg.topic,
@@ -372,28 +399,51 @@ class CellPipe(Pipe):
             return False
 
     def _receive_message(self, request: CellMessage) -> Union[None, CellMessage]:
+        # Return the pipe-level ACK as quickly as possible.
+        #
+        # The expensive work (FOBS decode / tensor download) has ALREADY been done
+        # by Adapter.call() in cell.py BEFORE this callback is invoked.  With
+        # reverse PASS_THROUGH enabled on the pipe cell, that decode is cheap
+        # (creates LazyDownloadRef objects rather than downloading).
+        #
+        # We queue the raw CellMessage rather than converting it to a Message here.
+        # The conversion (_from_cell_message) is deferred to receive() time so that
+        # this callback – and therefore the cell-level ACK path – performs the
+        # absolute minimum work before returning ReturnCode.OK to the sender.
         sender = request.get_header(MessageHeaderKey.ORIGIN)
         topic = request.get_header(MessageHeaderKey.TOPIC)
         self.logger.debug(f"got msg from peer {sender}: {topic}")
 
         if self.peer_fqcn != sender:
             raise RuntimeError(f"peer FQCN mismatch: expect {self.peer_fqcn} but got {sender}")
-        msg = _from_cell_message(request)
-        self.received_msgs.put_nowait(msg)
+        self.received_msgs.put_nowait(request)
         return make_reply(ReturnCode.OK)
 
     def receive(self, timeout=None) -> Union[None, Message]:
         try:
             if timeout:
-                return self.received_msgs.get(block=True, timeout=timeout)
+                cm = self.received_msgs.get(block=True, timeout=timeout)
             else:
-                return self.received_msgs.get_nowait()
+                cm = self.received_msgs.get_nowait()
         except queue.Empty:
             return None
+        # Convert the raw CellMessage to a Message at dequeue time.
+        return _from_cell_message(cm)
 
     def clear(self):
         while not self.received_msgs.empty():
             self.received_msgs.get_nowait()
+
+    def release_send_cache(self, msg: Message):
+        """Clear the cached CellMessage that was attached to *msg* by send().
+
+        The cache is created on the first send() call so that retries reuse the
+        already-serialized CellMessage.  Once the retry loop exits this
+        cache is no longer needed.  Dropping it allows the encoded payload bytes
+        and any lingering references to be reclaimed by GC promptly, rather than
+        waiting for the Message object itself to go out of scope.
+        """
+        msg.__dict__.pop("_cached_cell_msg", None)
 
     def can_resend(self) -> bool:
         return True

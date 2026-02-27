@@ -118,7 +118,8 @@ class InProcessClientAPI(APISpec):
         self.receive_called = True
         if result is not None:
             self._mem_round = result.current_round
-            log_rss(f"round={result.current_round} after_receive")
+            self._mem_site = self.get_site_name()
+            log_rss(f"site={self._mem_site} round={result.current_round} after_receive")
         return result
 
     def __receive(self) -> Optional[FLModel]:
@@ -169,7 +170,7 @@ class InProcessClientAPI(APISpec):
             self.receive_called = False
 
         self._maybe_cleanup_memory()
-        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
+        log_rss(f"site={getattr(self, '_mem_site', '?')} round={getattr(self, '_mem_round', None)} after_send")
 
     def system_info(self) -> Dict:
         return self.sys_info

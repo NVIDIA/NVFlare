@@ -79,6 +79,9 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
             cuda_empty_cache=cuda_empty_cache,
         )
 
+    def _decomposer_prefix(self) -> str:
+        return "tensor_"
+
     def initialize(self, fl_ctx: FLContext) -> None:
         fobs.register(TensorDecomposer)
         super().initialize(fl_ctx)

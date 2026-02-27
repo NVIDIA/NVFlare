@@ -179,7 +179,7 @@ class TestCacheableObject:
         DownloadService.delete_transaction(tx_id)
 
     def test_cacheable_object_downloaded_to_all(self, cell):
-        """Test downloaded_to_all callback clears cache."""
+        """Test downloaded_to_all callback clears cache and base_obj (Fix 4)."""
         items = ["item1", "item2"]
         obj = MockCacheableObject(items, max_chunk_size=100)
 
@@ -193,14 +193,15 @@ class TestCacheableObject:
         # Call downloaded_to_all
         obj.downloaded_to_all()
 
-        # Cache should be cleared
+        # Cache and base_obj must both be cleared (Fix 4).
         assert obj.cache is None
+        assert obj.base_obj is None
 
         # Cleanup
         DownloadService.delete_transaction(tx_id)
 
     def test_cacheable_object_transaction_done(self):
-        """Test transaction_done callback clears cache."""
+        """Test transaction_done callback clears cache and base_obj (Fix 4)."""
         items = ["item1", "item2"]
         obj = MockCacheableObject(items, max_chunk_size=100)
 
@@ -210,8 +211,37 @@ class TestCacheableObject:
         # Call transaction_done
         obj.transaction_done("tx123", "finished")
 
-        # Cache should be cleared
+        # Cache and base_obj must both be cleared (Fix 4).
         assert obj.cache is None
+        assert obj.base_obj is None
+
+    def test_clear_cache_releases_base_obj(self):
+        """Fix 4: clear_cache() must set base_obj to None, not just cache.
+
+        Before Fix 4, clear_cache() only nulled self.cache.  The source object
+        (e.g. a 5 GiB numpy dict stored in base_obj) was kept alive until the
+        CacheableObject itself was GC'd.  With Fix 4, base_obj is also nulled,
+        allowing the source data to be reclaimed immediately.
+        """
+        items = ["item1", "item2"]
+        obj = MockCacheableObject(items, max_chunk_size=100)
+        assert obj.base_obj is not None
+
+        obj.clear_cache()
+
+        assert obj.cache is None
+        assert obj.base_obj is None
+
+    def test_clear_cache_is_idempotent(self):
+        """Calling clear_cache() twice must not raise."""
+        items = ["item1"]
+        obj = MockCacheableObject(items, max_chunk_size=100)
+
+        obj.clear_cache()
+        obj.clear_cache()  # must not raise
+
+        assert obj.cache is None
+        assert obj.base_obj is None
 
     def test_cacheable_object_produce_after_cache_cleared(self):
         """Test that producing after cache is cleared still works."""

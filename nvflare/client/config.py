@@ -51,6 +51,8 @@ class ConfigKey:
     HEARTBEAT_TIMEOUT = "HEARTBEAT_TIMEOUT"
     MEMORY_GC_ROUNDS = "memory_gc_rounds"
     CUDA_EMPTY_CACHE = "cuda_empty_cache"
+    SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
+    MAX_RESENDS = "max_resends"
 
 
 class ClientConfig:
@@ -162,6 +164,33 @@ class ClientConfig:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
             ConfigKey.HEARTBEAT_TIMEOUT,
             self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
+        )
+
+    def get_max_resends(self):
+        """Return the maximum number of pipe send retries for submitting task results.
+
+        None means unlimited; the default of 3 bounds the retry window and prevents
+        unbounded ArrayDownloadable accumulation (Root Cause 6).
+        Set via recipe.add_client_config({"max_resends": N}).
+        """
+        value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.MAX_RESENDS, 3)
+        if value is None:
+            return None
+        return int(value)
+
+    def get_submit_result_timeout(self) -> float:
+        """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.
+
+        The value is read from the TASK_EXCHANGE section of the config, which is written by
+        ClientAPILauncherExecutor.prepare_config_for_launch().  If absent, a safe default of
+        300 s is returned — large enough for a single-chunk ACK with reverse PASS_THROUGH, and
+        a reasonable upper bound for direct (non-PASS_THROUGH) transfers at typical throughputs.
+
+        Changing this value via recipe.add_client_config() sets it for a specific job without
+        touching any process-level defaults.
+        """
+        return float(
+            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0)
         )
 
     def get_connection_security(self):

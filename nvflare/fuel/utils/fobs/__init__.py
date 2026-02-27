@@ -60,3 +60,12 @@ class FOBSContextKey:
     # forwarding node (the CJ) and is the foundation of the B1 pass-through
     # architecture.
     PASS_THROUGH = "pass_through"
+    # When > 0, _create_downloader() registers a transaction_done_cb that calls
+    # cleanup_memory() on every download-transaction completion.  Set via
+    # cell.update_fobs_context() from ClientAPILauncherExecutor (CJ side) and
+    # ExProcessClientAPI (subprocess side) using the same memory_gc_rounds value
+    # that controls APISpec._maybe_cleanup_memory().
+    MEMORY_GC_ROUNDS = "memory_gc_rounds"
+    # When True, the transaction_done_cb also calls torch.cuda.empty_cache()
+    # during cleanup_memory().
+    CUDA_EMPTY_CACHE = "cuda_empty_cache"
