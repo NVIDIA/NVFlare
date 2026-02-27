@@ -23,13 +23,14 @@ def _is_aggregatable_metric_value(v: Any) -> bool:
         return False
     if isinstance(v, (dict, list, set, tuple, str)):
         return False
+    # Bool metrics are treated as binary values (True=1, False=0) and averaged.
     if isinstance(v, (int, float, bool)):
         return True
     try:
         _ = v * 1.0
         _ = v + v
         return True
-    except Exception:
+    except (TypeError, ValueError, AttributeError, RuntimeError):
         return False
 
 

@@ -103,6 +103,20 @@ class TestIsAggregatableMetricValue:
 
         assert _is_aggregatable_metric_value(BadValue()) is False
 
+    def test_object_raising_unexpected_exception_propagates(self):
+        class UnexpectedError(Exception):
+            pass
+
+        class BadValue:
+            def __mul__(self, other):
+                raise UnexpectedError("unexpected")
+
+            def __add__(self, other):
+                return self
+
+        with pytest.raises(UnexpectedError, match="unexpected"):
+            _is_aggregatable_metric_value(BadValue())
+
 
 class TestFilterAggregatableMetrics:
     def test_none_or_empty_returns_empty_dict(self):
@@ -113,12 +127,13 @@ class TestFilterAggregatableMetrics:
         data = {
             "loss": 0.5,
             "accuracy": 0.9,
+            "converged": True,
             "config": {"lr": 0.01},
             "tags": ["a", "b"],
             "name": "run1",
         }
         filtered = filter_aggregatable_metrics(data)
-        assert filtered == {"loss": 0.5, "accuracy": 0.9}
+        assert filtered == {"loss": 0.5, "accuracy": 0.9, "converged": True}
 
     def test_warn_skipped_called_for_each_skipped_key(self):
         warned = []

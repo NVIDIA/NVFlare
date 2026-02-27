@@ -347,6 +347,40 @@ class TestFedAvgAggregation:
         assert "tags" not in aggr_result.metrics
         assert "name" not in aggr_result.metrics
 
+    def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
+        """Test bool metrics are aggregated as binary values (True=1, False=0)."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"is_good": True},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"is_good": False},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["is_good"] == 0.5
+
     def test_aggregate_one_result_warns_once_per_skipped_metric_key(self):
         """Test repeated skipped metric keys only emit one warning."""
         from unittest.mock import patch
