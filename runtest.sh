@@ -89,22 +89,11 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare examples tests integration research"
-    echo "checking license header in folder: $folders_to_check_license"
-    (grep -r --include "*.py" --exclude-dir "*protos*" --exclude "modeling_roberta.py" -L \
-    "\(# Copyright (c) \(2021\|2022\|2023\|2024\|2025\|2026\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
-    ${folders_to_check_license} || true) > no_license.lst
-    if [ -s no_license.lst ]; then
-        # The file is not-empty.
-        cat no_license.lst
-        echo "License text not found on the above files."
-        echo "Please fix them."
-        rm -f no_license.lst
-        exit 1
-    else
-        echo "All Python files in folder ${folders_to_check_license} have license header"
-        rm -f no_license.lst
-    fi
+    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research")
+    echo "checking license header in folder: ${folders_to_check_license[*]}"
+    status=0
+    python3 ci/check_license_header.py "${folders_to_check_license[@]}" || status="$?"
+    report_status "${status}"
     echo "finished checking license header"
 }
 
