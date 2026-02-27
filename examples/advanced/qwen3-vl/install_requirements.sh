@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install dependencies so flash_attn can build (it needs torch at build time).
-# Run from repo root with your venv activated, or pass path to requirements.txt.
+# Run with your venv activated from any directory; by default this script uses
+# requirements.txt next to itself (or pass a custom path as the first argument).
 #
 # If your project lives on a different filesystem than $HOME or /tmp (e.g. /scratch vs /home),
 # building flash_attn can hit "Invalid cross-device link" when it moves the downloaded wheel
