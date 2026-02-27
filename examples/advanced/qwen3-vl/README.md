@@ -10,7 +10,8 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
 | `client.py` | Client entry point (launched by NVFlare via torchrun): receives global model, runs Qwen3-VL `train_qwen` in-process per round, sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
-| `job.py` | FedAvg recipe: 3 clients, per-site data paths, Weights & Biases tracking; launches each client with a per-site torchrun command (unique `--master_port` per client). |
+| `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (--wandb); launches each client with a per-site torchrun command (unique `--master_port` per client). |
+| `download_data.py` | Downloads PubMedVision (git clone) and unzips image archives into `PubMedVision/` for a standard layout. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
 | `run_inference.py` | Inference on PubMedVision-style samples; compares base vs fine-tuned (HuggingFace checkpoint or NVFlare `FL_global_model.pt`). Prints question, ground truth, model answer, and image path. |
 
@@ -50,38 +51,20 @@ export QWEN3VL_ROOT="${PWD}/Qwen3-VL"
 
 ## 3. Data: PubMedVision
 
-From the [PubMedVision dataset page](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision):
+The example uses the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) medical VQA dataset. First, **download** the dataset and unzip its image archives into a local folder; then **split** it into non-overlapping shards (one per federated client) under `./data/site-1`, `site-2`, `site-3`. Both steps are automated.
+
+From this directory (`examples/advanced/qwen3-vl`), run:
 
 ```bash
-# Install Git LFS if needed: https://git-lfs.com/
-git clone https://huggingface.co/datasets/FreedomIntelligence/PubMedVision
+python download_data.py
+python prepare_data.py
 ```
 
-Unzip the image files (**Note** this might take a while):
+`download_data.py` clones the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) repo into `PubMedVision/` and unzips the image archives (requires [git](https://git-scm.com/) and [Git LFS](https://git-lfs.com/)). Unzipping can take a while. To use a different target directory: `python download_data.py --output_dir /path/to/PubMedVision`.
 
-```bash
-cd PubMedVision
-for ((i=0; i<20; i++))
-do
-    echo "Unzipping archive $((i+1))/20 ..."
-    unzip -q -j images_$i.zip -d images/
-done
-cd ..
-```
+`prepare_data.py` defaults to `--data_file PubMedVision/PubMedVision_InstructionTuning_VQA.json` and `--output_dir ./data`, so after `download_data.py` no arguments are needed. To load from HuggingFace Hub instead of a local file: `python prepare_data.py --data_file ''`. This produces `./data/site-1`, `site-2`, `site-3` with non-overlapping shards.
 
-### Split data for 3 federated clients
-
-Run the preparation script so each client has a non-overlapping shard under `./data/site-1`, `site-2`, `site-3`:
-
-**Using your local JSON file (e.g. from the cloned PubMedVision repo):**
-
-If the JSON is in the current directory:
-
-```bash
-python prepare_data.py --data_file PubMedVision/PubMedVision_InstructionTuning_VQA.json --output_dir ./data
-```
-
-**Expected output:**
+**Expected output (prepare_data.py):**
 ```
 Loading from local file: PubMedVision/PubMedVision_InstructionTuning_VQA.json
   site-1: 215586 samples -> ./data/site-1/train.json
@@ -102,9 +85,9 @@ Output layout (same JSON format as the source, one file per client):
 - `./data/site-2/train.json`
 - `./data/site-3/train.json`
 
-## 4. Weights & Biases setup (optional but recommended)
+## 4. Weights & Biases setup (optional)
 
-The example uses Weights & Biases (WandB) for experiment tracking. To enable online logging:
+WandB is disabled by default. To enable experiment tracking, pass `--wandb` when running the job and set up logging:
 
 **Authentication:** Set the `WANDB_API_KEY` environment variable before running the job (for local FL simulation only):
 
@@ -114,7 +97,7 @@ export WANDB_API_KEY=your_key_here
 
 Get your API key from [wandb.ai/authorize](https://wandb.ai/authorize). Alternatively, run `wandb.login()` in Python and enter the key when prompted; it is stored for future runs.
 
-**Configuration:** The `job.py` script configures WandB with (see `job.py` add_experiment_tracking call):
+**Configuration:** When `--wandb` is used, `job.py` configures WandB with:
 - `name`: "qwen3-vl-fedavg"
 - `project`: "nvflare"
 - `group`: "nvidia"
@@ -124,32 +107,23 @@ You can modify these in `job.py` if needed. If `WANDB_API_KEY` is not set, WandB
 
 ## 5. Run the federated job
 
-Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun (so Qwen gets a proper distributed env), receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
+With data under `./data/site-{1,2,3}/` (from `prepare_data.py`), run:
 
-1. **Clone Qwen3-VL and set `QWEN3VL_ROOT`** (see step 2 above).
+```bash
+python job.py
+```
 
-2. **Dataset config for training**: The example's Qwen3-VL clone already registers a `fl_site` dataset in `qwen-vl-finetune/qwenvl/data/__init__.py` following the [official Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) (dataset definition + `data_dict`). The client sets `FL_SITE_DATA_DIR` to its site data dir (e.g. `./data/site-1`); `fl_site` paths are resolved at runtime from that and, optionally, `PUBMEDVISION_IMAGE_ROOT`. If you use a fresh Qwen3-VL clone, add the same `FL_SITE` definition and `"fl_site": FL_SITE` in `data_dict`, and in `data_list()` resolve `annotation_path` and `data_path` for `fl_site` from those env vars. If images live in a separate PubMedVision repo, set `PUBMEDVISION_IMAGE_ROOT` to that repo path (the folder containing `images/`).
+`job.py` defaults to `--data_dir ./data`. Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
-3. **Run the job**:
+**Prerequisites for the job:** Clone Qwen3-VL and set `QWEN3VL_ROOT` (see step 2). The example's Qwen3-VL clone registers a `fl_site` dataset; the client sets `FL_SITE_DATA_DIR` to its site data dir (e.g. `./data/site-1`). If images live in a separate path, set `PUBMEDVISION_IMAGE_ROOT` to the folder containing `images/`.
 
-For testing, we can run a single client
-   ```bash
-   export QWEN3VL_ROOT=/path/to/Qwen3-VL
-   export WANDB_API_KEY=your_key_here   # optional
-   # If train.json is in ./data/site-* but images live in a PubMedVision clone:
-   export PUBMEDVISION_IMAGE_ROOT=/path/to/PubMedVision
-   python job.py --data_dir ./data --max_steps 1000 --n_clients 1
-   ```
+**Optional arguments:**
 
-   To run each client on a separate GPU (recommended when you have multiple GPUs):
+- Single client (testing): `python job.py --n_clients 1 --max_steps 1000`
+- One GPU per client: `python job.py --gpu "[0],[1],[2]"`
+- WandB: `python job.py --wandb` (and set `WANDB_API_KEY` for online logging)
 
-   ```bash
-   python job.py --data_dir ./data --max_steps 1000 --gpu "[0],[1],[2]"
-   ```
-
-   With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` (one GPU per client). For a different mapping, pass `--gpu` explicitly (e.g. `"[1],[2],[3]"`).
-
-   `--max_steps` limits steps per round (if not provided, the client trains for a full epoch).
+With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]`. `--max_steps` limits steps per round (omit to train a full epoch per round).
 
 ## Checkpoints and disk space
 
@@ -169,13 +143,13 @@ After each round the client sends the updated model weights back to the server; 
 
 Use `run_inference.py` to compare base vs fine-tuned checkpoints on PubMedVision-style samples. Run from this directory (`examples/advanced/qwen3-vl`):
 
-`--image_root` should be the directory that contains the `images/` folder (e.g. your PubMedVision repo). Output prints each question, ground-truth answer, and model answer so you can compare base vs fine-tuned runs.
+By default the script uses `./data/site-1/train.json` and `./PubMedVision` (the directory that contains the `images/` folder). Override with `--data_file` and `--image_root` if needed. Output prints each question, ground-truth answer, and model answer so you can compare base vs fine-tuned runs.
 
 ### Base model (no fine-tuning)
 ```bash
-python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct \
-  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct
 ```
+(Uses `./data/site-1/train.json` and `./PubMedVision` by default after the data workflow.)
 **Expected output**
 ```
 --- Sample 1 ---
@@ -188,12 +162,10 @@ Model:        Based on the provided CT angiography scan, the inferior mesenteric
 
 ### Fine-tuned checkpoint
 
-**Option A — NVFlare global model** (single `.pt` file saved by the server, e.g. `FL_global_model.pt`). You must pass `--base_model` so the script can load the architecture and processor, then apply the saved weights:
+**Option A — NVFlare global model** (single `.pt` file saved by the server, e.g. `FL_global_model.pt`). The script loads the architecture and processor from the default base model (Qwen/Qwen3-VL-2B-Instruct), then applies the saved weights; use `--base_model` if you used a different base in the FL job:
 
 ```bash
-python run_inference.py --model_path /tmp/nvflare/simulation/qwen3-vl/server/simulate_job/app_server/FL_global_model.pt \
-  --base_model Qwen/Qwen3-VL-2B-Instruct \
-  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+python run_inference.py --model_path /tmp/nvflare/simulation/qwen3-vl/server/simulate_job/app_server/FL_global_model.pt
 ```
 
 **Expected output** (fine-tuned): same format as base; compare the "Model" line to the base run.
@@ -209,8 +181,7 @@ Model:        The inferior mesenteric artery aneurysm (IMAA) measures 4.87 cm in
 **Option B — HuggingFace-style checkpoint directory** (e.g. from the FL client workspace or a saved `checkpoint-xxx` folder):
 
 ```bash
-python run_inference.py --model_path ./path/to/checkpoint-xxx \
-  --data_file ./data/site-1/train.json --image_root ./PubMedVision --max_samples 1
+python run_inference.py --model_path ./path/to/checkpoint-xxx
 ```
 
 > The example output above may look similar for base and fine-tuned checkpoints because the baseline is already strong; the intent here is to demonstrate federated fine-tuning and inference on the global checkpoint. Note that we use the same training data (e.g. `site-1/train.json`) only for illustration -- for real evaluation you should use a held-out validation or test set.
@@ -221,9 +192,11 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx \
 |------|--------|
 | 1 | Create venv, `pip install nvflare`, run `./install_requirements.sh` |
 | 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
-| 3 | Download PubMedVision (clone or Hub) and run `prepare_data.py` to get `./data/site-{1,2,3}/` |
-| 4 | (Optional) Set `WANDB_API_KEY` for online experiment tracking |
-| 5 | Run `python job.py --data_dir ./data` (optionally `--max_steps N`, `--gpu "[0],[1],[2]"` for one GPU per client) |
+| 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
+| 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
+| 5 | Run `python job.py` (optionally `--wandb`, `--max_steps N`, `--gpu "[0],[1],[2]"`) |
+
+Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`.
 
 ## References
 

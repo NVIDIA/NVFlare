@@ -16,17 +16,14 @@ Short inference script for Qwen3-VL on PubMedVision-style samples.
 Use to compare base vs fine-tuned checkpoints (e.g. before/after federated SFT).
 
 Example:
-  # Base model (no fine-tuning)
-  python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct \\
-    --data_file ./data/site-1/train.json --image_root /path/to/PubMedVision --max_samples 5
+  # Base model (no fine-tuning; uses ./data/site-1/train.json and ./PubMedVision, max 1 sample by default)
+  python run_inference.py --model_path Qwen/Qwen3-VL-2B-Instruct
 
   # Fine-tuned checkpoint (saved by FL job or client)
-  python run_inference.py --model_path ./path/to/checkpoint-xxx \\
-    --data_file ./data/site-1/train.json --image_root /path/to/PubMedVision --max_samples 5
+  python run_inference.py --model_path ./path/to/checkpoint-xxx
 
-  # NVFlare global model (single .pt file from server)
-  python run_inference.py --model_path /path/to/FL_global_model.pt --base_model Qwen/Qwen3-VL-2B-Instruct \\
-    --data_file ./data/site-1/train.json --image_root /path/to/PubMedVision --max_samples 5
+  # NVFlare global model (single .pt file from server; base model defaults to Qwen/Qwen3-VL-2B-Instruct)
+  python run_inference.py --model_path /path/to/FL_global_model.pt
 """
 
 import argparse
@@ -156,20 +153,20 @@ def main():
     parser.add_argument(
         "--data_file",
         type=str,
-        default=None,
-        help="Path to PubMedVision-style JSON (e.g. data/site-1/train.json)",
+        default="./data/site-1/train.json",
+        help="Path to PubMedVision-style JSON (default: ./data/site-1/train.json, after prepare_data.py)",
     )
     parser.add_argument(
         "--image_root",
         type=str,
-        default=None,
-        help="Root to resolve relative image paths (e.g. path to PubMedVision repo with images/)",
+        default="./PubMedVision",
+        help="Root to resolve relative image paths (default: ./PubMedVision, after download_data.py)",
     )
     parser.add_argument(
         "--max_samples",
         type=int,
-        default=5,
-        help="Max number of samples to run (default: 5)",
+        default=1,
+        help="Max number of samples to run (default: 1)",
     )
     parser.add_argument(
         "--max_new_tokens",
@@ -187,11 +184,11 @@ def main():
         "--base_model",
         type=str,
         default="Qwen/Qwen3-VL-2B-Instruct",
-        help="HuggingFace model ID for architecture and processor when --model_path is an NVFlare .pt file",
+        help="HuggingFace model ID for architecture and processor when --model_path is an NVFlare .pt file (default: Qwen/Qwen3-VL-2B-Instruct)",
     )
     args = parser.parse_args()
 
-    image_root = args.image_root or os.path.dirname(os.path.abspath(args.data_file or "."))
+    image_root = args.image_root or os.path.dirname(os.path.abspath(args.data_file))
 
     is_nvflare_pt = os.path.isfile(args.model_path) and args.model_path.endswith(".pt")
     if is_nvflare_pt:
@@ -249,7 +246,9 @@ def main():
         print(f"Running inference on {len(samples)} sample(s)\n")
     else:
         # Single prompt mode: no data file, optional manual test
-        print("No --data_file provided; use --data_file and --image_root to run on PubMedVision samples.")
+        print(
+            "Data file not found. Run download_data.py and prepare_data.py first, or set --data_file and --image_root."
+        )
         return 0
 
     for i, s in enumerate(samples):

@@ -53,6 +53,11 @@ def define_parser():
         default="5e-7",
         help="Peak learning rate for training (default 5e-7; try 1e-6 for faster convergence)",
     )
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Enable Weights & Biases experiment tracking (optional).",
+    )
     return parser.parse_args()
 
 
@@ -111,20 +116,21 @@ def main():
         clients=client_names,
     )
 
-    # Add experiment tracking with Weights & Biases
-    add_experiment_tracking(
-        recipe,
-        tracking_type="wandb",
-        tracking_config={
-            "wandb_args": {
-                "name": "qwen3-vl-fedavg",
-                "project": "nvflare",
-                "group": "nvidia",
-                "job_type": "training",
+    # Optional: add experiment tracking with Weights & Biases
+    if args.wandb:
+        add_experiment_tracking(
+            recipe,
+            tracking_type="wandb",
+            tracking_config={
+                "wandb_args": {
+                    "name": "qwen3-vl-fedavg",
+                    "project": "nvflare",
+                    "group": "nvidia",
+                    "job_type": "training",
+                },
+                "mode": "online",  # optional, default "offline"
             },
-            "mode": "online",  # optional, default "offline"
-        },
-    )
+        )
 
     gpu_config = args.gpu if args.gpu is not None else ",".join(f"[{i}]" for i in range(n_clients))
     env = SimEnv(clients=client_names, num_threads=n_clients, gpu_config=gpu_config)

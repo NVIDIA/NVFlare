@@ -28,6 +28,7 @@ from typing import Optional
 
 import torch
 from model import Qwen3VLModel, load_qwen_vl_from_pretrained, load_state_dict_from_checkpoint
+from transformers import AutoProcessor
 
 import nvflare.client as flare
 
@@ -216,17 +217,9 @@ def main():
         received_mb = _params_size_mb(input_model.params)
         print(f"site={client_name}, round={input_model.current_round}, received model size: {received_mb:.2f} MB")
 
-        if flare.is_evaluate():
-            output_model = flare.FLModel(metrics={"loss": 0.0})
-            sent_mb = _params_size_mb(getattr(output_model, "params", None) or {})
-            print(f"site={client_name}, round={input_model.current_round}, sent model size: {sent_mb:.2f} MB")
-            flare.send(output_model)
-            continue
-
         # Save received global model to HF format for train_qwen.py
         os.makedirs(input_model_dir, exist_ok=True)
         model.load_state_dict(input_model.params, strict=False)
-        from transformers import AutoProcessor
 
         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
         tokenizer = getattr(processor, "tokenizer", processor)

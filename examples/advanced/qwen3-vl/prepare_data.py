@@ -83,9 +83,9 @@ def main():
     parser.add_argument(
         "--data_file",
         type=str,
-        default=None,
-        help="Path to local PubMedVision JSON/JSONL (e.g. PubMedVision_InstructionTuning_VQA.json). "
-        "If set, uses this instead of HuggingFace Hub.",
+        default="PubMedVision/PubMedVision_InstructionTuning_VQA.json",
+        help="Path to local PubMedVision JSON (default: PubMedVision/PubMedVision_InstructionTuning_VQA.json, "
+        "after download_data.py). Set to empty string to load from HuggingFace Hub instead.",
     )
     parser.add_argument(
         "--split_name",
@@ -101,11 +101,14 @@ def main():
     except ImportError:
         raise ImportError("Please install datasets: pip install datasets")
 
-    if args.data_file:
-        if not os.path.isfile(args.data_file):
-            raise FileNotFoundError(f"Data file not found: {args.data_file}")
-        print(f"Loading from local file: {args.data_file}")
-        dataset = load_dataset("json", data_files=args.data_file, split="train")
+    if args.data_file and args.data_file.strip():
+        data_file = args.data_file.strip()
+        if not os.path.isfile(data_file):
+            raise FileNotFoundError(
+                f"Data file not found: {data_file}. Run download_data.py first, or use --data_file '' to load from HuggingFace Hub."
+            )
+        print(f"Loading from local file: {data_file}")
+        dataset = load_dataset("json", data_files=data_file, split="train")
     else:
         print(f"Loading {args.split_name} from HuggingFace ...")
         dataset = load_dataset(
