@@ -62,15 +62,19 @@ def run_provision_command(project_yaml: str, workspace: str):
     process.wait()
 
 
-def run_command_in_subprocess(command):
+def run_command_in_subprocess(command, stdin_data=None):
     new_env = os.environ.copy()
     python_path = ":".join(sys.path)[1:]  # strip leading colon
     new_env["PYTHONPATH"] = python_path
     process = subprocess.Popen(
         shlex.split(command),
+        stdin=subprocess.PIPE if stdin_data else None,
         preexec_fn=os.setsid,
         env=new_env,
     )
+    if stdin_data:
+        process.stdin.write(stdin_data)
+        process.stdin.close()
     return process
 
 
