@@ -121,6 +121,11 @@ def main():
     n_total = len(dataset)
     n_clients = args.num_clients
     n_per_client_full = n_total // n_clients
+    if n_per_client_full == 0:
+        raise ValueError(
+            f"Insufficient data: dataset has {n_total} samples but {n_clients} clients requested. "
+            f"Each client would receive 0 samples. Use fewer clients or more data."
+        )
     if args.subset_size is not None:
         n_per_client = min(n_per_client_full, args.subset_size)
     else:
