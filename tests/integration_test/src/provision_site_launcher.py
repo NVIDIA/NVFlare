@@ -40,7 +40,9 @@ def _start_site(site_properties: SiteProperties):
 
 
 def _stop_site(site_properties: SiteProperties):
-    run_command_in_subprocess(f"echo 'y' | {os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh')}")
+    run_command_in_subprocess(
+        f"bash {os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh')}", stdin_data=b"y\n"
+    )
     print(f"Stopping {site_properties.name} ...")
 
 
