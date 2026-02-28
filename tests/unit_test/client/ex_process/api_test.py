@@ -119,7 +119,7 @@ def test_get_submit_result_timeout_absent_section():
 
 def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
     """ExProcessClientAPI.init() must pass submit_result_timeout from config to FlareAgentWithFLModel."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     from nvflare.client.config import ConfigKey
     from nvflare.client.ex_process.api import ExProcessClientAPI

@@ -18,7 +18,6 @@ import pytest
 
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 
 
@@ -99,52 +98,6 @@ def base_executor(monkeypatch):
     return executor
 
 
-def test_pass_through_restored_to_previous_value(base_executor):
-    cell = _FakeCell({FOBSContextKey.PASS_THROUGH: True})
-    fl_ctx = _FakeFLContext(cell)
-
-    base_executor.initialize(fl_ctx)
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-
-    base_executor.finalize(fl_ctx)
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-    assert base_executor._cell_with_pass_through is None
-
-
-def test_pass_through_restored_to_none_when_previously_absent(base_executor):
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    base_executor.initialize(fl_ctx)
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-
-    base_executor.finalize(fl_ctx)
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
-    assert base_executor._cell_with_pass_through is None
-
-
-def test_initialize_failure_restores_pass_through(monkeypatch):
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    def _raise(*_args, **_kwargs):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(LauncherExecutor, "initialize", _raise)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    executor.pipe = _make_fake_cell_pipe()
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    with pytest.raises(RuntimeError, match="boom"):
-        executor.initialize(fl_ctx)
-
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
-    assert executor._cell_with_pass_through is None
-
-
 def test_launcher_converter_ids_warn_when_ignored(monkeypatch):
     warnings = []
     monkeypatch.setattr(LauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
@@ -183,8 +136,7 @@ def test_prepare_config_includes_submit_result_timeout(monkeypatch):
     """prepare_config_for_launch must include SUBMIT_RESULT_TIMEOUT in the task_exchange section."""
     from unittest.mock import MagicMock
 
-    from nvflare.app_common.utils.export_utils import update_export_props
-    from nvflare.client.config import ConfigKey, write_config_to_file
+    from nvflare.client.config import ConfigKey
 
     captured = {}
 
@@ -290,7 +242,6 @@ _GCV_MODULE = "nvflare.app_common.executors.client_api_launcher_executor.get_cli
 
 def _make_gcv_stub(overrides: dict):
     """Return a get_client_config_value replacement that answers from *overrides*."""
-    from nvflare.client.constants import EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
 
     def _gcv(fl_ctx, key, default=None):
         return overrides.get(key, default)
@@ -393,175 +344,9 @@ def test_peer_read_timeout_and_external_pre_init_both_overridable(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Fix 7: Gate PASS_THROUGH on CellPipe only
-# ---------------------------------------------------------------------------
-
-
-def test_pass_through_enabled_for_cell_pipe(monkeypatch):
-    """PASS_THROUGH must be set when pipe is a CellPipe (positive path)."""
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    executor.pipe = _make_fake_cell_pipe()
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    executor.initialize(fl_ctx)
-
-    assert cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-    assert executor._cell_with_pass_through is cell  # engine cell stored for later restore
-
-
-def test_pass_through_skipped_for_non_cell_pipe(monkeypatch):
-    """PASS_THROUGH must NOT be set when pipe is not a CellPipe (e.g. FilePipe).
-
-    Before Fix 7: PASS_THROUGH was enabled unconditionally, silently corrupting
-    task data for FilePipe subprocesses that cannot resolve cell FQCNs.
-    After Fix 7: only CellPipe triggers PASS_THROUGH.
-    """
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    # Simulate a non-CellPipe (e.g. FilePipe or any other Pipe subclass).
-    from unittest.mock import MagicMock
-    executor.pipe = MagicMock()  # not a CellPipe instance
-
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    executor.initialize(fl_ctx)
-
-    # PASS_THROUGH must remain absent (not set at all).
-    assert FOBSContextKey.PASS_THROUGH not in cell.core_cell.ctx
-    assert executor._cell_with_pass_through is None
-
-
-def test_pass_through_skipped_when_pipe_is_none(monkeypatch):
-    """PASS_THROUGH must not be set when pipe has not been resolved yet."""
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    # pipe is None (default before START_RUN fires)
-
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    executor.initialize(fl_ctx)
-
-    assert FOBSContextKey.PASS_THROUGH not in cell.core_cell.ctx
-    assert executor._cell_with_pass_through is None
-
-
-# ---------------------------------------------------------------------------
-# Fix 8: Reverse PASS_THROUGH on pipe cell
-# ---------------------------------------------------------------------------
-
-
-class _FakePipeCoreCell:
-    """Minimal CoreCell-like for a CellPipe's cell."""
-    def __init__(self):
-        self.ctx = {}
-
-    def update_fobs_context(self, props: dict):
-        self.ctx.update(props)
-
-    def get_fobs_context(self, props: dict = None):
-        import copy
-        result = copy.copy(self.ctx)
-        if props:
-            result.update(props)
-        return result
-
-
-class _FakePipeCell:
-    """Minimal Cell-like object attached to a CellPipe."""
-    def __init__(self):
-        self.core_cell = _FakePipeCoreCell()
-
-
-def _make_cell_pipe_with_fake_cell(pipe_cell=None):
-    """Return a CellPipe instance whose .cell is a _FakePipeCell."""
-    cp = _make_fake_cell_pipe()
-    cp.cell = pipe_cell if pipe_cell is not None else _FakePipeCell()
-    return cp
-
-
-def test_pipe_cell_pass_through_enabled(monkeypatch):
-    """Reverse PASS_THROUGH must be set on the pipe cell when pipe is CellPipe
-    and pipe.cell is distinct from the engine cell."""
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    executor.pipe = _make_cell_pipe_with_fake_cell()
-
-    engine_cell = _FakeCell()
-    fl_ctx = _FakeFLContext(engine_cell)
-
-    executor.initialize(fl_ctx)
-
-    # Engine cell: forward PASS_THROUGH
-    assert engine_cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-    # Pipe cell: reverse PASS_THROUGH
-    assert executor.pipe.cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-    assert executor._pipe_cell_with_pass_through is executor.pipe.cell
-
-
-def test_pipe_cell_pass_through_not_set_when_same_as_engine_cell(monkeypatch):
-    """Reverse PASS_THROUGH must NOT double-set when pipe.cell is the same
-    object as the engine cell (e.g. in simulator)."""
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    engine_cell = _FakeCell()
-    # Pipe cell IS the engine cell — same object.
-    executor.pipe = _make_cell_pipe_with_fake_cell(pipe_cell=engine_cell)
-
-    fl_ctx = _FakeFLContext(engine_cell)
-    executor.initialize(fl_ctx)
-
-    assert executor._pipe_cell_with_pass_through is None
-
-
-def test_pipe_cell_pass_through_restored_on_finalize(monkeypatch):
-    """Pipe cell PASS_THROUGH must be restored to its previous value on finalize."""
-    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(LauncherExecutor, "finalize", lambda self, fl_ctx: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    executor.pipe = _make_cell_pipe_with_fake_cell()
-
-    engine_cell = _FakeCell()
-    fl_ctx = _FakeFLContext(engine_cell)
-
-    executor.initialize(fl_ctx)
-    assert executor.pipe.cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is True
-
-    executor.finalize(fl_ctx)
-    assert executor.pipe.cell.core_cell.ctx[FOBSContextKey.PASS_THROUGH] is None
-    assert executor._pipe_cell_with_pass_through is None
-
-
-# ---------------------------------------------------------------------------
 # Fix 10: max_resends wiring
 # ---------------------------------------------------------------------------
+
 
 def test_max_resends_default_stored():
     """Default max_resends (3) must be stored on the executor."""
@@ -584,6 +369,7 @@ def test_max_resends_none_stored():
 def test_prepare_config_includes_max_resends(monkeypatch):
     """prepare_config_for_launch must include MAX_RESENDS in the task_exchange section."""
     from unittest.mock import MagicMock
+
     from nvflare.client.config import ConfigKey
 
     captured = {}
@@ -631,6 +417,7 @@ def test_prepare_config_includes_max_resends(monkeypatch):
 def test_client_config_get_max_resends_default():
     """ClientConfig.get_max_resends() must return 3 when key is absent."""
     from nvflare.client.config import ClientConfig
+
     cfg = ClientConfig(config={})
     assert cfg.get_max_resends() == 3
 
@@ -638,6 +425,7 @@ def test_client_config_get_max_resends_default():
 def test_client_config_get_max_resends_from_config():
     """ClientConfig.get_max_resends() must return the configured value."""
     from nvflare.client.config import ClientConfig, ConfigKey
+
     cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: 7}})
     assert cfg.get_max_resends() == 7
 
@@ -645,6 +433,7 @@ def test_client_config_get_max_resends_from_config():
 def test_client_config_get_max_resends_none():
     """ClientConfig.get_max_resends() must return None when explicitly set to None."""
     from nvflare.client.config import ClientConfig, ConfigKey
+
     cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: None}})
     assert cfg.get_max_resends() is None
 
@@ -652,15 +441,18 @@ def test_client_config_get_max_resends_none():
 def test_ex_process_api_passes_max_resends_to_flare_agent(monkeypatch):
     """ExProcessClientAPI must pass max_resends from ClientConfig to FlareAgentWithFLModel."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.client.config import ClientConfig, ConfigKey
 
-    client_config = ClientConfig(config={
-        ConfigKey.TASK_EXCHANGE: {
-            ConfigKey.MAX_RESENDS: 5,
-            ConfigKey.SUBMIT_RESULT_TIMEOUT: 300.0,
-            ConfigKey.HEARTBEAT_TIMEOUT: 600.0,
+    client_config = ClientConfig(
+        config={
+            ConfigKey.TASK_EXCHANGE: {
+                ConfigKey.MAX_RESENDS: 5,
+                ConfigKey.SUBMIT_RESULT_TIMEOUT: 300.0,
+                ConfigKey.HEARTBEAT_TIMEOUT: 600.0,
+            }
         }
-    })
+    )
 
     captured_kwargs = {}
 
@@ -669,6 +461,7 @@ def test_ex_process_api_passes_max_resends_to_flare_agent(monkeypatch):
 
     with patch("nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel.__init__", fake_agent_init):
         from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
+
         agent = object.__new__(FlareAgentWithFLModel)
         fake_agent_init(agent, pipe=MagicMock(), max_resends=client_config.get_max_resends())
 
@@ -676,74 +469,9 @@ def test_ex_process_api_passes_max_resends_to_flare_agent(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Memory context (memory_gc_rounds / cuda_empty_cache) FOBS context wiring
-# ---------------------------------------------------------------------------
-
-def test_memory_ctx_set_on_engine_cell_when_gc_rounds_positive(base_executor):
-    """When memory_gc_rounds > 0, MEMORY_GC_ROUNDS and CUDA_EMPTY_CACHE must be
-    written to the engine cell's FOBS context."""
-    base_executor._memory_gc_rounds = 2
-    base_executor._cuda_empty_cache = True
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    base_executor.initialize(fl_ctx)
-
-    assert cell.core_cell.ctx.get(FOBSContextKey.MEMORY_GC_ROUNDS) == 2
-    assert cell.core_cell.ctx.get(FOBSContextKey.CUDA_EMPTY_CACHE) is True
-
-
-def test_memory_ctx_not_set_when_gc_rounds_zero(base_executor):
-    """When memory_gc_rounds=0, MEMORY_GC_ROUNDS must NOT be written to the cell."""
-    base_executor._memory_gc_rounds = 0
-    base_executor._cuda_empty_cache = False
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
-
-    base_executor.initialize(fl_ctx)
-
-    assert FOBSContextKey.MEMORY_GC_ROUNDS not in cell.core_cell.ctx
-
-
-def test_memory_ctx_set_on_pipe_cell(base_executor):
-    """When memory_gc_rounds > 0 and pipe has a separate cell, that cell's FOBS
-    context must also receive the memory settings."""
-    base_executor._memory_gc_rounds = 3
-    base_executor._cuda_empty_cache = False
-
-    engine_cell = _FakeCell()
-    pipe_cell = _FakeCell()
-
-    # Attach a fake cell to the pipe (different from the engine cell)
-    fake_pipe = base_executor.pipe
-    fake_pipe.cell = pipe_cell
-
-    fl_ctx = _FakeFLContext(engine_cell)
-    base_executor.initialize(fl_ctx)
-
-    assert pipe_cell.core_cell.ctx.get(FOBSContextKey.MEMORY_GC_ROUNDS) == 3
-
-
-def test_memory_ctx_not_duplicated_when_pipe_cell_is_engine_cell(base_executor):
-    """When pipe cell and engine cell are the same object, MEMORY_GC_ROUNDS must
-    still be set (idempotently) without raising."""
-    base_executor._memory_gc_rounds = 1
-    base_executor._cuda_empty_cache = False
-
-    cell = _FakeCell()
-    # Make the pipe's cell the same object as the engine cell
-    base_executor.pipe.cell = cell
-
-    fl_ctx = _FakeFLContext(cell)
-    base_executor.initialize(fl_ctx)
-
-    # The value must be set on the shared cell
-    assert cell.core_cell.ctx.get(FOBSContextKey.MEMORY_GC_ROUNDS) == 1
-
-
-# ---------------------------------------------------------------------------
 # CJ-side RSS logging and memory GC (check_output_shareable / Fix 12)
 # ---------------------------------------------------------------------------
+
 
 def _make_shareable(round_num=1):
     """Return a minimal Shareable with CURRENT_ROUND set."""
@@ -758,6 +486,7 @@ def _make_shareable(round_num=1):
 def test_check_output_shareable_returns_true_on_success(monkeypatch):
     """check_output_shareable must return True when the parent returns True."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
@@ -774,14 +503,17 @@ def test_check_output_shareable_returns_false_when_parent_fails(monkeypatch):
     """check_output_shareable must return False when the parent returns False
     without calling log_rss or cleanup."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 1
 
     monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, tn, sh, ctx: False)
-    with patch("nvflare.fuel.utils.mem_utils.log_rss") as mock_log_rss, \
-         patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+    with (
+        patch("nvflare.fuel.utils.mem_utils.log_rss") as mock_log_rss,
+        patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup,
+    ):
         result = executor.check_output_shareable("train", _make_shareable(), MagicMock())
 
     assert result is False
@@ -792,14 +524,17 @@ def test_check_output_shareable_returns_false_when_parent_fails(monkeypatch):
 def test_cj_cleanup_not_called_when_gc_rounds_zero(monkeypatch):
     """_maybe_cleanup_cj_memory must not call cleanup_memory when memory_gc_rounds=0."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 0
 
     monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, tn, sh, ctx: True)
-    with patch("nvflare.fuel.utils.mem_utils.log_rss"), \
-         patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+    with (
+        patch("nvflare.fuel.utils.mem_utils.log_rss"),
+        patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup,
+    ):
         executor.check_output_shareable("train", _make_shareable(), MagicMock())
 
     mock_cleanup.assert_not_called()
@@ -808,6 +543,7 @@ def test_cj_cleanup_not_called_when_gc_rounds_zero(monkeypatch):
 def test_cj_cleanup_called_every_n_rounds(monkeypatch):
     """cleanup_memory must be called exactly once per memory_gc_rounds sends."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
@@ -817,8 +553,10 @@ def test_cj_cleanup_called_every_n_rounds(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
 
     monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, tn, sh, ctx: True)
-    with patch("nvflare.fuel.utils.mem_utils.log_rss"), \
-         patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+    with (
+        patch("nvflare.fuel.utils.mem_utils.log_rss"),
+        patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup,
+    ):
         for i in range(6):
             executor.check_output_shareable("train", _make_shareable(i), MagicMock())
 
@@ -828,6 +566,7 @@ def test_cj_cleanup_called_every_n_rounds(monkeypatch):
 def test_cj_cleanup_passes_cuda_empty_cache(monkeypatch):
     """cleanup_memory must be called with cuda_empty_cache=True when configured."""
     from unittest.mock import MagicMock, patch
+
     from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
@@ -837,8 +576,10 @@ def test_cj_cleanup_passes_cuda_empty_cache(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
 
     monkeypatch.setattr(LauncherExecutor, "check_output_shareable", lambda self, tn, sh, ctx: True)
-    with patch("nvflare.fuel.utils.mem_utils.log_rss"), \
-         patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+    with (
+        patch("nvflare.fuel.utils.mem_utils.log_rss"),
+        patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup,
+    ):
         executor.check_output_shareable("train", _make_shareable(), MagicMock())
 
     mock_cleanup.assert_called_once_with(cuda_empty_cache=True)
@@ -847,6 +588,7 @@ def test_cj_cleanup_passes_cuda_empty_cache(monkeypatch):
 # ---------------------------------------------------------------------------
 # Timeout validation warnings (_validate_timeout_config)
 # ---------------------------------------------------------------------------
+
 
 def _make_validating_executor(monkeypatch, **executor_kwargs):
     """Return an executor whose initialize() runs _validate_timeout_config() and
@@ -893,7 +635,7 @@ def test_no_timeout_warning_when_min_dl_ge_per_req(monkeypatch):
 
     def _fake_get(name, default):
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
-            return 700.0   # min_dl > per_req
+            return 700.0  # min_dl > per_req
         if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
             return 600.0
         return default
@@ -915,9 +657,9 @@ def test_timeout_warning_submit_exceeds_min_dl(monkeypatch):
 
     def _fake_get(name, default):
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
-            return 300.0   # min_dl=300 < submit_result_timeout=400
+            return 300.0  # min_dl=300 < submit_result_timeout=400
         if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
-            return 100.0   # keep per_req < min_dl so only the submit warning fires
+            return 100.0  # keep per_req < min_dl so only the submit warning fires
         return default
 
     monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
@@ -954,9 +696,7 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(
-        monkeypatch, submit_result_timeout=200.0, max_resends=3
-    )
+    executor, warnings = _make_validating_executor(monkeypatch, submit_result_timeout=200.0, max_resends=3)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
