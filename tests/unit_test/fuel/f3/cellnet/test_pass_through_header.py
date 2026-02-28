@@ -16,10 +16,18 @@
 Unit tests for the per-message PASS_THROUGH mechanism (Fix 14).
 
 The PASS_THROUGH flag is carried as a cell-message header rather than being
-set globally on the engine cell.  This lets task/result messages (CellPipe
-`pass_through_on_send=True`) trigger lazy tensor loading at the receiver while
-Swarm P2P aggregation messages — which arrive on the same cell without the
-header — are decoded normally (no LazyDownloadRef, no crash).
+set globally on the engine cell.  Only the subprocess-side CellPipe has
+pass_through_on_send=True (set in ExProcessClientAPI.init()) — this stamps
+the header on result messages so CJ decodes them as LazyDownloadRef and
+forwards the original datum to the server for direct download (reverse path).
+
+CJ's own pipe must NOT stamp PASS_THROUGH on outgoing task messages.
+Stamping it on the forward path (CJ → subprocess) would cause the subprocess
+to receive LazyDownloadRef objects instead of real tensors, crashing user
+code (e.g. torch.as_tensor(LazyDownloadRef)).
+
+Swarm P2P aggregation messages arrive on the same cell without the header
+and are decoded normally (no LazyDownloadRef, no crash).
 
 Tests verify:
 
@@ -280,8 +288,9 @@ class TestCellPipePassThroughHeader:
     def test_default_pass_through_on_send_is_false(self):
         """The default value of pass_through_on_send must be False.
 
-        Only CellPipe instances that opt in (CJ task pipe and subprocess result pipe)
-        should stamp the header. All other CellPipe users get normal encode/decode.
+        Only the subprocess-side CellPipe (subprocess result pipe, set in
+        ExProcessClientAPI.init()) should opt in.  CJ's own pipe must NOT
+        stamp the header on outgoing task messages.
         """
         # Create stub without overriding the attribute
         pipe = object.__new__(CellPipe)
@@ -342,3 +351,113 @@ class TestCellPipePassThroughHeader:
         # Heartbeat → fire_and_forget, not send_request
         pipe.cell.fire_and_forget.assert_called_once()
         pipe.cell.send_request.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 7-8: Combined directional contract (forward path vs reverse path)
+# ---------------------------------------------------------------------------
+
+
+class TestPassThroughDirectionContract:
+    """Documents the two-direction PASS_THROUGH contract.
+
+    Forward path (CJ → subprocess):
+      CJ's pipe has pass_through_on_send=False (the default after Fix 14).
+      No PASS_THROUGH header is stamped on task messages.
+      Subprocess Adapter.call() builds PASS_THROUGH=False in the decode context.
+      ViaDownloaderDecomposer.process_datum() downloads tensors normally →
+      subprocess receives real tensor values → torch.as_tensor() succeeds.
+
+    Reverse path (subprocess → CJ → server):
+      Subprocess-side CellPipe has pass_through_on_send=True (set in
+      ExProcessClientAPI.init()).  PASS_THROUGH header is stamped on result msgs.
+      CJ Adapter.call() builds PASS_THROUGH=True in the decode context.
+      ViaDownloaderDecomposer.process_datum() stores _LazyBatchInfo (no download) →
+      recompose() returns LazyDownloadRef → CJ forwards reference to server.
+
+    The bug (Fix 14 regression):
+      If CJ's pipe had pass_through_on_send=True, step 1 of the forward path
+      would stamp the header.  Subprocess would decode with PASS_THROUGH=True,
+      receive LazyDownloadRef, and torch.as_tensor() would raise
+      "RuntimeError: Could not infer dtype of LazyDownloadRef".
+    """
+
+    def test_forward_path_cj_pipe_sends_task_without_pass_through_header(self):
+        """Forward path step 1: CJ's pipe (default False) sends task → no header.
+
+        Combined test connecting CellPipe.send() to the absence of the header that
+        would otherwise trigger LazyDownloadRef creation at the subprocess.
+        """
+        cj_pipe = _make_stub_cell_pipe(pass_through_on_send=False)
+        task_msg = Message(msg_type=Message.REQUEST, topic="train", data=b"model")
+        cj_pipe.send(task_msg, timeout=30.0)
+
+        sent = _get_sent_request(cj_pipe)
+        header = sent.get_header(MessageHeaderKey.PASS_THROUGH)
+        assert header is None, (
+            "CJ's pipe (pass_through_on_send=False) must not stamp PASS_THROUGH.\n"
+            "Presence of this header on task messages would give the subprocess\n"
+            "PASS_THROUGH=True decode context → LazyDownloadRef → crash."
+        )
+
+    def test_forward_path_no_header_gives_subprocess_pass_through_false_decode_ctx(self):
+        """Forward path step 2: no header → subprocess Adapter builds PASS_THROUGH=False.
+
+        Confirms that when CJ's pipe does NOT stamp the header (correct behaviour
+        after Fix 14), the subprocess FOBS decode context has PASS_THROUGH=False,
+        so ViaDownloaderDecomposer downloads tensors normally instead of returning
+        LazyDownloadRef objects.
+        """
+        captured = {}
+        adapter = _make_adapter(captured)
+        # Subprocess receives the message CJ's pipe sent — no PASS_THROUGH header
+        headers = _headers_without_pass_through()
+        future = _make_future(headers)
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
+            adapter.call(future)
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is False, (
+            "No PASS_THROUGH header → subprocess decode ctx must have PASS_THROUGH=False.\n"
+            "ViaDownloaderDecomposer.process_datum() then downloads tensors normally;\n"
+            "torch.as_tensor() on the result works without error."
+        )
+
+    def test_reverse_path_subprocess_pipe_stamps_pass_through_on_result(self):
+        """Reverse path step 1: subprocess pipe (pass_through_on_send=True) stamps header.
+
+        Confirms the subprocess result pipe correctly stamps PASS_THROUGH so CJ
+        creates LazyDownloadRef and forwards the reference to the server.
+        """
+        subprocess_pipe = _make_stub_cell_pipe(pass_through_on_send=True)
+        result_msg = Message(msg_type=Message.REPLY, topic="submit_model", data=b"result")
+        subprocess_pipe.send(result_msg, timeout=30.0)
+
+        sent = _get_sent_request(subprocess_pipe)
+        assert sent.get_header(MessageHeaderKey.PASS_THROUGH) is True, (
+            "Subprocess pipe (pass_through_on_send=True) must stamp PASS_THROUGH=True "
+            "on result messages so CJ's decode context is PASS_THROUGH=True."
+        )
+
+    def test_reverse_path_pass_through_header_gives_cj_pass_through_true_decode_ctx(self):
+        """Reverse path step 2: header present → CJ Adapter builds PASS_THROUGH=True.
+
+        Confirms that when the subprocess pipe stamps the header (reverse path),
+        CJ's FOBS decode context has PASS_THROUGH=True, so ViaDownloaderDecomposer
+        stores _LazyBatchInfo and recompose() returns LazyDownloadRef — CJ then
+        forwards the reference to the server without materialising any tensor data.
+        """
+        captured = {}
+        adapter = _make_adapter(captured)
+        headers = _headers_without_pass_through()
+        headers[MessageHeaderKey.PASS_THROUGH] = True  # stamped by subprocess pipe
+        future = _make_future(headers)
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
+            adapter.call(future)
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True, (
+            "PASS_THROUGH=True header → CJ decode ctx must have PASS_THROUGH=True.\n"
+            "ViaDownloaderDecomposer.process_datum() then stores _LazyBatchInfo;\n"
+            "recompose() returns LazyDownloadRef that CJ forwards to the server."
+        )

@@ -148,7 +148,7 @@ class TestScatterMsgRootTtl:
 
         set_learn_task() receives a deep copy of task_data.  If MSG_ROOT_TTL is stamped
         after the deep copy, the local training path does not see it and falls back to
-        _MIN_DOWNLOAD_TIMEOUT (60 s) when the local subprocess downloads the model.
+        _MIN_DOWNLOAD_TIMEOUT when the local subprocess downloads the model.
         """
         ctrl = _make_swarm_controller(learn_task_timeout=_LEARN_TASK_TIMEOUT)
         task_data = _make_task_data()

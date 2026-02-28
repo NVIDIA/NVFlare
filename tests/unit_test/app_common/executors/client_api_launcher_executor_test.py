@@ -612,13 +612,20 @@ def _make_validating_executor(monkeypatch, **executor_kwargs):
 def test_timeout_warning_min_dl_less_than_per_req(monkeypatch):
     """A warning must fire when min_download_timeout < streaming_per_request_timeout."""
     import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
 
     executor, warnings = _make_validating_executor(monkeypatch)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
-    # Force: per_req=600 (default), min_dl=60 (default) → min_dl < per_req
-    monkeypatch.setattr(acu, "get_positive_float_var", lambda name, default: default)
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 60.0   # explicitly small → min_dl < per_req
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
     executor.initialize(fl_ctx)
 
     assert any("min_download_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
@@ -711,6 +718,47 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     executor.initialize(fl_ctx)
 
     assert warnings == [], warnings
+
+
+# ---------------------------------------------------------------------------
+# Fix 14: PASS_THROUGH direction contract — CJ pipe must NOT stamp the header
+# ---------------------------------------------------------------------------
+
+
+def test_cj_pipe_pass_through_on_send_false_after_initialize(monkeypatch):
+    """CJ's CellPipe must NOT have pass_through_on_send=True after initialize().
+
+    Regression guard for RuntimeError: Could not infer dtype of LazyDownloadRef.
+
+    If CJ's pipe stamps PASS_THROUGH on outgoing task messages (forward path),
+    the subprocess Adapter decodes with PASS_THROUGH=True, causing
+    ViaDownloaderDecomposer to return LazyDownloadRef objects instead of real
+    tensors.  User code (e.g. torch.as_tensor()) then crashes because it
+    cannot infer the dtype of a LazyDownloadRef.
+
+    Only the subprocess-side CellPipe (set in ExProcessClientAPI.init()) should
+    have pass_through_on_send=True — for the reverse path so CJ creates
+    LazyDownloadRef from subprocess results and forwards them to the server.
+    """
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    cell_pipe = _make_fake_cell_pipe()
+    cell_pipe.pass_through_on_send = False  # default
+    executor.pipe = cell_pipe
+
+    fl_ctx = _FakeFLContext(_FakeCell())
+    executor.initialize(fl_ctx)
+
+    assert not cell_pipe.pass_through_on_send, (
+        "CJ's CellPipe must NOT have pass_through_on_send=True after initialize().\n"
+        "Stamping PASS_THROUGH on forward-path task messages causes the subprocess\n"
+        "to decode model params as LazyDownloadRef, crashing torch.as_tensor()."
+    )
 
 
 def test_decomposer_prefix_default_is_numpy(monkeypatch):

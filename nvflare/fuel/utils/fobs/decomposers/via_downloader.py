@@ -28,7 +28,7 @@ from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
-_MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
+_MIN_DOWNLOAD_TIMEOUT = 3600  # floor for download transaction lifetime (must be >= per_request_timeout)
 
 
 class LazyDownloadRef:

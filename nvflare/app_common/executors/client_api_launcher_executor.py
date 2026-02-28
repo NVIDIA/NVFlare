@@ -25,7 +25,6 @@ from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import _MIN_DOWNLOAD_TIMEOUT
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
@@ -141,39 +140,18 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # PASS_THROUGH is scoped per-message via MessageHeaderKey.PASS_THROUGH.
-        # CellPipe.pass_through_on_send=True stamps the header on every outgoing
-        # task/result message.  Adapter.call() on the receiving side reads the
-        # header and builds a per-call FOBS decode context, so PASS_THROUGH
-        # applies to exactly one decode.  Messages without the header (Swarm P2P,
-        # system messages) decode normally — no LazyDownloadRef, no crash.
+        # PASS_THROUGH (reverse path only):
+        # The subprocess-side CellPipe (pass_through_on_send=True, set in
+        # ExProcessClientAPI.init()) stamps MessageHeaderKey.PASS_THROUGH on
+        # result messages so CJ decodes them as LazyDownloadRef and forwards
+        # the original subprocess datum to the server for direct download.
         #
-        # Forward (CJ → subprocess): CellPipe stamps the header; the subprocess
-        # Adapter.call() decodes with PASS_THROUGH=True → LazyDownloadRef.
-        # Reverse (subprocess → CJ → server): ExProcessClientAPI sets
-        # pass_through_on_send=True on the subprocess-side CellPipe so result
-        # messages carry the header; CJ decodes → LazyDownloadRef and forwards
-        # the subprocess datum to the server for direct download.
-        #
-        # Only applies to CellPipe.  FilePipe subprocesses are not cell-network
-        # participants and cannot resolve cell FQCNs in LazyDownloadRef objects.
-        engine = fl_ctx.get_engine()
-        cell = engine.get_cell()
-        if isinstance(self.pipe, CellPipe):
-            self.pipe.pass_through_on_send = True
-            self.log_info(
-                fl_ctx,
-                "Per-message PASS_THROUGH enabled on CellPipe: task/result tensors "
-                "will arrive as LazyDownloadRef at the peer, avoiding inline "
-                "tensor materialisation at CJ.",
-            )
-        elif cell is not None:
-            self.log_info(
-                fl_ctx,
-                f"PASS_THROUGH skipped: pipe type {type(self.pipe).__name__} is not CellPipe; "
-                "CJ will download tensors from the server and forward them inline.",
-            )
-
+        # CJ's own pipe must NOT have pass_through_on_send=True: stamping
+        # PASS_THROUGH on task delivery messages (CJ → subprocess) causes the
+        # subprocess to create LazyDownloadRef objects instead of real tensors,
+        # which crashes user code (e.g. torch.as_tensor(LazyDownloadRef)).
+        # CJ downloads model tensors from the server normally and sends actual
+        # tensor data to the subprocess.
         super().initialize(fl_ctx)
 
         # Check for top-level config override for external_pre_init_timeout
