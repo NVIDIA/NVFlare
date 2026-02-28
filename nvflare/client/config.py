@@ -53,6 +53,7 @@ class ConfigKey:
     CUDA_EMPTY_CACHE = "cuda_empty_cache"
     SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
     MAX_RESENDS = "max_resends"
+    DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
 
 
 class ClientConfig:
@@ -178,6 +179,15 @@ class ClientConfig:
             return None
         return int(value)
 
+    def get_download_complete_timeout(self) -> float:
+        """Return timeout (seconds) for subprocess to wait for the server to finish downloading its result.
+
+        After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
+        DownloadService.  This timeout gates subprocess exit so the process does not disappear before
+        the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        """
+        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.
 
@@ -189,9 +199,7 @@ class ClientConfig:
         Changing this value via recipe.add_client_config() sets it for a specific job without
         touching any process-level defaults.
         """
-        return float(
-            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0)
-        )
+        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0))
 
     def get_connection_security(self):
         return self.config.get(ConnPropKey.CONNECTION_SECURITY)

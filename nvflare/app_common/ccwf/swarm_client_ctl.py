@@ -20,7 +20,7 @@ from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable import Learnable
@@ -488,6 +488,16 @@ class SwarmClientController(ClientSideController):
         task_data.set_header(AppConstants.CURRENT_ROUND, for_round)
         task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, for_round)
         task_data.set_header(Constant.AGGREGATOR, aggr)
+
+        # Stamp MSG_ROOT_TTL on the task data so the sender's ArrayDownloadable
+        # download transaction stays alive for learn_task_timeout seconds — long
+        # enough for the receiving subprocess to pull the global model.  Without
+        # this, via_downloader._create_downloader() falls back to
+        # _MIN_DOWNLOAD_TIMEOUT (60 s), which is too short for large-model
+        # transfers.  task_controller.broadcast_and_wait() preserves a pre-set
+        # MSG_ROOT_TTL instead of overwriting it with the short ACK timeout.
+        if self.learn_task_timeout:
+            task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
 
         targets = copy.copy(clients)
         if aggr not in targets:

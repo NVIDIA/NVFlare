@@ -25,6 +25,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils.constants import PipeChannelName
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -77,6 +78,7 @@ class FlareAgent:
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
         decomposer_module: str = None,
+        download_complete_timeout: float = 1800.0,
     ):
         """Constructor of Flare Agent.
 
@@ -102,6 +104,10 @@ class FlareAgent:
             close_metric_pipe (bool): whether to close the metric pipe when stopped. Defaults to True.
                 Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
             decomposer_module (str): the module name which contains the external decomposers.
+            download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the
+                server to finish downloading tensors from this subprocess's DownloadService.
+                Only active when pipe is a CellPipe with pass_through_on_send=True.
+                Defaults to 1800.0.
         """
         if pipe is None and metric_pipe is None:
             raise RuntimeError(
@@ -145,6 +151,7 @@ class FlareAgent:
         self.asked_to_stop = False
         self._close_pipe = close_pipe
         self._close_metric_pipe = close_metric_pipe
+        self._download_complete_timeout = download_complete_timeout
 
     def start(self):
         """Start the agent.
@@ -339,8 +346,34 @@ class FlareAgent:
         return result
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
-        result = self.task_result_to_shareable(result, rc)
-        reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result)
+        result_shareable = self.task_result_to_shareable(result, rc)
+        reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result_shareable)
+
+        # Gate subprocess exit on download completion for the reverse PASS_THROUGH path
+        # (subprocess → CJ → server).  CJ ACKs send_to_peer() immediately after creating
+        # LazyDownloadRef objects; the server then downloads tensors asynchronously from
+        # this subprocess's DownloadService.  Registering DOWNLOAD_COMPLETE_CB before
+        # serialisation ensures _create_downloader() wires it as the transaction_done_cb,
+        # so the event is set exactly when the last receiver finishes downloading.
+        if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
+            download_done = threading.Event()
+            self.pipe.cell.update_fobs_context(
+                {FOBSContextKey.DOWNLOAD_COMPLETE_CB: lambda tid, status, objs: download_done.set()}
+            )
+            try:
+                sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+                if not sent:
+                    return False
+                if not download_done.wait(timeout=self._download_complete_timeout):
+                    self.logger.warning(
+                        f"Download completion not signalled within {self._download_complete_timeout}s; "
+                        "proceeding (server may still be downloading from this process)"
+                    )
+            finally:
+                # Always clear the callback so stale refs do not accumulate across rounds.
+                self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
+            return True
+
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
     def log(self, record: DXO) -> bool:

@@ -31,26 +31,6 @@ from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 _MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
 
 
-def _on_tx_done(tid: str, status: str, base_objs: list,
-                memory_gc_rounds: int = 0, cuda_empty_cache: bool = False):
-    """Transaction-done callback for forced memory cleanup at download completion.
-
-    base_obj has already been nulled on each CacheableObject before this
-    callback fires, so base_objs contains [None, ...].  This callback's purpose
-    is to call gc.collect() (and optionally torch.cuda.empty_cache()) so that
-    CPython and the CUDA allocator release the freed memory promptly rather than
-    waiting for the next GC cycle.
-
-    Only called when memory_gc_rounds > 0 (user has opted in to forced GC).
-    cuda_empty_cache is gated independently so PyTorch-free jobs never import
-    torch here.
-    """
-    if memory_gc_rounds > 0:
-        from nvflare.fuel.utils.memory_utils import cleanup_memory
-
-        cleanup_memory(cuda_empty_cache=cuda_empty_cache)
-
-
 class LazyDownloadRef:
     """Placeholder created in PASS_THROUGH mode instead of downloading a tensor.
 
@@ -336,25 +316,17 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
             num_receivers = num if num else 1
 
-            # Register a transaction_done_cb that triggers cleanup_memory() at
-            # exactly the moment a download transaction terminates.  base_obj has
-            # already been nulled before this callback fires; the callback's
-            # purpose is to call gc.collect() / cuda_empty_cache() so CPython and
-            # the CUDA allocator release the freed memory promptly.
-            # Both flags are threaded from the component (ClientAPILauncherExecutor
-            # or ExProcessClientAPI) into the cell's FOBS context via
-            # cell.update_fobs_context(), keeping the config wiring outside the
-            # lower-level decomposer code.
-            memory_gc_rounds = fobs_ctx.get(fobs.FOBSContextKey.MEMORY_GC_ROUNDS, 0)
-            cuda_empty_cache = fobs_ctx.get(fobs.FOBSContextKey.CUDA_EMPTY_CACHE, False)
+            # Optional lifecycle callback set by FlareAgent._do_submit_result()
+            # (subprocess → CJ → server reverse path) so the subprocess can wait
+            # until the server has finished downloading from its DownloadService
+            # before exiting.  None when no gating is needed (forward path).
+            on_complete_cb = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB)
 
             downloader = ObjectDownloader(
                 num_receivers=num_receivers,
                 cell=cell,
                 timeout=timeout,
-                transaction_done_cb=_on_tx_done if memory_gc_rounds > 0 else None,
-                memory_gc_rounds=memory_gc_rounds,
-                cuda_empty_cache=cuda_empty_cache,
+                transaction_done_cb=on_complete_cb,
             )
 
         if msg_root_id:

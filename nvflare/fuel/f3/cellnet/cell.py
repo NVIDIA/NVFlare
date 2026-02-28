@@ -76,7 +76,15 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
+        # PASS_THROUGH is scoped per-message via the MessageHeaderKey.PASS_THROUGH
+        # header.  Senders that want tensors to arrive as LazyDownloadRef
+        # placeholders (CellPipe.pass_through_on_send=True) stamp this header;
+        # all other messages (Swarm P2P, system) arrive without it and decode
+        # normally.  get_fobs_context(props=...) returns a fresh shallow-copy
+        # dict so the cell-level base context is never mutated.
+        pt = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: pt})
+        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
 
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         request.set_header(MessageHeaderKey.CHANNEL, channel)

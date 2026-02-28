@@ -285,6 +285,17 @@ class CellPipe(Pipe):
         self.closed = False
         self.last_peer_active_time = 0.0
         self.hb_seq = 1
+        # When True, every non-heartbeat outgoing cell message gets
+        # MessageHeaderKey.PASS_THROUGH=True stamped on it.  The peer's
+        # Adapter.call() reads this header and builds a per-call FOBS decode
+        # context with FOBSContextKey.PASS_THROUGH=True so that tensors arrive
+        # as LazyDownloadRef placeholders rather than being downloaded inline.
+        #
+        # Set by ClientAPILauncherExecutor (CJ→subprocess forward direction)
+        # and by ExProcessClientAPI (subprocess→CJ reverse direction) when
+        # CellPipe is in use.  Has no effect for FilePipe (which is not a
+        # CellPipe and never has this attribute set).
+        self.pass_through_on_send: bool = False
 
     def _update_peer_active_time(self, msg: CellMessage, ch_name: str, msg_type: str):
         origin = msg.get_header(MessageHeaderKey.ORIGIN)
@@ -376,6 +387,15 @@ class CellPipe(Pipe):
         # where the server uses task.timeout for its MSG_ROOT_TTL.
         if msg.msg_type == Message.REPLY and timeout:
             request.set_header(MessageHeaderKey.MSG_ROOT_TTL, float(timeout))
+        # Stamp PASS_THROUGH on every outgoing task/result message when the
+        # caller has opted in.  Adapter.call() on the receiving side reads this
+        # header and builds a per-call FOBS decode context with
+        # FOBSContextKey.PASS_THROUGH=True so that large tensors arrive as
+        # LazyDownloadRef placeholders rather than being downloaded inline.
+        # Heartbeat messages do not carry model data and always skip this path
+        # (they use fire_and_forget above).
+        if self.pass_through_on_send:
+            request.set_header(MessageHeaderKey.PASS_THROUGH, True)
         reply = self.cell.send_request(
             channel=self.channel,
             topic=msg.topic,

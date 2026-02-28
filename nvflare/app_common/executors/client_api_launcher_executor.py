@@ -23,10 +23,9 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.attributes_exportable import ExportMode
-from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import _MIN_DOWNLOAD_TIMEOUT
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
@@ -61,6 +60,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         cuda_empty_cache: bool = False,
         submit_result_timeout: float = 300.0,
         max_resends: int = 3,
+        download_complete_timeout: float = 1800.0,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -100,6 +100,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ACK within submit_result_timeout.  Defaults to 3.  None means unlimited (unsafe for large models
                 — each retry creates a new download transaction).  Configurable via
                 recipe.add_client_config({"max_resends": N}).
+            download_complete_timeout (float): How long (seconds) the subprocess waits after send_to_peer() ACKs
+                for the server to finish downloading its tensors from the subprocess DownloadService.  Without
+                this gate, the subprocess may exit before the download completes and the server gets
+                "no ref found".  Defaults to 1800 s.  Configurable via
+                recipe.add_client_config({"download_complete_timeout": N}).
         """
         LauncherExecutor.__init__(
             self,
@@ -131,41 +136,36 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._cuda_empty_cache = cuda_empty_cache
         self._submit_result_timeout = submit_result_timeout
         self._max_resends = max_resends
-        self._cell_with_pass_through = None
-        self._prev_pass_through = None
-        # Track pipe-cell PASS_THROUGH state independently of engine cell.
-        self._pipe_cell_with_pass_through = None
-        self._prev_pipe_pass_through = None
+        self._download_complete_timeout = download_complete_timeout
         self._round_count = 0
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # Enable PASS_THROUGH mode on the engine's communication cell so that
-        # large tensors arriving from the FL server are NOT downloaded here at
-        # the CJ.  ViaDownloaderDecomposer will instead create LazyDownloadRef
-        # placeholders that carry the original server FQCN and ref_id.  When CJ
-        # forwards the task to the subprocess agent via the task pipe, those
-        # placeholders are re-emitted as-is, causing the subprocess to download
-        # each tensor directly from the server — one tensor at a time, with no
-        # size limit and no tensor copy at CJ.
+        # PASS_THROUGH is scoped per-message via MessageHeaderKey.PASS_THROUGH.
+        # CellPipe.pass_through_on_send=True stamps the header on every outgoing
+        # task/result message.  Adapter.call() on the receiving side reads the
+        # header and builds a per-call FOBS decode context, so PASS_THROUGH
+        # applies to exactly one decode.  Messages without the header (Swarm P2P,
+        # system messages) decode normally — no LazyDownloadRef, no crash.
+        #
+        # Forward (CJ → subprocess): CellPipe stamps the header; the subprocess
+        # Adapter.call() decodes with PASS_THROUGH=True → LazyDownloadRef.
+        # Reverse (subprocess → CJ → server): ExProcessClientAPI sets
+        # pass_through_on_send=True on the subprocess-side CellPipe so result
+        # messages carry the header; CJ decodes → LazyDownloadRef and forwards
+        # the subprocess datum to the server for direct download.
+        #
+        # Only applies to CellPipe.  FilePipe subprocesses are not cell-network
+        # participants and cannot resolve cell FQCNs in LazyDownloadRef objects.
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
-        # Enable PASS_THROUGH only when using CellPipe.
-        # FilePipe subprocesses are NOT cell-network participants and cannot
-        # resolve server-side cell FQCNs embedded in LazyDownloadRef objects.
-        # Enabling PASS_THROUGH with FilePipe would cause the subprocess to
-        # receive opaque ref_ids it has no way to download from, silently
-        # corrupting task data.  CellPipe subprocesses participate in the
-        # cellnet and can download directly from the original source cell.
-        if cell is not None and isinstance(self.pipe, CellPipe):
-            self._cell_with_pass_through = cell
-            prev_ctx = cell.core_cell.get_fobs_context()
-            self._prev_pass_through = prev_ctx.get(FOBSContextKey.PASS_THROUGH, None)
-            cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
+        if isinstance(self.pipe, CellPipe):
+            self.pipe.pass_through_on_send = True
             self.log_info(
                 fl_ctx,
-                "PASS_THROUGH enabled: task tensors will be downloaded by the subprocess "
-                "agent directly from the source, bypassing CJ memory.",
+                "Per-message PASS_THROUGH enabled on CellPipe: task/result tensors "
+                "will arrive as LazyDownloadRef at the peer, avoiding inline "
+                "tensor materialisation at CJ.",
             )
         elif cell is not None:
             self.log_info(
@@ -174,55 +174,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 "CJ will download tensors from the server and forward them inline.",
             )
 
-        # Enable reverse PASS_THROUGH on the CellPipe's own cell
-        # (subprocess↔CJ cell) so that when subprocess sends its result back to
-        # CJ, the FOBS decode on CJ creates LazyDownloadRef objects instead of
-        # downloading the 5 GiB tensors inline.  When CJ re-encodes the result
-        # for the server, LazyDownloadRefDecomposer re-emits the subprocess's
-        # original fqcn + ref_id so the server downloads directly from the
-        # subprocess — CJ never materialises the tensors on the reverse path.
-        #
-        # The guard `pipe_cell is not cell` prevents double-setting if the pipe
-        # and engine happen to share the same Cell object (e.g. in simulator).
-        if isinstance(self.pipe, CellPipe) and cell is not None:
-            pipe_cell = getattr(self.pipe, "cell", None)
-            if pipe_cell is not None and pipe_cell is not cell:
-                self._pipe_cell_with_pass_through = pipe_cell
-                prev_pipe_ctx = pipe_cell.core_cell.get_fobs_context()
-                self._prev_pipe_pass_through = prev_pipe_ctx.get(FOBSContextKey.PASS_THROUGH, None)
-                pipe_cell.core_cell.update_fobs_context({FOBSContextKey.PASS_THROUGH: True})
-                self.log_info(
-                    fl_ctx,
-                    "Reverse PASS_THROUGH enabled on pipe cell: result tensors sent by "
-                    "the subprocess will be forwarded as LazyDownloadRef objects, "
-                    "allowing the server to download directly from the subprocess.",
-                )
-
-        # Propagate memory-cleanup settings into the FOBS context of both cells
-        # so that _create_downloader() can register a transaction_done_cb without
-        # needing a direct reference to this component.
-        if self._memory_gc_rounds > 0:
-            mem_ctx = {
-                FOBSContextKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
-                FOBSContextKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
-            }
-            if cell is not None:
-                cell.core_cell.update_fobs_context(mem_ctx)
-            if isinstance(self.pipe, CellPipe):
-                pipe_cell = getattr(self.pipe, "cell", None)
-                if pipe_cell is not None and pipe_cell is not cell:
-                    pipe_cell.core_cell.update_fobs_context(mem_ctx)
-            self.log_info(
-                fl_ctx,
-                f"Memory cleanup on download completion enabled: "
-                f"memory_gc_rounds={self._memory_gc_rounds} cuda_empty_cache={self._cuda_empty_cache}.",
-            )
-
-        try:
-            super().initialize(fl_ctx)
-        except Exception:
-            self._restore_pass_through(fl_ctx)
-            raise
+        super().initialize(fl_ctx)
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()
@@ -311,29 +263,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             )
 
     def finalize(self, fl_ctx: FLContext) -> None:
-        try:
-            super().finalize(fl_ctx)
-        finally:
-            self._restore_pass_through(fl_ctx)
-
-    def _restore_pass_through(self, fl_ctx: FLContext):
-        # Restore engine cell forward PASS_THROUGH.
-        if self._cell_with_pass_through is not None:
-            self._cell_with_pass_through.core_cell.update_fobs_context(
-                {FOBSContextKey.PASS_THROUGH: self._prev_pass_through}
-            )
-            self.log_info(fl_ctx, f"Engine cell PASS_THROUGH restored to {self._prev_pass_through}.")
-            self._cell_with_pass_through = None
-            self._prev_pass_through = None
-
-        # Restore pipe cell reverse PASS_THROUGH.
-        if self._pipe_cell_with_pass_through is not None:
-            self._pipe_cell_with_pass_through.core_cell.update_fobs_context(
-                {FOBSContextKey.PASS_THROUGH: self._prev_pipe_pass_through}
-            )
-            self.log_info(fl_ctx, f"Pipe cell PASS_THROUGH restored to {self._prev_pipe_pass_through}.")
-            self._pipe_cell_with_pass_through = None
-            self._prev_pipe_pass_through = None
+        super().finalize(fl_ctx)
 
     def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         ok = super().check_output_shareable(task_name, shareable, fl_ctx)
@@ -342,7 +272,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         from nvflare.fuel.utils.mem_utils import log_rss
 
         site_name = fl_ctx.get_identity_name()
-        log_rss(f"client_job site={site_name} task={task_name} round={shareable.get_header(AppConstants.CURRENT_ROUND)} after_relay")
+        log_rss(f"CJ s={site_name} t={task_name} r={shareable.get_header(AppConstants.CURRENT_ROUND)} relay")
         self._maybe_cleanup_cj_memory(fl_ctx)
         return True
 
@@ -384,6 +314,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
             ConfigKey.MAX_RESENDS: self._max_resends,
+            ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
         }
 
         config_data = {
