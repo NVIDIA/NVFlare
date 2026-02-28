@@ -56,6 +56,13 @@ class WeightedAggregationHelper(object):
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
 
+                # Disk-streamed payloads may pass lazy refs
+                # instead of in-memory tensors. If present, materialize() loads
+                # the tensor from disk before weighted aggregation math.
+                materialize_fn = getattr(v, "materialize", None)
+                if callable(materialize_fn):
+                    v = materialize_fn()
+
                 current_total = self.total.get(k, None)
 
                 if current_total is None:

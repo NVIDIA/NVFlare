@@ -87,6 +87,25 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
 
+Optional Tensor Disk Offload Control
+------------------------------------
+
+Tensor streaming is automatic, but disk-backed tensor materialization is opt-in via
+``enable_tensor_disk_offload``.
+
+- ``enable_tensor_disk_offload=False`` (default): downloaded tensors are materialized in memory.
+- ``enable_tensor_disk_offload=True``: downloaded tensors are written to temporary safetensors files and consumed through lazy refs, reducing memory spikes during aggregation.
+
+This parameter is available on key workflow/controller configs, including:
+
+- ``FedAvgRecipe`` / ``FedAvg`` (server-side FedAvg workflow)
+- ``SwarmClientConfig`` / ``SwarmClientController`` (client-controlled workflows)
+
+.. note::
+
+   Tensor disk offload applies to PyTorch tensor payloads in streaming paths. If streaming is disabled
+   (for example, by setting tensor chunk size to 0), the native in-memory path is used.
+
 Example: Using PyTorch FedAvg Recipe
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

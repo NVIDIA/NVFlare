@@ -789,6 +789,7 @@ The following SwarmClientController parameters are particularly important for la
 - ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
 - ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
 - ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
+- ``enable_tensor_disk_offload``: Materialize streamed PyTorch tensors to temporary disk files (lazy refs) instead of fully in memory. **Default: False**. **Suggested: True** for very large-model swarm jobs.
 
 **Example client config for large models:**
 
@@ -874,6 +875,7 @@ If you only adjust a few parameters for large models, start with:
 3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
 4. ``progress_timeout`` - Prevents premature workflow termination
 5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
+6. ``enable_tensor_disk_offload`` - Reduces peak memory during streamed tensor consumption
 
 .. _ccwf_cross_site_evaluation:
 

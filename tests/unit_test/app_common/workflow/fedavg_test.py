@@ -56,6 +56,44 @@ class MockModelAggregator(ModelAggregator):
         self.reset_count += 1
 
 
+class _FakeTempRef:
+    def __init__(self):
+        self.cleaned = False
+
+    def cleanup(self):
+        self.cleaned = True
+
+
+class _FakeLazyRef:
+    def __init__(self, value, temp_ref: _FakeTempRef):
+        self._value = value
+        self._temp_ref = temp_ref
+        self.materialize_calls = 0
+
+    def materialize(self):
+        self.materialize_calls += 1
+        return self._value
+
+
+class _MockCell:
+    def __init__(self, enable_tensor_disk_offload: bool):
+        self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
+
+    def get_fobs_context(self):
+        return dict(self.ctx)
+
+    def update_fobs_context(self, props: dict):
+        self.ctx.update(props)
+
+
+class _MockEngine:
+    def __init__(self, cell):
+        self.cell = cell
+
+    def get_cell(self):
+        return self.cell
+
+
 class TestFedAvgInit:
     """Test FedAvg controller initialization."""
 
@@ -361,6 +399,48 @@ class TestFedAvgAggregation:
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
         controller._aggregate_one_result(empty_result)
         assert controller._received_count == 0  # Not counted
+
+
+class TestFedAvgLazyCompatibility:
+    def test_custom_aggregator_keeps_lazy_payload_in_tensor_disk_offload_mode(self):
+        aggregator = MockModelAggregator()
+        controller = FedAvg(num_clients=1, aggregator=aggregator, enable_tensor_disk_offload=True)
+        controller._received_count = 0
+        controller._expected_count = 1
+        controller.current_round = 0
+        controller._params_type = None
+
+        temp_ref = _FakeTempRef()
+        lazy_ref = _FakeLazyRef(value=2.5, temp_ref=temp_ref)
+        result = FLModel(
+            params={"w": lazy_ref},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result)
+
+        accepted_model = aggregator.models[0]
+        assert accepted_model.params["w"] is lazy_ref
+        assert temp_ref.cleaned is False
+        assert lazy_ref.materialize_calls == 0
+
+
+class TestFedAvgDownloadToDiskContext:
+    def test_set_enable_tensor_disk_offload(self):
+        controller = FedAvg(enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+
+        controller._set_enable_tensor_disk_offload()
+        assert cell.ctx["enable_tensor_disk_offload"] is True
+
+    def test_set_enable_tensor_disk_offload_without_cell(self):
+        controller = FedAvg(enable_tensor_disk_offload=True)
+        controller.engine = _MockEngine(cell=None)
+
+        controller._set_enable_tensor_disk_offload()
+        assert controller.engine.get_cell() is None
 
 
 class TestFedAvgWorkflowEvents:

@@ -33,6 +33,12 @@ Most training recipes accept the following model-related parameters:
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
     * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
 
+``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
+    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
+
+    * ``False`` (default): materialize in memory
+    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
+
 See :ref:`job_recipe` for detailed explanations of these options.
 
 Federated Averaging (FedAvg)
@@ -804,4 +810,3 @@ Deploy to production NVFlare infrastructure.
 
     env = ProdEnv(startup_kit_location="/path/to/startup_kit")
     run = recipe.execute(env)
-

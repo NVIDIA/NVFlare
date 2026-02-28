@@ -11,6 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
+import os
+import shutil
+import struct
+import tempfile
 from typing import Any, List, Optional, Tuple
 
 import torch
@@ -21,6 +26,8 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
+
+from .lazy_tensor_dict import LazyTensorDict
 
 _TWO_MB = 2 * 1024 * 1024
 
@@ -51,7 +58,8 @@ class TensorConsumer(ItemConsumer):
             raise ValueError("tensors_received_cb must be callable")
 
     def consume_items(self, items: List[Any], result: Any) -> Any:
-        assert isinstance(items, list)
+        if not isinstance(items, list):
+            raise TypeError(f"items must be list but got {type(items)}")
         if result is None:
             result = {}
 
@@ -128,3 +136,95 @@ def download_tensors(
         abort_signal=abort_signal,
     )
     return consumer.error, consumer.result
+
+
+def _extract_safetensors_keys(data: bytes) -> list[str]:
+    """Extract tensor key names from safetensors header without deserializing tensors."""
+    if len(data) < 8:
+        raise ValueError("Invalid safetensors data: too short")
+
+    header_size = struct.unpack("<Q", data[:8])[0]
+    if header_size == 0:
+        raise ValueError("Invalid safetensors data: empty header")
+
+    header_end = 8 + header_size
+    if header_end > len(data):
+        raise ValueError("Invalid safetensors data: header size exceeds payload length")
+
+    try:
+        header = json.loads(data[8:header_end])
+    except Exception as e:
+        raise ValueError("Invalid safetensors data: invalid JSON header") from e
+
+    if not isinstance(header, dict):
+        raise ValueError("Invalid safetensors data: header must be JSON object")
+
+    return [k for k in header.keys() if k != "__metadata__"]
+
+
+class DiskTensorConsumer(ItemConsumer):
+    """Writes raw safetensors bytes to disk without deserializing to tensors."""
+
+    def __init__(self, temp_dir: str):
+        ItemConsumer.__init__(self)
+        self._temp_dir = temp_dir
+        self._file_counter = 0
+
+    def consume_items(self, items: List[Any], result: Any) -> Any:
+        if not isinstance(items, list):
+            raise TypeError(f"items must be list but got {type(items)}")
+        if result is None:
+            result = {}
+
+        for item in items:
+            keys = _extract_safetensors_keys(item)
+            file_path = os.path.join(self._temp_dir, f"chunk_{self._file_counter}.safetensors")
+            self._file_counter += 1
+            with open(file_path, "wb") as f:
+                f.write(item)
+            for key in keys:
+                result[key] = (file_path, key)
+
+        return result
+
+    def download_failed(self, ref_id, reason: str):
+        super().download_failed(ref_id, reason)
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
+
+
+def download_tensors_to_disk(
+    from_fqcn: str,
+    ref_id: str,
+    per_request_timeout: float,
+    cell: Cell,
+    secure=False,
+    optional=False,
+    abort_signal=None,
+) -> Tuple[str, Optional[LazyTensorDict]]:
+    """Download tensors to disk instead of memory.
+
+    Returns: tuple of (error message if any, LazyTensorDict for lazy access).
+    """
+    temp_dir = tempfile.mkdtemp(prefix="nvflare_tensors_")
+
+    consumer = DiskTensorConsumer(temp_dir)
+    try:
+        download_object(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            consumer=consumer,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+        )
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+    if consumer.error:
+        return consumer.error, None
+
+    key_to_file = consumer.result if consumer.result is not None else {}
+    return None, LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)

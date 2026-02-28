@@ -72,6 +72,10 @@ class FedAvg(BaseFedAvg):
             aggregation. Defaults to None. Only used when no custom aggregator is provided.
         aggregation_weights (dict, optional): Per-client aggregation weights.
             Defaults to None (equal weights). Only used when no custom aggregator is provided.
+        enable_tensor_disk_offload (bool, optional): Download tensors to disk during FOBS streaming
+            instead of deserializing into memory. Reduces peak server memory from ~N× to ~1×
+            model size during aggregation. When used with a custom aggregator, lazy refs are
+            passed through directly and must be handled by that aggregator. Defaults to False.
     """
 
     def __init__(
@@ -85,6 +89,7 @@ class FedAvg(BaseFedAvg):
         task_name: Optional[str] = "train",
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
+        enable_tensor_disk_offload: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -104,6 +109,7 @@ class FedAvg(BaseFedAvg):
         # Aggregation configuration (used only when no custom aggregator)
         self.exclude_vars = exclude_vars
         self.aggregation_weights = aggregation_weights or {}
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
 
         # Parse stop condition
         if self.stop_cond:
@@ -123,8 +129,32 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
 
+    def _set_enable_tensor_disk_offload(self):
+        engine = getattr(self, "engine", None)
+        if not engine:
+            if self.enable_tensor_disk_offload:
+                self.warning(
+                    "enable_tensor_disk_offload is enabled but no active engine is available; using in-memory download path"
+                )
+            return
+
+        cell = engine.get_cell()
+        if not cell:
+            if self.enable_tensor_disk_offload:
+                self.warning(
+                    "enable_tensor_disk_offload is enabled but no active cell is available; using in-memory download path"
+                )
+            return
+
+        desired = bool(self.enable_tensor_disk_offload)
+        current = bool(cell.get_fobs_context().get("enable_tensor_disk_offload", False))
+        if current != desired:
+            cell.update_fobs_context({"enable_tensor_disk_offload": desired})
+            self.info(f"_set_enable_tensor_disk_offload: {current} -> {desired}")
+
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
+        self._set_enable_tensor_disk_offload()
 
         # Set NUM_ROUNDS in FL context for persistor and other components.
         # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
@@ -228,12 +258,12 @@ class FedAvg(BaseFedAvg):
             self._params_type = result.params_type
 
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
-
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
         else:
-            # Use built-in InTime aggregation with weighted averaging
+            # Built-in InTime aggregation: add() materializes lazy refs on-demand.
+            # Cleanup relies on lazy ref object lifetime / GC.
             # Get weight: use aggregation_weights if specified, else use NUM_STEPS
             if self.aggregation_weights and client_name in self.aggregation_weights:
                 aggregation_weight = self.aggregation_weights[client_name]
