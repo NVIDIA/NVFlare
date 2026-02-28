@@ -17,18 +17,35 @@
 from unittest.mock import patch
 
 import pytest
-import torch.nn as nn
+
+try:
+    import torch.nn as nn
+
+    class SimpleTestModel(nn.Module):
+        """A simple PyTorch model for testing purposes."""
+
+        def __init__(self):
+            super().__init__()
+            self.lin = nn.Linear(10, 10)
+
+        def forward(self, x):
+            return self.lin(x)
+
+except ImportError:
+    SimpleTestModel = None  # PyTorch not installed (e.g. TF-only venv)
 
 
-class SimpleTestModel(nn.Module):
-    """A simple PyTorch model for testing purposes."""
+def _tensorflow_available():
+    """Return True if TensorFlow can be imported and loaded (used to skip TF tests when TF is broken)."""
+    try:
+        import tensorflow  # noqa: F401
 
-    def __init__(self):
-        super().__init__()
-        self.lin = nn.Linear(10, 10)
+        return True
+    except Exception:
+        return False
 
-    def forward(self, x):
-        return self.lin(x)
+
+TENSORFLOW_AVAILABLE = _tensorflow_available()
 
 
 @pytest.fixture
@@ -40,7 +57,9 @@ def mock_file_system():
 
 @pytest.fixture
 def simple_model():
-    """Create a simple test model."""
+    """Create a simple test model (skips when PyTorch not installed)."""
+    if SimpleTestModel is None:
+        pytest.skip("PyTorch not installed")
     return SimpleTestModel()
 
 
@@ -55,6 +74,7 @@ def base_recipe_params():
     }
 
 
+@pytest.mark.skipif(SimpleTestModel is None, reason="PyTorch not installed")
 class TestPTFedOptRecipe:
     """Test cases for PyTorch FedOptRecipe."""
 
@@ -109,12 +129,12 @@ class TestPTFedOptRecipe:
             assert recipe.model["path"] == "my_module.models.SimpleNet"
             assert recipe.model["args"] == {"input_size": 10}
 
-    def test_with_optimizer_args(self, mock_file_system, base_recipe_params, simple_model):
-        """Test FedOptRecipe with optimizer arguments."""
+    def test_optimizer_args_class_path_supported(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that optimizer_args with 'class_path' is supported; path is set from class_path."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
         optimizer_args = {
-            "path": "torch.optim.SGD",
+            "class_path": "torch.optim.SGD",
             "args": {"lr": 1.0, "momentum": 0.6},
         }
         recipe = FedOptRecipe(
@@ -124,7 +144,50 @@ class TestPTFedOptRecipe:
             **base_recipe_params,
         )
 
-        assert recipe.optimizer_args == optimizer_args
+        assert recipe.optimizer_args["path"] == optimizer_args["class_path"]
+        assert recipe.optimizer_args["args"] == optimizer_args["args"]
+        assert recipe.optimizer_args.get("config_type") == "dict"
+
+    def test_optimizer_args_path_supported(self, mock_file_system, base_recipe_params, simple_model):
+        """Test that optimizer_args with 'path' (no class_path) is supported for backward compatibility."""
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        optimizer_args = {
+            "path": "torch.optim.SGD",
+            "args": {"lr": 0.5},
+        }
+        recipe = FedOptRecipe(
+            name="test_fedopt_optim_path",
+            model=simple_model,
+            optimizer_args=optimizer_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.optimizer_args["path"] == "torch.optim.SGD"
+        assert recipe.optimizer_args["args"] == {"lr": 0.5}
+        assert recipe.optimizer_args.get("config_type") == "dict"
+
+    def test_optimizer_args_path_and_class_path_path_takes_precedence(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Test that when both 'path' and 'class_path' are given, 'path' is used (not overwritten)."""
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        optimizer_args = {
+            "path": "torch.optim.Adam",
+            "class_path": "torch.optim.SGD",
+            "args": {"lr": 0.1},
+        }
+        recipe = FedOptRecipe(
+            name="test_fedopt_both",
+            model=simple_model,
+            optimizer_args=optimizer_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.optimizer_args["path"] == "torch.optim.Adam"
+        assert recipe.optimizer_args["args"] == {"lr": 0.1}
+        assert recipe.optimizer_args.get("config_type") == "dict"
 
     def test_initial_ckpt_must_exist_for_relative_path(self, base_recipe_params, simple_model):
         """Test that non-existent relative paths are rejected."""
@@ -192,12 +255,15 @@ class TestPTFedOptRecipe:
             )
 
 
+@pytest.mark.skipif(
+    not TENSORFLOW_AVAILABLE,
+    reason="TensorFlow not installed or failed to load (e.g. broken install)",
+)
 class TestTFFedOptRecipe:
     """Test cases for TensorFlow FedOptRecipe."""
 
     def test_basic_initialization(self, mock_file_system, base_recipe_params):
         """Test TF FedOptRecipe basic initialization."""
-        pytest.importorskip("tensorflow")
         from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
 
         recipe = FedOptRecipe(
@@ -211,7 +277,6 @@ class TestTFFedOptRecipe:
 
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params):
         """Test that initial_ckpt parameter is accepted (TF can load without model)."""
-        pytest.importorskip("tensorflow")
         from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
 
         recipe = FedOptRecipe(
@@ -222,3 +287,79 @@ class TestTFFedOptRecipe:
         )
 
         assert recipe.initial_ckpt == "/abs/path/to/model.h5"
+
+    def test_optimizer_args_class_path_supported(self, mock_file_system, base_recipe_params):
+        """Test that TF FedOptRecipe optimizer_args with 'class_path' is supported."""
+        from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+
+        optimizer_args = {
+            "class_path": "tf.keras.optimizers.SGD",
+            "args": {"learning_rate": 1.0, "momentum": 0.6},
+        }
+        recipe = FedOptRecipe(
+            name="test_tf_fedopt_optim",
+            model=None,
+            optimizer_args=optimizer_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.optimizer_args["path"] == optimizer_args["class_path"]
+        assert recipe.optimizer_args["args"] == optimizer_args["args"]
+        assert recipe.optimizer_args.get("config_type") == "dict"
+
+    def test_optimizer_args_path_supported(self, mock_file_system, base_recipe_params):
+        """Test that TF FedOptRecipe optimizer_args with 'path' is supported."""
+        from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+
+        optimizer_args = {
+            "path": "tf.keras.optimizers.SGD",
+            "args": {"learning_rate": 0.5},
+        }
+        recipe = FedOptRecipe(
+            name="test_tf_fedopt_optim_path",
+            model=None,
+            optimizer_args=optimizer_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.optimizer_args["path"] == "tf.keras.optimizers.SGD"
+        assert recipe.optimizer_args["args"] == {"learning_rate": 0.5}
+        assert recipe.optimizer_args.get("config_type") == "dict"
+
+    def test_lr_scheduler_args_class_path_supported(self, mock_file_system, base_recipe_params):
+        """Test that TF FedOptRecipe lr_scheduler_args with 'class_path' is supported."""
+        from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+
+        lr_scheduler_args = {
+            "class_path": "tf.keras.optimizers.schedules.CosineDecay",
+            "args": {"initial_learning_rate": 1.0, "decay_steps": 100},
+        }
+        recipe = FedOptRecipe(
+            name="test_tf_fedopt_scheduler",
+            model=None,
+            lr_scheduler_args=lr_scheduler_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.lr_scheduler_args["path"] == lr_scheduler_args["class_path"]
+        assert recipe.lr_scheduler_args["args"] == lr_scheduler_args["args"]
+        assert recipe.lr_scheduler_args.get("config_type") == "dict"
+
+    def test_lr_scheduler_args_path_supported(self, mock_file_system, base_recipe_params):
+        """Test that TF FedOptRecipe lr_scheduler_args with 'path' is supported."""
+        from nvflare.app_opt.tf.recipes.fedopt import FedOptRecipe
+
+        lr_scheduler_args = {
+            "path": "tf.keras.optimizers.schedules.CosineDecay",
+            "args": {"initial_learning_rate": 0.5, "decay_steps": 50},
+        }
+        recipe = FedOptRecipe(
+            name="test_tf_fedopt_scheduler_path",
+            model=None,
+            lr_scheduler_args=lr_scheduler_args,
+            **base_recipe_params,
+        )
+
+        assert recipe.lr_scheduler_args["path"] == "tf.keras.optimizers.schedules.CosineDecay"
+        assert recipe.lr_scheduler_args["args"] == lr_scheduler_args["args"]
+        assert recipe.lr_scheduler_args.get("config_type") == "dict"

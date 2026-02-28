@@ -17,7 +17,7 @@ from nvflare.fuel.utils.component_builder import ComponentBuilder
 
 class MockComponentBuilder(ComponentBuilder):
     def __init__(self):
-        self.module_scanner = ModuleScanner(["nvflare"], ["api", "app_commons", "app_opt", "fuel", "private", "utils"])
+        self.module_scanner = ModuleScanner(["nvflare"], ["api", "app_common", "app_opt", "fuel", "private", "utils"])
 
     def get_module_scanner(self):
         return self.module_scanner

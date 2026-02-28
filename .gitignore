@@ -172,6 +172,12 @@ __pycache__
 docs/apidocs/
 !docs/apidocs/modules.rst
 
+# dependency marker
+.deps_marker
+
+# local test temp dir
+.tmp/
+
 # Claude Code personal config
 CLAUDE.local.md
 

@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
@@ -129,7 +130,15 @@ class FedAvg(BaseFedAvg):
         self._params_type = None  # Only store params_type, not full result
 
     def _set_enable_tensor_disk_offload(self):
-        cell = self.engine.get_cell()
+        engine = getattr(self, "engine", None)
+        if not engine:
+            if self.enable_tensor_disk_offload:
+                self.warning(
+                    "enable_tensor_disk_offload is enabled but no active engine is available; using in-memory download path"
+                )
+            return
+
+        cell = engine.get_cell()
         if not cell:
             if self.enable_tensor_disk_offload:
                 self.warning(
@@ -146,8 +155,10 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
         self._set_enable_tensor_disk_offload()
-        # Set NUM_ROUNDS in FL context for persistor and other components
-        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+
+        # Set NUM_ROUNDS in FL context for persistor and other components.
+        # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
 
         # Load initial model - prefer model if provided, else use persistor
         if self.model is not None:
@@ -167,6 +178,8 @@ class FedAvg(BaseFedAvg):
             self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+            self.event(AppEventType.ROUND_STARTED)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -198,6 +211,8 @@ class FedAvg(BaseFedAvg):
                     self.info("Abort signal triggered. Finishing FedAvg.")
                     return
                 time.sleep(self._task_check_period)
+
+            self.event(AppEventType.BEFORE_AGGREGATION)
 
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()

@@ -14,7 +14,7 @@
 import importlib
 import inspect
 import pkgutil
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.common.excepts import ConfigError
@@ -45,6 +45,67 @@ def instantiate_class(class_path, init_params):
         raise ValueError(f"Class {class_path} has parameters error: {secure_format_exception(e)}.")
 
     return instance
+
+
+def get_class_path_from_config(
+    config_dict: dict,
+    resolve_name: Optional[Callable[[str], Optional[str]]] = None,
+) -> str:
+    """Resolve a component config dict to a fully qualified class path.
+
+    Config key precedence: path → class_path → name. The first key present
+    is used; the others are ignored. Key presence is used, not truthiness:
+    e.g. path="" or path=None is still "path present", so path is validated
+    and raises ConfigError instead of falling through to class_path or name.
+    When only "name" is present, resolve_name(class_name) is called to get
+    the module name.
+
+    Args:
+        config_dict: Config with "path", "class_path", or "name" (see precedence above).
+        resolve_name: Callable that takes a class name and returns module name or None.
+            Required when config uses "name".
+
+    Returns:
+        Fully qualified class path string.
+
+    Raises:
+        ConfigError: Invalid or missing path/class_path/name.
+    """
+    if "path" in config_dict:
+        path_spec = config_dict["path"]
+        if not isinstance(path_spec, str):
+            raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
+        if len(path_spec) <= 0:
+            raise ConfigError("path spec must not be empty")
+        parts = path_spec.split(".")
+        if len(parts) < 2:
+            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+        return path_spec
+
+    if "class_path" in config_dict:
+        path_spec = config_dict["class_path"]
+        if not isinstance(path_spec, str):
+            raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
+        if len(path_spec) <= 0:
+            raise ConfigError("path spec must not be empty")
+        parts = path_spec.split(".")
+        if len(parts) < 2:
+            raise ConfigError("invalid class path '{}': missing module name".format(path_spec))
+        return path_spec
+
+    if "name" not in config_dict:
+        raise ConfigError("class name or path or class_path must be specified")
+    class_name = config_dict["name"]
+    if not isinstance(class_name, str):
+        raise ConfigError("class name must be str but got {}.".format(type(class_name)))
+    if len(class_name) <= 0:
+        raise ConfigError("class name must not be empty")
+    if resolve_name is None:
+        raise ConfigError("resolve_name required when config uses 'name'")
+    module_name = resolve_name(class_name)
+    if module_name is None:
+        raise ConfigError('Cannot find component class "{}"'.format(class_name))
+    return module_name + ".{}".format(class_name)
 
 
 class ModuleScanner:
