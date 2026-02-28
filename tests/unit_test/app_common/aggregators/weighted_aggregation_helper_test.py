@@ -16,7 +16,166 @@ import numpy as np
 import pytest
 import torch
 
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+    _is_aggregatable_metric_value,
+    filter_aggregatable_metrics,
+)
+
+
+class TestIsAggregatableMetricValue:
+    """Test _is_aggregatable_metric_value predicate."""
+
+    def test_none_is_not_aggregatable(self):
+        assert _is_aggregatable_metric_value(None) is False
+
+    def test_dict_list_set_tuple_str_not_aggregatable(self):
+        assert _is_aggregatable_metric_value({}) is False
+        assert _is_aggregatable_metric_value({"a": 1}) is False
+        assert _is_aggregatable_metric_value([]) is False
+        assert _is_aggregatable_metric_value([1, 2]) is False
+        assert _is_aggregatable_metric_value(set()) is False
+        assert _is_aggregatable_metric_value((1, 2)) is False
+        assert _is_aggregatable_metric_value("") is False
+        assert _is_aggregatable_metric_value("hello") is False
+
+    def test_int_float_bool_aggregatable(self):
+        assert _is_aggregatable_metric_value(0) is True
+        assert _is_aggregatable_metric_value(1) is True
+        assert _is_aggregatable_metric_value(1.0) is True
+        assert _is_aggregatable_metric_value(True) is True
+        assert _is_aggregatable_metric_value(False) is True
+
+    def test_numpy_array_aggregatable(self):
+        assert _is_aggregatable_metric_value(np.array([1.0, 2.0])) is True
+        assert _is_aggregatable_metric_value(np.float64(3.14)) is True
+
+    def test_torch_tensor_aggregatable(self):
+        assert _is_aggregatable_metric_value(torch.tensor([1.0, 2.0])) is True
+        assert _is_aggregatable_metric_value(torch.tensor(3.14)) is True
+
+    def test_object_with_shape_and_arithmetic_aggregatable(self):
+        class FakeArray:
+            shape = (2, 3)
+
+            def __mul__(self, other):
+                return self
+
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(FakeArray()) is True
+
+    def test_object_supporting_mul_add_aggregatable(self):
+        class Scalelike:
+            def __mul__(self, other):
+                return self
+
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(Scalelike()) is True
+
+    def test_object_not_supporting_mul_not_aggregatable(self):
+        class NoMul:
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(NoMul()) is False
+
+    def test_object_not_supporting_add_not_aggregatable(self):
+        class NoAdd:
+            def __mul__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(NoAdd()) is False
+
+    def test_numpy_string_array_not_aggregatable(self):
+        assert _is_aggregatable_metric_value(np.array(["a"])) is False
+
+    def test_object_raising_value_error_not_aggregatable(self):
+        class BadValue:
+            def __mul__(self, other):
+                raise ValueError("unsupported")
+
+            def __add__(self, other):
+                return self
+
+        assert _is_aggregatable_metric_value(BadValue()) is False
+
+    def test_object_raising_unexpected_exception_propagates(self):
+        class UnexpectedError(Exception):
+            pass
+
+        class BadValue:
+            def __mul__(self, other):
+                raise UnexpectedError("unexpected")
+
+            def __add__(self, other):
+                return self
+
+        with pytest.raises(UnexpectedError, match="unexpected"):
+            _is_aggregatable_metric_value(BadValue())
+
+
+class TestFilterAggregatableMetrics:
+    def test_none_or_empty_returns_empty_dict(self):
+        assert filter_aggregatable_metrics(None) == {}
+        assert filter_aggregatable_metrics({}) == {}
+
+    def test_filters_non_aggregatable_values(self):
+        data = {
+            "loss": 0.5,
+            "accuracy": 0.9,
+            "converged": True,
+            "config": {"lr": 0.01},
+            "tags": ["a", "b"],
+            "name": "run1",
+        }
+        filtered = filter_aggregatable_metrics(data)
+        assert filtered == {"loss": 0.5, "accuracy": 0.9, "converged": True}
+
+    def test_warn_skipped_called_for_each_skipped_key(self):
+        warned = []
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        data = {"loss": 0.5, "meta": {"x": 1}, "label": "train"}
+        filtered = filter_aggregatable_metrics(data, warn_skipped=capture)
+        assert filtered == {"loss": 0.5}
+        assert len(warned) == 2
+        assert ("meta", "dict") in warned
+        assert ("label", "str") in warned
+
+    def test_warned_metric_keys_only_warn_once(self):
+        warned = []
+        warned_keys = set()
+
+        def capture(key, type_name):
+            warned.append((key, type_name))
+
+        filtered = filter_aggregatable_metrics(
+            {"loss": 0.1, "meta": {}, "name": "x"},
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert filtered == {"loss": 0.1}
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+        filtered = filter_aggregatable_metrics(
+            {"acc": 0.2, "meta": {}, "name": "y"},
+            warn_skipped=capture,
+            warned_metric_keys=warned_keys,
+        )
+        assert filtered == {"acc": 0.2}
+        assert len(warned) == 2
+        assert warned_keys == {"meta", "name"}
+
+    def test_all_skipped_returns_empty_dict(self):
+        filtered = filter_aggregatable_metrics({"a": [], "b": "x"})
+        assert filtered == {}
 
 
 class TestWeightedAggregationHelper:

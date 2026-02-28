@@ -14,7 +14,61 @@
 
 import re
 import threading
-from typing import Optional
+from typing import Any, Callable, Dict, Optional, Set
+
+
+def _is_aggregatable_metric_value(v: Any) -> bool:
+    """Return True if the metric value supports weighted aggregation (v * weight and addition).
+
+    Boolean values are considered aggregatable and treated as binary values
+    (`True=1.0`, `False=0.0`) when averaged.
+    """
+    if v is None:
+        return False
+    if isinstance(v, (dict, list, set, tuple, str)):
+        return False
+    # Bool metrics are treated as binary values (True=1, False=0) and averaged.
+    if isinstance(v, (int, float, bool)):
+        return True
+    try:
+        _ = v * 1.0
+        _ = v + v
+        return True
+    except (TypeError, ValueError, AttributeError, RuntimeError):
+        return False
+
+
+def filter_aggregatable_metrics(
+    metrics: Optional[Dict[str, Any]],
+    warn_skipped: Optional[Callable[[str, str], None]] = None,
+    warned_metric_keys: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    """Return metric entries that support weighted aggregation.
+
+    Note:
+        Boolean metric values are included and aggregate as binary rates.
+
+    Args:
+        metrics: Dict of metric name -> value.
+        warn_skipped: Optional callback invoked as warn_skipped(key, type_name) for skipped metrics.
+        warned_metric_keys: Optional set of keys already warned about. If provided, warnings are emitted
+            at most once per key and newly warned keys are added to this set.
+    """
+    if not metrics:
+        return {}
+
+    filtered = {}
+    for key, value in metrics.items():
+        if _is_aggregatable_metric_value(value):
+            filtered[key] = value
+            continue
+        if warn_skipped is None:
+            continue
+        if warned_metric_keys is None or key not in warned_metric_keys:
+            warn_skipped(key, type(value).__name__)
+            if warned_metric_keys is not None:
+                warned_metric_keys.add(key)
+    return filtered
 
 
 class WeightedAggregationHelper(object):
