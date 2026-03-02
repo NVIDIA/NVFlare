@@ -59,7 +59,7 @@ def main():
 
     from datasets import load_dataset
 
-    print(f"Loading wikitext-2-raw-v1 ...")
+    print("Loading wikitext-2-raw-v1 ...")
     train_ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="train", cache_dir=args.cache_dir)
     val_ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="validation", cache_dir=args.cache_dir)
 

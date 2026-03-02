@@ -75,7 +75,12 @@ def build_lora_model(model_path: str):
 
 
 def build_dataloader(
-    tokenizer, site_name: str, data_dir: str = None, n_shards: int = 4, max_seq_len: int = MAX_SEQ_LEN, batch_size: int = BATCH_SIZE
+    tokenizer,
+    site_name: str,
+    data_dir: str = None,
+    n_shards: int = 4,
+    max_seq_len: int = MAX_SEQ_LEN,
+    batch_size: int = BATCH_SIZE,
 ) -> DataLoader:
     """Build a DataLoader for this site's training shard.
 
@@ -195,7 +200,9 @@ def main():
     print(f"[{site_name}] Loading model from '{args.model_path}'")
 
     model, tokenizer = build_lora_model(args.model_path)
-    dataloader = build_dataloader(tokenizer, site_name, data_dir=args.data_dir, max_seq_len=args.max_seq_len, batch_size=args.batch_size)
+    dataloader = build_dataloader(
+        tokenizer, site_name, data_dir=args.data_dir, max_seq_len=args.max_seq_len, batch_size=args.batch_size
+    )
 
     print(f"[{site_name}] Dataset ready ({len(dataloader)} batches/round)")
 
