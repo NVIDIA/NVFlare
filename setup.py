@@ -15,7 +15,6 @@
 import datetime
 import os
 import shutil
-from distutils.dir_util import copy_tree
 
 from setuptools import find_packages, setup
 
@@ -49,7 +48,7 @@ def package_files(
     starting,
 ):
     paths = []
-    for (path, directories, filenames) in os.walk(os.path.join(root, starting)):
+    for path, directories, filenames in os.walk(os.path.join(root, starting)):
         rel_dir = os.path.relpath(path, root)
         for filename in filenames:
             paths.append(os.path.join(rel_dir, filename))
@@ -58,9 +57,8 @@ def package_files(
 
 def copy_package(src_dir, dst_dir):
     if os.path.isdir(src_dir):
-        if not os.path.isdir(dst_dir):
-            os.makedirs(dst_dir, exist_ok=True)
-        copy_tree(src_dir, dst_dir)
+        os.makedirs(dst_dir, exist_ok=True)
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
 
     for root, dirs, files in os.walk(dst_dir):
         for f in files:
@@ -100,4 +98,3 @@ setup(
 )
 
 remove_dir(target_path=tmp_job_template_folder)
-

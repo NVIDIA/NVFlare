@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.12
+          python-version: 3.13
 
       # versions need to be consistent with setup.cfg
       - name: Install isort
@@ -48,4 +48,3 @@ jobs:
           git add .
           git diff --cached --quiet || git commit -m "Auto format with black"
           git push
-

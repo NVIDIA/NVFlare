@@ -19,7 +19,7 @@
 ## Style and Testing Conventions
 
 - Format/lint stack: black (line length 120), flake8, isort (black profile).
-- Python support targets: 3.9, 3.10, 3.11, 3.12.
+- Python support targets: 3.9, 3.10, 3.11, 3.12, 3.13, 3.14.
 - Add the standard NVIDIA Apache-2.0 license header to new Python source files.
 - Unit tests live in `tests/unit_test/`; integration tests live in `tests/integration_test/`.
 - Test file names follow `[module_name]_test.py`.
