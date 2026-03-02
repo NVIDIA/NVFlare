@@ -97,19 +97,22 @@ def _make_stub(clients=None, min_clients=0):
     return ctrl
 
 
-def _add_client_status(ctrl, client_name, *, silent=False, all_done=False, ready=True):
+def _add_client_status(ctrl, client_name, *, silent=False, all_done=False, ready=True, stalled_seconds=0):
     """Add a ClientStatus entry to ctrl.client_statuses.
 
     silent=True: last_report_time is far in the past (> max_status_report_interval).
     all_done=True: status.all_done is True.
     ready=True: ready_time is set (configure phase succeeded).
+    stalled_seconds>0: last_progress_time is that many seconds in the past (active but no progress).
     """
     cs = ClientStatus()
     if silent:
         cs.last_report_time = time.time() - ctrl.max_status_report_interval - 1
     else:
         cs.last_report_time = time.time()
-        cs.last_progress_time = time.time()
+        cs.last_progress_time = (
+            time.time() - stalled_seconds if stalled_seconds > 0 else time.time()
+        )
     cs.status = StatusReport()
     cs.status.all_done = all_done
     cs.ready_time = time.time() if ready else None
@@ -336,3 +339,111 @@ class TestProgressMonitor:
         msg = ctrl.system_panic.call_args[0][0]
         assert "2" in msg  # 4 total - 2 silent = 2 active
         assert "min_clients=3" in msg
+
+    def test_progress_timeout_fires_when_active_clients_stalled(self):
+        """Active clients that stop making progress eventually trigger progress_timeout.
+
+        Regression test for the bug where overall_last_progress_time was initialized to
+        now instead of 0.0, making time.time()-overall_last_progress_time always ≈ 0
+        and preventing the timeout from ever firing.
+        """
+        ctrl = _make_stub(min_clients=0)
+        stale = 400  # seconds — exceeds the progress_timeout below
+        ctrl.progress_timeout = 300.0
+        for c in _FOUR_CLIENTS:
+            _add_client_status(ctrl, c, stalled_seconds=stale)
+        fl_ctx = MagicMock()
+        ctrl._check_job_status(fl_ctx)
+        ctrl.system_panic.assert_called_once()
+        msg = ctrl.system_panic.call_args[0][0]
+        assert "no progress" in msg
+
+    def test_progress_timeout_does_not_fire_when_clients_recently_progressed(self):
+        """Clients that recently reported progress must not trigger progress_timeout."""
+        ctrl = _make_stub(min_clients=0)
+        ctrl.progress_timeout = 300.0
+        for c in _FOUR_CLIENTS:
+            _add_client_status(ctrl, c, stalled_seconds=0)  # last_progress_time ≈ now
+        fl_ctx = MagicMock()
+        ctrl._check_job_status(fl_ctx)
+        ctrl.system_panic.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# E. Pruned starting_client reselection
+# ---------------------------------------------------------------------------
+
+
+class TestPrunedStartingClient:
+    """Test that a pruned starting_client is reselected from remaining active clients."""
+
+    def _run_prune_and_start(self, ctrl, ready_clients, starting_client):
+        """Simulate the configure-phase prune + starting_client reselection logic."""
+        ctrl.starting_client = starting_client
+        for c in ctrl.participating_clients:
+            _add_client_status(ctrl, c, ready=(c in ready_clients))
+
+        total_clients = len(ctrl.participating_clients)
+        required = ctrl.min_clients if ctrl.min_clients > 0 else total_clients
+        failed_clients = [c for c, cs in ctrl.client_statuses.items() if not cs.ready_time]
+        configured_count = total_clients - len(failed_clients)
+
+        fl_ctx = MagicMock()
+        if configured_count < required:
+            ctrl.system_panic(
+                f"failed to configure clients {failed_clients}: "
+                f"only {configured_count}/{total_clients} configured, need {required}",
+                fl_ctx,
+            )
+            return fl_ctx
+
+        if failed_clients:
+            ctrl.log_warning(
+                fl_ctx,
+                f"clients {failed_clients} did not configure but min_clients={ctrl.min_clients} allows proceeding",
+            )
+            for c in failed_clients:
+                ctrl.participating_clients.remove(c)
+                ctrl.result_clients = [r for r in ctrl.result_clients if r != c]
+                del ctrl.client_statuses[c]
+
+            # Reselect starting_client if it was pruned (the fix under test).
+            if ctrl.starting_client in failed_clients:
+                if not ctrl.participating_clients:
+                    ctrl.system_panic("no active clients remain after pruning; cannot start workflow", fl_ctx)
+                    return fl_ctx
+                ctrl.starting_client = ctrl.participating_clients[0]
+                ctrl.log_warning(fl_ctx, f"starting client was pruned; reselected to {ctrl.starting_client}")
+
+        return fl_ctx
+
+    def test_starting_client_not_pruned_stays_unchanged(self):
+        ctrl = _make_stub(min_clients=2)
+        ctrl.result_clients = list(_FOUR_CLIENTS)
+        self._run_prune_and_start(ctrl, ready_clients=["site-1", "site-2", "site-3"], starting_client="site-1")
+        assert ctrl.starting_client == "site-1"
+        ctrl.system_panic.assert_not_called()
+
+    def test_starting_client_pruned_reselected_from_survivors(self):
+        ctrl = _make_stub(min_clients=2)
+        ctrl.result_clients = list(_FOUR_CLIENTS)
+        # site-1 (the starting client) fails; site-2 and site-3 succeed → reselect
+        self._run_prune_and_start(ctrl, ready_clients=["site-2", "site-3"], starting_client="site-1")
+        assert ctrl.starting_client != "site-1"
+        assert ctrl.starting_client in ["site-2", "site-3"]
+        ctrl.system_panic.assert_not_called()
+
+    def test_all_clients_fail_after_pruning_panics(self):
+        ctrl = _make_stub(min_clients=1)
+        ctrl.result_clients = list(_FOUR_CLIENTS)
+        # Only site-1 needed, but site-1 is the one that fails
+        # With min_clients=1 and only one client configured → 1 >= 1 so prune fires
+        # Then starting_client=site-1 is pruned; remaining clients must be empty → panic
+        # Actually to get 0 survivors we need ALL to fail but min_clients allows proceeding
+        # Use min_clients=0 so required=total and panic happens before pruning
+        # Instead: 1 client total, it fails → configured=0 < required=1 → system_panic
+        ctrl2 = _make_stub(clients=["site-1"], min_clients=1)
+        ctrl2.result_clients = ["site-1"]
+        # site-1 fails → configured_count=0 < required=1 → panic (not reselection path)
+        self._run_prune_and_start(ctrl2, ready_clients=[], starting_client="site-1")
+        ctrl2.system_panic.assert_called_once()

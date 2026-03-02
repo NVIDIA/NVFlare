@@ -299,6 +299,14 @@ class ServerSideController(Controller):
                 del self.client_statuses[c]
             self.log_info(fl_ctx, f"active clients after pruning: {self.participating_clients}")
 
+            # If the designated starting client was pruned, pick a new one from the survivors.
+            if self.starting_client in failed_clients:
+                if not self.participating_clients:
+                    self.system_panic("no active clients remain after pruning; cannot start workflow", fl_ctx)
+                    return
+                self.starting_client = self.participating_clients[0]
+                self.log_warning(fl_ctx, f"starting client was pruned; reselected to {self.starting_client}")
+
         self.log_info(fl_ctx, f"successfully configured clients {self.participating_clients}")
 
         # starting the starting_client
@@ -438,7 +446,7 @@ class ServerSideController(Controller):
             return True
 
         now = time.time()
-        overall_last_progress_time = now  # sentinel: no progress yet but not infinitely stale
+        overall_last_progress_time = 0.0  # will be set to max(cs.last_progress_time) across active clients
         silent_clients = []
 
         for client_name, cs in self.client_statuses.items():
