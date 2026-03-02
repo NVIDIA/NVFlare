@@ -22,6 +22,7 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.tensor_disk_offload_context import apply_enable_tensor_disk_offload, restore_enable_tensor_disk_offload
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
@@ -129,122 +130,110 @@ class FedAvg(BaseFedAvg):
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
 
-    def _set_enable_tensor_disk_offload(self):
-        engine = getattr(self, "engine", None)
-        if not engine:
-            if self.enable_tensor_disk_offload:
-                self.warning(
-                    "enable_tensor_disk_offload is enabled but no active engine is available; using in-memory download path"
-                )
-            return
-
-        cell = engine.get_cell()
-        if not cell:
-            if self.enable_tensor_disk_offload:
-                self.warning(
-                    "enable_tensor_disk_offload is enabled but no active cell is available; using in-memory download path"
-                )
-            return
-
-        desired = bool(self.enable_tensor_disk_offload)
-        current = bool(cell.get_fobs_context().get("enable_tensor_disk_offload", False))
-        if current != desired:
-            cell.update_fobs_context({"enable_tensor_disk_offload": desired})
-            self.info(f"_set_enable_tensor_disk_offload: {current} -> {desired}")
-
     def run(self) -> None:
-        self.info(center_message("Start FedAvg."))
-        self._set_enable_tensor_disk_offload()
+        previous_disk_offload = apply_enable_tensor_disk_offload(
+            engine=getattr(self, "engine", None),
+            enabled=self.enable_tensor_disk_offload,
+            warning_fn=self.warning,
+            info_fn=self.info,
+        )
+        try:
+            self.info(center_message("Start FedAvg."))
 
-        # Set NUM_ROUNDS in FL context for persistor and other components.
-        # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
-        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
+            # Set NUM_ROUNDS in FL context for persistor and other components.
+            # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
+            self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
 
-        # Load initial model - prefer model if provided, else use persistor
-        if self.model is not None:
-            if isinstance(self.model, FLModel):
-                model = self.model
-            else:
-                # Assume dict of params
-                model = FLModel(params=self.model)
-            self.info("Using provided model")
-        else:
-            model = self.load_model()
-
-        model.start_round = self.start_round
-        model.total_rounds = self.num_rounds
-
-        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-            self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
-
-            model.current_round = self.current_round
-            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
-            self.event(AppEventType.ROUND_STARTED)
-
-            clients = self.sample_clients(self.num_clients)
-
-            # Reset aggregation state for this round
-            if self.aggregator:
-                # Use custom aggregator
-                self.aggregator.reset_stats()
-            else:
-                # Use built-in InTime aggregation
-                self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
-                self._aggr_metrics_helper = WeightedAggregationHelper()
-                self._all_metrics = True  # Only used by built-in aggregation
-            # Shared state for both aggregator types
-            self._received_count = 0
-            self._expected_count = len(clients)
-            self._params_type = None
-
-            # Non-blocking send with callback for streaming aggregation
-            self.send_model(
-                task_name=self.task_name,
-                targets=clients,
-                data=model,
-                callback=self._aggregate_one_result,
-            )
-
-            # Wait for all results to be processed
-            while self.get_num_standing_tasks():
-                if self.abort_signal.triggered:
-                    self.info("Abort signal triggered. Finishing FedAvg.")
-                    return
-                time.sleep(self._task_check_period)
-
-            self.event(AppEventType.BEFORE_AGGREGATION)
-
-            # Get final aggregated result
-            aggregate_results = self._get_aggregated_result()
-
-            model = self.update_model(model, aggregate_results)
-
-            # Early stopping: check if current model is better
-            if self.stop_condition:
-                self.info(f"Round {self.current_round} global metrics: {model.metrics}")
-
-                if self.is_curr_model_better(model):
-                    self.info("New best model found.")
-                    self.save_model(model)
+            # Load initial model - prefer model if provided, else use persistor
+            if self.model is not None:
+                if isinstance(self.model, FLModel):
+                    model = self.model
                 else:
-                    if self.patience:
-                        self.info(
-                            f"No metric improvement, num of FL rounds without improvement: "
-                            f"{self.num_fl_rounds_without_improvement}"
-                        )
-
-                # Check if we should stop early
-                if self.should_stop(model.metrics):
-                    self.info(f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}.")
-                    break
+                    # Assume dict of params
+                    model = FLModel(params=self.model)
+                self.info("Using provided model")
             else:
-                # No early stopping: save model every round
-                self.save_model(model)
+                model = self.load_model()
 
-            # Memory cleanup at end of round (if configured)
-            self._maybe_cleanup_memory()
+            model.start_round = self.start_round
+            model.total_rounds = self.num_rounds
 
-        self.info(center_message("Finished FedAvg."))
+            for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+                self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
+
+                model.current_round = self.current_round
+                self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+                self.event(AppEventType.ROUND_STARTED)
+
+                clients = self.sample_clients(self.num_clients)
+
+                # Reset aggregation state for this round
+                if self.aggregator:
+                    # Use custom aggregator
+                    self.aggregator.reset_stats()
+                else:
+                    # Use built-in InTime aggregation
+                    self._aggr_helper = WeightedAggregationHelper(exclude_vars=self.exclude_vars)
+                    self._aggr_metrics_helper = WeightedAggregationHelper()
+                    self._all_metrics = True  # Only used by built-in aggregation
+                # Shared state for both aggregator types
+                self._received_count = 0
+                self._expected_count = len(clients)
+                self._params_type = None
+
+                # Non-blocking send with callback for streaming aggregation
+                self.send_model(
+                    task_name=self.task_name,
+                    targets=clients,
+                    data=model,
+                    callback=self._aggregate_one_result,
+                )
+
+                # Wait for all results to be processed
+                while self.get_num_standing_tasks():
+                    if self.abort_signal.triggered:
+                        self.info("Abort signal triggered. Finishing FedAvg.")
+                        return
+                    time.sleep(self._task_check_period)
+
+                self.event(AppEventType.BEFORE_AGGREGATION)
+
+                # Get final aggregated result
+                aggregate_results = self._get_aggregated_result()
+
+                model = self.update_model(model, aggregate_results)
+
+                # Early stopping: check if current model is better
+                if self.stop_condition:
+                    self.info(f"Round {self.current_round} global metrics: {model.metrics}")
+
+                    if self.is_curr_model_better(model):
+                        self.info("New best model found.")
+                        self.save_model(model)
+                    else:
+                        if self.patience:
+                            self.info(
+                                f"No metric improvement, num of FL rounds without improvement: "
+                                f"{self.num_fl_rounds_without_improvement}"
+                            )
+                    # Check if we should stop early
+                    if self.should_stop(model.metrics):
+                        self.info(f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}.")
+                        break
+                else:
+                    # No early stopping: save model every round
+                    self.save_model(model)
+
+                # Memory cleanup at end of round (if configured)
+                self._maybe_cleanup_memory()
+
+            self.info(center_message("Finished FedAvg."))
+        finally:
+            restore_enable_tensor_disk_offload(
+                engine=getattr(self, "engine", None),
+                previous_value=previous_disk_offload,
+                info_fn=self.info,
+            )
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""

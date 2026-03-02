@@ -30,6 +30,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.app_common.utils.tensor_disk_offload_context import apply_enable_tensor_disk_offload, restore_enable_tensor_disk_offload
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -381,6 +382,7 @@ class SwarmClientController(ClientSideController):
         self.is_aggr = False
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self._previous_enable_tensor_disk_offload = None
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -405,16 +407,6 @@ class SwarmClientController(ClientSideController):
             message_handle_func=self._process_submission_request,
         )
 
-    def _set_enable_tensor_disk_offload(self):
-        cell = self.engine.get_cell()
-        if not cell:
-            return
-
-        desired = bool(self.enable_tensor_disk_offload)
-        current = bool(cell.get_fobs_context().get("enable_tensor_disk_offload", False))
-        if current != desired:
-            cell.update_fobs_context({"enable_tensor_disk_offload": desired})
-
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:
             return self._process_learn_result(shareable, fl_ctx, abort_signal)
@@ -422,7 +414,10 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
-        self._set_enable_tensor_disk_offload()
+        self._previous_enable_tensor_disk_offload = apply_enable_tensor_disk_offload(
+            engine=self.engine,
+            enabled=self.enable_tensor_disk_offload,
+        )
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -448,6 +443,15 @@ class SwarmClientController(ClientSideController):
         aggr_thread.daemon = True
         aggr_thread.start()
         self.log_debug(fl_ctx, "started aggregator thread")
+
+    def finalize(self, fl_ctx: FLContext):
+        try:
+            restore_enable_tensor_disk_offload(self.engine, self._previous_enable_tensor_disk_offload)
+        except Exception:
+            self.log_warning(fl_ctx, f"failed to restore enable_tensor_disk_offload: {secure_format_traceback()}")
+        finally:
+            self._previous_enable_tensor_disk_offload = None
+        super().finalize(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:

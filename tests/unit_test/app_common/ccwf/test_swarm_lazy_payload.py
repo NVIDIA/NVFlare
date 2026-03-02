@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import patch
+
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 
 
@@ -35,28 +39,28 @@ class _MockEngine:
 
 
 class TestSwarmTensorDiskOffloadContext:
-    def test_set_enable_tensor_disk_offload_true(self):
+    def test_finalize_restores_enable_tensor_disk_offload(self):
         ctl = object.__new__(SwarmClientController)
         ctl.enable_tensor_disk_offload = True
         cell = _MockCell(enable_tensor_disk_offload=False)
         ctl.engine = _MockEngine(cell)
+        cell.ctx["enable_tensor_disk_offload"] = True
+        ctl._previous_enable_tensor_disk_offload = False
 
-        ctl._set_enable_tensor_disk_offload()
-        assert cell.ctx["enable_tensor_disk_offload"] is True
+        with patch.object(ClientSideController, "finalize", autospec=True) as super_finalize:
+            ctl.finalize(FLContext())
 
-    def test_set_enable_tensor_disk_offload_false(self):
-        ctl = object.__new__(SwarmClientController)
-        ctl.enable_tensor_disk_offload = False
-        cell = _MockCell(enable_tensor_disk_offload=True)
-        ctl.engine = _MockEngine(cell)
-
-        ctl._set_enable_tensor_disk_offload()
         assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert ctl._previous_enable_tensor_disk_offload is None
+        super_finalize.assert_called_once()
 
-    def test_set_enable_tensor_disk_offload_without_cell(self):
+    def test_finalize_with_missing_cell(self):
         ctl = object.__new__(SwarmClientController)
-        ctl.enable_tensor_disk_offload = True
         ctl.engine = _MockEngine(cell=None)
+        ctl._previous_enable_tensor_disk_offload = False
 
-        ctl._set_enable_tensor_disk_offload()
-        assert ctl.engine.get_cell() is None
+        with patch.object(ClientSideController, "finalize", autospec=True) as super_finalize:
+            ctl.finalize(FLContext())
+
+        assert ctl._previous_enable_tensor_disk_offload is None
+        super_finalize.assert_called_once()
