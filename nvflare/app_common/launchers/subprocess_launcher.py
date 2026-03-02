@@ -64,8 +64,7 @@ def get_line(buffer: bytearray):
 
 def _make_subprocess_log_prefix(fl_ctx: FLContext, pid: int) -> str:
     site_name = fl_ctx.get_identity_name(default="?")
-    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "?")
-    return f"[subprocess site={site_name} job={job_id} pid={pid}]"
+    return f"[{site_name}]"
 
 
 def log_subprocess_output(process, logger, prefix: str = ""):

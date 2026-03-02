@@ -130,7 +130,7 @@ class TestSubprocessLauncher:
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job_123", private=False, sticky=False)
         fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=False)
         prefix = _make_subprocess_log_prefix(fl_ctx, pid=4321)
-        assert prefix == "[subprocess site=site-1 job=job_123 pid=4321]"
+        assert prefix == "[site-1]"
 
     def test_log_subprocess_output_with_prefix(self):
         class _Proc:
