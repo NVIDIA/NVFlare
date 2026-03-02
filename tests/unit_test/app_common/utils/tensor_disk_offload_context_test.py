@@ -30,11 +30,17 @@ class _MockCell:
 
 
 class _MockEngine:
-    def __init__(self, cell):
+    def __init__(self, cell, run_manager=None):
         self.cell = cell
+        self.run_manager = run_manager
 
     def get_cell(self):
         return self.cell
+
+
+class _MockRunManager:
+    def __init__(self, cell):
+        self.cell = cell
 
 
 def test_apply_returns_previous_and_updates():
@@ -63,3 +69,18 @@ def test_apply_and_restore_noop_when_unavailable():
 
     restore_enable_tensor_disk_offload(None, False)
     restore_enable_tensor_disk_offload(None, None)
+
+
+def test_apply_and_restore_use_run_manager_cell_when_available():
+    parent_cell = _MockCell(enable_tensor_disk_offload=False)
+    run_cell = _MockCell(enable_tensor_disk_offload=False)
+    engine = _MockEngine(cell=parent_cell, run_manager=_MockRunManager(run_cell))
+
+    previous = apply_enable_tensor_disk_offload(engine=engine, enabled=True)
+
+    assert previous is False
+    assert run_cell.ctx["enable_tensor_disk_offload"] is True
+    assert parent_cell.ctx["enable_tensor_disk_offload"] is False
+
+    restore_enable_tensor_disk_offload(engine, previous)
+    assert run_cell.ctx["enable_tensor_disk_offload"] is False

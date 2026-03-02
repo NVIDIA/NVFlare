@@ -35,7 +35,11 @@ def apply_enable_tensor_disk_offload(
             )
         return None
 
-    cell = engine.get_cell()
+    run_manager = getattr(engine, "run_manager", None)
+    if run_manager and run_manager.cell:
+        cell = run_manager.cell
+    else:
+        cell = engine.get_cell()
     if not cell:
         if enabled and warning_fn:
             warning_fn(
@@ -57,7 +61,11 @@ def restore_enable_tensor_disk_offload(
     if not engine or previous_value is None:
         return
 
-    cell = engine.get_cell()
+    run_manager = getattr(engine, "run_manager", None)
+    if run_manager and run_manager.cell:
+        cell = run_manager.cell
+    else:
+        cell = engine.get_cell()
     if not cell:
         return
 

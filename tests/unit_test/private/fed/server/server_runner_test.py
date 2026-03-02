@@ -31,14 +31,14 @@ def _make_engine():
 
 
 class TestServerEngineGetCell:
-    def test_prefers_run_manager_cell(self):
+    def test_returns_parent_cell_even_when_run_manager_cell_present(self):
         engine = _make_engine()
         parent_cell = MagicMock(name="parent_cell")
         run_cell = MagicMock(name="run_cell")
         engine.cell = parent_cell
         engine.run_manager = SimpleNamespace(cell=run_cell)
 
-        assert engine.get_cell() is run_cell
+        assert engine.get_cell() is parent_cell
 
     def test_falls_back_to_parent_cell_when_run_cell_missing(self):
         engine = _make_engine()
