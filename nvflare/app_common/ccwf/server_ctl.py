@@ -292,6 +292,12 @@ class ServerSideController(Controller):
                 fl_ctx,
                 f"clients {failed_clients} did not configure but min_clients={self.min_clients} allows proceeding",
             )
+            # Remove failed clients so the swarm/workflow does not wait on them each round.
+            for c in failed_clients:
+                self.participating_clients.remove(c)
+                self.result_clients = [r for r in self.result_clients if r != c]
+                del self.client_statuses[c]
+            self.log_info(fl_ctx, f"active clients after pruning: {self.participating_clients}")
 
         self.log_info(fl_ctx, f"successfully configured clients {self.participating_clients}")
 
@@ -432,7 +438,7 @@ class ServerSideController(Controller):
             return True
 
         now = time.time()
-        overall_last_progress_time = 0.0
+        overall_last_progress_time = now  # sentinel: no progress yet but not infinitely stale
         silent_clients = []
 
         for client_name, cs in self.client_statuses.items():

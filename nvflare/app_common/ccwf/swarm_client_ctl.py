@@ -573,32 +573,32 @@ class SwarmClientController(ClientSideController):
             self.update_status(action="aggregate", error=ReturnCode.EXECUTION_EXCEPTION)
             return
 
-        # Defensive check: LazyDownloadRefs must never reach shareable_to_learnable().
-        # Under normal operation _resolve_lazy_refs() in do_learn_task() handles the
-        # local-aggr path.  This guard is a last-resort backstop for future code paths
-        # that might bypass that call (e.g. multi-hop or relay scenarios).
+        # Defensive check: only relevant when forward_pass_through is active, because that
+        # is the only path that produces LazyDownloadRef objects in aggregation results.
+        # Skipping this check in the common (non-PASS_THROUGH) case avoids deserializing
+        # the full aggregated DXO just to inspect value types.
         #
         # Guard is limited to DXO Shareables (the only kind that carries tensor payloads).
         # from_shareable() raises ValueError for non-DXO Shareables so we check the
         # CONTENT_TYPE header first to avoid treating that as a guard failure.
         # The except block uses logger.warning (not log_warning) to avoid calling
         # generate_log_message(), which requires fl_ctx to have a real peer context.
-        try:
-            from nvflare.apis.dxo import from_shareable as _from_shareable
-            from nvflare.apis.shareable import ReservedHeaderKey as _RHK
-            from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+        if self.forward_pass_through:
+            try:
+                from nvflare.apis.dxo import from_shareable as _from_shareable
+                from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
-            if aggr_result.get_header(_RHK.CONTENT_TYPE) == "DXO":
-                _dxo = _from_shareable(aggr_result)
-                if _dxo.data and any(isinstance(v, LazyDownloadRef) for v in _dxo.data.values()):
-                    self.log_error(
-                        fl_ctx,
-                        "LazyDownloadRef objects reached _end_gather() — resolving now. "
-                        "This indicates _resolve_lazy_refs() was not called on the local-aggr path.",
-                    )
-                    aggr_result = self._resolve_lazy_refs(aggr_result, fl_ctx)
-        except Exception:
-            self.logger.warning(f"LazyDownloadRef guard check failed: {secure_format_traceback()}")
+                if aggr_result.get_header(ReservedHeaderKey.CONTENT_TYPE) == "DXO":
+                    _dxo = _from_shareable(aggr_result)
+                    if _dxo.data and any(isinstance(v, LazyDownloadRef) for v in _dxo.data.values()):
+                        self.log_error(
+                            fl_ctx,
+                            "LazyDownloadRef objects reached _end_gather() — resolving now. "
+                            "This indicates _resolve_lazy_refs() was not called on the local-aggr path.",
+                        )
+                        aggr_result = self._resolve_lazy_refs(aggr_result, fl_ctx)
+            except Exception:
+                self.logger.warning(f"LazyDownloadRef guard check failed: {secure_format_traceback()}")
 
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
@@ -837,6 +837,13 @@ class SwarmClientController(ClientSideController):
         # required by the WEIGHT_DIFF branch of _end_gather() (base_weights += diff).
         # task_data (with refs intact) is still passed to execute_learn_task() below so
         # the subprocess can download directly from the aggregator DownloadService.
+        #
+        # Memory note: when this CJ is also the aggregator (me == aggr), _resolve_lazy_refs
+        # downloads the full model into CJ memory here, while the subprocess independently
+        # downloads its own copy from the aggregator. This is an unavoidable cost of the
+        # local-aggr + forward_pass_through combination: the aggregator CJ needs real tensors
+        # for GLOBAL_MODEL, but cannot share the subprocess's download without a synchronous
+        # barrier that would defeat the purpose of PASS_THROUGH.
         task_data_for_model = self._resolve_lazy_refs(task_data, fl_ctx) if self.forward_pass_through else task_data
         global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 

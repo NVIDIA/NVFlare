@@ -136,7 +136,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._submit_result_timeout = submit_result_timeout
         self._max_resends = max_resends
         self._download_complete_timeout = download_complete_timeout
-        self._round_count = 0
+        self._cj_round_count = 0
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -207,8 +207,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         can still run — the messages give the operator actionable guidance
         before the first download attempt.
         """
-        import nvflare.fuel.utils.app_config_utils as acu
-        from nvflare.apis.fl_constant import ConfigVarName
+        try:
+            import nvflare.fuel.utils.app_config_utils as acu
+            from nvflare.apis.fl_constant import ConfigVarName
+        except ImportError as e:
+            self.log_warning(fl_ctx, f"_validate_timeout_config skipped: {e}")
+            return
 
         prefix = self._decomposer_prefix()
         per_req = acu.get_positive_float_var(f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}", 600.0)
@@ -240,9 +244,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 "Set max_resends to a bounded value (e.g. 3) in job config.",
             )
 
-    def finalize(self, fl_ctx: FLContext) -> None:
-        super().finalize(fl_ctx)
-
     def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         ok = super().check_output_shareable(task_name, shareable, fl_ctx)
         if not ok:
@@ -265,12 +266,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         """
         if self._memory_gc_rounds <= 0:
             return
-        self._round_count += 1
-        if self._round_count % self._memory_gc_rounds == 0:
+        self._cj_round_count += 1
+        if self._cj_round_count % self._memory_gc_rounds == 0:
             from nvflare.fuel.utils.memory_utils import cleanup_memory
 
             cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
-            self.log_info(fl_ctx, f"Client job memory cleanup performed at round {self._round_count}.")
+            self.log_info(fl_ctx, f"Client job memory cleanup performed at round {self._cj_round_count}.")
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)

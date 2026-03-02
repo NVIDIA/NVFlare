@@ -369,8 +369,11 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
 
     def test_defensive_guard_fires_and_resolves_lazy_refs(self):
         """If LazyDownloadRefs survive into _end_gather(), the guard resolves them and
-        logs an error, and shareable_to_learnable receives the resolved result."""
+        logs an error, and shareable_to_learnable receives the resolved result.
+        The guard only runs when forward_pass_through=True (the only path that produces
+        LazyDownloadRef objects in aggregation results)."""
         ctl = self._build_end_gather_ctl()
+        ctl.forward_pass_through = True
 
         lazy_aggr = _make_shareable_with_lazy_refs()
         real_aggr = _make_shareable_with_real_arrays()

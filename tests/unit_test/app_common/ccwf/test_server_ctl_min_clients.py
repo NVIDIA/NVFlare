@@ -334,5 +334,5 @@ class TestProgressMonitor:
         fl_ctx = MagicMock()
         ctrl._check_job_status(fl_ctx)
         msg = ctrl.system_panic.call_args[0][0]
-        assert "active_count" not in msg or "2" in msg  # message says active count
+        assert "2" in msg  # 4 total - 2 silent = 2 active
         assert "min_clients=3" in msg
