@@ -14,7 +14,6 @@
 
 from typing import Any, Callable, Optional
 
-
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 
 
@@ -31,13 +30,17 @@ def apply_enable_tensor_disk_offload(
     """
     if not engine:
         if enabled and warning_fn:
-            warning_fn("enable_tensor_disk_offload is enabled but no active engine is available; using in-memory download path")
+            warning_fn(
+                "enable_tensor_disk_offload is enabled but no active engine is available; using in-memory download path"
+            )
         return None
 
     cell = engine.get_cell()
     if not cell:
         if enabled and warning_fn:
-            warning_fn("enable_tensor_disk_offload is enabled but no active cell is available; using in-memory download path")
+            warning_fn(
+                "enable_tensor_disk_offload is enabled but no active cell is available; using in-memory download path"
+            )
         return None
 
     previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
@@ -47,7 +50,9 @@ def apply_enable_tensor_disk_offload(
     return previous
 
 
-def restore_enable_tensor_disk_offload(engine, previous_value: Any, info_fn: Optional[Callable[[str], None]] = None) -> None:
+def restore_enable_tensor_disk_offload(
+    engine, previous_value: Any, info_fn: Optional[Callable[[str], None]] = None
+) -> None:
     """Restore prior enable_tensor_disk_offload value on a cell."""
     if not engine or previous_value is None:
         return

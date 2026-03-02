@@ -22,8 +22,11 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.utils.tensor_disk_offload_context import apply_enable_tensor_disk_offload, restore_enable_tensor_disk_offload
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    apply_enable_tensor_disk_offload,
+    restore_enable_tensor_disk_offload,
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
