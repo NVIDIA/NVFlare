@@ -194,30 +194,23 @@ class TestDoLearnTaskForwardPassThrough(unittest.TestCase):
         """With forward_pass_through=True, _resolve_lazy_refs() is called before
         shareable_to_learnable() and the resolved result is used for GLOBAL_MODEL."""
         task_data = _make_shareable_with_lazy_refs()
-        resolve_calls, model_input = self._run_global_model_setup_block(
-            forward_pass_through=True, task_data=task_data
-        )
+        resolve_calls, model_input = self._run_global_model_setup_block(forward_pass_through=True, task_data=task_data)
 
-        self.assertEqual(len(resolve_calls), 1,
-                         "_resolve_lazy_refs must be called once when forward_pass_through=True")
-        self.assertIs(resolve_calls[0], task_data,
-                      "_resolve_lazy_refs must receive the original task_data")
+        self.assertEqual(len(resolve_calls), 1, "_resolve_lazy_refs must be called once when forward_pass_through=True")
+        self.assertIs(resolve_calls[0], task_data, "_resolve_lazy_refs must receive the original task_data")
         self.assertIsNotNone(model_input)
-        self.assertIsNot(model_input, task_data,
-                         "shareable_to_learnable must receive the resolved result, not the lazy task_data")
+        self.assertIsNot(
+            model_input, task_data, "shareable_to_learnable must receive the resolved result, not the lazy task_data"
+        )
 
     def test_global_model_not_resolved_when_flag_false(self):
         """With forward_pass_through=False (default), _resolve_lazy_refs() is NOT called
         and task_data is passed directly to shareable_to_learnable() — original behaviour."""
         task_data = _make_shareable_with_lazy_refs()
-        resolve_calls, model_input = self._run_global_model_setup_block(
-            forward_pass_through=False, task_data=task_data
-        )
+        resolve_calls, model_input = self._run_global_model_setup_block(forward_pass_through=False, task_data=task_data)
 
-        self.assertEqual(resolve_calls, [],
-                         "_resolve_lazy_refs must NOT be called when forward_pass_through=False")
-        self.assertIs(model_input, task_data,
-                      "With flag=False, shareable_to_learnable must receive original task_data")
+        self.assertEqual(resolve_calls, [], "_resolve_lazy_refs must NOT be called when forward_pass_through=False")
+        self.assertIs(model_input, task_data, "With flag=False, shareable_to_learnable must receive original task_data")
 
 
 if __name__ == "__main__":
