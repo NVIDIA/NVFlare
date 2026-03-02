@@ -36,7 +36,10 @@ from nvflare.client.config import TransferType
 from nvflare.recipe.sim_env import SimEnv
 
 JOB_NAME = "ccwf_swarm_pt_lora"
-MODEL_PATH = "Qwen/Qwen2.5-0.5B"  # HuggingFace Hub ID; override with a local path if preferred
+MODEL_SIZES = {
+    "0.5B": "Qwen/Qwen2.5-0.5B",
+    "1.5B": "Qwen/Qwen2.5-1.5B",
+}
 
 
 def define_parser():
@@ -57,6 +60,15 @@ def define_parser():
         default="/tmp/nvflare/simulation",
         help="Root workspace directory for SimEnv (job results written to <workspace>/<job_name>)",
     )
+    parser.add_argument("--local_steps", type=int, default=10, help="Gradient steps per client per round")
+    parser.add_argument("--batch_size", type=int, default=4, help="Training batch size")
+    parser.add_argument("--max_seq_len", type=int, default=128, help="Maximum tokenized sequence length")
+    parser.add_argument(
+        "--model_size",
+        choices=list(MODEL_SIZES.keys()),
+        default="0.5B",
+        help="Qwen2.5 model size to use (default: 0.5B)",
+    )
     return parser.parse_args()
 
 
@@ -66,18 +78,22 @@ def main():
     if args.n_clients < 2:
         raise ValueError("Swarm learning requires at least 2 clients.")
 
+    model_path = MODEL_SIZES[args.model_size]
+
     # Build script args forwarded to the client.py subprocess
-    script_args = f"--model_path {MODEL_PATH}"
+    script_args = f"--model_path {model_path}"
     if args.data_dir:
         script_args += f" --data_dir {args.data_dir}"
+    script_args += f" --local_steps {args.local_steps} --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
 
     recipe = SimpleSwarmLearningRecipe(
         name=JOB_NAME,
-        model=QwenLoRAModelWrapper(model_path=MODEL_PATH),
+        model=QwenLoRAModelWrapper(model_path=model_path),
         num_rounds=args.num_rounds,
         train_script="client.py",
         min_clients=2,
         launch_external_process=True,
+        cuda_empty_cache=True,
         train_args={"script_args": script_args},
         # LoRA adapters are small — exchange full adapter state each round (FedAvg)
         expected_data_kind=DataKind.WEIGHT_DIFF,

@@ -14,7 +14,7 @@
 
 """Swarm LoRA fine-tuning client.
 
-Trains a Qwen2.5-0.5B causal-LM with LoRA adapters on the wikitext-2-raw-v1
+Trains a Qwen2.5-1.5B causal-LM with LoRA adapters on the wikitext-2-raw-v1
 dataset (Apache-2.0, no license acceptance required).  Only the LoRA adapter
 parameters (~0.4 % of total weights) are exchanged each round, keeping
 communication cost low regardless of base-model size.
@@ -58,7 +58,7 @@ def build_lora_model(model_path: str):
     base = AutoModelForCausalLM.from_pretrained(
         model_path,
         dtype=torch.bfloat16,
-        device_map="cpu",
+        device_map="auto",
     )
 
     lora_cfg = LoraConfig(
@@ -74,7 +74,9 @@ def build_lora_model(model_path: str):
     return model, tokenizer
 
 
-def build_dataloader(tokenizer, site_name: str, data_dir: str = None, n_shards: int = 4) -> DataLoader:
+def build_dataloader(
+    tokenizer, site_name: str, data_dir: str = None, n_shards: int = 4, max_seq_len: int = MAX_SEQ_LEN, batch_size: int = BATCH_SIZE
+) -> DataLoader:
     """Build a DataLoader for this site's training shard.
 
     If data_dir is given, loads the pre-split Arrow dataset written by
@@ -107,7 +109,7 @@ def build_dataloader(tokenizer, site_name: str, data_dir: str = None, n_shards: 
         enc = tokenizer(
             batch["text"],
             truncation=True,
-            max_length=MAX_SEQ_LEN,
+            max_length=max_seq_len,
             padding="max_length",
         )
         enc["labels"] = enc["input_ids"].copy()
@@ -115,7 +117,7 @@ def build_dataloader(tokenizer, site_name: str, data_dir: str = None, n_shards: 
 
     dataset = dataset.map(tokenize, batched=True, remove_columns=["text"])
     dataset.set_format("torch")
-    return DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
 
 def apply_global_adapter(model, global_params: dict):
@@ -142,6 +144,7 @@ def local_train(model, dataloader: DataLoader, steps: int) -> dict:
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=LEARNING_RATE,
     )
+    device = next(model.parameters()).device
     model.train()
     data_iter = iter(dataloader)
 
@@ -153,19 +156,19 @@ def local_train(model, dataloader: DataLoader, steps: int) -> dict:
             batch = next(data_iter)
 
         loss = model(
-            input_ids=batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-            labels=batch["labels"],
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            labels=batch["labels"].to(device),
         ).loss
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
 
-        if step % 5 == 0:
-            print(f"  step={step}/{steps}  loss={loss.item():.4f}")
+        if (step + 1) % 5 == 0 or step == steps - 1:
+            print(f"  step={step + 1}/{steps}  loss={loss.item():.4f}", flush=True)
 
     weights_after = get_peft_model_state_dict(model)
-    diff = {k: (weights_after[k] - weights_before[k]).float().detach().cpu().numpy() for k in weights_before}
+    diff = {k: (weights_after[k] - weights_before[k]).float().detach().cpu() for k in weights_before}
     return diff
 
 
@@ -173,8 +176,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_path",
-        default="Qwen/Qwen2.5-0.5B",
-        help="HuggingFace Hub model ID or local path to Qwen2.5-0.5B",
+        default="Qwen/Qwen2.5-1.5B",
+        help="HuggingFace Hub model ID or local path to Qwen2.5-1.5B",
     )
     parser.add_argument(
         "--data_dir",
@@ -183,6 +186,8 @@ def main():
         "(e.g. /tmp/swarm_data). If omitted, falls back to in-memory shard.",
     )
     parser.add_argument("--local_steps", type=int, default=DEFAULT_LOCAL_STEPS)
+    parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
+    parser.add_argument("--max_seq_len", type=int, default=MAX_SEQ_LEN)
     args = parser.parse_args()
 
     flare.init()
@@ -190,7 +195,7 @@ def main():
     print(f"[{site_name}] Loading model from '{args.model_path}'")
 
     model, tokenizer = build_lora_model(args.model_path)
-    dataloader = build_dataloader(tokenizer, site_name, data_dir=args.data_dir)
+    dataloader = build_dataloader(tokenizer, site_name, data_dir=args.data_dir, max_seq_len=args.max_seq_len, batch_size=args.batch_size)
 
     print(f"[{site_name}] Dataset ready ({len(dataloader)} batches/round)")
 

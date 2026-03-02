@@ -26,6 +26,8 @@ import torch.nn as nn
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from transformers import AutoModelForCausalLM
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
 # Must match client.py
 LORA_R = 8
 LORA_ALPHA = 16
@@ -43,9 +45,10 @@ class QwenLoRAModelWrapper(nn.Module):
 
     def __init__(self, model_path: str = "Qwen/Qwen2.5-0.5B"):
         super().__init__()
+        self.logger = get_obj_logger(self)
         base = AutoModelForCausalLM.from_pretrained(
             model_path,
-            torch_dtype=torch.float32,
+            torch_dtype=torch.bfloat16,
             device_map="cpu",
         )
         lora_cfg = LoraConfig(
@@ -65,6 +68,17 @@ class QwenLoRAModelWrapper(nn.Module):
         return get_peft_model_state_dict(self._peft_model)
 
     def load_state_dict(self, state_dict, strict: bool = False):
+        current = get_peft_model_state_dict(self._peft_model)
+        mismatched = [k for k in state_dict if k in current and state_dict[k].shape != current[k].shape]
+        if mismatched:
+            self.logger.warning(
+                f"Checkpoint shape mismatch for {len(mismatched)} adapter param(s) "
+                f"(e.g. '{mismatched[0]}': checkpoint {tuple(state_dict[mismatched[0]].shape)} "
+                f"vs model {tuple(current[mismatched[0]].shape)}). "
+                "Ignoring checkpoint and starting from fresh adapter weights. "
+                "This is expected when switching --model_size between runs."
+            )
+            return
         set_peft_model_state_dict(self._peft_model, state_dict)
 
     def forward(self, *args, **kwargs):

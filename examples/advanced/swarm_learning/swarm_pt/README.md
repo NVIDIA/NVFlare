@@ -1,7 +1,7 @@
 
 # Swarm Learning with LoRA Fine-Tuning
 
-This example demonstrates how to use NVIDIA FLARE's [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.html) workflow to fine-tune a large language model using [LoRA (Low-Rank Adaptation)](https://arxiv.org/abs/2106.09685) in a federated setting. Each client fine-tunes a Qwen2.5-0.5B causal language model on its own local data shard using LoRA adapters — only the small adapter weights (~0.4% of total parameters) are exchanged each round, keeping communication cost low regardless of base-model size.
+This example demonstrates how to use NVIDIA FLARE's [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.ccwf.html) workflow to fine-tune a large language model using [LoRA (Low-Rank Adaptation)](https://arxiv.org/abs/2106.09685) in a federated setting. Each client fine-tunes a Qwen2.5 causal language model (0.5B or 1.5B, configurable) on its own local data shard using LoRA adapters — only the small adapter weights are exchanged each round, keeping communication cost low regardless of base-model size.
 
 The complete example code can be found in the `swarm_pt` directory. It is recommended to create a virtual environment and run everything within a virtualenv.
 
@@ -40,10 +40,14 @@ swarm_pt/
 |-- client.py           # client LoRA fine-tuning script (runs as subprocess)
 |-- model.py            # QwenLoRAModelWrapper — LoRA-adapted model for server persistor
 |-- job.py              # job recipe using SimpleSwarmLearningRecipe
-|-- download_data.py    # pre-download wikitext-2 dataset and Qwen2.5-0.5B model
+|-- download_data.py    # pre-download wikitext-2 dataset and Qwen2.5 model
 |-- prepare_data.py     # split dataset among N clients
 |-- requirements.txt    # dependencies
 ```
+
+## Hardware Requirements
+
+A CUDA-capable GPU is strongly recommended. The base model is loaded in `bfloat16` and placed automatically via `device_map="auto"`, so it runs on GPU when available and falls back to CPU otherwise. Running 4 clients simultaneously on CPU is very slow (~10 minutes per step per client).
 
 ## Dataset
 
@@ -51,14 +55,16 @@ This example uses the [wikitext-2-raw-v1](https://huggingface.co/datasets/wikite
 
 ## Model
 
-[Qwen2.5-0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B) (Apache-2.0) is used as the base model. LoRA adapters are attached to the query and value projection layers of every attention block:
+[Qwen2.5-0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B) (Apache-2.0, default) or [Qwen2.5-1.5B](https://huggingface.co/Qwen/Qwen2.5-1.5B) is used as the base model, selectable via `--model_size`. LoRA adapters are attached to the query and value projection layers of every attention block:
 
 ```python
 LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"],
            lora_dropout=0.05, bias="none", task_type="CAUSAL_LM")
 ```
 
-The `QwenLoRAModelWrapper` in `model.py` overrides `state_dict()` / `load_state_dict()` to expose only the LoRA adapter parameters (~2 MB) to the server persistor and aggregator, instead of the full ~1 GB base model.
+The `QwenLoRAModelWrapper` in `model.py` overrides `state_dict()` / `load_state_dict()` to expose only the LoRA adapter parameters (~2 MB for 0.5B, ~4 MB for 1.5B) to the server persistor and aggregator, instead of the full base model weights (~1 GB / ~3 GB). The base model weights are loaded in `bfloat16` to halve memory usage.
+
+`load_state_dict()` also detects shape mismatches between a saved checkpoint and the current model size. If you switch `--model_size` between runs without clearing the workspace, the incompatible checkpoint is silently discarded and training restarts from a fresh adapter — no manual cleanup required.
 
 ## Client Code
 
@@ -96,13 +102,16 @@ This example uses [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidoc
 `job.py` uses `SimpleSwarmLearningRecipe` to configure the entire job with a few lines:
 
 ```python
+model_path = MODEL_SIZES[args.model_size]   # e.g. "Qwen/Qwen2.5-0.5B" or "Qwen/Qwen2.5-1.5B"
+
 recipe = SimpleSwarmLearningRecipe(
     name="ccwf_swarm_pt_lora",
-    model=QwenLoRAModelWrapper(model_path=MODEL_PATH),
+    model=QwenLoRAModelWrapper(model_path=model_path),
     num_rounds=args.num_rounds,
     train_script="client.py",
     min_clients=2,
     launch_external_process=True,       # run client.py as a subprocess
+    cuda_empty_cache=True,              # free GPU cache between rounds
     train_args={"script_args": script_args},
     expected_data_kind=DataKind.WEIGHT_DIFF,
     params_transfer_type=TransferType.DIFF,
@@ -135,9 +144,13 @@ pip install -r requirements.txt
 python download_data.py
 ```
 
-This downloads:
-- `wikitext-2-raw-v1` (train / validation / test splits) into the HuggingFace cache
-- `Qwen/Qwen2.5-0.5B` tokenizer and weights into the HuggingFace cache
+This downloads the `wikitext-2-raw-v1` dataset and the default `Qwen/Qwen2.5-0.5B` model into the HuggingFace cache.
+
+To download the 1.5B model instead:
+
+```bash
+python download_data.py --model_size 1.5B
+```
 
 To skip the model download (e.g. model is already cached or on a local mount):
 
@@ -178,10 +191,22 @@ With pre-split data (recommended):
 python job.py --n_clients 4 --num_rounds 5 --data_dir /tmp/swarm_data
 ```
 
+To use the larger 1.5B model:
+
+```bash
+python job.py --n_clients 4 --num_rounds 5 --model_size 1.5B --data_dir /tmp/swarm_data
+```
+
 With in-memory sharding (quick start, no prepare_data.py needed):
 
 ```bash
 python job.py --n_clients 4 --num_rounds 5
+```
+
+On CPU, reduce batch size and sequence length to keep step time manageable:
+
+```bash
+python job.py --n_clients 4 --num_rounds 5 --batch_size 1 --max_seq_len 32 --data_dir /tmp/swarm_data
 ```
 
 The simulation results are written to `/tmp/nvflare/simulation/ccwf_swarm_pt_lora/`.
@@ -200,6 +225,10 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 |---|---|---|
 | `--n_clients` | 2 | Number of simulated clients |
 | `--num_rounds` | 3 | Number of swarm learning rounds |
+| `--model_size` | `0.5B` | Base model size: `0.5B` or `1.5B` |
+| `--local_steps` | 10 | Gradient steps per client per round |
+| `--batch_size` | 4 | Training batch size per client |
+| `--max_seq_len` | 128 | Maximum tokenized sequence length |
 | `--data_dir` | *(empty)* | Pre-split data root from `prepare_data.py`; in-memory if omitted |
 | `--workspace` | `/tmp/nvflare/simulation` | Root directory for simulation output |
 | `--export_dir` | *(empty)* | If set, export job folder instead of running |

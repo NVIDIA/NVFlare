@@ -587,6 +587,8 @@ def download_object(
     if max_retries < 0:
         raise ValueError(f"max_retries must be non-negative, got {max_retries}")
     consecutive_timeouts = 0
+    total_bytes = 0
+    download_start = time.time()
     # Track current download state (None = initial request).
     # On retry, resend the same state so producer re-generates the same chunk.
     current_state = None
@@ -660,6 +662,12 @@ def download_object(
         assert isinstance(payload, dict)
         status = payload.get(_PropKey.STATUS)
         if status == ProduceRC.EOF:
+            elapsed = time.time() - download_start
+            size_mb = total_bytes / (1024 * 1024)
+            logger.info(
+                f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
+                f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
+            )
             consumer.download_completed(ref_id)
             return
         elif status == ProduceRC.ERROR:
@@ -668,6 +676,8 @@ def download_object(
 
         # continue
         data = payload.get(_PropKey.DATA)
+        if data is not None:
+            total_bytes += len(data)
         state = payload.get(_PropKey.STATE)
         try:
             new_state = consumer.consume(ref_id, state, data)

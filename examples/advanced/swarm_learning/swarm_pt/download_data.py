@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Download and cache the wikitext-2-raw-v1 dataset and the Qwen2.5-0.5B model.
+"""Download and cache the wikitext-2-raw-v1 dataset and the Qwen2.5-1.5B model.
 
 Run once before starting the simulation:
 
@@ -22,7 +22,7 @@ Run once before starting the simulation:
 
 Both downloads are licence-free:
   - wikitext-2-raw-v1  (Apache-2.0)
-  - Qwen/Qwen2.5-0.5B  (Apache-2.0, no HuggingFace gating)
+  - Qwen/Qwen2.5-1.5B  (Apache-2.0, no HuggingFace gating)
 """
 
 import argparse
@@ -47,12 +47,24 @@ def download_model(model_path: str, cache_dir=None):
     print("Model download complete.\n")
 
 
+MODEL_SIZES = {
+    "0.5B": "Qwen/Qwen2.5-0.5B",
+    "1.5B": "Qwen/Qwen2.5-1.5B",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pre-download dataset and model for the swarm LoRA example.")
     parser.add_argument(
         "--model_path",
-        default="Qwen/Qwen2.5-0.5B",
-        help="HuggingFace Hub model ID or local path (default: Qwen/Qwen2.5-0.5B)",
+        default=None,
+        help="HuggingFace Hub model ID or local path. Overrides --model_size when set.",
+    )
+    parser.add_argument(
+        "--model_size",
+        choices=list(MODEL_SIZES.keys()),
+        default="0.5B",
+        help="Qwen2.5 model size to download (default: 0.5B). Ignored when --model_path is set.",
     )
     parser.add_argument(
         "--skip_model",
@@ -66,12 +78,14 @@ def main():
     )
     args = parser.parse_args()
 
+    model_path = args.model_path if args.model_path else MODEL_SIZES[args.model_size]
+
     download_dataset(cache_dir=args.cache_dir)
 
     if not args.skip_model:
-        download_model(args.model_path, cache_dir=args.cache_dir)
+        download_model(model_path, cache_dir=args.cache_dir)
     else:
-        print(f"Skipping model download (--skip_model). Using '{args.model_path}' as-is.")
+        print(f"Skipping model download (--skip_model). Using '{model_path}' as-is.")
 
     print("All downloads complete. You can now run: python job.py")
 
