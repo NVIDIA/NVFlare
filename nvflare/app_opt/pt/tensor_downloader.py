@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
 import os
 import shutil
 import struct
@@ -30,6 +31,16 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from .lazy_tensor_dict import LazyTensorDict
 
 _TWO_MB = 2 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+def _cleanup_temp_dir(path: str) -> None:
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        logger.warning("failed to cleanup tensor offload temp dir '%s': %s", path, e)
 
 
 class TensorDownloadable(CacheableObject):
@@ -189,7 +200,7 @@ class DiskTensorConsumer(ItemConsumer):
 
     def download_failed(self, ref_id, reason: str):
         super().download_failed(ref_id, reason)
-        shutil.rmtree(self._temp_dir, ignore_errors=True)
+        _cleanup_temp_dir(self._temp_dir)
 
 
 def download_tensors_to_disk(
@@ -220,7 +231,7 @@ def download_tensors_to_disk(
             abort_signal=abort_signal,
         )
     except Exception:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        _cleanup_temp_dir(temp_dir)
         raise
 
     if consumer.error:
