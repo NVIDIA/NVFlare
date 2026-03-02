@@ -31,13 +31,13 @@ from safetensors import safe_open
 logger = logging.getLogger(__name__)
 
 
-def _cleanup_temp_dir(path: str, caller: str) -> None:
+def _cleanup_temp_dir(path: str) -> None:
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
         return
     except Exception as e:
-        logger.warning("failed to cleanup tensor offload temp dir '%s' in %s: %s", path, caller, e)
+        logger.warning("failed to cleanup tensor offload temp dir '%s': %s", path, e)
 
 
 class _TempDirRef:
@@ -54,7 +54,7 @@ class _TempDirRef:
     def cleanup(self):
         if not self._deleted:
             self._deleted = True
-            _cleanup_temp_dir(self.path, "_TempDirRef.cleanup")
+            _cleanup_temp_dir(self.path)
 
     def __del__(self):
         self.cleanup()

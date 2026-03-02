@@ -19,6 +19,7 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
+import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
 from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, _LazyRef, _TempDirRef
 
 
@@ -91,6 +92,22 @@ class TestTempDirRef:
 
         del lazy_ref  # last reference gone → _TempDirRef.__del__ fires
         assert not os.path.exists(temp_dir)
+
+    def test_cleanup_logs_warning_on_error(self, monkeypatch, caplog, tmp_path):
+        temp_dir = tmp_path / "nvflare_test_cleanup_warn"
+        temp_dir.mkdir()
+        ref = _TempDirRef(str(temp_dir))
+
+        def raise_cleanup_error(_):
+            raise PermissionError("permission denied")
+
+        monkeypatch.setattr(lazy_tensor_dict.shutil, "rmtree", raise_cleanup_error)
+
+        with caplog.at_level("WARNING"):
+            ref.cleanup()
+
+        assert "failed to cleanup tensor offload temp dir" in caplog.text
+        assert str(temp_dir) in caplog.text
 
 
 class TestLazyTensorDict:

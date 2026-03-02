@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-import logging
 import os
-import shutil
 import struct
 import tempfile
 from typing import Any, List, Optional, Tuple
@@ -28,19 +26,9 @@ from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 
-from .lazy_tensor_dict import LazyTensorDict
+from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir
 
 _TWO_MB = 2 * 1024 * 1024
-logger = logging.getLogger(__name__)
-
-
-def _cleanup_temp_dir(path: str) -> None:
-    try:
-        shutil.rmtree(path)
-    except FileNotFoundError:
-        return
-    except Exception as e:
-        logger.warning("failed to cleanup tensor offload temp dir '%s': %s", path, e)
 
 
 class TensorDownloadable(CacheableObject):
