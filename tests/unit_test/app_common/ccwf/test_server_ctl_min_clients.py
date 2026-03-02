@@ -110,9 +110,7 @@ def _add_client_status(ctrl, client_name, *, silent=False, all_done=False, ready
         cs.last_report_time = time.time() - ctrl.max_status_report_interval - 1
     else:
         cs.last_report_time = time.time()
-        cs.last_progress_time = (
-            time.time() - stalled_seconds if stalled_seconds > 0 else time.time()
-        )
+        cs.last_progress_time = time.time() - stalled_seconds if stalled_seconds > 0 else time.time()
     cs.status = StatusReport()
     cs.status.all_done = all_done
     cs.ready_time = time.time() if ready else None
