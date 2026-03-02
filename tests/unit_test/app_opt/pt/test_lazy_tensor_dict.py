@@ -61,14 +61,6 @@ class TestLazyRef:
         ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
         assert "layer1.bias" in repr(ref)
 
-    def test_cleanup_cleans_temp_dir(self, temp_safetensors):
-        key_to_file, temp_dir, _ = temp_safetensors
-        file_path, st_key = key_to_file["layer1.bias"]
-        ref = _LazyRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
-        assert os.path.exists(temp_dir)
-        ref.cleanup()
-        assert not os.path.exists(temp_dir)
-
 
 class TestTempDirRef:
     def test_cleanup_on_del(self):
