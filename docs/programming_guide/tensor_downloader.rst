@@ -106,6 +106,13 @@ This parameter is available on key workflow/controller configs, including:
    Tensor disk offload applies to PyTorch tensor payloads in streaming paths. If streaming is disabled
    (for example, by setting tensor chunk size to 0), the native in-memory path is used.
 
+.. warning::
+
+   Disk offload temporary files use Python's process temp directory (``tempfile.mkdtemp``), which follows
+   ``TMPDIR`` (or OS defaults such as ``/tmp``). In container deployments, default ``/tmp`` may be tmpfs
+   (RAM-backed), which can reduce or eliminate memory savings. For production usage, set ``TMPDIR`` to a
+   disk-backed mount for the server/aggregator process.
+
 Example: Using PyTorch FedAvg Recipe
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

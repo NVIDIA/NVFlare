@@ -86,6 +86,8 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 ## Temp File Lifecycle
 
 - Disk offload writes safetensors chunks under a temp dir (`nvflare_tensors_*`).
+- Temp dir selection follows Python `tempfile` behavior (`TMPDIR` / OS default, typically `/tmp`).
+- In containerized deployments, `/tmp` may be tmpfs (RAM-backed); set `TMPDIR` to a disk-backed mount to realize memory offload benefits.
 - `LazyTensorDict` owns a shared `_TempDirRef`; each lazy ref keeps this reference alive.
 - Runtime cleanup relies on GC: when lazy refs are released, `_TempDirRef.__del__` removes the temp dir.
 

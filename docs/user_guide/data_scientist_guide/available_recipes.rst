@@ -39,6 +39,12 @@ Most training recipes accept the following model-related parameters:
     * ``False`` (default): materialize in memory
     * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
 
+    .. warning::
+
+       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
+       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
+       ``TMPDIR`` to a disk-backed mount for the server process.
+
 See :ref:`job_recipe` for detailed explanations of these options.
 
 Federated Averaging (FedAvg)

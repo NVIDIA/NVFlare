@@ -791,6 +791,13 @@ The following SwarmClientController parameters are particularly important for la
 - ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
 - ``enable_tensor_disk_offload``: Materialize streamed PyTorch tensors to temporary disk files (lazy refs) instead of fully in memory. **Default: False**. **Suggested: True** for very large-model swarm jobs.
 
+.. warning::
+
+   With ``enable_tensor_disk_offload=True``, temporary files are created under the process temp directory
+   (``TMPDIR`` or OS default such as ``/tmp``). In containerized environments, ``/tmp`` is often tmpfs
+   (RAM-backed), which can negate memory offload benefits. Set ``TMPDIR`` to a disk-backed mount on
+   aggregator clients.
+
 **Example client config for large models:**
 
 .. code-block::
