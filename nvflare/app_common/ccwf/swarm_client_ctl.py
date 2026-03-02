@@ -493,9 +493,10 @@ class SwarmClientController(ClientSideController):
         # download transaction stays alive for learn_task_timeout seconds — long
         # enough for the receiving subprocess to pull the global model.  Without
         # this, via_downloader._create_downloader() falls back to
-        # _MIN_DOWNLOAD_TIMEOUT (60 s), which is too short for large-model
-        # transfers.  task_controller.broadcast_and_wait() preserves a pre-set
-        # MSG_ROOT_TTL instead of overwriting it with the short ACK timeout.
+        # _MIN_DOWNLOAD_TIMEOUT (3600 s), which may still be too short for very
+        # large models or slow networks.  task_controller.broadcast_and_wait()
+        # preserves a pre-set MSG_ROOT_TTL instead of overwriting it with the
+        # short ACK timeout.
         if self.learn_task_timeout:
             task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
 
@@ -560,6 +561,33 @@ class SwarmClientController(ClientSideController):
             self.log_error(fl_ctx, f"exception in aggregation: {secure_format_traceback()}")
             self.update_status(action="aggregate", error=ReturnCode.EXECUTION_EXCEPTION)
             return
+
+        # Defensive check: LazyDownloadRefs must never reach shareable_to_learnable().
+        # Under normal operation _resolve_lazy_refs() in do_learn_task() handles the
+        # local-aggr path.  This guard is a last-resort backstop for future code paths
+        # that might bypass that call (e.g. multi-hop or relay scenarios).
+        #
+        # Guard is limited to DXO Shareables (the only kind that carries tensor payloads).
+        # from_shareable() raises ValueError for non-DXO Shareables so we check the
+        # CONTENT_TYPE header first to avoid treating that as a guard failure.
+        # The except block uses logger.warning (not log_warning) to avoid calling
+        # generate_log_message(), which requires fl_ctx to have a real peer context.
+        try:
+            from nvflare.apis.dxo import from_shareable as _from_shareable
+            from nvflare.apis.shareable import ReservedHeaderKey as _RHK
+            from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+            if aggr_result.get_header(_RHK.CONTENT_TYPE) == "DXO":
+                _dxo = _from_shareable(aggr_result)
+                if _dxo.data and any(isinstance(v, LazyDownloadRef) for v in _dxo.data.values()):
+                    self.log_error(
+                        fl_ctx,
+                        "LazyDownloadRef objects reached _end_gather() — resolving now. "
+                        "This indicates _resolve_lazy_refs() was not called on the local-aggr path.",
+                    )
+                    aggr_result = self._resolve_lazy_refs(aggr_result, fl_ctx)
+        except Exception:
+            self.logger.warning(f"LazyDownloadRef guard check failed: {secure_format_traceback()}")
 
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
@@ -682,6 +710,46 @@ class SwarmClientController(ClientSideController):
         rc = gatherer.can_accept_submission(client_name, request, fl_ctx)
         self.log_debug(fl_ctx, f"got permission from gatherer: {rc}")
         return make_reply(rc)
+
+    def _resolve_lazy_refs(self, result: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Resolve any LazyDownloadRef objects in result by downloading from subprocess.
+
+        When the subprocess sends its result via CellPipe with pass_through_on_send=True,
+        Adapter.call() decodes the message with PASS_THROUGH=True and creates
+        LazyDownloadRef objects (one per large tensor) instead of downloading the tensors.
+        These placeholders carry the subprocess's fqcn and ref_id so that a downstream
+        hop can download from the subprocess DownloadService on demand.
+
+        For the remote aggregator path this download is triggered automatically by the
+        FOBS encode/decode inside broadcast_and_wait() (Fix 14).  For the local
+        aggregation path (aggr == self.me) there is no encode/decode, so we must
+        trigger the download explicitly here before the result reaches the gatherer.
+
+        Uses an FOBS round-trip:
+          encode: LazyDownloadRefDecomposer.decompose() re-emits the original subprocess
+                  datum (fqcn + ref_id) as a TEXT datum — no CELL needed in the encode ctx.
+          decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
+                  which downloads real numpy arrays from the subprocess DownloadService.
+                  cell.get_fobs_context() supplies the CELL so the download can route to
+                  the subprocess via the cell network.
+        """
+        import nvflare.fuel.utils.fobs as fobs
+
+        engine = fl_ctx.get_engine()
+        if not engine:
+            return result
+        # Not all engine implementations expose get_cell() (e.g. test stubs).
+        # If the method is absent or returns None, skip the download — there is
+        # no cell network available to route the download through.
+        get_cell = getattr(engine, "get_cell", None)
+        if not get_cell:
+            return result
+        cell = get_cell()
+        if not cell:
+            return result
+        encoded = fobs.dumps(result)
+        decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+        return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
@@ -872,6 +940,11 @@ class SwarmClientController(ClientSideController):
             if aggr == self.me:
                 # Avoid synchronous self-message path through CoreCell._send_direct_message.
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
+                # For the remote path, LazyDownloadRefs are resolved automatically during
+                # the FOBS encode/decode inside broadcast_and_wait() (Fix 14).  The local
+                # path has no such encode/decode, so we resolve them explicitly here
+                # before the result reaches the gatherer and ultimately shareable_to_learnable().
+                result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
                 local_fl_ctx.set_peer_context(engine.new_context())
