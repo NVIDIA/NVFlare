@@ -92,6 +92,7 @@ def _make_controller():
     ctl.memory_gc_rounds = 1
     ctl.cuda_empty_cache = False
     ctl._aggr_round_count = 0
+    ctl.forward_pass_through = False
     # component stubs
     ctl.shareable_generator = MagicMock()
     ctl.aggregator = MagicMock()
@@ -154,8 +155,10 @@ class TestResolveRef(unittest.TestCase):
         mock_fl_ctx = MagicMock()
         mock_fl_ctx.get_engine.return_value.get_cell.return_value = mock_cell
 
-        with patch("nvflare.fuel.utils.fobs.dumps", return_value=b"encoded") as mock_dumps, \
-             patch("nvflare.fuel.utils.fobs.loads", return_value=real_result) as mock_loads:
+        with (
+            patch("nvflare.fuel.utils.fobs.dumps", return_value=b"encoded") as mock_dumps,
+            patch("nvflare.fuel.utils.fobs.loads", return_value=real_result) as mock_loads,
+        ):
             out = ctl._resolve_lazy_refs(lazy_result, mock_fl_ctx)
 
         mock_dumps.assert_called_once_with(lazy_result)
@@ -164,13 +167,17 @@ class TestResolveRef(unittest.TestCase):
         # cell.get_fobs_context must be called with props containing PASS_THROUGH=False
         mock_cell.get_fobs_context.assert_called_once()
         props = mock_cell.get_fobs_context.call_args.kwargs.get("props", {})
-        self.assertFalse(props.get(FOBSContextKey.PASS_THROUGH, True),
-                         "get_fobs_context must be called with PASS_THROUGH=False")
+        self.assertFalse(
+            props.get(FOBSContextKey.PASS_THROUGH, True), "get_fobs_context must be called with PASS_THROUGH=False"
+        )
 
         # fobs.loads must receive the decode context as fobs_ctx kwarg
         load_kwargs = mock_loads.call_args.kwargs
-        self.assertIs(load_kwargs.get("fobs_ctx"), fake_decode_ctx,
-                      "fobs.loads must receive the decode context from cell.get_fobs_context()")
+        self.assertIs(
+            load_kwargs.get("fobs_ctx"),
+            fake_decode_ctx,
+            "fobs.loads must receive the decode context from cell.get_fobs_context()",
+        )
         self.assertIs(out, real_result)
 
 
@@ -250,16 +257,21 @@ class TestLocalAggregationPath(unittest.TestCase):
             MockGatherer.return_value = MagicMock()
             ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
 
-        self.assertEqual(len(ctl._resolve_calls), 1,
-                         "_resolve_lazy_refs should be called exactly once")
-        self.assertIs(ctl._resolve_calls[0], lazy_result,
-                      "the lazy result from execute_learn_task must be passed to _resolve_lazy_refs")
-        self.assertEqual(len(ctl._process_calls), 1,
-                         "_process_learn_result should be called exactly once")
-        self.assertIsNot(ctl._process_calls[0], lazy_result,
-                         "_process_learn_result must receive the resolved (non-lazy) result")
-        self.assertIs(ctl._process_calls[0], real_result,
-                      "_process_learn_result must receive the real-array result from _resolve_lazy_refs")
+        self.assertEqual(len(ctl._resolve_calls), 1, "_resolve_lazy_refs should be called exactly once")
+        self.assertIs(
+            ctl._resolve_calls[0],
+            lazy_result,
+            "the lazy result from execute_learn_task must be passed to _resolve_lazy_refs",
+        )
+        self.assertEqual(len(ctl._process_calls), 1, "_process_learn_result should be called exactly once")
+        self.assertIsNot(
+            ctl._process_calls[0], lazy_result, "_process_learn_result must receive the resolved (non-lazy) result"
+        )
+        self.assertIs(
+            ctl._process_calls[0],
+            real_result,
+            "_process_learn_result must receive the real-array result from _resolve_lazy_refs",
+        )
 
     def test_local_aggr_no_resolve_if_execute_fails(self):
         """If execute_learn_task() returns an error RC, _resolve_lazy_refs() must NOT be called."""
@@ -277,8 +289,7 @@ class TestLocalAggregationPath(unittest.TestCase):
             MockGatherer.return_value = MagicMock()
             ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
 
-        self.assertEqual(ctl._resolve_calls, [],
-                         "_resolve_lazy_refs must NOT be called when execute_learn_task fails")
+        self.assertEqual(ctl._resolve_calls, [], "_resolve_lazy_refs must NOT be called when execute_learn_task fails")
 
 
 class TestRemotePathUnchanged(unittest.TestCase):
@@ -328,8 +339,7 @@ class TestRemotePathUnchanged(unittest.TestCase):
         with patch("nvflare.app_common.ccwf.swarm_client_ctl.Gatherer"):
             ctl.do_learn_task("learn", task_data, fl_ctx, abort_signal)
 
-        self.assertEqual(resolve_called, [],
-                         "_resolve_lazy_refs must NOT be called for remote aggregator path")
+        self.assertEqual(resolve_called, [], "_resolve_lazy_refs must NOT be called for remote aggregator path")
         ctl.broadcast_and_wait.assert_called_once()
 
 
@@ -380,12 +390,10 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
 
         ctl._end_gather(mock_gatherer)
 
-        self.assertEqual(len(resolve_calls), 1,
-                         "defensive guard must call _resolve_lazy_refs exactly once")
+        self.assertEqual(len(resolve_calls), 1, "defensive guard must call _resolve_lazy_refs exactly once")
         ctl.log_error.assert_called()  # the unexpected path must be logged as an error
         called_with = ctl.shareable_generator.shareable_to_learnable.call_args[0][0]
-        self.assertIs(called_with, real_aggr,
-                      "shareable_to_learnable must receive the resolved result, not lazy refs")
+        self.assertIs(called_with, real_aggr, "shareable_to_learnable must receive the resolved result, not lazy refs")
 
     def test_defensive_guard_does_not_interfere_with_real_arrays(self):
         """When aggr_result already contains real arrays, the guard must not call
@@ -409,8 +417,7 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
         ctl._end_gather(mock_gatherer)
 
         # Guard must not activate for clean (non-lazy) aggregated results
-        self.assertEqual(resolve_calls, [],
-                         "_resolve_lazy_refs must NOT be called when result has real arrays")
+        self.assertEqual(resolve_calls, [], "_resolve_lazy_refs must NOT be called when result has real arrays")
 
 
 if __name__ == "__main__":

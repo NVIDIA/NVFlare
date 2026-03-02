@@ -288,6 +288,7 @@ class SwarmClientController(ClientSideController):
         max_concurrent_submissions: int = 1,
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
+        forward_pass_through: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -384,6 +385,7 @@ class SwarmClientController(ClientSideController):
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
+        self.forward_pass_through = forward_pass_through
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -499,6 +501,15 @@ class SwarmClientController(ClientSideController):
         # short ACK timeout.
         if self.learn_task_timeout:
             task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
+
+        # When forward_pass_through is enabled, request PASS_THROUGH decode at the
+        # receiving trainer CJ so tensors arrive as LazyDownloadRef placeholders.
+        # The subprocess then downloads the model directly from this aggregator's
+        # DownloadService, bypassing the trainer CJ entirely.
+        # aux_runner.py propagates ReservedHeaderKey.PASS_THROUGH → MessageHeaderKey.PASS_THROUGH
+        # on the outgoing cell message (same pattern as MSG_ROOT_TTL).
+        if self.forward_pass_through:
+            task_data.set_header(ReservedHeaderKey.PASS_THROUGH, True)
 
         targets = copy.copy(clients)
         if aggr not in targets:
@@ -821,7 +832,13 @@ class SwarmClientController(ClientSideController):
         if not base_model:
             base_model = Learnable()
             fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, base_model, private=True, sticky=True)
-        global_weights = self.shareable_generator.shareable_to_learnable(task_data, fl_ctx)
+        # With forward_pass_through, task_data.dxo.data holds LazyDownloadRef placeholders.
+        # Resolve them before shareable_to_learnable so GLOBAL_MODEL receives real tensors —
+        # required by the WEIGHT_DIFF branch of _end_gather() (base_weights += diff).
+        # task_data (with refs intact) is still passed to execute_learn_task() below so
+        # the subprocess can download directly from the aggregator DownloadService.
+        task_data_for_model = self._resolve_lazy_refs(task_data, fl_ctx) if self.forward_pass_through else task_data
+        global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         self.log_debug(fl_ctx, f"current global model: {global_weights}")
 
