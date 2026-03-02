@@ -117,6 +117,17 @@ class TestIsAggregatableMetricValue:
         with pytest.raises(UnexpectedError, match="unexpected"):
             _is_aggregatable_metric_value(BadValue())
 
+    def test_object_raising_runtime_error_propagates(self):
+        class BadValue:
+            def __mul__(self, other):
+                raise RuntimeError("runtime failure")
+
+            def __add__(self, other):
+                return self
+
+        with pytest.raises(RuntimeError, match="runtime failure"):
+            _is_aggregatable_metric_value(BadValue())
+
 
 class TestFilterAggregatableMetrics:
     def test_none_or_empty_returns_empty_dict(self):
