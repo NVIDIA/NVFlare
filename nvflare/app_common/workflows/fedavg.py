@@ -137,8 +137,6 @@ class FedAvg(BaseFedAvg):
         previous_disk_offload = apply_enable_tensor_disk_offload(
             engine=getattr(self, "engine", None),
             enabled=self.enable_tensor_disk_offload,
-            warning_fn=self.warning,
-            info_fn=self.info,
         )
         try:
             self.info(center_message("Start FedAvg."))
@@ -235,7 +233,6 @@ class FedAvg(BaseFedAvg):
             restore_enable_tensor_disk_offload(
                 engine=getattr(self, "engine", None),
                 previous_value=previous_disk_offload,
-                info_fn=self.info,
             )
 
     def _aggregate_one_result(self, result: FLModel) -> None:
