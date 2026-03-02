@@ -361,12 +361,22 @@ class FlareAgent:
                 {FOBSContextKey.DOWNLOAD_COMPLETE_CB: lambda tid, status, objs: download_done.set()}
             )
             try:
+                send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
                 if not sent:
                     return False
-                if not download_done.wait(timeout=self._download_complete_timeout):
+                send_elapsed = time.time() - send_start
+                self.logger.info(
+                    f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                    f"waiting up to {self._download_complete_timeout}s for server tensor download"
+                )
+                wait_start = time.time()
+                if download_done.wait(timeout=self._download_complete_timeout):
+                    download_elapsed = time.time() - wait_start
+                    self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                else:
                     self.logger.warning(
-                        f"Download completion not signalled within {self._download_complete_timeout}s; "
+                        f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
                         "proceeding (server may still be downloading from this process)"
                     )
             finally:

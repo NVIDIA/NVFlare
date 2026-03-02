@@ -620,7 +620,7 @@ def test_timeout_warning_min_dl_less_than_per_req(monkeypatch):
 
     def _fake_get(name, default):
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
-            return 60.0   # explicitly small → min_dl < per_req
+            return 60.0  # explicitly small → min_dl < per_req
         if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
             return 600.0
         return default

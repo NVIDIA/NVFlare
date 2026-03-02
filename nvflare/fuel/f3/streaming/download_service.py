@@ -232,9 +232,12 @@ class _Transaction:
         self.timeout = timeout
         self.num_receivers = num_receivers
         self.last_active_time = time.time()
+        self.start_time = time.time()
+        self.total_bytes = 0
         self.transaction_done_cb = transaction_done_cb
         self.cb_kwargs = cb_kwargs
         self.refs = []
+        self.logger = get_obj_logger(self)
 
     def mark_active(self):
         """Called to update the last active time of the transaction.
@@ -284,6 +287,13 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
+        elapsed = time.time() - self.start_time
+        size_mb = self.total_bytes / (1024 * 1024)
+        self.logger.info(
+            f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
+            f"size={size_mb:.1f}MB ({self.total_bytes:,} bytes)"
+        )
+
         for ref in self.refs:
             obj = ref.obj
             assert isinstance(obj, Downloadable)
@@ -456,7 +466,9 @@ class DownloadService:
             )
             return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
         else:
-            # continue
+            # continue — accumulate bytes for timing summary in transaction_done()
+            if data is not None:
+                tx.total_bytes += len(data)
             return make_reply(
                 ReturnCode.OK,
                 body={

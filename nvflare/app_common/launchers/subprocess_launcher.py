@@ -62,9 +62,16 @@ def get_line(buffer: bytearray):
     return line, remaining
 
 
-def log_subprocess_output(process, logger):
+def _make_subprocess_log_prefix(fl_ctx: FLContext, pid: int) -> str:
+    site_name = fl_ctx.get_identity_name(default="?")
+    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID, "?")
+    return f"[subprocess site={site_name} job={job_id} pid={pid}]"
+
+
+def log_subprocess_output(process, logger, prefix: str = ""):
 
     buffer = bytearray()
+    pre = f"{prefix} " if prefix else ""
     while True:
         chunk = process.stdout.read1(4096)
         if not chunk:
@@ -77,10 +84,10 @@ def log_subprocess_output(process, logger):
                 break
 
             if line:
-                logger.info(line)
+                logger.info(f"{pre}{line}")
 
     if buffer:
-        logger.info(buffer.decode())
+        logger.info(f"{pre}{buffer.decode()}")
 
 
 class SubprocessLauncher(Launcher):
@@ -144,7 +151,8 @@ class SubprocessLauncher(Launcher):
                 self._process = subprocess.Popen(
                     command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
                 )
-                self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
+                prefix = _make_subprocess_log_prefix(fl_ctx, self._process.pid)
+                self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger, prefix))
                 self._log_thread.start()
 
     def _stop_external_process(self):
