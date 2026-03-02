@@ -20,7 +20,6 @@
 
 set -ex
 BUILD_TYPE=numpy
-TF_PYTHON_BIN=${TF_PYTHON_BIN:-python3.14}
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -46,27 +45,14 @@ remove_pipenv() {
 
 integration_test_tf() {
     echo "Run TF integration test..."
-    if ! command -v "${TF_PYTHON_BIN}" > /dev/null; then
-        echo "WARNING: ${TF_PYTHON_BIN} not found, trying python3.13"
-        TF_PYTHON_BIN=python3.13
-    fi
-    if ! command -v "${TF_PYTHON_BIN}" > /dev/null; then
-        echo "WARNING: ${TF_PYTHON_BIN} not found, falling back to python3.12"
-        TF_PYTHON_BIN=python3.12
-    fi
-    if ! command -v "${TF_PYTHON_BIN}" > /dev/null; then
-        echo "ERROR: cannot find a Python binary for TensorFlow integration tests"
-        exit 1
-    fi
-    # since running directly in container, point python/python3 to the selected version
-    python_bin_path=$(command -v "${TF_PYTHON_BIN}")
-    ln -sfn "${python_bin_path}" /usr/bin/python
-    ln -sfn "${python_bin_path}" /usr/bin/python3
+    # since running directly in container, point python to python3.14
+    ln -sfn /usr/bin/python3.14 /usr/bin/python
+    ln -sfn /usr/bin/python3.14 /usr/bin/python3
     # somehow the base container has blinker which should be removed
     apt remove -y python3-blinker python-blinker-doc || true
     # pipenv does not work with TensorFlow so using pip
-    "${TF_PYTHON_BIN}" -m pip install -e .[dev]
-    "${TF_PYTHON_BIN}" -m pip install tensorflow[and-cuda]
+    python3.14 -m pip install -e .[dev]
+    python3.14 -m pip install tensorflow[and-cuda]
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job

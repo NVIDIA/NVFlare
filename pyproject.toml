@@ -12,8 +12,7 @@ skip_glob = [ "*.pyi", "**/*_pb2*" ]
 
 [tool.black]
 line-length = 120
-# black==24.8.0 supports up to py313; add py314 when black version is upgraded.
-target-version = ["py39", "py310", "py311", "py312", "py313"]
+target-version = ["py39", "py310", "py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 exclude = '''
 (
