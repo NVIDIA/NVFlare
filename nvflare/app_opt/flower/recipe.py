@@ -18,7 +18,6 @@ from importlib.metadata import version as get_package_version
 from typing import Optional
 
 from nvflare.app_common.tie.defs import Constant
-from nvflare.app_opt.flower.flower_job import FlowerJob
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.recipe.spec import Recipe
@@ -52,6 +51,12 @@ def _validate_flwr_version():
         raise RuntimeError(
             f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         )
+
+
+def _create_flower_job(**kwargs):
+    from nvflare.app_opt.flower.flower_job import FlowerJob
+
+    return FlowerJob(**kwargs)
 
 
 class FlowerRecipe(Recipe):
@@ -122,7 +127,7 @@ class FlowerRecipe(Recipe):
         # only external client api works with the current flower integration
         env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
-        job = FlowerJob(
+        job = _create_flower_job(
             name=name,
             flower_content=flower_content,
             min_clients=min_clients,
