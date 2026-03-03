@@ -74,8 +74,8 @@ def run_command_in_subprocess(command, stdin_data=None):
         env=new_env,
     )
     if stdin_data:
-        process.stdin.write(stdin_data)
-        process.stdin.close()
+        # Use communicate() to avoid deadlock if stdin pipe buffer fills
+        process.communicate(input=stdin_data)
     return process
 
 
