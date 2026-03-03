@@ -62,12 +62,7 @@ def get_line(buffer: bytearray):
     return line, remaining
 
 
-def _make_subprocess_log_prefix(fl_ctx: FLContext, pid: int) -> str:
-    site_name = fl_ctx.get_identity_name(default="?")
-    return f"[{site_name}]"
-
-
-def log_subprocess_output(process, logger, prefix: str = ""):
+def log_subprocess_output(process, logger):
     # Subprocess lines are already fully-formatted log records (timestamp + logger + level + message)
     # and the subprocess itself adds the site name to its own output (e.g. "[site-1] step=1/10 loss=...").
     # Write them directly to stdout as-is; adding a prefix here produces double site labels.
@@ -151,8 +146,7 @@ class SubprocessLauncher(Launcher):
                 self._process = subprocess.Popen(
                     command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
                 )
-                prefix = _make_subprocess_log_prefix(fl_ctx, self._process.pid)
-                self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger, prefix))
+                self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
                 self._log_thread.start()
 
     def _stop_external_process(self):

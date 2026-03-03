@@ -121,12 +121,17 @@ class TestConfigureSubprocessLogging:
         mock_apply.assert_not_called()
 
     def test_file_handlers_stripped_keeps_only_console(self):
-        """Only consoleHandler is kept; all file handlers are removed from root logger config."""
+        """Only consoleHandler is kept; all file handlers are removed from root and named loggers."""
         api = _make_api()
         client_config = _make_client_config("/ws")
 
         original_handlers = ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
-        dict_config = {"loggers": {"root": {"handlers": list(original_handlers)}}}
+        dict_config = {
+            "loggers": {
+                "root": {"handlers": list(original_handlers)},
+                "nvflare": {"handlers": list(original_handlers)},
+            }
+        }
         mock_conf = MagicMock()
         mock_conf.to_dict.return_value = dict_config
 
@@ -143,8 +148,10 @@ class TestConfigureSubprocessLogging:
             api._configure_subprocess_logging(client_config)
 
         assert "cfg" in captured, "apply_log_config must be called"
-        kept = captured["cfg"]["loggers"]["root"]["handlers"]
-        assert kept == ["consoleHandler"], f"Only consoleHandler must be kept; got {kept}"
+        kept_root = captured["cfg"]["loggers"]["root"]["handlers"]
+        assert kept_root == ["consoleHandler"], f"Only consoleHandler must be kept on root; got {kept_root}"
+        kept_named = captured["cfg"]["loggers"]["nvflare"]["handlers"]
+        assert kept_named == ["consoleHandler"], f"Only consoleHandler must be kept on named logger; got {kept_named}"
 
     def test_apply_log_config_called_with_dict_and_workspace(self):
         """apply_log_config() is called with the filtered dict and workspace_dir."""

@@ -20,12 +20,10 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.app_common.launchers.subprocess_launcher import (
     SubprocessLauncher,
-    _make_subprocess_log_prefix,
     log_subprocess_output,
 )
 
@@ -125,21 +123,14 @@ class TestSubprocessLauncher:
         assert launcher._clean_up_script == "echo 'cleanup'"
         assert launcher._shutdown_timeout == 0.0
 
-    def test_make_subprocess_log_prefix(self):
-        fl_ctx = FLContext()
-        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "job_123", private=False, sticky=False)
-        fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=False)
-        prefix = _make_subprocess_log_prefix(fl_ctx, pid=4321)
-        assert prefix == "[site-1]"
-
-    def test_log_subprocess_output_with_prefix(self, capsys):
+    def test_log_subprocess_output(self, capsys):
         class _Proc:
             pass
 
         p = _Proc()
         p.stdout = BufferedReader(BytesIO(b"line1\nline2\r\npartial"))
         logger = Mock()
-        log_subprocess_output(p, logger, prefix="[ctx]")
+        log_subprocess_output(p, logger)
 
         captured = capsys.readouterr()
         assert captured.out.splitlines() == ["line1", "line2", "partial"]

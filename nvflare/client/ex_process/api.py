@@ -100,10 +100,10 @@ class ExProcessClientAPI(APISpec):
 
         Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
         .yml, .default) are found automatically — the hardcoded `.json` suffix is
-        not assumed.  Only consoleHandler is kept in the root logger so logs flow
-        through SubprocessLauncher's stdout capture to the parent's log files.
-        Enabling file handlers in both parent and subprocess would produce duplicate
-        writes to the same rotating log files.
+        not assumed.  Only consoleHandler is kept on every logger (root and named)
+        so logs flow through SubprocessLauncher's stdout capture to the parent's
+        log files.  Enabling file handlers in both parent and subprocess would
+        produce duplicate writes to the same rotating log files.
         """
         try:
             task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
@@ -118,11 +118,13 @@ class ExProcessClientAPI(APISpec):
                 return
 
             dict_config = conf.to_dict()
-            # Keep only consoleHandler on the root logger — subprocess stdout is
-            # captured by SubprocessLauncher and re-logged by the parent process.
-            root_cfg = dict_config.get("loggers", {}).get("root", {})
-            if "handlers" in root_cfg:
-                root_cfg["handlers"] = [h for h in root_cfg["handlers"] if h == "consoleHandler"]
+            # Keep only consoleHandler on every logger (root and named) — subprocess
+            # stdout is captured by SubprocessLauncher and re-logged by the parent.
+            # Leaving file handlers active in both parent and subprocess produces
+            # duplicate writes to the same rotating log files.
+            for logger_cfg in dict_config.get("loggers", {}).values():
+                if "handlers" in logger_cfg:
+                    logger_cfg["handlers"] = [h for h in logger_cfg["handlers"] if h == "consoleHandler"]
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
