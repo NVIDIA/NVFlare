@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for TFModel dict config and initial_ckpt support."""
+"""Unit tests for TFModel dict config, initial_ckpt, and raw Keras model support."""
+
+import os
 
 import pytest
 
@@ -122,5 +124,82 @@ class TestTFModelPersistorDictConfig:
             # The path validation happens at runtime in load_model()
             persistor = TFModelPersistor(model={"args": {}})
             assert persistor.model == {"args": {}}
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+
+class TestTFModelRawKeras:
+    """Tests for raw (non-subclassed) Keras model handling."""
+
+    def test_is_raw_keras_model_sequential(self):
+        """Raw tf.keras.Sequential should be detected as raw Keras model."""
+        try:
+            import tensorflow as tf
+
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            model = tf.keras.Sequential([tf.keras.layers.Dense(2)])
+            assert TFModel._is_raw_keras_model(model) is True
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+    def test_is_raw_keras_model_subclassed(self):
+        """User-subclassed model should NOT be detected as raw Keras model."""
+        try:
+            import tensorflow as tf
+
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            class UserNet(tf.keras.Sequential):
+                def __init__(self):
+                    super().__init__([tf.keras.layers.Dense(2)])
+
+            model = UserNet()
+            assert TFModel._is_raw_keras_model(model) is False
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+    def test_raw_keras_model_creates_saved_file(self):
+        """Raw Keras model should be saved to a .keras file."""
+        try:
+            import tensorflow as tf
+
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            model = tf.keras.Sequential([tf.keras.layers.Dense(2, input_shape=(4,))])
+            tf_model = TFModel(model=model)
+
+            persistor = tf_model._create_persistor_for_model()
+
+            # Persistor should have model=None and a relative ckpt path
+            assert persistor.model is None
+            assert persistor.source_ckpt_file_full_name == "initial_model.keras"
+
+            # The saved file should exist on disk
+            assert hasattr(tf_model, "_saved_model_file")
+            assert os.path.exists(tf_model._saved_model_file)
+            assert tf_model._saved_model_file.endswith(".keras")
+        except ImportError:
+            pytest.skip("TensorFlow not installed")
+
+    def test_subclassed_model_uses_model_directly(self):
+        """User-subclassed model should pass model object to persistor."""
+        try:
+            import tensorflow as tf
+
+            from nvflare.app_opt.tf.job_config.model import TFModel
+
+            class UserNet(tf.keras.Sequential):
+                def __init__(self):
+                    super().__init__([tf.keras.layers.Dense(2)])
+
+            model = UserNet()
+            tf_model = TFModel(model=model)
+
+            persistor = tf_model._create_persistor_for_model()
+
+            # Persistor should have the model instance directly
+            assert persistor.model is model
+            assert persistor.source_ckpt_file_full_name is None
         except ImportError:
             pytest.skip("TensorFlow not installed")

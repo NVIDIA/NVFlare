@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, Union
 import tensorflow as tf
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -99,43 +100,52 @@ class TFModelPersistor(ModelPersistor):
 
         # Priority: source_ckpt_file_full_name > previously saved model > model weights
         if self.source_ckpt_file_full_name:
-            # If user explicitly specified a checkpoint, it MUST exist (fail fast to catch config errors)
-            if not os.path.exists(self.source_ckpt_file_full_name):
+            # Resolve relative paths against the app's custom directory
+            if os.path.isabs(self.source_ckpt_file_full_name):
+                ckpt_path = self.source_ckpt_file_full_name
+            else:
+                app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+                ckpt_path = os.path.join(
+                    app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME, self.source_ckpt_file_full_name
+                )
+
+            # Checkpoint MUST exist at runtime (fail fast to catch config errors)
+            if not os.path.exists(ckpt_path):
                 self.system_panic(
-                    reason=f"Source checkpoint not found: {self.source_ckpt_file_full_name}. "
+                    reason=f"Source checkpoint not found: {ckpt_path}. "
                     "Check that the checkpoint exists at runtime.",
                     fl_ctx=fl_ctx,
                 )
                 return None
 
-            self.logger.info(f"Loading model from source checkpoint: {self.source_ckpt_file_full_name}")
+            self.logger.info(f"Loading model from source checkpoint: {ckpt_path}")
             # Check if it's a full model file or just weights
-            if self.source_ckpt_file_full_name.endswith((".h5", ".keras")):
+            if ckpt_path.endswith((".h5", ".keras")):
                 try:
                     # Try loading as full model first
-                    self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+                    self.model = tf.keras.models.load_model(ckpt_path)
                 except Exception as e:
                     # Fall back to loading weights only if file format suggests weights-only
                     self.logger.info(f"Could not load as full model ({e}), attempting weights-only load")
                     if self.model is not None:
-                        self.model.load_weights(self.source_ckpt_file_full_name)
+                        self.model.load_weights(ckpt_path)
                     else:
                         self.system_panic(
-                            reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model. "
+                            reason=f"Cannot load weights from {ckpt_path} without a model. "
                             "Provide a model instance or use a full model file.",
                             fl_ctx=fl_ctx,
                         )
                         return None
-            elif os.path.isdir(self.source_ckpt_file_full_name):
+            elif os.path.isdir(ckpt_path):
                 # SavedModel directory
-                self.model = tf.keras.models.load_model(self.source_ckpt_file_full_name)
+                self.model = tf.keras.models.load_model(ckpt_path)
             else:
                 # Assume weights file
                 if self.model is not None:
-                    self.model.load_weights(self.source_ckpt_file_full_name)
+                    self.model.load_weights(ckpt_path)
                 else:
                     self.system_panic(
-                        reason=f"Cannot load weights from {self.source_ckpt_file_full_name} without a model.",
+                        reason=f"Cannot load weights from {ckpt_path} without a model.",
                         fl_ctx=fl_ctx,
                     )
                     return None

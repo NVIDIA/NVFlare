@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 from typing import Any, Dict, Optional, Union
 
 import tensorflow as tf
@@ -94,12 +96,58 @@ class TFModel:
             )
 
         persistor_id = job.add_component(comp_id="persistor", obj=persistor, ctx=ctx)
+
+        # If a raw Keras model was saved to a temp file, include it in the job
+        if hasattr(self, "_saved_model_file") and self._saved_model_file:
+            job.add_file_source(
+                src_path=self._saved_model_file,
+                dest_dir=None,
+                app_folder_type=None,
+                ctx=ctx,
+            )
+
         return persistor_id
+
+    @staticmethod
+    def _is_raw_keras_model(model: tf.keras.Model) -> bool:
+        """Check if a model is a non-subclassed (raw) Keras model.
+
+        Non-subclassed models (e.g. tf.keras.Sequential([...])) have their type's
+        module starting with "keras" or "tensorflow". User subclasses (e.g.
+        class Net(tf.keras.Sequential)) have the user's own module name.
+        """
+        module = type(model).__module__ or ""
+        return module.startswith("keras") or module.startswith("tensorflow")
 
     def _create_persistor_for_model(self) -> ModelPersistor:
         """Create persistor for tf.keras.Model."""
+        if self._is_raw_keras_model(self.model):
+            return self._create_persistor_for_raw_keras_model()
+
         persistor_kwargs = {"model": self.model}
 
+        if self.initial_ckpt:
+            persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
+
+        return TFModelPersistor(**persistor_kwargs)
+
+    def _create_persistor_for_raw_keras_model(self) -> ModelPersistor:
+        """Create persistor for a non-subclassed Keras model.
+
+        Raw Keras models (e.g. tf.keras.Sequential([...])) cannot be serialized
+        by _get_args() because their __init__ params contain complex internal
+        objects. Instead, save the full model to a .keras file and load it at
+        runtime via source_ckpt_file_full_name.
+        """
+        save_dir = tempfile.mkdtemp(prefix="nvflare_tf_model_")
+        save_path = os.path.join(save_dir, "initial_model.keras")
+        self.model.save(save_path)
+        self._saved_model_file = save_path
+
+        persistor_kwargs = {
+            "model": None,
+            "source_ckpt_file_full_name": "initial_model.keras",
+        }
         if self.initial_ckpt:
             persistor_kwargs["source_ckpt_file_full_name"] = self.initial_ckpt
 
