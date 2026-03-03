@@ -117,6 +117,14 @@ class CacheableObject(Downloadable):
                 # release() was already called — no new chunk requests should
                 # arrive after transaction_done(), but guard defensively.
                 raise RuntimeError(f"item {index} requested after base_obj released for {requester}")
+            # produce_item() reads self.base_obj internally and is called outside
+            # the lock.  A concurrent release() could set self.base_obj to None
+            # between the guard above and produce_item's first read.  In practice
+            # this window cannot open: release() is only invoked from
+            # transaction_done_cb, which fires after the download service confirms
+            # all chunks have been delivered — i.e. after this code path has
+            # already returned.  The guard above handles the only truly invalid
+            # state (request arriving after a completed transaction).
             return self.produce_item(index)
 
         if data is not None:

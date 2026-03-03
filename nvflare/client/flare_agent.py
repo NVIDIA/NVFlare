@@ -424,10 +424,10 @@ class FlareAgentWithCellPipe(FlareAgent):
         workspace_dir: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=60.0,  # was 30.0 — align with FlareAgent base; 30s too tight under large-model GC/relay
+        heartbeat_timeout=60.0,  # increased from 30.0 — 30s too tight under large-model GC/relay
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=60.0,  # was 30.0 — align with FlareAgent base; CJ ACK latency is transport-independent
+        submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
         download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
     ):

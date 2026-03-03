@@ -993,9 +993,12 @@ class SwarmClientController(ClientSideController):
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
                 # For the remote path, LazyDownloadRefs are resolved automatically during
                 # the FOBS encode/decode inside broadcast_and_wait() (Fix 14).  The local
-                # path has no such encode/decode, so we resolve them explicitly here
-                # before the result reaches the gatherer and ultimately shareable_to_learnable().
-                result = self._resolve_lazy_refs(result, fl_ctx)
+                # path has no such encode/decode, so when forward_pass_through is active we
+                # resolve them explicitly before the result reaches shareable_to_learnable().
+                # Without forward_pass_through the result holds ordinary tensors (no LazyRefs),
+                # so skipping this avoids a spurious multi-GiB FOBS round-trip every round.
+                if self.forward_pass_through:
+                    result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
                 local_fl_ctx.set_peer_context(engine.new_context())
