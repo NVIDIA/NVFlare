@@ -182,12 +182,15 @@ class NumpyCrossSiteEvalRecipe(Recipe):
                 memory_gc_rounds=client_memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
             )
-            job.to_clients(executor, tasks=[AppConstants.TASK_VALIDATION])
+            job.to_clients(
+                executor,
+                tasks=[AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+            )
         else:
             # Use built-in dummy validator (for testing/demo only)
             job.to_clients(
                 NPValidator(),
-                tasks=[AppConstants.TASK_VALIDATION],
+                tasks=[AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
             )
 
         # Set framework for external API compatibility (e.g., add_cross_site_evaluation)
