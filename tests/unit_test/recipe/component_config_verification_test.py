@@ -499,9 +499,10 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
         recipe = SimpleSwarmLearningRecipe(
             name="test-pt-swarm",
             model=simple_model,
-            initial_ckpt=self.checkpoint_path,
             num_rounds=2,
             train_script=self.train_script,
+            min_clients=2,
+            initial_ckpt=self.checkpoint_path,
         )
 
         job_dir = os.path.join(self.temp_dir, "export_swarm")

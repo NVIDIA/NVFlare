@@ -190,33 +190,43 @@ class PipeHandler(object):
         if not timeout or not pipe.can_resend() or not self.resend_interval:
             if not timeout:
                 timeout = self.default_request_timeout
-            return pipe.send(msg, timeout)
+            try:
+                return pipe.send(msg, timeout)
+            finally:
+                pipe.release_send_cache(msg)
 
+        # Release any per-message state (e.g. the cached CellMessage)
+        # once the retry loop exits, regardless of the exit path.  This ensures
+        # the serialized payload bytes are freed promptly rather than waiting for
+        # the Message object to go out of scope.
         num_sends = 0
-        while not self.asked_to_stop:
-            sent = pipe.send(msg, timeout)
-            num_sends += 1
-            if sent:
-                return sent
+        try:
+            while not self.asked_to_stop:
+                sent = pipe.send(msg, timeout)
+                num_sends += 1
+                if sent:
+                    return sent
 
-            if self.max_resends is not None and num_sends > self.max_resends:
-                self.logger.error(f"abort sending after {num_sends} tries")
-                return False
+                if self.max_resends is not None and num_sends > self.max_resends:
+                    self.logger.error(f"abort sending after {num_sends} tries")
+                    return False
 
-            if self._is_stopped_or_aborted(abort_signal):
-                return False
-
-            # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
-            self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
-            start_wait = time.time()
-            while True:
                 if self._is_stopped_or_aborted(abort_signal):
                     return False
 
-                if time.time() - start_wait > self.resend_interval:
-                    break
-                time.sleep(0.1)
-        return False
+                # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
+                self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
+                start_wait = time.time()
+                while True:
+                    if self._is_stopped_or_aborted(abort_signal):
+                        return False
+
+                    if time.time() - start_wait > self.resend_interval:
+                        break
+                    time.sleep(0.1)
+            return False
+        finally:
+            pipe.release_send_cache(msg)
 
     def _is_stopped_or_aborted(self, abort_signal: Optional[Signal] = None):
         if self.asked_to_stop:
