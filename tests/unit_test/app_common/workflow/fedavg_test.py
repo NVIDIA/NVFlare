@@ -360,6 +360,84 @@ class TestFedAvgAggregation:
         aggr_result = controller._get_aggregated_result()
         assert aggr_result.metrics is None
 
+    def test_aggregate_one_result_none_metrics_disables_round_metrics(self):
+        """Test missing metrics (`None`) from any client disables round metrics aggregation."""
+        controller = FedAvg(num_clients=2)
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics=None,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        assert controller._all_metrics is False
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is None
+
+    def test_aggregate_one_result_empty_metrics_keep_round_enabled(self):
+        """Test empty dict metrics still count as present and keep round metrics enabled."""
+        controller = FedAvg(num_clients=2)
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        assert controller._all_metrics is True
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
+
+    def test_aggregate_one_result_nonaggregatable_metrics_keep_round_enabled(self):
+        """Test non-empty non-aggregatable metrics keep round metrics collection enabled."""
+        controller = FedAvg(num_clients=2)
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        assert controller._all_metrics is True
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
+        assert "meta" not in aggr_result.metrics
+
     def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
         """Test bool metrics are aggregated as binary values (True=1, False=0)."""
         controller = FedAvg(num_clients=2)
@@ -493,6 +571,47 @@ class TestFedAvgAggregation:
         assert aggr_result.metrics is not None
         assert aggr_result.metrics["loss"] == 0.4
         assert "meta" not in aggr_result.metrics
+
+    def test_base_fedavg_aggregate_fn_none_metrics_disable_round_metrics(self):
+        """Test BaseFedAvg.aggregate_fn returns None when any client has metrics=None."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics=None,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is None
+
+    def test_base_fedavg_aggregate_fn_empty_metrics_keep_round_enabled(self):
+        """Test BaseFedAvg.aggregate_fn keeps metrics aggregation when a client has metrics={}."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
 
     def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
         """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""

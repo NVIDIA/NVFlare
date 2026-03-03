@@ -118,7 +118,7 @@ class BaseFedAvg(ModelController):
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.current_round,
             )
-            if not _result.metrics:
+            if _result.metrics is None:
                 all_metrics = False
             if all_metrics:
                 aggregatable = filter_aggregatable_metrics(_result.metrics)

@@ -260,9 +260,13 @@ class FedAvg(BaseFedAvg):
         # Add to metrics aggregation if available (only aggregatable values;
         # non-aggregatable metrics like dicts are still in result.metrics for collection)
         if not self.aggregator:
-            if not result.metrics:
+            # If a client omits metrics entirely (None), disable round-level metrics
+            # aggregation instead of mixing present/absent metric coverage.
+            if result.metrics is None:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
+                # Non-empty metric dicts are treated as "present"; unsupported values are
+                # filtered per key while allowing other aggregatable keys to contribute.
                 aggregatable = filter_aggregatable_metrics(
                     result.metrics,
                     warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
