@@ -482,6 +482,7 @@ class TestSwarmResultSubmissionFix(unittest.TestCase):
         ctl.log_debug = lambda *_args, **_kwargs: None
         ctl.log_warning = lambda *_args, **_kwargs: None
         ctl.log_error = lambda *_args, **_kwargs: None
+        ctl.forward_pass_through = False
         ctl.broadcast_and_wait = mock.Mock(return_value={"site-1": make_reply(FLReturnCode.OK)})
         ctl._process_learn_result = mock.Mock(return_value=make_reply(FLReturnCode.OK))
         return ctl, task_data, fl_ctx, abort_signal, learn_result, engine, _DummyGatherer

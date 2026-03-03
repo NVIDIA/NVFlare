@@ -28,7 +28,8 @@ from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
-_MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
+MIN_DOWNLOAD_TIMEOUT_DEFAULT = 300  # inactivity timeout between chunk requests; 5 min covers GC pauses
+_MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 
 
 class LazyDownloadRef:
@@ -292,13 +293,21 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
     def _create_downloader(self, fobs_ctx: dict):
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
+        # Read min_download_timeout from job config so operators can tune
+        # it per-job (e.g. np_min_download_timeout: 600 for a 70B model).
+        # Falls back to the module-level constant (60s) when not set.
+        min_timeout = acu.get_positive_float_var(
+            self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT),
+            _MIN_DOWNLOAD_TIMEOUT,
+        )
+
         if msg_root_ttl:
             timeout = msg_root_ttl
         else:
-            timeout = _MIN_DOWNLOAD_TIMEOUT
+            timeout = min_timeout
 
-        if timeout < _MIN_DOWNLOAD_TIMEOUT:
-            timeout = _MIN_DOWNLOAD_TIMEOUT
+        if timeout < min_timeout:
+            timeout = min_timeout
 
         self.logger.debug(f"ViaDownloader: {msg_root_id=} {timeout=}")
 
@@ -308,10 +317,17 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
             num_receivers = num if num else 1
 
+            # Optional lifecycle callback set by FlareAgent._do_submit_result()
+            # (subprocess → CJ → server reverse path) so the subprocess can wait
+            # until the server has finished downloading from its DownloadService
+            # before exiting.  None when no gating is needed (forward path).
+            on_complete_cb = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB)
+
             downloader = ObjectDownloader(
                 num_receivers=num_receivers,
                 cell=cell,
                 timeout=timeout,
+                transaction_done_cb=on_complete_cb,
             )
 
         if msg_root_id:
