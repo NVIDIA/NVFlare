@@ -473,6 +473,61 @@ class TestFedAvgAggregation:
         # Filtering must be serialized so warned_metric_keys dedup check/add stays atomic.
         assert max_active_calls == 1
 
+    def test_aggregate_one_result_serializes_received_count_updates(self):
+        """Test concurrent callbacks do not lose `_received_count` increments."""
+        import threading
+        import time
+
+        controller = FedAvg(num_clients=20)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        class SlowCounter:
+            """Intentionally race-prone counter to validate synchronization."""
+
+            def __init__(self):
+                self.value = 0
+
+            def __iadd__(self, n):
+                current = self.value
+                time.sleep(0.001)
+                self.value = current + n
+                return self
+
+            def __str__(self):
+                return str(self.value)
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = SlowCounter()
+        controller._expected_count = 20
+        controller._params_type = None
+        controller.current_round = 0
+
+        start_barrier = threading.Barrier(20)
+        results = [
+            FLModel(
+                params={"w": float(i + 1)},
+                params_type=ParamsType.FULL,
+                metrics={"loss": 0.1 * i},
+                meta={"client_name": f"site-{i + 1}", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+            )
+            for i in range(20)
+        ]
+
+        def run_result(result):
+            start_barrier.wait()
+            controller._aggregate_one_result(result)
+
+        threads = [threading.Thread(target=run_result, args=(r,)) for r in results]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert controller._received_count.value == 20
+
     def test_base_fedavg_aggregate_fn_filters_non_aggregatable_metrics(self):
         """Test BaseFedAvg.aggregate_fn skips unsupported metrics without failing."""
         result1 = FLModel(
@@ -494,6 +549,26 @@ class TestFedAvgAggregation:
         assert aggr_result.metrics is not None
         assert aggr_result.metrics["loss"] == 0.4
         assert "meta" not in aggr_result.metrics
+
+    def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
+        """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}, "tags": ["a"]},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-2"}, "tags": ["b"]},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is None
 
     def test_aggregate_with_custom_aggregator(self):
         """Test custom aggregator is used when provided."""

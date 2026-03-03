@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import threading
 import time
 from typing import Any, Dict, Optional, Set, Union
 
@@ -123,6 +124,7 @@ class FedAvg(BaseFedAvg):
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
         self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
+        self._callback_state_lock = threading.Lock()
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -225,11 +227,8 @@ class FedAvg(BaseFedAvg):
             self.warning(f"Empty result from client {client_name}, skipping.")
             return
 
-        # Store only params_type from first result (not the full model)
-        if self._params_type is None:
-            self._params_type = result.params_type
-
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        weight = None
 
         if self.aggregator:
             # Use custom aggregator
@@ -255,13 +254,18 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
+        # Protect callback-shared state across concurrent callbacks.
+        with self._callback_state_lock:
+            # Store only params_type from first result (not the full model)
+            if self._params_type is None:
+                self._params_type = result.params_type
+
             # Add to metrics aggregation if available (only aggregatable values;
             # non-aggregatable metrics like dicts are still in result.metrics for collection)
-            if not result.metrics:
-                self._all_metrics = False
-            if self._all_metrics and result.metrics:
-                # Protect warn deduplication state across concurrent callbacks.
-                with self._aggr_helper.lock:
+            if not self.aggregator:
+                if not result.metrics:
+                    self._all_metrics = False
+                if self._all_metrics and result.metrics:
                     aggregatable = filter_aggregatable_metrics(
                         result.metrics,
                         warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
@@ -275,8 +279,10 @@ class FedAvg(BaseFedAvg):
                             contribution_round=self.current_round,
                         )
 
-        self._received_count += 1
-        self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
+            self._received_count += 1
+            received_count = self._received_count
+
+        self.info(f"Aggregated {received_count}/{self._expected_count} results")
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
