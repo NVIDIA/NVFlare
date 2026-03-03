@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import threading
 import time
 from typing import Any, Dict, Optional, Set, Union
 
@@ -124,7 +123,6 @@ class FedAvg(BaseFedAvg):
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
         self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
-        self._callback_state_lock = threading.Lock()
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -254,33 +252,32 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-        # Protect callback-shared state across concurrent callbacks.
-        with self._callback_state_lock:
-            # Store only params_type from first result (not the full model)
-            if self._params_type is None:
-                self._params_type = result.params_type
+        # Callback execution is serialized by the framework via Task.cb_lock.
+        # Store only params_type from first result (not the full model)
+        if self._params_type is None:
+            self._params_type = result.params_type
 
-            # Add to metrics aggregation if available (only aggregatable values;
-            # non-aggregatable metrics like dicts are still in result.metrics for collection)
-            if not self.aggregator:
-                if not result.metrics:
-                    self._all_metrics = False
-                if self._all_metrics and result.metrics:
-                    aggregatable = filter_aggregatable_metrics(
-                        result.metrics,
-                        warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
-                        warned_metric_keys=self._warned_metric_keys,
+        # Add to metrics aggregation if available (only aggregatable values;
+        # non-aggregatable metrics like dicts are still in result.metrics for collection)
+        if not self.aggregator:
+            if not result.metrics:
+                self._all_metrics = False
+            if self._all_metrics and result.metrics:
+                aggregatable = filter_aggregatable_metrics(
+                    result.metrics,
+                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                    warned_metric_keys=self._warned_metric_keys,
+                )
+                if aggregatable:
+                    self._aggr_metrics_helper.add(
+                        data=aggregatable,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
                     )
-                    if aggregatable:
-                        self._aggr_metrics_helper.add(
-                            data=aggregatable,
-                            weight=weight,
-                            contributor_name=client_name,
-                            contribution_round=self.current_round,
-                        )
 
-            self._received_count += 1
-            received_count = self._received_count
+        self._received_count += 1
+        received_count = self._received_count
 
         self.info(f"Aggregated {received_count}/{self._expected_count} results")
 

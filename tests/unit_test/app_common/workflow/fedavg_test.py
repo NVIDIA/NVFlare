@@ -412,8 +412,8 @@ class TestFedAvgAggregation:
         assert mock_warning.call_count == 1
         assert mock_warning.call_args_list[0].args[0] == "Metric 'meta' (dict) skipped for aggregation."
 
-    def test_aggregate_one_result_serializes_metric_filtering(self):
-        """Test concurrent callbacks do not execute metric filtering in parallel."""
+    def test_aggregate_one_result_callback_lock_serializes_metrics_processing(self):
+        """Test framework-level callback lock keeps metrics processing serialized."""
         import threading
         import time
         from unittest.mock import patch
@@ -436,27 +436,30 @@ class TestFedAvgAggregation:
             meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
         )
 
+        cb_lock = threading.Lock()
         active_calls = 0
         max_active_calls = 0
-        lock = threading.Lock()
+        active_lock = threading.Lock()
         start_barrier = threading.Barrier(2)
         real_filter = fedavg_module.filter_aggregatable_metrics
 
         def slow_filter(*args, **kwargs):
             nonlocal active_calls, max_active_calls
-            with lock:
+            with active_lock:
                 active_calls += 1
                 max_active_calls = max(max_active_calls, active_calls)
             time.sleep(0.02)
             try:
                 return real_filter(*args, **kwargs)
             finally:
-                with lock:
+                with active_lock:
                     active_calls -= 1
 
         def run_result(result):
             start_barrier.wait()
-            controller._aggregate_one_result(result)
+            # This mirrors Task.cb_lock behavior in the framework callback path.
+            with cb_lock:
+                controller._aggregate_one_result(result)
 
         with patch.object(fedavg_module, "filter_aggregatable_metrics", side_effect=slow_filter):
             t1 = threading.Thread(target=run_result, args=(result1,))
@@ -466,56 +469,8 @@ class TestFedAvgAggregation:
             t1.join()
             t2.join()
 
-        # Filtering must be serialized so warned_metric_keys dedup check/add stays atomic.
         assert max_active_calls == 1
-
-    def test_aggregate_one_result_serializes_received_count_updates(self):
-        """Test concurrent callbacks do not lose `_received_count` increments."""
-        import threading
-        import time
-
-        controller = FedAvg(num_clients=20)
-
-        class SlowCounter:
-            """Intentionally race-prone counter to validate synchronization."""
-
-            def __init__(self):
-                self.value = 0
-
-            def __iadd__(self, n):
-                current = self.value
-                time.sleep(0.001)
-                self.value = current + n
-                return self
-
-            def __str__(self):
-                return str(self.value)
-
-        _setup_builtin_in_time_aggregation(controller, expected_count=20)
-        controller._received_count = SlowCounter()
-
-        start_barrier = threading.Barrier(20)
-        results = [
-            FLModel(
-                params={"w": float(i + 1)},
-                params_type=ParamsType.FULL,
-                metrics={"loss": 0.1 * i},
-                meta={"client_name": f"site-{i + 1}", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
-            )
-            for i in range(20)
-        ]
-
-        def run_result(result):
-            start_barrier.wait()
-            controller._aggregate_one_result(result)
-
-        threads = [threading.Thread(target=run_result, args=(r,)) for r in results]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert controller._received_count.value == 20
+        assert controller._received_count == 2
 
     def test_base_fedavg_aggregate_fn_filters_non_aggregatable_metrics(self):
         """Test BaseFedAvg.aggregate_fn skips unsupported metrics without failing."""
