@@ -19,6 +19,24 @@ from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
 
 
+def _setup_round_state(controller: FedAvg, expected_count: int) -> None:
+    """Set common per-round callback state used by aggregation tests."""
+    controller._received_count = 0
+    controller._expected_count = expected_count
+    controller._params_type = None
+    controller.current_round = 0
+
+
+def _setup_builtin_in_time_aggregation(controller: FedAvg, expected_count: int) -> None:
+    """Set up built-in InTime aggregation helpers and round state."""
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+    controller._aggr_helper = WeightedAggregationHelper()
+    controller._aggr_metrics_helper = WeightedAggregationHelper()
+    controller._all_metrics = True
+    _setup_round_state(controller, expected_count=expected_count)
+
+
 class MockModelAggregator(ModelAggregator):
     """Mock aggregator for testing custom aggregator support."""
 
@@ -266,17 +284,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_builtin(self):
         """Test built-in aggregation accumulates results."""
         controller = FedAvg(num_clients=2)
-
-        # Simulate round setup
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Simulate client result 1
         result1 = FLModel(
@@ -303,16 +311,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_filters_non_aggregatable_metrics(self):
         """Test built-in aggregation filters non-aggregatable metrics."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -340,16 +339,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
         """Test bool metrics are aggregated as binary values (True=1, False=0)."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -376,16 +366,7 @@ class TestFedAvgAggregation:
         from unittest.mock import patch
 
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -416,16 +397,7 @@ class TestFedAvgAggregation:
         from nvflare.app_common.workflows import fedavg as fedavg_module
 
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -480,8 +452,6 @@ class TestFedAvgAggregation:
 
         controller = FedAvg(num_clients=20)
 
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
         class SlowCounter:
             """Intentionally race-prone counter to validate synchronization."""
 
@@ -497,13 +467,8 @@ class TestFedAvgAggregation:
             def __str__(self):
                 return str(self.value)
 
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
+        _setup_builtin_in_time_aggregation(controller, expected_count=20)
         controller._received_count = SlowCounter()
-        controller._expected_count = 20
-        controller._params_type = None
-        controller.current_round = 0
 
         start_barrier = threading.Barrier(20)
         results = [
@@ -577,10 +542,7 @@ class TestFedAvgAggregation:
 
         # Simulate round setup
         aggregator.reset_stats()
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_round_state(controller, expected_count=2)
 
         # Simulate client results
         result1 = FLModel(
@@ -607,16 +569,7 @@ class TestFedAvgAggregation:
     def test_aggregate_empty_result_skipped(self):
         """Test empty results are skipped."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Empty result
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
@@ -633,16 +586,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Result from site-1 with weight 2.0
         result1 = FLModel(
@@ -673,16 +617,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: weight=2.0, n_iter=10 -> total_weight = 20
         result1 = FLModel(
@@ -707,16 +642,7 @@ class TestFedAvgAggregationWeights:
     def test_aggregation_weights_with_different_num_steps(self):
         """Test aggregation without explicit weights uses NUM_STEPS_CURRENT_ROUND only."""
         controller = FedAvg(num_clients=2)  # No aggregation_weights
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: n_iter=100
         result1 = FLModel(
@@ -744,16 +670,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 1.0, "site-2": 3.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: multiple params, weight=1, n_iter=10 -> total=10
         result1 = FLModel(
@@ -788,16 +705,7 @@ class TestFedAvgAggregationWeights:
             num_clients=3,
             aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 0.5},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 3
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=3)
 
         # site-1: weight=1.0, n_iter=100 -> total=100
         result1 = FLModel(
