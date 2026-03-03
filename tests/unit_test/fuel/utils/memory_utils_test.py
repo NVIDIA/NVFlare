@@ -31,7 +31,7 @@ class TestMemoryUtils:
         """Test that cleanup_memory calls gc.collect."""
         from nvflare.fuel.utils.memory_utils import cleanup_memory
 
-        with patch.object(gc, "collect") as mock_gc:
+        with patch.object(gc, "collect", return_value=0) as mock_gc:
             with patch("nvflare.fuel.utils.memory_utils.try_malloc_trim"):
                 cleanup_memory()
                 mock_gc.assert_called_once()
@@ -119,5 +119,42 @@ class TestMemoryUtils:
         # This should work regardless of allocator type
         get_allocator_type.cache_clear()
         cleanup_memory()
+
+    # -----------------------------------------------------------------
+    # M8 fix: gc.collect() result logged at INFO when non-zero
+    # -----------------------------------------------------------------
+
+    def test_gc_collect_nonzero_logs_info(self):
+        """M8 fix: cleanup_memory must log at INFO when gc.collect() returns non-zero.
+
+        Before M8 fix, gc.collect() result was silently discarded.  Non-zero means
+        reference cycles were broken — actionable signal worth surfacing in logs.
+        """
+        from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+        with patch("nvflare.fuel.utils.memory_utils.logger") as mock_logger:
+            with patch.object(gc, "collect", return_value=5):
+                cleanup_memory()
+            mock_logger.info.assert_called_once()
+            msg = mock_logger.info.call_args[0][0]
+            assert "5" in msg or "freed" in msg.lower(), f"INFO log must mention the freed count. Got: {msg}"
+
+    def test_gc_collect_zero_does_not_log_info(self):
+        """M8 fix: cleanup_memory must NOT log INFO when gc.collect() returns 0.
+
+        Zero freed objects is expected in steady state; logging it every round
+        would be noisy with no actionable signal.
+        """
+        from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+        with patch("nvflare.fuel.utils.memory_utils.logger") as mock_logger:
+            with patch.object(gc, "collect", return_value=0):
+                cleanup_memory()
+            # logger.info must not be called for gc result when freed=0
+            # (other info calls from allocator-specific paths are fine, but
+            # those are at DEBUG level — so info should not be called at all here)
+            for call in mock_logger.info.call_args_list:
+                msg = call[0][0]
+                assert "freed" not in msg.lower(), f"Must not log 'freed' when gc.collect()=0. Got: {msg}"
 
         # Verify it completed without error - allocator-specific logic handled internally

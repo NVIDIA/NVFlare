@@ -180,3 +180,4 @@ docs/apidocs/
 
 # memory profiler output
 tests/memory_profile/**/*.dat
+/HEAD

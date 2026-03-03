@@ -139,7 +139,9 @@ def cleanup_memory(cuda_empty_cache: bool = False) -> None:
         the appropriate cleanup strategy.
     """
     # Step 1: Python garbage collection (always)
-    gc.collect()
+    freed = gc.collect()
+    if freed > 0:
+        logger.info(f"gc.collect() freed {freed} unreachable objects")
 
     # Step 2: Allocator-specific cleanup
     allocator = get_allocator_type()
