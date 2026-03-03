@@ -15,23 +15,32 @@
 import importlib.util
 
 import pytest
-pytestmark = pytest.mark.skipif(
-    importlib.util.find_spec("tenseal") is None or importlib.util.find_spec("torch") is None,
-    reason="tenseal and torch are required",
-)
+try:
+    import torch.nn as nn
+except ImportError:
+    nn = None
 
 from nvflare.recipe.sim_env import SimEnv
 
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("tenseal") is None, reason="tenseal is not installed")
+pytestmark = pytest.mark.skipif(
+    importlib.util.find_spec("tenseal") is None or nn is None,
+    reason="tenseal and torch are required",
+)
 
+if nn is not None:
 
-class SimpleTestModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lin = nn.Linear(10, 10)
+    class SimpleTestModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = nn.Linear(10, 10)
 
-    def forward(self, x):
-        return self.lin(x)
+        def forward(self, x):
+            return self.lin(x)
+
+else:
+
+    class SimpleTestModel:
+        pass
 
 
 def _create_recipe(train_script: str):
