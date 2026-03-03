@@ -25,6 +25,7 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
 
 
@@ -308,6 +309,135 @@ class TestFedAvgAggregation:
         # Get aggregated result
         aggr_result = controller._get_aggregated_result()
         assert aggr_result.params["w"] == 2.0  # (1+3)/2
+
+    def test_aggregate_one_result_filters_non_aggregatable_metrics(self):
+        """Test built-in aggregation filters non-aggregatable metrics."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "meta": {"client": "site-1"}, "tags": ["a", "b"], "name": "run-1"},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "meta": {"client": "site-2"}, "tags": ["c"], "name": "run-2"},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.4
+        assert "meta" not in aggr_result.metrics
+        assert "tags" not in aggr_result.metrics
+        assert "name" not in aggr_result.metrics
+
+    def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
+        """Test bool metrics are aggregated as binary values (True=1, False=0)."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"is_good": True},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"is_good": False},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["is_good"] == 0.5
+
+    def test_aggregate_one_result_warns_once_per_skipped_metric_key(self):
+        """Test repeated skipped metric keys only emit one warning."""
+        from unittest.mock import patch
+
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "meta": {"a": 1}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "meta": {"b": 2}},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        with patch.object(controller, "warning") as mock_warning:
+            controller._aggregate_one_result(result1)
+            controller._aggregate_one_result(result2)
+
+        assert mock_warning.call_count == 1
+        assert mock_warning.call_args_list[0].args[0] == "Metric 'meta' (dict) skipped for aggregation."
+
+    def test_base_fedavg_aggregate_fn_filters_non_aggregatable_metrics(self):
+        """Test BaseFedAvg.aggregate_fn skips unsupported metrics without failing."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "meta": {"client": "site-1"}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "meta": {"client": "site-2"}},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.4
+        assert "meta" not in aggr_result.metrics
 
     def test_aggregate_with_custom_aggregator(self):
         """Test custom aggregator is used when provided."""
