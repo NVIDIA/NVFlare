@@ -21,6 +21,17 @@ on:
   workflow_dispatch:
 
 jobs:
+  style-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Run style checks
+        run: ./runtest.sh -s
+
   unit-tests:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -34,12 +45,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
       - name: Run unit test
-        run: ./runtest.sh
+        run: ./runtest.sh --numprocesses=auto -u
 
   wheel-build:
     runs-on: ${{ matrix.os }}
@@ -57,7 +64,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
+          python3 -m pip install --no-cache-dir -e .
           python3 -m pip install --no-cache-dir build twine torch torchvision
       - name: Run wheel build
         run: python3 -m build --wheel

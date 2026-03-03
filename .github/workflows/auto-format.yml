@@ -30,7 +30,7 @@ jobs:
         run: python -m isort $DIRS
 
       - name: Install black
-        run: pip install black==26.1.0
+        run: pip install black==25.9.0
 
       - name: Run black
         run: python -m black $DIRS
