@@ -381,16 +381,23 @@ class CellPipe(Pipe):
             msg._cached_cell_msg = _to_cell_message(msg)
         request = msg._cached_cell_msg
         request.set_header(MessageHeaderKey.MSG_ROOT_ID, msg.msg_id)
-        # For REPLY messages (subprocess→CJ result direction), stamp
-        # MSG_ROOT_TTL so via_downloader._create_downloader() keeps the
-        # subprocess's download transaction alive long enough for the server
-        # to pull the tensors directly from the subprocess.  We reuse
-        # `timeout` (= submit_result_timeout, already operator-configurable)
-        # — it is already sized for the full large-model transfer.
-        # No new constant is needed; same reasoning as the forward direction
-        # where the server uses task.timeout for its MSG_ROOT_TTL.
-        if msg.msg_type == Message.REPLY and timeout is not None and timeout > 0:
-            request.set_header(MessageHeaderKey.MSG_ROOT_TTL, float(timeout))
+        # For REPLY messages (subprocess→CJ result direction), stamp MSG_ROOT_TTL so
+        # via_downloader._create_downloader() keeps the subprocess's DownloadService
+        # transaction alive long enough for the server to pull tensors directly from
+        # the subprocess.
+        #
+        # When pass_through_on_send is active (reverse PASS_THROUGH path), use
+        # _dl_ttl stamped by FlareAgent._do_submit_result() — this is
+        # download_complete_timeout (default 1800s), the actual transfer budget.
+        # Mirrors the forward direction where the server uses task.timeout.
+        #
+        # Fall back to `timeout` (= submit_result_timeout, the CJ-ACK timeout)
+        # for non-PASS_THROUGH REPLY messages where no tensor transfer occurs.
+        if msg.msg_type == Message.REPLY:
+            dl_ttl = getattr(msg, "_dl_ttl", None) if self.pass_through_on_send else None
+            ttl = dl_ttl if dl_ttl and dl_ttl > 0 else timeout
+            if ttl is not None and ttl > 0:
+                request.set_header(MessageHeaderKey.MSG_ROOT_TTL, float(ttl))
         # Stamp PASS_THROUGH on every outgoing task/result message when the
         # caller has opted in.  Adapter.call() on the receiving side reads this
         # header and builds a per-call FOBS decode context with

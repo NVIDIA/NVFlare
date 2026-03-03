@@ -122,9 +122,15 @@ class ExProcessClientAPI(APISpec):
             # stdout is captured by SubprocessLauncher and re-logged by the parent.
             # Leaving file handlers active in both parent and subprocess produces
             # duplicate writes to the same rotating log files.
+            # Strip from both locations the root logger can appear:
+            #   dict_config["loggers"]["root"]  — NVFlare's log_config.json layout
+            #   dict_config["root"]             — standard Python dictConfig schema
             for logger_cfg in dict_config.get("loggers", {}).values():
                 if "handlers" in logger_cfg:
                     logger_cfg["handlers"] = [h for h in logger_cfg["handlers"] if h == "consoleHandler"]
+            root_cfg = dict_config.get("root", {})
+            if "handlers" in root_cfg:
+                root_cfg["handlers"] = [h for h in root_cfg["handlers"] if h == "consoleHandler"]
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.

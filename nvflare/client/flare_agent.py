@@ -365,6 +365,11 @@ class FlareAgent:
                 download_done.set()
 
             self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done})
+            # Tell cell_pipe.py to use download_complete_timeout as MSG_ROOT_TTL so the
+            # subprocess's DownloadService transaction stays alive long enough for the server
+            # to finish pulling tensors.  submit_result_timeout is the CJ-ACK timeout and is
+            # unrelated to transfer duration — using it here would kill the transaction too early.
+            reply._dl_ttl = self._download_complete_timeout
             try:
                 send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
