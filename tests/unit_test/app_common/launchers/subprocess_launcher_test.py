@@ -22,10 +22,7 @@ import pytest
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.launchers.subprocess_launcher import (
-    SubprocessLauncher,
-    log_subprocess_output,
-)
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher, log_subprocess_output
 
 
 class TestSubprocessLauncher:

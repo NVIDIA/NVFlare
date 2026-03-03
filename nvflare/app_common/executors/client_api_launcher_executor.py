@@ -216,7 +216,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         prefix = self._decomposer_prefix()
         per_req = acu.get_positive_float_var(f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}", 600.0)
-        min_dl = acu.get_positive_float_var(f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT)
+        min_dl = acu.get_positive_float_var(
+            f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT
+        )
 
         if min_dl < per_req:
             self.log_warning(
