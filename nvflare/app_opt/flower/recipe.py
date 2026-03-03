@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import re
-from importlib.metadata import PackageNotFoundError, version as get_package_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_package_version
 from typing import Optional
 
 from nvflare.app_common.tie.defs import Constant
@@ -43,15 +44,13 @@ def _validate_flwr_version():
         installed_version = get_package_version("flwr")
     except PackageNotFoundError as ex:
         raise RuntimeError(
-            f"Flower package 'flwr' is not installed. "
-            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+            f"Flower package 'flwr' is not installed. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         ) from ex
 
     major_minor = _parse_major_minor(installed_version)
     if major_minor < MIN_FLWR_VERSION or major_minor >= MAX_FLWR_VERSION_EXCLUSIVE:
         raise RuntimeError(
-            f"incompatible flwr version '{installed_version}'. "
-            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+            f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         )
 
 
