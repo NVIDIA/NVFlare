@@ -55,7 +55,6 @@ class ConfigKey:
     SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
     MAX_RESENDS = "max_resends"
     DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
-    LAUNCH_ONCE = "launch_once"
 
 
 class ClientConfig:
@@ -185,15 +184,6 @@ class ClientConfig:
             self.logger.warning(f"max_resends={result} is negative, clamping to 0")
             return 0
         return result
-
-    def get_launch_once(self) -> bool:
-        """Return whether the subprocess is launched once for the entire job (True) or per-round (False).
-
-        True  → subprocess handles multiple rounds; must NOT os._exit() after each send.
-        False → subprocess handles one round; must os._exit() after download so the deferred-stop
-                poller on the CJ side unblocks (default, preserves original behaviour).
-        """
-        return bool(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.LAUNCH_ONCE, False))
 
     def get_download_complete_timeout(self) -> float:
         """Return timeout (seconds) for subprocess to wait for the server to finish downloading its result.

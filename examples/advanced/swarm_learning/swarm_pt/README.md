@@ -39,7 +39,7 @@ swarm_pt/
 |
 |-- client.py           # client LoRA fine-tuning script (runs as subprocess)
 |-- model.py            # QwenLoRAModelWrapper — LoRA-adapted model for server persistor
-|-- job.py              # job recipe using SwarmLearningRecipe
+|-- job.py              # job recipe using SimpleSwarmLearningRecipe
 |-- download_data.py    # pre-download wikitext-2 dataset and Qwen2.5 model
 |-- prepare_data.py     # split dataset among N clients
 |-- requirements.txt    # dependencies
@@ -99,12 +99,12 @@ This example uses [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidoc
 
 ## Job Recipe Code
 
-`job.py` uses `SwarmLearningRecipe` to configure the entire job with a few lines:
+`job.py` uses `SimpleSwarmLearningRecipe` to configure the entire job with a few lines:
 
 ```python
 model_path = MODEL_SIZES[args.model_size]   # e.g. "Qwen/Qwen2.5-0.5B" or "Qwen/Qwen2.5-1.5B"
 
-recipe = SwarmLearningRecipe(
+recipe = SimpleSwarmLearningRecipe(
     name="ccwf_swarm_pt_lora",
     model=QwenLoRAModelWrapper(model_path=model_path),
     num_rounds=args.num_rounds,
@@ -124,16 +124,7 @@ env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
 recipe.execute(env)
 ```
 
-For large models (7B+) where P2P transfer takes minutes, increase `round_timeout` accordingly:
-
-```python
-recipe = SwarmLearningRecipe(
-    ...
-    round_timeout=7200,   # 2 hours — P2P ACK budget for 7B+ model transfers
-)
-```
-
-`SwarmLearningRecipe` handles all component wiring automatically:
+`SimpleSwarmLearningRecipe` handles all component wiring automatically:
 - `PTClientAPILauncherExecutor` + `SubprocessLauncher` + `CellPipe` for subprocess execution
 - `PTFileModelPersistor` for checkpoint management (stores only LoRA adapter weights)
 - `InTimeAccumulateWeightedAggregator` for peer-to-peer adapter aggregation
@@ -241,7 +232,6 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 | `--data_dir` | *(empty)* | Pre-split data root from `prepare_data.py`; in-memory if omitted |
 | `--workspace` | `/tmp/nvflare/simulation` | Root directory for simulation output |
 | `--export_dir` | *(empty)* | If set, export job folder instead of running |
-| `round_timeout` *(recipe)* | 3600 | P2P model transfer ACK budget in seconds — how long the aggregator waits for a receiver to acknowledge a model download (including the full tensor transfer). Does **not** cap per-round training time. Increase for models ≥2 GB where P2P transfer can take minutes. |
 
 ## Output Summary
 

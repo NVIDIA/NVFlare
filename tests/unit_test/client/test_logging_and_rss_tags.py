@@ -120,8 +120,8 @@ class TestConfigureSubprocessLogging:
 
         mock_apply.assert_not_called()
 
-    def test_all_handlers_preserved(self):
-        """All handlers are preserved — subprocess uses the same logging config as the parent."""
+    def test_file_handlers_stripped_keeps_only_console(self):
+        """Only consoleHandler is kept; all file handlers are removed from root and named loggers."""
         api = _make_api()
         client_config = _make_client_config("/ws")
 
@@ -149,9 +149,9 @@ class TestConfigureSubprocessLogging:
 
         assert "cfg" in captured, "apply_log_config must be called"
         kept_root = captured["cfg"]["loggers"]["root"]["handlers"]
-        assert kept_root == original_handlers, f"All handlers must be preserved on root; got {kept_root}"
+        assert kept_root == ["consoleHandler"], f"Only consoleHandler must be kept on root; got {kept_root}"
         kept_named = captured["cfg"]["loggers"]["nvflare"]["handlers"]
-        assert kept_named == original_handlers, f"All handlers must be preserved on named logger; got {kept_named}"
+        assert kept_named == ["consoleHandler"], f"Only consoleHandler must be kept on named logger; got {kept_named}"
 
     def test_apply_log_config_called_with_dict_and_workspace(self):
         """apply_log_config() is called with the filtered dict and workspace_dir."""

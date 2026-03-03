@@ -32,7 +32,7 @@ import shutil
 from model import QwenLoRAModelWrapper
 
 from nvflare.apis.dxo import DataKind
-from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
 from nvflare.client.config import TransferType
 from nvflare.recipe.sim_env import SimEnv
 
@@ -88,7 +88,7 @@ def main():
     script_args += f" --local_steps {args.local_steps} --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
     script_args += f" --n_shards {args.n_clients}"
 
-    recipe = SwarmLearningRecipe(
+    recipe = SimpleSwarmLearningRecipe(
         name=JOB_NAME,
         model=QwenLoRAModelWrapper(model_path=model_path),
         num_rounds=args.num_rounds,
@@ -107,7 +107,7 @@ def main():
     )
 
     # model.py is needed by client subprocesses (shared LoRA config constants).
-    # client.py is already bundled by SwarmLearningRecipe via ScriptRunner.
+    # client.py is already bundled by SimpleSwarmLearningRecipe via ScriptRunner.
     recipe.add_client_file(os.path.join(os.path.dirname(__file__), "model.py"))
 
     # Streaming chunk sizes for LoRA adapter transfers
