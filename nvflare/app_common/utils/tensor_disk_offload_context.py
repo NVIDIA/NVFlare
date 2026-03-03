@@ -44,6 +44,8 @@ def apply_enable_tensor_disk_offload(
 
 def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:
     """Restore prior enable_tensor_disk_offload value on a cell."""
+    # previous_value is None only when apply was not executed because no
+    # engine/cell was available; False is a valid prior value and must restore.
     if not engine or previous_value is None:
         return
 

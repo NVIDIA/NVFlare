@@ -188,6 +188,9 @@ class DiskTensorConsumer(ItemConsumer):
 
     def download_failed(self, ref_id, reason: str):
         super().download_failed(ref_id, reason)
+        # Eager cleanup on download callback error; the outer caller may also
+        # attempt cleanup via consumer.error path. Double cleanup is intentional
+        # and safe because _cleanup_temp_dir handles already-removed paths.
         _cleanup_temp_dir(self._temp_dir)
 
 
