@@ -24,7 +24,7 @@ from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import _MIN_DOWNLOAD_TIMEOUT
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import MIN_DOWNLOAD_TIMEOUT_DEFAULT
 from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         prefix = self._decomposer_prefix()
         per_req = acu.get_positive_float_var(f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}", 600.0)
-        min_dl = acu.get_positive_float_var(f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", _MIN_DOWNLOAD_TIMEOUT)
+        min_dl = acu.get_positive_float_var(f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT)
 
         if min_dl < per_req:
             self.log_warning(

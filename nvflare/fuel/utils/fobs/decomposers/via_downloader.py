@@ -28,7 +28,8 @@ from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
-_MIN_DOWNLOAD_TIMEOUT = 300  # inactivity timeout between chunk requests; 5 min covers GC pauses
+MIN_DOWNLOAD_TIMEOUT_DEFAULT = 300  # inactivity timeout between chunk requests; 5 min covers GC pauses
+_MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 
 
 class LazyDownloadRef:
