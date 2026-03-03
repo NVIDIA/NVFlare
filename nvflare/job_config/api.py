@@ -655,7 +655,6 @@ class FedJob:
                 f"Conflicting client specification: {len(self.clients)} clients were defined "
                 f"but n_clients={n_clients}. Remove n_clients or make them consistent."
             )
-            )
 
         n_clients = len(self.clients)
 
