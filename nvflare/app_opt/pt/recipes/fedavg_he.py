@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import Any, List, Optional, Union
 
 from pydantic import BaseModel
@@ -31,6 +32,13 @@ from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
+
+HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html"
+HE_CONTEXT_PRECHECK_ERROR = (
+    "TenSEAL contexts must be generated before running HE jobs. "
+    f"See: {HE_CONTEXT_PROVISIONING_DOC_LINK}"
+)
+_HE_REQUIRED_CONTEXT_FILES = ("server_context.tenseal", "client_context.tenseal")
 
 
 # Internal — not part of the public API
@@ -72,6 +80,48 @@ class FedAvgRecipeWithHE(Recipe):
     - HE model encryptor/decryptor filters on the client side
     - HE model serialization filter on the server side
     - Script runners for client-side training execution
+
+    Important:
+        TenSEAL context files must be generated before running this recipe:
+        - `server_context.tenseal` for the server startup folder
+        - `client_context.tenseal` for each client startup folder
+
+        The following example shows how to generate these files with TenSEAL:
+
+        ```python
+        import tenseal as ts
+
+        context = ts.context(
+            ts.SCHEME_TYPE.CKKS,
+            poly_modulus_degree=8192,
+            coeff_mod_bit_sizes=[60, 40, 40],
+            encryption_type=ts.ENCRYPTION_TYPE.SYMMETRIC,
+        )
+        context.generate_relin_keys()
+        context.global_scale = 2**40
+
+        with open("client_context.tenseal", "wb") as f:
+            f.write(
+                context.serialize(
+                    save_public_key=True,
+                    save_secret_key=True,
+                    save_galois_keys=False,
+                    save_relin_keys=True,
+                )
+            )
+        with open("server_context.tenseal", "wb") as f:
+            f.write(
+                context.serialize(
+                    save_public_key=False,
+                    save_secret_key=False,
+                    save_galois_keys=False,
+                    save_relin_keys=True,
+                )
+            )
+        ```
+
+        For provisioning details, see:
+        https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
@@ -290,3 +340,19 @@ class FedAvgRecipeWithHE(Recipe):
         )
 
         Recipe.__init__(self, job)
+
+    def process_env(self, env):
+        from nvflare.recipe.sim_env import SimEnv
+
+        if isinstance(env, SimEnv):
+            self._validate_sim_env_he_contexts(env)
+
+    def _validate_sim_env_he_contexts(self, env):
+        startup_dir = os.path.join(env.workspace_root, self.name, "startup")
+        missing_files = [f for f in _HE_REQUIRED_CONTEXT_FILES if not os.path.isfile(os.path.join(startup_dir, f))]
+        if missing_files:
+            missing_paths = [os.path.join(startup_dir, f) for f in missing_files]
+            raise ValueError(
+                f"{HE_CONTEXT_PRECHECK_ERROR} Missing context files: {missing_paths}. "
+                "For SimEnv, copy both files to the simulator startup folder before execute()."
+            )
