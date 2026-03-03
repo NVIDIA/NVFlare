@@ -336,6 +336,30 @@ class TestFedAvgAggregation:
         assert "tags" not in aggr_result.metrics
         assert "name" not in aggr_result.metrics
 
+    def test_aggregate_one_result_returns_none_when_all_metrics_filtered(self):
+        """Test InTime aggregation returns None when all metrics are non-aggregatable."""
+        controller = FedAvg(num_clients=2)
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}, "tags": ["a"]},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-2"}, "tags": ["b"]},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is None
+
     def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
         """Test bool metrics are aggregated as binary values (True=1, False=0)."""
         controller = FedAvg(num_clients=2)

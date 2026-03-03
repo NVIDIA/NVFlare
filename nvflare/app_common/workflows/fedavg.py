@@ -297,6 +297,7 @@ class FedAvg(BaseFedAvg):
             # Use built-in InTime aggregation
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
+            aggr_metrics = aggr_metrics or None
 
             return FLModel(
                 params=aggr_params,
