@@ -393,8 +393,11 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
 def internal_submit_job(admin_user_dir, username, temp_job_dir):
     print("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
-    job_id = sess.submit_job(temp_job_dir)
-    print(f"job: '{job_id} was submitted")
+    try:
+        job_id = sess.submit_job(temp_job_dir)
+        print(f"job: '{job_id} was submitted")
+    finally:
+        sess.close()
 
 
 job_sub_cmd_handlers = {

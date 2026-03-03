@@ -52,6 +52,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
         )
 
         assert recipe.job is not None
@@ -65,6 +66,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
         )
 
         assert recipe.job is not None
@@ -78,6 +80,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             initial_ckpt="/abs/path/to/model.pt",
         )
 
@@ -93,6 +96,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             initial_ckpt="relative/path/model.pt",
         )
         assert recipe is not None
@@ -106,6 +110,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             do_cross_site_eval=True,
             cross_site_eval_timeout=600,
         )
@@ -121,6 +126,7 @@ class TestSimpleSwarmLearningRecipe:
             model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
         )
 
         assert recipe.job is not None
@@ -134,6 +140,7 @@ class TestSimpleSwarmLearningRecipe:
             model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             initial_ckpt="/abs/path/to/model.pt",
         )
 
@@ -149,6 +156,7 @@ class TestSimpleSwarmLearningRecipe:
                 model={"args": {"in_features": 10}},  # Missing 'path'
                 num_rounds=5,
                 train_script="train.py",
+                min_clients=2,
             )
 
     def test_train_args_reserved_keys_rejected(self, mock_file_system, simple_pt_model):
@@ -161,6 +169,7 @@ class TestSimpleSwarmLearningRecipe:
                 model=simple_pt_model,
                 num_rounds=5,
                 train_script="train.py",
+                min_clients=2,
                 train_args={"script": "other.py"},  # 'script' is reserved
             )
 
@@ -173,20 +182,21 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             train_args={"script_args": "--batch_size 32"},  # valid key
         )
 
         assert recipe.job is not None
 
     def test_min_clients_accepted(self, mock_file_system, simple_pt_model):
-        """Test that min_clients is accepted and passed to the job."""
+        """Test that min_clients is a required parameter and is passed to the job."""
         import inspect
 
         from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
 
         sig = inspect.signature(SimpleSwarmLearningRecipe.__init__)
         assert "min_clients" in sig.parameters
-        assert sig.parameters["min_clients"].default == 1
+        assert sig.parameters["min_clients"].default is inspect.Parameter.empty  # required, no default
 
         recipe = SimpleSwarmLearningRecipe(
             name="test_swarm_min_clients",
@@ -207,6 +217,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             launch_external_process=True,
         )
 
@@ -221,6 +232,7 @@ class TestSimpleSwarmLearningRecipe:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             launch_external_process=True,
             command="python3 -u",
         )
@@ -262,6 +274,7 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             memory_gc_rounds=2,
         )
         assert recipe.job is not None
@@ -275,6 +288,7 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             memory_gc_rounds=0,
         )
         assert recipe.job is not None
@@ -288,6 +302,7 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
             model=simple_pt_model,
             num_rounds=5,
             train_script="train.py",
+            min_clients=2,
             cuda_empty_cache=True,
         )
         assert recipe.job is not None

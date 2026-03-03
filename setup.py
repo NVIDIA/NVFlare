@@ -13,13 +13,25 @@
 # limitations under the License.
 
 import datetime
+import importlib.util
 import os
 import shutil
 from distutils.dir_util import copy_tree
 
 from setuptools import find_packages, setup
 
-import versioneer
+def load_local_versioneer():
+    root = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
+    versioneer_path = os.path.join(root, "versioneer.py")
+    spec = importlib.util.spec_from_file_location("nvflare_local_versioneer", versioneer_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load versioneer from {versioneer_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+versioneer = load_local_versioneer()
 
 # read the contents of your README file
 
@@ -100,4 +112,3 @@ setup(
 )
 
 remove_dir(target_path=tmp_job_template_folder)
-
