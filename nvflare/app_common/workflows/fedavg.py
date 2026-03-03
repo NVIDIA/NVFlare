@@ -260,8 +260,6 @@ class FedAvg(BaseFedAvg):
             if not result.metrics:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                assert self._aggr_helper is not None
-                assert self._aggr_metrics_helper is not None
                 # Protect warn deduplication state across concurrent callbacks.
                 with self._aggr_helper.lock:
                     aggregatable = filter_aggregatable_metrics(
