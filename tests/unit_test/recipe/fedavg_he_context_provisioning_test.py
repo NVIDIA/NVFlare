@@ -58,21 +58,6 @@ def test_process_env_raises_descriptive_error_when_contexts_missing(tmp_path):
         recipe.process_env(env)
 
     err = str(exc_info.value)
-    assert "TenSEAL contexts must be generated before running HE jobs." in err
+    assert "FedAvgRecipeWithHE does not support SimEnv." in err
+    assert "HEBuilder" in err
     assert HE_CONTEXT_PROVISIONING_DOC_LINK in err
-    assert "server_context.tenseal" in err
-    assert "client_context.tenseal" in err
-
-
-def test_process_env_passes_when_contexts_exist(tmp_path):
-    train_script = tmp_path / "client.py"
-    train_script.write_text("print('train')\n")
-    recipe = _create_recipe(str(train_script))
-    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
-
-    startup_dir = tmp_path / recipe.name / "startup"
-    startup_dir.mkdir(parents=True, exist_ok=True)
-    (startup_dir / "server_context.tenseal").write_bytes(b"server")
-    (startup_dir / "client_context.tenseal").write_bytes(b"client")
-
-    recipe.process_env(env)

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Any, List, Optional, Union
 
 from pydantic import BaseModel
@@ -34,11 +33,11 @@ from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html"
-HE_CONTEXT_PRECHECK_ERROR = (
-    "TenSEAL contexts must be generated before running HE jobs. "
+HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
+    "FedAvgRecipeWithHE does not support SimEnv. "
+    "Use provisioned startup kits with nvflare.lighter.impl.he.HEBuilder and run with ProdEnv or PocEnv. "
     f"See: {HE_CONTEXT_PROVISIONING_DOC_LINK}"
 )
-_HE_REQUIRED_CONTEXT_FILES = ("server_context.tenseal", "client_context.tenseal")
 
 
 # Internal — not part of the public API
@@ -91,6 +90,9 @@ class FedAvgRecipeWithHE(Recipe):
 
         Example project config:
         `examples/advanced/cifar10/pt/cifar10-real-world/workspaces/secure_project.yml`
+
+        SimEnv is not supported for this HE recipe. Use ProdEnv or PocEnv with
+        provisioned startup kits.
 
         For provisioning details, see:
         https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
@@ -317,14 +319,4 @@ class FedAvgRecipeWithHE(Recipe):
         from nvflare.recipe.sim_env import SimEnv
 
         if isinstance(env, SimEnv):
-            self._validate_sim_env_he_contexts(env)
-
-    def _validate_sim_env_he_contexts(self, env):
-        startup_dir = os.path.join(env.workspace_root, self.name, WorkspaceConstants.STARTUP_FOLDER_NAME)
-        missing_files = [f for f in _HE_REQUIRED_CONTEXT_FILES if not os.path.isfile(os.path.join(startup_dir, f))]
-        if missing_files:
-            missing_paths = [os.path.join(startup_dir, f) for f in missing_files]
-            raise ValueError(
-                f"{HE_CONTEXT_PRECHECK_ERROR} Missing context files: {missing_paths}. "
-                f"For SimEnv, copy the missing file(s) to the simulator startup folder before execute(): {startup_dir}"
-            )
+            raise ValueError(HE_SIM_ENV_NOT_SUPPORTED_ERROR)
