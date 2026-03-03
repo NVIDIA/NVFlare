@@ -239,24 +239,18 @@ class TestSimulatorRunClientValidation:
         job._deployed = True
         return job
 
-    def test_consistent_clients_and_n_clients_passes(self, tmp_path):
-        """clients list + matching n_clients should not raise (SimEnv scenario)."""
+    def test_clients_and_n_clients_raises(self, tmp_path):
+        """Providing both clients and n_clients should raise ValueError."""
         job = self._make_job()
         with patch.object(job.job, "simulator_run"):
-            # should not raise
-            job.simulator_run(str(tmp_path), clients=["site-1", "site-2"], n_clients=2)
-
-    def test_single_client_consistent_passes(self, tmp_path):
-        """Single named client with n_clients=1 should not raise (llm_hf SimEnv scenario)."""
-        job = self._make_job()
-        with patch.object(job.job, "simulator_run"):
-            job.simulator_run(str(tmp_path), clients=["dolly"], n_clients=1)
+            with pytest.raises(ValueError, match="already specified clients"):
+                job.simulator_run(str(tmp_path), clients=["site-1", "site-2"], n_clients=2)
 
     def test_mismatched_n_clients_raises(self, tmp_path):
-        """n_clients differing from len(clients) should raise ValueError."""
+        """n_clients with any named clients should raise ValueError."""
         job = self._make_job()
         with patch.object(job.job, "simulator_run"):
-            with pytest.raises(ValueError, match="Conflicting client specification"):
+            with pytest.raises(ValueError, match="already specified clients"):
                 job.simulator_run(str(tmp_path), clients=["site-1", "site-2"], n_clients=3)
 
     def test_clients_only_no_n_clients_passes(self, tmp_path):
