@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+from importlib.metadata import PackageNotFoundError, version as get_package_version
 from typing import Optional
 
 from nvflare.app_common.tie.defs import Constant
@@ -19,6 +21,38 @@ from nvflare.app_opt.flower.flower_job import FlowerJob
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.recipe.spec import Recipe
+
+MIN_FLWR_VERSION = (1, 16)
+MAX_FLWR_VERSION_EXCLUSIVE = (1, 26)
+SUPPORTED_FLWR_SPEC = "flwr[simulation]>=1.16,<1.26"
+_VERSION_PATTERN = re.compile(r"^\s*(\d+)\.(\d+)")
+
+
+def _parse_major_minor(version_str: str) -> tuple[int, int]:
+    match = _VERSION_PATTERN.match(version_str)
+    if not match:
+        raise RuntimeError(
+            f"unable to parse installed flwr version '{version_str}'. "
+            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        )
+    return int(match.group(1)), int(match.group(2))
+
+
+def _validate_flwr_version():
+    try:
+        installed_version = get_package_version("flwr")
+    except PackageNotFoundError as ex:
+        raise RuntimeError(
+            f"Flower package 'flwr' is not installed. "
+            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        ) from ex
+
+    major_minor = _parse_major_minor(installed_version)
+    if major_minor < MIN_FLWR_VERSION or major_minor >= MAX_FLWR_VERSION_EXCLUSIVE:
+        raise RuntimeError(
+            f"incompatible flwr version '{installed_version}'. "
+            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        )
 
 
 class FlowerRecipe(Recipe):
@@ -29,6 +63,11 @@ class FlowerRecipe(Recipe):
     a recipe-based interface for easier job configuration and execution.
 
     Enables metric streaming and use of client API by default.
+
+    Flower CLI compatibility:
+        This recipe requires ``flwr[simulation]>=1.16,<1.26``. The current
+        integration relies on legacy federation CLI arguments that are not
+        available in newer Flower CLI versions.
 
     Example usage:
         ```python
@@ -78,6 +117,7 @@ class FlowerRecipe(Recipe):
 
         Creates a FlowerJob and wraps it in the Recipe interface.
         """
+        _validate_flwr_version()
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration
