@@ -410,8 +410,6 @@ class SwarmClientController(ClientSideController):
             message_handle_func=self._process_submission_request,
         )
 
-        # Register handler for server-initiated membership updates.
-
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:
             return self._process_learn_result(shareable, fl_ctx, abort_signal)

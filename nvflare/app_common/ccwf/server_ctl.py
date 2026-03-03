@@ -380,7 +380,7 @@ class ServerSideController(Controller):
                 f"({successful}/{total} successful, min_clients={required})",
             )
 
-        self.log_debug(fl_ctx, f"Workflow {self.workflow_id} done!")
+        self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_PROCESS_TASK_REQUEST:
