@@ -132,7 +132,7 @@ class TestSubprocessLauncher:
         prefix = _make_subprocess_log_prefix(fl_ctx, pid=4321)
         assert prefix == "[site-1]"
 
-    def test_log_subprocess_output_with_prefix(self):
+    def test_log_subprocess_output_with_prefix(self, capsys):
         class _Proc:
             pass
 
@@ -140,6 +140,7 @@ class TestSubprocessLauncher:
         p.stdout = BufferedReader(BytesIO(b"line1\nline2\r\npartial"))
         logger = Mock()
         log_subprocess_output(p, logger, prefix="[ctx]")
-        logger.info.assert_any_call("[ctx] line1")
-        logger.info.assert_any_call("[ctx] line2")
-        logger.info.assert_any_call("[ctx] partial")
+
+        captured = capsys.readouterr()
+        assert captured.out.splitlines() == ["line1", "line2", "partial"]
+        logger.info.assert_not_called()

@@ -135,7 +135,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._cuda_empty_cache = cuda_empty_cache
         self._submit_result_timeout = submit_result_timeout
         self._max_resends = max_resends
-        self.max_resends = max_resends
         self._download_complete_timeout = download_complete_timeout
         self._cj_round_count = 0
 

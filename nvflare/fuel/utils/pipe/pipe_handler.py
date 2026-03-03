@@ -190,7 +190,10 @@ class PipeHandler(object):
         if not timeout or not pipe.can_resend() or not self.resend_interval:
             if not timeout:
                 timeout = self.default_request_timeout
-            return pipe.send(msg, timeout)
+            try:
+                return pipe.send(msg, timeout)
+            finally:
+                pipe.release_send_cache(msg)
 
         # Release any per-message state (e.g. the cached CellMessage)
         # once the retry loop exits, regardless of the exit path.  This ensures
