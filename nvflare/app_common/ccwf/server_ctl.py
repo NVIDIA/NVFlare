@@ -31,7 +31,6 @@ from nvflare.app_common.ccwf.common import (
     make_task_name,
     status_report_from_dict,
     topic_for_end_workflow,
-    topic_for_membership_update,
 )
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
@@ -291,41 +290,9 @@ class ServerSideController(Controller):
         if failed_clients:
             self.log_warning(
                 fl_ctx,
-                f"clients {failed_clients} did not configure but min_clients={self.min_clients} allows proceeding",
+                f"clients {failed_clients} did not configure within timeout but min_clients={self.min_clients} "
+                f"allows proceeding; they remain as participants and may rejoin in a later round",
             )
-            # Remove failed clients so the swarm/workflow does not wait on them each round.
-            for c in failed_clients:
-                self.participating_clients.remove(c)
-                self.result_clients = [r for r in self.result_clients if r != c]
-                del self.client_statuses[c]
-            self.log_info(fl_ctx, f"active clients after pruning: {self.participating_clients}")
-
-            # Broadcast the updated membership list so clients remove dead peers from their
-            # trainers/aggrs lists.  Without this, clients scatter/aggregate to dead clients
-            # → timeouts → round deadlock.  Clients register the handler during process_config()
-            # so it is available before this update arrives.
-            update = Shareable()
-            update[Constant.CLIENTS] = self.participating_clients
-            engine = fl_ctx.get_engine()
-            resp = engine.send_aux_request(
-                targets=self.participating_clients,
-                topic=topic_for_membership_update(self.workflow_id),
-                request=update,
-                timeout=self.configure_task_timeout,
-                fl_ctx=fl_ctx,
-                secure=False,
-            )
-            for c in self.participating_clients:
-                if not resp.get(c):
-                    self.log_warning(fl_ctx, f"client {c} did not ACK membership update")
-
-            # If the designated starting client was pruned, pick a new one from the survivors.
-            if self.starting_client in failed_clients:
-                if not self.participating_clients:
-                    self.system_panic("no active clients remain after pruning; cannot start workflow", fl_ctx)
-                    return
-                self.starting_client = self.participating_clients[0]
-                self.log_warning(fl_ctx, f"starting client was pruned; reselected to {self.starting_client}")
 
         self.log_info(fl_ctx, f"successfully configured clients {self.participating_clients}")
 
@@ -413,7 +380,7 @@ class ServerSideController(Controller):
                 f"({successful}/{total} successful, min_clients={required})",
             )
 
-        self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
+        self.log_debug(fl_ctx, f"Workflow {self.workflow_id} done!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_PROCESS_TASK_REQUEST:
@@ -538,7 +505,9 @@ class ServerSideController(Controller):
             return
 
         if client_name not in self.client_statuses:
-            self.log_error(fl_ctx, f"received result from unknown client {client_name}!")
+            self.log_debug(
+                fl_ctx, f"received status from client {client_name} not in active set (pruned or not yet configured)"
+            )
             return
 
         report = status_report_from_dict(my_report)

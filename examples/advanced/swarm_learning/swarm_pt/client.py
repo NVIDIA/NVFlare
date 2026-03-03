@@ -57,7 +57,7 @@ def build_lora_model(model_path: str):
 
     base = AutoModelForCausalLM.from_pretrained(
         model_path,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
         device_map="auto",
     )
 
@@ -181,8 +181,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model_path",
-        default="Qwen/Qwen2.5-1.5B",
-        help="HuggingFace Hub model ID or local path to Qwen2.5-1.5B",
+        default="Qwen/Qwen2.5-0.5B",
+        help="HuggingFace Hub model ID or local path to the Qwen2.5 model",
     )
     parser.add_argument(
         "--data_dir",
@@ -193,6 +193,13 @@ def main():
     parser.add_argument("--local_steps", type=int, default=DEFAULT_LOCAL_STEPS)
     parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
     parser.add_argument("--max_seq_len", type=int, default=MAX_SEQ_LEN)
+    parser.add_argument(
+        "--n_shards",
+        type=int,
+        default=4,
+        help="Number of shards for in-memory data splitting (ignored when --data_dir is given). "
+        "Should match --n_clients.",
+    )
     args = parser.parse_args()
 
     flare.init()
@@ -201,7 +208,12 @@ def main():
 
     model, tokenizer = build_lora_model(args.model_path)
     dataloader = build_dataloader(
-        tokenizer, site_name, data_dir=args.data_dir, max_seq_len=args.max_seq_len, batch_size=args.batch_size
+        tokenizer,
+        site_name,
+        data_dir=args.data_dir,
+        n_shards=args.n_shards,
+        max_seq_len=args.max_seq_len,
+        batch_size=args.batch_size,
     )
 
     print(f"[{site_name}] Dataset ready ({len(dataloader)} batches/round)")

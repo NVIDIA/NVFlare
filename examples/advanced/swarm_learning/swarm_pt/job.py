@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import os
+import shutil
 
 from model import QwenLoRAModelWrapper
 
@@ -85,16 +86,17 @@ def main():
     if args.data_dir:
         script_args += f" --data_dir {args.data_dir}"
     script_args += f" --local_steps {args.local_steps} --batch_size {args.batch_size} --max_seq_len {args.max_seq_len}"
+    script_args += f" --n_shards {args.n_clients}"
 
     recipe = SimpleSwarmLearningRecipe(
         name=JOB_NAME,
         model=QwenLoRAModelWrapper(model_path=model_path),
         num_rounds=args.num_rounds,
         train_script="client.py",
-        min_clients=2,
+        train_args={"script_args": script_args},
+        min_clients=args.n_clients,
         launch_external_process=True,
         cuda_empty_cache=True,
-        train_args={"script_args": script_args},
         # LoRA adapters are small — exchange full adapter state each round (FedAvg)
         expected_data_kind=DataKind.WEIGHT_DIFF,
         params_transfer_type=TransferType.DIFF,
@@ -128,6 +130,10 @@ def main():
         recipe.export(args.export_dir)
         print(f"Exported job to: {args.export_dir}")
         return
+
+    job_workspace = os.path.join(args.workspace, JOB_NAME)
+    if os.path.isdir(job_workspace):
+        shutil.rmtree(job_workspace)
 
     env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
     recipe.execute(env)

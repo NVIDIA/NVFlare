@@ -44,6 +44,10 @@ class QwenLoRAModelWrapper(nn.Module):
     """
 
     def __init__(self, model_path: str = "Qwen/Qwen2.5-0.5B"):
+
+        # note: this attribute is must have to make it work !
+        self.model_path = model_path
+
         super().__init__()
         self.logger = get_obj_logger(self)
         base = AutoModelForCausalLM.from_pretrained(

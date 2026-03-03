@@ -68,9 +68,10 @@ def _make_subprocess_log_prefix(fl_ctx: FLContext, pid: int) -> str:
 
 
 def log_subprocess_output(process, logger, prefix: str = ""):
-
+    # Subprocess lines are already fully-formatted log records (timestamp + logger + level + message)
+    # and the subprocess itself adds the site name to its own output (e.g. "[site-1] step=1/10 loss=...").
+    # Write them directly to stdout as-is; adding a prefix here produces double site labels.
     buffer = bytearray()
-    pre = f"{prefix} " if prefix else ""
     while True:
         chunk = process.stdout.read1(4096)
         if not chunk:
@@ -83,10 +84,10 @@ def log_subprocess_output(process, logger, prefix: str = ""):
                 break
 
             if line:
-                logger.info(f"{pre}{line}")
+                print(line, flush=True)
 
     if buffer:
-        logger.info(f"{pre}{buffer.decode()}")
+        print(buffer.decode(), flush=True)
 
 
 class SubprocessLauncher(Launcher):

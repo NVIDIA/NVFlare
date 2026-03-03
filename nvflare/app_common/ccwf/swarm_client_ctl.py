@@ -28,13 +28,7 @@ from nvflare.app_common.abstract.metric_comparator import MetricComparator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import (
-    Constant,
-    NumberMetricComparator,
-    ResultType,
-    make_task_name,
-    topic_for_membership_update,
-)
+from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -417,15 +411,6 @@ class SwarmClientController(ClientSideController):
         )
 
         # Register handler for server-initiated membership updates.
-        # When the server prunes failed clients at configure time, it broadcasts
-        # the new active-client list so each surviving client can remove dead peers
-        # from its trainers/aggrs lists.  Registered here (before the configure-phase
-        # response is sent back) so the update can arrive as soon as the server
-        # broadcasts — no race with process_config returning.
-        self.engine.register_aux_message_handler(
-            topic=topic_for_membership_update(self.workflow_id),
-            message_handle_func=self._handle_membership_update,
-        )
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:
@@ -993,12 +978,13 @@ class SwarmClientController(ClientSideController):
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
                 # For the remote path, LazyDownloadRefs are resolved automatically during
                 # the FOBS encode/decode inside broadcast_and_wait() (Fix 14).  The local
-                # path has no such encode/decode, so when forward_pass_through is active we
-                # resolve them explicitly before the result reaches shareable_to_learnable().
-                # Without forward_pass_through the result holds ordinary tensors (no LazyRefs),
-                # so skipping this avoids a spurious multi-GiB FOBS round-trip every round.
-                if self.forward_pass_through:
-                    result = self._resolve_lazy_refs(result, fl_ctx)
+                # path has no such encode/decode, so we resolve them explicitly here.
+                # This is always required: ex_process/api.py sets pass_through_on_send=True
+                # unconditionally for CellPipe, so the subprocess result always arrives at
+                # CJ as LazyDownloadRef objects regardless of forward_pass_through.
+                # (forward_pass_through controls the forward path server→subprocess, not this
+                # reverse path subprocess→aggregator.)
+                result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
                 local_fl_ctx.set_peer_context(engine.new_context())
@@ -1043,46 +1029,6 @@ class SwarmClientController(ClientSideController):
 
             # update status
             self.update_status(last_round=current_round, action="finished_learn_task")
-
-    def _handle_membership_update(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Handle a server-broadcast membership update after configure-phase pruning.
-
-        When the server prunes failed clients (min_clients > 0 allows proceeding with fewer
-        clients than configured), it sends the updated active-client list here so this client
-        removes dead peers from its trainers/aggrs lists.  Without this, _scatter() and
-        result-submission would still target the pruned clients → timeouts → round deadlock.
-
-        Args:
-            topic: the membership-update topic (scoped to this workflow)
-            request: Shareable carrying Constant.CLIENTS = list of surviving client names
-            fl_ctx: FL context
-
-        Returns:
-            OK reply to ACK the update to the server
-        """
-        new_clients = request.get(Constant.CLIENTS)
-        if not new_clients:
-            self.log_warning(fl_ctx, "received empty membership update — ignoring")
-            return make_reply(ReturnCode.OK)
-
-        new_clients_set = set(new_clients)
-
-        old_trainers = list(self.trainers)
-        old_aggrs = list(self.aggrs)
-
-        self.trainers = [c for c in self.trainers if c in new_clients_set]
-        self.aggrs = [c for c in self.aggrs if c in new_clients_set]
-
-        removed_trainers = [c for c in old_trainers if c not in new_clients_set]
-        removed_aggrs = [c for c in old_aggrs if c not in new_clients_set]
-
-        self.log_info(
-            fl_ctx,
-            f"membership update: active_clients={new_clients}, "
-            f"trainers={self.trainers} (removed: {removed_trainers}), "
-            f"aggrs={self.aggrs} (removed: {removed_aggrs})",
-        )
-        return make_reply(ReturnCode.OK)
 
     def _process_share_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()
