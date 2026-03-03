@@ -22,8 +22,10 @@ Example:
 """
 
 import argparse
+import os
 import subprocess
 import sys
+import tempfile
 
 
 def main():
@@ -42,25 +44,39 @@ def main():
     with open(args.requirements_file) as f:
         lines = f.readlines()
 
-    packages = []
+    filtered = []
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        pkg_lower = stripped.lower()
-        if any(pkg_lower.startswith(ex) for ex in excluded):
-            continue
-        packages.append(stripped)
+        if excluded:
+            # Extract the package specifier before any inline comment for exclude matching
+            spec = stripped.split(" #")[0].strip()
+            if any(spec.lower().startswith(ex) for ex in excluded):
+                continue
+        filtered.append(line)
 
-    if not packages:
+    if not filtered:
         print("No packages to install.")
         return
 
-    cmd = [sys.executable, "-m", "pip", "install"] + packages
-    if args.quiet:
-        cmd.append("--quiet")
+    req_dir = os.path.dirname(os.path.abspath(args.requirements_file))
+    fd, tmp_path = tempfile.mkstemp(suffix=".txt", dir=req_dir)
+    result = 1
+    try:
+        with os.fdopen(fd, "w") as tmp:
+            tmp.writelines(filtered)
+        cmd = [sys.executable, "-m", "pip", "install", "-r", tmp_path]
+        if args.quiet:
+            cmd.append("--quiet")
+        result = subprocess.call(cmd)
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
 
-    sys.exit(subprocess.call(cmd))
+    sys.exit(result)
 
 
 if __name__ == "__main__":
