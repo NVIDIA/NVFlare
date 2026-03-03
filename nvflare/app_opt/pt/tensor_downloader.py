@@ -182,6 +182,11 @@ class DiskTensorConsumer(ItemConsumer):
             with open(file_path, "wb") as f:
                 f.write(item)
             for key in keys:
+                if key in result:
+                    raise ValueError(
+                        f"Duplicate tensor key '{key}' seen in multiple safetensors chunks; "
+                        "streaming data may be malformed."
+                    )
                 result[key] = (file_path, key)
 
         return result

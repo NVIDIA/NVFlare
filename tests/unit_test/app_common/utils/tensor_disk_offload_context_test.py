@@ -21,11 +21,13 @@ from nvflare.app_common.utils.tensor_disk_offload_context import (
 class _MockCell:
     def __init__(self, enable_tensor_disk_offload: bool):
         self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
+        self.update_calls = 0
 
     def get_fobs_context(self):
         return dict(self.ctx)
 
     def update_fobs_context(self, props: dict):
+        self.update_calls += 1
         self.ctx.update(props)
 
 
@@ -51,6 +53,18 @@ def test_apply_returns_previous_and_updates():
     assert previous is False
     assert applied is True
     assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.update_calls == 1
+
+
+def test_apply_skips_update_when_value_unchanged():
+    cell = _MockCell(enable_tensor_disk_offload=True)
+
+    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+
+    assert previous is True
+    assert applied is True
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.update_calls == 0
 
 
 def test_restore_sets_previous_value():

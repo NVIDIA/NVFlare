@@ -38,7 +38,8 @@ def apply_enable_tensor_disk_offload(
         return None, False
 
     previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
-    cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: enabled})
+    if previous != enabled:
+        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: enabled})
     return previous, True
 
 

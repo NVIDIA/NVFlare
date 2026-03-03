@@ -113,6 +113,13 @@ class TestDiskTensorConsumer:
             disk_bytes = f.read()
         assert disk_bytes == original_bytes
 
+    def test_duplicate_key_raises_error(self, temp_dir):
+        consumer = DiskTensorConsumer(temp_dir)
+        items = [save_tensors({"dup": torch.randn(2)}), save_tensors({"dup": torch.randn(2)})]
+
+        with pytest.raises(ValueError, match="Duplicate tensor key"):
+            consumer.consume_items(items, None)
+
     def test_accumulates_across_calls(self, temp_dir):
         consumer = DiskTensorConsumer(temp_dir)
 
