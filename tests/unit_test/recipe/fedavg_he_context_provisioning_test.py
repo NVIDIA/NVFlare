@@ -15,7 +15,10 @@
 import importlib.util
 
 import pytest
-import torch.nn as nn
+pytestmark = pytest.mark.skipif(
+    importlib.util.find_spec("tenseal") is None or importlib.util.find_spec("torch") is None,
+    reason="tenseal and torch are required",
+)
 
 from nvflare.recipe.sim_env import SimEnv
 

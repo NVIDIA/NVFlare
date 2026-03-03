@@ -320,11 +320,11 @@ class FedAvgRecipeWithHE(Recipe):
             self._validate_sim_env_he_contexts(env)
 
     def _validate_sim_env_he_contexts(self, env):
-        startup_dir = os.path.join(env.workspace_root, self.name, "startup")
+        startup_dir = os.path.join(env.workspace_root, self.name, WorkspaceConstants.STARTUP_FOLDER_NAME)
         missing_files = [f for f in _HE_REQUIRED_CONTEXT_FILES if not os.path.isfile(os.path.join(startup_dir, f))]
         if missing_files:
             missing_paths = [os.path.join(startup_dir, f) for f in missing_files]
             raise ValueError(
                 f"{HE_CONTEXT_PRECHECK_ERROR} Missing context files: {missing_paths}. "
-                "For SimEnv, copy both files to the simulator startup folder before execute()."
+                f"For SimEnv, copy the missing file(s) to the simulator startup folder before execute(): {startup_dir}"
             )
