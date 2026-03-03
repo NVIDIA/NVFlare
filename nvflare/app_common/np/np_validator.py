@@ -22,9 +22,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
@@ -130,8 +128,8 @@ class NPValidator(Executor):
                 self.log_exception(fl_ctx, f"Exception in NPValidator execute: {secure_format_exception(e)}.")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         elif task_name == self._submit_model_task_name:
-            # Dummy validator has no local model; return empty FLModel for CSE workflow compatibility.
-            self.log_info(fl_ctx, "submit_model (dummy): no local model, returning empty FLModel.")
-            return FLModelUtils.to_shareable(FLModel())
+            # Dummy validator has no local model; signal OK so CSE controller can skip this client's submission.
+            self.log_info(fl_ctx, "submit_model (dummy): no local model, returning OK.")
+            return make_reply(ReturnCode.OK)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
