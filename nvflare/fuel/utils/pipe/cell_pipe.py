@@ -291,10 +291,14 @@ class CellPipe(Pipe):
         # context with FOBSContextKey.PASS_THROUGH=True so that tensors arrive
         # as LazyDownloadRef placeholders rather than being downloaded inline.
         #
-        # Set by ClientAPILauncherExecutor (CJ→subprocess forward direction)
-        # and by ExProcessClientAPI (subprocess→CJ reverse direction) when
-        # CellPipe is in use.  Has no effect for FilePipe (which is not a
+        # Set by ExProcessClientAPI.init() (subprocess→CJ reverse direction)
+        # when CellPipe is in use.  Has no effect for FilePipe (which is not a
         # CellPipe and never has this attribute set).
+        #
+        # Note: the forward direction (Fix 18, CJ→subprocess) does not use this
+        # flag; it is implemented via ReservedHeaderKey.PASS_THROUGH stamped on
+        # the shareable in SwarmClientController._scatter() and propagated by
+        # aux_runner.py — not through pipe.pass_through_on_send.
         self.pass_through_on_send: bool = False
 
     def _update_peer_active_time(self, msg: CellMessage, ch_name: str, msg_type: str):
