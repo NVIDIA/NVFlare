@@ -650,8 +650,11 @@ class FedJob:
         elif ALL_SITES in self.clients and n_clients:
             check_positive_int("n_clients", n_clients)
             self.clients = [f"site-{i}" for i in range(1, n_clients + 1)]
-        elif self.clients and n_clients:
-            raise ValueError("You already specified clients using `to()`. Don't use `n_clients` in simulator_run.")
+        elif self.clients and n_clients and n_clients != len(self.clients):
+            raise ValueError(
+                f"Conflicting client specification: `to()` defined {len(self.clients)} clients "
+                f"but n_clients={n_clients}. Remove n_clients or make them consistent."
+            )
 
         n_clients = len(self.clients)
 
