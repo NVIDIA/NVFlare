@@ -405,3 +405,100 @@ class TestNoMemoryAccumulation:
             # Each cycle produces exactly one datum and no OBJECTS entry
             assert len(tx_mgr.get_datums()) == 1, f"Round {i}: expected 1 datum"
             assert _CtxKey.OBJECTS not in tx_mgr.fobs_ctx, f"Round {i}: OBJECTS must not be set"
+
+
+# ---------------------------------------------------------------------------
+# 7. Forward-path regression guard: PASS_THROUGH context determines tensor vs ref
+# ---------------------------------------------------------------------------
+
+
+class TestForwardPathRegressionGuard:
+    """Documents the consequence of PASS_THROUGH on the forward path (CJ → subprocess).
+
+    The bug (Fix 14): CJ's pipe had pass_through_on_send=True, which stamped
+    PASS_THROUGH=True on task messages.  The subprocess Adapter.call() then
+    built a decode context with PASS_THROUGH=True, causing process_datum() to
+    store _LazyBatchInfo and recompose() to return LazyDownloadRef objects instead
+    of real tensors.  User code (torch.as_tensor(LazyDownloadRef)) then crashed
+    with "RuntimeError: Could not infer dtype of LazyDownloadRef".
+
+    The fix: CJ's pipe must NOT have pass_through_on_send=True.  The subprocess
+    decode context then has PASS_THROUGH=False, process_datum() downloads tensors
+    normally, and recompose() returns real tensor values.
+    """
+
+    def test_pass_through_true_context_yields_lazy_download_ref(self):
+        """PASS_THROUGH=True in decode ctx → recompose() returns LazyDownloadRef.
+
+        This is the bug scenario: subprocess receives a task message that was
+        stamped with PASS_THROUGH=True by CJ's pipe.  The subprocess decoder
+        builds a PASS_THROUGH=True context, process_datum() stores _LazyBatchInfo
+        (does not download), and recompose() returns LazyDownloadRef.
+
+        torch.as_tensor(LazyDownloadRef) → RuntimeError: Could not infer dtype.
+        """
+        decomposer = _make_decomposer()
+        fobs_ctx = {FOBSContextKey.PASS_THROUGH: True}  # bug: CJ stamped the header
+        mgr = _make_manager(fobs_ctx)
+        datum = _ref_datum()
+
+        with patch.object(decomposer, "_download_from_remote_cell"):
+            decomposer.process_datum(datum, mgr)
+
+        result = decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: _ITEM_ID_0}, mgr)
+
+        assert isinstance(result, LazyDownloadRef), (
+            "PASS_THROUGH=True context → recompose() must return LazyDownloadRef.\n"
+            "This is the crash path: torch.as_tensor(LazyDownloadRef) raises\n"
+            "RuntimeError: Could not infer dtype of LazyDownloadRef."
+        )
+
+    def test_pass_through_false_context_yields_real_item_not_lazy_download_ref(self):
+        """PASS_THROUGH=False in decode ctx → recompose() returns the real downloaded item.
+
+        This is the correct scenario after Fix 14: CJ's pipe does NOT stamp
+        PASS_THROUGH.  The subprocess decoder builds a PASS_THROUGH=False context,
+        process_datum() downloads tensors normally, and recompose() returns the
+        actual tensor value — torch.as_tensor() succeeds.
+        """
+        decomposer = _make_decomposer()
+        # PASS_THROUGH absent (False) — correct path after Fix 14
+        mgr = _make_manager()
+        datum = _ref_datum()
+
+        fake_tensor = object()  # stand-in for a real numpy array / tensor
+        fake_items = {_ITEM_ID_0: fake_tensor}
+        with patch.object(decomposer, "_download_from_remote_cell", return_value=fake_items):
+            decomposer.process_datum(datum, mgr)
+
+        result = decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: _ITEM_ID_0}, mgr)
+
+        assert result is fake_tensor, (
+            "PASS_THROUGH=False context → recompose() must return the real downloaded item,\n"
+            "not a LazyDownloadRef.  torch.as_tensor() on a real tensor succeeds."
+        )
+        assert not isinstance(result, LazyDownloadRef), (
+            "recompose() must never return LazyDownloadRef on the forward path\n"
+            "(PASS_THROUGH=False context).  CJ's pipe must not stamp the header."
+        )
+
+    def test_pass_through_absent_equivalent_to_false(self):
+        """An absent PASS_THROUGH key in fobs_ctx is treated as False.
+
+        DatumManager starts with an empty ctx, so FOBSContextKey.PASS_THROUGH
+        is not present.  process_datum() must fall through to the download path,
+        not the PASS_THROUGH path.
+        """
+        decomposer = _make_decomposer()
+        mgr = _make_manager()  # no PASS_THROUGH key at all
+        assert FOBSContextKey.PASS_THROUGH not in mgr.fobs_ctx  # guard
+
+        datum = _ref_datum()
+        fake_items = {_ITEM_ID_0: object()}
+        with patch.object(decomposer, "_download_from_remote_cell", return_value=fake_items) as mock_dl:
+            decomposer.process_datum(datum, mgr)
+
+        # With no PASS_THROUGH key, download must be attempted
+        mock_dl.assert_called_once()
+        # And no _LazyBatchInfo should be stored
+        assert not isinstance(mgr.fobs_ctx.get(decomposer.items_key), _LazyBatchInfo)

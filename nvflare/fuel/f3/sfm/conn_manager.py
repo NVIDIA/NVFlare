@@ -152,10 +152,10 @@ class ConnManager(ConnMonitor):
                 connector.stopped.set()
                 connector.driver.shutdown()
 
+        self.stopped = True
+
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
-
-        self.stopped = True
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -376,7 +376,10 @@ class ConnManager(ConnMonitor):
             log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
             return
 
-        self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
+        try:
+            self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
+        except RuntimeError:
+            log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
 
     def update_endpoint(self, sfm_conn: SfmConnection, data: dict):
 
@@ -460,8 +463,14 @@ class ConnManager(ConnMonitor):
     def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send message to itself"""
 
+        if self.stopped:
+            return
+
         # Call receiver in a different thread to avoid deadlock
-        self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, headers, payload)
+        try:
+            self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, headers, payload)
+        except RuntimeError as e:
+            log.debug(f"Loopback submit skipped: {e}")
 
     def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
 
