@@ -28,7 +28,13 @@ from nvflare.app_common.abstract.metric_comparator import MetricComparator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
-from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.app_common.ccwf.common import (
+    Constant,
+    NumberMetricComparator,
+    ResultType,
+    make_task_name,
+    topic_for_membership_update,
+)
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -410,6 +416,17 @@ class SwarmClientController(ClientSideController):
             message_handle_func=self._process_submission_request,
         )
 
+        # Register handler for server-initiated membership updates.
+        # When the server prunes failed clients at configure time, it broadcasts
+        # the new active-client list so each surviving client can remove dead peers
+        # from its trainers/aggrs lists.  Registered here (before the configure-phase
+        # response is sent back) so the update can arrive as soon as the server
+        # broadcasts — no race with process_config returning.
+        self.engine.register_aux_message_handler(
+            topic=topic_for_membership_update(self.workflow_id),
+            message_handle_func=self._handle_membership_update,
+        )
+
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.report_learn_result_task_name:
             return self._process_learn_result(shareable, fl_ctx, abort_signal)
@@ -495,10 +512,9 @@ class SwarmClientController(ClientSideController):
         # download transaction stays alive for learn_task_timeout seconds — long
         # enough for the receiving subprocess to pull the global model.  Without
         # this, via_downloader._create_downloader() falls back to
-        # _MIN_DOWNLOAD_TIMEOUT (3600 s), which may still be too short for very
-        # large models or slow networks.  task_controller.broadcast_and_wait()
-        # preserves a pre-set MSG_ROOT_TTL instead of overwriting it with the
-        # short ACK timeout.
+        # _MIN_DOWNLOAD_TIMEOUT (300 s inactivity floor), which is sufficient
+        # for most GC pauses.  task_controller.broadcast_and_wait() preserves a
+        # pre-set MSG_ROOT_TTL instead of overwriting it with the short ACK timeout.
         if self.learn_task_timeout:
             task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
 
@@ -530,7 +546,16 @@ class SwarmClientController(ClientSideController):
         # 3. Without deep copy, there's a race condition between modification and processing
         if should_queue_locally:
             self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
-            if not self.set_learn_task(task_data=copy.deepcopy(task_data), fl_ctx=fl_ctx):
+            local_task_data = copy.deepcopy(task_data)
+            if self.forward_pass_through and remote_targets:
+                # task_data may carry LazyDownloadRef placeholders from a forward PASS_THROUGH
+                # round.  The upstream transaction has num_receivers=1 — if both local _do_learn
+                # and remote subprocesses try to download from the same ref_id, the first to
+                # complete closes the transaction and the second gets "no ref found".
+                # Resolve locally so the local consumer uses real tensors; remote targets still
+                # receive the original LazyDownloadRef via send_learn_task below.
+                local_task_data = self._resolve_lazy_refs(local_task_data, fl_ctx)
+            if not self.set_learn_task(task_data=local_task_data, fl_ctx=fl_ctx):
                 self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
                 return False
 
@@ -585,18 +610,19 @@ class SwarmClientController(ClientSideController):
         # generate_log_message(), which requires fl_ctx to have a real peer context.
         if self.forward_pass_through:
             try:
-                from nvflare.apis.dxo import from_shareable as _from_shareable
+                from nvflare.apis.dxo import from_shareable
                 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
                 if aggr_result.get_header(ReservedHeaderKey.CONTENT_TYPE) == "DXO":
-                    _dxo = _from_shareable(aggr_result)
+                    _dxo = from_shareable(aggr_result)
                     if _dxo.data and any(isinstance(v, LazyDownloadRef) for v in _dxo.data.values()):
-                        self.log_error(
+                        self.system_panic(
+                            "LazyDownloadRef objects reached _end_gather() — "
+                            "_resolve_lazy_refs() was not called on the local-aggr path. "
+                            "This is a code bug.",
                             fl_ctx,
-                            "LazyDownloadRef objects reached _end_gather() — resolving now. "
-                            "This indicates _resolve_lazy_refs() was not called on the local-aggr path.",
                         )
-                        aggr_result = self._resolve_lazy_refs(aggr_result, fl_ctx)
+                        return
             except Exception:
                 self.logger.warning(f"LazyDownloadRef guard check failed: {secure_format_traceback()}")
 
@@ -636,6 +662,7 @@ class SwarmClientController(ClientSideController):
                 from nvflare.fuel.utils.memory_utils import cleanup_memory
 
                 cleanup_memory(cuda_empty_cache=self.cuda_empty_cache)
+                self.log_info(fl_ctx, f"Swarm aggregator memory cleanup at round {self._aggr_round_count}")
 
     def _ask_to_share_best_result(self, client: str, metric, fl_ctx: FLContext):
         # other client has best model - ask it to distribute its result
@@ -1013,6 +1040,46 @@ class SwarmClientController(ClientSideController):
 
             # update status
             self.update_status(last_round=current_round, action="finished_learn_task")
+
+    def _handle_membership_update(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Handle a server-broadcast membership update after configure-phase pruning.
+
+        When the server prunes failed clients (min_clients > 0 allows proceeding with fewer
+        clients than configured), it sends the updated active-client list here so this client
+        removes dead peers from its trainers/aggrs lists.  Without this, _scatter() and
+        result-submission would still target the pruned clients → timeouts → round deadlock.
+
+        Args:
+            topic: the membership-update topic (scoped to this workflow)
+            request: Shareable carrying Constant.CLIENTS = list of surviving client names
+            fl_ctx: FL context
+
+        Returns:
+            OK reply to ACK the update to the server
+        """
+        new_clients = request.get(Constant.CLIENTS)
+        if not new_clients:
+            self.log_warning(fl_ctx, "received empty membership update — ignoring")
+            return make_reply(ReturnCode.OK)
+
+        new_clients_set = set(new_clients)
+
+        old_trainers = list(self.trainers)
+        old_aggrs = list(self.aggrs)
+
+        self.trainers = [c for c in self.trainers if c in new_clients_set]
+        self.aggrs = [c for c in self.aggrs if c in new_clients_set]
+
+        removed_trainers = [c for c in old_trainers if c not in new_clients_set]
+        removed_aggrs = [c for c in old_aggrs if c not in new_clients_set]
+
+        self.log_info(
+            fl_ctx,
+            f"membership update: active_clients={new_clients}, "
+            f"trainers={self.trainers} (removed: {removed_trainers}), "
+            f"aggrs={self.aggrs} (removed: {removed_aggrs})",
+        )
+        return make_reply(ReturnCode.OK)
 
     def _process_share_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()

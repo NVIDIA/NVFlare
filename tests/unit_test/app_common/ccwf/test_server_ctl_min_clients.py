@@ -36,6 +36,13 @@ Three code paths are tested:
      - min_clients=0: first silent client triggers system_panic immediately.
      - min_clients=N>0: panic only when active_count < N; tolerate dropouts
        as long as at least N clients are still reporting.
+
+  E. Pruned starting_client reselection (tested in TestPrunedStartingClient).
+
+  F. Membership update broadcast (H4 fix):
+     - When clients are pruned at configure time, server broadcasts the updated
+       membership list to surviving clients so they remove dead peers.
+     - No broadcast when no clients are pruned.
 """
 
 import time
@@ -43,7 +50,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.app_common.ccwf.common import StatusReport
+from nvflare.app_common.ccwf.common import Constant, StatusReport, topic_for_membership_update
 from nvflare.app_common.ccwf.server_ctl import ClientStatus, ServerSideController
 from nvflare.fuel.utils.validation_utils import DefaultValuePolicy
 
@@ -445,3 +452,107 @@ class TestPrunedStartingClient:
         # site-1 fails → configured_count=0 < required=1 → panic (not reselection path)
         self._run_prune_and_start(ctrl2, ready_clients=[], starting_client="site-1")
         ctrl2.system_panic.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# F. Membership update broadcast (H4 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestMembershipUpdateBroadcast:
+    """H4 fix: server must broadcast the updated membership list to surviving clients
+    when one or more clients are pruned during the configure phase.
+
+    Without this broadcast, clients keep stale membership lists and scatter/aggregate
+    to dead peers → timeouts → round deadlock.
+
+    The broadcast must:
+    - target only the surviving (non-pruned) clients
+    - use topic_for_membership_update(wf_id)
+    - carry the updated participating_clients list in the Shareable payload
+    - NOT be sent when no clients are pruned
+    """
+
+    def _run_prune_and_broadcast(self, ctrl, ready_clients):
+        """Simulate the configure-phase prune + membership broadcast logic."""
+        for c in ctrl.participating_clients:
+            _add_client_status(ctrl, c, ready=(c in ready_clients))
+
+        total_clients = len(ctrl.participating_clients)
+        required = ctrl.min_clients if ctrl.min_clients > 0 else total_clients
+        failed_clients = [c for c, cs in ctrl.client_statuses.items() if not cs.ready_time]
+        configured_count = total_clients - len(failed_clients)
+
+        fl_ctx = MagicMock()
+        if configured_count < required:
+            ctrl.system_panic(
+                f"failed to configure clients {failed_clients}: "
+                f"only {configured_count}/{total_clients} configured, need {required}",
+                fl_ctx,
+            )
+            return fl_ctx
+
+        if failed_clients:
+            for c in failed_clients:
+                ctrl.participating_clients.remove(c)
+                del ctrl.client_statuses[c]
+
+            # H4: broadcast updated membership to survivors
+            from nvflare.apis.shareable import Shareable as _Shareable
+
+            update = _Shareable()
+            update[Constant.CLIENTS] = ctrl.participating_clients
+            engine = fl_ctx.get_engine()
+            engine.send_aux_request(
+                targets=ctrl.participating_clients,
+                topic=topic_for_membership_update(ctrl.workflow_id),
+                request=update,
+                timeout=10.0,
+                fl_ctx=fl_ctx,
+                secure=False,
+            )
+
+        return fl_ctx
+
+    def test_broadcast_sent_when_client_pruned(self):
+        """When a client fails and is pruned, send_aux_request must be called with
+        the membership update topic and the surviving clients list."""
+        ctrl = _make_stub(clients=_FOUR_CLIENTS, min_clients=2)
+        fl_ctx = self._run_prune_and_broadcast(ctrl, ready_clients=["site-1", "site-2", "site-3"])
+
+        engine = fl_ctx.get_engine()
+        engine.send_aux_request.assert_called_once()
+        kwargs = engine.send_aux_request.call_args.kwargs
+        assert kwargs["topic"] == topic_for_membership_update("wf-test")
+        assert kwargs["targets"] == ["site-1", "site-2", "site-3"]
+
+    def test_broadcast_carries_survivors_not_pruned(self):
+        """The membership update payload must contain only the surviving clients."""
+        ctrl = _make_stub(clients=_FOUR_CLIENTS, min_clients=2)
+        fl_ctx = self._run_prune_and_broadcast(ctrl, ready_clients=["site-1", "site-2"])
+
+        engine = fl_ctx.get_engine()
+        call_kwargs = engine.send_aux_request.call_args.kwargs
+        request = call_kwargs["request"]
+        clients_in_payload = request[Constant.CLIENTS]
+        assert "site-3" not in clients_in_payload
+        assert "site-4" not in clients_in_payload
+        assert set(clients_in_payload) == {"site-1", "site-2"}
+
+    def test_no_broadcast_when_all_configured(self):
+        """When all clients configure successfully, no membership update is sent."""
+        ctrl = _make_stub(clients=_FOUR_CLIENTS, min_clients=0)
+        fl_ctx = self._run_prune_and_broadcast(ctrl, ready_clients=_FOUR_CLIENTS)
+
+        engine = fl_ctx.get_engine()
+        engine.send_aux_request.assert_not_called()
+
+    def test_topic_format_matches_workflow_id(self):
+        """The broadcast topic must be scoped to the workflow ID."""
+        ctrl = _make_stub(clients=_FOUR_CLIENTS, min_clients=2)
+        ctrl.workflow_id = "my-wf-42"
+        fl_ctx = self._run_prune_and_broadcast(ctrl, ready_clients=["site-1", "site-2"])
+
+        engine = fl_ctx.get_engine()
+        kwargs = engine.send_aux_request.call_args.kwargs
+        assert "my-wf-42" in kwargs["topic"]

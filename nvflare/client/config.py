@@ -19,6 +19,7 @@ from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ExchangeFormat(str, Enum):
@@ -129,6 +130,7 @@ class ClientConfig:
         if config is None:
             config = {}
         self.config = config
+        self.logger = get_obj_logger(self)
 
     def get_config(self) -> Dict:
         return self.config
@@ -177,7 +179,11 @@ class ClientConfig:
         value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.MAX_RESENDS, 3)
         if value is None:
             return None
-        return int(value)
+        result = int(value)
+        if result < 0:
+            self.logger.warning(f"max_resends={result} is negative, clamping to 0")
+            return 0
+        return result
 
     def get_download_complete_timeout(self) -> float:
         """Return timeout (seconds) for subprocess to wait for the server to finish downloading its result.

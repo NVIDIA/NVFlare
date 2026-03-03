@@ -17,7 +17,7 @@ Covers three scenarios:
   1. _resolve_lazy_refs(): FOBS round-trip with PASS_THROUGH=False in decode context.
   2. Self-aggregation local path: LazyDownloadRefs resolved before _process_learn_result().
   3. Remote P2P path: _resolve_lazy_refs() NOT called (resolution handled by Fix 14).
-  4. Defensive guard in _end_gather(): fires, logs error, resolves surviving refs.
+  4. Defensive guard in _end_gather(): fires, calls system_panic (invariant violation).
 """
 import unittest
 from unittest.mock import MagicMock, patch
@@ -102,6 +102,7 @@ def _make_controller():
     ctl.record_last_result = MagicMock()
     ctl._scatter = MagicMock()
     ctl._distribute_final_results = MagicMock()
+    ctl.system_panic = MagicMock()
     return ctl
 
 
@@ -344,7 +345,13 @@ class TestRemotePathUnchanged(unittest.TestCase):
 
 
 class TestDefensiveGuardInEndGather(unittest.TestCase):
-    """_end_gather() defensive check must log error and resolve surviving LazyDownloadRefs."""
+    """_end_gather() defensive check must call system_panic when LazyDownloadRefs survive.
+
+    YT1 fix: reaching _end_gather() with unresolved LazyDownloadRef objects is a code
+    invariant violation — _resolve_lazy_refs() should have been called upstream on the
+    local-aggregation path (_scatter() or do_learn_task()).  Logging and recovering would
+    mask the root cause; system_panic + return is the correct response.
+    """
 
     def _build_end_gather_ctl(self, num_rounds=10):
         """Return a controller ready for _end_gather() testing.
@@ -367,24 +374,18 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
         ctl.shareable_generator.learnable_to_shareable.return_value = _make_shareable_with_real_arrays()
         return ctl
 
-    def test_defensive_guard_fires_and_resolves_lazy_refs(self):
-        """If LazyDownloadRefs survive into _end_gather(), the guard resolves them and
-        logs an error, and shareable_to_learnable receives the resolved result.
-        The guard only runs when forward_pass_through=True (the only path that produces
-        LazyDownloadRef objects in aggregation results)."""
+    def test_defensive_guard_fires_system_panic_on_lazy_refs(self):
+        """YT1 fix: if LazyDownloadRefs survive into _end_gather(), call system_panic
+        and return early.  Reaching this point is a code bug — _resolve_lazy_refs()
+        was not called on the local-aggregation path where it should have been.
+        The guard only runs when forward_pass_through=True."""
         ctl = self._build_end_gather_ctl()
         ctl.forward_pass_through = True
 
         lazy_aggr = _make_shareable_with_lazy_refs()
-        real_aggr = _make_shareable_with_real_arrays()
 
         resolve_calls = []
-
-        def fake_resolve(res, ctx):
-            resolve_calls.append(res)
-            return real_aggr
-
-        ctl._resolve_lazy_refs = fake_resolve
+        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or res
 
         mock_gatherer = MagicMock()
         mock_gatherer.aggregate.return_value = lazy_aggr
@@ -393,10 +394,13 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
 
         ctl._end_gather(mock_gatherer)
 
-        self.assertEqual(len(resolve_calls), 1, "defensive guard must call _resolve_lazy_refs exactly once")
-        ctl.log_error.assert_called()  # the unexpected path must be logged as an error
-        called_with = ctl.shareable_generator.shareable_to_learnable.call_args[0][0]
-        self.assertIs(called_with, real_aggr, "shareable_to_learnable must receive the resolved result, not lazy refs")
+        # Must panic — not recover
+        ctl.system_panic.assert_called_once()
+        msg = ctl.system_panic.call_args[0][0]
+        assert "LazyDownloadRef" in msg, f"panic message must name the type, got: {msg}"
+        # Must return early — no resolution, no further processing
+        self.assertEqual(resolve_calls, [], "_resolve_lazy_refs must NOT be called after system_panic")
+        ctl.shareable_generator.shareable_to_learnable.assert_not_called()
 
     def test_defensive_guard_does_not_interfere_with_real_arrays(self):
         """When aggr_result already contains real arrays, the guard must not call

@@ -128,3 +128,49 @@ class TestSwarmAggregatorMemoryGC:
                 _call_end_gather(ctrl, _make_gatherer(for_round=r))
             # rounds 3 and 6 fire
             assert mock_cleanup.call_count == 2
+
+
+class TestSwarmAggregatorGCLogging:
+    """M3 fix: _end_gather() must log at INFO when cleanup_memory() fires.
+
+    Before M3 fix, cleanup_memory() was called silently — no log message.
+    Unlike all other GC call sites (CJ-side), Swarm aggregator GC was invisible
+    in runtime logs, making it impossible to verify GC execution from logs alone.
+    """
+
+    def test_gc_fires_log_info_called(self):
+        """When memory_gc_rounds=1 and GC fires, log_info must be called."""
+        ctrl = _make_controller(memory_gc_rounds=1)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory"):
+            _call_end_gather(ctrl, _make_gatherer(for_round=0))
+
+        ctrl.log_info.assert_called()
+        msgs = [str(call_args) for call_args in ctrl.log_info.call_args_list]
+        assert any(
+            "cleanup" in m.lower() or "memory" in m.lower() or "aggr" in m.lower() for m in msgs
+        ), f"log_info must mention cleanup/memory/aggr, got calls: {msgs}"
+
+    def test_gc_skipped_round_no_cleanup_log(self):
+        """When GC does not fire on a given round, no cleanup log_info is emitted."""
+        ctrl = _make_controller(memory_gc_rounds=2)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory") as mock_cleanup:
+            _call_end_gather(ctrl, _make_gatherer(for_round=0))  # round 1 — GC skipped
+            mock_cleanup.assert_not_called()
+
+        # Only non-GC log_info calls should have been made (round completion etc.)
+        # None of them should mention "cleanup" since GC did not fire.
+        for call_args in ctrl.log_info.call_args_list:
+            msg = str(call_args)
+            assert "cleanup" not in msg.lower(), f"cleanup log must not appear when GC is skipped, got: {msg}"
+
+    def test_gc_log_mentions_round_count(self):
+        """Log message must include the aggregation round count."""
+        ctrl = _make_controller(memory_gc_rounds=1)
+
+        with patch("nvflare.fuel.utils.memory_utils.cleanup_memory"):
+            _call_end_gather(ctrl, _make_gatherer(for_round=0))
+
+        all_msgs = " ".join(str(c) for c in ctrl.log_info.call_args_list)
+        assert "1" in all_msgs, "GC log message must include the round count (1 after first GC call)"

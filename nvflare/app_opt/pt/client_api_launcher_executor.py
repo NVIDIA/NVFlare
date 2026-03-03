@@ -50,6 +50,9 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         config_file_name: str = CLIENT_API_CONFIG,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        submit_result_timeout: float = 300.0,
+        max_resends: int = 3,
+        download_complete_timeout: float = 1800.0,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -77,6 +80,9 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
             config_file_name=config_file_name,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            submit_result_timeout=submit_result_timeout,
+            max_resends=max_resends,
+            download_complete_timeout=download_complete_timeout,
         )
 
     def _decomposer_prefix(self) -> str:

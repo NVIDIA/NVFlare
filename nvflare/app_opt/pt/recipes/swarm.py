@@ -110,7 +110,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             - A dict config: {"class_path": "module.ClassName", "args": {"param": value}}
         num_rounds: Number of training rounds.
         train_script: Path to the training script.
-        min_clients: Minimum number of clients required to start the job. Defaults to 1.
+        min_clients: Minimum number of clients required. Defaults to 1.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
@@ -229,6 +229,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             start_task_timeout=start_task_timeout,
             progress_timeout=progress_timeout,
             max_status_report_interval=max_status_report_interval,
+            min_clients=min_clients,
         )
         client_config = SwarmClientConfig(
             executor=ScriptRunner(
@@ -245,6 +246,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             shareable_generator=SimpleModelShareableGenerator(),
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            min_responses_required=min_clients,
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)

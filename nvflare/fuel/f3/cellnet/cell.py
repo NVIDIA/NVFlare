@@ -82,8 +82,8 @@ class Adapter:
         # all other messages (Swarm P2P, system) arrive without it and decode
         # normally.  get_fobs_context(props=...) returns a fresh shallow-copy
         # dict so the cell-level base context is never mutated.
-        pt = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
-        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: pt})
+        passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
 
         channel = request.get_header(StreamHeaderKey.CHANNEL)

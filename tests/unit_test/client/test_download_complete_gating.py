@@ -353,3 +353,195 @@ class TestClientConfigDownloadCompleteTimeout:
 
         cfg = ClientConfig(config={})
         assert cfg.get_download_complete_timeout() == 1800.0
+
+
+# ---------------------------------------------------------------------------
+# M-new: ClientConfig.get_max_resends() — negative value clamping
+# ---------------------------------------------------------------------------
+
+
+class TestClientConfigMaxResends:
+    """M-new fix: get_max_resends() must clamp negative values to 0 with a warning.
+
+    A negative max_resends (e.g. a typo of -1 in YAML) would otherwise behave
+    like max_resends=0 silently, causing send_to_peer() to abort after the first
+    failure without any indication to the user.
+    """
+
+    def test_positive_value_returned_as_is(self):
+        """Positive max_resends is returned unchanged."""
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: 5}})
+        assert cfg.get_max_resends() == 5
+
+    def test_zero_is_valid(self):
+        """max_resends=0 is valid (one attempt, no retries)."""
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: 0}})
+        assert cfg.get_max_resends() == 0
+
+    def test_none_returns_none(self):
+        """max_resends=None means unlimited retries — returned as None."""
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: None}})
+        assert cfg.get_max_resends() is None
+
+    def test_negative_clamped_to_zero(self):
+        """Negative max_resends is clamped to 0 (M-new fix)."""
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: -1}})
+        result = cfg.get_max_resends()
+        assert result == 0, f"Expected 0 for max_resends=-1, got {result}"
+
+    def test_negative_clamped_logs_warning(self):
+        """Negative max_resends logs a warning so the user knows it was corrected (M-new fix)."""
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.MAX_RESENDS: -3}})
+        with patch.object(cfg.logger, "warning") as mock_warn:
+            cfg.get_max_resends()
+            mock_warn.assert_called_once()
+            msg = mock_warn.call_args[0][0]
+            assert "-3" in msg or "negative" in msg.lower(), f"Warning should mention -3 or 'negative': {msg}"
+
+    def test_default_is_3(self):
+        """Default max_resends when not configured is 3."""
+        from nvflare.client.config import ClientConfig
+
+        cfg = ClientConfig(config={})
+        assert cfg.get_max_resends() == 3
+
+
+# ---------------------------------------------------------------------------
+# L11: status-based download logging (FINISHED→info, TIMEOUT/DELETED→warning)
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadStatusLogging:
+    """L11 fix: _do_submit_result() logs info for FINISHED, warning for TIMEOUT/DELETED.
+
+    Before L11 fix, the lambda ignored status and line 376 always logged
+    "server download complete" — misleading when the transaction timed out.
+    After fix, status is captured and the log level matches the outcome.
+    """
+
+    def _patch_shareable(self, agent):
+        agent.task_result_to_shareable = MagicMock(return_value=MagicMock())
+
+    def _run_with_status(self, status: str, timeout: float = 5.0):
+        """Helper: run _do_submit_result and fire callback with given status."""
+        pipe = _make_cell_pipe(pass_through_on_send=True)
+        agent = _make_agent(pipe, download_complete_timeout=timeout)
+        self._patch_shareable(agent)
+
+        registered_cb = {}
+
+        def fire_cb(reply, t):
+            for c in pipe.cell.update_fobs_context.call_args_list:
+                props = c[0][0]
+                if (
+                    FOBSContextKey.DOWNLOAD_COMPLETE_CB in props
+                    and props[FOBSContextKey.DOWNLOAD_COMPLETE_CB] is not None
+                ):
+                    registered_cb["cb"] = props[FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+            if registered_cb.get("cb"):
+                registered_cb["cb"]("tid", status, [])
+            return True
+
+        agent.pipe_handler.send_to_peer.side_effect = fire_cb
+        agent._do_submit_result(_make_task_ctx(), None, "OK")
+        return agent
+
+    def test_finished_logs_info(self):
+        """FINISHED status → logger.info called (not warning)."""
+        from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
+
+        agent = self._run_with_status(TransactionDoneStatus.FINISHED)
+        agent.logger.info.assert_called()
+        # Must not log a warning for FINISHED
+        for call in agent.logger.warning.call_args_list:
+            msg = call[0][0]
+            assert "download transaction" not in msg, f"FINISHED must not trigger download warning: {msg}"
+
+    def test_timeout_logs_warning(self):
+        """TIMEOUT status → logger.warning called with status in message."""
+        from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
+
+        agent = self._run_with_status(TransactionDoneStatus.TIMEOUT)
+        agent.logger.warning.assert_called()
+        # At least one warning must mention the status
+        msgs = [c[0][0] for c in agent.logger.warning.call_args_list]
+        assert any(
+            TransactionDoneStatus.TIMEOUT in m for m in msgs
+        ), f"Warning must include status={TransactionDoneStatus.TIMEOUT!r}. Got: {msgs}"
+
+    def test_deleted_logs_warning(self):
+        """DELETED status → logger.warning called with status in message."""
+        from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
+
+        agent = self._run_with_status(TransactionDoneStatus.DELETED)
+        agent.logger.warning.assert_called()
+        msgs = [c[0][0] for c in agent.logger.warning.call_args_list]
+        assert any(
+            TransactionDoneStatus.DELETED in m for m in msgs
+        ), f"Warning must include status={TransactionDoneStatus.DELETED!r}. Got: {msgs}"
+
+
+# ---------------------------------------------------------------------------
+# H3 + L12: FlareAgentWithCellPipe default values
+# ---------------------------------------------------------------------------
+
+
+class TestFlareAgentWithCellPipeDefaults:
+    """H3 + L12: FlareAgentWithCellPipe must have aligned defaults and forward
+    download_complete_timeout to the base class.
+
+    Before H3/L12: submit_result_timeout=30.0 and heartbeat_timeout=30.0 diverged
+    silently from FlareAgent base (both 60.0). download_complete_timeout was missing
+    entirely — users of this convenience class could not override it.
+    """
+
+    def _make_cellpipe_cls(self):
+        """Patch CellPipe so FlareAgentWithCellPipe.__init__ doesn't open sockets."""
+        from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+
+        return MagicMock(spec=CellPipe)
+
+    def test_submit_result_timeout_default_is_60(self):
+        """submit_result_timeout default must be 60.0 (was 30.0 before H3)."""
+        import inspect
+
+        from nvflare.client.flare_agent import FlareAgentWithCellPipe
+
+        sig = inspect.signature(FlareAgentWithCellPipe.__init__)
+        default = sig.parameters["submit_result_timeout"].default
+        assert (
+            default == 60.0
+        ), f"submit_result_timeout default must be 60.0 (aligned with FlareAgent base). Got {default}"
+
+    def test_heartbeat_timeout_default_is_60(self):
+        """heartbeat_timeout default must be 60.0 (was 30.0 before L12)."""
+        import inspect
+
+        from nvflare.client.flare_agent import FlareAgentWithCellPipe
+
+        sig = inspect.signature(FlareAgentWithCellPipe.__init__)
+        default = sig.parameters["heartbeat_timeout"].default
+        assert default == 60.0, f"heartbeat_timeout default must be 60.0 (aligned with FlareAgent base). Got {default}"
+
+    def test_download_complete_timeout_param_exists(self):
+        """download_complete_timeout parameter must exist with default 1800.0 (H3)."""
+        import inspect
+
+        from nvflare.client.flare_agent import FlareAgentWithCellPipe
+
+        sig = inspect.signature(FlareAgentWithCellPipe.__init__)
+        assert (
+            "download_complete_timeout" in sig.parameters
+        ), "download_complete_timeout parameter must exist on FlareAgentWithCellPipe (H3 fix)"
+        default = sig.parameters["download_complete_timeout"].default
+        assert default == 1800.0, f"download_complete_timeout default must be 1800.0. Got {default}"

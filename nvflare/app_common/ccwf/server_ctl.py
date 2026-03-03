@@ -31,6 +31,7 @@ from nvflare.app_common.ccwf.common import (
     make_task_name,
     status_report_from_dict,
     topic_for_end_workflow,
+    topic_for_membership_update,
 )
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
@@ -299,6 +300,25 @@ class ServerSideController(Controller):
                 del self.client_statuses[c]
             self.log_info(fl_ctx, f"active clients after pruning: {self.participating_clients}")
 
+            # Broadcast the updated membership list so clients remove dead peers from their
+            # trainers/aggrs lists.  Without this, clients scatter/aggregate to dead clients
+            # → timeouts → round deadlock.  Clients register the handler during process_config()
+            # so it is available before this update arrives.
+            update = Shareable()
+            update[Constant.CLIENTS] = self.participating_clients
+            engine = fl_ctx.get_engine()
+            resp = engine.send_aux_request(
+                targets=self.participating_clients,
+                topic=topic_for_membership_update(self.workflow_id),
+                request=update,
+                timeout=self.configure_task_timeout,
+                fl_ctx=fl_ctx,
+                secure=False,
+            )
+            for c in self.participating_clients:
+                if not resp.get(c):
+                    self.log_warning(fl_ctx, f"client {c} did not ACK membership update")
+
             # If the designated starting client was pruned, pick a new one from the survivors.
             if self.starting_client in failed_clients:
                 if not self.participating_clients:
@@ -367,18 +387,31 @@ class ServerSideController(Controller):
         for c in self.participating_clients:
             reply = resp.get(c)
             if not reply:
-                self.log_error(fl_ctx, f"not reply from client {c} for ending workflow {self.workflow_id}")
+                self.log_warning(fl_ctx, f"no reply from client {c} for ending workflow {self.workflow_id}")
                 num_errors += 1
                 continue
 
             assert isinstance(reply, Shareable)
             rc = reply.get_return_code(ReturnCode.OK)
             if rc != ReturnCode.OK:
-                self.log_error(fl_ctx, f"client {c} failed to end workflow {self.workflow_id}: {rc}")
+                self.log_warning(fl_ctx, f"client {c} failed to end workflow {self.workflow_id}: {rc}")
                 num_errors += 1
 
-        if num_errors > 0:
-            self.system_panic(f"failed to end workflow {self.workflow_id} on all clients", fl_ctx)
+        total = len(self.participating_clients)
+        successful = total - num_errors
+        required = self.min_clients if self.min_clients > 0 else total
+        if successful < required:
+            self.system_panic(
+                f"failed to end workflow {self.workflow_id}: only {successful}/{total} clients responded, "
+                f"need {required} (min_clients={self.min_clients})",
+                fl_ctx,
+            )
+        elif num_errors > 0:
+            self.log_warning(
+                fl_ctx,
+                f"workflow {self.workflow_id} ended with {num_errors} non-responding client(s) "
+                f"({successful}/{total} successful, min_clients={required})",
+            )
 
         self.log_info(fl_ctx, f"Workflow {self.workflow_id} done!")
 

@@ -213,5 +213,107 @@ class TestDoLearnTaskForwardPassThrough(unittest.TestCase):
         self.assertIs(model_input, task_data, "With flag=False, shareable_to_learnable must receive original task_data")
 
 
+class TestScatterLazyRefResolution(unittest.TestCase):
+    """M4 fix: _scatter() must resolve LazyDownloadRefs on the local copy when
+    forward_pass_through=True AND remote_targets exist.
+
+    Root cause: task_data may carry LazyDownloadRef placeholders from an upstream
+    PASS_THROUGH decode.  The upstream DownloadService transaction has num_receivers=1.
+    If both the local _do_learn thread and a remote subprocess try to download from the
+    same ref_id, the first consumer closes the transaction and the second gets
+    "no ref found".  Resolving locally produces real tensors for the local consumer;
+    remote targets still receive the original LazyDownloadRef via send_learn_task.
+    """
+
+    def _make_real_scatter_ctl(self, me="site-1", trainers=None, aggrs=None, forward_pass_through=True):
+        """Build a controller that exposes the real _scatter() implementation."""
+        ctl = _make_controller(forward_pass_through=forward_pass_through)
+        # undo the _scatter mock so we test the real method
+        del ctl._scatter
+
+        ctl.me = me
+        ctl.trainers = trainers or [me]
+        ctl.aggrs = aggrs or [me]
+        ctl.is_trainer = True
+        ctl.is_aggr = True
+        ctl.learn_task_timeout = None
+
+        # Mock out network/task methods
+        ctl.set_learn_task = MagicMock(return_value=True)
+        ctl.send_learn_task = MagicMock(return_value=True)
+
+        from nvflare.app_common.ccwf.common import Constant as _Const
+
+        def cfg(key, *default):
+            mapping = {
+                _Const.TRAIN_CLIENTS: ctl.trainers,
+                _Const.AGGR_CLIENTS: ctl.aggrs,
+            }
+            return mapping.get(key, default[0] if default else None)
+
+        ctl.get_config_prop = MagicMock(side_effect=cfg)
+
+        return ctl
+
+    def test_resolve_called_on_local_when_forward_and_remotes_exist(self):
+        """M4: with forward_pass_through=True and remote targets, _resolve_lazy_refs must
+        be called on the local deep copy before set_learn_task."""
+        # two trainers: self (site-1) and a remote (site-2)
+        ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"])
+
+        resolve_calls = []
+        real_data = _make_shareable_with_real_arrays()
+
+        def fake_resolve(res, ctx):
+            resolve_calls.append(res)
+            return real_data
+
+        ctl._resolve_lazy_refs = fake_resolve
+        fl_ctx = MagicMock()
+
+        lazy_task = _make_shareable_with_lazy_refs()
+        ctl._scatter(lazy_task, for_round=0, fl_ctx=fl_ctx)
+
+        self.assertEqual(len(resolve_calls), 1, "_resolve_lazy_refs must be called once for local copy")
+        # The local set_learn_task must receive the resolved data (real arrays), not lazy refs
+        local_data = (
+            ctl.set_learn_task.call_args.kwargs.get("task_data") or ctl.set_learn_task.call_args[1]["task_data"]
+        )
+        self.assertIs(local_data, real_data, "set_learn_task must receive the resolved result")
+
+    def test_resolve_not_called_when_local_only(self):
+        """M4: with forward_pass_through=True but NO remote targets, _resolve_lazy_refs
+        must NOT be called (no fan-out race possible when there is only one consumer)."""
+        # only self as trainer — no remote targets
+        ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1"])
+
+        resolve_calls = []
+        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or res
+        fl_ctx = MagicMock()
+
+        lazy_task = _make_shareable_with_lazy_refs()
+        ctl._scatter(lazy_task, for_round=0, fl_ctx=fl_ctx)
+
+        self.assertEqual(
+            resolve_calls,
+            [],
+            ("_resolve_lazy_refs must NOT be called when local is the sole consumer " "(no fan-out race possible)"),
+        )
+
+    def test_resolve_not_called_when_forward_pass_through_false(self):
+        """M4: with forward_pass_through=False, _resolve_lazy_refs must NOT be called
+        regardless of how many targets exist."""
+        ctl = self._make_real_scatter_ctl(me="site-1", trainers=["site-1", "site-2"], forward_pass_through=False)
+
+        resolve_calls = []
+        ctl._resolve_lazy_refs = lambda res, ctx: resolve_calls.append(res) or res
+        fl_ctx = MagicMock()
+
+        task = _make_shareable_with_real_arrays()
+        ctl._scatter(task, for_round=0, fl_ctx=fl_ctx)
+
+        self.assertEqual(resolve_calls, [], "_resolve_lazy_refs must NOT be called when forward_pass_through=False")
+
+
 if __name__ == "__main__":
     unittest.main()

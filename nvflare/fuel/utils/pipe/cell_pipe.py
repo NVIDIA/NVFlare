@@ -385,7 +385,7 @@ class CellPipe(Pipe):
         # — it is already sized for the full large-model transfer.
         # No new constant is needed; same reasoning as the forward direction
         # where the server uses task.timeout for its MSG_ROOT_TTL.
-        if msg.msg_type == Message.REPLY and timeout:
+        if msg.msg_type == Message.REPLY and timeout is not None and timeout > 0:
             request.set_header(MessageHeaderKey.MSG_ROOT_TTL, float(timeout))
         # Stamp PASS_THROUGH on every outgoing task/result message when the
         # caller has opted in.  Adapter.call() on the receiving side reads this

@@ -24,6 +24,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -357,9 +358,13 @@ class FlareAgent:
         # so the event is set exactly when the last receiver finishes downloading.
         if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
             download_done = threading.Event()
-            self.pipe.cell.update_fobs_context(
-                {FOBSContextKey.DOWNLOAD_COMPLETE_CB: lambda tid, status, objs: download_done.set()}
-            )
+            download_status = [None]
+
+            def _on_download_done(tid, status, objs):
+                download_status[0] = status
+                download_done.set()
+
+            self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done})
             try:
                 send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
@@ -373,7 +378,14 @@ class FlareAgent:
                 wait_start = time.time()
                 if download_done.wait(timeout=self._download_complete_timeout):
                     download_elapsed = time.time() - wait_start
-                    self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                    ds = download_status[0]
+                    if ds == TransactionDoneStatus.FINISHED:
+                        self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                    else:
+                        self.logger.warning(
+                            f"[subprocess] download transaction ended with status={ds} "
+                            f"after {download_elapsed:.2f}s"
+                        )
                 else:
                     self.logger.warning(
                         f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
@@ -412,11 +424,12 @@ class FlareAgentWithCellPipe(FlareAgent):
         workspace_dir: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,  # was 30.0 — align with FlareAgent base; 30s too tight under large-model GC/relay
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,  # was 30.0 — align with FlareAgent base; CJ ACK latency is transport-independent
         has_metrics=False,
+        download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
 
@@ -429,12 +442,15 @@ class FlareAgentWithCellPipe(FlareAgent):
             read_interval (float): how often to read from the pipe.
             heartbeat_interval (float): how often to send a heartbeat to the peer.
             heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
-                0 means DO NOT check for heartbeat.
+                0 means DO NOT check for heartbeat. Defaults to 60.0.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
             max_resends (int, optional): max number of resend. None means no limit.
             submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
+                Defaults to 60.0.
             has_metrics (bool): has metric pipe or not.
+            download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the server to finish
+                downloading tensors from this subprocess's DownloadService. Defaults to 1800.0.
         """
         pipe = CellPipe(
             mode=Mode.ACTIVE,
@@ -465,4 +481,5 @@ class FlareAgentWithCellPipe(FlareAgent):
             max_resends=max_resends,
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
+            download_complete_timeout=download_complete_timeout,
         )

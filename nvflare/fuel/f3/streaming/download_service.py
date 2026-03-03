@@ -145,6 +145,16 @@ class Downloadable(ABC):
         """
         pass
 
+    def release(self):
+        """Drop the infrastructure reference to the source object.
+
+        Called by _Transaction.transaction_done() AFTER the transaction_done_cb
+        fires.  Subclasses should override this to null their base_obj (or any
+        other large reference) so the GC can reclaim the memory immediately.
+        The default implementation is a no-op.
+        """
+        pass
+
 
 class _PropKey:
     REF_ID = "ref_id"
@@ -294,13 +304,26 @@ class _Transaction:
             f"size={size_mb:.1f}MB ({self.total_bytes:,} bytes)"
         )
 
+        # Snapshot base_objs BEFORE the loop so the callback receives the
+        # original objects.  obj.transaction_done() may clear the chunk cache
+        # (CacheableObject.clear_cache()); the source object itself is released
+        # via obj.release() AFTER the callback so the callback can still
+        # observe it (e.g. for memory-GC notifications).
+        base_objs = [ref.obj.base_obj for ref in self.refs]
+
         for ref in self.refs:
             obj = ref.obj
             assert isinstance(obj, Downloadable)
             obj.transaction_done(self.tid, status)
 
         if self.transaction_done_cb:
-            self.transaction_done_cb(self.tid, status, [ref.obj.base_obj for ref in self.refs], **self.cb_kwargs)
+            self.transaction_done_cb(self.tid, status, base_objs, **self.cb_kwargs)
+
+        # Release source objects after the callback so the callback can still
+        # reference them.  This drops the last infrastructure reference to
+        # large objects (e.g. numpy dicts) allowing GC to reclaim them.
+        for ref in self.refs:
+            ref.obj.release()
 
 
 class TransactionInfo:
@@ -467,8 +490,10 @@ class DownloadService:
             return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
         else:
             # continue — accumulate bytes for timing summary in transaction_done()
+            # CacheableObject returns a list of byte-chunks; FileDownloader returns raw bytes.
+            # Sum chunk lengths for lists (len(list) counts items, not bytes).
             if data is not None:
-                tx.total_bytes += len(data)
+                tx.total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
             return make_reply(
                 ReturnCode.OK,
                 body={
@@ -675,9 +700,10 @@ def download_object(
             return
 
         # continue
+        # CacheableObject sends a list of byte-chunks; FileDownloader sends raw bytes.
         data = payload.get(_PropKey.DATA)
         if data is not None:
-            total_bytes += len(data)
+            total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
         state = payload.get(_PropKey.STATE)
         try:
             new_state = consumer.consume(ref_id, state, data)
