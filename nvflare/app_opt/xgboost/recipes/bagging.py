@@ -204,6 +204,9 @@ class XGBBaggingRecipe(Recipe):
         self.data_loader_id = v.data_loader_id
         self.per_site_config = per_site_config
 
+        if self.training_mode == "cyclic" and self.min_clients < 2:
+            raise ValueError("Cyclic training requires at least 2 clients (min_clients >= 2).")
+
         # Validate per_site_config is provided
         if per_site_config is None:
             raise ValueError(
