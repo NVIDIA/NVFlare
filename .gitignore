@@ -181,5 +181,5 @@ docs/apidocs/
 # Claude Code personal config
 CLAUDE.local.md
 
-# Codex local workspace metadata
+# local Codex artifacts
 .codex/
