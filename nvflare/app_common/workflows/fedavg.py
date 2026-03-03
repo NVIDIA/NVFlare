@@ -14,12 +14,15 @@
 
 import os
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+    filter_aggregatable_metrics,
+)
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
@@ -119,6 +122,7 @@ class FedAvg(BaseFedAvg):
         self._aggr_helper: Optional[WeightedAggregationHelper] = None
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
+        self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -253,16 +257,23 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-            # Add to metrics aggregation if available
+            # Add to metrics aggregation if available (only aggregatable values;
+            # non-aggregatable metrics like dicts are still in result.metrics for collection)
             if not result.metrics:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                self._aggr_metrics_helper.add(
-                    data=result.metrics,
-                    weight=weight,
-                    contributor_name=client_name,
-                    contribution_round=self.current_round,
+                aggregatable = filter_aggregatable_metrics(
+                    result.metrics,
+                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                    warned_metric_keys=self._warned_metric_keys,
                 )
+                if aggregatable:
+                    self._aggr_metrics_helper.add(
+                        data=aggregatable,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
+                    )
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
