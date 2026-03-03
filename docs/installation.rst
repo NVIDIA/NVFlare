@@ -89,6 +89,11 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[HE]
 
+  .. note::
+
+     ``nvflare[HE]`` currently supports Python 3.9-3.13.
+     On Python 3.14, ``tenseal`` is not available yet, so the HE extra is not installed.
+
 * **PSI** - Private Set Intersection support:
 
   .. code-block:: shell

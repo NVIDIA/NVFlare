@@ -368,6 +368,8 @@ class ClientRunner(TBI):
             try:
                 reply = executor.execute(task.name, task.data, fl_ctx, abort_signal)
             except Exception as e:
+                # Catch regular execution errors here so abort handling below can map to TASK_ABORTED.
+                # We intentionally do not catch BaseException (for example KeyboardInterrupt/SystemExit).
                 exec_exception = e
 
             if abort_signal.triggered:

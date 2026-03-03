@@ -57,7 +57,6 @@ def package_files(
 
 def copy_package(src_dir, dst_dir):
     if os.path.isdir(src_dir):
-        os.makedirs(dst_dir, exist_ok=True)
         shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
 
     for root, dirs, files in os.walk(dst_dir):
