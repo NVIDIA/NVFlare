@@ -277,9 +277,7 @@ class FedAvg(BaseFedAvg):
                     )
 
         self._received_count += 1
-        received_count = self._received_count
-
-        self.info(f"Aggregated {received_count}/{self._expected_count} results")
+        self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
