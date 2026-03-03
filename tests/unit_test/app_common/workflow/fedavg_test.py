@@ -407,6 +407,72 @@ class TestFedAvgAggregation:
         assert mock_warning.call_count == 1
         assert mock_warning.call_args_list[0].args[0] == "Metric 'meta' (dict) skipped for aggregation."
 
+    def test_aggregate_one_result_serializes_metric_filtering(self):
+        """Test concurrent callbacks do not execute metric filtering in parallel."""
+        import threading
+        import time
+        from unittest.mock import patch
+
+        from nvflare.app_common.workflows import fedavg as fedavg_module
+
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "meta": {"a": 1}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "meta": {"b": 2}},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        active_calls = 0
+        max_active_calls = 0
+        lock = threading.Lock()
+        start_barrier = threading.Barrier(2)
+        real_filter = fedavg_module.filter_aggregatable_metrics
+
+        def slow_filter(*args, **kwargs):
+            nonlocal active_calls, max_active_calls
+            with lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            time.sleep(0.02)
+            try:
+                return real_filter(*args, **kwargs)
+            finally:
+                with lock:
+                    active_calls -= 1
+
+        def run_result(result):
+            start_barrier.wait()
+            controller._aggregate_one_result(result)
+
+        with patch.object(fedavg_module, "filter_aggregatable_metrics", side_effect=slow_filter):
+            t1 = threading.Thread(target=run_result, args=(result1,))
+            t2 = threading.Thread(target=run_result, args=(result2,))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        # Filtering must be serialized so warned_metric_keys dedup check/add stays atomic.
+        assert max_active_calls == 1
+
     def test_base_fedavg_aggregate_fn_filters_non_aggregatable_metrics(self):
         """Test BaseFedAvg.aggregate_fn skips unsupported metrics without failing."""
         result1 = FLModel(

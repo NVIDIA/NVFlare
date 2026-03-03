@@ -260,18 +260,22 @@ class FedAvg(BaseFedAvg):
             if not result.metrics:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                aggregatable = filter_aggregatable_metrics(
-                    result.metrics,
-                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
-                    warned_metric_keys=self._warned_metric_keys,
-                )
-                if aggregatable:
-                    self._aggr_metrics_helper.add(
-                        data=aggregatable,
-                        weight=weight,
-                        contributor_name=client_name,
-                        contribution_round=self.current_round,
+                assert self._aggr_helper is not None
+                assert self._aggr_metrics_helper is not None
+                # Protect warn deduplication state across concurrent callbacks.
+                with self._aggr_helper.lock:
+                    aggregatable = filter_aggregatable_metrics(
+                        result.metrics,
+                        warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                        warned_metric_keys=self._warned_metric_keys,
                     )
+                    if aggregatable:
+                        self._aggr_metrics_helper.add(
+                            data=aggregatable,
+                            weight=weight,
+                            contributor_name=client_name,
+                            contribution_round=self.current_round,
+                        )
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
