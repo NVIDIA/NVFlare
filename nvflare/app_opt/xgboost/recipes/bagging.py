@@ -83,7 +83,7 @@ class XGBBaggingRecipe(Recipe):
         training_mode (str, optional): Training mode ("bagging" or "cyclic"). Default is "bagging".
         num_rounds (int, optional): Number of training rounds. Default is 1 for bagging, 100 for cyclic.
         num_client_bagging (int, optional): Number of clients for bagging. Default is min_clients.
-        num_local_parallel_tree (int, optional): Number of parallel trees per client. Default is 5.
+        num_local_parallel_tree (int, optional): Number of parallel trees per client. Default is 1.
         local_subsample (float, optional): Subsample ratio for local training. Default is 0.8.
         learning_rate (float, optional): Learning rate for XGBoost. Default is 0.1.
         objective (str, optional): Learning objective. Default is "binary:logistic".
@@ -146,7 +146,7 @@ class XGBBaggingRecipe(Recipe):
         training_mode: str = "bagging",
         num_rounds: Optional[int] = None,
         num_client_bagging: Optional[int] = None,
-        num_local_parallel_tree: int = 5,
+        num_local_parallel_tree: int = 1,
         local_subsample: float = 0.8,
         learning_rate: float = 0.1,
         objective: str = "binary:logistic",
