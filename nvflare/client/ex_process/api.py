@@ -17,7 +17,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, WorkspaceConstants
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
@@ -27,9 +27,10 @@ from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
 from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.fobs import fobs
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.log_utils import apply_log_config, get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
@@ -95,28 +96,41 @@ class ExProcessClientAPI(APISpec):
         # Memory settings will be read from config in init()
 
     def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
-        """Load the site's log_config.json to configure Python logging in the subprocess.
+        """Configure Python logging in the subprocess using the site's log config file.
 
-        Without this, logger.info() calls in the subprocess are silently dropped because
-        Python logging has no handlers configured. Loading log_config.json wires up
-        consoleHandler -> sys.stdout so logs flow through SubprocessLauncher to the site's
-        log files, and also directly into log.txt / log.json alongside the main process.
+        Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
+        .yml, .default) are found automatically — the hardcoded `.json` suffix is
+        not assumed.  Only consoleHandler is kept on every logger (root and named)
+        so logs flow through SubprocessLauncher's stdout capture to the parent's
+        log files.  Enabling file handlers in both parent and subprocess would
+        produce duplicate writes to the same rotating log files.
         """
         try:
-            import json
-
-            from nvflare.fuel.utils.log_utils import apply_log_config
-
             task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
             pipe_args = task_exchange.get(ConfigKey.PIPE, {}).get(ConfigKey.ARG, {})
             workspace_dir = pipe_args.get("workspace_dir", "")
             if not workspace_dir:
                 return
-            log_config_path = os.path.join(workspace_dir, "local", "log_config.json")
-            if not os.path.isfile(log_config_path):
+
+            local_dir = os.path.join(workspace_dir, "local")
+            conf = ConfigFactory.load_config(WorkspaceConstants.LOGGING_CONFIG, search_dirs=[local_dir])
+            if not conf:
                 return
-            with open(log_config_path) as f:
-                dict_config = json.load(f)
+
+            dict_config = conf.to_dict()
+            # Keep only consoleHandler on every logger (root and named) — subprocess
+            # stdout is captured by SubprocessLauncher and re-logged by the parent.
+            # Leaving file handlers active in both parent and subprocess produces
+            # duplicate writes to the same rotating log files.
+            # Strip from both locations the root logger can appear:
+            #   dict_config["loggers"]["root"]  — NVFlare's log_config.json layout
+            #   dict_config["root"]             — standard Python dictConfig schema
+            for logger_cfg in dict_config.get("loggers", {}).values():
+                if "handlers" in logger_cfg:
+                    logger_cfg["handlers"] = [h for h in logger_cfg["handlers"] if h == "consoleHandler"]
+            root_cfg = dict_config.get("root", {})
+            if "handlers" in root_cfg:
+                root_cfg["handlers"] = [h for h in root_cfg["handlers"] if h == "consoleHandler"]
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
@@ -162,6 +176,16 @@ class ExProcessClientAPI(APISpec):
                     pipe, task_channel_name = _create_pipe_using_config(
                         client_config=client_config, section=ConfigKey.TASK_EXCHANGE
                     )
+                    # Enable per-message PASS_THROUGH on the subprocess-side CellPipe
+                    # (reverse path: subprocess → CJ → FL Server).  Every result message
+                    # sent from the subprocess will carry MessageHeaderKey.PASS_THROUGH=True
+                    # so CJ's Adapter.call() builds a per-call decode context with
+                    # PASS_THROUGH=True → LazyDownloadRef at CJ.  CJ never materialises
+                    # the trained tensors; the server downloads directly from the subprocess.
+                    from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
+
+                    if isinstance(pipe, _CellPipe):
+                        pipe.pass_through_on_send = True
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
                     metric_pipe, metric_channel_name = _create_pipe_using_config(
@@ -181,6 +205,9 @@ class ExProcessClientAPI(APISpec):
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
                     heartbeat_timeout=client_config.get_heartbeat_timeout(),
+                    submit_result_timeout=client_config.get_submit_result_timeout(),
+                    max_resends=client_config.get_max_resends(),
+                    download_complete_timeout=client_config.get_download_complete_timeout(),
                     from_nvflare_converter=from_nvflare_converter,
                     to_nvflare_converter=to_nvflare_converter,
                 )
@@ -211,7 +238,8 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = True
         if result is not None:
             self._mem_round = result.current_round
-            log_rss(f"round={result.current_round} after_receive")
+            self._mem_site = self.get_site_name()
+            log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -231,7 +259,7 @@ class ExProcessClientAPI(APISpec):
             self.clear()
 
         self._maybe_cleanup_memory()
-        log_rss(f"round={getattr(self, '_mem_round', None)} after_send")
+        log_rss(f"CA s={getattr(self, '_mem_site', '?')} r={getattr(self, '_mem_round', None)} send")
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()

@@ -119,7 +119,7 @@ class TaskExchanger(Executor):
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
-            self.log_info(fl_ctx, "Stopping pipe handler")
+            self.log_debug(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
                 self.pipe_handler.stop()
