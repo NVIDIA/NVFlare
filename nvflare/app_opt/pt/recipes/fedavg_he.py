@@ -86,39 +86,11 @@ class FedAvgRecipeWithHE(Recipe):
         - `server_context.tenseal` for the server startup folder
         - `client_context.tenseal` for each client startup folder
 
-        The following example shows how to generate these files with TenSEAL:
+        Use NVFlare provisioning with `nvflare.lighter.impl.he.HEBuilder` so these
+        context files are generated automatically into startup kits.
 
-        ```python
-        import tenseal as ts
-
-        context = ts.context(
-            ts.SCHEME_TYPE.CKKS,
-            poly_modulus_degree=8192,
-            coeff_mod_bit_sizes=[60, 40, 40],
-            encryption_type=ts.ENCRYPTION_TYPE.SYMMETRIC,
-        )
-        context.generate_relin_keys()
-        context.global_scale = 2**40
-
-        with open("client_context.tenseal", "wb") as f:
-            f.write(
-                context.serialize(
-                    save_public_key=True,
-                    save_secret_key=True,
-                    save_galois_keys=False,
-                    save_relin_keys=True,
-                )
-            )
-        with open("server_context.tenseal", "wb") as f:
-            f.write(
-                context.serialize(
-                    save_public_key=False,
-                    save_secret_key=False,
-                    save_galois_keys=False,
-                    save_relin_keys=True,
-                )
-            )
-        ```
+        Example project config:
+        `examples/advanced/cifar10/pt/cifar10-real-world/workspaces/secure_project.yml`
 
         For provisioning details, see:
         https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
