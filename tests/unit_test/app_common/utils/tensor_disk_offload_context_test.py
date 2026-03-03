@@ -46,26 +46,29 @@ class _MockRunManager:
 def test_apply_returns_previous_and_updates():
     cell = _MockCell(enable_tensor_disk_offload=False)
 
-    previous = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
 
     assert previous is False
+    assert applied is True
     assert cell.ctx["enable_tensor_disk_offload"] is True
 
 
 def test_restore_sets_previous_value():
     cell = _MockCell(enable_tensor_disk_offload=False)
-    previous = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+    previous, _ = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
 
     restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
     assert cell.ctx["enable_tensor_disk_offload"] is False
 
 
 def test_apply_and_restore_noop_when_unavailable():
-    previous = apply_enable_tensor_disk_offload(engine=None, enabled=True)
+    previous, applied = apply_enable_tensor_disk_offload(engine=None, enabled=True)
     assert previous is None
+    assert applied is False
 
-    previous = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+    previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
     assert previous is None
+    assert applied is False
 
     restore_enable_tensor_disk_offload(None, False)
     restore_enable_tensor_disk_offload(None, None)
@@ -76,9 +79,10 @@ def test_apply_and_restore_use_run_manager_cell_when_available():
     run_cell = _MockCell(enable_tensor_disk_offload=False)
     engine = _MockEngine(cell=parent_cell, run_manager=_MockRunManager(run_cell))
 
-    previous = apply_enable_tensor_disk_offload(engine=engine, enabled=True)
+    previous, applied = apply_enable_tensor_disk_offload(engine=engine, enabled=True)
 
     assert previous is False
+    assert applied is True
     assert run_cell.ctx["enable_tensor_disk_offload"] is True
     assert parent_cell.ctx["enable_tensor_disk_offload"] is False
 

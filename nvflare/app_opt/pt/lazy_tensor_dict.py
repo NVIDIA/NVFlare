@@ -108,6 +108,9 @@ class LazyTensorDict:
     def keys(self):
         return self._key_to_file.keys()
 
+    def __iter__(self):
+        return iter(self._key_to_file)
+
     def items(self):
         for key in self._key_to_file:
             yield key, self[key]

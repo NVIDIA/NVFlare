@@ -216,3 +216,35 @@ def test_download_tensors_to_disk_logs_cleanup_warning(monkeypatch, tmp_path, ca
 
     assert "failed to cleanup tensor offload temp dir" in caplog.text
     assert str(temp_dir) in caplog.text
+
+
+def test_download_tensors_to_disk_second_chance_cleanup_on_consumer_error(monkeypatch, tmp_path):
+    temp_dir = tmp_path / "nvflare_tensors_consumer_error"
+    cleanup_calls = []
+
+    def fake_mkdtemp(prefix):
+        os.makedirs(temp_dir, exist_ok=False)
+        return str(temp_dir)
+
+    def fake_download_object(**kwargs):
+        kwargs["consumer"].error = "download failed"
+
+    def fake_cleanup(path):
+        cleanup_calls.append(path)
+        shutil.rmtree(path, ignore_errors=True)
+
+    monkeypatch.setattr(tensor_downloader.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+    monkeypatch.setattr(tensor_downloader, "_cleanup_temp_dir", fake_cleanup)
+
+    err, result = tensor_downloader.download_tensors_to_disk(
+        from_fqcn="server",
+        ref_id="ref",
+        per_request_timeout=1.0,
+        cell=None,
+    )
+
+    assert err == "download failed"
+    assert result is None
+    assert cleanup_calls == [str(temp_dir)]
+    assert not temp_dir.exists()

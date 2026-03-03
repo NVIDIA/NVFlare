@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Tuple
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 
@@ -20,14 +20,14 @@ _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 def apply_enable_tensor_disk_offload(
     engine,
     enabled: bool,
-) -> Any:
+) -> Tuple[Any, bool]:
     """Apply enable_tensor_disk_offload to cell FOBS context.
 
     Returns:
-      previous value (or None when engine/cell is unavailable).
+      (previous value, applied flag).
     """
     if not engine:
-        return None
+        return None, False
 
     run_manager = getattr(engine, "run_manager", None)
     if run_manager and run_manager.cell:
@@ -35,11 +35,11 @@ def apply_enable_tensor_disk_offload(
     else:
         cell = engine.get_cell()
     if not cell:
-        return None
+        return None, False
 
     previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: enabled})
-    return previous
+    return previous, True
 
 
 def restore_enable_tensor_disk_offload(engine, previous_value: Any) -> None:

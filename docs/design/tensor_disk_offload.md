@@ -28,7 +28,7 @@ Swarm/CCWF:
 - `nvflare/app_common/ccwf/ccwf_job.py` -> `SwarmClientConfig(..., enable_tensor_disk_offload=True)`
 - `nvflare/app_common/ccwf/swarm_client_ctl.py` applies the flag to the active Cell FOBS context at run start
 
-If no active Cell is available, FedAvg logs a warning and falls back to in-memory download.
+If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
 ## Data Flow
 
@@ -52,7 +52,7 @@ Lazy refs in payload tree
         +--> aggregator consumes lazy refs (materialize on demand)
 ```
 
-`ServerEngine.get_cell()` now prefers the run manager cell when available, so workflow-level FOBS context updates are applied to the active job runner cell.
+`tensor_disk_offload_context` checks `run_manager.cell` directly when available, then falls back to `engine.get_cell()`. This applies workflow-level FOBS context updates to the active job runner cell in the normal run path.
 
 ## Runtime Behavior
 
@@ -74,7 +74,7 @@ When a custom aggregator is used, payload params may contain lazy refs (duck-typ
 Custom aggregators are responsible for:
 
 1. materializing refs when tensor math is required
-2. cleaning temporary resources after use (for example by calling `cleanup()` on lazy refs)
+2. releasing lazy-ref object references after use so temp resources can be reclaimed
 
 ### Swarm/CCWF
 
@@ -105,7 +105,6 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 - `nvflare/fuel/utils/fobs/decomposers/via_downloader.py`
 - `nvflare/app_common/workflows/fedavg.py`
 - `nvflare/app_common/ccwf/swarm_client_ctl.py`
-- `nvflare/private/fed/server/server_engine.py`
 - `nvflare/recipe/fedavg.py`
 
 ## Test Coverage

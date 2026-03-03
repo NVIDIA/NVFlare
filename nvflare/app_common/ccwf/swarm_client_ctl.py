@@ -417,10 +417,16 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
-        self._previous_enable_tensor_disk_offload = apply_enable_tensor_disk_offload(
+        self._previous_enable_tensor_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
             engine=self.engine,
             enabled=self.enable_tensor_disk_offload,
         )
+        if self.enable_tensor_disk_offload and not disk_offload_applied:
+            self.log_warning(
+                fl_ctx,
+                "enable_tensor_disk_offload=True but no active cell is available; "
+                "falling back to in-memory tensor download",
+            )
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(

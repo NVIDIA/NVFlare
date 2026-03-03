@@ -223,6 +223,7 @@ def download_tensors_to_disk(
         raise
 
     if consumer.error:
+        _cleanup_temp_dir(temp_dir)
         return consumer.error, None
 
     key_to_file = consumer.result if consumer.result is not None else {}

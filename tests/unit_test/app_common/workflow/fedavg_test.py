@@ -433,16 +433,18 @@ class TestFedAvgLazyCompatibility:
 class TestFedAvgDownloadToDiskContext:
     def test_set_enable_tensor_disk_offload(self):
         cell = _MockCell(enable_tensor_disk_offload=False)
-        previous = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
         assert previous is False
+        assert applied is True
         assert cell.ctx["enable_tensor_disk_offload"] is True
 
         restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
         assert cell.ctx["enable_tensor_disk_offload"] is False
 
     def test_set_enable_tensor_disk_offload_without_cell(self):
-        previous = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
         assert previous is None
+        assert applied is False
 
     def test_run_restores_enable_tensor_disk_offload(self):
         controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)

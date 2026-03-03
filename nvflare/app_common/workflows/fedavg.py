@@ -134,10 +134,15 @@ class FedAvg(BaseFedAvg):
         self._params_type = None  # Only store params_type, not full result
 
     def run(self) -> None:
-        previous_disk_offload = apply_enable_tensor_disk_offload(
+        previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
             engine=getattr(self, "engine", None),
             enabled=self.enable_tensor_disk_offload,
         )
+        if self.enable_tensor_disk_offload and not disk_offload_applied:
+            self.warning(
+                "enable_tensor_disk_offload=True but no active cell is available; "
+                "falling back to in-memory tensor download"
+            )
         try:
             self.info(center_message("Start FedAvg."))
 

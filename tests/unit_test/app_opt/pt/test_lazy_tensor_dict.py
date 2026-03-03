@@ -122,6 +122,12 @@ class TestLazyTensorDict:
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
         assert set(ltd.keys()) == set(tensors.keys())
 
+    def test_iter_yields_keys(self, temp_safetensors):
+        key_to_file, temp_dir, tensors = temp_safetensors
+        ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
+        assert set(iter(ltd)) == set(tensors.keys())
+        assert set(ltd) == set(tensors.keys())
+
     def test_len(self, temp_safetensors):
         key_to_file, temp_dir, _ = temp_safetensors
         ltd = LazyTensorDict(key_to_file=key_to_file, temp_dir=temp_dir)
