@@ -110,7 +110,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             - A dict config: {"class_path": "module.ClassName", "args": {"param": value}}
         num_rounds: Number of training rounds.
         train_script: Path to the training script.
-        min_clients: Minimum number of clients required. Defaults to 1.
+        min_clients: Minimum number of clients required.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
@@ -170,7 +170,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         model: Union[Any, Dict[str, Any]],
         num_rounds: int,
         train_script: str,
-        min_clients: int = 1,
+        min_clients: int,
         initial_ckpt: Optional[str] = None,
         train_args: dict = None,
         do_cross_site_eval: bool = False,
