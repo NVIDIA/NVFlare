@@ -75,7 +75,6 @@ def test_process_env_rejects_sim_env_for_he_recipe(tmp_path):
 
 
 def test_process_env_allows_non_sim_env(tmp_path):
-def test_process_env_allows_non_sim_env(tmp_path):
     from nvflare.recipe.spec import ExecEnv
 
     train_script = tmp_path / "client.py"
