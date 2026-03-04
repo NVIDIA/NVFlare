@@ -12,13 +12,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as get_package_version
 from typing import Optional
 
+from packaging.specifiers import SpecifierSet
+from packaging.version import InvalidVersion, Version
+
 from nvflare.app_common.tie.defs import Constant
-from nvflare.app_opt.flower.flower_job import FlowerJob
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.recipe.spec import Recipe
+
+SUPPORTED_FLWR_MIN_VERSION_SPEC = ">=1.16"
+SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE = Version("1.26")
+SUPPORTED_FLWR_SPEC = "flwr>=1.16,<1.26"
+SUPPORTED_FLWR_MIN_SPEC_SET = SpecifierSet(SUPPORTED_FLWR_MIN_VERSION_SPEC)
+
+
+def _validate_flwr_version():
+    try:
+        installed_version = get_package_version("flwr")
+    except PackageNotFoundError as ex:
+        raise RuntimeError(
+            f"Flower package 'flwr' is not installed. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        ) from ex
+
+    try:
+        parsed_version = Version(installed_version)
+    except InvalidVersion as ex:
+        raise RuntimeError(
+            f"unable to parse installed flwr version '{installed_version}'. "
+            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        ) from ex
+
+    # Use a SpecifierSet for the lower bound and Version comparison for the upper bound.
+    # This keeps 1.16rc0 excluded while allowing 1.26.0rc0 as < 1.26.
+    is_supported = SUPPORTED_FLWR_MIN_SPEC_SET.contains(parsed_version, prereleases=True) and (
+        parsed_version < SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE
+    )
+    if not is_supported:
+        raise RuntimeError(
+            f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        )
+
+
+def _create_flower_job(**kwargs):
+    from nvflare.app_opt.flower.flower_job import FlowerJob
+
+    return FlowerJob(**kwargs)
 
 
 class FlowerRecipe(Recipe):
@@ -29,6 +71,11 @@ class FlowerRecipe(Recipe):
     a recipe-based interface for easier job configuration and execution.
 
     Enables metric streaming and use of client API by default.
+
+    Flower CLI compatibility:
+        This recipe requires ``flwr>=1.16,<1.26``. The current
+        integration relies on legacy federation CLI arguments that are not
+        available in newer Flower CLI versions.
 
     Example usage:
         ```python
@@ -78,12 +125,13 @@ class FlowerRecipe(Recipe):
 
         Creates a FlowerJob and wraps it in the Recipe interface.
         """
+        _validate_flwr_version()
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration
         env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
-        job = FlowerJob(
+        job = _create_flower_job(
             name=name,
             flower_content=flower_content,
             min_clients=min_clients,
