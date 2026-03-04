@@ -76,7 +76,7 @@ Recipes accept model input in two formats, each with different trade-offs:
    * **Non-serializable state**: If your model carries state that cannot be reconstructed from JSON configuration
      (e.g., loaded data, open file handles), that state will be lost.
    * **TensorFlow/Keras class instances**: Use a user-defined subclass (for example, subclassing
-     ``tf.keras.Model`` or ``keras.Sequential``) so the model can be reconstructed from class path and args.
+     ``tf.keras.Model`` or ``tf.keras.Sequential``) so the model can be reconstructed from class path and args.
      Passing raw inline Keras model objects may fail during job export.
    * **Trade-off**: Class instance is more Pythonic and catches errors early; dictionary format is more performant
      for large models.

@@ -25,7 +25,7 @@ Most training recipes accept the following model-related parameters:
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
        use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
-       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``keras.Sequential`` subclasses).
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
