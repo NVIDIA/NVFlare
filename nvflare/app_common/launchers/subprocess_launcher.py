@@ -63,9 +63,7 @@ def get_line(buffer: bytearray):
 
 
 def log_subprocess_output(process, logger):
-    # Subprocess lines are already fully-formatted log records (timestamp + logger + level + message)
-    # and the subprocess itself adds the site name to its own output (e.g. "[site-1] step=1/10 loss=...").
-    # Write them directly to stdout as-is; adding a prefix here produces double site labels.
+
     buffer = bytearray()
     while True:
         chunk = process.stdout.read1(4096)
@@ -79,10 +77,10 @@ def log_subprocess_output(process, logger):
                 break
 
             if line:
-                print(line, flush=True)
+                logger.info(line)
 
     if buffer:
-        print(buffer.decode(), flush=True)
+        logger.info(buffer.decode())
 
 
 class SubprocessLauncher(Launcher):

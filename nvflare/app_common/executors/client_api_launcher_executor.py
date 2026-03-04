@@ -134,7 +134,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
         self._submit_result_timeout = submit_result_timeout
-        self._max_resends = max_resends
+        self.max_resends = max_resends
         self._download_complete_timeout = download_complete_timeout
         self._cj_round_count = 0
 
@@ -239,7 +239,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f'(e.g. recipe.add_client_config({{"{prefix}min_download_timeout": {int(self._submit_result_timeout)}}})).',
             )
 
-        if self._max_resends is None:
+        if self.max_resends is None:
             self.log_warning(
                 fl_ctx,
                 "max_resends is None (unbounded). This risks OOM on large model transfers. "
@@ -294,7 +294,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
             ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
-            ConfigKey.MAX_RESENDS: self._max_resends,
+            ConfigKey.MAX_RESENDS: self.max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
         }
 

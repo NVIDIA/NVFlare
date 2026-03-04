@@ -120,7 +120,7 @@ class TestSubprocessLauncher:
         assert launcher._clean_up_script == "echo 'cleanup'"
         assert launcher._shutdown_timeout == 0.0
 
-    def test_log_subprocess_output(self, capsys):
+    def test_log_subprocess_output(self):
         class _Proc:
             pass
 
@@ -129,6 +129,5 @@ class TestSubprocessLauncher:
         logger = Mock()
         log_subprocess_output(p, logger)
 
-        captured = capsys.readouterr()
-        assert captured.out.splitlines() == ["line1", "line2", "partial"]
-        logger.info.assert_not_called()
+        logged = [call.args[0] for call in logger.info.call_args_list]
+        assert logged == ["line1", "line2", "partial"]
