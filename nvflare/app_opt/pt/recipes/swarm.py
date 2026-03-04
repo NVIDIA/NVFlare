@@ -84,7 +84,19 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
         train_args: Additional arguments for the training script.
-        do_cross_site_eval: Whether to perform cross-site evaluation.
+        do_cross_site_eval: Whether to perform cross-site evaluation. When combined with
+            ``launch_external_process=True``, the trained model is loaded from the
+            persistor on disk (saved by PTFileModelPersistor after each round).  Two
+            limitations apply in that combination:
+
+            1. **Custom persistors**: If your persistor streams models to a remote store
+               without supporting local ``get()``, the persistor path returns None and
+               CSE falls back to the executor, which also fails for ext-process mode.
+               Ensure your persistor's ``get()`` can retrieve the model locally.
+            2. **Cross-job evaluation**: CSE against a model trained in a *different* job
+               is not supported with ``launch_external_process=True`` because the current
+               job's persistor cannot locate the other job's workspace. Use in-process
+               mode or copy the trained model into the evaluating job's workspace.
         cross_site_eval_timeout: Timeout for cross-site evaluation.
         launch_external_process: Whether to launch the training script in an external process.
             Defaults to False (in-process execution).
@@ -106,6 +118,13 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             considered stalled. Defaults to 3600.
         max_status_report_interval: Maximum seconds between consecutive status reports from
             a client before it is considered silent. Defaults to 300.
+        round_timeout: P2P model transfer ACK budget in seconds — how long the aggregator
+            waits for a receiver to acknowledge the model download via tensor streaming.
+            The "ACK" includes the full model download, so the hardcoded default of 10s
+            in SwarmClientConfig is too short for models larger than ~2GB.  Set higher
+            for large models (7B+) where P2P transfer can take minutes.  Does NOT cap
+            per-round training time (learn_task_timeout remains unbounded by default).
+            Defaults to 3600 (matching progress_timeout).
 
     Example:
         Using nn.Module instance:
@@ -153,6 +172,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         start_task_timeout: float = 300,
         progress_timeout: float = 3600,
         max_status_report_interval: float = 300,
+        round_timeout: float = 3600,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
@@ -215,6 +235,11 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
             min_responses_required=min_clients,
+            learn_task_ack_timeout=round_timeout,
+            final_result_ack_timeout=round_timeout,
+            # learn_task_timeout intentionally not set — inherits None (unbounded) from
+            # SwarmClientConfig default.  Capping per-round training time via round_timeout
+            # would regress long-running training on slow hardware or for 70B+ models.
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)

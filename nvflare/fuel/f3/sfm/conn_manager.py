@@ -260,7 +260,7 @@ class ConnManager(ConnMonitor):
         try:
             self.conn_mgr_executor.submit(self.start_connector_task, connector)
         except RuntimeError:
-            log.debug(f"Connector start skipped — executor already shut down")
+            log.debug("Connector start skipped — executor already shut down")
 
     @staticmethod
     def start_connector_task(connector: ConnectorInfo):

@@ -124,6 +124,15 @@ env = SimEnv(num_clients=args.n_clients, workspace_root=args.workspace)
 recipe.execute(env)
 ```
 
+For large models (7B+) where P2P transfer takes minutes, increase `round_timeout` accordingly:
+
+```python
+recipe = SimpleSwarmLearningRecipe(
+    ...
+    round_timeout=7200,   # 2 hours — P2P ACK budget for 7B+ model transfers
+)
+```
+
 `SimpleSwarmLearningRecipe` handles all component wiring automatically:
 - `PTClientAPILauncherExecutor` + `SubprocessLauncher` + `CellPipe` for subprocess execution
 - `PTFileModelPersistor` for checkpoint management (stores only LoRA adapter weights)
@@ -232,6 +241,7 @@ This writes a standard NVFlare job folder that can be submitted to a production 
 | `--data_dir` | *(empty)* | Pre-split data root from `prepare_data.py`; in-memory if omitted |
 | `--workspace` | `/tmp/nvflare/simulation` | Root directory for simulation output |
 | `--export_dir` | *(empty)* | If set, export job folder instead of running |
+| `round_timeout` *(recipe)* | 3600 | P2P model transfer ACK budget in seconds — how long the aggregator waits for a receiver to acknowledge a model download (including the full tensor transfer). Does **not** cap per-round training time. Increase for models ≥2 GB where P2P transfer can take minutes. |
 
 ## Output Summary
 
