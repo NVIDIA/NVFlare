@@ -14,6 +14,7 @@
 
 """Tests for Swarm Learning recipes."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -306,3 +307,48 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
             cuda_empty_cache=True,
         )
         assert recipe.job is not None
+
+
+class TestSimpleSwarmLearningRecipeExport:
+    """Export behavior tests for SimpleSwarmLearningRecipe."""
+
+    def test_export_preserves_dict_model_args_in_client_config(self, tmp_path):
+        """Regression: exported client config keeps dict model args for PTFileModelPersistor."""
+        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+
+        train_script = tmp_path / "driver.py"
+        train_script.write_text("print('train')\n")
+
+        model_name_or_path = "meta-llama/Llama-3.1-8B"
+        model = {
+            "class_path": "hf_sft_model.CausalLMModel",
+            "args": {"model_name_or_path": model_name_or_path},
+        }
+        job_name = "swarm_issue_reproducer"
+
+        recipe = SimpleSwarmLearningRecipe(
+            name=job_name,
+            model=model,
+            num_rounds=3,
+            train_script=str(train_script),
+            min_clients=2,
+        )
+
+        export_dir = tmp_path / "job"
+        recipe.export(str(export_dir))
+
+        config_path = export_dir / job_name / "app" / "config" / "config_fed_client.json"
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        persistor = None
+        for comp in config.get("components", []):
+            if comp.get("id") == "persistor":
+                persistor = comp
+                break
+
+        assert persistor is not None, "Persistor component not found in client config"
+        model_cfg = persistor.get("args", {}).get("model")
+        assert model_cfg is not None, "Persistor model config is missing"
+        assert model_cfg.get("path") == "hf_sft_model.CausalLMModel"
+        assert model_cfg.get("args", {}).get("model_name_or_path") == model_name_or_path
