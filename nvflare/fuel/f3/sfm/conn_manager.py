@@ -257,7 +257,10 @@ class ConnManager(ConnMonitor):
 
         log.info(f"Connector {connector} is starting")
 
-        self.conn_mgr_executor.submit(self.start_connector_task, connector)
+        try:
+            self.conn_mgr_executor.submit(self.start_connector_task, connector)
+        except RuntimeError:
+            log.debug(f"Connector start skipped — executor already shut down")
 
     @staticmethod
     def start_connector_task(connector: ConnectorInfo):
@@ -332,6 +335,9 @@ class ConnManager(ConnMonitor):
 
     def process_frame_task(self, sfm_conn: SfmConnection, frame: BytesAlike):
 
+        if self.stopped:
+            return
+
         try:
             prefix = Prefix.from_bytes(frame)
             log.debug(f"Received frame: {prefix} on {sfm_conn.conn}")
@@ -367,6 +373,12 @@ class ConnManager(ConnMonitor):
 
             else:
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
+        except RuntimeError as ex:
+            if self.stopped:
+                log.debug(f"Frame processing interrupted by shutdown: {secure_format_exception(ex)}")
+            else:
+                log.error(f"Error processing frame: {secure_format_exception(ex)}")
+                log.debug(secure_format_traceback())
         except Exception as ex:
             log.error(f"Error processing frame: {secure_format_exception(ex)}")
             log.debug(secure_format_traceback())
