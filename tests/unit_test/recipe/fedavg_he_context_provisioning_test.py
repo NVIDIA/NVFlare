@@ -16,6 +16,7 @@ import importlib.util
 from unittest.mock import MagicMock
 
 import pytest
+
 try:
     import torch.nn as nn
 except ImportError:
