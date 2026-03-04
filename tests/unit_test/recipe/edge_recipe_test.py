@@ -14,11 +14,14 @@
 
 """Tests for Edge FedBuff recipes."""
 
+import importlib.util
 from unittest.mock import patch
 
 import pytest
 
 torch = pytest.importorskip("torch")
+
+executorch_available = importlib.util.find_spec("executorch") is not None
 
 
 @pytest.fixture
@@ -144,3 +147,70 @@ class TestEdgeFedBuffRecipe:
             initial_ckpt="relative/path/model.pt",
         )
         assert recipe is not None
+
+
+@pytest.mark.skipif(not executorch_available, reason="executorch not installed")
+class TestETFedBuffRecipeSimBasic:
+    """Tests for ETFedBuffRecipe — skipped when executorch is absent."""
+
+    @pytest.fixture
+    def simple_device_model(self):
+        import torch.nn as nn
+
+        from nvflare.edge.models.model import DeviceModel
+
+        return DeviceModel(nn.Linear(10, 2))
+
+    @pytest.fixture
+    def model_manager_config(self):
+        from nvflare.edge.tools.edge_fed_buff_recipe import ModelManagerConfig
+
+        return ModelManagerConfig(max_model_version=10, num_updates_for_model=5)
+
+    @pytest.fixture
+    def device_manager_config(self):
+        from nvflare.edge.tools.edge_fed_buff_recipe import DeviceManagerConfig
+
+        return DeviceManagerConfig(device_selection_size=10)
+
+    def test_sim_basic(self, mock_file_system, simple_device_model, model_manager_config, device_manager_config):
+        """Basic ETFedBuffRecipe initialization with required args."""
+        from nvflare.edge.tools.et_fed_buff_recipe import ETFedBuffRecipe
+
+        recipe = ETFedBuffRecipe(
+            job_name="test_et_fedbuff",
+            device_model=simple_device_model,
+            input_shape=(1, 10),
+            output_shape=(1,),
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+        assert recipe.job is not None
+
+
+class TestETFedBuffRecipeWithoutExecutorch:
+    """Negative tests for ETFedBuffRecipe — verify graceful error when executorch is absent."""
+
+    def test_raises_import_error_without_executorch(self, mock_file_system):
+        """ETFedBuffRecipe.__init__ raises ImportError with install link when executorch is missing.
+
+        Uses mock so this test always runs regardless of whether executorch is installed.
+        """
+        import torch.nn as nn
+
+        from nvflare.edge.models.model import DeviceModel
+        from nvflare.edge.tools.edge_fed_buff_recipe import DeviceManagerConfig, ModelManagerConfig
+        from nvflare.edge.tools.et_fed_buff_recipe import ETFedBuffRecipe
+
+        device_model = DeviceModel(nn.Linear(10, 2))
+
+        with patch("nvflare.edge.tools.et_fed_buff_recipe.importlib.util.find_spec", return_value=None):
+            with pytest.raises(ImportError, match="executorch"):
+                ETFedBuffRecipe(
+                    job_name="test_no_et",
+                    device_model=device_model,
+                    input_shape=(1, 10),
+                    output_shape=(1,),
+                    model_manager_config=ModelManagerConfig(max_model_version=10, num_updates_for_model=5),
+                    device_manager_config=DeviceManagerConfig(device_selection_size=10),
+                )

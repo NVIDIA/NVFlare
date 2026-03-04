@@ -17,8 +17,24 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from executorch.extension.training import _load_for_executorch_for_training_from_buffer, get_sgd_optimizer
 from torch.utils.data import DataLoader, Dataset
+
+from nvflare.fuel.utils.import_utils import optional_import
+
+_load_for_executorch_for_training_from_buffer, _ = optional_import(
+    "executorch.extension.training",
+    name="_load_for_executorch_for_training_from_buffer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
+get_sgd_optimizer, _ = optional_import(
+    "executorch.extension.training",
+    name="get_sgd_optimizer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
 
 from nvflare.apis.dxo import DXO, from_dict
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNativeFormat, verify_payload
