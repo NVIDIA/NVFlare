@@ -221,6 +221,9 @@ class EdgeFedBuffRecipe(Recipe):
         evaluator_config: Configuration for the global evaluator (optional).
         simulation_config: Configuration for simulated devices settings (optional).
         custom_source_root: Path to custom source code (optional).
+        device_wait_timeout: Timeout in seconds for waiting for sufficient devices
+            to join before stopping the job. None means wait indefinitely.
+            Default: 300.0
     """
 
     def __init__(
@@ -233,6 +236,7 @@ class EdgeFedBuffRecipe(Recipe):
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         custom_source_root: str = None,
+        device_wait_timeout: Optional[float] = 300.0,
     ):
         # Validate initial_ckpt
         _EdgeFedBuffValidator(initial_ckpt=initial_ckpt)
@@ -254,6 +258,7 @@ class EdgeFedBuffRecipe(Recipe):
         self.evaluator_config = evaluator_config
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
+        self.device_wait_timeout = device_wait_timeout
 
         # Determine model instance for evaluation (handle dict config vs model instance)
         if isinstance(model, dict):
@@ -359,6 +364,7 @@ class EdgeFedBuffRecipe(Recipe):
             model_manager_id=model_manager_id,
             device_manager_id=device_manager_id,
             max_model_version=self.model_manager_config.max_model_version,
+            device_wait_timeout=self.device_wait_timeout,
         )
         job.configure_server(
             assessor=assessor,
