@@ -24,14 +24,16 @@ Most training recipes accept the following model-related parameters:
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead.
+       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
+      subclassed Keras class instance or dict config.
 
 ``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
     Controls where streamed PyTorch tensors are materialized during server-side aggregation.
