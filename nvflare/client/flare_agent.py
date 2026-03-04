@@ -358,13 +358,20 @@ class FlareAgent:
         # so the event is set exactly when the last receiver finishes downloading.
         if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
             download_done = threading.Event()
+            download_started = threading.Event()
             download_status = [None]
 
             def _on_download_done(tid, status, objs):
                 download_status[0] = status
                 download_done.set()
 
-            self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done})
+            def _on_download_started():
+                download_started.set()
+
+            self.pipe.cell.update_fobs_context({
+                FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done,
+                FOBSContextKey.DOWNLOAD_STARTED_CB: _on_download_started,
+            })
             # Tell cell_pipe.py to use download_complete_timeout as MSG_ROOT_TTL so the
             # subprocess's DownloadService transaction stays alive long enough for the server
             # to finish pulling tensors.  submit_result_timeout is the CJ-ACK timeout and is
@@ -376,6 +383,17 @@ class FlareAgent:
                 if not sent:
                     return False
                 send_elapsed = time.time() - send_start
+
+                if not download_started.is_set():
+                    # No download transaction was created — the result has no large
+                    # objects (e.g. validate metrics).  Proceed immediately instead
+                    # of blocking for download_complete_timeout.
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        "no download transaction created — proceeding immediately"
+                    )
+                    return True
+
                 self.logger.info(
                     f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
                     f"waiting up to {self._download_complete_timeout}s for server tensor download"
@@ -397,8 +415,11 @@ class FlareAgent:
                         "proceeding (server may still be downloading from this process)"
                     )
             finally:
-                # Always clear the callback so stale refs do not accumulate across rounds.
-                self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
+                # Always clear the callbacks so stale refs do not accumulate across rounds.
+                self.pipe.cell.update_fobs_context({
+                    FOBSContextKey.DOWNLOAD_COMPLETE_CB: None,
+                    FOBSContextKey.DOWNLOAD_STARTED_CB: None,
+                })
             return True
 
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)

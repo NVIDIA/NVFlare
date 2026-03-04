@@ -412,6 +412,12 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
 
+            # Notify that a download transaction was created so FlareAgent can
+            # distinguish "download in progress" from "no download needed".
+            started_cb = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_STARTED_CB)
+            if started_cb:
+                started_cb()
+
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):
         # Defer deletion to allow pending blob_cb callbacks to complete
         # secondary tensor downloads.  The monitor thread will clean up

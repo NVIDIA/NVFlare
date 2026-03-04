@@ -68,3 +68,10 @@ class FOBSContextKey:
     # subprocess's DownloadService.  FlareAgent waits on a threading.Event
     # backed by this callback to gate subprocess exit on download completion.
     DOWNLOAD_COMPLETE_CB = "download_complete_cb"
+    # Optional no-arg callable invoked by _finalize_download_tx() when a
+    # download transaction is actually created (i.e. the result contains large
+    # objects that need via-downloader transfer).  FlareAgent uses this to
+    # distinguish "download in progress" from "no download needed" so it can
+    # skip the blocking download_done.wait() for small results (e.g. validate
+    # metrics) that don't trigger any download transaction.
+    DOWNLOAD_STARTED_CB = "download_started_cb"
