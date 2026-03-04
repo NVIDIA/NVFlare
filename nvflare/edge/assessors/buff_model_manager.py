@@ -181,6 +181,9 @@ class BuffModelManager(ModelManager):
 
             # Accept the update and aggregate it to the corresponding model version
             model_state = self.updates.get(model_version)
+            if not model_state:
+                self.log_error(fl_ctx, f"No model state for version {model_version}")
+                continue
             accepted = model_state.accept(model_update, fl_ctx)
             self.log_info(
                 fl_ctx,
