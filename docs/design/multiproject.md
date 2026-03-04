@@ -1,5 +1,12 @@
 # Multi-Project Support in Flare
 
+## Revision History
+
+| Version | Notes |
+|---------|-------|
+| 1 | Initial version |
+| 2 | Incorporate feedback and Mayo discussion |
+
 ## Introduction
 
 Flare currently operates as a single-tenant system. All server and client processes run under the same Linux user, all jobs share a flat store (`jobs/<uuid>/`), and every authorized admin can see and act on every job. There is no data segregation between different collaborations running on the same infrastructure.
