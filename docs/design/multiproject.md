@@ -12,7 +12,7 @@ To achieve genuine multi-tenancy, we introduce a **project** concept as the prim
 2. **Defense in depth** — logical access control (authz) + physical isolation (containers/PVs)
 3. **Backward compatible** — a `default` project preserves current single-tenant behavior
 4. **`scope` deprecated** — the existing `scope` data-governance concept is superseded by `project`; `scope` will be removed in a future release
-5. **Feature-gated** — all multitenancy behavior gated on `api_version: 4` in `project.yml`; single-tenant deployments see zero behavior change
+5. **Phased rollout** — Phase 1 project plumbing is available without `api_version: 4`; full multitenancy enforcement is gated on `api_version: 4` in `project.yml`
 
 
 ---
@@ -24,7 +24,7 @@ A project is a named, immutable tenant boundary with these properties:
 | Property | Description |
 |----------|-------------|
 | `name` | Unique identifier (e.g., `cancer-research`) |
-| `clients` | Set of FL client sites enrolled in this project |
+| `sites` | Set of FL sites enrolled in this project (must reference client-type site entries) |
 | `users` | Set of admin users with per-project roles |
 | `authorization` | Per-project authorization policy |
 
@@ -67,7 +67,7 @@ env = PocEnv(
 run = recipe.execute(env)
 ```
 
-If `project` is omitted in either env, the `default` project is used.
+If `project` is omitted in either env, it remains `None` (no API default change).
 
 ### Admin (FLARE API / Admin Console)
 
@@ -80,7 +80,7 @@ sess = new_secure_session(
     project="cancer-research",      # new
 )
 # All subsequent operations scoped to this project
-jobs = sess.list_jobs()             # only cancer-research jobs
+jobs = sess.list_jobs()             # only caller-visible jobs in cancer-research
 sess.submit_job("./my_job")        # tagged to cancer-research
 ```
 
@@ -91,7 +91,7 @@ Admin console equivalent:
 Project set to: cancer-research
 
 > list_jobs
-... only shows cancer-research jobs ...
+... only shows caller-visible jobs in cancer-research ...
 ```
 
 A user with roles in multiple projects can switch context:
@@ -105,10 +105,11 @@ Project set to: multiple-sclerosis
 
 A new **platform admin** role (distinct from per-project `project_admin`) manages cross-project concerns:
 
-- Create/archive projects
 - Assign clients to projects
 - Assign project admins
 - View system-wide health (without seeing job data)
+
+Project create/archive is deferred for v1 (projects are provisioning-time config in `project.yml`).
 
 ---
 
@@ -121,6 +122,8 @@ A new **platform admin** role (distinct from per-project `project_admin`) manage
 ### Job Store Partitioning
 
 New multitenant jobs are stored at `jobs/<project>/<uuid>/` (vs. current `jobs/<uuid>/`). No migration of existing jobs — they remain at `jobs/<uuid>/` and implicitly belong to the `default` project.
+
+Legacy `default` jobs continue to be served by the main server process for compatibility. New server job pods mount only the project-partitioned slice needed for the active job.
 
 Physical partitioning enables:
 - Filesystem-level isolation (different mount points per project in K8s)
@@ -143,15 +146,16 @@ Today, the role is baked into the X.509 certificate (`UNSTRUCTURED_NAME` field).
 
 **Layered resolution (no breaking change):**
 1. If `ProjectRegistry` exists AND user has a mapping for the active project → use registry role
-2. Otherwise → fall back to cert-embedded role (existing behavior)
+2. Else if active project is `default` → fall back to cert-embedded role (legacy compatibility)
+3. Otherwise → deny (`user not assigned to active project`)
 
-The cert format is unchanged. Existing deployments with `api_version: 3` certs keep working. The cert role field is not removed or made vestigial in this version — it remains the primary source for single-tenant deployments.
+The cert format is unchanged. Existing deployments with `api_version: 3` certs keep working. The cert role field is not removed or made vestigial in this version — it remains the primary source for single-tenant deployments and fallback for the `default` project.
 
 ### Admin Role Hierarchy
 
 | Role | Scope | Capabilities |
 |------|-------|-------------|
-| `platform_admin` | Global | Create/delete projects, assign clients, system shutdown, view all sessions |
+| `platform_admin` | Global | Assign clients/admins to provisioned projects, system shutdown, view all sessions |
 | `project_admin` | Per-project | All job ops within project, view project's clients (no client lifecycle control) |
 | `org_admin` | Per-project | Manage own-org jobs, view own-org clients within project |
 | `lead` | Per-project | Submit/manage own jobs, view own-org clients within project |
@@ -161,12 +165,17 @@ The cert format is unchanged. Existing deployments with `api_version: 3` certs k
 
 Every command is scoped to the user's active project. Operations on resources outside the active project are denied.
 
+If the same human has multiple roles (for example `platform_admin` globally and `project_admin` in some projects), no explicit role-switch is required:
+- Project-scoped job commands are authorized by the user's role in the active project
+- Platform/global commands are authorized by `platform_admin`
+- `platform_admin` alone does not imply project job-data permissions
+
 #### Job Operations
 
 | Command | project_admin | org_admin | lead | member |
 |---------|:---:|:---:|:---:|:---:|
 | `submit_job` | yes | no | yes | no |
-| `list_jobs` | all in project | all in project | all in project | all in project |
+| `list_jobs` | all in project | own-org jobs | own jobs | all in project |
 | `get_job_meta` | all in project | own-org jobs | own jobs | all in project |
 | `download_job` | all in project | own-org jobs | own jobs | no |
 | `download_job_components` | all in project | own-org jobs | own jobs | no |
@@ -203,7 +212,7 @@ Since clients are shared across projects, **only `platform_admin` can perform cl
 |---------|:---:|:---:|:---:|:---:|:---:|
 | `pwd`, `ls`, `cat`, `head`, `tail`, `grep` | all | project's clients | own-org + project | own-org + project | no |
 
-Shell commands must be **restricted to the project's workspace path** on the target site. See Unresolved Questions.
+Shell command behavior needs deeper design discussion because parent-process and job-pod filesystems can diverge (including standard K8s setups). See Unresolved Questions.
 
 #### Session / Platform Commands
 
@@ -235,9 +244,9 @@ The v4 schema uses three top-level sections with a deliberate separation of conc
 
 - **`sites`** — infrastructure participants (server, clients). Always present. Identity and trust are cert-based; these entries never go away.
 - **`admins`** — human participants with per-platform and per-project roles. **Optional.** Omit entirely when using SSO (see [Future: SSO](#future-sso-for-human-users)); roles are then provided by IdP claims.
-- **`projects`** — tenant definitions: which clients are enrolled, and (optionally) which admins have which roles. The `admins:` block inside each project is also omitted under SSO.
+- **`projects`** — tenant definitions: which sites are enrolled (client-type entries), and (optionally) which admins have which roles. The `admins:` block inside each project is also omitted under SSO.
 
-This separation is intentional: `sites` and `projects.clients` form the **permanent skeleton** of the file. The `admins` sections are an **optional overlay** that exists today but disappears when SSO is introduced — with no restructuring of the rest of the file.
+This separation is intentional: `sites` and `projects.sites` form the **permanent skeleton** of the file. The `admins` sections are an **optional overlay** that exists today but disappears when SSO is introduced — with no restructuring of the rest of the file.
 
 ```yaml
 api_version: 4
@@ -257,13 +266,13 @@ admins:
 
 projects:
   cancer-research:
-    clients: [hospital-a, hospital-b]
+    sites: [hospital-a, hospital-b]
     # Omit when using SSO (roles come from IdP claims)
     admins:
       trainer@org_a.com: lead
 
   multiple-sclerosis:
-    clients: [hospital-a, hospital-c]
+    sites: [hospital-a, hospital-c]
     admins:
       trainer@org_a.com: member
       viewer@org_b.com:  lead
@@ -282,9 +291,9 @@ sites:
 
 projects:
   cancer-research:
-    clients: [hospital-a, hospital-b]
+    sites: [hospital-a, hospital-b]
   multiple-sclerosis:
-    clients: [hospital-a, hospital-c]
+    sites: [hospital-a, hospital-c]
 ```
 
 ### Certificate Changes
@@ -304,8 +313,8 @@ In multitenant mode (`api_version: 4`), per-project roles are resolved from the 
 
 The scheduler becomes project-aware:
 
-1. **Candidate filtering**: Only schedule jobs to clients enrolled in the job's project
-2. **Validation**: `deploy_map` sites must be a subset of the project's enrolled clients
+1. **Candidate filtering**: Only schedule jobs to sites enrolled in the job's project (client-type sites)
+2. **Validation**: `deploy_map` sites must be a subset of the project's enrolled sites
 3. **Quota/priority**: Deferred. K8s-level resource quotas per namespace may suffice initially. Future option: route different projects to different K8s scheduling queues via pod labels/nodeSelectors.
 
 ---
@@ -330,18 +339,18 @@ The project becomes a property of the job, and ProdEnv prepares the correspondin
 
 ### Kubernetes (Primary Target)
 
-Clients participate in all their enrolled projects. **Data isolation is achieved by mounting different PersistentVolumes per project in each job pod.** The Flare client parent process runs in its own pod (or on the node) and does not mount project data PVs — it only orchestrates job pod creation.
+Clients participate in all their enrolled projects. **Data isolation is achieved by mounting project-scoped workspace volumes in each job pod.** The Flare client parent process runs in its own pod (or on the node) and does not mount project data volumes — it only orchestrates job pod creation.
 
 | Concern | Mechanism |
 |---------|-----------|
-| Namespace isolation | One K8s namespace per project |
-| Storage isolation | PersistentVolumeClaim per project per client (not hostPath) |
+| Namespace isolation | Deployment-defined strategy (recommended: one namespace per project; supported: shared namespace or per-job namespace) |
+| Storage isolation | Workspace volume resolved by `(project, client, job pod namespace)` (not hostPath) |
 | Temp directory isolation | Each pod gets its own `/tmp` via `emptyDir` — no shared host `/tmp` |
-| Network isolation | NetworkPolicy per namespace |
-| Resource limits | ResourceQuota per namespace (deferred, see Scheduler) |
+| Network isolation | NetworkPolicy scoped by project name |
+| Resource limits | ResourceQuota policy per deployment strategy (deferred, see Scheduler) |
 | Pod security | PodSecurityPolicy/Standards per namespace |
 
-Job pods are created in the project's K8s namespace, mounting a pre-provisioned PVC (`<project>-workspace`) per project per client. Each pod also gets its own `/tmp` via `emptyDir` to prevent cross-project leakage via temporary files. This applies to both server and client job pods.
+Workspace volume naming/provisioning must remain project-aware and work with either shared namespaces or per-job namespaces.
 
 ### Slurm
 
@@ -353,8 +362,8 @@ Job pods are created in the project's K8s namespace, mounting a pre-provisioned 
 
 ## FLARE API Changes
 
-- `Session` gains a `project` parameter (defaults to `"default"`) and `set_project()`/`list_projects()` methods
-- `list_jobs` is automatically filtered to the active project (replaces the `-u` user-only filter)
+- `Session` gains an optional `project` parameter (defaults to `None`) and `set_project()`/`list_projects()` methods
+- `list_jobs` is filtered by active project and caller role (`project_admin`: all in project, `org_admin`: own-org, `lead`: own jobs, `member`: all in project)
 - `get_system_info` returns only clients enrolled in the active project
 - All job operations validate that the target job belongs to the active project
 
@@ -375,11 +384,20 @@ Audit logs should be queryable per project for compliance.
 
 ## Migration / Backward Compatibility
 
-1. **Feature gate**: all multitenancy behavior gated on `project.yml` having `api_version: 4` with a `projects:` section. Without it, the system behaves identically to today.
-2. **Default project**: all existing jobs, clients, and users are in the `default` project
-3. **Cert role fallback**: if no project registry exists (or user has no registry mapping), fall back to cert-embedded role
-4. **API compatibility**: `project` parameter defaults to `"default"` everywhere
-5. **Config version**: `api_version: 4` in `project.yml` signals multi-project support; version 3 continues to work as single-tenant
+1. **Phase 1 is ungated**: project plumbing (`project` argument + metadata propagation to launchers) is available independent of `api_version`.
+2. **Feature gate for full multitenancy**: project registry, project-scoped RBAC, scheduler constraints, and job-store partitioning are enabled only when `project.yml` has `api_version: 4` with a `projects:` section.
+3. **Default project**: all existing jobs, clients, and users are in the `default` project
+4. **Cert role fallback**: if no project registry exists, fall back to cert-embedded role; if registry exists but user has no mapping, fallback applies only when active project is `default`
+5. **API compatibility**: omitted `project` remains `None` (no default change) across phases
+6. **Config version**: `api_version: 4` in `project.yml` signals full multi-project enforcement; version 3 continues to work as single-tenant
+
+### Release Transition Strategy (2.8 -> 2.9)
+
+1. **Upgrade to 2.8 (Phase 1 only)**: optional project tagging/plumbing is available, but no multitenant access-control or scheduler behavior changes are enabled.
+2. **Upgrade to 2.9 with existing v3 deployments**: keep current `project.yml` (`api_version: 3`) and startup kits; system remains single-tenant/compatibility mode.
+3. **Existing jobs continue to work**: legacy jobs remain at `jobs/<uuid>/` as `default`; no data migration is required.
+4. **Activate full multi-project mode when ready**: deploy a v4 `project.yml` (`api_version: 4` + `projects:`) to server startup artifacts and restart server to load registry-backed project scoping.
+5. **Provisioning impact**: no full reprovision is required; keep dynamic provisioning behavior by updating server-side artifacts and generating startup kits only for newly added or changed participants.
 
 ---
 
@@ -391,29 +409,18 @@ Audit logs should be queryable per project for compliance.
 | D2 | Project lifecycle management? | **Deferred.** Projects are defined at provisioning time in `project.yml`. Runtime project CRUD is not in scope for v1. |
 | D3 | Per-project quota management? | **Deferred.** Rely on K8s ResourceQuota per namespace for now. Future: route projects to different K8s scheduling queues via pod labels. |
 | D4 | `check_status` information leakage? | **Server has global knowledge, filtering the response is sufficient.** The server parent process knows about all clients and jobs; it filters responses to only include resources in the user's active project. No architectural change needed. |
-| D5 | Server-side job store isolation? | **Server job pods must only access their project's data.** The server job process (running in K8s/Docker) must not mount the entire job store — only the project-partitioned slice. Current `FilesystemStorage` will be replaced by a database or object store in the future, which will enforce project-scoped access natively. For v1 with filesystem: mount only `jobs/<project>/` into the server job pod. No migration of existing jobs — they stay at `jobs/<uuid>/` and belong to `default`. |
+| D5 | Server-side job store isolation? | **Server job pods must only access their project's data.** The server job process (running in K8s/Docker) must not mount the entire job store — only the project-partitioned slice for new-layout jobs (`jobs/<project>/...`). Legacy jobs remain at `jobs/<uuid>/` under `default`; they are served by the main server process for compatibility and are not mounted into new server job pods. Current `FilesystemStorage` will be replaced by a database or object store in the future, which will enforce project-scoped access natively. |
 | D6 | Role storage: certs vs. server-side registry? | **Layered: registry overrides cert.** `project.yml` defines per-project roles; the server loads it at startup via `ProjectRegistry`. Certs continue to authenticate identity (name, org) and carry a role as fallback. No cert format change required. |
 | D7 | How do shared clients know which project PV to mount? | **The launcher passes the project name to the client.** Job metadata carries the project; the server includes it when dispatching to clients. The client-side `K8sJobLauncher`/`DockerJobLauncher` uses the project name to select the correct PV/volume mount. |
 | D8 | Cross-project isolation in subprocess mode? | **Subprocess mode is single-tenant/trusted only.** Only K8s, Docker, and Slurm launchers provide secure multi-tenant isolation (separate namespaces, volumes, `/tmp`). The default subprocess launcher offers no physical isolation and is only suitable for single-tenant or trusted environments. |
+| D9 | Cross-project visibility for `platform_admin` job data? | **No.** `platform_admin` does not get cross-project job metadata/data visibility and there is no `list_jobs --all-projects` behavior in v1. If the same human also has a project-scoped role in the active project, only that project-scoped role grants job access. |
+| D10 | Provisioning model at scale? | **Keep dynamic provisioning behavior.** Adding sites/users should not require reprovisioning all existing sites; update server-side config/startup artifacts and generate kits only for newly added or changed participants. |
 
 ---
 
 ## Unresolved Questions
 
-1. **Cross-project visibility**: Can a platform admin see job metadata across all projects (for debugging)? Should `list_jobs` have a `--all-projects` flag for platform admins?
-
-2. **Existing `scope` concept**: The `scope` concept will be deprecated in favor of `project`. The `project` boundary subsumes data-governance scoping; existing `scope` usage will be migrated to `project`.
-
-3. **External IdP integration**: SSO is a follow-on (see Future: SSO section), but should the `ProjectRegistry` interface be designed now to accommodate an IdP backend later? What claims/attributes should the IdP provide (project membership, role, org)?
-
-4. **Shell commands (pwd, ls, cat, head, tail, grep)**: These allow direct filesystem access on server/client sites. In a multi-tenant environment:
-   - How do we restrict file access to the active project's workspace? Current implementation does basic path validation (no `..`, no absolute paths) but has no project awareness.
-   - In K8s, project data lives on per-project PVs that are only mounted into job pods — the client parent process does not have them mounted. Shell commands executed on the parent process have **no access** to project data at all.
-   - Options: (a) disable shell commands in multi-tenant mode, (b) replace with a project-scoped log/artifact download API that retrieves data from the job store, (c) route shell commands to a running job pod (requires the job to be active), (d) launch an ephemeral "debug pod" in the project's namespace with the project PV mounted.
-   - The current `cat log.txt` pattern assumes a single workspace. With per-project workspaces, the working directory concept needs redefinition.
-   - **This is a significant UX change** — today admins rely heavily on shell commands for debugging. Need a clear alternative.
-
-5. **Provisioning at scale**: With N projects and M users, the current "one provision run per project" model means M*N startup kits in the worst case. Is a shared-CA model with a single startup kit per user viable?
+1. **Shell-command replacement UX**: Parent-process shell commands are backend-dependent and cannot be relied on for job workspace access (notably in K8s, but this can happen in single-project setups too). The right policy and UX replacement need further study (for example log/artifact APIs vs pod-targeted debug workflows).
 
 ---
 
@@ -456,9 +463,9 @@ Phase 1 delivers no access control, no job store partitioning, and no cert/regis
 
 ### Scope
 
-1. Add `project: str = "default"` parameter to `ProdEnv` and `PocEnv`.
+1. Add `project: Optional[str] = None` parameter to `ProdEnv` and `PocEnv`.
 2. Pass `project` through to the job metadata at submission time.
-3. `K8sJobLauncher` reads `project` from job metadata and selects the corresponding PVC (`<project>-workspace`).
+3. `K8sJobLauncher` reads `project` from job metadata and selects the corresponding project workspace volume.
 4. `DockerJobLauncher` reads `project` from job metadata and mounts `/data/<project>/` as the workspace volume.
 5. No changes to authorization, job store paths, `project.yml`, scheduler, or any other component.
 

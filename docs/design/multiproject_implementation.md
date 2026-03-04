@@ -1,12 +1,12 @@
 # Multitenancy Implementation Plan
 
-Companion to [multitenancy.md](multitenancy.md). This document specifies *how* to implement the design with minimal risk.
+Companion to [multiproject.md](multiproject.md). This document specifies *how* to implement the design with minimal risk.
 
 ## Guiding Principles
 
-1. **Feature-gated** — all multitenancy behavior gated on `project.yml` having a `projects:` section (`api_version: 4`). Single-tenant deployments unchanged.
+1. **Phased rollout** — Phase 1 project plumbing is ungated; full multitenancy enforcement is gated on `project.yml` having a `projects:` section (`api_version: 4`).
 2. **Additive, not migratory** — no job store path migration, no role renames. New code paths only.
-3. **Layered role resolution** — registry overrides cert, cert remains fallback. No breaking change to cert format.
+3. **Layered role resolution** — registry role for active project when available; cert remains fallback for `default` only. No breaking change to cert format.
 4. **Incremental delivery** — three shippable milestones, each independently testable.
 
 ---
@@ -53,10 +53,17 @@ Key files and their roles (discovered via exploration):
 **Mitigation**: no migration. New multitenant jobs go to `jobs/<project>/<uuid>/`. Existing jobs stay at `jobs/<uuid>/` and implicitly belong to `default`. `SimpleJobDefManager` checks both paths when listing `default` project jobs.
 
 ### Problem: `project_admin` role rename
-**Mitigation**: no rename. `project_admin` already fits as the per-project admin concept. Add `platform_admin` as a new global role. Existing `must_be_project_admin()` checks become "is user `project_admin` in any project OR `platform_admin`" — backward compatible.
+**Mitigation**: no rename. `project_admin` already fits as the per-project admin concept. Add `platform_admin` as a new global role. `must_be_project_admin()`-style checks for project job operations must remain project-scoped (no implicit `platform_admin` job-data access).
 
 ### Problem: Cert role becomes vestigial
-**Mitigation**: layered resolution. If `ProjectRegistry` has a mapping for this user+project, use it. Otherwise fall back to cert role. Cert format unchanged; no re-provisioning required for existing deployments.
+**Mitigation**: layered resolution. If `ProjectRegistry` has a mapping for this user+project, use it. If not, cert fallback applies only when active project is `default`; otherwise deny. Cert format unchanged; no re-provisioning required for existing deployments.
+
+### Problem: Project name injection/path hazards
+**Mitigation**: centralized `validate_project_name()` used by provisioning and job submission. Rules:
+- Must be non-empty string, length `1..63`
+- Must match `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`
+- Invalid names are rejected (no auto-truncation)
+- `default` reserved as system project name
 
 ### Problem: Cross-cutting feature requires all-or-nothing
 **Mitigation**: three milestones. Milestone 1 adds plumbing with zero behavior change. Milestone 2 adds the registry (gated). Milestone 3 enforces scoping.
@@ -65,7 +72,7 @@ Key files and their roles (discovered via exploration):
 
 ## Milestone 1: Project-Aware Plumbing
 
-**Goal**: thread `project` through the stack, always `"default"`. All existing tests pass, zero behavior change.
+**Goal**: thread `project` through the stack while preserving current API defaults (`None`). All existing tests pass, zero behavior change.
 
 ### 1.1 Add `JobMetaKey.PROJECT`
 
@@ -93,7 +100,10 @@ class ConnProps(object):
 
 In `submit_job()` (~line 604), after setting submitter info:
 ```python
-meta[JobMetaKey.PROJECT.value] = conn.get_prop(ConnProps.PROJECT, "default")
+project = conn.get_prop(ConnProps.PROJECT, None)
+if project is not None:
+    validate_project_name(project)
+meta[JobMetaKey.PROJECT.value] = project
 ```
 
 Same for `clone_job()` (~line 504).
@@ -102,20 +112,20 @@ Same for `clone_job()` (~line 504).
 
 **File**: `nvflare/fuel/hci/server/sess.py`
 
-Add `project="default"` to `Session.__init__()`. Include `"p"` key in token encoding. Set `ConnProps.PROJECT` from session in `LoginModule.pre_command()`.
+Add `project: Optional[str] = None` to `Session.__init__()`. Include `"p"` key in token encoding. Set `ConnProps.PROJECT` from session in `LoginModule.pre_command()`.
 
 ### 1.5 Add `project` to client-side `Session`
 
 **File**: `nvflare/fuel/flare_api/flare_api.py`
 
-- Add `project="default"` param to `Session.__init__()` and `new_secure_session()`
+- Add `project: Optional[str] = None` param to `Session.__init__()` and `new_secure_session()`
 - Store as `self._project`, pass to server on connect
 
 ### 1.6 Add `project` to `ProdEnv`
 
 **File**: `nvflare/recipe/prod_env.py`
 
-Add `project="default"` param, pass through to `SessionManager`.
+Add `project: Optional[str] = None` param, pass through to `SessionManager`.
 
 ### 1.7 Add `project` to audit events
 
@@ -125,7 +135,7 @@ Add `project` param to `add_event()`. Emit `[P:project]` in log line.
 
 **File**: `nvflare/fuel/hci/server/audit.py`
 
-Pass `conn.get_prop(ConnProps.PROJECT, "default")` to `add_event()`.
+Pass `conn.get_prop(ConnProps.PROJECT, None)` to `add_event()`.
 
 ### 1.8 Filter `list_jobs` by project
 
@@ -167,15 +177,15 @@ Extract shared helper `_is_job_in_project(job_meta, project)` for reuse across a
 
 ```python
 class ProjectRegistry:
-    """Resolves project membership, client enrollment, and per-project roles.
+    """Resolves project membership, site enrollment, and per-project roles.
 
     Loaded from project.yml at server startup. When absent or api_version < 4,
-    operates in single-tenant mode (all users/clients in 'default' project,
+    operates in single-tenant mode (all users/sites in 'default' project,
     roles from certs).
     """
 
     def __init__(self):
-        self._projects = {}        # name -> {clients: set, users: dict}
+        self._projects = {}        # name -> {sites: set, users: dict}
         self._multitenant = False
 
     def load_from_config(self, project_dict: dict):
@@ -190,8 +200,8 @@ class ProjectRegistry:
         """All project names."""
         ...
 
-    def get_project_clients(self, project: str) -> Set[str]:
-        """Client names enrolled in project."""
+    def get_project_sites(self, project: str) -> Set[str]:
+        """Site names enrolled in project (client-type sites)."""
         ...
 
     def get_user_projects(self, username: str) -> List[str]:
@@ -209,7 +219,7 @@ class ProjectRegistry:
     def is_user_in_project(self, username: str, project: str) -> bool:
         ...
 
-    def is_client_in_project(self, client_name: str, project: str) -> bool:
+    def is_site_in_project(self, site_name: str, project: str) -> bool:
         ...
 ```
 
@@ -328,7 +338,8 @@ cmd_reg.add_filter(authz_filter)
 Extend `prepare_project()` to accept `api_version` 3 or 4. When 4:
 - Parse `projects:` section
 - Parse per-admin `projects:` mapping
-- Validate referenced clients exist in participants
+- Validate referenced project sites exist in participants and are client-type sites
+- Preserve dynamic provisioning behavior: adding users/sites should not require reprovisioning all existing sites; regenerate/update startup artifacts only for the server and newly added/changed participants.
 
 **File**: `nvflare/lighter/entity.py`
 
@@ -362,7 +373,7 @@ Copy `project.yml` into server startup kit directory.
 
 ## Milestone 3: Enforcement + Scheduler
 
-**Goal**: all commands scoped to active project. Scheduler validates project client enrollment.
+**Goal**: all commands scoped to active project. Scheduler validates project site enrollment (client-type sites).
 
 ### 3.1 All job commands: project gate
 
@@ -386,19 +397,19 @@ def authorize_job_id(self, conn, args):
 
 This is a single change point since all job commands route through `authorize_job_id()`.
 
-### 3.2 Infrastructure commands: filter to project clients
+### 3.2 Infrastructure commands: filter to project sites
 
 **File**: `nvflare/private/fed/server/training_cmds.py` (and `cmd_utils.py`)
 
-In `validate_command_targets()`, filter target list to clients enrolled in the active project:
+In `validate_command_targets()`, filter target list to sites enrolled in the active project:
 
 ```python
 registry = ProjectRegistryService.get_registry()
 if registry and registry.is_multitenant():
     project = conn.get_prop(ConnProps.PROJECT, "default")
     for target in targets:
-        if not registry.is_client_in_project(target, project):
-            conn.append_error(f"Client '{target}' not in project '{project}'")
+        if not registry.is_site_in_project(target, project):
+            conn.append_error(f"Site '{target}' not in project '{project}'")
             return PreAuthzReturnCode.ERROR
 ```
 
@@ -418,9 +429,9 @@ In `_try_job()`, after extracting applicable sites (~line 126):
 registry = ProjectRegistryService.get_registry()
 if registry and registry.is_multitenant():
     project = job_meta.get(JobMetaKey.PROJECT.value, "default")
-    project_clients = registry.get_project_clients(project)
+    project_sites = registry.get_project_sites(project)
     for site in applicable_sites:
-        if site != SERVER_SITE_NAME and site not in project_clients:
+        if site != SERVER_SITE_NAME and site not in project_sites:
             return (SCHEDULE_RESULT_BLOCK, None, f"Site {site} not in project {project}")
 ```
 
@@ -454,9 +465,9 @@ def job_uri(self, jid, project=None):
 | File | Change |
 |------|--------|
 | `nvflare/private/fed/server/job_cmds.py` | project gate in authorize_job_id |
-| `nvflare/private/fed/server/training_cmds.py` | filter infra commands to project clients |
+| `nvflare/private/fed/server/training_cmds.py` | filter infra commands to project sites |
 | `nvflare/private/fed/server/cmd_utils.py` | project-aware target validation |
-| `nvflare/app_common/job_schedulers/job_scheduler.py` | deploy_map vs project clients |
+| `nvflare/app_common/job_schedulers/job_scheduler.py` | deploy_map vs project sites |
 | `nvflare/apis/impl/job_def_manager.py` | partitioned job_uri for new jobs |
 | `tests/unit_test/...` (5 new files) | ~630 lines of tests |
 
@@ -494,6 +505,4 @@ def job_uri(self, jid, project=None):
 
 2. **Token encoding**: should the project be part of the session token, or sent as a command header? Token means re-auth on project switch; header is simpler but requires server-side validation on every command.
 
-3. **`list_jobs --all-projects`**: should `platform_admin` have a flag to see all projects' jobs? Useful for debugging but increases blast radius.
-
-4. **Provisioner backward compat**: when `api_version: 4` project.yml is used, should the provisioner still bake a role into the cert? Options: (a) bake the first project's role as a fallback, (b) leave `UNSTRUCTURED_NAME` empty, (c) bake a sentinel value like `"multitenant"`.
+3. **Provisioner backward compat**: when `api_version: 4` project.yml is used, should the provisioner still bake a role into the cert? Options: (a) bake the first project's role as a fallback, (b) leave `UNSTRUCTURED_NAME` empty, (c) bake a sentinel value like `"multitenant"`.
