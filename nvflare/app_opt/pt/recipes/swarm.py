@@ -106,6 +106,17 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             considered stalled. Defaults to 3600.
         max_status_report_interval: Maximum seconds between consecutive status reports from
             a client before it is considered silent. Defaults to 300.
+        learn_task_ack_timeout: Seconds to wait for the learn task ACK from remote clients
+            during P2P broadcast. For large models (e.g. Llama 1B ~2.8GB) transferred via
+            tensor streaming, increase this to allow time for the full model download.
+            Defaults to 10.
+        learn_task_timeout: Maximum seconds allowed for a complete training round (including
+            model download, training, and result submission). None means no timeout.
+            For large models, set to a generous value (e.g. 10800 for 3 hours).
+        final_result_ack_timeout: Seconds to wait for the final result broadcast ACK after
+            all training rounds complete. The aggregator broadcasts the final model to all
+            participants; for large models this involves a full P2P tensor transfer.
+            Defaults to 10. For large models, set to match learn_task_ack_timeout.
 
     Example:
         Using nn.Module instance:
@@ -153,6 +164,9 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         start_task_timeout: float = 300,
         progress_timeout: float = 3600,
         max_status_report_interval: float = 300,
+        learn_task_ack_timeout: float = 10,
+        learn_task_timeout: float = None,
+        final_result_ack_timeout: float = 10,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
@@ -215,6 +229,9 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
             min_responses_required=min_clients,
+            learn_task_ack_timeout=learn_task_ack_timeout,
+            learn_task_timeout=learn_task_timeout,
+            final_result_ack_timeout=final_result_ack_timeout,
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
