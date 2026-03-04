@@ -38,6 +38,7 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install --no-cache-dir -e .[dev]
+          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
         run: ./runtest.sh
 
@@ -58,6 +59,7 @@ jobs:
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install --no-cache-dir -e .[dev]
+          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
           python3 -m pip install --no-cache-dir build twine torch torchvision
       - name: Run wheel build
         run: python3 -m build --wheel
