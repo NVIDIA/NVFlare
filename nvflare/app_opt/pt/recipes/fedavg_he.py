@@ -320,3 +320,5 @@ class FedAvgRecipeWithHE(Recipe):
 
         if isinstance(env, SimEnv):
             raise ValueError(HE_SIM_ENV_NOT_SUPPORTED_ERROR)
+
+        super().process_env(env)
