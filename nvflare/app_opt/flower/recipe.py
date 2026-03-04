@@ -12,30 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
 from typing import Optional
+
+from packaging.specifiers import SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from nvflare.app_common.tie.defs import Constant
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.recipe.spec import Recipe
 
-MIN_FLWR_VERSION = (1, 16)
-MAX_FLWR_VERSION_EXCLUSIVE = (1, 26)
+SUPPORTED_FLWR_MIN_VERSION_SPEC = ">=1.16"
+SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE = Version("1.26")
 SUPPORTED_FLWR_SPEC = "flwr>=1.16,<1.26"
-_VERSION_PATTERN = re.compile(r"^\s*(\d+)\.(\d+)")
-
-
-def _parse_major_minor(version_str: str) -> tuple[int, int]:
-    match = _VERSION_PATTERN.match(version_str)
-    if not match:
-        raise RuntimeError(
-            f"unable to parse installed flwr version '{version_str}'. "
-            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
-        )
-    return int(match.group(1)), int(match.group(2))
+SUPPORTED_FLWR_MIN_SPEC_SET = SpecifierSet(SUPPORTED_FLWR_MIN_VERSION_SPEC)
 
 
 def _validate_flwr_version():
@@ -46,8 +38,20 @@ def _validate_flwr_version():
             f"Flower package 'flwr' is not installed. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         ) from ex
 
-    major_minor = _parse_major_minor(installed_version)
-    if major_minor < MIN_FLWR_VERSION or major_minor >= MAX_FLWR_VERSION_EXCLUSIVE:
+    try:
+        parsed_version = Version(installed_version)
+    except InvalidVersion as ex:
+        raise RuntimeError(
+            f"unable to parse installed flwr version '{installed_version}'. "
+            f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
+        ) from ex
+
+    # Use a SpecifierSet for the lower bound and Version comparison for the upper bound.
+    # This keeps 1.16rc0 excluded while allowing 1.26.0rc0 as < 1.26.
+    is_supported = SUPPORTED_FLWR_MIN_SPEC_SET.contains(parsed_version, prereleases=True) and (
+        parsed_version < SUPPORTED_FLWR_MAX_VERSION_EXCLUSIVE
+    )
+    if not is_supported:
         raise RuntimeError(
             f"incompatible flwr version '{installed_version}'. " f"FlowerRecipe requires '{SUPPORTED_FLWR_SPEC}'."
         )
