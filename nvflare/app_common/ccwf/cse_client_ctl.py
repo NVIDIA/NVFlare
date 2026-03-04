@@ -244,6 +244,34 @@ class CrossSiteEvalClientController(ClientSideController):
         return make_reply(ReturnCode.OK)
 
     def _prepare_local_model(self, model_name, fl_ctx: FLContext, abort_signal: Signal):
+        # Try persistor first — works with all executor types including external process
+        # executors that launch a fresh subprocess with no retained training state.
+        if self.persistor:
+            try:
+                assert isinstance(self.persistor, ModelPersistor)
+                # model_name (e.g. "best_model") may not match persistor inventory keys
+                # (e.g. "FL_global_model.pt"), so try exact name then fall back to inventory.
+                model_learnable = self.persistor.get(model_name, fl_ctx)
+                if not model_learnable:
+                    inventory = self.persistor.get_model_inventory(fl_ctx)
+                    if inventory:
+                        for key in inventory:
+                            model_learnable = self.persistor.get(key, fl_ctx)
+                            if model_learnable:
+                                break
+                if model_learnable:
+                    dxo = model_learnable_to_dxo(model_learnable)
+                    model = dxo.to_shareable()
+                    self._set_prepared_model(ModelType.LOCAL, model_name, model)
+                    self.log_info(fl_ctx, f"got local model '{model_name}' from persistor")
+                    return make_reply(ReturnCode.OK)
+            except Exception as ex:
+                self.log_warning(
+                    fl_ctx,
+                    f"could not get local model from persistor, will try executor: {secure_format_exception(ex)}",
+                )
+
+        # Fall back to submit_model_executor
         if not self.submit_model_executor:
             self.log_error(fl_ctx, "got request to prepare local model but I don't have local models")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
