@@ -19,7 +19,12 @@ from typing import Dict
 
 from torch.utils.data import DataLoader, Dataset
 
-from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.apis.dxo import DXO, from_dict
+from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNativeFormat, verify_payload
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.fuel.utils.import_utils import LazyImportError, optional_import
 
 _load_for_executorch_for_training_from_buffer, _ = optional_import(
     "executorch.extension.training",
@@ -35,12 +40,6 @@ get_sgd_optimizer, _ = optional_import(
         "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
     ),
 )
-
-from nvflare.apis.dxo import DXO, from_dict
-from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNativeFormat, verify_payload
-from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.job_response import JobResponse
-from nvflare.edge.web.models.task_response import TaskResponse
 
 log = logging.getLogger(__name__)
 
@@ -235,6 +234,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         try:
             model_bytes = base64.b64decode(payload.data)
             et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
+        except (ImportError, LazyImportError):
+            raise
         except Exception as e:
             log.error(f"Failed to load model: {e}")
             raise RuntimeError("Failed to load model") from e
