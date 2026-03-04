@@ -67,7 +67,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"Flower executable '{executable_name}' not found at: {executable_path}\n"
             f"\n"
             f"This indicates Flower is not properly installed in your Python environment.\n"
-            f"Please install Flower with simulation support:\n"
+            f"Please install a compatible Flower version:\n"
             f"  pip install 'flwr>=1.16,<1.26'\n"
             f"\n"
             f"If using a virtual environment, ensure it's activated before installation.\n"
