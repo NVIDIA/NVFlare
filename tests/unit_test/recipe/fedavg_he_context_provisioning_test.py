@@ -75,6 +75,7 @@ def test_process_env_rejects_sim_env_for_he_recipe(tmp_path):
 
 
 def test_process_env_allows_non_sim_env(tmp_path):
+def test_process_env_allows_non_sim_env(tmp_path):
     from nvflare.recipe.spec import ExecEnv
 
     train_script = tmp_path / "client.py"
@@ -82,4 +83,5 @@ def test_process_env_allows_non_sim_env(tmp_path):
     recipe = _create_recipe(str(train_script))
 
     non_sim_env = MagicMock(spec=ExecEnv)
+    # Should not raise any exception for a non-SimEnv environment
     recipe.process_env(non_sim_env)
