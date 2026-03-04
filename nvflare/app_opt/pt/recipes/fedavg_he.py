@@ -32,7 +32,7 @@ from nvflare.job_config.defs import FilterType
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import ExecEnv, Recipe
 
-HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html"
+HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html"
 HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
     "FedAvgRecipeWithHE does not support SimEnv. "
     "Use provisioned startup kits with nvflare.lighter.impl.he.HEBuilder and run with ProdEnv or PocEnv. "
