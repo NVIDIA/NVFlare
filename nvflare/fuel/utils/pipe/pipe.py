@@ -176,6 +176,20 @@ class Pipe(AttributesExportable, ABC):
         """Whether the pipe is able to resend a message."""
         pass
 
+    def release_send_cache(self, msg: Message):
+        """Release any per-message state cached by send().
+
+        Called by PipeHandler after the retry loop exits (success, max retries,
+        or stop) to allow pipe implementations to free resources that were
+        attached to the message during send().  The default is a no-op; pipes
+        that cache state (e.g. CellPipe caches the serialized CellMessage) must
+        override this method.
+
+        Args:
+            msg: the message that was being sent.
+        """
+        pass
+
     def get_last_peer_active_time(self):
         """Get the last time that the peer is known to be active
 

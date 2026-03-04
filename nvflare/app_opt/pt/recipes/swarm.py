@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
@@ -38,36 +37,6 @@ class _SwarmValidator(BaseModel):
         return v
 
     model_config = {"arbitrary_types_allowed": True}
-
-
-def _instantiate_model_from_dict(model_config: Dict[str, Any]) -> Any:
-    """Instantiate a model from dict config (internal job format with 'path' key).
-
-    Recipes accept {"class_path": "...", "args": {...}} and normalize to {"path": "...", "args": {...}}
-    before calling this. So this function receives the normalized config.
-
-    Args:
-        model_config: Dict with 'path' (required) and 'args' (optional) keys.
-
-    Returns:
-        Instantiated model
-
-    Raises:
-        ValueError: If 'path' key is missing or model cannot be instantiated.
-    """
-    if "path" not in model_config:
-        raise ValueError("model_config dict must contain 'path' key with the model class path")
-
-    class_path = model_config["path"]
-    model_args = model_config.get("args", {})
-
-    try:
-        module_path, class_name = class_path.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        model_class = getattr(module, class_name)
-        return model_class(**model_args)
-    except Exception as e:
-        raise ValueError(f"Failed to instantiate model from '{class_path}': {str(e)}") from e
 
 
 class BaseSwarmLearningRecipe(Recipe):
@@ -110,7 +79,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             - A dict config: {"class_path": "module.ClassName", "args": {"param": value}}
         num_rounds: Number of training rounds.
         train_script: Path to the training script.
-        min_clients: Minimum number of clients required to start the job. Defaults to 1.
+        min_clients: Minimum number of clients required.
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
@@ -125,6 +94,18 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
             and aggregator roles. Defaults to 1 (every round) to match legacy behavior where
             gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
+        expected_data_kind: The data kind the aggregator expects from clients. Defaults to
+            DataKind.WEIGHTS for full-weight FedAvg. Use DataKind.WEIGHT_DIFF when clients
+            send parameter deltas (e.g. LoRA adapter diffs with params_transfer_type=DIFF).
+        params_transfer_type: How parameters are transferred between client script and NVFlare.
+            FULL sends the entire parameter state each round; DIFF sends only the delta.
+            Defaults to FULL. Must match the ParamsType used in the training script.
+        start_task_timeout: Seconds to wait for the starting client to acknowledge the start
+            task. Increase for large models that need time to load. Defaults to 300.
+        progress_timeout: Seconds of no progress from any client before the workflow is
+            considered stalled. Defaults to 3600.
+        max_status_report_interval: Maximum seconds between consecutive status reports from
+            a client before it is considered silent. Defaults to 300.
 
     Example:
         Using nn.Module instance:
@@ -158,7 +139,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         model: Union[Any, Dict[str, Any]],
         num_rounds: int,
         train_script: str,
-        min_clients: int = 1,
+        min_clients: int,
         initial_ckpt: Optional[str] = None,
         train_args: dict = None,
         do_cross_site_eval: bool = False,
@@ -167,19 +148,23 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         command: str = "python3 -u",
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
+        expected_data_kind: str = DataKind.WEIGHTS,
+        params_transfer_type: str = "FULL",
+        start_task_timeout: float = 300,
+        progress_timeout: float = 3600,
+        max_status_report_interval: float = 300,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
 
-        # Handle dict-based model config (recipe accepts class_path; normalize for job API)
+        # Handle dict-based model config (recipe accepts class_path; normalize for job API).
+        # Pass the dict directly to PTFileModelPersistor so args are preserved in the exported config.
+        # The persistor resolves the dict to an nn.Module at runtime via instantiate_class().
         if isinstance(model, dict):
             from nvflare.recipe.utils import recipe_model_to_job_model
 
             model = recipe_model_to_job_model(model)
-            model_instance = _instantiate_model_from_dict(model)
-        else:
-            model_instance = model
 
-        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=expected_data_kind)
         if do_cross_site_eval:
             cse_config = CrossSiteEvalConfig(eval_task_timeout=cross_site_eval_timeout)
         else:
@@ -207,7 +192,13 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         job = CCWFJob(name=name, min_clients=min_clients)
         ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
 
-        server_config = SwarmServerConfig(num_rounds=num_rounds)
+        server_config = SwarmServerConfig(
+            num_rounds=num_rounds,
+            start_task_timeout=start_task_timeout,
+            progress_timeout=progress_timeout,
+            max_status_report_interval=max_status_report_interval,
+            min_clients=min_clients,
+        )
         client_config = SwarmClientConfig(
             executor=ScriptRunner(
                 script=train_script,
@@ -215,13 +206,15 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
                 command=command,
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
+                params_transfer_type=params_transfer_type,
                 **train_args,
             ),
             aggregator=aggregator,
-            persistor=PTFileModelPersistor(model=model_instance, source_ckpt_file_full_name=ckpt_path),
+            persistor=PTFileModelPersistor(model=model, source_ckpt_file_full_name=ckpt_path),
             shareable_generator=SimpleModelShareableGenerator(),
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            min_responses_required=min_clients,
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)

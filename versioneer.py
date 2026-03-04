@@ -667,7 +667,8 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     if describe_out is None:
         raise NotThisMethod("'git describe' failed")
     describe_out = describe_out.strip()
-    full_out, rc = runner(GITS, ["rev-parse", "HEAD"], cwd=root)
+    # Disambiguate HEAD from any path named "HEAD" in the working tree.
+    full_out, rc = runner(GITS, ["rev-parse", "--verify", "HEAD", "--"], cwd=root)
     if full_out is None:
         raise NotThisMethod("'git rev-parse' failed")
     full_out = full_out.strip()
@@ -677,7 +678,8 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     pieces["short"] = full_out[:7]  # maybe improved later
     pieces["error"] = None
 
-    branch_name, rc = runner(GITS, ["rev-parse", "--abbrev-ref", "HEAD"],
+    # Disambiguate HEAD from any path named "HEAD" in the working tree.
+    branch_name, rc = runner(GITS, ["rev-parse", "--abbrev-ref", "HEAD", "--"],
                              cwd=root)
     # --abbrev-ref was added in git-1.6.3
     if rc != 0 or branch_name is None:
@@ -751,11 +753,15 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     else:
         # HEX: no tags
         pieces["closest-tag"] = None
-        count_out, rc = runner(GITS, ["rev-list", "HEAD", "--count"], cwd=root)
+        # Disambiguate HEAD from any path named "HEAD" in the working tree.
+        count_out, rc = runner(GITS, ["rev-list", "HEAD", "--count", "--"], cwd=root)
         pieces["distance"] = int(count_out)  # total number of commits
 
     # commit date: see ISO-8601 comment in git_versions_from_keywords()
-    date = runner(GITS, ["show", "-s", "--format=%%ci", "HEAD"], cwd=root)[0].strip()
+    date_out, rc = runner(GITS, ["show", "-s", "--format=%%ci", "HEAD", "--"], cwd=root)
+    if date_out is None:
+        raise NotThisMethod("'git show -s --format=%%ci HEAD --' failed")
+    date = date_out.strip()
     # Use only the last line.  Previous lines may contain GPG signature
     # information.
     date = date.splitlines()[-1]
@@ -1185,7 +1191,8 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     if describe_out is None:
         raise NotThisMethod("'git describe' failed")
     describe_out = describe_out.strip()
-    full_out, rc = runner(GITS, ["rev-parse", "HEAD"], cwd=root)
+    # Disambiguate HEAD from any path named "HEAD" in the working tree.
+    full_out, rc = runner(GITS, ["rev-parse", "--verify", "HEAD", "--"], cwd=root)
     if full_out is None:
         raise NotThisMethod("'git rev-parse' failed")
     full_out = full_out.strip()
@@ -1195,7 +1202,8 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     pieces["short"] = full_out[:7]  # maybe improved later
     pieces["error"] = None
 
-    branch_name, rc = runner(GITS, ["rev-parse", "--abbrev-ref", "HEAD"],
+    # Disambiguate HEAD from any path named "HEAD" in the working tree.
+    branch_name, rc = runner(GITS, ["rev-parse", "--abbrev-ref", "HEAD", "--"],
                              cwd=root)
     # --abbrev-ref was added in git-1.6.3
     if rc != 0 or branch_name is None:
@@ -1269,11 +1277,16 @@ def git_pieces_from_vcs(tag_prefix, root, verbose, runner=run_command):
     else:
         # HEX: no tags
         pieces["closest-tag"] = None
-        count_out, rc = runner(GITS, ["rev-list", "HEAD", "--count"], cwd=root)
+        # Disambiguate HEAD from any path named "HEAD" in the working tree.
+        count_out, rc = runner(GITS, ["rev-list", "HEAD", "--count", "--"], cwd=root)
         pieces["distance"] = int(count_out)  # total number of commits
 
     # commit date: see ISO-8601 comment in git_versions_from_keywords()
-    date = runner(GITS, ["show", "-s", "--format=%ci", "HEAD"], cwd=root)[0].strip()
+    # Disambiguate HEAD from any path named "HEAD" in the working tree.
+    date_out, rc = runner(GITS, ["show", "-s", "--format=%ci", "HEAD", "--"], cwd=root)
+    if date_out is None:
+        raise NotThisMethod("'git show -s --format=%ci HEAD --' failed")
+    date = date_out.strip()
     # Use only the last line.  Previous lines may contain GPG signature
     # information.
     date = date.splitlines()[-1]
