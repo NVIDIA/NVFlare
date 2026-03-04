@@ -44,7 +44,7 @@ Install the dependencies:
 
 
 ```text
-hello-pt
+hello-tf
 |
 |-- client.py         # client local training script
 |-- model.py          # model definition
