@@ -58,30 +58,22 @@ This example uses the [MNIST](https://www.tensorflow.org/datasets/catalog/mnist)
 
 ## Model
 
-```
-class SimpleNetwork(nn.Module):
-    def __init__(self):
-        super(SimpleNetwork, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+```python
+from tensorflow.keras import layers, models
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+class Net(models.Sequential):
+    def __init__(self, input_shape=(None, 28, 28)):
+        super().__init__()
+        self._input_shape = input_shape
+        self.add(layers.Flatten())
+        self.add(layers.Dense(128, activation="relu"))
+        self.add(layers.Dropout(0.2))
+        self.add(layers.Dense(10))
 ```
 
 ## Client Code
 
-The client code `client.py` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
+The client code `client.py` is responsible for training. The training code closely resembles standard TensorFlow/Keras training code, with additional lines to handle data exchange with the server.
 
 ## Server Code
 
@@ -117,7 +109,7 @@ print()
 
 The `model` parameter accepts two formats:
 
-1. **Class instance** (shown above): `model=Net()` - Convenient and Pythonic
+1. **Class instance (subclassed Keras model)** (shown above): `model=Net()` - Convenient and Pythonic
 2. **Dict config**: `model={"class_path": "model.Net", "args": {}}` - Better for large models
 
 To resume from pre-trained weights, use `initial_ckpt`:
@@ -129,7 +121,8 @@ recipe = FedAvgRecipe(
 )
 ```
 
-> **Note:** For TensorFlow/Keras, SavedModel or .h5 files contain both architecture and weights, so `initial_ckpt` can be used without `model`.
+> **Note:** For TensorFlow/Keras, use a subclassed Keras class instance (like `Net()`) or dict config for `model`.
+> SavedModel or .h5 files contain both architecture and weights, so `initial_ckpt` can be used without `model`.
 
 ## Run the Experiment
 
