@@ -189,14 +189,24 @@ class TestDoSubmitResultGating:
         pipe = _make_cell_pipe(pass_through_on_send=True)
         agent = _make_agent(pipe, download_complete_timeout=0.05)  # very short timeout
         self._patch_shareable(agent)
-        # send_to_peer succeeds but callback never fires
+
+        # Must fire DOWNLOAD_STARTED_CB so the code reaches the download_done.wait() path
+        # (Bug 3 fix: without DOWNLOAD_STARTED_CB, the code returns True immediately).
+        def fire_started_on_send(reply, timeout):
+            for c in pipe.cell.update_fobs_context.call_args_list:
+                props = c[0][0]
+                if FOBSContextKey.DOWNLOAD_STARTED_CB in props and props[FOBSContextKey.DOWNLOAD_STARTED_CB]:
+                    props[FOBSContextKey.DOWNLOAD_STARTED_CB]()
+            return True
+
+        agent.pipe_handler.send_to_peer.side_effect = fire_started_on_send
 
         result = agent._do_submit_result(_make_task_ctx(), None, "OK")
 
         assert result is True, "Non-fatal timeout must still return True"
         agent.logger.warning.assert_called_once()
         warning_msg = agent.logger.warning.call_args[0][0]
-        assert "0.05" in warning_msg or "Download completion" in warning_msg
+        assert "0.05" in warning_msg or "Download completion" in warning_msg or "not signalled" in warning_msg
 
     def test_send_fails_returns_false_without_waiting(self):
         """When send_to_peer() fails, returns False and does NOT wait for the callback."""
@@ -443,6 +453,9 @@ class TestDownloadStatusLogging:
         def fire_cb(reply, t):
             for c in pipe.cell.update_fobs_context.call_args_list:
                 props = c[0][0]
+                # Fire DOWNLOAD_STARTED_CB so the code reaches the download_done.wait() path
+                if FOBSContextKey.DOWNLOAD_STARTED_CB in props and props[FOBSContextKey.DOWNLOAD_STARTED_CB]:
+                    props[FOBSContextKey.DOWNLOAD_STARTED_CB]()
                 if (
                     FOBSContextKey.DOWNLOAD_COMPLETE_CB in props
                     and props[FOBSContextKey.DOWNLOAD_COMPLETE_CB] is not None

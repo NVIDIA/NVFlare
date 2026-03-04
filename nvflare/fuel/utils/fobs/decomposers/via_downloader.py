@@ -422,9 +422,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Defer deletion to allow pending blob_cb callbacks to complete
         # secondary tensor downloads.  The monitor thread will clean up
         # naturally once all downloads finish or the transaction times out.
-        self.logger.debug(
-            f"ViaDownloader: scheduling deferred deletion of download transaction for {msg_root_id=}"
-        )
+        self.logger.debug(f"ViaDownloader: scheduling deferred deletion of download transaction for {msg_root_id=}")
         t = threading.Timer(30.0, self._deferred_delete_download_tx, args=[msg_root_id, downloader])
         t.daemon = True
         t.start()
