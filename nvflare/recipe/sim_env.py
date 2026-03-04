@@ -106,7 +106,7 @@ class SimEnv(ExecEnv):
 
         job.simulator_run(
             workspace=os.path.join(self.workspace_root, job.name),
-            n_clients=self.num_clients,
+            n_clients=self.num_clients if self.clients is None else None,
             clients=self.clients,
             threads=self.num_threads,
             gpu=self.gpu_config,
