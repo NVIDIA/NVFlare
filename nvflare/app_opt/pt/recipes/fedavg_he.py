@@ -30,7 +30,14 @@ from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
+
+HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html"
+HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
+    "FedAvgRecipeWithHE does not support SimEnv. "
+    "Use provisioned startup kits with nvflare.lighter.impl.he.HEBuilder and run with ProdEnv or PocEnv. "
+    f"See: {HE_CONTEXT_PROVISIONING_DOC_LINK}"
+)
 
 
 # Internal — not part of the public API
@@ -72,6 +79,23 @@ class FedAvgRecipeWithHE(Recipe):
     - HE model encryptor/decryptor filters on the client side
     - HE model serialization filter on the server side
     - Script runners for client-side training execution
+
+    Important:
+        TenSEAL context files must be generated before running this recipe:
+        - `server_context.tenseal` for the server startup folder
+        - `client_context.tenseal` for each client startup folder
+
+        Use NVFlare provisioning with `nvflare.lighter.impl.he.HEBuilder` so these
+        context files are generated automatically into startup kits.
+
+        Example project config:
+        `examples/advanced/cifar10/pt/cifar10-real-world/workspaces/secure_project.yml`
+
+        SimEnv is not supported for this HE recipe. Use ProdEnv or PocEnv with
+        provisioned startup kits.
+
+        For provisioning details, see:
+        https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
 
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
@@ -290,3 +314,11 @@ class FedAvgRecipeWithHE(Recipe):
         )
 
         Recipe.__init__(self, job)
+
+    def process_env(self, env: ExecEnv):
+        from nvflare.recipe.sim_env import SimEnv
+
+        if isinstance(env, SimEnv):
+            raise ValueError(HE_SIM_ENV_NOT_SUPPORTED_ERROR)
+
+        super().process_env(env)

@@ -14,12 +14,15 @@
 
 import os
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+    filter_aggregatable_metrics,
+)
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
@@ -27,25 +30,6 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
 from .base_fedavg import BaseFedAvg
-
-
-def _is_aggregatable_metric_value(v: Any) -> bool:
-    """Return True if the metric value supports weighted aggregation (v * weight and addition)."""
-    if v is None:
-        return False
-    if isinstance(v, (dict, list, set, tuple, str)):
-        return False
-    if isinstance(v, (int, float, bool)):
-        return True
-    # NumPy array, NumPy scalar, or tensor (has shape and supports * and +)
-    if hasattr(v, "shape"):
-        return True
-    try:
-        _ = v * 1.0
-        _ = v + v
-        return True
-    except (TypeError, ValueError):
-        return False
 
 
 class FedAvg(BaseFedAvg):
@@ -138,6 +122,7 @@ class FedAvg(BaseFedAvg):
         self._aggr_helper: Optional[WeightedAggregationHelper] = None
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
+        self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -240,11 +225,8 @@ class FedAvg(BaseFedAvg):
             self.warning(f"Empty result from client {client_name}, skipping.")
             return
 
-        # Store only params_type from first result (not the full model)
-        if self._params_type is None:
-            self._params_type = result.params_type
-
         client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        weight = None
 
         if self.aggregator:
             # Use custom aggregator
@@ -270,17 +252,26 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-            # Add to metrics aggregation if available (only aggregatable values;
-            # non-aggregatable metrics like dicts are still in result.metrics for collection)
-            if not result.metrics:
+        # Callback execution is serialized by the framework via Task.cb_lock.
+        # Store only params_type from first result (not the full model)
+        if self._params_type is None:
+            self._params_type = result.params_type
+
+        # Add to metrics aggregation if available (only aggregatable values;
+        # non-aggregatable metrics like dicts are still in result.metrics for collection)
+        if not self.aggregator:
+            # If a client omits metrics entirely (None), disable round-level metrics
+            # aggregation instead of mixing present/absent metric coverage.
+            if result.metrics is None:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                aggregatable = {}
-                for k, v in result.metrics.items():
-                    if _is_aggregatable_metric_value(v):
-                        aggregatable[k] = v
-                    else:
-                        self.warning(f"Metric '{k}' ({type(v).__name__}) skipped for aggregation.")
+                # Non-empty metric dicts are treated as "present"; unsupported values are
+                # filtered per key while allowing other aggregatable keys to contribute.
+                aggregatable = filter_aggregatable_metrics(
+                    result.metrics,
+                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                    warned_metric_keys=self._warned_metric_keys,
+                )
                 if aggregatable:
                     self._aggr_metrics_helper.add(
                         data=aggregatable,
@@ -305,6 +296,7 @@ class FedAvg(BaseFedAvg):
             # Use built-in InTime aggregation
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
+            aggr_metrics = aggr_metrics or None
 
             return FLModel(
                 params=aggr_params,
