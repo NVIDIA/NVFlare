@@ -249,6 +249,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 "kind": "et_tensor_diff",
             }
             return dxo_dict
+        except (ImportError, LazyImportError):
+            raise
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e

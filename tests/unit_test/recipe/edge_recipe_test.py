@@ -148,6 +148,68 @@ class TestEdgeFedBuffRecipe:
         )
         assert recipe is not None
 
+    def _find_assessor(self, job):
+        """Find the ModelUpdateAssessor component in the job's server config."""
+        from nvflare.edge.assessors.model_update import ModelUpdateAssessor
+
+        server_app = job._deploy_map.get("server")
+        assert server_app is not None, "No server app found in job"
+        for comp in server_app.app_config.components.values():
+            if isinstance(comp, ModelUpdateAssessor):
+                return comp
+        raise AssertionError("ModelUpdateAssessor not found in server components")
+
+    def test_device_wait_timeout_default_is_none(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
+    ):
+        """Test that device_wait_timeout defaults to None on the assessor."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_timeout_default",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+
+        assert recipe.device_wait_timeout is None
+        assessor = self._find_assessor(recipe.job)
+        assert assessor.device_wait_timeout is None
+
+    def test_device_wait_timeout_explicit_value(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
+    ):
+        """Test that an explicit device_wait_timeout is passed through to the assessor."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_timeout_explicit",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+            device_wait_timeout=120.0,
+        )
+
+        assert recipe.device_wait_timeout == 120.0
+        assessor = self._find_assessor(recipe.job)
+        assert assessor.device_wait_timeout == 120.0
+
+    @pytest.mark.parametrize("bad_value", [0, -1, -100.0])
+    def test_device_wait_timeout_rejects_non_positive(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config, bad_value
+    ):
+        """Test that zero or negative device_wait_timeout raises ValueError."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        with pytest.raises(ValueError, match="device_wait_timeout must be a positive number"):
+            EdgeFedBuffRecipe(
+                job_name="test_timeout_bad",
+                model=simple_pt_model,
+                model_manager_config=model_manager_config,
+                device_manager_config=device_manager_config,
+                device_wait_timeout=bad_value,
+            )
+
 
 @pytest.mark.skipif(not executorch_available, reason="executorch not installed")
 class TestETFedBuffRecipeSimBasic:
@@ -214,64 +276,3 @@ class TestETFedBuffRecipeWithoutExecutorch:
                     model_manager_config=ModelManagerConfig(max_model_version=10, num_updates_for_model=5),
                     device_manager_config=DeviceManagerConfig(device_selection_size=10),
                 )
-    def _find_assessor(self, job):
-        """Find the ModelUpdateAssessor component in the job's server config."""
-        from nvflare.edge.assessors.model_update import ModelUpdateAssessor
-
-        server_app = job._deploy_map.get("server")
-        assert server_app is not None, "No server app found in job"
-        for comp in server_app.app_config.components.values():
-            if isinstance(comp, ModelUpdateAssessor):
-                return comp
-        raise AssertionError("ModelUpdateAssessor not found in server components")
-
-    def test_device_wait_timeout_default_is_none(
-        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
-    ):
-        """Test that device_wait_timeout defaults to None on the assessor."""
-        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
-
-        recipe = EdgeFedBuffRecipe(
-            job_name="test_timeout_default",
-            model=simple_pt_model,
-            model_manager_config=model_manager_config,
-            device_manager_config=device_manager_config,
-        )
-
-        assert recipe.device_wait_timeout is None
-        assessor = self._find_assessor(recipe.job)
-        assert assessor.device_wait_timeout is None
-
-    def test_device_wait_timeout_explicit_value(
-        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
-    ):
-        """Test that an explicit device_wait_timeout is passed through to the assessor."""
-        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
-
-        recipe = EdgeFedBuffRecipe(
-            job_name="test_timeout_explicit",
-            model=simple_pt_model,
-            model_manager_config=model_manager_config,
-            device_manager_config=device_manager_config,
-            device_wait_timeout=120.0,
-        )
-
-        assert recipe.device_wait_timeout == 120.0
-        assessor = self._find_assessor(recipe.job)
-        assert assessor.device_wait_timeout == 120.0
-
-    @pytest.mark.parametrize("bad_value", [0, -1, -100.0])
-    def test_device_wait_timeout_rejects_non_positive(
-        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config, bad_value
-    ):
-        """Test that zero or negative device_wait_timeout raises ValueError."""
-        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
-
-        with pytest.raises(ValueError, match="device_wait_timeout must be a positive number"):
-            EdgeFedBuffRecipe(
-                job_name="test_timeout_bad",
-                model=simple_pt_model,
-                model_manager_config=model_manager_config,
-                device_manager_config=device_manager_config,
-                device_wait_timeout=bad_value,
-            )
