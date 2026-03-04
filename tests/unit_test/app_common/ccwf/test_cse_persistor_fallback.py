@@ -239,6 +239,31 @@ class TestPrepareLocalModelPersistorFirst:
         ctrl.log_warning.assert_called()
         executor.execute.assert_called_once()
 
+    def test_inventory_key_returns_none_warns_and_falls_back(self):
+        """Inventory key selected but persistor.get(chosen_key) returns None → warning logged, executor used.
+
+        Covers the edge case where the checkpoint file is deleted between the
+        inventory query and the actual read (e.g. workspace cleanup race).
+        """
+        # get() returns None for all keys — simulates deleted checkpoint
+        persistor = _make_model_persistor(
+            inventory={"best_FL_global_model": MagicMock()},
+            get_result=None,
+        )
+        executor = MagicMock()
+        executor.execute.return_value = _ok_executor_result()
+
+        ctrl = _make_controller(persistor=persistor, submit_model_executor=executor)
+        ctrl._prepare_local_model("best_model", _make_fl_ctx(), _make_abort_signal())
+
+        # Must warn that the key was found but returned None
+        ctrl.log_warning.assert_called()
+        warning_text = " ".join(str(c) for c in ctrl.log_warning.call_args_list)
+        assert "best_FL_global_model" in warning_text, (
+            "Warning must name the inventory key that returned None"
+        )
+        executor.execute.assert_called_once()
+
     def test_empty_inventory_falls_back_to_executor(self):
         """persistor.get() returns None and inventory is empty → executor used."""
         persistor = _make_model_persistor(inventory={}, get_result=None)

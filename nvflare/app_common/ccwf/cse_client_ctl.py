@@ -298,6 +298,12 @@ class CrossSiteEvalClientController(ClientSideController):
                                         f"loaded local model from inventory key '{chosen_key}' "
                                         f"(requested name: '{model_name}')",
                                     )
+                                else:
+                                    self.log_warning(
+                                        fl_ctx,
+                                        f"persistor inventory key '{chosen_key}' found but returned None "
+                                        f"(checkpoint may have been deleted); falling back to executor",
+                                    )
                     if model_learnable:
                         dxo = model_learnable_to_dxo(model_learnable)
                         model = dxo.to_shareable()
