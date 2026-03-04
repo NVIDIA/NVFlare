@@ -55,7 +55,7 @@ def _create_recipe(train_script: str):
     )
 
 
-def test_process_env_raises_descriptive_error_when_contexts_missing(tmp_path):
+def test_process_env_rejects_sim_env_for_he_recipe(tmp_path):
     from nvflare.app_opt.pt.recipes.fedavg_he import HE_CONTEXT_PROVISIONING_DOC_LINK
 
     train_script = tmp_path / "client.py"
