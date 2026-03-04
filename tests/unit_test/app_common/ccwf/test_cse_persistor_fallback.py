@@ -259,9 +259,7 @@ class TestPrepareLocalModelPersistorFirst:
         # Must warn that the key was found but returned None
         ctrl.log_warning.assert_called()
         warning_text = " ".join(str(c) for c in ctrl.log_warning.call_args_list)
-        assert "best_FL_global_model" in warning_text, (
-            "Warning must name the inventory key that returned None"
-        )
+        assert "best_FL_global_model" in warning_text, "Warning must name the inventory key that returned None"
         executor.execute.assert_called_once()
 
     def test_empty_inventory_falls_back_to_executor(self):
