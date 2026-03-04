@@ -413,8 +413,18 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 downloader.add_object(obj, ref_id=ref_id)
 
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):
-        # this CB is triggered when msg root is deleted.
-        self.logger.debug(f"ViaDownloader: deleting download transaction associated with {msg_root_id=}")
+        # Defer deletion to allow pending blob_cb callbacks to complete
+        # secondary tensor downloads.  The monitor thread will clean up
+        # naturally once all downloads finish or the transaction times out.
+        self.logger.debug(
+            f"ViaDownloader: scheduling deferred deletion of download transaction for {msg_root_id=}"
+        )
+        t = threading.Timer(30.0, self._deferred_delete_download_tx, args=[msg_root_id, downloader])
+        t.daemon = True
+        t.start()
+
+    def _deferred_delete_download_tx(self, msg_root_id: str, downloader: ObjectDownloader):
+        self.logger.debug(f"ViaDownloader: executing deferred deletion of download transaction for {msg_root_id=}")
         downloader.delete_transaction()
 
     def _finalize_lazy_batch(self, mgr: DatumManager):
