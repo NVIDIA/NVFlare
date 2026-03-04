@@ -24,7 +24,7 @@ from nvflare.recipe.spec import Recipe
 
 MIN_FLWR_VERSION = (1, 16)
 MAX_FLWR_VERSION_EXCLUSIVE = (1, 26)
-SUPPORTED_FLWR_SPEC = "flwr[simulation]>=1.16,<1.26"
+SUPPORTED_FLWR_SPEC = "flwr>=1.16,<1.26"
 _VERSION_PATTERN = re.compile(r"^\s*(\d+)\.(\d+)")
 
 
@@ -69,7 +69,7 @@ class FlowerRecipe(Recipe):
     Enables metric streaming and use of client API by default.
 
     Flower CLI compatibility:
-        This recipe requires ``flwr[simulation]>=1.16,<1.26``. The current
+        This recipe requires ``flwr>=1.16,<1.26``. The current
         integration relies on legacy federation CLI arguments that are not
         available in newer Flower CLI versions.
 

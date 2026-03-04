@@ -26,7 +26,7 @@ from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr\[simulation\]>=1\.16,<1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.16,<1\.26'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
@@ -35,7 +35,7 @@ def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
 def test_flower_recipe_rejects_missing_flwr_package():
     with patch("nvflare.app_opt.flower.recipe.get_package_version", side_effect=PackageNotFoundError):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr\[simulation\]>=1\.16,<1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.16,<1\.26'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()

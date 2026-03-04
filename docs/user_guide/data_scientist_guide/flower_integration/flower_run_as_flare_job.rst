@@ -4,11 +4,11 @@ Run Flower Application as FLARE Job
 
 Before running Flower applications with FLARE, you must have both FLARE and Flower frameworks
 installed in your Python environment. NVFlare 2.7 Flower integration currently requires
-``flwr[simulation]>=1.16,<1.26``.
+``flwr>=1.16,<1.26``.
 
 .. code-block:: shell
 
-    pip install 'flwr[simulation]>=1.16,<1.26'
+    pip install 'flwr>=1.16,<1.26'
 
 To run a Flower application as a job in FLARE, follow these steps:
 

@@ -68,7 +68,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"\n"
             f"This indicates Flower is not properly installed in your Python environment.\n"
             f"Please install Flower with simulation support:\n"
-            f"  pip install 'flwr[simulation]>=1.16,<1.26'\n"
+            f"  pip install 'flwr>=1.16,<1.26'\n"
             f"\n"
             f"If using a virtual environment, ensure it's activated before installation.\n"
             f"Current Python: {sys.executable}"
