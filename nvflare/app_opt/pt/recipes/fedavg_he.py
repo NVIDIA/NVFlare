@@ -30,7 +30,7 @@ from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
 
 HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html"
 HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
@@ -315,7 +315,7 @@ class FedAvgRecipeWithHE(Recipe):
 
         Recipe.__init__(self, job)
 
-    def process_env(self, env):
+    def process_env(self, env: ExecEnv):
         from nvflare.recipe.sim_env import SimEnv
 
         if isinstance(env, SimEnv):

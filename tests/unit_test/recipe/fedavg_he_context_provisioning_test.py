@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+from unittest.mock import MagicMock
 
 import pytest
 try:
@@ -70,3 +71,14 @@ def test_process_env_rejects_sim_env_for_he_recipe(tmp_path):
     assert "FedAvgRecipeWithHE does not support SimEnv." in err
     assert "HEBuilder" in err
     assert HE_CONTEXT_PROVISIONING_DOC_LINK in err
+
+
+def test_process_env_allows_non_sim_env(tmp_path):
+    from nvflare.recipe.spec import ExecEnv
+
+    train_script = tmp_path / "client.py"
+    train_script.write_text("print('train')\n")
+    recipe = _create_recipe(str(train_script))
+
+    non_sim_env = MagicMock(spec=ExecEnv)
+    recipe.process_env(non_sim_env)
