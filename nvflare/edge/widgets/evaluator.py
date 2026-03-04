@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
