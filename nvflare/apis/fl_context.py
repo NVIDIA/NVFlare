@@ -194,6 +194,18 @@ class FLContext(object):
             else:
                 return None
 
+    def update_prop_value(self, key: str, value) -> bool:
+        """Update the value of an existing prop, preserving its (private, sticky) attributes.
+
+        Use when the prop is already set and you only want to change its value without
+        changing visibility or stickiness. If the prop does not exist, returns False
+        and does nothing (caller should use set_prop instead).
+        """
+        detail = self.get_prop_detail(key)
+        if detail is None:
+            return False
+        return self.set_prop(key, value, private=detail["private"], sticky=detail["sticky"])
+
     def remove_prop(self, key: str, force_removal=False):
         if not isinstance(key, str):
             return

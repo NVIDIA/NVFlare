@@ -385,22 +385,15 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
-        Uses existing (private, sticky) attributes when the prop is already set so set_prop()
-        accepts the update without warning; otherwise uses private=True, sticky=False. Required
-        for flows like FedAvg that do not set CURRENT_ROUND in fl_ctx before send; downstream
-        (e.g. aggregators) rely on it.
+        If the prop already exists, only its value is updated (via update_prop_value); otherwise
+        it is set with private=True, sticky=False. Required for flows like FedAvg that do not
+        set CURRENT_ROUND in fl_ctx before send; downstream (e.g. aggregators) rely on it.
         """
         if not data:
             return
         if data.current_round is not None:
-            detail = self.fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
-            if detail is not None:
-                self.fl_ctx.set_prop(
-                    AppConstants.CURRENT_ROUND,
-                    data.current_round,
-                    private=detail["private"],
-                    sticky=detail["sticky"],
-                )
+            if self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is not None:
+                self.fl_ctx.update_prop_value(AppConstants.CURRENT_ROUND, data.current_round)
             else:
                 self.fl_ctx.set_prop(
                     AppConstants.CURRENT_ROUND,
@@ -409,14 +402,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                     sticky=False,
                 )
         if data.total_rounds is not None:
-            detail = self.fl_ctx.get_prop_detail(AppConstants.NUM_ROUNDS)
-            if detail is not None:
-                self.fl_ctx.set_prop(
-                    AppConstants.NUM_ROUNDS,
-                    data.total_rounds,
-                    private=detail["private"],
-                    sticky=detail["sticky"],
-                )
+            if self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is not None:
+                self.fl_ctx.update_prop_value(AppConstants.NUM_ROUNDS, data.total_rounds)
             else:
                 self.fl_ctx.set_prop(
                     AppConstants.NUM_ROUNDS,
