@@ -15,7 +15,7 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr>=1.16,<2.0",
+    "flwr>=1.16,<1.26",
     "nvflare~=2.6.0rc",
     "torch",
     "torchvision",

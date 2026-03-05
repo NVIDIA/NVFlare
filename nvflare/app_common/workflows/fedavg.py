@@ -14,13 +14,17 @@
 
 import os
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Set, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    WeightedAggregationHelper,
+    filter_aggregatable_metrics,
+)
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
@@ -118,6 +122,7 @@ class FedAvg(BaseFedAvg):
         self._aggr_helper: Optional[WeightedAggregationHelper] = None
         self._aggr_metrics_helper: Optional[WeightedAggregationHelper] = None
         self._all_metrics: bool = True
+        self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
@@ -125,8 +130,9 @@ class FedAvg(BaseFedAvg):
     def run(self) -> None:
         self.info(center_message("Start FedAvg."))
 
-        # Set NUM_ROUNDS in FL context for persistor and other components
-        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
+        # Set NUM_ROUNDS in FL context for persistor and other components.
+        # Use sticky=True to stay consistent with set_fl_context() in broadcast_model().
+        self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=True)
 
         # Load initial model - prefer model if provided, else use persistor
         if self.model is not None:
@@ -146,6 +152,8 @@ class FedAvg(BaseFedAvg):
             self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+            self.event(AppEventType.ROUND_STARTED)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -177,6 +185,8 @@ class FedAvg(BaseFedAvg):
                     self.info("Abort signal triggered. Finishing FedAvg.")
                     return
                 time.sleep(self._task_check_period)
+
+            self.event(AppEventType.BEFORE_AGGREGATION)
 
             # Get final aggregated result
             aggregate_results = self._get_aggregated_result()
@@ -247,16 +257,27 @@ class FedAvg(BaseFedAvg):
                 contribution_round=self.current_round,
             )
 
-            # Add to metrics aggregation if available
-            if not result.metrics:
+            # Add to metrics aggregation if available (only aggregatable values;
+            # non-aggregatable metrics like dicts are still in result.metrics for collection)
+            # If a client omits metrics entirely (None), disable round-level metrics
+            # aggregation instead of mixing present/absent metric coverage.
+            if result.metrics is None:
                 self._all_metrics = False
             if self._all_metrics and result.metrics:
-                self._aggr_metrics_helper.add(
-                    data=result.metrics,
-                    weight=weight,
-                    contributor_name=client_name,
-                    contribution_round=self.current_round,
+                # Non-empty metric dicts are treated as "present"; unsupported values are
+                # filtered per key while allowing other aggregatable keys to contribute.
+                aggregatable = filter_aggregatable_metrics(
+                    result.metrics,
+                    warn_skipped=lambda k, tn: self.warning(f"Metric '{k}' ({tn}) skipped for aggregation."),
+                    warned_metric_keys=self._warned_metric_keys,
                 )
+                if aggregatable:
+                    self._aggr_metrics_helper.add(
+                        data=aggregatable,
+                        weight=weight,
+                        contributor_name=client_name,
+                        contribution_round=self.current_round,
+                    )
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
@@ -274,6 +295,7 @@ class FedAvg(BaseFedAvg):
             # Use built-in InTime aggregation
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
+            aggr_metrics = aggr_metrics or None
 
             return FLModel(
                 params=aggr_params,

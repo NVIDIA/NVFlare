@@ -80,11 +80,10 @@ def main():
         model=ModerateCNN(),
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
-        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}, "config_type": "dict"},
+        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
         lr_scheduler_args={
-            "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
             "args": {"T_max": num_rounds, "eta_min": 0.9},
-            "config_type": "dict",
         },
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")

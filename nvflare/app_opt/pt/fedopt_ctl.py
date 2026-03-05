@@ -28,11 +28,11 @@ class FedOpt(FedAvg):
         *args,
         source_model: Union[str, torch.nn.Module],
         optimizer_args: dict = {
-            "path": "torch.optim.SGD",
+            "class_path": "torch.optim.SGD",
             "args": {"lr": 1.0, "momentum": 0.6},
         },
         lr_scheduler_args: dict = {
-            "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
             "args": {"T_max": 3, "eta_min": 0.9},
         },
         device=None,

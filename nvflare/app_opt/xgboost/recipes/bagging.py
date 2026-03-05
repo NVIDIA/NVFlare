@@ -16,6 +16,7 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
+from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggregator
 from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
@@ -82,7 +83,7 @@ class XGBBaggingRecipe(Recipe):
         training_mode (str, optional): Training mode ("bagging" or "cyclic"). Default is "bagging".
         num_rounds (int, optional): Number of training rounds. Default is 1 for bagging, 100 for cyclic.
         num_client_bagging (int, optional): Number of clients for bagging. Default is min_clients.
-        num_local_parallel_tree (int, optional): Number of parallel trees per client. Default is 5.
+        num_local_parallel_tree (int, optional): Number of parallel trees per client. Default is 1.
         local_subsample (float, optional): Subsample ratio for local training. Default is 0.8.
         learning_rate (float, optional): Learning rate for XGBoost. Default is 0.1.
         objective (str, optional): Learning objective. Default is "binary:logistic".
@@ -145,7 +146,7 @@ class XGBBaggingRecipe(Recipe):
         training_mode: str = "bagging",
         num_rounds: Optional[int] = None,
         num_client_bagging: Optional[int] = None,
-        num_local_parallel_tree: int = 5,
+        num_local_parallel_tree: int = 1,
         local_subsample: float = 0.8,
         learning_rate: float = 0.1,
         objective: str = "binary:logistic",
@@ -203,6 +204,9 @@ class XGBBaggingRecipe(Recipe):
         self.data_loader_id = v.data_loader_id
         self.per_site_config = per_site_config
 
+        if self.training_mode == "cyclic" and self.min_clients < 2:
+            raise ValueError("Cyclic training requires at least 2 clients (min_clients >= 2).")
+
         # Validate per_site_config is provided
         if per_site_config is None:
             raise ValueError(
@@ -220,20 +224,31 @@ class XGBBaggingRecipe(Recipe):
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
         # Configure server components
-        controller = ScatterAndGather(
-            min_clients=self.min_clients,
-            num_rounds=self.num_rounds,
-            start_round=0,
-            aggregator_id="aggregator",
-            persistor_id="persistor",
-            shareable_generator_id="shareable_generator",
-            wait_time_after_min_received=0,
-            train_timeout=0,
-            allow_empty_global_weights=True,
-            task_check_period=0.01,
-            persist_every_n_rounds=0,
-            snapshot_every_n_rounds=0,
-        )
+        if self.training_mode == "cyclic":
+            controller = CyclicController(
+                num_rounds=self.num_rounds,
+                persistor_id="persistor",
+                shareable_generator_id="shareable_generator",
+                task_name="train",
+                task_check_period=0.01,
+                persist_every_n_rounds=0,
+                snapshot_every_n_rounds=0,
+            )
+        else:
+            controller = ScatterAndGather(
+                min_clients=self.min_clients,
+                num_rounds=self.num_rounds,
+                start_round=0,
+                aggregator_id="aggregator",
+                persistor_id="persistor",
+                shareable_generator_id="shareable_generator",
+                wait_time_after_min_received=0,
+                train_timeout=0,
+                allow_empty_global_weights=True,
+                task_check_period=0.01,
+                persist_every_n_rounds=0,
+                snapshot_every_n_rounds=0,
+            )
         job.to_server(controller, id="xgb_controller")
 
         persistor = XGBModelPersistor(save_name=self.save_name)
@@ -242,8 +257,9 @@ class XGBBaggingRecipe(Recipe):
         shareable_generator = XGBModelShareableGenerator()
         job.to_server(shareable_generator, id="shareable_generator")
 
-        aggregator = XGBBaggingAggregator()
-        job.to_server(aggregator, id="aggregator")
+        if self.training_mode == "bagging":
+            aggregator = XGBBaggingAggregator()
+            job.to_server(aggregator, id="aggregator")
 
         # Add executors and data loaders per site
         from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
