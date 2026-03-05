@@ -24,7 +24,7 @@ from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNat
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.fuel.utils.import_utils import LazyImportError, optional_import
+from nvflare.fuel.utils.import_utils import optional_import
 
 _load_for_executorch_for_training_from_buffer, _ = optional_import(
     "executorch.extension.training",
