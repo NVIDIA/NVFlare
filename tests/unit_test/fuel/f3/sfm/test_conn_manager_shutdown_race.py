@@ -30,10 +30,9 @@ import threading
 from unittest.mock import MagicMock
 
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo
-from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager
-
+from nvflare.fuel.utils.constants import Mode
 
 # ---------------------------------------------------------------------------
 # Helpers
