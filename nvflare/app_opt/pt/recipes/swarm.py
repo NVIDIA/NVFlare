@@ -150,9 +150,10 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         pipe_root_path: Base directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
             ``None`` (default) uses ``{WORKSPACE}/{JOB_ID}/{SITE_NAME}``, matching
             the ``sag_cse_ccwf_pt`` reference template. If provided, the path must be
-            an absolute path to an existing directory (e.g. ``"/dev/shm/nvflare_pipes"``
-            for a RAM-backed tmpfs); ``{JOB_ID}/{SITE_NAME}`` is always appended so
-            concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
+            an absolute path (e.g. ``"/dev/shm/nvflare_pipes"`` for a RAM-backed tmpfs);
+            the directory is treated as a runtime path and does not need to exist on the
+            machine that builds or exports the job. ``{JOB_ID}/{SITE_NAME}`` is always
+            appended so concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
 
     Example:
         Using nn.Module instance:
@@ -218,8 +219,6 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         if pipe_root_path and pipe_type == "file_pipe":
             if not os.path.isabs(pipe_root_path):
                 raise ValueError(f"pipe_root_path must be an absolute path, got '{pipe_root_path}'")
-            if not os.path.isdir(pipe_root_path):
-                raise ValueError(f"pipe_root_path '{pipe_root_path}' does not exist or is not a directory")
 
         if pipe_type == "file_pipe" and not launch_external_process:
             logger.warning(
@@ -307,7 +306,3 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
-
-
-# Backward compatibility alias
-SimpleSwarmLearningRecipe = SwarmLearningRecipe

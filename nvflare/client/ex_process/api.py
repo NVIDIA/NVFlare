@@ -34,6 +34,28 @@ from nvflare.fuel.utils.log_utils import apply_log_config, get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
+_ROTATING_HANDLER_CLASSES = {
+    "logging.handlers.RotatingFileHandler",
+    "logging.handlers.TimedRotatingFileHandler",
+}
+_ROTATING_ONLY_KEYS = {"maxBytes", "backupCount", "when", "interval", "utc", "atTime"}
+
+
+def _downgrade_rotating_handlers(dict_config: dict) -> None:
+    """Replace rotating file handlers with plain FileHandler in subprocess log config.
+
+    Both the CJ and the subprocess write to the same log files.  Only the CJ
+    should trigger rotation; RotatingFileHandler is not process-safe and two
+    processes rotating the same file concurrently can corrupt it.  The subprocess
+    uses plain FileHandler (append-only, no rotation) so the CJ remains the sole
+    rotation manager.
+    """
+    for handler_cfg in dict_config.get("handlers", {}).values():
+        if handler_cfg.get("class") in _ROTATING_HANDLER_CLASSES:
+            handler_cfg["class"] = "logging.FileHandler"
+            for key in _ROTATING_ONLY_KEYS:
+                handler_cfg.pop(key, None)
+
 
 def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
@@ -100,10 +122,10 @@ class ExProcessClientAPI(APISpec):
 
         Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
         .yml, .default) are found automatically — the hardcoded `.json` suffix is
-        not assumed.  The config is applied unchanged so the subprocess logger is
-        identical to the parent CJ logger: same handlers (consoleHandler + file
-        handlers), same formatters, same levels.  File handlers write directly to
-        the shared log files; consoleHandler output reaches stdout, where
+        not assumed.  RotatingFileHandler entries in the config are downgraded to
+        plain FileHandler before applying: both the CJ and the subprocess share the
+        same log files, and only the CJ should trigger rotation (RotatingFileHandler
+        is not process-safe).  consoleHandler output reaches stdout, where
         SubprocessLauncher routes it to the terminal or wraps it with logger.info()
         for raw print() lines from user training scripts.
         """
@@ -119,7 +141,9 @@ class ExProcessClientAPI(APISpec):
             if not conf:
                 return
 
-            apply_log_config(conf.to_dict(), workspace_dir)
+            dict_config = conf.to_dict()
+            _downgrade_rotating_handlers(dict_config)
+            apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
             self.logger.warning(f"Unable to configure subprocess logging: {e}")

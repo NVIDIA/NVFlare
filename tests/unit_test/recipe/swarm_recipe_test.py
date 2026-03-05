@@ -43,7 +43,7 @@ def simple_pt_model():
 
 
 class TestSwarmLearningRecipe:
-    """Test cases for SimpleSwarmLearningRecipe."""
+    """Test cases for SwarmLearningRecipe."""
 
     def test_import_from_new_location(self, mock_file_system, simple_pt_model):
         """Test importing from new location (app_opt/pt/recipes)."""
@@ -61,9 +61,9 @@ class TestSwarmLearningRecipe:
 
     def test_import_from_old_location_backward_compat(self, mock_file_system, simple_pt_model):
         """Test importing from old location (backward compatibility)."""
-        from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_common.ccwf.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -243,7 +243,7 @@ class TestSwarmLearningRecipe:
 
 
 class TestSwarmLearningRecipeMemoryGC:
-    """Test memory GC parameters on SimpleSwarmLearningRecipe."""
+    """Test memory GC parameters on SwarmLearningRecipe."""
 
     def test_default_memory_gc_rounds_is_one(self):
         """Default memory_gc_rounds=1 for backward compatibility with legacy GC behavior."""
@@ -442,30 +442,29 @@ class TestSwarmLearningRecipePipeType:
                 pipe_root_path="relative/path",
             )
 
-    def test_pipe_root_path_nonexistent_raises(self, simple_pt_model):
-        """A non-existent pipe_root_path must raise ValueError."""
+    def test_pipe_root_path_nonexistent_accepted(self, mock_file_system, simple_pt_model):
+        """A non-existent pipe_root_path must be accepted (runtime path, not validated locally).
+
+        NVFlare follows the same model as absolute checkpoint paths: the directory
+        is treated as a runtime-only path and does not need to exist on the machine
+        that builds or exports the job (e.g. /dev/shm mounts on worker nodes).
+        """
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        with (
-            patch("os.path.isfile", return_value=True),
-            patch("os.path.exists", return_value=True),
-            patch("os.path.isabs", return_value=True),
-            patch("os.path.isdir", return_value=False),
-        ):
-            with pytest.raises(ValueError, match="does not exist or is not a directory"):
-                SwarmLearningRecipe(
-                    name="t",
-                    model=simple_pt_model,
-                    num_rounds=1,
-                    train_script="t.py",
-                    min_clients=2,
-                    pipe_type="file_pipe",
-                    pipe_root_path="/nonexistent/path",
-                )
+        # Should not raise even though /nonexistent/path does not exist locally.
+        SwarmLearningRecipe(
+            name="t",
+            model=simple_pt_model,
+            num_rounds=1,
+            train_script="t.py",
+            min_clients=2,
+            pipe_type="file_pipe",
+            pipe_root_path="/nonexistent/path",
+        )
 
 
 class TestSwarmLearningRecipeExport:
-    """Export behavior tests for SimpleSwarmLearningRecipe."""
+    """Export behavior tests for SwarmLearningRecipe."""
 
     def test_export_preserves_dict_model_args_in_client_config(self, tmp_path):
         """Regression: exported client config keeps dict model args for PTFileModelPersistor."""
