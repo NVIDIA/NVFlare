@@ -394,7 +394,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             return
         if data.current_round is not None:
             if self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is not None:
-                self.fl_ctx.update_prop_value(AppConstants.CURRENT_ROUND, data.current_round)
+                if not self.fl_ctx.update_prop_value(AppConstants.CURRENT_ROUND, data.current_round):
+                    self.warning(f"Failed to update {AppConstants.CURRENT_ROUND} in fl_ctx; value may be stale.")
             else:
                 self.fl_ctx.set_prop(
                     AppConstants.CURRENT_ROUND,
@@ -404,7 +405,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
         if data.total_rounds is not None:
             if self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is not None:
-                self.fl_ctx.update_prop_value(AppConstants.NUM_ROUNDS, data.total_rounds)
+                if not self.fl_ctx.update_prop_value(AppConstants.NUM_ROUNDS, data.total_rounds):
+                    self.warning(f"Failed to update {AppConstants.NUM_ROUNDS} in fl_ctx; value may be stale.")
             else:
                 self.fl_ctx.set_prop(
                     AppConstants.NUM_ROUNDS,
