@@ -41,14 +41,14 @@ def simple_pt_model():
     return nn.Linear(10, 2)
 
 
-class TestSimpleSwarmLearningRecipe:
+class TestSwarmLearningRecipe:
     """Test cases for SimpleSwarmLearningRecipe."""
 
     def test_import_from_new_location(self, mock_file_system, simple_pt_model):
         """Test importing from new location (app_opt/pt/recipes)."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -74,9 +74,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_initial_ckpt_accepted(self, mock_file_system, simple_pt_model):
         """Test that initial_ckpt parameter is accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_ckpt",
             model=simple_pt_model,
             num_rounds=5,
@@ -89,10 +89,10 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_relative_path_accepted_if_exists(self, mock_file_system, simple_pt_model):
         """Test that existing relative paths are accepted and bundled."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         # This should not raise since relative paths are now supported
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -104,9 +104,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_cross_site_eval_option(self, mock_file_system, simple_pt_model):
         """Test with cross-site evaluation enabled."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_cse",
             model=simple_pt_model,
             num_rounds=5,
@@ -120,9 +120,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_dict_model_config_accepted(self, mock_file_system):
         """Test that dict model config is accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_dict",
             model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
@@ -134,9 +134,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_dict_model_config_with_ckpt(self, mock_file_system):
         """Test dict model config with initial checkpoint."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_dict_ckpt",
             model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
             num_rounds=5,
@@ -149,10 +149,10 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_dict_model_missing_path_rejected(self, mock_file_system):
         """Test that dict model without 'class_path' key is rejected."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         with pytest.raises(ValueError, match="must have 'class_path' key"):
-            SimpleSwarmLearningRecipe(
+            SwarmLearningRecipe(
                 name="test_swarm_bad_dict",
                 model={"args": {"in_features": 10}},  # Missing 'path'
                 num_rounds=5,
@@ -162,10 +162,10 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_train_args_reserved_keys_rejected(self, mock_file_system, simple_pt_model):
         """Test that train_args with reserved keys are rejected."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         with pytest.raises(ValueError, match="reserved keys"):
-            SimpleSwarmLearningRecipe(
+            SwarmLearningRecipe(
                 name="test_swarm_bad_args",
                 model=simple_pt_model,
                 num_rounds=5,
@@ -176,9 +176,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_train_args_valid_keys_accepted(self, mock_file_system, simple_pt_model):
         """Test that valid train_args are accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_args",
             model=simple_pt_model,
             num_rounds=5,
@@ -193,13 +193,13 @@ class TestSimpleSwarmLearningRecipe:
         """Test that min_clients is a required parameter and is passed to the job."""
         import inspect
 
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        sig = inspect.signature(SimpleSwarmLearningRecipe.__init__)
+        sig = inspect.signature(SwarmLearningRecipe.__init__)
         assert "min_clients" in sig.parameters
         assert sig.parameters["min_clients"].default is inspect.Parameter.empty  # required, no default
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_min_clients",
             model=simple_pt_model,
             num_rounds=5,
@@ -211,9 +211,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_launch_external_process_accepted(self, mock_file_system, simple_pt_model):
         """Test that launch_external_process=True is accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_ext",
             model=simple_pt_model,
             num_rounds=5,
@@ -226,9 +226,9 @@ class TestSimpleSwarmLearningRecipe:
 
     def test_command_accepted(self, mock_file_system, simple_pt_model):
         """Test that command is accepted alongside launch_external_process."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm_cmd",
             model=simple_pt_model,
             num_rounds=5,
@@ -241,24 +241,24 @@ class TestSimpleSwarmLearningRecipe:
         assert recipe.job is not None
 
 
-class TestSimpleSwarmLearningRecipeMemoryGC:
+class TestSwarmLearningRecipeMemoryGC:
     """Test memory GC parameters on SimpleSwarmLearningRecipe."""
 
     def test_default_memory_gc_rounds_is_one(self):
         """Default memory_gc_rounds=1 for backward compatibility with legacy GC behavior."""
         import inspect
 
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        sig = inspect.signature(SimpleSwarmLearningRecipe.__init__)
+        sig = inspect.signature(SwarmLearningRecipe.__init__)
         assert sig.parameters["memory_gc_rounds"].default == 1
 
     def test_old_param_name_rejected(self, mock_file_system, simple_pt_model):
         """client_memory_gc_rounds (old name) is no longer accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         with pytest.raises(TypeError, match="client_memory_gc_rounds"):
-            SimpleSwarmLearningRecipe(
+            SwarmLearningRecipe(
                 name="test_swarm",
                 model=simple_pt_model,
                 num_rounds=5,
@@ -268,9 +268,9 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
 
     def test_memory_gc_rounds_custom_accepted(self, mock_file_system, simple_pt_model):
         """Custom memory_gc_rounds is accepted."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -282,9 +282,9 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
 
     def test_memory_gc_disabled_accepted(self, mock_file_system, simple_pt_model):
         """memory_gc_rounds=0 disables GC."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -296,9 +296,9 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
 
     def test_cuda_empty_cache_accepted(self, mock_file_system, simple_pt_model):
         """cuda_empty_cache=True is accepted and wired through."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test_swarm",
             model=simple_pt_model,
             num_rounds=5,
@@ -309,12 +309,12 @@ class TestSimpleSwarmLearningRecipeMemoryGC:
         assert recipe.job is not None
 
 
-class TestSimpleSwarmLearningRecipeExport:
+class TestSwarmLearningRecipeExport:
     """Export behavior tests for SimpleSwarmLearningRecipe."""
 
     def test_export_preserves_dict_model_args_in_client_config(self, tmp_path):
         """Regression: exported client config keeps dict model args for PTFileModelPersistor."""
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
         train_script = tmp_path / "driver.py"
         train_script.write_text("print('train')\n")
@@ -326,7 +326,7 @@ class TestSimpleSwarmLearningRecipeExport:
         }
         job_name = "swarm_issue_reproducer"
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name=job_name,
             model=model,
             num_rounds=3,

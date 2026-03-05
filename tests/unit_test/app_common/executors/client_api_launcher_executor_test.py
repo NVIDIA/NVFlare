@@ -351,19 +351,19 @@ def test_peer_read_timeout_and_external_pre_init_both_overridable(monkeypatch):
 def test_max_resends_default_stored():
     """Default max_resends (3) must be stored on the executor."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    assert executor.max_resends == 3
+    assert executor._max_resends == 3
 
 
 def test_max_resends_custom_stored():
     """Custom max_resends must be stored exactly as given."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=10)
-    assert executor.max_resends == 10
+    assert executor._max_resends == 10
 
 
 def test_max_resends_none_stored():
     """max_resends=None (unlimited) must be stored as-is."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=None)
-    assert executor.max_resends is None
+    assert executor._max_resends is None
 
 
 def test_prepare_config_includes_max_resends(monkeypatch):

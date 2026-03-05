@@ -69,7 +69,7 @@ class BaseSwarmLearningRecipe(Recipe):
         Recipe.__init__(self, job)
 
 
-class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
+class SwarmLearningRecipe(BaseSwarmLearningRecipe):
     """A simple recipe for Swarm Learning with PyTorch models.
 
     Args:
@@ -130,7 +130,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         Using nn.Module instance:
 
         ```python
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="swarm_job",
             model=MyModel(),
             min_clients=3,
@@ -142,7 +142,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         Using dict config:
 
         ```python
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="swarm_job",
             model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
             min_clients=3,
@@ -243,3 +243,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
+
+
+# Backward compatibility alias
+SimpleSwarmLearningRecipe = SwarmLearningRecipe

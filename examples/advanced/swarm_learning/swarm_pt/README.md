@@ -39,7 +39,7 @@ swarm_pt/
 |
 |-- client.py           # client LoRA fine-tuning script (runs as subprocess)
 |-- model.py            # QwenLoRAModelWrapper — LoRA-adapted model for server persistor
-|-- job.py              # job recipe using SimpleSwarmLearningRecipe
+|-- job.py              # job recipe using SwarmLearningRecipe
 |-- download_data.py    # pre-download wikitext-2 dataset and Qwen2.5 model
 |-- prepare_data.py     # split dataset among N clients
 |-- requirements.txt    # dependencies
@@ -99,12 +99,12 @@ This example uses [Swarm Learning](https://nvflare.readthedocs.io/en/main/apidoc
 
 ## Job Recipe Code
 
-`job.py` uses `SimpleSwarmLearningRecipe` to configure the entire job with a few lines:
+`job.py` uses `SwarmLearningRecipe` to configure the entire job with a few lines:
 
 ```python
 model_path = MODEL_SIZES[args.model_size]   # e.g. "Qwen/Qwen2.5-0.5B" or "Qwen/Qwen2.5-1.5B"
 
-recipe = SimpleSwarmLearningRecipe(
+recipe = SwarmLearningRecipe(
     name="ccwf_swarm_pt_lora",
     model=QwenLoRAModelWrapper(model_path=model_path),
     num_rounds=args.num_rounds,
@@ -127,13 +127,13 @@ recipe.execute(env)
 For large models (7B+) where P2P transfer takes minutes, increase `round_timeout` accordingly:
 
 ```python
-recipe = SimpleSwarmLearningRecipe(
+recipe = SwarmLearningRecipe(
     ...
     round_timeout=7200,   # 2 hours — P2P ACK budget for 7B+ model transfers
 )
 ```
 
-`SimpleSwarmLearningRecipe` handles all component wiring automatically:
+`SwarmLearningRecipe` handles all component wiring automatically:
 - `PTClientAPILauncherExecutor` + `SubprocessLauncher` + `CellPipe` for subprocess execution
 - `PTFileModelPersistor` for checkpoint management (stores only LoRA adapter weights)
 - `InTimeAccumulateWeightedAggregator` for peer-to-peer adapter aggregation

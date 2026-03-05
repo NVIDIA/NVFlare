@@ -259,9 +259,10 @@ class CrossSiteEvalClientController(ClientSideController):
         label from ModelName.BEST_MODEL), but PTFileModelPersistor keys are
         filesystem-derived ("FL_global_model", "best_FL_global_model").
         persistor.get("best_model") always returns None, so we scan the inventory.
-        When model_name contains "best", we prefer an inventory key containing "best"
-        over the first key in insertion order (which would be the last-round model,
-        not the best model).
+        When model_name contains "best", we prefer an inventory key containing "best".
+        We take the LAST such key (not the first) because PTFileModelPersistor adds
+        the source/initial checkpoint first — if it happens to contain "best" in its
+        name (e.g. "best_initial_model"), we must not mistake it for the trained best.
         """
         # ── Persistor path (preferred for external-process executors) ─────────────
         if self.persistor:
@@ -285,8 +286,7 @@ class CrossSiteEvalClientController(ClientSideController):
                             fallback_key = None
                             for key in inventory:
                                 if want_best and "best" in key.lower():
-                                    best_key = key
-                                    break
+                                    best_key = key  # keep iterating — last "best" key wins
                                 if fallback_key is None:
                                     fallback_key = key
                             chosen_key = best_key or fallback_key

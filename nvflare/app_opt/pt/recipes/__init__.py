@@ -25,6 +25,10 @@ def __getattr__(name):
         from .fedavg_he import FedAvgRecipeWithHE
 
         return FedAvgRecipeWithHE
+    if name == "SwarmLearningRecipe":
+        from .swarm import SwarmLearningRecipe
+
+        return SwarmLearningRecipe
     if name == "SimpleSwarmLearningRecipe":
         from .swarm import SimpleSwarmLearningRecipe
 
@@ -39,5 +43,6 @@ __all__ = [
     "ScaffoldRecipe",
     "FedAvgRecipeWithHE",
     "FedEvalRecipe",
+    "SwarmLearningRecipe",
     "SimpleSwarmLearningRecipe",
 ]

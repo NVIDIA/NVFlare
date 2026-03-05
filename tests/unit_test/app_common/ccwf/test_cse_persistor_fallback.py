@@ -141,10 +141,11 @@ class TestPrepareLocalModelPersistorFirst:
         executor.execute.assert_not_called()
 
     def test_best_key_preferred_when_model_name_contains_best(self):
-        """Inventory scan: "best_" key preferred when model_name contains "best".
+        """Inventory scan: last "best_" key preferred when model_name contains "best".
 
         PTFileModelPersistor insertion order is FL_global_model → best_FL_global_model.
-        Without the preference logic, first-match returns last-round model, not best.
+        We take the LAST "best" key so that an initial checkpoint named "best_*" (added
+        first by PTFileModelPersistor) cannot shadow the actual trained best model.
         """
         ml = _make_model_learnable()
 
@@ -170,6 +171,42 @@ class TestPrepareLocalModelPersistorFirst:
         assert "best_FL_global_model" in log_msgs, (
             "Expected 'best_FL_global_model' in log (preferred over 'FL_global_model' "
             "because model_name contains 'best')"
+        )
+
+    def test_initial_best_ckpt_not_picked_over_trained_best(self):
+        """Initial checkpoint with "best" in name must NOT shadow the trained best model.
+
+        PTFileModelPersistor adds the source/initial checkpoint FIRST.  If it is
+        named "best_initial_model", a first-match scan would incorrectly return the
+        untrained initialisation instead of the trained best model (pcnudde's review).
+        Fix: scan takes the LAST "best" key, not the first.
+        """
+        ml = _make_model_learnable()
+
+        def _get(key, fl_ctx):
+            if key == "best_FL_global_model":
+                return ml
+            return None
+
+        # Inventory order mirrors PTFileModelPersistor: initial ckpt first, trained last
+        persistor = _make_model_persistor(
+            inventory={
+                "best_initial_model": MagicMock(),  # initial ckpt — must NOT be chosen
+                "FL_global_model": MagicMock(),
+                "best_FL_global_model": MagicMock(),  # trained best — must be chosen
+            }
+        )
+        persistor.get.side_effect = _get
+        ctrl = _make_controller(persistor=persistor)
+
+        with _mock_dxo_patch():
+            result = ctrl._prepare_local_model("best_model", _make_fl_ctx(), _make_abort_signal())
+
+        assert result.get_return_code() == ReturnCode.OK
+        log_msgs = " ".join(str(c) for c in ctrl.log_info.call_args_list)
+        assert "best_FL_global_model" in log_msgs, (
+            "Expected last 'best' key 'best_FL_global_model' to be selected, "
+            "not the initial checkpoint 'best_initial_model'"
         )
 
     def test_first_key_used_when_model_name_has_no_best(self):
