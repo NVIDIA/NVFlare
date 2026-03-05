@@ -147,11 +147,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
               integrations that cannot resolve NVFlare cell addresses.
 
             Ignored when ``launch_external_process=False``.
-        pipe_root_path: Root directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
-            ``None`` (default) uses the site workspace directory (resolved at runtime).
-            If provided, the path must be an absolute path to an existing directory
-            (e.g. ``"/dev/shm/nvflare_pipes"`` for a RAM-backed tmpfs).
-            Ignored for ``"cell_pipe"``.
+        pipe_root_path: Base directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
+            ``None`` (default) uses ``{WORKSPACE}/{JOB_ID}/{SITE_NAME}``, matching
+            the ``sag_cse_ccwf_pt`` reference template. If provided, the path must be
+            an absolute path to an existing directory (e.g. ``"/dev/shm/nvflare_pipes"``
+            for a RAM-backed tmpfs); ``{JOB_ID}/{SITE_NAME}`` is always appended so
+            concurrent jobs and sites remain isolated. Ignored for ``"cell_pipe"``.
 
     Example:
         Using nn.Module instance:
@@ -228,7 +229,14 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
 
         task_pipe = None
         if pipe_type == "file_pipe":
-            root_path = pipe_root_path or ("{" + SystemVarName.WORKSPACE + "}/pipe")
+            # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
+            # machine use isolated pipe directories (resolved at runtime by NVFlare).
+            # Format matches the sag_cse_ccwf_pt reference template.
+            _job_site_suffix = "/{" + SystemVarName.JOB_ID + "}/{" + SystemVarName.SITE_NAME + "}"
+            if pipe_root_path:
+                root_path = pipe_root_path + _job_site_suffix
+            else:
+                root_path = "{" + SystemVarName.WORKSPACE + "}" + _job_site_suffix
             task_pipe = FilePipe(mode=Mode.PASSIVE, root_path=root_path)
 
         # Handle dict-based model config (recipe accepts class_path; normalize for job API).
