@@ -199,12 +199,23 @@ class FLContext(object):
 
         Use when the prop is already set and you only want to change its value without
         changing visibility or stickiness. If the prop does not exist, returns False
-        and does nothing (caller should use set_prop instead).
+        and does nothing (caller should use set_prop instead). The read and write are
+        done under a single lock to avoid TOCTOU races with other threads.
         """
-        detail = self.get_prop_detail(key)
-        if detail is None:
-            return False
-        return self.set_prop(key, value, private=detail["private"], sticky=detail["sticky"])
+        if not isinstance(key, str):
+            raise ValueError("prop key must be str, but got {}".format(type(key)))
+        with _update_lock:
+            exists, _ = self._get_prop(key)
+            if not exists:
+                return False
+            mask = self.props[key][M]
+            if is_sticky(mask):
+                ctx_manager = self._get_ctx_manager()
+                if ctx_manager:
+                    assert isinstance(ctx_manager, FLContextManager)
+                    ctx_manager.update_sticker(key, value, mask)
+            self.props[key] = {V: value, M: mask}
+            return True
 
     def remove_prop(self, key: str, force_removal=False):
         if not isinstance(key, str):
