@@ -135,7 +135,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 6. Medical Image Analysis
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [NVFlare + MONAI integration](../integration/monai/README.md)                                                                          | MONAI        | For using NVIDIA FLARE with MONAI Bundle, see the [migration guide](../integration/monai/MIGRATION.md) for the recommended Client API + Recipe pattern. |
+| [NVFlare + MONAI integration](../integration/monai/README.md)                                                                          | MONAI        | To use NVIDIA FLARE with MONAI Bundles, see the [migration guide](../integration/monai/MIGRATION.md) for the recommended Client API + Recipe pattern.          |
 
 ## 7. Federated Statistics
 [Federated Statistics Overview](./advanced/federated-statistics/README.md) discusses the overall federated statistics features.
