@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import json
 from typing import Dict, Optional
 
@@ -64,6 +65,13 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         device_training_params: Dict = None,
         custom_source_root: str = None,
     ):
+        if importlib.util.find_spec("executorch.extension.training") is None:
+            raise ImportError(
+                "ETFedBuffRecipe requires executorch. "
+                "See installation instructions: "
+                "https://pytorch.org/executorch/stable/getting-started-setup.html"
+            )
+
         self.device_model = device_model
         self.input_shape = input_shape
         self.output_shape = output_shape
