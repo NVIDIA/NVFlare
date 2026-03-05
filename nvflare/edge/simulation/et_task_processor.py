@@ -235,6 +235,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             model_bytes = base64.b64decode(payload.data)
             et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
         except ImportError:
+            log.error("executorch is not installed; cannot load model")
             raise
         except Exception as e:
             log.error(f"Failed to load model: {e}")
@@ -250,6 +251,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             }
             return dxo_dict
         except ImportError:
+            log.error("executorch is not installed; cannot run training")
             raise
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")

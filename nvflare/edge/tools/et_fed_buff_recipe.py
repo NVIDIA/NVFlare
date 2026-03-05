@@ -65,7 +65,7 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         device_training_params: Dict = None,
         custom_source_root: str = None,
     ):
-        if importlib.util.find_spec("executorch") is None:
+        if importlib.util.find_spec("executorch.extension.training") is None:
             raise ImportError(
                 "ETFedBuffRecipe requires executorch. "
                 "See installation instructions: "
