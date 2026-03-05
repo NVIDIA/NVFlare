@@ -15,11 +15,9 @@
 import shutil
 import tempfile
 from io import BufferedReader, BytesIO
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
-
-from unittest.mock import patch
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext

@@ -309,6 +309,155 @@ class TestSwarmLearningRecipeMemoryGC:
         assert recipe.job is not None
 
 
+class TestSwarmLearningRecipePipeType:
+    """Tests for pipe_type and pipe_root_path parameters."""
+
+    def _capture_task_pipe(self, recipe_kwargs):
+        """Helper: build recipe and return the task_pipe passed to ScriptRunner."""
+        import torch.nn as nn
+
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+        from nvflare.job_config.script_runner import ScriptRunner
+
+        captured = {}
+        orig = ScriptRunner.__init__
+
+        def _capture(self, *a, **kw):
+            captured["task_pipe"] = kw.get("task_pipe")
+            orig(self, *a, **kw)
+
+        model = nn.Linear(2, 2)
+        defaults = dict(name="t", model=model, num_rounds=1, train_script="t.py", min_clients=2)
+        defaults.update(recipe_kwargs)
+
+        with (
+            patch("os.path.isfile", return_value=True),
+            patch("os.path.isdir", return_value=True),
+            patch("os.path.exists", return_value=True),
+            patch.object(ScriptRunner, "__init__", _capture),
+        ):
+            SwarmLearningRecipe(**defaults)
+
+        return captured.get("task_pipe")
+
+    def test_default_cell_pipe_passes_task_pipe_none(self):
+        """Default pipe_type='cell_pipe' must pass task_pipe=None to ScriptRunner
+        so ScriptRunner creates a CellPipe via its own _create_cell_pipe()."""
+        task_pipe = self._capture_task_pipe({})
+        assert task_pipe is None
+
+    def test_file_pipe_passes_filepipe_instance(self):
+        """pipe_type='file_pipe' must pass a FilePipe instance to ScriptRunner."""
+        from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+
+        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe"})
+        assert isinstance(task_pipe, FilePipe)
+
+    def test_file_pipe_default_root_path_uses_workspace_template(self):
+        """pipe_type='file_pipe' with no pipe_root_path must use the workspace
+        template variable so the path is resolved at runtime on each client."""
+        from nvflare.apis.fl_constant import SystemVarName
+
+        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe"})
+        expected_fragment = "{" + SystemVarName.WORKSPACE + "}"
+        assert expected_fragment in task_pipe.root_path
+
+    def test_file_pipe_custom_root_path_forwarded(self, tmp_path):
+        """pipe_type='file_pipe' with a valid pipe_root_path must use that path."""
+        from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+
+        custom_path = str(tmp_path)
+        task_pipe = self._capture_task_pipe({"pipe_type": "file_pipe", "pipe_root_path": custom_path})
+        assert isinstance(task_pipe, FilePipe)
+        assert task_pipe.root_path == custom_path
+
+    def test_invalid_pipe_type_raises(self, mock_file_system, simple_pt_model):
+        """An unrecognised pipe_type must raise ValueError immediately."""
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="pipe_type must be one of"):
+            SwarmLearningRecipe(
+                name="t",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="t.py",
+                min_clients=2,
+                pipe_type="grpc_pipe",
+            )
+
+    def test_cell_pipe_with_root_path_warns(self, mock_file_system, simple_pt_model, caplog):
+        """pipe_root_path set alongside pipe_type='cell_pipe' must emit a warning."""
+        import logging
+
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with caplog.at_level(logging.WARNING, logger="nvflare.app_opt.pt.recipes.swarm"):
+            SwarmLearningRecipe(
+                name="t",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="t.py",
+                min_clients=2,
+                pipe_type="cell_pipe",
+                pipe_root_path="/some/path",
+            )
+        assert any("pipe_root_path" in r.message and "ignored" in r.message for r in caplog.records)
+
+    def test_file_pipe_with_in_process_warns(self, mock_file_system, simple_pt_model, caplog):
+        """pipe_type='file_pipe' + launch_external_process=False must warn the user."""
+        import logging
+
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with caplog.at_level(logging.WARNING, logger="nvflare.app_opt.pt.recipes.swarm"):
+            SwarmLearningRecipe(
+                name="t",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="t.py",
+                min_clients=2,
+                pipe_type="file_pipe",
+                launch_external_process=False,
+            )
+        assert any("has no effect" in r.message for r in caplog.records)
+
+    def test_pipe_root_path_relative_raises(self, mock_file_system, simple_pt_model):
+        """A relative pipe_root_path must raise ValueError."""
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="absolute path"):
+            SwarmLearningRecipe(
+                name="t",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="t.py",
+                min_clients=2,
+                pipe_type="file_pipe",
+                pipe_root_path="relative/path",
+            )
+
+    def test_pipe_root_path_nonexistent_raises(self, simple_pt_model):
+        """A non-existent pipe_root_path must raise ValueError."""
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with (
+            patch("os.path.isfile", return_value=True),
+            patch("os.path.exists", return_value=True),
+            patch("os.path.isabs", return_value=True),
+            patch("os.path.isdir", return_value=False),
+        ):
+            with pytest.raises(ValueError, match="does not exist or is not a directory"):
+                SwarmLearningRecipe(
+                    name="t",
+                    model=simple_pt_model,
+                    num_rounds=1,
+                    train_script="t.py",
+                    min_clients=2,
+                    pipe_type="file_pipe",
+                    pipe_root_path="/nonexistent/path",
+                )
+
+
 class TestSwarmLearningRecipeExport:
     """Export behavior tests for SimpleSwarmLearningRecipe."""
 

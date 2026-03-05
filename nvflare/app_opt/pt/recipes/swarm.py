@@ -12,18 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import os
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.ccwf.ccwf_job import CCWFJob, CrossSiteEvalConfig, SwarmClientConfig, SwarmServerConfig
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.fuel.utils.constants import Mode
+from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import validate_ckpt
+
+logger = logging.getLogger(__name__)
+
+_VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
 
 
 class _SwarmValidator(BaseModel):
@@ -125,6 +134,24 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             for large models (7B+) where P2P transfer can take minutes.  Does NOT cap
             per-round training time (learn_task_timeout remains unbounded by default).
             Defaults to 3600 (matching progress_timeout).
+        pipe_type: Pipe used for communication between the NVFlare client process
+            and the external training process when ``launch_external_process=True``.
+            Accepted values:
+
+            - ``"cell_pipe"`` *(default)*: ``CellPipe`` with zero-copy tensor
+              forwarding — the NVFlare client process relays model tensors without
+              loading them into memory (~1 GB RAM for large models).
+            - ``"file_pipe"``: ``FilePipe`` backed by a shared directory. The NVFlare
+              client process fully loads and re-serializes the model (~2× model size
+              in RAM). Use when cell networking is unavailable or for third-party
+              integrations that cannot resolve NVFlare cell addresses.
+
+            Ignored when ``launch_external_process=False``.
+        pipe_root_path: Root directory for ``FilePipe`` when ``pipe_type="file_pipe"``.
+            ``None`` (default) uses the site workspace directory (resolved at runtime).
+            If provided, the path must be an absolute path to an existing directory
+            (e.g. ``"/dev/shm/nvflare_pipes"`` for a RAM-backed tmpfs).
+            Ignored for ``"cell_pipe"``.
 
     Example:
         Using nn.Module instance:
@@ -173,8 +200,36 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         progress_timeout: float = 3600,
         max_status_report_interval: float = 300,
         round_timeout: float = 3600,
+        pipe_type: str = "cell_pipe",
+        pipe_root_path: Optional[str] = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+
+        if pipe_type not in _VALID_PIPE_TYPES:
+            raise ValueError(f"pipe_type must be one of {_VALID_PIPE_TYPES}, got '{pipe_type}'")
+
+        if pipe_root_path and pipe_type != "file_pipe":
+            logger.warning(
+                f"pipe_root_path='{pipe_root_path}' is ignored when pipe_type='{pipe_type}' "
+                "(only applies to 'file_pipe')"
+            )
+
+        if pipe_root_path and pipe_type == "file_pipe":
+            if not os.path.isabs(pipe_root_path):
+                raise ValueError(f"pipe_root_path must be an absolute path, got '{pipe_root_path}'")
+            if not os.path.isdir(pipe_root_path):
+                raise ValueError(f"pipe_root_path '{pipe_root_path}' does not exist or is not a directory")
+
+        if pipe_type == "file_pipe" and not launch_external_process:
+            logger.warning(
+                "pipe_type='file_pipe' has no effect when launch_external_process=False "
+                "(in-process mode does not use pipes)"
+            )
+
+        task_pipe = None
+        if pipe_type == "file_pipe":
+            root_path = pipe_root_path or ("{" + SystemVarName.WORKSPACE + "}/pipe")
+            task_pipe = FilePipe(mode=Mode.PASSIVE, root_path=root_path)
 
         # Handle dict-based model config (recipe accepts class_path; normalize for job API).
         # Pass the dict directly to PTFileModelPersistor so args are preserved in the exported config.
@@ -227,6 +282,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 memory_gc_rounds=memory_gc_rounds,
                 cuda_empty_cache=cuda_empty_cache,
                 params_transfer_type=params_transfer_type,
+                task_pipe=task_pipe,
                 **train_args,
             ),
             aggregator=aggregator,
