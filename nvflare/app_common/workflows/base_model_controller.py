@@ -385,9 +385,10 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
-        If the prop already exists, only its value is updated (via update_prop_value); otherwise
-        it is set with private=True, sticky=False. Required for flows like FedAvg that do not
-        set CURRENT_ROUND in fl_ctx before send; downstream (e.g. aggregators) rely on it.
+        If the prop already exists, only its value is updated (via update_prop_value), preserving
+        its (private, sticky) attributes. Otherwise it is set with private=True, sticky=True to
+        match original behaviour so the sticker is populated from round 0 and child/peer contexts
+        see it. Required for flows like FedAvg that do not set CURRENT_ROUND in fl_ctx before send.
         """
         if not data:
             return
@@ -399,7 +400,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                     AppConstants.CURRENT_ROUND,
                     data.current_round,
                     private=True,
-                    sticky=False,
+                    sticky=True,
                 )
         if data.total_rounds is not None:
             if self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is not None:
@@ -409,7 +410,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                     AppConstants.NUM_ROUNDS,
                     data.total_rounds,
                     private=True,
-                    sticky=False,
+                    sticky=True,
                 )
 
     def get_component(self, component_id: str):
