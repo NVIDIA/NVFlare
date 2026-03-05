@@ -26,10 +26,5 @@ SwarmLearningRecipe, _ = optional_import(
     name="SwarmLearningRecipe",
     descriptor="PyTorch is required for {}",
 )
-SimpleSwarmLearningRecipe, _ = optional_import(
-    "nvflare.app_opt.pt.recipes.swarm",
-    name="SimpleSwarmLearningRecipe",
-    descriptor="PyTorch is required for {}",
-)
 
-__all__ = ["BaseSwarmLearningRecipe", "SwarmLearningRecipe", "SimpleSwarmLearningRecipe"]
+__all__ = ["BaseSwarmLearningRecipe", "SwarmLearningRecipe"]
