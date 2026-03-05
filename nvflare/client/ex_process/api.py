@@ -100,10 +100,12 @@ class ExProcessClientAPI(APISpec):
 
         Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
         .yml, .default) are found automatically — the hardcoded `.json` suffix is
-        not assumed.  Only consoleHandler is kept on every logger (root and named)
-        so logs flow through SubprocessLauncher's stdout capture to the parent's
-        log files.  Enabling file handlers in both parent and subprocess would
-        produce duplicate writes to the same rotating log files.
+        not assumed.  The config is applied unchanged so the subprocess logger is
+        identical to the parent CJ logger: same handlers (consoleHandler + file
+        handlers), same formatters, same levels.  File handlers write directly to
+        the shared log files; consoleHandler output reaches stdout, where
+        SubprocessLauncher routes it to the terminal or wraps it with logger.info()
+        for raw print() lines from user training scripts.
         """
         try:
             task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
@@ -117,21 +119,7 @@ class ExProcessClientAPI(APISpec):
             if not conf:
                 return
 
-            dict_config = conf.to_dict()
-            # Keep only consoleHandler on every logger (root and named) — subprocess
-            # stdout is captured by SubprocessLauncher and re-logged by the parent.
-            # Leaving file handlers active in both parent and subprocess produces
-            # duplicate writes to the same rotating log files.
-            # Strip from both locations the root logger can appear:
-            #   dict_config["loggers"]["root"]  — NVFlare's log_config.json layout
-            #   dict_config["root"]             — standard Python dictConfig schema
-            for logger_cfg in dict_config.get("loggers", {}).values():
-                if "handlers" in logger_cfg:
-                    logger_cfg["handlers"] = [h for h in logger_cfg["handlers"] if h == "consoleHandler"]
-            root_cfg = dict_config.get("root", {})
-            if "handlers" in root_cfg:
-                root_cfg["handlers"] = [h for h in root_cfg["handlers"] if h == "consoleHandler"]
-            apply_log_config(dict_config, workspace_dir)
+            apply_log_config(conf.to_dict(), workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.
             self.logger.warning(f"Unable to configure subprocess logging: {e}")
