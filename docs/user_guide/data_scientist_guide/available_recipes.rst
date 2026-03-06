@@ -24,14 +24,16 @@ Most training recipes accept the following model-related parameters:
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead.
+       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
+      subclassed Keras class instance or dict config.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
@@ -687,12 +689,13 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm",
         model=MyModel(),
+        min_clients=3,
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
@@ -701,7 +704,8 @@ Decentralized federated learning without a central server.
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
+   ``SimpleSwarmLearningRecipe`` is a backward-compatible alias for ``SwarmLearningRecipe``.
+   It is also available from the original location:
    ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
 
 
@@ -804,4 +808,3 @@ Deploy to production NVFlare infrastructure.
 
     env = ProdEnv(startup_kit_location="/path/to/startup_kit")
     run = recipe.execute(env)
-

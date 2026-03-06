@@ -13,6 +13,9 @@ This guide supports two distinct workflows:
 - [1. ExecuTorch-based FL](#executorch-based-fl)
 - [2. Pure PyTorch Simulated Cross-Edge Federated Learning](#pure-pytorch-simulated-cross-edge-federated-learning-an-end-to-end-cifar10-example)
 
+## Important Note
+> **SimEnv (simulator) is not supported for edge examples.** The edge system relies on a hierarchical topology (server → relays → leaf clients → devices), which is not compatible with SimEnv's flat server-client architecture. All edge examples need to be run with `ProdEnv` using a provisioned hierarchical system as described below.
+
 ## Setup the NVFlare System
 ### Install prerequisites
 Install NVFlare and the required packages for this example:

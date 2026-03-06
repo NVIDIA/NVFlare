@@ -143,7 +143,7 @@ class LauncherExecutor(TaskExchanger):
             if self._abort_signal is not None:
                 self._abort_signal.trigger(f"{EventType.END_RUN} event received - telling external to stop")
             self.finalize(fl_ctx)
-            self.log_info(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
+            self.log_debug(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
             super().handle_event(event_type, fl_ctx)
         else:
             super().handle_event(event_type, fl_ctx)

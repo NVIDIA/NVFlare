@@ -195,15 +195,16 @@ Swarm Learning Configuration
 ----------------------------
 
 Swarm Learning uses ``memory_gc_rounds`` (not ``client_memory_gc_rounds``) and
-``cuda_empty_cache`` on ``SimpleSwarmLearningRecipe``:
+``cuda_empty_cache`` on ``SwarmLearningRecipe``:
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm_job",
         model=MyModel(),
+        min_clients=3,
         num_rounds=10,
         train_script="train.py",
         memory_gc_rounds=1,   # Cleanup every round on trainer and aggregator roles

@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from unittest.mock import patch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat
 from nvflare.client.converter_utils import create_default_params_converters
+from nvflare.client.ex_process.api import _downgrade_rotating_handlers
 
 
 class _DummyConverter(ParamsConverter):
@@ -84,3 +86,174 @@ def test_create_params_converters_skips_when_server_expected_format_is_not_numpy
     )
     assert from_converter is None
     assert to_converter is None
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: ClientConfig.get_submit_result_timeout() and ExProcessClientAPI wiring
+# ---------------------------------------------------------------------------
+
+
+def test_get_submit_result_timeout_default():
+    """When SUBMIT_RESULT_TIMEOUT is absent, default must be 300.0."""
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {}})
+    assert config.get_submit_result_timeout() == 300.0
+
+
+def test_get_submit_result_timeout_explicit():
+    """Explicit value must be returned as a float."""
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.SUBMIT_RESULT_TIMEOUT: 600.0}})
+    assert config.get_submit_result_timeout() == 600.0
+
+
+def test_get_submit_result_timeout_int_coerced_to_float():
+    """Integer value in config must be coerced to float."""
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.SUBMIT_RESULT_TIMEOUT: 120}})
+    result = config.get_submit_result_timeout()
+    assert isinstance(result, float)
+    assert result == 120.0
+
+
+def test_get_submit_result_timeout_absent_section():
+    """Missing TASK_EXCHANGE section must still return the default 300.0."""
+    config = ClientConfig({})
+    assert config.get_submit_result_timeout() == 300.0
+
+
+def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
+    """ExProcessClientAPI.init() must pass submit_result_timeout from config to FlareAgentWithFLModel."""
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ConfigKey
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+
+    fake_config = ClientConfig(
+        {
+            ConfigKey.TASK_EXCHANGE: {
+                ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.NUMPY,
+                ConfigKey.SERVER_EXPECTED_FORMAT: ExchangeFormat.NUMPY,
+                ConfigKey.TRAIN_TASK_NAME: "train",
+                ConfigKey.EVAL_TASK_NAME: "validate",
+                ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
+                ConfigKey.HEARTBEAT_TIMEOUT: 60,
+                ConfigKey.SUBMIT_RESULT_TIMEOUT: 999.0,
+            }
+        }
+    )
+
+    mock_pipe = MagicMock()
+    captured_kwargs = {}
+
+    class _CapturingAgent:
+        def __init__(self, *args, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(
+        "nvflare.client.ex_process.api._create_client_config",
+        lambda config: fake_config,
+    )
+    monkeypatch.setattr(
+        "nvflare.client.ex_process.api._create_pipe_using_config",
+        lambda client_config, section: (mock_pipe, "task"),
+    )
+    monkeypatch.setattr(
+        "nvflare.client.ex_process.api.FlareAgentWithFLModel",
+        _CapturingAgent,
+    )
+    monkeypatch.setattr(
+        "nvflare.client.ex_process.api.create_default_params_converters",
+        lambda **kwargs: (None, None),
+    )
+    monkeypatch.setattr(
+        "nvflare.client.ex_process.api.ModelRegistry",
+        lambda *args, **kwargs: MagicMock(),
+    )
+
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api._configure_subprocess_logging = lambda client_config: None
+    api.init(rank="0")
+
+    assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
+    assert captured_kwargs["submit_result_timeout"] == 999.0
+
+
+# ── _downgrade_rotating_handlers tests ────────────────────────────────────────
+
+_ROTATING_CONFIG = {
+    "handlers": {
+        "logFileHandler": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "DEBUG",
+            "formatter": "baseFormatter",
+            "filename": "log.txt",
+            "mode": "a",
+            "maxBytes": 20971520,
+            "backupCount": 10,
+        },
+        "timedHandler": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "level": "WARNING",
+            "filename": "log_timed.txt",
+            "when": "midnight",
+            "interval": 1,
+            "backupCount": 7,
+            "utc": True,
+        },
+        "consoleHandler": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "stream": "ext://sys.stdout",
+        },
+    }
+}
+
+
+class TestDowngradeRotatingHandlers:
+    def test_rotating_file_handler_replaced_with_file_handler(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        _downgrade_rotating_handlers(cfg)
+        assert cfg["handlers"]["logFileHandler"]["class"] == "logging.FileHandler"
+
+    def test_timed_rotating_file_handler_replaced_with_file_handler(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        _downgrade_rotating_handlers(cfg)
+        assert cfg["handlers"]["timedHandler"]["class"] == "logging.FileHandler"
+
+    def test_rotation_keys_removed(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        _downgrade_rotating_handlers(cfg)
+        h = cfg["handlers"]["logFileHandler"]
+        for key in ("maxBytes", "backupCount"):
+            assert key not in h, f"rotation key '{key}' should be removed"
+
+    def test_timed_rotation_keys_removed(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        _downgrade_rotating_handlers(cfg)
+        h = cfg["handlers"]["timedHandler"]
+        for key in ("when", "interval", "backupCount", "utc"):
+            assert key not in h, f"rotation key '{key}' should be removed"
+
+    def test_non_rotation_keys_preserved(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        _downgrade_rotating_handlers(cfg)
+        h = cfg["handlers"]["logFileHandler"]
+        assert h["level"] == "DEBUG"
+        assert h["formatter"] == "baseFormatter"
+        assert h["filename"] == "log.txt"
+        assert h["mode"] == "a"
+
+    def test_stream_handler_untouched(self):
+        cfg = copy.deepcopy(_ROTATING_CONFIG)
+        original = copy.deepcopy(cfg["handlers"]["consoleHandler"])
+        _downgrade_rotating_handlers(cfg)
+        assert cfg["handlers"]["consoleHandler"] == original
+
+    def test_empty_handlers_section(self):
+        cfg = {"handlers": {}}
+        _downgrade_rotating_handlers(cfg)  # must not raise
+
+    def test_no_handlers_key(self):
+        cfg = {}
+        _downgrade_rotating_handlers(cfg)  # must not raise

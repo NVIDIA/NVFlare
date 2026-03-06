@@ -2615,9 +2615,9 @@ CCWF/Swarm Learning Configuration
 
 .. code-block:: python
 
-   from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+   from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-   recipe = SimpleSwarmLearningRecipe(
+   recipe = SwarmLearningRecipe(
        min_clients=3,
        num_rounds=10,
        model=model,

@@ -43,7 +43,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     description = ""
     license = "Apache-2.0"
     dependencies = [
-        "flwr[simulation]>=1.11.0,<2.0",
+        "flwr>=1.16,<1.26",
         "nvflare~=2.5.0rc",
         "torch==2.2.1",
         "torchvision==0.17.1",
