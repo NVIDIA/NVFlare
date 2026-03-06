@@ -16,7 +16,8 @@ from argparse import Namespace
 
 import pytest
 
-from nvflare.private.fed.server.job_cmds import _create_list_job_cmd_parser
+from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.private.fed.server.job_cmds import JobCommandModule, _create_list_job_cmd_parser
 
 TEST_CASES = [
     (
@@ -41,3 +42,36 @@ class TestListJobCmdParser:
         parser = _create_list_job_cmd_parser()
         parsed_args = parser.parse_args(args)
         assert parsed_args == expected_args
+
+
+class _MockConnection:
+    def __init__(self, cmd_props=None):
+        self._cmd_props = cmd_props
+
+    def get_prop(self, key):
+        if key == ConnProps.CMD_PROPS:
+            return self._cmd_props
+        return None
+
+
+class TestProjectCmdProps:
+    @pytest.mark.parametrize(
+        "cmd_props, expected",
+        [
+            (None, ""),
+            ("not-a-dict", ""),
+            ({}, ""),
+            ({"project": ""}, ""),
+            ({"project": "cancer-research"}, "cancer-research"),
+            ({"project": "default"}, "default"),
+        ],
+    )
+    def test_get_project_from_cmd_props(self, cmd_props, expected):
+        conn = _MockConnection(cmd_props=cmd_props)
+        assert JobCommandModule._get_project_from_cmd_props(conn) == expected
+
+    @pytest.mark.parametrize("project", [123, "Bad Project", " cancer-research ", "../escape"])
+    def test_get_project_from_cmd_props_rejects_invalid_values(self, project):
+        conn = _MockConnection(cmd_props={"project": project})
+        with pytest.raises((TypeError, ValueError)):
+            JobCommandModule._get_project_from_cmd_props(conn)

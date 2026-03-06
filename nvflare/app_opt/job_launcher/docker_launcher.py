@@ -20,6 +20,7 @@ import docker
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import extract_job_image, generate_client_command, generate_server_command
@@ -117,8 +118,13 @@ class DockerJobLauncher(JobLauncherSpec):
         command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
         self.logger.info(f"Launch image:{job_image}, run command: {command}")
 
+        project = job_meta.get(JobMetaKey.PROJECT.value, "")
         docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
-        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
+        if docker_workspace and isinstance(project, str) and project and project != "default":
+            docker_workspace = os.path.join(docker_workspace, project)
+
+        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace} (project={project})")
+
         docker_client = docker.from_env()
         try:
             container = docker_client.containers.run(

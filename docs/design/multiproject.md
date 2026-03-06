@@ -126,6 +126,8 @@ Project create/archive is deferred for v1 (projects are provisioning-time config
 
 `project` becomes a first-class, immutable field on every job. Set at submission time from the user's active project context. Cannot be changed after creation.
 
+The project value is syntactically validated at the user-facing API layer and again on the server before it is persisted into job metadata. This prevents invalid or path-like values from reaching runtime launchers.
+
 ### Job Store Partitioning
 
 New multitenant jobs are stored at `jobs/<project>/<uuid>/` (vs. current `jobs/<uuid>/`). No migration of existing jobs — they remain at `jobs/<uuid>/` and implicitly belong to the `default` project.
@@ -471,7 +473,7 @@ Phase 1 delivers no access control, no job store partitioning, and no cert/regis
 ### Scope
 
 1. Add `project: Optional[str] = None` parameter to `ProdEnv` and `PocEnv`.
-2. Pass `project` through to the job metadata at submission time.
+2. Pass `project` through to the job metadata at submission/clone time, with syntax validation before persistence.
 3. `K8sJobLauncher` reads `project` from job metadata and selects the corresponding project workspace volume.
 4. `DockerJobLauncher` reads `project` from job metadata and mounts `/data/<project>/` as the workspace volume.
 5. No changes to authorization, job store paths, `project.yml`, scheduler, or any other component.
@@ -483,7 +485,7 @@ Phase 1 delivers no access control, no job store partitioning, and no cert/regis
 
 ### What this does NOT do
 
-- No access control — any user can submit to any project name.
+- No access control — any user can submit to any valid project name.
 - No job store partitioning (`jobs/<uuid>/` path unchanged).
 - No `project.yml` parsing or `ProjectRegistry`.
 - No `set_project` / `list_projects` admin commands.
