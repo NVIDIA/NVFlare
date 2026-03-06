@@ -100,6 +100,11 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[PSI]
 
+  .. note::
+
+     ``nvflare[PSI]`` currently supports Python 3.9-3.13.
+     On Python 3.14, ``openmined.psi`` is not available yet, so the PSI extra is not installed.
+
 * **PT** - PyTorch support:
 
   .. code-block:: shell
