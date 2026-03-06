@@ -14,9 +14,9 @@
 
 from unittest.mock import patch
 
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.proto import MetaKey
-from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 
 
 def _make_session_for_project(project):
