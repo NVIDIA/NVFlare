@@ -47,31 +47,42 @@ class TestListJobCmdParser:
 class _MockConnection:
     def __init__(self, cmd_props=None):
         self._cmd_props = cmd_props
+        self.errors = []
 
     def get_prop(self, key):
         if key == ConnProps.CMD_PROPS:
             return self._cmd_props
         return None
 
+    def append_error(self, msg, meta=None):
+        self.errors.append((msg, meta))
+
 
 class TestProjectCmdProps:
     @pytest.mark.parametrize(
-        "cmd_props, expected",
+        "cmd_props, expected_meta",
         [
-            (None, ""),
-            ("not-a-dict", ""),
-            ({}, ""),
-            ({"project": ""}, ""),
-            ({"project": "cancer-research"}, "cancer-research"),
-            ({"project": "default"}, "default"),
+            (None, {}),
+            ("not-a-dict", {}),
+            ({}, {}),
+            ({"project": ""}, {}),
+            ({"project": "cancer-research"}, {"project": "cancer-research"}),
+            ({"project": "default"}, {"project": "default"}),
         ],
     )
-    def test_get_project_from_cmd_props(self, cmd_props, expected):
+    def test_add_project_to_meta(self, cmd_props, expected_meta):
         conn = _MockConnection(cmd_props=cmd_props)
-        assert JobCommandModule._get_project_from_cmd_props(conn) == expected
+        meta = {}
+
+        assert JobCommandModule._add_project_to_meta(meta, conn) is True
+        assert meta == expected_meta
+        assert conn.errors == []
 
     @pytest.mark.parametrize("project", [123, "Bad Project", " cancer-research ", "../escape"])
-    def test_get_project_from_cmd_props_rejects_invalid_values(self, project):
+    def test_add_project_to_meta_rejects_invalid_values(self, project):
         conn = _MockConnection(cmd_props={"project": project})
-        with pytest.raises((TypeError, ValueError)):
-            JobCommandModule._get_project_from_cmd_props(conn)
+        meta = {}
+
+        assert JobCommandModule._add_project_to_meta(meta, conn) is False
+        assert meta == {}
+        assert len(conn.errors) == 1

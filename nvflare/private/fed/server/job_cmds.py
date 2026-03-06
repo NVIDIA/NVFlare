@@ -83,25 +83,27 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         self.logger = get_obj_logger(self)
 
     @staticmethod
-    def _get_project_from_cmd_props(conn: Connection) -> str:
-        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
-        if not isinstance(cmd_props, dict):
-            return ""
-        project = cmd_props.get(PROJECT_CMD_PROP_KEY)
-        if not project:
-            return ""
-        err, reason = name_check(project, "project")
-        if err:
-            raise ValueError(reason)
-        return project
-
-    @staticmethod
     def _add_project_to_meta(meta: dict, conn: Connection) -> bool:
-        try:
-            project = JobCommandModule._get_project_from_cmd_props(conn)
-        except (TypeError, ValueError) as e:
-            err = str(e)
-            conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, err))
+        """Validate optional project from command props and persist it into job metadata."""
+
+        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
+        project = ""
+        error = ""
+
+        if isinstance(cmd_props, dict):
+            candidate = cmd_props.get(PROJECT_CMD_PROP_KEY)
+            if candidate:
+                if not isinstance(candidate, str):
+                    error = f"project must be str but got {type(candidate)}"
+                else:
+                    invalid, reason = name_check(candidate, "project")
+                    if invalid:
+                        error = reason
+                    else:
+                        project = candidate
+
+        if error:
+            conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
             return False
 
         if project:
