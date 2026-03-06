@@ -216,6 +216,8 @@ class FLContext(object):
                 ctx_manager = self._get_ctx_manager()
                 if ctx_manager:
                     assert isinstance(ctx_manager, FLContextManager)
+                    # If the key was not yet in the sticker store (e.g. set via put()),
+                    # this call will insert it, making it sticky for all future contexts.
                     ctx_manager.update_sticker(key, value, mask)
             self.props[key] = {V: value, M: mask}
             return True

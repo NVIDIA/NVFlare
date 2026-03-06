@@ -382,6 +382,17 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         return clients
 
+    def _set_fl_ctx_prop(self, key: str, value, label: str) -> None:
+        """Set or update a sticky private prop in fl_ctx by key. Logs if fallback or set_prop fails."""
+        if self.fl_ctx.get_prop(key) is not None:
+            if not self.fl_ctx.update_prop_value(key, value):
+                self.debug(f"Failed to update {label} in fl_ctx via update_prop_value; retrying with set_prop.")
+                if not self.fl_ctx.set_prop(key, value, private=True, sticky=True):
+                    self.warning(f"set_prop also failed to update {key}; value may be stale.")
+        else:
+            if not self.fl_ctx.set_prop(key, value, private=True, sticky=True):
+                self.warning(f"set_prop failed to set {key}; value may be stale.")
+
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
@@ -393,45 +404,11 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         if not data:
             return
         if data.current_round is not None:
-            if self.fl_ctx.get_prop(AppConstants.CURRENT_ROUND) is not None:
-                if not self.fl_ctx.update_prop_value(AppConstants.CURRENT_ROUND, data.current_round):
-                    self.debug(
-                        f"Failed to update {AppConstants.CURRENT_ROUND} in fl_ctx via update_prop_value; retrying with set_prop."
-                    )
-                    self.fl_ctx.set_prop(
-                        AppConstants.CURRENT_ROUND,
-                        data.current_round,
-                        private=True,
-                        sticky=True,
-                    )
-            else:
-                self.fl_ctx.set_prop(
-                    AppConstants.CURRENT_ROUND,
-                    data.current_round,
-                    private=True,
-                    sticky=True,
-                )
+            self._set_fl_ctx_prop(AppConstants.CURRENT_ROUND, data.current_round, "CURRENT_ROUND")
         else:
             self.debug("The FLModel data does not contain the current_round information.")
         if data.total_rounds is not None:
-            if self.fl_ctx.get_prop(AppConstants.NUM_ROUNDS) is not None:
-                if not self.fl_ctx.update_prop_value(AppConstants.NUM_ROUNDS, data.total_rounds):
-                    self.debug(
-                        f"Failed to update {AppConstants.NUM_ROUNDS} in fl_ctx via update_prop_value; retrying with set_prop."
-                    )
-                    self.fl_ctx.set_prop(
-                        AppConstants.NUM_ROUNDS,
-                        data.total_rounds,
-                        private=True,
-                        sticky=True,
-                    )
-            else:
-                self.fl_ctx.set_prop(
-                    AppConstants.NUM_ROUNDS,
-                    data.total_rounds,
-                    private=True,
-                    sticky=True,
-                )
+            self._set_fl_ctx_prop(AppConstants.NUM_ROUNDS, data.total_rounds, "NUM_ROUNDS")
         else:
             self.debug("The FLModel data does not contain the total_rounds information.")
 
