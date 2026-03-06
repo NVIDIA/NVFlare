@@ -5,7 +5,7 @@ Variable Resolution in Job Configuration
 
 FLARE jobs are defined with configuration files: ``config_fed_client.json`` and ``config_fed_server.json``.
 These two files configure the components (Python objects) used for the server process and the FL client processes.
-The component configuration includes information about the class path of the Python object, and arguments for the object's constructor.
+The component configuration includes information about the class path of the Python object (via ``path`` or ``class_path``), and arguments for the object's constructor.
 The configuration files are processed at the beginning of the server/client job processes to create those components.
 
 Here is a typical example of a job configuration:

@@ -1,4 +1,6 @@
 test_configs:
+  # No configs; -m auto runs zero tests (legacy backend, registry removed).
+  auto: []
   auth:
     - ./data/test_configs/authorization/test_diff_job_config.yml
     - ./data/test_configs/authorization/submit_job.yml

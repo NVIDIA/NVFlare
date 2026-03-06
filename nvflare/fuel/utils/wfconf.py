@@ -23,7 +23,7 @@ from nvflare.security.logging import secure_format_exception
 
 from .argument_utils import parse_vars
 from .class_loader import load_class
-from .class_utils import ModuleScanner, instantiate_class
+from .class_utils import ModuleScanner, get_class_path_from_config, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
 
@@ -340,35 +340,10 @@ class Configurator(JsonObjectProcessor):
         return instantiate_class(class_path, class_args)
 
     def get_class_path(self, config_dict):
-        if "path" in config_dict.keys():
-            path_spec = config_dict["path"]
-            if not isinstance(path_spec, str):
-                raise ConfigError("path spec must be str but got {}.".format(type(path_spec)))
-
-            if len(path_spec) <= 0:
-                raise ConfigError("path spec must not be empty")
-
-            class_path = format(path_spec)
-            parts = class_path.split(".")
-            if len(parts) < 2:
-                raise ConfigError("invalid class path '{}': missing module name".format(class_path))
-        else:
-            if "name" not in config_dict:
-                raise ConfigError("class name or path must be specified")
-
-            class_name = config_dict["name"]
-
-            if not isinstance(class_name, str):
-                raise ConfigError("class name must be str")
-
-            if len(class_name) <= 0:
-                raise ConfigError("class name must not be empty")
-            module_name = self.module_scanner.get_module_name(class_name)
-            if module_name is None:
-                raise ConfigError('Cannot find component class "{}"'.format(class_name))
-            class_path = module_name + ".{}".format(class_name)
-
-        return class_path
+        return get_class_path_from_config(
+            config_dict,
+            resolve_name=lambda cn: self.module_scanner.get_module_name(cn),
+        )
 
     def is_configured_subclass(self, config_dict, base_class):
         return issubclass(load_class(self.get_class_path(config_dict)), base_class)
@@ -392,14 +367,22 @@ def get_component_refs(component):
     Returns: list of component and reference
 
     """
-    if "name" in component:
-        name = component["name"]
-        key = "name"
-    elif "path" in component:
+    if "path" in component:
         name = component["path"]
         key = "path"
+    elif "class_path" in component:
+        name = component["class_path"]
+        key = "class_path"
+    elif "name" in component:
+        name = component["name"]
+        key = "name"
     else:
-        raise ConfigError('component has no "name" or "path')
+        raise ConfigError('component has no "path", "class_path", or "name"')
+
+    if name is None or not isinstance(name, str):
+        raise ConfigError('component "{}" must be a non-null string, got {}'.format(key, type(name).__name__))
+    if len(name) <= 0:
+        raise ConfigError('component "{}" must not be empty'.format(key))
 
     parts = name.split("#")
     component[key] = parts[0]
