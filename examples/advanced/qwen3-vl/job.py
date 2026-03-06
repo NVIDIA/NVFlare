@@ -67,6 +67,11 @@ def define_parser():
         help="Peak learning rate for training (default 5e-7; try 1e-6 for faster convergence)",
     )
     parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="Enable LoRA fine-tuning (passes --lora_enable True to Qwen train script).",
+    )
+    parser.add_argument(
         "--wandb",
         action="store_true",
         help="Enable Weights & Biases experiment tracking (optional).",
@@ -143,6 +148,8 @@ def main():
             f"--learning_rate {args.learning_rate} "
             f"--report_to {report_to}"
         )
+        if args.lora:
+            train_args += " --lora_exchange"
         if qwen_root:
             train_args = f"--qwen_root {qwen_root} " + train_args
         # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
@@ -150,11 +157,17 @@ def main():
         command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
-    # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
-    model = {
-        "class_path": "model.Qwen3VLModel",
-        "args": {"model_name_or_path": args.model_name_or_path},
-    }
+    # Initial model: when --lora, use LoRA-only wrapper so server and clients exchange only adapter weights.
+    if args.lora:
+        model = {
+            "class_path": "model.Qwen3VLLoRAModel",
+            "args": {"model_name_or_path": args.model_name_or_path},
+        }
+    else:
+        model = {
+            "class_path": "model.Qwen3VLModel",
+            "args": {"model_name_or_path": args.model_name_or_path},
+        }
 
     # Use native PyTorch tensor exchange (like llm_hf message_mode=tensor) so BFloat16
     # weights are not converted to numpy (numpy does not support BFloat16).
@@ -164,7 +177,6 @@ def main():
         num_rounds=args.num_rounds,
         model=model,
         train_script="client.py",
-        train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
         launch_external_process=True,
         server_expected_format="pytorch",

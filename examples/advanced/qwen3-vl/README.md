@@ -165,6 +165,16 @@ With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_clie
 | `--gpu` | GPU IDs per client (comma-separated lists in brackets). | `python job.py --gpu "[0],[1],[2]"` (one GPU per client) |
 | `--nproc_per_client` | Number of torchrun processes (GPUs) per client. | `python job.py --nproc_per_client 2 --gpu "[0,1],[2,3],[4,5]"` (2 GPUs per client) |
 | `--wandb` | Enable Weights & Biases logging; set `WANDB_API_KEY` for online logging. | `python job.py --wandb` |
+| `--lora` | Enable LoRA fine-tuning and **exchange only LoRA adapter weights** between server and clients (~98 MB instead of ~4651 MB). See [LoRA and reduced communication](#lora-and-reduced-communication) below. | `python job.py --lora` |
+
+### LoRA and reduced communication cost
+
+By default, the server and clients exchange the **full model** each round (~4651 MB for Qwen3-VL-2B in bf16). With **`--lora`**, the job uses LoRA (Low-Rank Adaptation): only the **trainable LoRA adapter parameters** are sent and aggregated, so the communicated payload drops to roughly **~98 MB** per round. The base model stays fixed on each client; FedAvg is applied to the adapter weights only.
+
+- **Without `--lora`:** `sent updated weights, model size: 4651.45 MB`
+- **With `--lora`:** `sent model size: 98.00 MB`
+
+Use `--lora` when you want to reduce network transfer and speed up rounds. LoRA config (rank, alpha, target modules) matches the Qwen training script defaults; the client enables LoRA in the in-process training script automatically when `--lora` is set.
 
 ## Checkpoints and disk space
 
@@ -178,7 +188,7 @@ After each round the client sends the updated model weights back to the server; 
 ### Client errors and model size
 
 - **One site shows "(after error)" every round:** Training failed on that client (e.g. OOM, missing data, GPU). Check that site’s log (e.g. `.../site-1/log.txt`) for `Qwen SFT script failed:` and the exception message; the client also prints a short error hint next to `(after error)`.
-- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). On **error** the client first tries the current round checkpoint (if present), and otherwise sends the received global model unchanged.
+- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). With **`--lora`**, only LoRA adapter weights are exchanged (~98 MB sent/received). On **error** the client first tries the current round checkpoint (if present), and otherwise sends the received global model unchanged.
 
 ## Inference (before/after comparison)
 
@@ -235,9 +245,9 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 | 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
-| 5 | Run `python job.py` (optionally `--wandb`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
+| 5 | Run `python job.py` (optionally `--wandb`, `--lora`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
 
-Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`.
+Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`. Use `--lora` to exchange only adapter weights (~98 MB) instead of the full model (~4651 MB).
 
 ## References
 

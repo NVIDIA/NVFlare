@@ -19,20 +19,50 @@ Provides an nn.Module interface so the PT persistor can save/load state_dict.
 
 import glob
 import os
+from typing import Optional
 
 import torch
 import torch.nn as nn
 from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
 
 
-def load_state_dict_from_checkpoint(checkpoint_dir: str) -> dict:
+# LoRA config must match Qwen train_qwen.py (argument.py / train_qwen.py)
+DEFAULT_LORA_R = 64
+DEFAULT_LORA_ALPHA = 128
+DEFAULT_LORA_DROPOUT = 0.05
+DEFAULT_LORA_TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj"]
+
+
+def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False) -> dict:
     """Load state_dict from a HuggingFace-style checkpoint dir without loading the full model.
 
     Reads .safetensors (or pytorch_model.bin) so the client can send weights back to the server
     quickly and return to flare.receive(), avoiding cell_pipe send timeouts.
+
+    If lora_only=True, loads only adapter weights (adapter_model.safetensors if present,
+    otherwise filters full checkpoint to keys containing "lora").
     """
     checkpoint_dir = os.path.abspath(checkpoint_dir)
     state_dict = {}
+
+    if lora_only:
+        adapter_path = os.path.join(checkpoint_dir, "adapter_model.safetensors")
+        if os.path.isfile(adapter_path):
+            try:
+                from safetensors.torch import load_file
+
+                state_dict = load_file(adapter_path, device="cpu")
+                return state_dict
+            except Exception:
+                pass
+        # No adapter file: load full checkpoint and keep only LoRA keys
+        state_dict = load_state_dict_from_checkpoint(checkpoint_dir, lora_only=False)
+        state_dict = {k: v for k, v in state_dict.items() if "lora" in k.lower()}
+        if not state_dict:
+            raise FileNotFoundError(
+                f"No adapter_model.safetensors and no lora keys in {checkpoint_dir}"
+            )
+        return state_dict
 
     # Prefer safetensors (faster, no pickle)
     safetensor_files = sorted(glob.glob(os.path.join(checkpoint_dir, "*.safetensors")))
@@ -76,6 +106,14 @@ def load_qwen_vl_from_pretrained(model_name_or_path: str, **kwargs):
     return model_cls.from_pretrained(model_name_or_path, **kwargs)
 
 
+def _get_peft_adapter_state_dict(peft_model) -> dict:
+    """Return only the LoRA adapter state dict (trainable params) from a PEFT model."""
+    from peft import get_peft_model_state_dict
+
+    adapter_state = get_peft_model_state_dict(peft_model)
+    return adapter_state
+
+
 class Qwen3VLModel(nn.Module):
     """Qwen3-VL model wrapper for use as initial_model in FedAvgRecipe.
 
@@ -95,3 +133,44 @@ class Qwen3VLModel(nn.Module):
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
+
+
+class Qwen3VLLoRAModel(nn.Module):
+    """Initial model that exposes only LoRA adapter weights for FedAvg.
+
+    Used when --lora is set so the server and clients exchange only LoRA parameters
+    instead of the full model. state_dict() returns only adapter weights with "model."
+    prefix to match the wrapper format expected by the client.
+    """
+
+    def __init__(
+        self,
+        model_name_or_path: str = "Qwen/Qwen3-VL-2B-Instruct",
+        lora_r: int = DEFAULT_LORA_R,
+        lora_alpha: int = DEFAULT_LORA_ALPHA,
+        lora_dropout: float = DEFAULT_LORA_DROPOUT,
+        lora_target_modules: Optional[list] = None,
+        **kwargs,
+    ):
+        super().__init__()
+        from peft import LoraConfig, get_peft_model, TaskType
+
+        self.model_name_or_path = model_name_or_path
+        base = load_qwen_vl_from_pretrained(model_name_or_path, dtype=torch.bfloat16, **kwargs)
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=lora_target_modules or DEFAULT_LORA_TARGET_MODULES,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+        self.model = get_peft_model(base, lora_config)
+
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        """Return only LoRA adapter weights with "model." prefix for FL exchange."""
+        adapter = _get_peft_adapter_state_dict(self.model)
+        return {"model." + k: v for k, v in adapter.items()}

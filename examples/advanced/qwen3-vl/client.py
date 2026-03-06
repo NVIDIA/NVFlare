@@ -29,7 +29,15 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
-from model import Qwen3VLModel, load_state_dict_from_checkpoint
+from model import (
+    DEFAULT_LORA_ALPHA,
+    DEFAULT_LORA_DROPOUT,
+    DEFAULT_LORA_R,
+    DEFAULT_LORA_TARGET_MODULES,
+    Qwen3VLModel,
+    load_qwen_vl_from_pretrained,
+    load_state_dict_from_checkpoint,
+)
 from transformers import AutoProcessor
 
 import nvflare.client as flare
@@ -59,6 +67,52 @@ def _free_memory_after_send() -> None:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+
+def _save_lora_adapter_for_training(
+    lora_state_dict: dict,
+    save_dir: str,
+    base_model_name_or_path: str,
+) -> None:
+    """Build base + PEFT from LoRA state, save adapter to save_dir for train_qwen.py.
+
+    FL params use 'model.' prefix; we strip it when loading into PeftModel.
+    Ensures adapter_config.json has base_model_name_or_path so the training script
+    can load base + adapter from this dir.
+    """
+    from peft import LoraConfig, get_peft_model, TaskType
+
+    # Strip "model." prefix to match PeftModel state_dict key format
+    stripped = {}
+    for k, v in lora_state_dict.items():
+        if k.startswith("model."):
+            stripped[k[6:]] = v
+        else:
+            stripped[k] = v
+
+    base = load_qwen_vl_from_pretrained(base_model_name_or_path, dtype=torch.bfloat16)
+    lora_config = LoraConfig(
+        r=DEFAULT_LORA_R,
+        lora_alpha=DEFAULT_LORA_ALPHA,
+        lora_dropout=DEFAULT_LORA_DROPOUT,
+        target_modules=DEFAULT_LORA_TARGET_MODULES,
+        bias="none",
+        task_type=TaskType.CAUSAL_LM,
+    )
+    peft_model = get_peft_model(base, lora_config)
+    peft_model.load_state_dict(stripped, strict=False)
+    os.makedirs(save_dir, exist_ok=True)
+    peft_model.save_pretrained(save_dir)
+    # Ensure training script can load base from HF when it sees adapter_config in this dir
+    import json
+
+    adapter_config_path = os.path.join(save_dir, "adapter_config.json")
+    if os.path.isfile(adapter_config_path):
+        with open(adapter_config_path, "r") as f:
+            config = json.load(f)
+        config["base_model_name_or_path"] = base_model_name_or_path
+        with open(adapter_config_path, "w") as f:
+            json.dump(config, f, indent=2)
 
 
 def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:
@@ -139,6 +193,7 @@ def train(
     num_train_epochs: int,
     learning_rate: str,
     report_to: str,
+    lora_enable: bool = False,
     keep_process_group: bool = False,
 ) -> None:
     """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
@@ -155,31 +210,34 @@ def train(
     train_limit = (
         ["--max_steps", str(max_steps)] if max_steps is not None else ["--num_train_epochs", str(num_train_epochs)]
     )
+    base_args = [
+        "--data_flatten",
+        "True",
+        "--tune_mm_mlp",
+        "True",
+        "--tune_mm_llm",
+        "True",
+        "--bf16",
+        "--per_device_train_batch_size",
+        "8",
+        "--gradient_accumulation_steps",
+        "2",
+        "--learning_rate",
+        learning_rate,
+        "--save_strategy",
+        "no",
+        "--report_to",
+        report_to,
+        "--ddp_find_unused_parameters",
+        "False",
+    ]
+    if lora_enable:
+        base_args.extend(["--lora_enable", "True"])
     argv = (
         ["train_qwen.py", "--model_name_or_path", input_model_dir, "--output_dir", output_model_dir]
         + ["--dataset_use", dataset_use]
         + train_limit
-        + [
-            "--data_flatten",
-            "True",
-            "--tune_mm_mlp",
-            "True",
-            "--tune_mm_llm",
-            "True",
-            "--bf16",
-            "--per_device_train_batch_size",
-            "8",
-            "--gradient_accumulation_steps",
-            "2",
-            "--learning_rate",
-            learning_rate,
-            "--save_strategy",
-            "no",
-            "--report_to",
-            report_to,
-            "--ddp_find_unused_parameters",
-            "False",
-        ]
+        + base_args
     )
     pg_was_initialized = torch.distributed.is_initialized()
     old_argv = sys.argv
@@ -240,6 +298,11 @@ def main():
         default="none",
         help='Trainer reporting backend for train_qwen.py (e.g. "none", "wandb", "tensorboard").',
     )
+    parser.add_argument(
+        "--lora_exchange",
+        action="store_true",
+        help="Exchange only LoRA adapter weights (set by job when --lora); smaller payloads.",
+    )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
 
@@ -291,7 +354,8 @@ def main():
     image_root = _abs_path(args.image_root) if args.image_root else _abs_path("PubMedVision")
     os.environ["PUBMEDVISION_IMAGE_ROOT"] = image_root
 
-    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if rank == 0 else None
+    lora_exchange = getattr(args, "lora_exchange", False)
+    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if (rank == 0 and not lora_exchange) else None
 
     while _is_running_from_rank0(rank, world_size):
         input_model = None
@@ -307,15 +371,24 @@ def main():
                 received_mb = _params_size_mb(input_model.params)
                 print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
 
-                # Save received global model to HF format for train_qwen.py
                 os.makedirs(input_model_dir, exist_ok=True)
-                model.load_state_dict(input_model.params, strict=False)
-
-                processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                tokenizer = getattr(processor, "tokenizer", processor)
-                _align_model_config_to_tokenizer(model.model, tokenizer)
-                model.model.save_pretrained(input_model_dir)
-                processor.save_pretrained(input_model_dir)
+                if lora_exchange:
+                    # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter
+                    _save_lora_adapter_for_training(
+                        input_model.params,
+                        input_model_dir,
+                        args.model_name_or_path,
+                    )
+                    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                    processor.save_pretrained(input_model_dir)
+                else:
+                    # Full model: save received global model to HF format for train_qwen.py
+                    model.load_state_dict(input_model.params, strict=False)
+                    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                    tokenizer = getattr(processor, "tokenizer", processor)
+                    _align_model_config_to_tokenizer(model.model, tokenizer)
+                    model.model.save_pretrained(input_model_dir)
+                    processor.save_pretrained(input_model_dir)
 
                 # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
                 if os.path.isdir(output_model_dir):
@@ -342,6 +415,7 @@ def main():
                 num_train_epochs=args.num_train_epochs,
                 learning_rate=args.learning_rate,
                 report_to=args.report_to,
+                lora_enable=lora_exchange,
                 keep_process_group=_is_multi_rank(world_size),
             )
         except Exception as e:
@@ -355,7 +429,9 @@ def main():
                 params = input_model.params
                 raw = None
                 try:
-                    raw = load_state_dict_from_checkpoint(output_model_dir)
+                    raw = load_state_dict_from_checkpoint(
+                        output_model_dir, lora_only=lora_exchange
+                    )
                     params = {"model." + k: v for k, v in raw.items()}
                 except Exception:
                     pass
@@ -379,9 +455,11 @@ def main():
             continue
 
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
-        # Checkpoint has inner model keys; prefix with "model." to match wrapper state_dict format.
+        # When lora_exchange, load only adapter weights to keep payload small.
         if rank == 0:
-            raw = load_state_dict_from_checkpoint(output_model_dir)
+            raw = load_state_dict_from_checkpoint(
+                output_model_dir, lora_only=lora_exchange
+            )
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
