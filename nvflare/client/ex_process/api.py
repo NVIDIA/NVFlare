@@ -34,6 +34,28 @@ from nvflare.fuel.utils.log_utils import apply_log_config, get_obj_logger
 from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.pipe.pipe import Pipe
 
+_ROTATING_HANDLER_CLASSES = {
+    "logging.handlers.RotatingFileHandler",
+    "logging.handlers.TimedRotatingFileHandler",
+}
+_ROTATING_ONLY_KEYS = {"maxBytes", "backupCount", "when", "interval", "utc", "atTime"}
+
+
+def _downgrade_rotating_handlers(dict_config: dict) -> None:
+    """Replace rotating file handlers with plain FileHandler in subprocess log config.
+
+    Both the CJ and the subprocess write to the same log files.  Only the CJ
+    should trigger rotation; RotatingFileHandler is not process-safe and two
+    processes rotating the same file concurrently can corrupt it.  The subprocess
+    uses plain FileHandler (append-only, no rotation) so the CJ remains the sole
+    rotation manager.
+    """
+    for handler_cfg in dict_config.get("handlers", {}).values():
+        if handler_cfg.get("class") in _ROTATING_HANDLER_CLASSES:
+            handler_cfg["class"] = "logging.FileHandler"
+            for key in _ROTATING_ONLY_KEYS:
+                handler_cfg.pop(key, None)
+
 
 def _create_client_config(config: str) -> ClientConfig:
     if isinstance(config, str):
@@ -100,10 +122,12 @@ class ExProcessClientAPI(APISpec):
 
         Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
         .yml, .default) are found automatically — the hardcoded `.json` suffix is
-        not assumed.  Only consoleHandler is kept on every logger (root and named)
-        so logs flow through SubprocessLauncher's stdout capture to the parent's
-        log files.  Enabling file handlers in both parent and subprocess would
-        produce duplicate writes to the same rotating log files.
+        not assumed.  RotatingFileHandler entries in the config are downgraded to
+        plain FileHandler before applying: both the CJ and the subprocess share the
+        same log files, and only the CJ should trigger rotation (RotatingFileHandler
+        is not process-safe).  consoleHandler output reaches stdout, where
+        SubprocessLauncher routes it to the terminal or wraps it with logger.info()
+        for raw print() lines from user training scripts.
         """
         try:
             task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
@@ -118,19 +142,7 @@ class ExProcessClientAPI(APISpec):
                 return
 
             dict_config = conf.to_dict()
-            # Keep only consoleHandler on every logger (root and named) — subprocess
-            # stdout is captured by SubprocessLauncher and re-logged by the parent.
-            # Leaving file handlers active in both parent and subprocess produces
-            # duplicate writes to the same rotating log files.
-            # Strip from both locations the root logger can appear:
-            #   dict_config["loggers"]["root"]  — NVFlare's log_config.json layout
-            #   dict_config["root"]             — standard Python dictConfig schema
-            for logger_cfg in dict_config.get("loggers", {}).values():
-                if "handlers" in logger_cfg:
-                    logger_cfg["handlers"] = [h for h in logger_cfg["handlers"] if h == "consoleHandler"]
-            root_cfg = dict_config.get("root", {})
-            if "handlers" in root_cfg:
-                root_cfg["handlers"] = [h for h in root_cfg["handlers"] if h == "consoleHandler"]
+            _downgrade_rotating_handlers(dict_config)
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
             # Logging setup failure must never crash the training script.

@@ -57,6 +57,7 @@ from unittest.mock import MagicMock, patch
 
 from nvflare.client.flare_agent import FlareAgent, _TaskContext
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import _tls, clear_download_initiated
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -120,6 +121,9 @@ class TestDoSubmitResultGating:
     def _patch_shareable(self, agent):
         agent.task_result_to_shareable = MagicMock(return_value=MagicMock())
 
+    def setup_method(self):
+        clear_download_initiated()
+
     def test_download_complete_cb_registered_before_send(self):
         """DOWNLOAD_COMPLETE_CB must be in cell FOBS context before send_to_peer() is called."""
         pipe = _make_cell_pipe(pass_through_on_send=True)
@@ -137,6 +141,8 @@ class TestDoSubmitResultGating:
                     and props[FOBSContextKey.DOWNLOAD_COMPLETE_CB] is not None
                 ):
                     registered_before_send["cb"] = props[FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+            # Simulate _finalize_download_tx() setting the flag (tensors in result)
+            _tls.download_initiated = True
             # Fire the callback to unblock the wait
             if registered_before_send.get("cb"):
                 registered_before_send["cb"]("tid", "FINISHED", [])
@@ -166,6 +172,8 @@ class TestDoSubmitResultGating:
                     and props[FOBSContextKey.DOWNLOAD_COMPLETE_CB] is not None
                 ):
                     registered_cb["cb"] = props[FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+            # Simulate _finalize_download_tx() setting the flag (tensors in result)
+            _tls.download_initiated = True
 
             def _fire():
                 if registered_cb.get("cb"):
@@ -189,7 +197,14 @@ class TestDoSubmitResultGating:
         pipe = _make_cell_pipe(pass_through_on_send=True)
         agent = _make_agent(pipe, download_complete_timeout=0.05)  # very short timeout
         self._patch_shareable(agent)
-        # send_to_peer succeeds but callback never fires
+
+        # Simulate _finalize_download_tx() setting the flag (tensors in result)
+        # so the agent enters the wait path instead of returning immediately.
+        def _set_tls_on_send(reply, timeout):
+            _tls.download_initiated = True
+            return True
+
+        agent.pipe_handler.send_to_peer.side_effect = _set_tls_on_send
 
         result = agent._do_submit_result(_make_task_ctx(), None, "OK")
 
@@ -252,6 +267,13 @@ class TestDoSubmitResultGating:
         agent = _make_agent(pipe, download_complete_timeout=0.05)
         self._patch_shareable(agent)
 
+        # Simulate _finalize_download_tx() setting the flag so agent enters the wait path.
+        def _set_tls_on_send(reply, timeout):
+            _tls.download_initiated = True
+            return True
+
+        agent.pipe_handler.send_to_peer.side_effect = _set_tls_on_send
+
         agent._do_submit_result(_make_task_ctx(), None, "OK")
 
         # The last update_fobs_context call must clear DOWNLOAD_COMPLETE_CB
@@ -293,10 +315,7 @@ class TestCreateDownloaderCallback:
         sentinel_cb = MagicMock()
         fobs_ctx = self._make_fobs_ctx(cb=sentinel_cb)
 
-        with (
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.ObjectDownloader") as MockOD,
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.subscribe_to_msg_root"),
-        ):
+        with (patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.ObjectDownloader") as MockOD,):
             MockOD.return_value = MagicMock()
             self._make_decomposer()._create_downloader(fobs_ctx)
 
@@ -310,10 +329,7 @@ class TestCreateDownloaderCallback:
         """Without DOWNLOAD_COMPLETE_CB in fobs_ctx, transaction_done_cb=None."""
         fobs_ctx = self._make_fobs_ctx(cb=None)
 
-        with (
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.ObjectDownloader") as MockOD,
-            patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.subscribe_to_msg_root"),
-        ):
+        with (patch("nvflare.fuel.utils.fobs.decomposers.via_downloader.ObjectDownloader") as MockOD,):
             MockOD.return_value = MagicMock()
             self._make_decomposer()._create_downloader(fobs_ctx)
 
@@ -432,6 +448,9 @@ class TestDownloadStatusLogging:
     def _patch_shareable(self, agent):
         agent.task_result_to_shareable = MagicMock(return_value=MagicMock())
 
+    def setup_method(self):
+        clear_download_initiated()
+
     def _run_with_status(self, status: str, timeout: float = 5.0):
         """Helper: run _do_submit_result and fire callback with given status."""
         pipe = _make_cell_pipe(pass_through_on_send=True)
@@ -448,6 +467,8 @@ class TestDownloadStatusLogging:
                     and props[FOBSContextKey.DOWNLOAD_COMPLETE_CB] is not None
                 ):
                     registered_cb["cb"] = props[FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+            # Simulate _finalize_download_tx() setting the flag (tensors in result)
+            _tls.download_initiated = True
             if registered_cb.get("cb"):
                 registered_cb["cb"]("tid", status, [])
             return True
