@@ -119,7 +119,6 @@ def main():
     n_clients = args.n_clients
     data_dir = os.path.abspath(args.data_dir)
     image_root = os.path.abspath(args.image_root)
-    qwen_root = os.environ.get("QWEN3VL_ROOT", "")
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
     # Per-client process count: from --gpu when set (e.g. "[0,1,2,3]" -> 4), else nproc_per_client
@@ -150,9 +149,7 @@ def main():
         )
         if args.lora:
             train_args += " --lora_exchange"
-        if qwen_root:
-            train_args = f"--qwen_root {qwen_root} " + train_args
-        # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
+        # Per-site torchrun for distributed training (unique master_port per client)
         master_port = 29500 + (idx + 1)
         command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
         per_site_config[site_name] = {"train_args": train_args, "command": command}

@@ -13,10 +13,9 @@
 # limitations under the License.
 """
 Client script for federated Qwen3-VL fine-tuning. Launched by NVFlare as an external process
-(via torchrun from the job command). Receives global model, saves to a dir, runs Qwen train_qwen
-in-process, then loads the checkpoint and sends updated weights back.
-Requires QWEN3VL_ROOT and (for site data) a "fl_site" dataset entry in the Qwen repo's data_list
-that reads FL_SITE_DATA_DIR (see README).
+(via torchrun from the job command). Receives global model, saves to a dir, runs the vendored
+Qwen-style training (qwenvl.train) in-process, then loads the checkpoint and sends updated
+weights back. Uses FL_SITE_DATA_DIR and PUBMEDVISION_IMAGE_ROOT for site data (see README).
 """
 
 import argparse
@@ -185,7 +184,6 @@ def _collect_first_error(local_error: Optional[str], world_size: int) -> Optiona
 
 
 def train(
-    finetune_dir: str,
     input_model_dir: str,
     output_model_dir: str,
     dataset_use: str,
@@ -196,17 +194,8 @@ def train(
     lora_enable: bool = False,
     keep_process_group: bool = False,
 ) -> None:
-    """Run Qwen3-VL train_qwen.train() in-process; tear down process group on exit."""
-    # train_qwen.train() only reads from sys.argv via HfArgumentParser.parse_args_into_dataclasses()
-    # and does not accept training args as parameters, so we set sys.argv before calling it.
-    # Ensure Qwen finetune package is importable (train_qwen uses "from trainer import ...")
-    finetune_dir = os.path.abspath(finetune_dir)
-    if finetune_dir not in sys.path:
-        sys.path.insert(0, finetune_dir)
-    train_dir = os.path.join(finetune_dir, "qwenvl", "train")
-    if train_dir not in sys.path:
-        sys.path.insert(0, train_dir)
-
+    """Run vendored qwenvl.train.train_qwen in-process; tear down process group on exit."""
+    # train_qwen.train() reads sys.argv via HfArgumentParser; set it before calling.
     train_limit = (
         ["--max_steps", str(max_steps)] if max_steps is not None else ["--num_train_epochs", str(num_train_epochs)]
     )
@@ -243,9 +232,9 @@ def train(
     old_argv = sys.argv
     sys.argv = argv
     try:
-        from qwenvl.train import train_qwen
+        from qwenvl.train import train_qwen as train_qwen_module
 
-        train_qwen.train(attn_implementation="flash_attention_2")
+        train_qwen_module.train(attn_implementation="flash_attention_2")
     finally:
         sys.argv = old_argv
         if torch.distributed.is_initialized() and not keep_process_group and not pg_was_initialized:
@@ -261,7 +250,6 @@ def main():
         default=None,
         help="Root for image paths (folder containing images/). Sets PUBMEDVISION_IMAGE_ROOT for fl_site. Default: PubMedVision.",
     )
-    parser.add_argument("--qwen_root", type=str, default=None, help="Qwen3-VL repo root (or set QWEN3VL_ROOT)")
     parser.add_argument(
         "--dataset_use",
         type=str,
@@ -312,16 +300,10 @@ def main():
 
     signal.signal(signal.SIGTERM, _sigterm_handler)
 
-    qwen_root = args.qwen_root or os.environ.get("QWEN3VL_ROOT", "")
-    if not qwen_root or not os.path.isdir(qwen_root):
-        print("Set QWEN3VL_ROOT or pass --qwen_root to the Qwen3-VL repo.", file=sys.stderr)
-        sys.exit(1)
-    qwen_root = _abs_path(qwen_root)
-    finetune_dir = os.path.join(qwen_root, "qwen-vl-finetune")
-    train_script = os.path.join(finetune_dir, "qwenvl", "train", "train_qwen.py")
-    if not os.path.isfile(train_script):
-        print(f"Train script not found: {train_script}", file=sys.stderr)
-        sys.exit(1)
+    # Ensure this example dir is on path so vendored qwenvl is importable
+    _example_dir = os.path.dirname(os.path.abspath(__file__))
+    if _example_dir not in sys.path:
+        sys.path.insert(0, _example_dir)
 
     data_path = _abs_path(args.data_path)
     json_path = os.path.join(data_path, "train.json")
@@ -348,9 +330,8 @@ def main():
     input_model_dir = os.path.join(work_dir, "input_model")
     output_model_dir = os.path.join(work_dir, "output")
 
-    # So that Qwen data_list and imports can resolve paths (in-process training reads os.environ)
+    # Vendored qwenvl data_list reads these for fl_site dataset
     os.environ["FL_SITE_DATA_DIR"] = data_path
-    os.environ["QWEN_FINETUNE_DIR"] = finetune_dir
     image_root = _abs_path(args.image_root) if args.image_root else _abs_path("PubMedVision")
     os.environ["PUBMEDVISION_IMAGE_ROOT"] = image_root
 
@@ -407,7 +388,6 @@ def main():
         local_error = None
         try:
             train(
-                finetune_dir=finetune_dir,
                 input_model_dir=input_model_dir,
                 output_model_dir=output_model_dir,
                 dataset_use=args.dataset_use,
