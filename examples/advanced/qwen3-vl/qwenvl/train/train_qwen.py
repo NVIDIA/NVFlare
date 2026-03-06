@@ -152,7 +152,15 @@ def train(attn_implementation="flash_attention_2"):
             attn_implementation,
             training_args.bf16,
         )
+        base_model.config.use_cache = False
+        if hasattr(base_model, "enable_input_require_grads"):
+            base_model.enable_input_require_grads()
         model = PeftModel.from_pretrained(base_model, model_args.model_name_or_path)
+        model.train()
+        # Ensure adapter params are trainable (same as Qwen3-VL --lora_enable: only LoRA is trainable)
+        for name, param in model.named_parameters():
+            if "lora" in name.lower():
+                param.requires_grad = True
         model_loaded_as_peft = True
         rank0_print(f"Loaded base from {base_model_name_or_path} + adapter from {model_args.model_name_or_path}")
     else:
@@ -198,25 +206,33 @@ def train(attn_implementation="flash_attention_2"):
         from peft import LoraConfig, TaskType, get_peft_model
 
         print("LoRA enabled")
-
         for p in model.parameters():
             p.requires_grad = False
-
         lora_config = LoraConfig(
             r=training_args.lora_r or 64,
             lora_alpha=training_args.lora_alpha or 128,
             lora_dropout=training_args.lora_dropout or 0.05,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen 的 attention 线性层
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen attention
             bias="none",
             task_type=TaskType.CAUSAL_LM,
         )
         model = get_peft_model(model, lora_config)
+        model.train()
+        if torch.distributed.get_rank() == 0:
+            model.print_trainable_parameters()
     else:
         set_model(model_args, model)
 
         if torch.distributed.get_rank() == 0:
             model.visual.print_trainable_parameters()
             model.model.print_trainable_parameters()
+
+    # Disable gradient checkpointing for PeftModel to avoid "element 0 of tensors does not require grad"
+    from peft import PeftModel
+
+    if isinstance(model, PeftModel) and training_args.gradient_checkpointing:
+        rank0_print("Disabling gradient_checkpointing for PeftModel to avoid backward grad_fn errors.")
+        training_args.gradient_checkpointing = False
 
     data_module = make_supervised_data_module(processor, data_args=data_args)
     trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)

@@ -232,9 +232,9 @@ def train(
     old_argv = sys.argv
     sys.argv = argv
     try:
-        from qwenvl.train import train_qwen as train_qwen_module
+        from qwenvl.train import train_qwen as train_qwen_fn
 
-        train_qwen_module.train(attn_implementation="flash_attention_2")
+        train_qwen_fn(attn_implementation="flash_attention_2")
     finally:
         sys.argv = old_argv
         if torch.distributed.is_initialized() and not keep_process_group and not pg_was_initialized:

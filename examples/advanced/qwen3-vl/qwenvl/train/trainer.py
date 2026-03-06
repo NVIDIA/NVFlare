@@ -259,6 +259,37 @@ def print_trainable_parameters(self) -> None:
 
 
 def create_optimizer(self):
+    # PeftModel (e.g. LoRA): build optimizer with only trainable params to avoid
+    # "element 0 of tensors does not require grad" (HF default can include frozen base params).
+    try:
+        from peft import PeftModel
+
+        if isinstance(self.model, PeftModel):
+            opt_model = self.model
+            if self.optimizer is None:
+                decay_parameters = self.get_decay_parameter_names(opt_model)
+                decay_parameters = [name for name in decay_parameters if "bias" not in name]
+                optimizer_grouped_parameters = [
+                    {
+                        "params": [
+                            p for n, p in opt_model.named_parameters() if n in decay_parameters and p.requires_grad
+                        ],
+                        "weight_decay": self.args.weight_decay,
+                    },
+                    {
+                        "params": [
+                            p for n, p in opt_model.named_parameters() if n not in decay_parameters and p.requires_grad
+                        ],
+                        "weight_decay": 0.0,
+                    },
+                ]
+                # Drop empty groups so optimizer never sees params that don't require grad
+                optimizer_grouped_parameters = [g for g in optimizer_grouped_parameters if g["params"]]
+                optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
+                self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
+            return self.optimizer
+    except ImportError:
+        pass
 
     opt_model = self.model
 
@@ -402,7 +433,8 @@ def create_optimizer(self):
     return self.optimizer
 
 
-# Apply monkey patches
+# Apply monkey patches (keep reference to original for PeftModel delegation)
+_original_create_optimizer = Trainer.create_optimizer
 Trainer.create_optimizer = create_optimizer
 
 Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
