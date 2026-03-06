@@ -23,6 +23,7 @@ Example:
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -51,7 +52,7 @@ def main():
             continue
         if excluded:
             # Extract the package specifier before any inline comment for exclude matching
-            spec = stripped.split(" #")[0].strip()
+            spec = re.split(r"\s+#", stripped)[0].strip()
             if any(spec.lower().startswith(ex) for ex in excluded):
                 continue
         filtered.append(line)
