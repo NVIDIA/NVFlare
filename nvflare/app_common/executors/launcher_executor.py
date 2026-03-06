@@ -128,6 +128,15 @@ class LauncherExecutor(TaskExchanger):
         # Default 0 preserves the original synchronous behaviour.
         self._stop_task_wait_timeout: float = 0.0
 
+        # Coordinates deferred stop_task() with the next round's launch_task().
+        # Starts "set" (no deferred stop in progress). Cleared when a deferred stop
+        # thread starts; set again (in a finally block) when that thread completes.
+        # _initialize_external_execution() waits on this before calling launch_task()
+        # so that the launcher's internal _process reference is cleared before a new
+        # subprocess is started (prevents "run status becomes success" in round N+1).
+        self._deferred_stop_event = threading.Event()
+        self._deferred_stop_event.set()
+
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
         self._init_converter(fl_ctx)
@@ -230,6 +239,28 @@ class LauncherExecutor(TaskExchanger):
             self._abort_signal = abort_signal
             self._current_task = task_name
 
+        # Wait for any deferred stop_task() from the previous round to finish before
+        # calling launch_task(). Without this, launch_once=False launchers see
+        # self._process != None (old exited process not yet cleared) and skip
+        # creating a new subprocess, causing immediate COMPLETE_SUCCESS / "run status
+        # becomes success" errors. The deferred thread runs at most _stop_task_wait_timeout
+        # seconds, so the extra wait here is bounded. In practice it is ~0-1 s because
+        # the subprocess exits naturally (after download_done) well before the server
+        # completes global aggregation and dispatches the next round's task.
+        if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
+            wait_limit = self._stop_task_wait_timeout + 60.0
+            if not self._deferred_stop_event.wait(timeout=wait_limit):
+                # Timed out: deferred stop did not finish. Force stop now so the
+                # launcher clears self._process before we try to start a new subprocess.
+                self.log_warning(
+                    fl_ctx,
+                    f"Timed out waiting for deferred stop_task to finish after {wait_limit}s; "
+                    f"forcing stop_task({task_name}) now.",
+                )
+                self._execute_launcher_method_in_thread_executor(
+                    method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
+                )
+
         launch_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="launch_task",
             task_name=task_name,
@@ -326,26 +357,34 @@ class LauncherExecutor(TaskExchanger):
             # exits naturally (download done → subprocess unblocks and exits), then cleans up.
             # execute() returns immediately so ClientRunner can send SubmitUpdate to the server
             # while the subprocess cell is still alive.
+            #
+            # _deferred_stop_event is cleared here and set in a finally block inside the thread,
+            # so _initialize_external_execution() for the next round can safely wait for this
+            # cleanup to finish before calling launch_task().
             wait_timeout = self._stop_task_wait_timeout
+            self._deferred_stop_event.clear()
 
             def _deferred_stop_task():
-                deadline = time.time() + wait_timeout
-                while time.time() < deadline:
-                    if self._job_end or abort_signal.triggered:
-                        break
-                    try:
-                        status = self.launcher.check_run_status(task_name, fl_ctx)
-                    except Exception:
-                        break
-                    if status != LauncherRunStatus.RUNNING:
-                        break
-                    time.sleep(1.0)
-                self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")
                 try:
-                    self.launcher.stop_task(task_name, fl_ctx, abort_signal)
-                except Exception as e:
-                    self.log_warning(fl_ctx, f"Deferred stop_task ({task_name}) failed: {e}")
-                self.log_info(fl_ctx, f"External execution for task ({task_name}) is finished [deferred].")
+                    deadline = time.time() + wait_timeout
+                    while time.time() < deadline:
+                        if self._job_end or abort_signal.triggered:
+                            break
+                        try:
+                            status = self.launcher.check_run_status(task_name, fl_ctx)
+                        except Exception:
+                            break
+                        if status != LauncherRunStatus.RUNNING:
+                            break
+                        time.sleep(1.0)
+                    self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")
+                    try:
+                        self.launcher.stop_task(task_name, fl_ctx, abort_signal)
+                    except Exception as e:
+                        self.log_warning(fl_ctx, f"Deferred stop_task ({task_name}) failed: {e}")
+                    self.log_info(fl_ctx, f"External execution for task ({task_name}) is finished [deferred].")
+                finally:
+                    self._deferred_stop_event.set()
 
             threading.Thread(target=_deferred_stop_task, daemon=True, name=f"deferred-stop-{task_name}").start()
             return True
