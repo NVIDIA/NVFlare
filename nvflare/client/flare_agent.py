@@ -27,6 +27,7 @@ from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import clear_download_initiated, was_download_initiated
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -356,6 +357,11 @@ class FlareAgent:
         # this subprocess's DownloadService.  Registering DOWNLOAD_COMPLETE_CB before
         # serialisation ensures _create_downloader() wires it as the transaction_done_cb,
         # so the event is set exactly when the last receiver finishes downloading.
+        #
+        # For validate results (metrics only, no tensors), _finalize_download_tx() creates
+        # no download transaction and never fires DOWNLOAD_COMPLETE_CB.  We detect this via
+        # was_download_initiated() (thread-local set by _finalize_download_tx()) and return
+        # immediately without waiting — fixing the 1800s hang on CSE round 2+ (RC12 Bug 3).
         if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
             download_done = threading.Event()
             download_status = [None]
@@ -370,12 +376,27 @@ class FlareAgent:
             # to finish pulling tensors.  submit_result_timeout is the CJ-ACK timeout and is
             # unrelated to transfer duration — using it here would kill the transaction too early.
             reply._dl_ttl = self._download_complete_timeout
+            # Reset thread-local so a stale True from a previous training round does not
+            # carry over to the current validate round (no tensors → False expected).
+            clear_download_initiated()
             try:
                 send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
                 if not sent:
                     return False
                 send_elapsed = time.time() - send_start
+
+                # _finalize_download_tx() runs synchronously inside send_to_peer().
+                # was_download_initiated() is True iff it created a download transaction
+                # (i.e. the result contained large tensors requiring via-downloader transfer).
+                # False means validate result (metrics only) — proceed immediately.
+                if not was_download_initiated():
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        "no tensors in result — proceeding immediately"
+                    )
+                    return True
+
                 self.logger.info(
                     f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
                     f"waiting up to {self._download_complete_timeout}s for server tensor download"
