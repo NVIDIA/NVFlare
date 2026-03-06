@@ -138,6 +138,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._download_complete_timeout = download_complete_timeout
         self._cj_round_count = 0
 
+        # Allow the subprocess to exit naturally after Fix 16's download_done.wait()
+        # before stop_task() sends SIGTERM.  Without this, _finalize_external_execution()
+        # kills the subprocess immediately, tearing down its cell connection before the
+        # server can download tensors from it ("no path" / deadlock).
+        self._stop_task_wait_timeout = download_complete_timeout
+
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
         # PASS_THROUGH (reverse path only):

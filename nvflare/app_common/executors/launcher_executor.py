@@ -121,6 +121,13 @@ class LauncherExecutor(TaskExchanger):
         self._current_task = None
         self._lock = Lock()
 
+        # Subclasses can set this to a positive float to defer stop_task() to a
+        # background thread, polling for the subprocess to exit naturally first.
+        # This is required when the subprocess holds a DownloadService transaction
+        # that the server must pull (reverse PASS_THROUGH / large-model upload).
+        # Default 0 preserves the original synchronous behaviour.
+        self._stop_task_wait_timeout: float = 0.0
+
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
         self._init_converter(fl_ctx)
@@ -308,6 +315,40 @@ class LauncherExecutor(TaskExchanger):
         )
         if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_debug(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
+
+        if self._stop_task_wait_timeout > 0 and not self._job_end:
+            # The subprocess may be blocking in download_done.wait() (Fix 16 / DOWNLOAD_COMPLETE_CB)
+            # so the server can pull large tensors directly from its DownloadService.
+            # Calling stop_task() here would send SIGTERM and tear down the subprocess cell
+            # before the server connects, causing "no path" errors on every retry.
+            #
+            # Instead, defer stop_task() to a background thread that polls until the subprocess
+            # exits naturally (download done → subprocess unblocks and exits), then cleans up.
+            # execute() returns immediately so ClientRunner can send SubmitUpdate to the server
+            # while the subprocess cell is still alive.
+            wait_timeout = self._stop_task_wait_timeout
+
+            def _deferred_stop_task():
+                deadline = time.time() + wait_timeout
+                while time.time() < deadline:
+                    if self._job_end or abort_signal.triggered:
+                        break
+                    try:
+                        status = self.launcher.check_run_status(task_name, fl_ctx)
+                    except Exception:
+                        break
+                    if status != LauncherRunStatus.RUNNING:
+                        break
+                    time.sleep(1.0)
+                self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")
+                try:
+                    self.launcher.stop_task(task_name, fl_ctx, abort_signal)
+                except Exception as e:
+                    self.log_warning(fl_ctx, f"Deferred stop_task ({task_name}) failed: {e}")
+                self.log_info(fl_ctx, f"External execution for task ({task_name}) is finished [deferred].")
+
+            threading.Thread(target=_deferred_stop_task, daemon=True, name=f"deferred-stop-{task_name}").start()
+            return True
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
         stop_task_success = self._execute_launcher_method_in_thread_executor(
