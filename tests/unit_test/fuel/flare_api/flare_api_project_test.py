@@ -75,4 +75,3 @@ def test_new_secure_session_forwards_project():
         new_secure_session("admin@nvidia.com", "/tmp/kit", project="cancer-research")
         _, kwargs = mock_new_session.call_args
         assert kwargs["project"] == "cancer-research"
-
