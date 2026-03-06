@@ -156,9 +156,23 @@ def main():
 
     # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
     # sending results (when unset, framework uses communication_timeout default 300s).
+    # tensor_min_download_timeout must be >= tensor_streaming_per_request_timeout (default 600s)
+    # to avoid transactions being killed mid-download.
     recipe.add_client_config(
-        {"get_task_timeout": 1200, "submit_task_result_timeout": 1200},
+        {
+            "get_task_timeout": 1200,
+            "submit_task_result_timeout": 1200,
+            "tensor_min_download_timeout": 600,
+        },
         clients=client_names,
+    )
+
+    # Server tensor streaming: align timeouts so downloads are not killed mid-stream.
+    recipe.add_server_config(
+        {
+            "streaming_per_request_timeout": 600,
+            "tensor_min_download_timeout": 600,
+        }
     )
 
     # Optional: add experiment tracking with Weights & Biases

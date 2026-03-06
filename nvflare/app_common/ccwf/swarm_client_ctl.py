@@ -30,6 +30,10 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    apply_enable_tensor_disk_offload,
+    restore_enable_tensor_disk_offload,
+)
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -290,6 +294,7 @@ class SwarmClientController(ClientSideController):
         request_to_submit_result_msg_timeout=5.0,
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
+        enable_tensor_disk_offload: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -318,6 +323,8 @@ class SwarmClientController(ClientSideController):
                 Since submission req is a tiny message, this timeout value should be small.
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
+            enable_tensor_disk_offload: download tensors to disk during FOBS streaming instead of into memory.
+                Reduces peak memory during aggregation. Aggregators must handle lazy refs.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on
@@ -377,6 +384,8 @@ class SwarmClientController(ClientSideController):
         self.is_trainer = False
         self.is_aggr = False
         self.last_aggr_round_done = -1
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self._previous_enable_tensor_disk_offload = None
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -408,6 +417,16 @@ class SwarmClientController(ClientSideController):
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
+        self._previous_enable_tensor_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
+            engine=self.engine,
+            enabled=self.enable_tensor_disk_offload,
+        )
+        if self.enable_tensor_disk_offload and not disk_offload_applied:
+            self.log_warning(
+                fl_ctx,
+                "enable_tensor_disk_offload=True but no active cell is available; "
+                "falling back to in-memory tensor download",
+            )
         self.aggregator = self.engine.get_component(self.aggregator_id)
         if not isinstance(self.aggregator, Aggregator):
             self.system_panic(
@@ -433,6 +452,15 @@ class SwarmClientController(ClientSideController):
         aggr_thread.daemon = True
         aggr_thread.start()
         self.log_debug(fl_ctx, "started aggregator thread")
+
+    def finalize(self, fl_ctx: FLContext):
+        try:
+            restore_enable_tensor_disk_offload(self.engine, self._previous_enable_tensor_disk_offload)
+        except Exception:
+            self.log_warning(fl_ctx, f"failed to restore enable_tensor_disk_offload: {secure_format_traceback()}")
+        finally:
+            self._previous_enable_tensor_disk_offload = None
+        super().finalize(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
