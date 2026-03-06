@@ -25,7 +25,6 @@ import torch
 import torch.nn as nn
 from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
 
-
 # LoRA config must match Qwen train_qwen.py (argument.py / train_qwen.py)
 DEFAULT_LORA_R = 64
 DEFAULT_LORA_ALPHA = 128
@@ -59,9 +58,7 @@ def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False
         state_dict = load_state_dict_from_checkpoint(checkpoint_dir, lora_only=False)
         state_dict = {k: v for k, v in state_dict.items() if "lora" in k.lower()}
         if not state_dict:
-            raise FileNotFoundError(
-                f"No adapter_model.safetensors and no lora keys in {checkpoint_dir}"
-            )
+            raise FileNotFoundError(f"No adapter_model.safetensors and no lora keys in {checkpoint_dir}")
         return state_dict
 
     # Prefer safetensors (faster, no pickle)
@@ -153,7 +150,7 @@ class Qwen3VLLoRAModel(nn.Module):
         **kwargs,
     ):
         super().__init__()
-        from peft import LoraConfig, get_peft_model, TaskType
+        from peft import LoraConfig, TaskType, get_peft_model
 
         self.model_name_or_path = model_name_or_path
         base = load_qwen_vl_from_pretrained(model_name_or_path, dtype=torch.bfloat16, **kwargs)

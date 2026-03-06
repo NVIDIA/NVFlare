@@ -28,7 +28,7 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated Qwen3-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients (default 3)")
-    parser.add_argument("--num_rounds", type=int, default=5, help="FL rounds (default 5)")
+    parser.add_argument("--num_rounds", type=int, default=3, help="FL rounds (default 3)")
     parser.add_argument(
         "--gpu",
         type=str,
@@ -108,10 +108,12 @@ def _configure_timeouts(recipe, client_names, task_timeout=1200, tensor_timeout=
         },
         clients=client_names,
     )
-    recipe.add_server_config({
-        "streaming_per_request_timeout": tensor_timeout,
-        "tensor_min_download_timeout": tensor_timeout,
-    })
+    recipe.add_server_config(
+        {
+            "streaming_per_request_timeout": tensor_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+        }
+    )
 
 
 def main():

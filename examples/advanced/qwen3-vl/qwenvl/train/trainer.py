@@ -1,31 +1,21 @@
-from typing import Dict, List, Optional, Sequence, Tuple, Callable
+from typing import Optional
 
 import torch
 from flash_attn.flash_attn_interface import flash_attn_varlen_func
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers import Trainer
 from transformers.cache_utils import Cache
-from transformers.utils.deprecation import deprecate_kwarg
-from transformers.processing_utils import Unpack
+from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
+from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VisionTransformerPretrainedModel, Qwen2_5_VLModel
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
     Qwen2VisionTransformerPretrainedModel,
     Qwen2VLModel,
     apply_multimodal_rotary_pos_emb,
 )
-from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
-    Qwen2_5_VisionTransformerPretrainedModel,
-    Qwen2_5_VLModel,
-)
-from transformers.models.qwen3_vl.modeling_qwen3_vl import (
-    Qwen3VLVisionModel,
-    Qwen3VLModel,
-    apply_rotary_pos_emb,
-)
-from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import (
-    Qwen3VLMoeVisionModel,
-    Qwen3VLMoeModel,
-)
+from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel, Qwen3VLVisionModel, apply_rotary_pos_emb
+from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import Qwen3VLMoeModel, Qwen3VLMoeVisionModel
+from transformers.processing_utils import Unpack
 from transformers.utils import logging
+from transformers.utils.deprecation import deprecate_kwarg
 
 logger = logging.get_logger(__name__)
 
@@ -47,7 +37,7 @@ def flash_attention_forward(
             "`flash_attention_2` does not support `output_attentions=True` or `head_mask`."
             " Please set your attention to `eager` if you want any of these features."
         )
-    
+
     # This is before the transpose
     seq_len = query.shape[2]
 
@@ -85,12 +75,7 @@ def flash_attention_forward(
     cu_seqlens = attention_mask
 
     with torch.no_grad():
-        max_seqlen = max(
-            [
-                cu_seqlens[idx + 1] - cu_seqlens[idx]
-                for idx in range(cu_seqlens.size(0) - 1)
-            ]
-        ).item()
+        max_seqlen = max([cu_seqlens[idx + 1] - cu_seqlens[idx] for idx in range(cu_seqlens.size(0) - 1)]).item()
 
     attn_output = flash_attn_varlen_func(
         query,
@@ -158,7 +143,6 @@ def qwen2vl_forward(
     return attn_output, attn_weights
 
 
-
 @deprecate_kwarg("past_key_value", new_name="past_key_values", version="4.58")
 def qwen3vl_forward(
     self,
@@ -200,15 +184,7 @@ def qwen3vl_forward(
     return attn_output, attn_weights
 
 
-def return_mask(
-    config,
-    input_embeds,
-    attention_mask,
-    cache_position,
-    past_key_values,
-    position_ids,
-    **kwargs
-):
+def return_mask(config, input_embeds, attention_mask, cache_position, past_key_values, position_ids, **kwargs):
     return attention_mask
 
 
@@ -216,40 +192,19 @@ def replace_qwen2_vl_attention_class():
     import transformers
     import transformers.modeling_flash_attention_utils
 
-
-    transformers.models.qwen2_vl.modeling_qwen2_vl.Qwen2VLAttention.forward = (
-        qwen2vl_forward
-    )
-    transformers.models.qwen2_vl.modeling_qwen2_vl.create_causal_mask = (
-        return_mask
-    )
-    transformers.models.qwen2_vl.modeling_qwen2_vl.create_sliding_window_causal_mask = (
-        return_mask
-    )    
-    ## qwen2_5_vl
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.Qwen2_5_VLAttention.forward = (
-        qwen2vl_forward
-    )
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_causal_mask = (
-        return_mask
-    )
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_sliding_window_causal_mask = (
-        return_mask
-    )
-    ## qwen3vl
-    transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = (
-        qwen3vl_forward
-    )
-    transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = (
-        return_mask
-    )
-    ## qwen3vl moe
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = (
-        qwen3vl_forward
-    )
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = (
-        return_mask
-    )
+    transformers.models.qwen2_vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen2vl_forward
+    transformers.models.qwen2_vl.modeling_qwen2_vl.create_causal_mask = return_mask
+    transformers.models.qwen2_vl.modeling_qwen2_vl.create_sliding_window_causal_mask = return_mask
+    # qwen2_5_vl
+    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.Qwen2_5_VLAttention.forward = qwen2vl_forward
+    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_causal_mask = return_mask
+    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_sliding_window_causal_mask = return_mask
+    # qwen3vl
+    transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = qwen3vl_forward
+    transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = return_mask
+    # qwen3vl moe
+    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = qwen3vl_forward
+    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = return_mask
 
 
 def print_trainable_parameters_visual(self) -> None:
@@ -273,12 +228,8 @@ def print_trainable_parameters_visual(self) -> None:
 
     # Print results
     print("Vision Module - Attention Blocks:")
-    print(
-        f"Trainable Block Indices: {trainable_blocks if trainable_blocks else 'None'}"
-    )
-    print(
-        f"Non-Trainable Block Indices: {non_trainable_blocks if non_trainable_blocks else 'None'}"
-    )
+    print(f"Trainable Block Indices: {trainable_blocks if trainable_blocks else 'None'}")
+    print(f"Non-Trainable Block Indices: {non_trainable_blocks if non_trainable_blocks else 'None'}")
     print(f"Merger Module Trainable: {is_merger_trainable}")
 
 
@@ -288,9 +239,7 @@ def print_trainable_parameters(self) -> None:
     Outputs the indices of trainable/non-trainable layers and other module statuses.
     """
     # Check embed_tokens
-    is_embed_trainable = any(
-        param.requires_grad for param in self.language_model.embed_tokens.parameters()
-    )
+    is_embed_trainable = any(param.requires_grad for param in self.language_model.embed_tokens.parameters())
     print(f"LLM Module - Embed Tokens Trainable: {is_embed_trainable}")
 
     # Check each decoder layer
@@ -305,12 +254,8 @@ def print_trainable_parameters(self) -> None:
             non_trainable_layers.append(layer_idx)
 
     # Print layer status
-    print(
-        f"LLM Module - Trainable Layer Indices: {trainable_layers if trainable_layers else 'None'}"
-    )
-    print(
-        f"LLM Module - Non-Trainable Layer Indices: {non_trainable_layers if non_trainable_layers else 'None'}"
-    )
+    print(f"LLM Module - Trainable Layer Indices: {trainable_layers if trainable_layers else 'None'}")
+    print(f"LLM Module - Non-Trainable Layer Indices: {non_trainable_layers if non_trainable_layers else 'None'}")
 
 
 def create_optimizer(self):
@@ -321,13 +266,9 @@ def create_optimizer(self):
         decay_parameters = self.get_decay_parameter_names(opt_model)
         decay_parameters = [name for name in decay_parameters if "bias" not in name]
         if self.args.mm_projector_lr is not None and self.args.mm_projector_lr != 0:
-            projector_parameters = [
-                name for name, _ in opt_model.named_parameters() if "merger" in name
-            ]
+            projector_parameters = [name for name, _ in opt_model.named_parameters() if "merger" in name]
             if self.args.vision_tower_lr is not None and self.args.vision_tower_lr != 0:
-                vision_tower_parameters = [
-                    name for name, _ in opt_model.named_parameters() if "visual" in name
-                ]
+                vision_tower_parameters = [name for name, _ in opt_model.named_parameters() if "visual" in name]
                 optimizer_grouped_parameters = [
                     {
                         "params": [
@@ -387,11 +328,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n in decay_parameters
-                                and n in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n in decay_parameters and n in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": self.args.weight_decay,
                         "lr": self.args.mm_projector_lr,
@@ -400,11 +337,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n not in decay_parameters
-                                and n in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n not in decay_parameters and n in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": 0.0,
                         "lr": self.args.mm_projector_lr,
@@ -416,11 +349,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n in decay_parameters
-                                and n not in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n in decay_parameters and n not in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": self.args.weight_decay,
                     },
@@ -428,11 +357,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n not in decay_parameters
-                                and n not in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n not in decay_parameters and n not in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": 0.0,
                     },
@@ -440,11 +365,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n in decay_parameters
-                                and n in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n in decay_parameters and n in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": self.args.weight_decay,
                         "lr": self.args.mm_projector_lr,
@@ -453,11 +374,7 @@ def create_optimizer(self):
                         "params": [
                             p
                             for n, p in opt_model.named_parameters()
-                            if (
-                                n not in decay_parameters
-                                and n in projector_parameters
-                                and p.requires_grad
-                            )
+                            if (n not in decay_parameters and n in projector_parameters and p.requires_grad)
                         ],
                         "weight_decay": 0.0,
                         "lr": self.args.mm_projector_lr,
@@ -467,25 +384,19 @@ def create_optimizer(self):
             optimizer_grouped_parameters = [
                 {
                     "params": [
-                        p
-                        for n, p in opt_model.named_parameters()
-                        if (n in decay_parameters and p.requires_grad)
+                        p for n, p in opt_model.named_parameters() if (n in decay_parameters and p.requires_grad)
                     ],
                     "weight_decay": self.args.weight_decay,
                 },
                 {
                     "params": [
-                        p
-                        for n, p in opt_model.named_parameters()
-                        if (n not in decay_parameters and p.requires_grad)
+                        p for n, p in opt_model.named_parameters() if (n not in decay_parameters and p.requires_grad)
                     ],
                     "weight_decay": 0.0,
                 },
             ]
 
-        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
-            self.args
-        )
+        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
         self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
     return self.optimizer
@@ -494,18 +405,12 @@ def create_optimizer(self):
 # Apply monkey patches
 Trainer.create_optimizer = create_optimizer
 
-Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
+Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
 Qwen2VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
+Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
 Qwen2_5_VLModel.print_trainable_parameters = print_trainable_parameters
 
-Qwen3VLVisionModel.print_trainable_parameters = (
-    print_trainable_parameters_visual
-)
+Qwen3VLVisionModel.print_trainable_parameters = print_trainable_parameters_visual
 Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
 Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
 Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters

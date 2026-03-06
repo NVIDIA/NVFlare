@@ -79,7 +79,7 @@ def _save_lora_adapter_for_training(
     Ensures adapter_config.json has base_model_name_or_path so the training script
     can load base + adapter from this dir.
     """
-    from peft import LoraConfig, get_peft_model, TaskType
+    from peft import LoraConfig, TaskType, get_peft_model
 
     # Strip "model." prefix to match PeftModel state_dict key format
     stripped = {}
@@ -409,9 +409,7 @@ def main():
                 params = input_model.params
                 raw = None
                 try:
-                    raw = load_state_dict_from_checkpoint(
-                        output_model_dir, lora_only=lora_exchange
-                    )
+                    raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
                     params = {"model." + k: v for k, v in raw.items()}
                 except Exception:
                     pass
@@ -437,9 +435,7 @@ def main():
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
         # When lora_exchange, load only adapter weights to keep payload small.
         if rank == 0:
-            raw = load_state_dict_from_checkpoint(
-                output_model_dir, lora_only=lora_exchange
-            )
+            raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}

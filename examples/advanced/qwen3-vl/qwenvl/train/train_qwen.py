@@ -14,34 +14,32 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
 import logging
+import os
 import pathlib
-import torch
-import transformers
 import sys
 from pathlib import Path
+
+import torch
+import transformers
 
 # Ensure example root (parent of qwenvl) is on path for qwenvl.data / qwenvl.train.argument imports
 _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from .trainer import replace_qwen2_vl_attention_class
-
-from transformers import (
-    Qwen2VLForConditionalGeneration,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLMoeForConditionalGeneration
-)
 from qwenvl.data.data_processor import make_supervised_data_module
-from qwenvl.train.argument import (
-    ModelArguments,
-    DataArguments,
-    TrainingArguments,
+from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
+from transformers import (
+    AutoProcessor,
+    Qwen2_5_VLForConditionalGeneration,
+    Qwen2VLForConditionalGeneration,
+    Qwen3VLForConditionalGeneration,
+    Qwen3VLMoeForConditionalGeneration,
+    Trainer,
 )
-from transformers import AutoProcessor, Trainer
+
+from .trainer import replace_qwen2_vl_attention_class
 
 local_rank = None
 
@@ -131,9 +129,7 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
 def train(attn_implementation="flash_attention_2"):
     global local_rank
 
-    parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments, TrainingArguments)
-    )
+    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     local_rank = training_args.local_rank
@@ -144,7 +140,9 @@ def train(attn_implementation="flash_attention_2"):
     model_loaded_as_peft = False
     if adapter_config_path.is_file():
         import json
+
         from peft import PeftModel
+
         with open(adapter_config_path) as f:
             adapter_config = json.load(f)
         base_model_name_or_path = adapter_config.get("base_model_name_or_path", model_args.model_name_or_path)
@@ -165,7 +163,7 @@ def train(attn_implementation="flash_attention_2"):
             training_args.bf16,
         )
 
-    print(f'the initlized model is {model_args.model_name_or_path} the class is {model.__class__.__name__}')
+    print(f"the initlized model is {model_args.model_name_or_path} the class is {model.__class__.__name__}")
     processor = AutoProcessor.from_pretrained(
         model_args.model_name_or_path,
     )
@@ -197,7 +195,8 @@ def train(attn_implementation="flash_attention_2"):
         if torch.distributed.get_rank() == 0:
             model.print_trainable_parameters()
     elif training_args.lora_enable:
-        from peft import LoraConfig, get_peft_model, TaskType
+        from peft import LoraConfig, TaskType, get_peft_model
+
         print("LoRA enabled")
 
         for p in model.parameters():
@@ -218,11 +217,9 @@ def train(attn_implementation="flash_attention_2"):
         if torch.distributed.get_rank() == 0:
             model.visual.print_trainable_parameters()
             model.model.print_trainable_parameters()
-    
+
     data_module = make_supervised_data_module(processor, data_args=data_args)
-    trainer = Trainer(
-        model=model, processing_class=tokenizer, args=training_args, **data_module
-    )
+    trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         logging.info("checkpoint found, resume training")
@@ -234,7 +231,7 @@ def train(attn_implementation="flash_attention_2"):
     model.config.use_cache = True
 
     safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
-    
+
     processor.save_pretrained(training_args.output_dir)
 
 
