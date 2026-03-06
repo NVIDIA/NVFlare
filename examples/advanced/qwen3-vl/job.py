@@ -89,6 +89,26 @@ def _parse_gpu_string(gpu_str: str):
     return [max(1, len(g.split(","))) for g in groups]
 
 
+def _configure_timeouts(recipe, client_names, task_timeout=1200, tensor_timeout=600):
+    """Add client and server timeouts for large model / tensor streaming.
+
+    Ensures tensor_min_download_timeout >= tensor_streaming_per_request_timeout
+    so transactions are not killed mid-download.
+    """
+    recipe.add_client_config(
+        {
+            "get_task_timeout": task_timeout,
+            "submit_task_result_timeout": task_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+        },
+        clients=client_names,
+    )
+    recipe.add_server_config({
+        "streaming_per_request_timeout": tensor_timeout,
+        "tensor_min_download_timeout": tensor_timeout,
+    })
+
+
 def main():
     args = define_parser()
     n_clients = args.n_clients
@@ -152,28 +172,8 @@ def main():
         key_metric="",
     )
 
-    # Client script is the only custom file; it runs Qwen train in-process
-
-    # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
-    # sending results (when unset, framework uses communication_timeout default 300s).
-    # tensor_min_download_timeout must be >= tensor_streaming_per_request_timeout (default 600s)
-    # to avoid transactions being killed mid-download.
-    recipe.add_client_config(
-        {
-            "get_task_timeout": 1200,
-            "submit_task_result_timeout": 1200,
-            "tensor_min_download_timeout": 600,
-        },
-        clients=client_names,
-    )
-
-    # Server tensor streaming: align timeouts so downloads are not killed mid-stream.
-    recipe.add_server_config(
-        {
-            "streaming_per_request_timeout": 600,
-            "tensor_min_download_timeout": 600,
-        }
-    )
+    # Configure timeouts for large model / tensor streaming.
+    _configure_timeouts(recipe, client_names)
 
     # Optional: add experiment tracking with Weights & Biases
     if args.wandb:
