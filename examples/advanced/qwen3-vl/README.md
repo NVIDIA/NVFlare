@@ -72,6 +72,25 @@ cd ..
 
 The patch adds `import os` and a `fl_site` branch in `data_list()` so that `annotation_path` points to `FL_SITE_DATA_DIR/train.json` and `data_path` uses `PUBMEDVISION_IMAGE_ROOT` (the folder containing `images/`). The job passes `--image_root` so the client sets this for you. If the patch does not apply (e.g. after a Qwen3-VL update), try `git apply --ignore-whitespace ../patches/fl_site_data_list.patch`, or apply the changes manually by adding `import os` and the `fl_site` branch as shown in `patches/fl_site_data_list.patch`.
 
+### 2.2. LoRA adapter-only loading (when using `--lora`)
+
+When you run the job with **`--lora`**, the FL client receives only LoRA adapter weights and writes an adapter-only directory (e.g. `adapter_config.json` + `adapter_model.safetensors`) for the training script. The upstream Qwen script expects a full model path by default. Apply the following patch so it can load from an adapter-only dir (base model path is read from `adapter_config.json`):
+
+```bash
+cd /path/to/Qwen3-VL
+git apply /path/to/examples/advanced/qwen3-vl/patches/train_qwen_lora_adapter_load.patch
+```
+
+If you cloned Qwen3-VL inside this example:
+
+```bash
+cd Qwen3-VL
+git apply ../patches/train_qwen_lora_adapter_load.patch
+cd ..
+```
+
+The patch adds support for loading when `model_name_or_path` contains `adapter_config.json`: load the base model from the path in that config, then load the adapter with `PeftModel.from_pretrained`. If the patch does not apply cleanly, try `git apply --ignore-whitespace ../patches/train_qwen_lora_adapter_load.patch`, or apply the changes manually from `patches/train_qwen_lora_adapter_load.patch`.
+
 ## 3. Data: PubMedVision
 
 The example uses the [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) medical VQA dataset. First, **download** the dataset and unzip its image archives into a local folder; then **split** it into non-overlapping shards (one per federated client) under `./data/site-1`, `site-2`, `site-3`. Both steps are automated.
@@ -176,6 +195,8 @@ By default, the server and clients exchange the **full model** each round (~4651
 
 Use `--lora` when you want to reduce network transfer and speed up rounds. LoRA config (rank, alpha, target modules) matches the Qwen training script defaults; the client enables LoRA in the in-process training script automatically when `--lora` is set.
 
+**When using `--lora`** you must apply the LoRA adapter-loading patch to the Qwen3-VL repo so the training script can load from an adapter-only directory (see [§2.2 LoRA adapter-only loading](#22-lora-adapter-only-loading-when-using--lora)).
+
 ## Checkpoints and disk space
 
 By default, the client saves received and trained model checkpoints under the **NVFlare client workspace** (a `qwen3vl_checkpoints` subdir of the current working directory). When you run with SimEnv, that workspace is cleared every run, so you don't need to clean up manually. If you see **"No space left on device"**, the partition containing the SimEnv workspace (e.g. `/tmp/nvflare/simulation`) is full—run with `python job.py --workspace /path/to/large/disk`, or pass `--work_dir /path/to/large/disk` in the client's train_args to override the client checkpoint location.
@@ -242,7 +263,7 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 | Step | Action |
 |------|--------|
 | 1 | Create venv and run `./install_requirements.sh` |
-| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
+| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT`; apply `patches/fl_site_data_list.patch`; if using `--lora`, also apply `patches/train_qwen_lora_adapter_load.patch` (see §2.1 and §2.2) |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
 | 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
 | 5 | Run `python job.py` (optionally `--wandb`, `--lora`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
