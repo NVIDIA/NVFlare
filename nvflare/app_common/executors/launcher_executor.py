@@ -136,6 +136,7 @@ class LauncherExecutor(TaskExchanger):
         # subprocess is started (prevents "run status becomes success" in round N+1).
         self._deferred_stop_event = threading.Event()
         self._deferred_stop_event.set()
+        self._deferred_stop_task_name: str = ""  # task name captured when deferred stop starts
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
@@ -249,16 +250,27 @@ class LauncherExecutor(TaskExchanger):
         # completes global aggregation and dispatches the next round's task.
         if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
             wait_limit = self._stop_task_wait_timeout + 60.0
-            if not self._deferred_stop_event.wait(timeout=wait_limit):
-                # Timed out: deferred stop did not finish. Force stop now so the
+            deadline = time.time() + wait_limit
+            timed_out = True
+            while time.time() < deadline:
+                if abort_signal.triggered:
+                    return False  # abort fired; no point launching the next round
+                if self._deferred_stop_event.wait(timeout=1.0):
+                    timed_out = False
+                    break
+            if timed_out:
+                # Deferred stop did not finish in time. Force stop now so the
                 # launcher clears self._process before we try to start a new subprocess.
+                # Use _deferred_stop_task_name (the previous round's task), not the
+                # current task_name (the new round being initialized).
+                prev_task_name = self._deferred_stop_task_name
                 self.log_warning(
                     fl_ctx,
                     f"Timed out waiting for deferred stop_task to finish after {wait_limit}s; "
-                    f"forcing stop_task({task_name}) now.",
+                    f"forcing stop_task({prev_task_name}) now.",
                 )
                 self._execute_launcher_method_in_thread_executor(
-                    method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
+                    method_name="stop_task", task_name=prev_task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
                 )
 
         launch_task_success = self._execute_launcher_method_in_thread_executor(
@@ -347,7 +359,7 @@ class LauncherExecutor(TaskExchanger):
         if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_debug(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
-        if self._stop_task_wait_timeout > 0 and not self._job_end:
+        if self._stop_task_wait_timeout > 0 and not self._job_end and self.launcher.needs_deferred_stop():
             # The subprocess may be blocking in download_done.wait() (Fix 16 / DOWNLOAD_COMPLETE_CB)
             # so the server can pull large tensors directly from its DownloadService.
             # Calling stop_task() here would send SIGTERM and tear down the subprocess cell
@@ -362,6 +374,7 @@ class LauncherExecutor(TaskExchanger):
             # so _initialize_external_execution() for the next round can safely wait for this
             # cleanup to finish before calling launch_task().
             wait_timeout = self._stop_task_wait_timeout
+            self._deferred_stop_task_name = task_name  # capture before clearing event
             self._deferred_stop_event.clear()
 
             def _deferred_stop_task():
@@ -372,7 +385,11 @@ class LauncherExecutor(TaskExchanger):
                             break
                         try:
                             status = self.launcher.check_run_status(task_name, fl_ctx)
-                        except Exception:
+                        except Exception as e:
+                            self.log_warning(
+                                fl_ctx,
+                                f"check_run_status({task_name}) failed in deferred stop: {secure_format_exception(e)}",
+                            )
                             break
                         if status != LauncherRunStatus.RUNNING:
                             break

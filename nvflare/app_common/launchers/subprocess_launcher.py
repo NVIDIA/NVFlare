@@ -143,6 +143,9 @@ class SubprocessLauncher(Launcher):
         if self._launch_once and self._process:
             self._stop_external_process()
 
+    def needs_deferred_stop(self) -> bool:
+        return not self._launch_once
+
     def launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if not self._launch_once:
             self._start_external_process(fl_ctx)
