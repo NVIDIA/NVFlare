@@ -382,33 +382,32 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
 
         return clients
 
-    def _set_fl_ctx_prop(self, key: str, value, label: str) -> None:
-        """Set or update a sticky private prop in fl_ctx by key. Logs if fallback or set_prop fails."""
-        if self.fl_ctx.get_prop(key) is not None:
-            if not self.fl_ctx.update_prop_value(key, value):
-                self.debug(f"Failed to update {label} in fl_ctx via update_prop_value; retrying with set_prop.")
-                if not self.fl_ctx.set_prop(key, value, private=True, sticky=True):
-                    self.warning(f"set_prop also failed to update {key}; value may be stale.")
-        else:
-            if not self.fl_ctx.set_prop(key, value, private=True, sticky=True):
-                self.warning(f"set_prop failed to set {key}; value may be stale.")
-
     def set_fl_context(self, data: FLModel):
         """Set fl_ctx CURRENT_ROUND and NUM_ROUNDS from FLModel so they stay current each round.
 
-        If the prop already exists, only its value is updated (via update_prop_value), preserving
-        its (private, sticky) attributes. Otherwise it is set with private=True, sticky=True to
-        match original behaviour so the sticker is populated from round 0 and child/peer contexts
-        see it. Required for flows like FedAvg that do not set CURRENT_ROUND in fl_ctx before send.
+        Uses private=True, sticky=True so the sticker is populated from round 0 and child/peer
+        contexts see it. Required for flows like FedAvg that do not set CURRENT_ROUND in fl_ctx
+        before send. set_prop accepts the update when the prop already exists with the same
+        (private, sticky) attributes.
         """
         if not data:
             return
         if data.current_round is not None:
-            self._set_fl_ctx_prop(AppConstants.CURRENT_ROUND, data.current_round, "CURRENT_ROUND")
+            self.fl_ctx.set_prop(
+                AppConstants.CURRENT_ROUND,
+                data.current_round,
+                private=True,
+                sticky=True,
+            )
         else:
             self.debug("The FLModel data does not contain the current_round information.")
         if data.total_rounds is not None:
-            self._set_fl_ctx_prop(AppConstants.NUM_ROUNDS, data.total_rounds, "NUM_ROUNDS")
+            self.fl_ctx.set_prop(
+                AppConstants.NUM_ROUNDS,
+                data.total_rounds,
+                private=True,
+                sticky=True,
+            )
         else:
             self.debug("The FLModel data does not contain the total_rounds information.")
 
