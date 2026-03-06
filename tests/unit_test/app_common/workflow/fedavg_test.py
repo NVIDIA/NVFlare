@@ -25,6 +25,10 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.utils.tensor_disk_offload_context import (
+    apply_enable_tensor_disk_offload,
+    restore_enable_tensor_disk_offload,
+)
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
 
@@ -55,6 +59,44 @@ class MockModelAggregator(ModelAggregator):
     def reset_stats(self):
         self.models = []
         self.reset_count += 1
+
+
+class _FakeTempRef:
+    def __init__(self):
+        self.cleaned = False
+
+    def cleanup(self):
+        self.cleaned = True
+
+
+class _FakeLazyRef:
+    def __init__(self, value, temp_ref: _FakeTempRef):
+        self._value = value
+        self._temp_ref = temp_ref
+        self.materialize_calls = 0
+
+    def materialize(self):
+        self.materialize_calls += 1
+        return self._value
+
+
+class _MockCell:
+    def __init__(self, enable_tensor_disk_offload: bool):
+        self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
+
+    def get_fobs_context(self):
+        return dict(self.ctx)
+
+    def update_fobs_context(self, props: dict):
+        self.ctx.update(props)
+
+
+class _MockEngine:
+    def __init__(self, cell):
+        self.cell = cell
+
+    def get_cell(self):
+        return self.cell
 
 
 class TestFedAvgInit:
@@ -347,6 +389,144 @@ class TestFedAvgAggregation:
         assert "tags" not in aggr_result.metrics
         assert "name" not in aggr_result.metrics
 
+    def test_aggregate_one_result_returns_none_when_all_metrics_filtered(self):
+        """Test InTime aggregation returns None when all metrics are non-aggregatable."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}, "tags": ["a"]},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-2"}, "tags": ["b"]},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is None
+
+    def test_aggregate_one_result_none_metrics_disables_round_metrics(self):
+        """Test missing metrics (`None`) from any client disables round metrics aggregation."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics=None,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        assert controller._all_metrics is False
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is None
+
+    def test_aggregate_one_result_empty_metrics_keep_round_enabled(self):
+        """Test empty dict metrics still count as present and keep round metrics enabled."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        assert controller._all_metrics is True
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
+
+    def test_aggregate_one_result_nonaggregatable_metrics_keep_round_enabled(self):
+        """Test non-empty non-aggregatable metrics keep round metrics collection enabled."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result1)
+        assert controller._all_metrics is True
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
+        assert "meta" not in aggr_result.metrics
+
     def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
         """Test bool metrics are aggregated as binary values (True=1, False=0)."""
         controller = FedAvg(num_clients=2)
@@ -439,6 +619,67 @@ class TestFedAvgAggregation:
         assert aggr_result.metrics["loss"] == 0.4
         assert "meta" not in aggr_result.metrics
 
+    def test_base_fedavg_aggregate_fn_none_metrics_disable_round_metrics(self):
+        """Test BaseFedAvg.aggregate_fn returns None when any client has metrics=None."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics=None,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is None
+
+    def test_base_fedavg_aggregate_fn_empty_metrics_keep_round_enabled(self):
+        """Test BaseFedAvg.aggregate_fn keeps metrics aggregation when a client has metrics={}."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == 0.6
+
+    def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
+        """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-1"}, "tags": ["a"]},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"meta": {"client": "site-2"}, "tags": ["b"]},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_result = BaseFedAvg.aggregate_fn([result1, result2])
+        assert aggr_result.metrics is None
+
     def test_aggregate_with_custom_aggregator(self):
         """Test custom aggregator is used when provided."""
         aggregator = MockModelAggregator()
@@ -491,6 +732,64 @@ class TestFedAvgAggregation:
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
         controller._aggregate_one_result(empty_result)
         assert controller._received_count == 0  # Not counted
+
+
+class TestFedAvgLazyCompatibility:
+    def test_custom_aggregator_keeps_lazy_payload_in_tensor_disk_offload_mode(self):
+        aggregator = MockModelAggregator()
+        controller = FedAvg(num_clients=1, aggregator=aggregator, enable_tensor_disk_offload=True)
+        controller._received_count = 0
+        controller._expected_count = 1
+        controller.current_round = 0
+        controller._params_type = None
+
+        temp_ref = _FakeTempRef()
+        lazy_ref = _FakeLazyRef(value=2.5, temp_ref=temp_ref)
+        result = FLModel(
+            params={"w": lazy_ref},
+            params_type=ParamsType.FULL,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        controller._aggregate_one_result(result)
+
+        accepted_model = aggregator.models[0]
+        assert accepted_model.params["w"] is lazy_ref
+        assert temp_ref.cleaned is False
+        assert lazy_ref.materialize_calls == 0
+
+
+class TestFedAvgDownloadToDiskContext:
+    def test_set_enable_tensor_disk_offload(self):
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
+        assert previous is False
+        assert applied is True
+        assert cell.ctx["enable_tensor_disk_offload"] is True
+
+        restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+
+    def test_set_enable_tensor_disk_offload_without_cell(self):
+        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+        assert previous is None
+        assert applied is False
+
+    def test_run_restores_enable_tensor_disk_offload(self):
+        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+        controller.fl_ctx = FLContext()
+        controller.abort_signal = Signal()
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model = lambda **kwargs: None
+        controller.get_num_standing_tasks = lambda: 0
+        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+        assert cell.ctx["enable_tensor_disk_offload"] is False
 
 
 class TestFedAvgWorkflowEvents:

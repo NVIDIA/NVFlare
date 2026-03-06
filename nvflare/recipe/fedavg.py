@@ -60,6 +60,7 @@ class _FedAvgValidator(BaseModel):
     aggregation_weights: Optional[Dict[str, float]] = None
     # Memory management
     server_memory_gc_rounds: int = 0
+    enable_tensor_disk_offload: bool = False
 
 
 class FedAvgRecipe(Recipe):
@@ -136,6 +137,8 @@ class FedAvgRecipe(Recipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
+        enable_tensor_disk_offload: Enable disk-backed tensor offload for incoming streamed payloads.
+            When True, server receives tensor payloads via temp files and materializes lazily.
 
     Note:
         This recipe uses InTime (streaming) aggregation for memory efficiency - each client
@@ -177,6 +180,7 @@ class FedAvgRecipe(Recipe):
         exclude_vars: Optional[str] = None,
         aggregation_weights: Optional[Dict[str, float]] = None,
         server_memory_gc_rounds: int = 0,
+        enable_tensor_disk_offload: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -205,6 +209,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=exclude_vars,
             aggregation_weights=aggregation_weights,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
         )
 
         self.name = v.name
@@ -240,6 +245,7 @@ class FedAvgRecipe(Recipe):
         self.exclude_vars = v.exclude_vars
         self.aggregation_weights = v.aggregation_weights
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
 
         # Validate that we have at least one model source
         # Note: Subclasses (e.g., sklearn) that manage models differently should pass
@@ -285,6 +291,7 @@ class FedAvgRecipe(Recipe):
             exclude_vars=self.exclude_vars,
             aggregation_weights=self.aggregation_weights,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         job.to_server(controller)
 
