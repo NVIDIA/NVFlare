@@ -19,6 +19,9 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .fl_constant import ReservedKey
 
+# Lock-ordering rule: always acquire _update_lock (module-level FLContext lock)
+# before FLContextManager._update_lock. Never invert this order (e.g. in
+# update_prop_value we hold _update_lock and then call ctx_manager.update_sticker).
 _update_lock = threading.Lock()
 
 MASK_STICKY = 1 << 0
