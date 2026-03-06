@@ -20,8 +20,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from .fl_constant import ReservedKey
 
 # Lock-ordering rule: always acquire _update_lock (module-level FLContext lock)
-# before FLContextManager._update_lock. Never invert this order (e.g. in
-# update_prop_value we hold _update_lock and then call ctx_manager.update_sticker).
+# before FLContextManager._update_lock. Never invert this order (e.g. set_prop
+# holds _update_lock and then calls ctx_manager.update_sticker).
 _update_lock = threading.Lock()
 
 MASK_STICKY = 1 << 0
@@ -196,31 +196,6 @@ class FLContext(object):
                 return {V: value, "private": is_private(mask), "sticky": is_sticky(mask)}
             else:
                 return None
-
-    def update_prop_value(self, key: str, value) -> bool:
-        """Update the value of an existing prop, preserving its (private, sticky) attributes.
-
-        Use when the prop is already set and you only want to change its value without
-        changing visibility or stickiness. If the prop does not exist, returns False
-        and does nothing (caller should use set_prop instead). The read and write are
-        done under a single lock to avoid TOCTOU races with other threads.
-        """
-        if not isinstance(key, str):
-            raise ValueError("prop key must be str, but got {}".format(type(key)))
-        with _update_lock:
-            exists, _ = self._get_prop(key)
-            if not exists:
-                return False
-            mask = self.props[key][M]
-            if is_sticky(mask):
-                ctx_manager = self._get_ctx_manager()
-                if ctx_manager:
-                    assert isinstance(ctx_manager, FLContextManager)
-                    # If the key was not yet in the sticker store (e.g. set via put()),
-                    # this call will insert it, making it sticky for all future contexts.
-                    ctx_manager.update_sticker(key, value, mask)
-            self.props[key] = {V: value, M: mask}
-            return True
 
     def remove_prop(self, key: str, force_removal=False):
         if not isinstance(key, str):
