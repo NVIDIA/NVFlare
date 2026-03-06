@@ -120,6 +120,8 @@ class DockerJobLauncher(JobLauncherSpec):
 
         project = job_meta.get(JobMetaKey.PROJECT.value, "")
         docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
+        # Keep legacy jobs on the existing workspace root; only non-default projects
+        # get a project-specific subdirectory under the configured Docker workspace.
         if docker_workspace and isinstance(project, str) and project and project != "default":
             docker_workspace = os.path.join(docker_workspace, project)
 
