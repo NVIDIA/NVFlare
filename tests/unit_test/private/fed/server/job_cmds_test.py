@@ -16,7 +16,11 @@ from argparse import Namespace
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule, _create_list_job_cmd_parser
 
 TEST_CASES = [
@@ -45,17 +49,25 @@ class TestListJobCmdParser:
 
 
 class _MockConnection:
-    def __init__(self, cmd_props=None):
-        self._cmd_props = cmd_props
+    def __init__(self, cmd_props=None, app_ctx=None, props=None):
+        self._props = dict(props or {})
+        self._props.setdefault(ConnProps.CMD_PROPS, cmd_props)
+        self.app_ctx = app_ctx
         self.errors = []
+        self.strings = []
+        self.successes = []
 
-    def get_prop(self, key):
-        if key == ConnProps.CMD_PROPS:
-            return self._cmd_props
-        return None
+    def get_prop(self, key, default=None):
+        return self._props.get(key, default)
 
     def append_error(self, msg, meta=None):
         self.errors.append((msg, meta))
+
+    def append_string(self, msg, meta=None):
+        self.strings.append((msg, meta))
+
+    def append_success(self, msg, meta=None):
+        self.successes.append((msg, meta))
 
 
 class TestProjectCmdProps:
@@ -86,3 +98,60 @@ class TestProjectCmdProps:
         assert JobCommandModule._add_project_to_meta(meta, conn) is False
         assert meta == {}
         assert len(conn.errors) == 1
+
+
+class _FakeJobMetaValidator:
+    def validate(self, folder_name, zip_file_name):
+        assert folder_name == "job_folder"
+        assert zip_file_name == "job.zip"
+        return True, "", {}
+
+
+class _FakeJobDefManager:
+    def __init__(self):
+        self.created_meta = None
+
+    def create(self, meta, uploaded_content, fl_ctx):
+        self.created_meta = dict(meta)
+        result = dict(meta)
+        result[JobMetaKey.JOB_ID.value] = "new-job-id"
+        return result
+
+
+class _FakeEngine:
+    def __init__(self):
+        self.job_def_manager = _FakeJobDefManager()
+        self.submit_event_meta = None
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
+
+    def fire_event(self, event_type, fl_ctx):
+        assert event_type == EventType.SUBMIT_JOB
+        self.submit_event_meta = dict(fl_ctx.get_prop(FLContextKey.JOB_META, {}))
+
+
+def test_submit_job_exposes_project_in_submit_event(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidator)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.CMD_PROPS: {"project": "cancer-research"},
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert len(conn.successes) == 1
+    assert engine.submit_event_meta == {JobMetaKey.PROJECT.value: "cancer-research"}
+    assert engine.job_def_manager.created_meta[JobMetaKey.PROJECT.value] == "cancer-research"

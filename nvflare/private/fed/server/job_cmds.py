@@ -617,6 +617,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
 
+                if not self._add_project_to_meta(meta, conn):
+                    return
+
                 fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
                 engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)
                 block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
@@ -633,8 +636,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
                 meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
-                if not self._add_project_to_meta(meta, conn):
-                    return
                 custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
                 if custom_props:
                     meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
