@@ -50,6 +50,12 @@ def rank0_print(*args):
         print(*args)
 
 
+def _is_rank0_or_single_process() -> bool:
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        return True
+    return torch.distributed.get_rank() == 0
+
+
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
     """Collects the state dict and dump to disk."""
 
@@ -201,7 +207,7 @@ def train(attn_implementation="flash_attention_2"):
 
     if model_loaded_as_peft:
         # Already a PeftModel from adapter dir; no need to wrap again
-        if torch.distributed.get_rank() == 0:
+        if _is_rank0_or_single_process():
             model.print_trainable_parameters()
     elif training_args.lora_enable:
         from peft import LoraConfig, TaskType, get_peft_model
@@ -219,12 +225,12 @@ def train(attn_implementation="flash_attention_2"):
         )
         model = get_peft_model(model, lora_config)
         model.train()
-        if torch.distributed.get_rank() == 0:
+        if _is_rank0_or_single_process():
             model.print_trainable_parameters()
     else:
         set_model(model_args, model)
 
-        if torch.distributed.get_rank() == 0:
+        if _is_rank0_or_single_process():
             model.visual.print_trainable_parameters()
             model.model.print_trainable_parameters()
 
