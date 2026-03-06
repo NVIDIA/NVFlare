@@ -42,14 +42,6 @@ class FilePipe(Pipe):
         check_str("root_path", root_path)
 
         self._remove_root = False
-        if not os.path.exists(root_path):
-            try:
-                # create the root path
-                os.makedirs(root_path)
-                self._remove_root = True
-            except Exception:
-                pass
-
         self.root_path = root_path
         self.file_check_interval = file_check_interval
         self.pipe_path = None
@@ -87,6 +79,10 @@ class FilePipe(Pipe):
     def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
+
+        if not os.path.exists(self.root_path):
+            os.makedirs(self.root_path)
+            self._remove_root = True
 
         pipe_path = os.path.join(self.root_path, name)
 

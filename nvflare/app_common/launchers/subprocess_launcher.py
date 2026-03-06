@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import re
 import shlex
 import subprocess
 from threading import Lock, Thread
@@ -62,10 +63,31 @@ def get_line(buffer: bytearray):
     return line, remaining
 
 
+# Matches the start of a formatted NVFlare log line after stripping ANSI color
+# codes: "YYYY-MM-DD HH:MM:SS" produced by BaseFormatter / ColorFormatter.
+# Lines from the subprocess consoleHandler match this; raw print() lines do not.
+_ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
+_LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
+
+
+def _route_subprocess_line(line: str, logger) -> None:
+    """Route one stdout line from the subprocess to the right destination.
+
+    Formatted log lines (from the subprocess consoleHandler) are already written
+    to the shared log files by the subprocess file handler, so we just print them
+    to the terminal for interactive visibility.  Raw print() lines from user
+    training scripts have no timestamp, so we wrap them with logger.info() to
+    ensure they reach both the terminal and log.txt.
+    """
+    plain = _ANSI_ESC_RE.sub("", line)
+    if _LOG_LINE_RE.match(plain):
+        print(line)
+    else:
+        logger.info(line)
+
+
 def log_subprocess_output(process, logger):
-    # Subprocess lines are already fully-formatted log records (timestamp + logger + level + message)
-    # and the subprocess itself adds the site name to its own output (e.g. "[site-1] step=1/10 loss=...").
-    # Write them directly to stdout as-is; adding a prefix here produces double site labels.
+
     buffer = bytearray()
     while True:
         chunk = process.stdout.read1(4096)
@@ -79,10 +101,10 @@ def log_subprocess_output(process, logger):
                 break
 
             if line:
-                print(line, flush=True)
+                _route_subprocess_line(line, logger)
 
     if buffer:
-        print(buffer.decode(), flush=True)
+        _route_subprocess_line(buffer.decode(), logger)
 
 
 class SubprocessLauncher(Launcher):

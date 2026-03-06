@@ -15,14 +15,18 @@
 import shutil
 import tempfile
 from io import BufferedReader, BytesIO
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher, log_subprocess_output
+from nvflare.app_common.launchers.subprocess_launcher import (
+    SubprocessLauncher,
+    _route_subprocess_line,
+    log_subprocess_output,
+)
 
 
 class TestSubprocessLauncher:
@@ -120,7 +124,7 @@ class TestSubprocessLauncher:
         assert launcher._clean_up_script == "echo 'cleanup'"
         assert launcher._shutdown_timeout == 0.0
 
-    def test_log_subprocess_output(self, capsys):
+    def test_log_subprocess_output(self):
         class _Proc:
             pass
 
@@ -129,6 +133,92 @@ class TestSubprocessLauncher:
         logger = Mock()
         log_subprocess_output(p, logger)
 
-        captured = capsys.readouterr()
-        assert captured.out.splitlines() == ["line1", "line2", "partial"]
+        logged = [call.args[0] for call in logger.info.call_args_list]
+        assert logged == ["line1", "line2", "partial"]
+
+    def test_log_subprocess_output_formatted_lines_not_double_logged(self):
+        """Formatted NVFlare log lines must NOT be re-logged via logger.info().
+
+        When the subprocess has both consoleHandler and file handlers (same config
+        as parent CJ), formatted lines are already written to log.txt by the file
+        handler. The parent captures stdout and must only print() them to the
+        terminal — calling logger.info() would create a second copy in log.txt.
+        """
+
+        class _Proc:
+            pass
+
+        ts_line = b"2026-03-05 10:00:00 - nvflare.foo - INFO - [] - hello\n"
+        plain_line = b"training loss: 0.5\n"
+        p = _Proc()
+        p.stdout = BufferedReader(BytesIO(ts_line + plain_line))
+        logger = Mock()
+        with patch("builtins.print") as mock_print:
+            log_subprocess_output(p, logger)
+
+        # Formatted line → print() only (no double logging in log.txt)
+        mock_print.assert_called_once_with("2026-03-05 10:00:00 - nvflare.foo - INFO - [] - hello")
+        # Plain line → logger.info() (reaches log.txt)
+        logger.info.assert_called_once_with("training loss: 0.5")
+
+
+class TestRouteSubprocessLine:
+    """Unit tests for _route_subprocess_line() routing logic."""
+
+    def test_plain_print_line_goes_to_logger_info(self):
+        """Raw print() from user training script must reach logger.info() → log.txt."""
+        logger = Mock()
+        with patch("builtins.print") as mock_print:
+            _route_subprocess_line("training loss: 0.5", logger)
+
+        logger.info.assert_called_once_with("training loss: 0.5")
+        mock_print.assert_not_called()
+
+    def test_formatted_log_line_goes_to_print_not_logger(self):
+        """Formatted NVFlare log line must NOT be re-logged — goes to print() only.
+
+        The file handler in the subprocess writes it to log.txt already.
+        Calling logger.info() here would create a duplicate entry.
+        """
+        logger = Mock()
+        line = "2026-03-05 10:00:00 - nvflare.foo - INFO - [] - some message"
+        with patch("builtins.print") as mock_print:
+            _route_subprocess_line(line, logger)
+
+        mock_print.assert_called_once_with(line)
         logger.info.assert_not_called()
+
+    def test_ansi_colored_formatted_line_goes_to_print_not_logger(self):
+        """ANSI-colored formatted line from consoleHandler must go to print() only.
+
+        ANSI codes must be stripped before the timestamp pattern is checked so
+        the color prefix does not defeat the guard and cause double logging.
+        """
+        logger = Mock()
+        # Simulate ColorFormatter output: ANSI green prefix before timestamp
+        ansi_line = "\x1b[32m2026-03-05 10:00:00\x1b[0m - nvflare.foo - INFO - [] - colored"
+        with patch("builtins.print") as mock_print:
+            _route_subprocess_line(ansi_line, logger)
+
+        mock_print.assert_called_once_with(ansi_line)
+        logger.info.assert_not_called()
+
+    def test_empty_line_goes_to_logger_info(self):
+        """An empty/whitespace-only line has no timestamp → logger.info()."""
+        logger = Mock()
+        with patch("builtins.print") as mock_print:
+            _route_subprocess_line("", logger)
+
+        logger.info.assert_called_once_with("")
+        mock_print.assert_not_called()
+
+    def test_partial_timestamp_line_goes_to_logger_info(self):
+        """A line starting with something that looks like a partial date but lacks
+        the full 'YYYY-MM-DD HH:MM:SS' pattern must NOT be treated as a log line."""
+        logger = Mock()
+        line = "2026-03-05 epoch complete"  # date but no HH:MM:SS
+        with patch("builtins.print") as mock_print:
+            _route_subprocess_line(line, logger)
+
+        logger.info.assert_called_once_with(line)
+        mock_print.assert_not_called()
