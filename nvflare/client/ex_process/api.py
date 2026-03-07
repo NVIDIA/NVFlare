@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import atexit
 import importlib
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -225,7 +224,6 @@ class ExProcessClientAPI(APISpec):
                     to_nvflare_converter=to_nvflare_converter,
                 )
                 flare_agent.start()
-                atexit.register(self.shutdown)
 
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
             self.flare_agent = flare_agent
