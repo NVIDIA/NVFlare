@@ -15,7 +15,7 @@
 # Vendored/adapted from Qwen3-VL qwen-vl-finetune. See NOTICE and
 # https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 import torch
 
