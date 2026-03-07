@@ -190,7 +190,7 @@ class TaskExchanger(Executor):
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if self.pipe_handler.asked_to_stop:
-                self.log_debug(fl_ctx, "task pipe stopped!")
+                self.log_info(fl_ctx, "task pipe stopped! aborting task.")
                 self.pipe_handler.notify_abort(task_id)
                 abort_signal.trigger("task pipe stopped!")
                 return make_reply(ReturnCode.TASK_ABORTED)
