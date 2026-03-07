@@ -337,6 +337,13 @@ class LauncherExecutor(TaskExchanger):
             if self.peer_is_up_or_dead():
                 return True
 
+            # A stale PEER_GONE from the previous subprocess's TCP disconnect may
+            # arrive after _reset_pipe_handler() and stop the new handler.  Recreate
+            # it so the new subprocess's heartbeats can still be received.
+            if self.pipe_handler and self.pipe_handler.asked_to_stop:
+                self.log_debug(fl_ctx, "pipe handler stopped during setup (stale PEER_GONE?); recreating")
+                self._reset_pipe_handler()
+
             run_status = self.launcher.check_run_status(task_name, fl_ctx)
             if run_status != LauncherRunStatus.RUNNING:
                 self.log_error(
