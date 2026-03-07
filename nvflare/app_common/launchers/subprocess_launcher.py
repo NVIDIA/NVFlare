@@ -184,9 +184,7 @@ class SubprocessLauncher(Launcher):
                     pass
                 self.logger.info(f"_stop_external_process: terminating pid={self._process.pid}")
                 self._process.terminate()
-                self.logger.info("_stop_external_process: joining log thread")
                 self._log_thread.join()
-                self.logger.info("_stop_external_process: log thread joined")
                 if self._clean_up_script:
                     command_seq = shlex.split(self._clean_up_script)
                     process = subprocess.Popen(command_seq, cwd=self._app_dir)

@@ -313,10 +313,6 @@ class FlareAgent:
                 return False
 
         try:
-            self.logger.info(
-                f"[subprocess] submit_result: task_ph.asked_to_stop={self.pipe_handler.asked_to_stop if self.pipe_handler else 'N/A'}"
-                f" agent.asked_to_stop={self.asked_to_stop}"
-            )
             result = self._do_submit_result(current_task, result, rc)
         except Exception as ex:
             self.logger.error(f"exception submitting result to {current_task.sender}: {ex}")
