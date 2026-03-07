@@ -389,6 +389,7 @@ class PipeHandler(object):
                 except Exception as ex:
                     if not self.asked_to_stop:
                         self.logger.debug(f"heartbeat send failed, stopping heartbeat: {ex}")
+                        self.asked_to_stop = True
                     break
                 last_heartbeat_sent_time = now
 
