@@ -19,6 +19,7 @@ Provides an nn.Module interface so the PT persistor can save/load state_dict.
 
 import glob
 import os
+import warnings
 from typing import Optional
 
 import torch
@@ -52,8 +53,10 @@ def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False
 
                 state_dict = load_file(adapter_path, device="cpu")
                 return state_dict
-            except Exception:
-                pass
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to load adapter weights from {adapter_path}: {e}. Falling back to full checkpoint."
+                )
         # No adapter file: load full checkpoint and keep only LoRA keys
         state_dict = load_state_dict_from_checkpoint(checkpoint_dir, lora_only=False)
         state_dict = {k: v for k, v in state_dict.items() if "lora" in k.lower()}
@@ -171,3 +174,21 @@ class Qwen3VLLoRAModel(nn.Module):
         """Return only LoRA adapter weights with "model." prefix for FL exchange."""
         adapter = _get_peft_adapter_state_dict(self.model)
         return {"model." + k: v for k, v in adapter.items()}
+
+    def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
+        """Load only LoRA adapter weights to avoid base-model missing-keys noise."""
+        adapter_state = {}
+        for key, value in state_dict.items():
+            if key.startswith("model."):
+                adapter_state[key[6:]] = value
+            elif "lora" in key.lower():
+                adapter_state[key] = value
+
+        if not adapter_state and strict:
+            raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
+
+        try:
+            return self.model.load_state_dict(adapter_state, strict=False, assign=assign)
+        except TypeError:
+            # Older torch versions do not support the `assign` argument.
+            return self.model.load_state_dict(adapter_state, strict=False)

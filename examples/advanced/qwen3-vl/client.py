@@ -89,29 +89,40 @@ def _save_lora_adapter_for_training(
         else:
             stripped[k] = v
 
-    base = load_qwen_vl_from_pretrained(base_model_name_or_path, dtype=torch.bfloat16)
-    lora_config = LoraConfig(
-        r=DEFAULT_LORA_R,
-        lora_alpha=DEFAULT_LORA_ALPHA,
-        lora_dropout=DEFAULT_LORA_DROPOUT,
-        target_modules=DEFAULT_LORA_TARGET_MODULES,
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,
-    )
-    peft_model = get_peft_model(base, lora_config)
-    peft_model.load_state_dict(stripped, strict=False)
-    os.makedirs(save_dir, exist_ok=True)
-    peft_model.save_pretrained(save_dir)
-    # Ensure training script can load base from HF when it sees adapter_config in this dir
-    import json
+    base = None
+    peft_model = None
+    try:
+        base = load_qwen_vl_from_pretrained(base_model_name_or_path, dtype=torch.bfloat16)
+        lora_config = LoraConfig(
+            r=DEFAULT_LORA_R,
+            lora_alpha=DEFAULT_LORA_ALPHA,
+            lora_dropout=DEFAULT_LORA_DROPOUT,
+            target_modules=DEFAULT_LORA_TARGET_MODULES,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+        peft_model = get_peft_model(base, lora_config)
+        peft_model.load_state_dict(stripped, strict=False)
+        os.makedirs(save_dir, exist_ok=True)
+        peft_model.save_pretrained(save_dir)
+        # Ensure training script can load base from HF when it sees adapter_config in this dir
+        import json
 
-    adapter_config_path = os.path.join(save_dir, "adapter_config.json")
-    if os.path.isfile(adapter_config_path):
-        with open(adapter_config_path, "r") as f:
-            config = json.load(f)
-        config["base_model_name_or_path"] = base_model_name_or_path
-        with open(adapter_config_path, "w") as f:
-            json.dump(config, f, indent=2)
+        adapter_config_path = os.path.join(save_dir, "adapter_config.json")
+        if os.path.isfile(adapter_config_path):
+            with open(adapter_config_path, "r") as f:
+                config = json.load(f)
+            config["base_model_name_or_path"] = base_model_name_or_path
+            with open(adapter_config_path, "w") as f:
+                json.dump(config, f, indent=2)
+    finally:
+        if peft_model is not None:
+            del peft_model
+        if base is not None:
+            del base
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def _align_model_config_to_tokenizer(hf_model, tokenizer) -> None:

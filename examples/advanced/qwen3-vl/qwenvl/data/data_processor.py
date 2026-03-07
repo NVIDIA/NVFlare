@@ -79,12 +79,8 @@ def update_processor_pixels(processor, data_args):
     if hasattr(ip, "size") and isinstance(ip.size, dict):
         ip.size["shortest_edge"] = data_args.min_pixels
         ip.size["longest_edge"] = data_args.max_pixels
-        rank0_print(
-            f"✅ Updated image_processor size['shortest_edge'] to {data_args.min_pixels}"
-        )
-        rank0_print(
-            f"✅ Updated image_processor size['longest_edge'] to {data_args.max_pixels}"
-        )
+        rank0_print(f"✅ Updated image_processor size['shortest_edge'] to {data_args.min_pixels}")
+        rank0_print(f"✅ Updated image_processor size['longest_edge'] to {data_args.max_pixels}")
 
     rank0_print("=== AFTER IMAGE PROCESSOR PARAMETERS ===")
     rank0_print(f"Image min_pixels: {getattr(ip, 'min_pixels', 'N/A')}")
@@ -101,30 +97,20 @@ def update_processor_pixels(processor, data_args):
         rank0_print(f"Video min_frames: {getattr(vp, 'min_frames', 'N/A')}")
         rank0_print(f"Video max_frames: {getattr(vp, 'max_frames', 'N/A')}")
         rank0_print(f"Video fps: {getattr(vp, 'fps', 'N/A')}")
-        rank0_print(
-            f"Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}"
-        )
+        rank0_print(f"Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}")
         rank0_print(f"Video size (longest_edge):  {vp.size.get('longest_edge', 'N/A')}")
 
         if hasattr(vp, "min_pixels") and hasattr(vp, "max_pixels"):
             vp.min_pixels = data_args.video_min_pixels
             vp.max_pixels = data_args.video_max_pixels
-            rank0_print(
-                f"✅ Updated Qwen2-VL video_processor min_pixels to {data_args.video_min_pixels}"
-            )
-            rank0_print(
-                f"✅ Updated Qwen2-VL video_processor max_pixels to {data_args.video_max_pixels}"
-            )
+            rank0_print(f"✅ Updated Qwen2-VL video_processor min_pixels to {data_args.video_min_pixels}")
+            rank0_print(f"✅ Updated Qwen2-VL video_processor max_pixels to {data_args.video_max_pixels}")
 
         if hasattr(vp, "min_frames") and hasattr(vp, "max_frames"):
             vp.min_frames = data_args.video_min_frames
             vp.max_frames = data_args.video_max_frames
-            rank0_print(
-                f"✅ Updated video_processor min_frames to {data_args.video_min_frames}"
-            )
-            rank0_print(
-                f"✅ Updated video_processor max_frames to {data_args.video_max_frames}"
-            )
+            rank0_print(f"✅ Updated video_processor min_frames to {data_args.video_min_frames}")
+            rank0_print(f"✅ Updated video_processor max_frames to {data_args.video_max_frames}")
 
         if hasattr(vp, "fps"):
             vp.fps = data_args.video_fps
@@ -133,12 +119,8 @@ def update_processor_pixels(processor, data_args):
         if hasattr(vp, "size") and isinstance(vp.size, dict):
             vp.size["shortest_edge"] = data_args.video_min_pixels
             vp.size["longest_edge"] = data_args.video_max_pixels
-            rank0_print(
-                f"✅ Updated Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}"
-            )
-            rank0_print(
-                f"✅ Updated Video size (longest_edge):  {vp.size.get('longest_edge', 'N/A')}"
-            )
+            rank0_print(f"✅ Updated Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}")
+            rank0_print(f"✅ Updated Video size (longest_edge):  {vp.size.get('longest_edge', 'N/A')}")
 
         rank0_print("=== AFTER VIDEO PROCESSOR PARAMETERS ===")
         rank0_print(f"Video min_pixels: {getattr(vp, 'min_pixels', 'N/A')}")
@@ -146,9 +128,7 @@ def update_processor_pixels(processor, data_args):
         rank0_print(f"Video min_frames: {getattr(vp, 'min_frames', 'N/A')}")
         rank0_print(f"Video max_frames: {getattr(vp, 'max_frames', 'N/A')}")
         rank0_print(f"Video fps: {getattr(vp, 'fps', 'N/A')}")
-        rank0_print(
-            f"Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}"
-        )
+        rank0_print(f"Video size (shortest_edge): {vp.size.get('shortest_edge', 'N/A')}")
         rank0_print(f"Video size (longest_edge):  {vp.size.get('longest_edge', 'N/A')}")
 
     return processor
@@ -165,12 +145,8 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
         videos = [videos]
 
     # Build media pools with absolute paths
-    image_pool = [
-        {"type": "image", "image": _make_abs_paths(base_path, img)} for img in images
-    ]
-    video_pool = [
-        {"type": "video", "video": _make_abs_paths(base_path, vid)} for vid in videos
-    ]
+    image_pool = [{"type": "image", "image": _make_abs_paths(base_path, img)} for img in images]
+    video_pool = [{"type": "video", "video": _make_abs_paths(base_path, vid)} for vid in videos]
 
     messages = []
     for turn in item["conversations"]:
@@ -185,15 +161,11 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
             for seg in text_parts:
                 if seg == "<image>":
                     if not image_pool:
-                        raise ValueError(
-                            "Number of <image> placeholders exceeds the number of provided images"
-                        )
+                        raise ValueError("Number of <image> placeholders exceeds the number of provided images")
                     content.append(image_pool.pop(0))
                 elif seg == "<video>":
                     if not video_pool:
-                        raise ValueError(
-                            "Number of <video> placeholders exceeds the number of provided videos"
-                        )
+                        raise ValueError("Number of <video> placeholders exceeds the number of provided videos")
                     content.append(video_pool.pop(0))
                 elif seg.strip():
                     content.append({"type": "text", "text": seg.strip()})
@@ -205,13 +177,9 @@ def _build_messages(item: Dict[str, Any], base_path: Path) -> List[Dict[str, Any
 
     # Check for unused media files
     if image_pool:
-        raise ValueError(
-            f"{len(image_pool)} image(s) remain unused (not consumed by placeholders)"
-        )
+        raise ValueError(f"{len(image_pool)} image(s) remain unused (not consumed by placeholders)")
     if video_pool:
-        raise ValueError(
-            f"{len(video_pool)} video(s) remain unused (not consumed by placeholders)"
-        )
+        raise ValueError(f"{len(video_pool)} video(s) remain unused (not consumed by placeholders)")
 
     return messages
 
@@ -227,9 +195,7 @@ def preprocess_qwen_visual(
     base_path = Path(source.get("data_path", ""))
     messages = _build_messages(source, base_path)
 
-    full_result = processor.apply_chat_template(
-        messages, tokenize=True, return_dict=True, return_tensors="pt"
-    )
+    full_result = processor.apply_chat_template(messages, tokenize=True, return_dict=True, return_tensors="pt")
 
     input_ids = full_result["input_ids"]
     if isinstance(input_ids, list):
@@ -247,9 +213,7 @@ def preprocess_qwen_visual(
             while ans_end < L and input_ids_flat[ans_end] != 151645:
                 ans_end += 1
             if ans_end < L:
-                labels[0, ans_start : ans_end + 2] = input_ids[
-                    0, ans_start : ans_end + 2
-                ]
+                labels[0, ans_start : ans_end + 2] = input_ids[0, ans_start : ans_end + 2]
                 pos = ans_end
         pos += 1
 
@@ -267,12 +231,8 @@ class LazySupervisedDataset(Dataset):
         dataset = data_args.dataset_use.split(",")
         dataset_list = data_list(dataset)
         rank0_print(f"Loading datasets: {dataset_list}")
-        self.video_max_total_pixels = getattr(
-            data_args, "video_max_total_pixels", 1664 * 28 * 28
-        )
-        self.video_min_total_pixels = getattr(
-            data_args, "video_min_total_pixels", 256 * 28 * 28
-        )
+        self.video_max_total_pixels = getattr(data_args, "video_max_total_pixels", 1664 * 28 * 28)
+        self.video_min_total_pixels = getattr(data_args, "video_min_total_pixels", 256 * 28 * 28)
         self.model_type = data_args.model_type
         if data_args.model_type == "qwen3vl":
             self.get_rope_index = get_rope_index_3
@@ -294,9 +254,7 @@ class LazySupervisedDataset(Dataset):
                     annotations = json.load(f)
             sampling_rate = data.get("sampling_rate", 1.0)
             if sampling_rate < 1.0:
-                annotations = random.sample(
-                    annotations, int(len(annotations) * sampling_rate)
-                )
+                annotations = random.sample(annotations, int(len(annotations) * sampling_rate))
                 rank0_print(f"sampling {len(annotations)} examples from dataset {data}")
             else:
                 rank0_print(f"dataset name: {data}")
@@ -309,7 +267,6 @@ class LazySupervisedDataset(Dataset):
             list_data_dict += annotations
 
         rank0_print(f"Total training samples: {len(list_data_dict)}")
-
 
         rank0_print("Formatting inputs...Skip in lazy mode")
         processor = update_processor_pixels(processor, data_args)
@@ -332,22 +289,15 @@ class LazySupervisedDataset(Dataset):
         length_list = []
         for sample in self.list_data_dict:
             img_tokens = 128 if "image" in sample else 0
-            length_list.append(
-                sum(len(conv["value"].split()) for conv in sample["conversations"])
-                + img_tokens
-            )
+            length_list.append(sum(len(conv["value"].split()) for conv in sample["conversations"]) + img_tokens)
         return length_list
 
     @property
     def modality_lengths(self):
         length_list = []
         for sample in self.list_data_dict:
-            cur_len = sum(
-                len(conv["value"].split()) for conv in sample["conversations"]
-            )
-            cur_len = (
-                cur_len if ("image" in sample) or ("video" in sample) else -cur_len
-            )
+            cur_len = sum(len(conv["value"].split()) for conv in sample["conversations"])
+            cur_len = cur_len if ("image" in sample) or ("video" in sample) else -cur_len
             length_list.append(cur_len)
         return length_list
 
@@ -424,8 +374,7 @@ class LazySupervisedDataset(Dataset):
             if not isinstance(video_grid_thw, Sequence):
                 video_grid_thw = [video_grid_thw]
             second_per_grid_ts = [
-                self.processor.video_processor.temporal_patch_size
-                / self.processor.video_processor.fps
+                self.processor.video_processor.temporal_patch_size / self.processor.video_processor.fps
             ] * len(video_grid_thw)
         else:
             video_grid_thw = None
@@ -435,24 +384,17 @@ class LazySupervisedDataset(Dataset):
             self.merge_size,
             data_dict["input_ids"],
             image_grid_thw=torch.cat(grid_thw, dim=0) if grid_thw else None,
-            video_grid_thw=(
-                torch.cat(video_grid_thw, dim=0) if video_grid_thw else None
-            ),
+            video_grid_thw=(torch.cat(video_grid_thw, dim=0) if video_grid_thw else None),
             second_per_grid_ts=second_per_grid_ts if second_per_grid_ts else None,
         )
 
         data_dict["position_ids"] = position_ids
         data_dict["attention_mask"] = [seq_len]
 
-        text = self.processor.tokenizer.decode(
-            data_dict["input_ids"][0], skip_special_tokens=False
-        )
+        text = self.processor.tokenizer.decode(data_dict["input_ids"][0], skip_special_tokens=False)
 
         labels = data_dict["labels"][0]
-        labels = [
-            tid if tid != -100 else self.processor.tokenizer.pad_token_id
-            for tid in labels
-        ]
+        labels = [tid if tid != -100 else self.processor.tokenizer.pad_token_id for tid in labels]
         label = self.processor.tokenizer.decode(labels, skip_special_tokens=False)
 
         return data_dict
@@ -470,17 +412,13 @@ class LazySupervisedDataset(Dataset):
             for source in sources:
                 if isinstance(source, dict):
                     source = [source]
-                assert (
-                    len(source) == 1
-                ), f"Don't know why it is wrapped to a list.\n {source}"  # FIXME
+                assert len(source) == 1, f"Don't know why it is wrapped to a list.\n {source}"  # FIXME
                 data_list.append(self._get_item(source))
 
             input_ids = torch.cat([d["input_ids"] for d in data_list], dim=1)
             labels = torch.cat([d["labels"] for d in data_list], dim=1)
             position_ids = torch.cat([d["position_ids"] for d in data_list], dim=2)
-            attention_mask = [
-                d["attention_mask"][0] for d in data_list if "attention_mask" in d
-            ]
+            attention_mask = [d["attention_mask"][0] for d in data_list if "attention_mask" in d]
             new_data_dict = {
                 "input_ids": input_ids,
                 "labels": labels,
@@ -492,19 +430,11 @@ class LazySupervisedDataset(Dataset):
                 new_data_dict.update(
                     {
                         "pixel_values": torch.cat(
-                            [
-                                d["pixel_values"]
-                                for d in data_list
-                                if "pixel_values" in d
-                            ],
+                            [d["pixel_values"] for d in data_list if "pixel_values" in d],
                             dim=0,
                         ),
                         "image_grid_thw": torch.cat(
-                            [
-                                d["image_grid_thw"]
-                                for d in data_list
-                                if "image_grid_thw" in d
-                            ],
+                            [d["image_grid_thw"] for d in data_list if "image_grid_thw" in d],
                             dim=0,
                         ),
                     }
@@ -514,19 +444,11 @@ class LazySupervisedDataset(Dataset):
                 new_data_dict.update(
                     {
                         "pixel_values_videos": torch.cat(
-                            [
-                                d["pixel_values_videos"]
-                                for d in data_list
-                                if "pixel_values_videos" in d
-                            ],
+                            [d["pixel_values_videos"] for d in data_list if "pixel_values_videos" in d],
                             dim=0,
                         ),
                         "video_grid_thw": torch.cat(
-                            [
-                                d["video_grid_thw"]
-                                for d in data_list
-                                if "video_grid_thw" in d
-                            ],
+                            [d["video_grid_thw"] for d in data_list if "video_grid_thw" in d],
                             dim=0,
                         ),
                     }
@@ -556,17 +478,14 @@ class DataCollatorForSupervisedDataset(object):
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels, position_ids = tuple(
-            [instance[key] for instance in instances]
-            for key in ("input_ids", "labels", "position_ids")
+            [instance[key] for instance in instances] for key in ("input_ids", "labels", "position_ids")
         )
         input_ids = [ids.squeeze(0) for ids in input_ids]
         labels = [ids.squeeze(0) for ids in labels]
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
         )
-        labels = torch.nn.utils.rnn.pad_sequence(
-            labels, batch_first=True, padding_value=IGNORE_INDEX
-        )
+        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
         position_ids = pad_and_cat(position_ids)
         input_ids = input_ids[:, : self.tokenizer.model_max_length]
         labels = labels[:, : self.tokenizer.model_max_length]
@@ -576,23 +495,11 @@ class DataCollatorForSupervisedDataset(object):
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
-        images = list(
-            instance["pixel_values"]
-            for instance in instances
-            if "pixel_values" in instance
-        )
-        videos = list(
-            instance["pixel_values_videos"]
-            for instance in instances
-            if "pixel_values_videos" in instance
-        )
+        images = list(instance["pixel_values"] for instance in instances if "pixel_values" in instance)
+        videos = list(instance["pixel_values_videos"] for instance in instances if "pixel_values_videos" in instance)
         if len(images) != 0:
             concat_images = torch.cat([image for image in images], dim=0)
-            grid_thw = [
-                instance["image_grid_thw"]
-                for instance in instances
-                if "image_grid_thw" in instance
-            ]
+            grid_thw = [instance["image_grid_thw"] for instance in instances if "image_grid_thw" in instance]
             grid_thw = torch.cat(grid_thw, dim=0)
         else:
             concat_images = None
@@ -600,11 +507,7 @@ class DataCollatorForSupervisedDataset(object):
 
         if len(videos) != 0:
             concat_videos = torch.cat([video for video in videos], dim=0)
-            video_grid_thw = [
-                instance["video_grid_thw"]
-                for instance in instances
-                if "video_grid_thw" in instance
-            ]
+            video_grid_thw = [instance["video_grid_thw"] for instance in instances if "video_grid_thw" in instance]
             video_grid_thw = torch.cat(video_grid_thw, dim=0)
         else:
             concat_videos = None
@@ -630,13 +533,7 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
             for key in ("input_ids", "labels", "position_ids", "attention_mask")
         )
         attention_mask = list(
-            itertools.chain(
-                *(
-                    instance["attention_mask"]
-                    for instance in instances
-                    if "attention_mask" in instance
-                )
-            )
+            itertools.chain(*(instance["attention_mask"] for instance in instances if "attention_mask" in instance))
         )
         seq_lens = torch.tensor([0] + attention_mask, dtype=torch.int32)
         cumsum_seq_lens = torch.cumsum(seq_lens, dim=0, dtype=torch.int32)
@@ -650,23 +547,11 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
             attention_mask=cumsum_seq_lens,
             position_ids=position_ids,
         )
-        images = list(
-            instance["pixel_values"]
-            for instance in instances
-            if "pixel_values" in instance
-        )
-        videos = list(
-            instance["pixel_values_videos"]
-            for instance in instances
-            if "pixel_values_videos" in instance
-        )
+        images = list(instance["pixel_values"] for instance in instances if "pixel_values" in instance)
+        videos = list(instance["pixel_values_videos"] for instance in instances if "pixel_values_videos" in instance)
         if len(images) != 0:
             concat_images = torch.cat([image for image in images], dim=0)
-            grid_thw = [
-                instance["image_grid_thw"]
-                for instance in instances
-                if "image_grid_thw" in instance
-            ]
+            grid_thw = [instance["image_grid_thw"] for instance in instances if "image_grid_thw" in instance]
             grid_thw = torch.cat(grid_thw, dim=0)
         else:
             concat_images = None
@@ -674,11 +559,7 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
 
         if len(videos) != 0:
             concat_videos = torch.cat([video for video in videos], dim=0)
-            video_grid_thw = [
-                instance["video_grid_thw"]
-                for instance in instances
-                if "video_grid_thw" in instance
-            ]
+            video_grid_thw = [instance["video_grid_thw"] for instance in instances if "video_grid_thw" in instance]
             video_grid_thw = torch.cat(video_grid_thw, dim=0)
         else:
             concat_videos = None
@@ -697,13 +578,9 @@ def make_supervised_data_module(processor, data_args) -> Dict:
     train_dataset = LazySupervisedDataset(processor, data_args=data_args)
     if data_args.data_flatten or data_args.data_packing:
         data_collator = FlattenedDataCollatorForSupervisedDataset(processor.tokenizer)
-        return dict(
-            train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator
-        )
+        return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
     data_collator = DataCollatorForSupervisedDataset(processor.tokenizer)
-    return dict(
-        train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator
-    )
+    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
 if __name__ == "__main__":
