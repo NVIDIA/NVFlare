@@ -138,23 +138,12 @@ class TaskExchanger(Executor):
             if self.pipe_handler is not _h:
                 self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
                 return
-            self.logger.info(f"pipe status changed to {msg.topic}")
+            self.logger.info(f"pipe status changed to {msg.topic}: {msg.data}")
             _h.stop(close_pipe=False)
 
         handler.set_status_cb(_bound_status_cb)
         self.pipe_handler = handler
         return handler
-
-    def _reset_pipe_handler(self):
-        """Stop the current PipeHandler and create a fresh one.
-
-        Must be called between rounds on the deferred-stop path so that a
-        late PEER_GONE from the old subprocess cannot race with the new one.
-        """
-        if self.pipe_handler:
-            self.pipe_handler.stop(close_pipe=False)
-        self._create_pipe_handler()
-        self.pipe_handler.start()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
