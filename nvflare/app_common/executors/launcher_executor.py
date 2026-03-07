@@ -511,16 +511,16 @@ class LauncherExecutor(TaskExchanger):
                             f"launcher completed with status {run_status} at time {self._launcher_finish_time}",
                         )
 
-                    if run_status == LauncherRunStatus.COMPLETE_FAILED:
-                        msg = f"Launcher failed at time {self._launcher_finish_time} "
-                        self._abort_signal.trigger(msg)
-                        break
-
                     # Deferred stop in progress: the subprocess exit is expected
                     # and managed by the deferred thread.  Skip the result-wait
                     # below to avoid a false abort between rounds.
                     if not self._deferred_stop_event.is_set():
                         continue
+
+                    if run_status == LauncherRunStatus.COMPLETE_FAILED:
+                        msg = f"Launcher failed at time {self._launcher_finish_time} "
+                        self._abort_signal.trigger(msg)
+                        break
 
                 if not self._launcher_finish:
                     continue
