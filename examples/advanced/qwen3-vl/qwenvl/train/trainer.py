@@ -450,8 +450,7 @@ def create_optimizer(self):
     return self.optimizer
 
 
-# Apply monkey patches (keep reference to original for PeftModel delegation)
-_original_create_optimizer = Trainer.create_optimizer
+# Apply monkey patches.
 Trainer.create_optimizer = create_optimizer
 
 Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual

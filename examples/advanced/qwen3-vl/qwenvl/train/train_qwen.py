@@ -64,6 +64,19 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
         trainer.save_model(output_dir)
         return
 
+    # For PEFT models, save adapter-only artifacts to reduce checkpoint I/O and
+    # allow fast adapter reload paths.
+    try:
+        from peft import PeftModel
+
+        model_to_save = trainer.model.module if hasattr(trainer.model, "module") else trainer.model
+        if isinstance(model_to_save, PeftModel):
+            if trainer.args.should_save:
+                model_to_save.save_pretrained(output_dir)
+            return
+    except ImportError:
+        pass
+
     state_dict = trainer.model.state_dict()
     if trainer.args.should_save:
         cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
@@ -89,11 +102,11 @@ def set_model(model_args, model):
     if model_args.tune_mm_llm:
         for n, p in model.language_model.named_parameters():
             p.requires_grad = True
-        model.lm_head.requires_grad = True
+        model.lm_head.requires_grad_(True)
     else:
         for n, p in model.language_model.named_parameters():
             p.requires_grad = False
-        model.lm_head.requires_grad = False
+        model.lm_head.requires_grad_(False)
 
 
 def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementation, bf16):
@@ -218,7 +231,7 @@ def train(attn_implementation="flash_attention_2"):
         lora_config = LoraConfig(
             r=training_args.lora_r or 64,
             lora_alpha=training_args.lora_alpha or 128,
-            lora_dropout=training_args.lora_dropout or 0.05,
+            lora_dropout=training_args.lora_dropout if training_args.lora_dropout is not None else 0.05,
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen attention
             bias="none",
             task_type=TaskType.CAUSAL_LM,

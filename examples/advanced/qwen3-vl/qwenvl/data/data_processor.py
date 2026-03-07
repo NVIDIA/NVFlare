@@ -21,8 +21,8 @@ import logging
 import re
 import time
 import itertools
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, List, Tuple, Any
+from dataclasses import dataclass
+from typing import Dict, Optional, List, Tuple, Any
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -290,7 +290,8 @@ class LazySupervisedDataset(Dataset):
             if file_format == "jsonl":
                 annotations = read_jsonl(data["annotation_path"])
             else:
-                annotations = json.load(open(data["annotation_path"], "r"))
+                with open(data["annotation_path"], "r") as f:
+                    annotations = json.load(f)
             sampling_rate = data.get("sampling_rate", 1.0)
             if sampling_rate < 1.0:
                 annotations = random.sample(
@@ -459,8 +460,7 @@ class LazySupervisedDataset(Dataset):
     def _get_packed_item(self, sources) -> Dict[str, torch.Tensor]:
 
         if isinstance(sources, dict):
-            if isinstance(source, dict):
-                sources = [sources]
+            sources = [sources]
             assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
             return self._get_item(sources)
 
