@@ -249,15 +249,20 @@ class LauncherExecutor(TaskExchanger):
         # the subprocess exits naturally (after download_done) well before the server
         # completes global aggregation and dispatches the next round's task.
         if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
+            self.log_info(fl_ctx, f"waiting for deferred stop of '{self._deferred_stop_task_name}' to finish")
             wait_limit = self._stop_task_wait_timeout + 60.0
             deadline = time.time() + wait_limit
             timed_out = True
+            last_log = time.time()
             while time.time() < deadline:
                 if abort_signal.triggered:
                     return False  # abort fired; no point launching the next round
                 if self._deferred_stop_event.wait(timeout=1.0):
                     timed_out = False
                     break
+                if time.time() - last_log >= 10.0:
+                    self.log_info(fl_ctx, f"still waiting for deferred stop of '{self._deferred_stop_task_name}'...")
+                    last_log = time.time()
             if timed_out:
                 # Deferred stop did not finish in time. Force stop now so the
                 # launcher clears self._process before we try to start a new subprocess.
@@ -385,6 +390,7 @@ class LauncherExecutor(TaskExchanger):
             def _deferred_stop_task():
                 try:
                     deadline = time.time() + wait_timeout
+                    last_log = time.time()
                     while time.time() < deadline:
                         if self._job_end or abort_signal.triggered:
                             break
@@ -397,7 +403,11 @@ class LauncherExecutor(TaskExchanger):
                             )
                             break
                         if status != LauncherRunStatus.RUNNING:
+                            self.log_info(fl_ctx, f"deferred stop: subprocess exited with status={status}")
                             break
+                        if time.time() - last_log >= 10.0:
+                            self.log_info(fl_ctx, f"deferred stop: subprocess still RUNNING...")
+                            last_log = time.time()
                         time.sleep(1.0)
                     self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")
                     try:

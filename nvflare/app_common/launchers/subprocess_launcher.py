@@ -158,6 +158,7 @@ class SubprocessLauncher(Launcher):
     def _start_external_process(self, fl_ctx: FLContext):
         with self._lock:
             if self._process is None:
+                self.logger.info(f"_start_external_process: launching new subprocess")
                 command = self._script
                 env = os.environ.copy()
                 env["CLIENT_API_TYPE"] = "EX_PROCESS_API"
@@ -181,8 +182,11 @@ class SubprocessLauncher(Launcher):
                     self._process.wait(self._shutdown_timeout)
                 except subprocess.TimeoutExpired:
                     pass
+                self.logger.info(f"_stop_external_process: terminating pid={self._process.pid}")
                 self._process.terminate()
+                self.logger.info("_stop_external_process: joining log thread")
                 self._log_thread.join()
+                self.logger.info("_stop_external_process: log thread joined")
                 if self._clean_up_script:
                     command_seq = shlex.split(self._clean_up_script)
                     process = subprocess.Popen(command_seq, cwd=self._app_dir)
