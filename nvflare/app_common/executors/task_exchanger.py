@@ -106,15 +106,7 @@ class TaskExchanger(Executor):
             if not isinstance(self.pipe, Pipe):
                 self.system_panic(f"component of {self.pipe_id} must be Pipe but got {type(self.pipe)}", fl_ctx)
                 return
-            self.pipe_handler = PipeHandler(
-                pipe=self.pipe,
-                read_interval=self.read_interval,
-                heartbeat_interval=self.heartbeat_interval,
-                heartbeat_timeout=self.heartbeat_timeout,
-                resend_interval=self.resend_interval,
-                max_resends=self.max_resends,
-            )
-            self.pipe_handler.set_status_cb(self._pipe_status_cb)
+            self._create_pipe_handler()
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
@@ -122,11 +114,42 @@ class TaskExchanger(Executor):
             self.log_debug(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
-                self.pipe_handler.stop()
+                self.pipe_handler.stop(close_pipe=False)
+            if self.pipe:
+                self.pipe.close()
 
-    def _pipe_status_cb(self, msg: Message):
-        self.logger.info(f"pipe status changed to {msg.topic}")
-        self.pipe_handler.stop()
+    def _create_pipe_handler(self):
+        """Create a new PipeHandler for self.pipe with a handler-bound status callback.
+
+        Each handler gets its own closure that checks identity before stopping,
+        so a late PEER_GONE from a previous handler cannot kill the current one.
+        The callback uses close_pipe=False because CellPipe.close() is irreversible.
+        """
+        handler = PipeHandler(
+            pipe=self.pipe,
+            read_interval=self.read_interval,
+            heartbeat_interval=self.heartbeat_interval,
+            heartbeat_timeout=self.heartbeat_timeout,
+            resend_interval=self.resend_interval,
+            max_resends=self.max_resends,
+        )
+
+        def _bound_status_cb(msg, _h=handler):
+            if self.pipe_handler is not _h:
+                self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
+                return
+            self.logger.info(f"pipe status changed to {msg.topic}")
+            _h.stop(close_pipe=False)
+
+        handler.set_status_cb(_bound_status_cb)
+        self.pipe_handler = handler
+        return handler
+
+    def _ensure_pipe_handler_alive(self):
+        """If the current PipeHandler was stopped (e.g. by PEER_GONE), replace it."""
+        if self.pipe_handler and self.pipe_handler.asked_to_stop:
+            self._create_pipe_handler()
+            self.pipe_handler.start()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """

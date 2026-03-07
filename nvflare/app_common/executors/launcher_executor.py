@@ -273,6 +273,8 @@ class LauncherExecutor(TaskExchanger):
                     method_name="stop_task", task_name=prev_task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
                 )
 
+        self._ensure_pipe_handler_alive()
+
         launch_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="launch_task",
             task_name=task_name,
@@ -359,7 +361,12 @@ class LauncherExecutor(TaskExchanger):
         if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_debug(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
-        if self._stop_task_wait_timeout > 0 and not self._job_end and self.launcher.needs_deferred_stop():
+        if (
+            self._stop_task_wait_timeout > 0
+            and not self._job_end
+            and self.launcher.needs_deferred_stop()
+            and self._deferred_stop_event.is_set()
+        ):
             # The subprocess may be blocking in download_done.wait() (Fix 16 / DOWNLOAD_COMPLETE_CB)
             # so the server can pull large tensors directly from its DownloadService.
             # Calling stop_task() here would send SIGTERM and tear down the subprocess cell
@@ -405,6 +412,12 @@ class LauncherExecutor(TaskExchanger):
 
             threading.Thread(target=_deferred_stop_task, daemon=True, name=f"deferred-stop-{task_name}").start()
             return True
+
+        if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
+            self.log_warning(
+                fl_ctx,
+                f"Previous deferred stop still in progress; using synchronous stop_task({task_name}).",
+            )
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
         stop_task_success = self._execute_launcher_method_in_thread_executor(
@@ -502,6 +515,12 @@ class LauncherExecutor(TaskExchanger):
                         msg = f"Launcher failed at time {self._launcher_finish_time} "
                         self._abort_signal.trigger(msg)
                         break
+
+                    # Deferred stop in progress: the subprocess exit is expected
+                    # and managed by the deferred thread.  Skip the result-wait
+                    # below to avoid a false abort between rounds.
+                    if not self._deferred_stop_event.is_set():
+                        continue
 
                 if not self._launcher_finish:
                     continue
