@@ -273,7 +273,8 @@ class LauncherExecutor(TaskExchanger):
                     method_name="stop_task", task_name=prev_task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
                 )
 
-        self._ensure_pipe_handler_alive()
+        if self._stop_task_wait_timeout > 0 and self.pipe_handler:
+            self._reset_pipe_handler()
 
         launch_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="launch_task",

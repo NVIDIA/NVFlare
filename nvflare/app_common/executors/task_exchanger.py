@@ -145,11 +145,16 @@ class TaskExchanger(Executor):
         self.pipe_handler = handler
         return handler
 
-    def _ensure_pipe_handler_alive(self):
-        """If the current PipeHandler was stopped (e.g. by PEER_GONE), replace it."""
-        if self.pipe_handler and self.pipe_handler.asked_to_stop:
-            self._create_pipe_handler()
-            self.pipe_handler.start()
+    def _reset_pipe_handler(self):
+        """Stop the current PipeHandler and create a fresh one.
+
+        Must be called between rounds on the deferred-stop path so that a
+        late PEER_GONE from the old subprocess cannot race with the new one.
+        """
+        if self.pipe_handler:
+            self.pipe_handler.stop(close_pipe=False)
+        self._create_pipe_handler()
+        self.pipe_handler.start()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
