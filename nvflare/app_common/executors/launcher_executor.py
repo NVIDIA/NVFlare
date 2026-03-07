@@ -406,7 +406,7 @@ class LauncherExecutor(TaskExchanger):
                             self.log_info(fl_ctx, f"deferred stop: subprocess exited with status={status}")
                             break
                         if time.time() - last_log >= 10.0:
-                            self.log_info(fl_ctx, f"deferred stop: subprocess still RUNNING...")
+                            self.log_info(fl_ctx, "deferred stop: subprocess still RUNNING...")
                             last_log = time.time()
                         time.sleep(1.0)
                     self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")

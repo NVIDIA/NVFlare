@@ -158,7 +158,7 @@ class SubprocessLauncher(Launcher):
     def _start_external_process(self, fl_ctx: FLContext):
         with self._lock:
             if self._process is None:
-                self.logger.info(f"_start_external_process: launching new subprocess")
+                self.logger.info("_start_external_process: launching new subprocess")
                 command = self._script
                 env = os.environ.copy()
                 env["CLIENT_API_TYPE"] = "EX_PROCESS_API"

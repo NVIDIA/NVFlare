@@ -430,6 +430,7 @@ class FlareAgent:
             # forever on the non-daemon CoreCell network threads.
             self.logger.info("[subprocess] exiting after server download")
             import sys
+
             sys.stdout.flush()
             sys.stderr.flush()
             os._exit(0)
