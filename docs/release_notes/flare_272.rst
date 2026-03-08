@@ -383,7 +383,7 @@ MONAI Integration
 Documentation
 ~~~~~~~~~~~~~
 
-- **Available Recipes Guide**: New :ref:`available_recipes` guide with code examples and links to working examples for core recipes (FedAvg, FedOpt, SCAFFOLD, Cyclic, XGBoost, FedEval, Swarm Learning, etc.). NumPy-specific recipes (NumpyFedAvgRecipe, NumpyCrossSiteEvalRecipe) are not documented there; use PyTorch, TensorFlow, or sklearn recipes for new projects.
+- **Available Recipes Guide**: New :ref:`available_recipes` guide with code examples and links to working examples for all available recipes.
 
 - **Timeout Documentation**: New :doc:`/user_guide/timeout_troubleshooting` for common timeout-related job failures and fixes (task fetch, external process pre-init, submit result, etc.), and :doc:`/programming_guide/timeouts` as the comprehensive reference for all 100+ timeout parameters by component and use case.
 
