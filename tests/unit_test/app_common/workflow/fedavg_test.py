@@ -868,6 +868,30 @@ class TestFedAvgWorkflowEvents:
         num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
         assert len(num_round_calls) > 0
         assert all(c.kwargs.get("sticky") is True for c in num_round_calls)
+class TestScaffoldAggregation:
+    """Test Scaffold aggregation behavior."""
+
+    def test_missing_scaffold_ctrl_diff_raises_clear_error(self):
+        """Test missing scaffold control diff raises a clear, framework-neutral error."""
+        import pytest
+
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            current_round=0,
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            scaffold_aggregate_fn([result])
+
+        error = str(exc_info.value)
+        assert "site-1" in error
+        assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in error
+        assert "PTScaffoldHelper" not in error
 
 
 class TestFedAvgAggregationWeights:
