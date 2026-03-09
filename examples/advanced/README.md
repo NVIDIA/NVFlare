@@ -9,8 +9,8 @@ Please also install "./requirements.txt" in each example folder.
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
-    * This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
-  [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
+    * This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629),
+  [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295),
   and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL simulator.
   * [Real-world Federated Learning with CIFAR-10](./cifar10/pt/cifar10-real-world/README.md)
     * Includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with streaming 
@@ -27,12 +27,6 @@ Please also install "./requirements.txt" in each example folder.
   * NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/) and k-Means.
 * [Federated SVM with Scikit-learn](./sklearn-svm/README.md)
   * NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/) and [SVM](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
-* [Histogram-based and Tree-based FL for XGBoost](./xgboost/fedxgb/README.md)
-  * Example of using NVIDIA FLARE with [XGBoost](https://xgboost.readthedocs.io/) for histogram-based and bagging-style tree ensembles.
-
-## Medical Image Analysis
-* [NVFlare + MONAI Integration](./monai/README.md)
-  * Demonstrates federated learning with MONAI bundles using NVFlare's Client API and Job Recipe patterns.
 
 ## Finance
 * [Financial Application with Federated XGBoost Methods](./finance/README.md)
