@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import copy
+import threading
+import time as _real_time
 
 import pytest
 
@@ -769,7 +771,412 @@ def test_decomposer_prefix_default_is_numpy(monkeypatch):
 
 def test_pt_executor_decomposer_prefix_is_tensor():
     """PTClientAPILauncherExecutor._decomposer_prefix() must return 'tensor_'."""
+    pytest.importorskip("torch")
     from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
 
     executor = object.__new__(PTClientAPILauncherExecutor)
     assert executor._decomposer_prefix() == "tensor_"
+
+
+# ---------------------------------------------------------------------------
+# Deferred stop_task() coordination (large-model download fix)
+# ---------------------------------------------------------------------------
+
+
+class _FakeLauncher:
+    """Minimal Launcher stub for deferred-stop tests."""
+
+    def __init__(self, needs_deferred=True, statuses=None):
+        self._needs_deferred = needs_deferred
+        self._statuses = list(statuses or ["success"])  # LauncherRunStatus.COMPLETE_SUCCESS
+        self._status_idx = 0
+        self.stop_task_calls = []
+
+    def needs_deferred_stop(self):
+        return self._needs_deferred
+
+    def check_run_status(self, task_name, fl_ctx):
+        if self._status_idx < len(self._statuses):
+            s = self._statuses[self._status_idx]
+            self._status_idx += 1
+            return s
+        return "success"  # LauncherRunStatus.COMPLETE_SUCCESS
+
+    def stop_task(self, task_name, fl_ctx, abort_signal):
+        self.stop_task_calls.append(task_name)
+
+    def launch_task(self, task_name, shareable, fl_ctx, abort_signal):
+        return True
+
+    def initialize(self, fl_ctx):
+        pass
+
+    def finalize(self, fl_ctx):
+        pass
+
+
+class _FakeAbortSignal:
+    def __init__(self, triggered=False):
+        self.triggered = triggered
+
+    def trigger(self, msg=""):
+        self.triggered = True
+
+
+def _make_deferred_stop_executor(monkeypatch, stop_task_wait_timeout=5.0):
+    """Return a LauncherExecutor wired for deferred-stop unit tests.
+
+    - Logging is silenced.
+    - _execute_launcher_method_in_thread_executor is replaced with a direct
+      delegation to self.launcher so tests don't need a live ThreadPoolExecutor.
+    - _wait_external_setup always returns True.
+    - reset_peer_is_up_or_dead is a no-op.
+    """
+    executor = LauncherExecutor(pipe_id="test_pipe")
+    executor._stop_task_wait_timeout = stop_task_wait_timeout
+    executor._job_end = False
+
+    for meth in ("log_info", "log_warning", "log_debug", "log_error"):
+        monkeypatch.setattr(LauncherExecutor, meth, lambda self, fl_ctx, msg: None)
+
+    def _mock_execute(self_inner, method_name, **kwargs):
+        fn = getattr(self_inner.launcher, method_name, None)
+        if fn is None:
+            return None
+        if method_name == "check_run_status":
+            return fn(kwargs.get("task_name"), kwargs.get("fl_ctx"))
+        elif method_name == "stop_task":
+            return fn(kwargs.get("task_name"), kwargs.get("fl_ctx"), kwargs.get("abort_signal"))
+        elif method_name == "launch_task":
+            return fn(
+                kwargs.get("task_name"), kwargs.get("shareable"), kwargs.get("fl_ctx"), kwargs.get("abort_signal")
+            )
+        return None
+
+    monkeypatch.setattr(LauncherExecutor, "_execute_launcher_method_in_thread_executor", _mock_execute)
+    monkeypatch.setattr(LauncherExecutor, "_wait_external_setup", lambda self, tn, fl_ctx, abort: True)
+    monkeypatch.setattr(LauncherExecutor, "reset_peer_is_up_or_dead", lambda self: None)
+    return executor
+
+
+def test_deferred_stop_event_starts_set():
+    """`_deferred_stop_event` must start set (no deferred stop in progress)."""
+    executor = LauncherExecutor(pipe_id="test_pipe")
+    assert executor._deferred_stop_event.is_set()
+
+
+def test_deferred_stop_task_name_default_empty():
+    """`_deferred_stop_task_name` must be initialized to empty string."""
+    executor = LauncherExecutor(pipe_id="test_pipe")
+    assert executor._deferred_stop_task_name == ""
+
+
+def test_stop_task_wait_timeout_default_zero():
+    """`_stop_task_wait_timeout` must default to 0.0 on base LauncherExecutor."""
+    executor = LauncherExecutor(pipe_id="test_pipe")
+    assert executor._stop_task_wait_timeout == 0.0
+
+
+def test_stop_task_wait_timeout_set_from_download_complete_timeout():
+    """`ClientAPILauncherExecutor` must set `_stop_task_wait_timeout = download_complete_timeout`."""
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", download_complete_timeout=900.0)
+    assert executor._stop_task_wait_timeout == 900.0
+
+
+def test_needs_deferred_stop_launcher_base_returns_false():
+    """Launcher base class `needs_deferred_stop()` must return False."""
+    from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
+
+    class _MinimalLauncher(Launcher):
+        def launch_task(self, task_name, shareable, fl_ctx, abort_signal):
+            return True
+
+        def stop_task(self, task_name, fl_ctx, abort_signal):
+            pass
+
+        def check_run_status(self, task_name, fl_ctx):
+            return LauncherRunStatus.NOT_RUNNING
+
+    assert _MinimalLauncher().needs_deferred_stop() is False
+
+
+def test_needs_deferred_stop_subprocess_launch_once_false():
+    """`SubprocessLauncher(launch_once=False).needs_deferred_stop()` must return True."""
+    from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+
+    assert SubprocessLauncher(script="echo test", launch_once=False).needs_deferred_stop() is True
+
+
+def test_needs_deferred_stop_subprocess_launch_once_true():
+    """`SubprocessLauncher(launch_once=True).needs_deferred_stop()` must return False."""
+    from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+
+    assert SubprocessLauncher(script="echo test", launch_once=True).needs_deferred_stop() is False
+
+
+def test_finalize_captures_deferred_stop_task_name(monkeypatch):
+    """`_finalize_external_execution` must capture the task name in `_deferred_stop_task_name`."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=True, statuses=["success"])
+    executor._received_result.set()
+
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert executor._deferred_stop_task_name == "train"
+    executor._deferred_stop_event.wait(timeout=10.0)  # clean up background thread
+
+
+def test_finalize_deferred_event_cleared_then_set_by_thread(monkeypatch):
+    """After `_finalize_external_execution` with needs_deferred=True the event must be
+    cleared while the deferred thread is running and set once the thread finishes.
+
+    A gate Event controls when stop_task() proceeds so the test can observe the
+    intermediate 'event cleared' state deterministically without any timing races.
+    """
+    from unittest.mock import MagicMock
+
+    stop_task_entered = threading.Event()  # signals that the deferred thread is inside stop_task
+    stop_task_gate = threading.Event()  # test sets this to let stop_task() proceed
+
+    class _GatedLauncher(_FakeLauncher):
+        def stop_task(self, task_name, fl_ctx, abort_signal):
+            stop_task_entered.set()
+            stop_task_gate.wait(timeout=10.0)
+            super().stop_task(task_name, fl_ctx, abort_signal)
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    fake_launcher = _GatedLauncher(needs_deferred=True, statuses=["success"])
+    executor.launcher = fake_launcher
+    executor._received_result.set()
+
+    assert executor._deferred_stop_event.is_set()
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    # Wait until the deferred thread has entered stop_task() — at this point the
+    # finally block has NOT run yet, so the event must still be cleared.
+    assert stop_task_entered.wait(timeout=5.0), "Deferred thread did not enter stop_task in time"
+    assert not executor._deferred_stop_event.is_set(), "Event must be cleared while deferred thread is in stop_task"
+
+    # Release the gate; the thread completes and the finally block sets the event.
+    stop_task_gate.set()
+    assert executor._deferred_stop_event.wait(timeout=5.0), "Event must be set after deferred thread completes"
+    assert fake_launcher.stop_task_calls == ["train"]
+
+
+def test_finalize_no_deferred_when_needs_deferred_false(monkeypatch):
+    """When `needs_deferred_stop()` is False, `_finalize_external_execution` must
+    take the synchronous path and leave the event set."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+    executor._received_result.set()
+
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert executor._deferred_stop_event.is_set(), "Synchronous path must not clear the event"
+
+
+def test_initialize_waits_for_deferred_stop_event(monkeypatch):
+    """`_initialize_external_execution` must block on `_deferred_stop_event` until
+    the previous round's deferred stop completes, then proceed with launch_task."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=True)
+    executor._deferred_stop_event.clear()  # simulate in-progress deferred stop
+    executor._deferred_stop_task_name = "train"
+
+    results = []
+
+    def run_init():
+        results.append(executor._initialize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal()))
+
+    t = threading.Thread(target=run_init, daemon=True)
+    t.start()
+
+    t.join(timeout=0.3)
+    assert t.is_alive(), "_initialize_external_execution should be blocking on the event"
+
+    executor._deferred_stop_event.set()  # simulate deferred stop completing
+    t.join(timeout=5.0)
+    assert not t.is_alive(), "_initialize_external_execution did not unblock after event was set"
+    assert results == [True]
+
+
+def test_initialize_returns_false_on_abort_during_deferred_wait(monkeypatch):
+    """`_initialize_external_execution` must return False immediately when the
+    abort signal is triggered while waiting for `_deferred_stop_event`."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=True)
+    executor._deferred_stop_event.clear()
+    executor._deferred_stop_task_name = "train"
+
+    result = executor._initialize_external_execution(
+        "train", MagicMock(), MagicMock(), _FakeAbortSignal(triggered=True)
+    )
+    assert result is False
+
+
+def test_initialize_timeout_fallback_uses_previous_task_name(monkeypatch):
+    """On deferred-stop timeout, the fallback `stop_task` call must use
+    `_deferred_stop_task_name` (the previous round's task), not the new task name."""
+    from unittest.mock import MagicMock, patch
+
+    executor = _make_deferred_stop_executor(monkeypatch, stop_task_wait_timeout=5.0)
+    fake_launcher = _FakeLauncher(needs_deferred=True)
+    executor.launcher = fake_launcher
+    executor._deferred_stop_task_name = "train"  # previous round
+
+    # Replace event with a mock that never becomes set and wait() returns False instantly
+    mock_event = MagicMock()
+    mock_event.is_set.return_value = False
+    mock_event.wait.return_value = False
+    executor._deferred_stop_event = mock_event
+
+    # Advance time past deadline after a few calls so the loop exits without sleeping
+    base = _real_time.time()
+    call_count = [0]
+
+    def fast_time():
+        call_count[0] += 1
+        return base + (100_000 if call_count[0] > 3 else 0)
+
+    with patch("nvflare.app_common.executors.launcher_executor.time") as mock_time:
+        mock_time.time.side_effect = fast_time
+        result = executor._initialize_external_execution("validate", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert result is True
+    assert fake_launcher.stop_task_calls == [
+        "train"
+    ], f"Fallback stop_task must use previous task name 'train', got {fake_launcher.stop_task_calls}"
+
+
+# ---------------------------------------------------------------------------
+# launch_once=True scenario: synchronous stop, no deferred thread
+# ---------------------------------------------------------------------------
+
+
+def test_launch_once_finalize_calls_stop_synchronously(monkeypatch):
+    """With launch_once=True (needs_deferred=False), stop_task must be called
+    synchronously — it appears in stop_task_calls before _finalize returns."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+    executor._received_result.set()
+
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert executor.launcher.stop_task_calls == [
+        "train"
+    ], "launch_once=True: stop_task must be called synchronously during _finalize_external_execution"
+
+
+def test_launch_once_event_stays_set_after_finalize(monkeypatch):
+    """With launch_once=True, _deferred_stop_event must remain set after finalize
+    (no background thread is started to clear it)."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+    executor._received_result.set()
+
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert (
+        executor._deferred_stop_event.is_set()
+    ), "launch_once=True: event must remain set — synchronous stop does not clear it"
+
+
+def test_launch_once_sequential_rounds_no_blocking(monkeypatch):
+    """With launch_once=True, _initialize_external_execution for round N+1 must not
+    block on the deferred stop event (which is never cleared in this path)."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+    executor._received_result.set()
+
+    # Finalize round N
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    # Initialize round N+1 must return True immediately (event is set, no wait)
+    result = executor._initialize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+    assert result is True
+
+
+def test_launch_once_deferred_task_name_not_captured(monkeypatch):
+    """With needs_deferred=False, _deferred_stop_task_name must NOT be updated —
+    task name capture only happens in the deferred branch."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+    executor._received_result.set()
+
+    executor._finalize_external_execution("train", MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert (
+        executor._deferred_stop_task_name == ""
+    ), "launch_once=True: _deferred_stop_task_name must not be updated in the synchronous path"
+
+
+# ---------------------------------------------------------------------------
+# Swarm learning scenario: launch_once=True, multiple task types in sequence
+# ---------------------------------------------------------------------------
+
+
+def test_swarm_each_task_type_stop_called_synchronously(monkeypatch):
+    """In a swarm job (launch_once=True), stop_task must be called synchronously for
+    each of train / validate / submit_model in the order they are finalized."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    for task_name in ("train", "validate", "submit_model"):
+        executor._received_result.set()
+        executor._finalize_external_execution(task_name, MagicMock(), MagicMock(), _FakeAbortSignal())
+
+    assert executor.launcher.stop_task_calls == [
+        "train",
+        "validate",
+        "submit_model",
+    ], "Swarm: stop_task must be called for each task type in sequence"
+
+
+def test_swarm_event_stays_set_across_all_task_types(monkeypatch):
+    """In a swarm job, _deferred_stop_event must remain set after every task type —
+    no deferred threads are ever started with launch_once=True."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    for task_name in ("train", "validate", "submit_model"):
+        executor._received_result.set()
+        executor._finalize_external_execution(task_name, MagicMock(), MagicMock(), _FakeAbortSignal())
+        assert (
+            executor._deferred_stop_event.is_set()
+        ), f"Swarm: event must remain set after finalizing task '{task_name}'"
+
+
+def test_swarm_initialize_never_blocks_on_event(monkeypatch):
+    """In a swarm job, _initialize_external_execution must never block on the
+    deferred stop event because it is never cleared by a needs_deferred=False launcher."""
+    from unittest.mock import MagicMock
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    for task_name in ("train", "validate", "submit_model"):
+        result = executor._initialize_external_execution(task_name, MagicMock(), MagicMock(), _FakeAbortSignal())
+        assert result is True, f"Swarm: _initialize_external_execution must succeed for task '{task_name}'"
+        assert (
+            executor._deferred_stop_event.is_set()
+        ), f"Swarm: event must remain set before/after initialize for task '{task_name}'"

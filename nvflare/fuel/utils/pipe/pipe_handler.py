@@ -179,7 +179,10 @@ class PipeHandler(object):
 
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
         if self._is_stopped_or_aborted(abort_signal):
-            self.logger.debug("cannot send message to pipe since PipeHandler is asked to stop")
+            self.logger.info(
+                f"cannot send '{msg.topic}' to pipe: asked_to_stop={self.asked_to_stop}"
+                f" abort_triggered={abort_signal.triggered if abort_signal else 'N/A'}"
+            )
             return False
 
         pipe = self.pipe
@@ -365,6 +368,11 @@ class PipeHandler(object):
                     and now - self._last_heartbeat_received_time > self.heartbeat_timeout
                     and not self.asked_to_stop
                 ):
+                    elapsed = now - self._last_heartbeat_received_time
+                    self.logger.info(
+                        f"peer gone: no heartbeat for {elapsed:.1f}s (timeout={self.heartbeat_timeout}s)"
+                        f" last_active={self._last_heartbeat_received_time:.1f}"
+                    )
                     self._add_message(
                         self._make_event_message(
                             Topic.PEER_GONE, f"missing heartbeat after {self.heartbeat_timeout} secs"
@@ -384,7 +392,13 @@ class PipeHandler(object):
 
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
-                self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
+                try:
+                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
+                except Exception as ex:
+                    if not self.asked_to_stop:
+                        self.logger.debug(f"heartbeat send failed, stopping heartbeat: {ex}")
+                        self.asked_to_stop = True
+                    break
                 last_heartbeat_sent_time = now
 
             time.sleep(self._check_interval)

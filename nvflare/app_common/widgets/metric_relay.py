@@ -78,7 +78,7 @@ class MetricRelay(Widget, AttributesExportable):
                 self.pipe_handler.stop()
 
     def _pipe_status_cb(self, msg: Message):
-        self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}")
+        self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}: {msg.data}")
         self.pipe_handler.stop()
 
     def _pipe_msg_cb(self, msg: Message):
