@@ -61,7 +61,7 @@ class JobHandleSpec:
     def terminate(self):
         """To terminate the job run.
 
-        Returns: the job run return code.
+        Returns: None
 
         """
         raise NotImplementedError()
@@ -94,7 +94,7 @@ class JobLauncherSpec(FLComponent):
             job_meta: job metadata
             fl_ctx: FLContext
 
-        Returns: boolean to indicates the job launch success or fail.
+        Returns: a JobHandle instance.
 
         """
         raise NotImplementedError()
