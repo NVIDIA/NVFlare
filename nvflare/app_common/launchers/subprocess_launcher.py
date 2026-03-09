@@ -143,6 +143,9 @@ class SubprocessLauncher(Launcher):
         if self._launch_once and self._process:
             self._stop_external_process()
 
+    def needs_deferred_stop(self) -> bool:
+        return not self._launch_once
+
     def launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if not self._launch_once:
             self._start_external_process(fl_ctx)
@@ -155,6 +158,7 @@ class SubprocessLauncher(Launcher):
     def _start_external_process(self, fl_ctx: FLContext):
         with self._lock:
             if self._process is None:
+                self.logger.info("_start_external_process: launching new subprocess")
                 command = self._script
                 env = os.environ.copy()
                 env["CLIENT_API_TYPE"] = "EX_PROCESS_API"
@@ -178,6 +182,7 @@ class SubprocessLauncher(Launcher):
                     self._process.wait(self._shutdown_timeout)
                 except subprocess.TimeoutExpired:
                     pass
+                self.logger.info(f"_stop_external_process: terminating pid={self._process.pid}")
                 self._process.terminate()
                 self._log_thread.join()
                 if self._clean_up_script:
