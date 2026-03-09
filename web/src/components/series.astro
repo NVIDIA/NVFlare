@@ -158,7 +158,7 @@ const series_100 = {
           title: "Getting Started",
           tags: ["beg.", "pytorch", "lightning", "sklearn", "tensorflow"],
           description: "Getting started examples using the Client API, Model Controller API, and Job API for different frameworks.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/getting_started`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world`
         },
         {
           title: "Client API",
@@ -188,7 +188,7 @@ const series_100 = {
           title: "Hello FedAvg",
           tags: ["beg.", "pytorch"],
           description: "Demonstrate flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
         },
         {
           title: "Job API Examples",
@@ -308,22 +308,10 @@ const series_200 = {
       description: "See how FL algorithms can be implemented in a variety of frameworks.",
       cards: [
         {
-          title: "Step-by-Step CIFAR10 Examples",
-          tags: ["beg.", "algorithm", "pytorch", "dl"],
-          description: "Step-by-step examples series with CIFAR-10 (image data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/cifar10`
-        },
-        {
-          title: "Step-by-Step HIGGS Examples",
-          tags: ["beg.", "algorithm", "pandas", "sklearn", "xgboost"],
-          description: "Step-by-step examples series with HIGGS (tabular data) to showcase different NVIDIA FLARE features, workflows, and APIs.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/step-by-step/higgs`
-        },
-        {
           title: "Hello FedAvg",
           tags: ["beg.", "algorithm", "pytorch", "dl"],
           description: "Example using the FedAvg workflow to implement Federated Averaging.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
         },
         {
           title: "Hello Numpy Cross-Site Validation",
@@ -341,7 +329,7 @@ const series_200 = {
           title: "Simulated Federated Learning with CIFAR-10",
           tags: ["int.", "algorithm", "simulator", "pytorch", "dl"],
           description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-sim/README.md`
         },
         {
           title: "TensorFlow Algorithms and Examples",
@@ -378,7 +366,7 @@ const series_200 = {
           title: "Federated Learning for Prostate Segmentation from Multi-source Data",
           tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
           description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/prostate`
         },
         {
           title: "NVFlare + MONAI integration",
@@ -390,7 +378,7 @@ const series_200 = {
           title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
           tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
           description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/brats18`
         },
         {
           title: "Federated GNN: Protein Classification",
@@ -435,20 +423,20 @@ const series_200 = {
           title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
           tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
           description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/brats18`
         },
         {
           title: "Real-world Federated Learning with CIFAR-10",
           tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
           description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-real-world/README.md`
         },
         {
           title: "Secure Federated XGBoost with Homomorphic Encryption",
           tags: ["adv.", "algorithm", "xgboost", "he"],
           description:
             "Federated secure training with XGBoost using homomorphic encryption.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb_secure`,
         },
       ]
     }

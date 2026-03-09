@@ -207,8 +207,9 @@ Swarm Learning uses ``memory_gc_rounds`` (not ``client_memory_gc_rounds``) and
         min_clients=3,
         num_rounds=10,
         train_script="train.py",
-        memory_gc_rounds=1,   # Cleanup every round on trainer and aggregator roles
+        memory_gc_rounds=1,    # Cleanup every round on trainer and aggregator roles
         cuda_empty_cache=True,
+        round_timeout=3600,    # P2P model-transfer ACK budget; increase for large models
     )
 
 .. note::
@@ -260,14 +261,31 @@ Supplemental cleanup is also available and configurable:
    The lifecycle handling is transparent to user training scripts. No code changes are required
    in ``train.py`` for default behavior.
 
-External Process Support
-------------------------
+Client Training Process Memory Cleanup
+---------------------------------------
+
+For subprocess-mode jobs (``launch_external_process=True``), memory cleanup runs
+across all stages of the client training process — not just the training subprocess.
+After each round result is forwarded, the same GC and heap-trim cycle is applied
+to every stage of the client training process, preventing RSS growth across long jobs.
+
+The cleanup frequency and GPU cache behavior are controlled by the same
+``memory_gc_rounds`` / ``client_memory_gc_rounds`` and ``cuda_empty_cache`` parameters
+already documented above.
+
+RSS profiling across all stages can be enabled with the environment variable
+``NVFLARE_CLIENT_MEMORY_PROFILE=1``, which emits per-stage RSS log markers after each
+send and receive for easy grep-based analysis.
+
+External Process Settings
+--------------------------
 
 For external process execution (``launch_external_process=True``), memory settings
 are passed via environment variables:
 
 - ``NVFLARE_CLIENT_MEMORY_GC_ROUNDS``: Cleanup interval
 - ``NVFLARE_CUDA_EMPTY_CACHE``: GPU cache cleanup (``true``/``false``)
+- ``NVFLARE_CLIENT_MEMORY_PROFILE``: Set to ``1`` to enable per-round RSS logging
 
 Recommended Settings
 ====================
