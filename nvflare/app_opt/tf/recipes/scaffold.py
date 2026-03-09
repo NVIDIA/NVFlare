@@ -48,8 +48,14 @@ class ScaffoldRecipe(Recipe):
 
     Implements the training algorithm proposed in
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
-    (https://arxiv.org/abs/1910.06378). The client script is assumed to be using functions
-    implemented in `TFScaffoldHelper` class.
+    (https://arxiv.org/abs/1910.06378).
+
+    **Client script requirement**: Unlike FedAvgRecipe, the client script *must* use
+    `TFScaffoldHelper` (nvflare.app_opt.tf.scaffold): call init(model), model_update()
+    during training, terms_update() after training, and include
+    ``meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = scaffold_helper.get_delta_controls()``
+    in the FLModel sent back to the server. A standard flare.receive/send loop without
+    TFScaffoldHelper will cause server-side aggregation to fail.
 
     This recipe sets up a complete federated learning workflow with SCAFFOLD controller.
 
@@ -103,9 +109,6 @@ class ScaffoldRecipe(Recipe):
         job.simulator_run("/tmp/nvflare/jobs/my_scaffold_job", gpu="0")
         ```
 
-    Note:
-        The client script must use `TFScaffoldHelper` from `nvflare.app_opt.tf.scaffold`
-        to handle SCAFFOLD-specific operations including control variates.
     """
 
     def __init__(
