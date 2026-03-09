@@ -24,6 +24,9 @@ Example:
 
   # NVFlare global model (single .pt file from server; base model defaults to Qwen/Qwen3-VL-2B-Instruct)
   python run_inference.py --model_path /path/to/FL_global_model.pt
+
+  # LoRA-saved FL global model (--lora job): script detects adapter keys and loads base + PEFT automatically
+  python run_inference.py --model_path /path/to/FL_global_model.pt --base_model Qwen/Qwen3-VL-2B-Instruct
 """
 
 import argparse
@@ -35,7 +38,13 @@ import numpy as np
 import torch
 
 # Use example's model loader (supports both Qwen2.5-VL and Qwen3-VL)
-from model import load_qwen_vl_from_pretrained
+from model import (
+    DEFAULT_LORA_ALPHA,
+    DEFAULT_LORA_DROPOUT,
+    DEFAULT_LORA_R,
+    DEFAULT_LORA_TARGET_MODULES,
+    load_qwen_vl_from_pretrained,
+)
 from transformers import AutoProcessor
 
 # Key used by NVFlare PT persistor when saving FL_global_model.pt
@@ -76,8 +85,25 @@ def _align_ckpt_to_model(state_dict: dict, model_keys: set) -> dict:
     return best
 
 
-def _load_nvflare_global_pt(pt_path: str, model_keys: set) -> dict:
-    """Load state dict from NVFlare FL_global_model.pt and align keys to the inner HuggingFace model."""
+def _is_lora_checkpoint(state_dict: dict) -> bool:
+    """True if this state dict is LoRA-only (adapter weights from FL --lora job)."""
+    return any("lora_" in k.lower() or "base_model.model" in k for k in state_dict) if state_dict else False
+
+
+def _prepare_lora_state_dict(state_dict: dict) -> dict:
+    """Convert FL LoRA state dict (key 'model.' prefix, lora_A/B.weight) to PeftModel format."""
+    out = {}
+    for k, v in state_dict.items():
+        key = k[6:] if k.startswith("model.") else k
+        key = key.replace(".lora_A.weight", ".lora_A.default.weight").replace(
+            ".lora_B.weight", ".lora_B.default.weight"
+        )
+        out[key] = v
+    return out
+
+
+def _load_nvflare_global_pt(pt_path: str, model_keys: set = None) -> tuple[dict, bool]:
+    """Load state dict from NVFlare FL_global_model.pt. Returns (state_dict, is_lora)."""
     data = torch.load(pt_path, map_location="cpu", weights_only=True)
     if not isinstance(data, dict):
         raise ValueError(f"Expected dict from {pt_path}, got {type(data)}")
@@ -85,8 +111,10 @@ def _load_nvflare_global_pt(pt_path: str, model_keys: set) -> dict:
     if state_dict is None:
         raise ValueError(f"No key {NVFLARE_PT_MODEL_KEY!r} in {pt_path}. Keys: {list(data.keys())}")
     state_dict = _ensure_tensors(state_dict)
-    state_dict = _align_ckpt_to_model(state_dict, model_keys)
-    return state_dict
+    is_lora = _is_lora_checkpoint(state_dict)
+    if not is_lora and model_keys is not None:
+        state_dict = _align_ckpt_to_model(state_dict, model_keys)
+    return state_dict, is_lora
 
 
 def _abs_image_path(image_path: str, image_root: str) -> str:
@@ -201,41 +229,71 @@ def main():
     is_nvflare_pt = os.path.isfile(args.model_path) and args.model_path.endswith(".pt")
     if is_nvflare_pt:
         base_path = args.base_model
-        print(f"Loading base model and processor from: {base_path}")
-        model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
-        model_keys = set(model.state_dict().keys())
-        # Snapshot one weight from base to detect if .pt is identical to base (global never updated)
-        _sample_key = next((k for k in model_keys if "weight" in k and "embed" in k), next(iter(model_keys)))
-        base_sample = model.state_dict()[_sample_key].clone()
         print(f"Loading NVFlare global weights from: {args.model_path}")
-        state_dict = _load_nvflare_global_pt(args.model_path, model_keys)
-        result = model.load_state_dict(state_dict, strict=False)
-        n_missing = len(result.missing_keys)
-        n_unexpected = len(result.unexpected_keys)
-        n_applied = len(model_keys) - n_missing
-        print(f"Checkpoint: applied {n_applied} keys; missing_keys={n_missing}, unexpected_keys={n_unexpected}")
-        ckpt_sample = model.state_dict()[_sample_key]
-        if torch.equal(base_sample, ckpt_sample):
-            print(
-                "  Note: checkpoint weight sample matches base model (key=%s). "
-                "FL_global_model.pt may be the initial save or the global model was never updated." % (_sample_key,)
+        state_dict, is_lora = _load_nvflare_global_pt(args.model_path)
+
+        if is_lora:
+            # LoRA checkpoint: load base, wrap with PEFT, load adapter (keys: strip "model." prefix, .lora_A/B.weight -> .default.weight)
+            print(f"Detected LoRA checkpoint. Loading base model from: {base_path}")
+            model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
+            from peft import LoraConfig, TaskType, get_peft_model
+
+            model = get_peft_model(
+                model,
+                LoraConfig(
+                    r=DEFAULT_LORA_R,
+                    lora_alpha=DEFAULT_LORA_ALPHA,
+                    lora_dropout=DEFAULT_LORA_DROPOUT,
+                    target_modules=DEFAULT_LORA_TARGET_MODULES,
+                    bias="none",
+                    task_type=TaskType.CAUSAL_LM,
+                ),
             )
+            lora_sd = _prepare_lora_state_dict(state_dict)
+            result = model.load_state_dict(lora_sd, strict=False)
+            n_applied = len(lora_sd) - len(result.unexpected_keys)
+            if n_applied == 0:
+                raise RuntimeError(
+                    "No LoRA keys matched the model. Check that --base_model matches the FL job base."
+                )
+            print(f"LoRA checkpoint: loaded {n_applied} adapter keys.")
         else:
-            diff = (ckpt_sample.float() - base_sample.float()).abs().max().item()
-            print(f"  Checkpoint differs from base (max abs diff on sample key {_sample_key!r}: {diff:.2e})")
-        if n_applied == 0:
-            sample_ckpt = list(state_dict.keys())[:3]
-            sample_model = list(model_keys)[:3]
-            print(f"  Checkpoint key sample: {sample_ckpt}")
-            print(f"  Model key sample:      {sample_model}")
-            raise RuntimeError(
-                "No checkpoint keys matched the model. Check that --base_model matches the model "
-                "used in the FL job (e.g. Qwen/Qwen3-VL-2B-Instruct)."
-            )
-        if n_missing > 0 and n_missing <= 5:
-            print(f"  missing_keys: {result.missing_keys}")
-        elif n_missing > 5:
-            print(f"  missing_keys (first 5): {result.missing_keys[:5]}")
+            # Full-model checkpoint: load base and apply full state dict
+            print(f"Loading base model and processor from: {base_path}")
+            model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
+            model_keys = set(model.state_dict().keys())
+            state_dict = _align_ckpt_to_model(state_dict, model_keys)
+            _sample_key = next((k for k in model_keys if "weight" in k and "embed" in k), next(iter(model_keys)))
+            base_sample = model.state_dict()[_sample_key].clone()
+            result = model.load_state_dict(state_dict, strict=False)
+            n_missing = len(result.missing_keys)
+            n_unexpected = len(result.unexpected_keys)
+            n_applied = len(model_keys) - n_missing
+            print(f"Checkpoint: applied {n_applied} keys; missing_keys={n_missing}, unexpected_keys={n_unexpected}")
+            ckpt_sample = model.state_dict()[_sample_key]
+            if torch.equal(base_sample, ckpt_sample):
+                print(
+                    "  Note: checkpoint weight sample matches base model (key=%s). "
+                    "FL_global_model.pt may be the initial save or the global model was never updated."
+                    % (_sample_key,)
+                )
+            else:
+                diff = (ckpt_sample.float() - base_sample.float()).abs().max().item()
+                print(f"  Checkpoint differs from base (max abs diff on sample key {_sample_key!r}: {diff:.2e})")
+            if n_applied == 0:
+                sample_ckpt = list(state_dict.keys())[:3]
+                sample_model = list(model_keys)[:3]
+                print(f"  Checkpoint key sample: {sample_ckpt}")
+                print(f"  Model key sample:      {sample_model}")
+                raise RuntimeError(
+                    "No checkpoint keys matched the model. Check that --base_model matches the model "
+                    "used in the FL job (e.g. Qwen/Qwen3-VL-2B-Instruct)."
+                )
+            if n_missing > 0 and n_missing <= 5:
+                print(f"  missing_keys: {result.missing_keys}")
+            elif n_missing > 5:
+                print(f"  missing_keys (first 5): {result.missing_keys[:5]}")
+
         model = model.to(args.device)
         model.eval()
         processor = AutoProcessor.from_pretrained(base_path, trust_remote_code=True)
