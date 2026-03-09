@@ -47,6 +47,7 @@ Key Highlights
   - **Cyclic Learning** (sequential client training)
   - **XGBoost** (horizontal, vertical, and bagging modes)
   - **Federated Statistics** (distributed statistics computation)
+  - **FedEval** (federated evaluation of pre-trained models)
   - **Cross-Site Evaluation** (model evaluation across sites)
   - **PSI** (Private Set Intersection)
   - **Flower Integration**
@@ -135,6 +136,37 @@ FLARE 2.7.2 introduces a **pass-through architecture** for ``ClientAPILauncherEx
 This is particularly impactful for LLM-scale models (7B–70B parameters) where CJ memory
 previously equalled the full model size.
 
+Large-Model Subprocess Reliability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FLARE 2.7.2 adds a set of reliability improvements for jobs using subprocess-mode
+clients (``launch_external_process=True``) with large models.
+
+**Reduced memory on retry**: Send retries no longer accumulate per-attempt model
+copies in memory — a single serialized payload is reused across retries, preventing
+OOM growth on slow or congested networks.
+
+**Configurable large-model timeouts**: Three timeout parameters previously hardcoded
+at values too short for large models are now configurable via
+``recipe.add_client_config({...})``:
+
+- ``submit_result_timeout`` (default 60 s): time the training subprocess waits for
+  acknowledgment of its result.  Set to 1800 s for LLM-scale transfers.
+- ``tensor_min_download_timeout`` (PyTorch) / ``np_min_download_timeout`` (NumPy),
+  default 300 s: minimum idle time before an inactive download transaction is declared
+  dead.  Increase to 600 s for 70B+ models on congested networks.
+- ``max_resends`` (default 3): retry limit on persistent send failures.
+  Previously unlimited.
+
+**Timeout consistency validation**: At job start, FLARE logs warnings when timeout
+values are inconsistent (e.g., ``min_download_timeout < streaming_per_request_timeout``),
+making misconfiguration visible before a failure.
+
+**Client-Controlled Workflows min_clients fault tolerance**: Swarm Learning and SAG
+workflows now accept a ``min_clients`` threshold; if configured clients meet the
+threshold the workflow proceeds with a warning for missing participants rather than
+aborting.
+
 Client-Side Memory Management
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -152,6 +184,10 @@ the existing server-side cleanup:
 - **Combined with server-side cleanup**: Together with the server-side garbage collection
   introduced in 2.7.2, this prevents unbounded RSS growth in both the server and client
   processes across long-running jobs with many rounds.
+- **Full pipeline coverage for subprocess mode**: When using subprocess-mode clients
+  (``launch_external_process=True``), all stages of the client training process now
+  run the same GC and heap-trim cycle — not just the training subprocess — preventing
+  RSS growth across the entire client-side pipeline.
 
 Server-Side Memory Cleanup
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -329,6 +365,14 @@ To provide a cleaner and more focused learning experience, we have consolidated 
 
     A few examples and tutorials still use older APIs. These will continue to be updated in upcoming releases.
 
+Edge Recipes
+~~~~~~~~~~~~
+
+- **``device_wait_timeout`` for ETFedBuffRecipe**: Sets an explicit timeout (seconds)
+  for waiting for devices to join before aborting the job.  Recommended when
+  ``device_reuse=False`` with a finite device pool to prevent indefinite hangs once
+  the pool is exhausted.  Defaults to ``None`` (wait indefinitely).
+
 MONAI Integration
 ~~~~~~~~~~~~~~~~~
 
@@ -341,7 +385,7 @@ Documentation
 
 - **Available Recipes Guide**: New :ref:`available_recipes` guide with code examples and links to working examples for all available recipes.
 
-- **Timeout Documentation**: New :doc:`/user_guide/timeout_troubleshooting` for common job failures, and :doc:`/programming_guide/timeouts` as comprehensive reference for all 100+ timeout parameters.
+- **Timeout Documentation**: New :doc:`/user_guide/timeout_troubleshooting` for common timeout-related job failures and fixes (task fetch, external process pre-init, submit result, etc.), and :doc:`/programming_guide/timeouts` as the comprehensive reference for all 100+ timeout parameters by component and use case.
 
 - **Memory Management Guide**: New :doc:`/programming_guide/memory_management` covering server-side and client-side garbage collection, ``MALLOC_ARENA_MAX`` tuning, platform compatibility, and troubleshooting.
 
@@ -356,6 +400,13 @@ Documentation
 Bug Fixes
 ~~~~~~~~~
 
+- Fixed OOM accumulation on subprocess send retry: a single serialized payload is now reused across retries rather than re-serializing per attempt.
+- Fixed subprocess task-fetch stall: the client training process now acknowledges task receipt immediately instead of waiting for download completion, preventing subprocess timeout during large-model transfers.
+- Fixed CSE model-load failure after external-process training: cross-site evaluation now uses the on-disk persistor instead of relaunching the already-exited training subprocess.
+- Fixed ``SwarmServerController`` crash when ``min_clients`` is omitted from JSON config (``None < 0`` TypeError replaced with ``int = 0`` default).
+- Fixed ``max_resends`` silently ignored in subprocess executor due to private attribute shadowing.
+- Fixed gRPC session resource leak in ``nvflare job submit`` when the server is unreachable.
+- Fixed connection manager crash on frame arrival after job teardown.
 - Fixed F3 streaming Head-of-Line stall: ``send_frame()`` no longer holds the connection lock without a timeout bound.
 - Fixed RxTask self-deadlock triggered by stream error signals during active receive.
 - Fixed stream thread pool starvation that prevented concurrent model downloads from completing.
