@@ -281,6 +281,21 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             cleanup_memory(cuda_empty_cache=self._cuda_empty_cache)
             self.log_info(fl_ctx, f"Client job memory cleanup performed at round {self._cj_round_count}.")
 
+    def _resolve_launch_once(self, fl_ctx: FLContext) -> bool:
+        """Return True if the subprocess is launched once for the whole job.
+
+        self.launcher may be None when prepare_config_for_launch() is called during
+        initialize() (before _initialize_external_execution() assigns it), so we
+        fetch the launcher component directly from the engine.
+        """
+        launcher = self.launcher
+        if launcher is None and self._launcher_id:
+            engine = fl_ctx.get_engine()
+            launcher = engine.get_component(self._launcher_id)
+        if launcher is None:
+            return False  # safe default: treat as per-round (direct os._exit path)
+        return not launcher.needs_deferred_stop()
+
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {
@@ -302,7 +317,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
             ConfigKey.MAX_RESENDS: self._max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
-            ConfigKey.LAUNCH_ONCE: not self.launcher.needs_deferred_stop(),
+            ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
         }
 
         config_data = {
