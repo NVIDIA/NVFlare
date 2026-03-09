@@ -873,8 +873,9 @@ class TestScaffoldAggregation:
 
     def test_missing_scaffold_ctrl_diff_raises_clear_error(self):
         """Test missing scaffold control diff raises a clear, framework-neutral error."""
-        import pytest
         import re
+
+        import pytest
 
         from nvflare.app_common.app_constant import AlgorithmConstants
         from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
