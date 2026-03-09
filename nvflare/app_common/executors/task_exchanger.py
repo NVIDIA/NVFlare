@@ -106,9 +106,10 @@ class TaskExchanger(Executor):
             if not isinstance(self.pipe, Pipe):
                 self.system_panic(f"component of {self.pipe_id} must be Pipe but got {type(self.pipe)}", fl_ctx)
                 return
-            self._create_pipe_handler()
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            if self.pipe_handler:
+                self.pipe_handler.stop(close_pipe=False)
             self._create_pipe_handler()
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
