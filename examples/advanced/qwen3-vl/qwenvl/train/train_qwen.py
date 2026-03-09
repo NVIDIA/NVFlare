@@ -263,7 +263,7 @@ def train(
         lora_config = LoraConfig(
             r=training_args.lora_r or 64,
             lora_alpha=training_args.lora_alpha or 128,
-            lora_dropout=training_args.lora_dropout if training_args.lora_dropout is not None else 0.05,
+            lora_dropout=training_args.lora_dropout if training_args.lora_dropout is not None else 0.0,
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen attention
             bias="none",
             task_type=TaskType.CAUSAL_LM,

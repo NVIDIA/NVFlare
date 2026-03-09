@@ -29,7 +29,7 @@ from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
 # LoRA config must match Qwen train_qwen.py (argument.py / train_qwen.py)
 DEFAULT_LORA_R = 64
 DEFAULT_LORA_ALPHA = 128
-DEFAULT_LORA_DROPOUT = 0.05
+DEFAULT_LORA_DROPOUT = 0.0
 DEFAULT_LORA_TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj"]
 
 

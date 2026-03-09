@@ -444,6 +444,9 @@ def create_optimizer(self):
                 },
             ]
 
+        optimizer_grouped_parameters = [g for g in optimizer_grouped_parameters if g["params"]]
+        if not optimizer_grouped_parameters:
+            raise ValueError("No trainable parameters found for optimizer construction.")
         optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
         self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
