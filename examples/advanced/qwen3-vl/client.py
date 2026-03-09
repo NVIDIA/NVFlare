@@ -364,7 +364,11 @@ def main():
 
     lora_exchange = getattr(args, "lora_exchange", False)
     use_in_memory_exchange = not _is_multi_rank(world_size)
-    model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if (rank == 0 and not lora_exchange) else None
+    model = (
+        Qwen3VLModel(model_name_or_path=args.model_name_or_path)
+        if (rank == 0 and not lora_exchange and not use_in_memory_exchange)
+        else None
+    )
 
     while _is_running_from_rank0(rank, world_size):
         input_model = None
@@ -396,6 +400,10 @@ def main():
                         processor.save_pretrained(input_model_dir)
                     else:
                         # Full model: save received global model to HF format for train_qwen.py
+                        if model is None:
+                            raise RuntimeError(
+                                "Expected Qwen3VLModel to be initialized for checkpoint-based full-model exchange."
+                            )
                         model.load_state_dict(input_model.params, strict=False)
                         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
                         tokenizer = getattr(processor, "tokenizer", processor)
@@ -464,6 +472,9 @@ def main():
                 flare.send(output_model)
                 if raw is not None:
                     del raw
+                if trained_raw is not None:
+                    del trained_raw
+                    trained_raw = None
                 del params, output_model
             _dist_barrier(world_size)
             _free_memory_after_send()
@@ -497,6 +508,9 @@ def main():
 
             # Free memory before next round to reduce OOM risk in long runs (e.g. round 5+)
             del raw, params, output_model
+            if trained_raw is not None:
+                del trained_raw
+                trained_raw = None
         _dist_barrier(world_size)
         _free_memory_after_send()
 

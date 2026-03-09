@@ -223,7 +223,7 @@ def train(
             training_args.bf16,
         )
 
-    print(f"the initlized model is {model_args.model_name_or_path} the class is {model.__class__.__name__}")
+    rank0_print(f"the initlized model is {model_args.model_name_or_path} the class is {model.__class__.__name__}")
     processor = AutoProcessor.from_pretrained(
         model_args.model_name_or_path,
     )
@@ -257,7 +257,7 @@ def train(
     elif training_args.lora_enable:
         from peft import LoraConfig, TaskType, get_peft_model
 
-        print("LoRA enabled")
+        rank0_print("LoRA enabled")
         for p in model.parameters():
             p.requires_grad = False
         lora_config = LoraConfig(
