@@ -55,9 +55,24 @@ Tests verify:
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nvflare.client.flare_agent import FlareAgent, _TaskContext
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import _tls, clear_download_initiated
+
+# ---------------------------------------------------------------------------
+# Module-level fixture: prevent os._exit() from killing the pytest worker.
+# _do_submit_result() calls os._exit(0) after the download gate so that the
+# subprocess can bypass non-daemon thread cleanup.  In unit tests we patch it
+# to a no-op so the worker process survives.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_os_exit(monkeypatch):
+    monkeypatch.setattr("nvflare.client.flare_agent.os._exit", lambda code: None)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
