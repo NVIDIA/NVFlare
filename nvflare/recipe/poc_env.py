@@ -19,6 +19,7 @@ from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
 
+from nvflare.apis.utils.format_check import name_check
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import _collect_non_local_scripts
@@ -50,6 +51,7 @@ class _PocEnvValidator(BaseModel):
     docker_image: Optional[str] = None
     project_conf_path: str = ""
     username: str = DEFAULT_ADMIN_USER
+    project: Optional[str] = None
 
     @model_validator(mode="after")
     def check_client_configuration(self):
@@ -67,6 +69,10 @@ class _PocEnvValidator(BaseModel):
         if self.clients is None and self.num_clients <= 0:
             raise ValueError("num_clients must be greater than 0")
 
+        if self.project is not None:
+            err, reason = name_check(self.project, "project")
+            if err:
+                raise ValueError(reason)
         return self
 
 
@@ -87,6 +93,7 @@ class PocEnv(ExecEnv):
         docker_image: Optional[str] = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
+        project: Optional[str] = None,
         extra: Optional[dict] = None,
     ):
         """Initialize POC execution environment.
@@ -101,6 +108,7 @@ class PocEnv(ExecEnv):
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
             username (str, optional): Admin user. Defaults to "admin@nvidia.com".
+            project (Optional[str]): Project name to tag submitted/cloned jobs.
             extra: extra env info.
         """
         super().__init__(extra)
@@ -113,6 +121,7 @@ class PocEnv(ExecEnv):
             docker_image=docker_image,
             project_conf_path=project_conf_path,
             username=username,
+            project=project,
         )
 
         self.clients = v.clients
@@ -123,6 +132,7 @@ class PocEnv(ExecEnv):
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
         self.username = v.username
+        self.project = v.project
         self._session_manager = None  # Lazy initialization
 
     def deploy(self, job: FedJob):
@@ -257,6 +267,7 @@ class PocEnv(ExecEnv):
                 "username": self.username,
                 "startup_kit_location": self._get_admin_startup_kit_path(),
                 "timeout": self.get_extra_prop("login_timeout", 10),
+                "project": self.project,
             }
             self._session_manager = SessionManager(session_params)
         return self._session_manager

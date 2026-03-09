@@ -18,6 +18,7 @@ from typing import Optional
 
 from pydantic import BaseModel, PositiveFloat, model_validator
 
+from nvflare.apis.utils.format_check import name_check
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 from nvflare.recipe.utils import _collect_non_local_scripts
@@ -34,11 +35,16 @@ class _ProdEnvValidator(BaseModel):
     startup_kit_location: str
     login_timeout: PositiveFloat = 5.0
     username: str = DEFAULT_ADMIN_USER
+    project: Optional[str] = None
 
     @model_validator(mode="after")
     def check_startup_kit_location_exists(self) -> "_ProdEnvValidator":
         if not os.path.exists(self.startup_kit_location):
             raise ValueError(f"startup_kit_location path does not exist: {self.startup_kit_location}")
+        if self.project is not None:
+            err, reason = name_check(self.project, "project")
+            if err:
+                raise ValueError(reason)
         return self
 
 
@@ -48,6 +54,7 @@ class ProdEnv(ExecEnv):
         startup_kit_location: str,
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
+        project: Optional[str] = None,
         extra: Optional[dict] = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
@@ -58,6 +65,7 @@ class ProdEnv(ExecEnv):
             startup_kit_location (str): Path to the admin's startup kit directory.
             login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
             username (str): Username to log in with.
+            project (Optional[str]): Project name to tag submitted/cloned jobs.
             extra: extra env info.
         """
         super().__init__(extra)
@@ -66,11 +74,13 @@ class ProdEnv(ExecEnv):
             startup_kit_location=startup_kit_location,
             login_timeout=login_timeout,
             username=username,
+            project=project,
         )
 
         self.startup_kit_location = v.startup_kit_location
         self.login_timeout = v.login_timeout
         self.username = v.username
+        self.project = v.project
         self._session_manager = None  # Lazy initialization
 
     def get_job_status(self, job_id: str) -> Optional[str]:
@@ -103,6 +113,7 @@ class ProdEnv(ExecEnv):
                 "username": self.username,
                 "startup_kit_location": self.startup_kit_location,
                 "timeout": self.login_timeout,
+                "project": self.project,
             }
             self._session_manager = SessionManager(session_params)
         return self._session_manager

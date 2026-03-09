@@ -61,6 +61,10 @@ def test_poc_env_validation():
     with pytest.raises(ValueError, match="Inconsistent"):
         PocEnv(num_clients=3, clients=["site1", "site2"])
 
+    # Test invalid project name
+    with pytest.raises(ValueError):
+        PocEnv(project="Bad Project")
+
 
 def test_poc_env_client_names():
     """Test PocEnv client name generation and validation."""
@@ -137,3 +141,12 @@ def test_stop_poc(mock_rmtree, mock_is_running, mock_clean_poc, mock_stop_poc, m
     )
     mock_clean_poc.assert_called_once_with(env.poc_workspace)
     mock_rmtree.assert_called_once_with(env.poc_workspace, ignore_errors=True)
+
+
+def test_poc_env_session_manager_passes_project():
+    env = PocEnv(project="multiple-sclerosis")
+    with patch.object(env, "_get_admin_startup_kit_path", return_value="/tmp/admin@nvidia.com"):
+        with patch("nvflare.recipe.poc_env.SessionManager") as mock_session_manager:
+            env._get_session_manager()
+            session_params = mock_session_manager.call_args[0][0]
+            assert session_params["project"] == "multiple-sclerosis"
