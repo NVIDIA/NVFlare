@@ -893,6 +893,39 @@ class TestScaffoldAggregation:
         assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in error
         assert "PTScaffoldHelper" not in error
 
+    def test_scaffold_aggregate_fn_success_path(self):
+        """Test scaffold_aggregate_fn aggregates model params and control diffs when present."""
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            current_round=0,
+            meta={
+                "client_name": "site-1",
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1,
+                AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 2.0},
+            },
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            current_round=0,
+            meta={
+                "client_name": "site-2",
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1,
+                AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 4.0},
+            },
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.params["w"] == 2.0
+        assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == 3.0
+        assert aggr_result.meta["nr_aggregated"] == 2
+        assert aggr_result.meta["current_round"] == 0
+
 
 class TestFedAvgAggregationWeights:
     """Test FedAvg aggregation weights."""
