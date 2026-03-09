@@ -235,7 +235,6 @@ class LauncherExecutor(TaskExchanger):
     def _initialize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> bool:
-        self.reset_peer_is_up_or_dead()
         with self._lock:
             self._abort_signal = abort_signal
             self._current_task = task_name
@@ -278,6 +277,13 @@ class LauncherExecutor(TaskExchanger):
                     method_name="stop_task", task_name=prev_task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
                 )
 
+        # Reset after deferred-stop wait completes (old subprocess is dead, queue
+        # drained) but before launch_task (new subprocess hasn't started yet).
+        # This prevents heartbeats from the OLD subprocess (received during the
+        # deferred-stop wait) from causing _wait_external_setup to return True
+        # before the NEW subprocess connects.
+        self.reset_peer_is_up_or_dead()
+
         launch_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="launch_task",
             task_name=task_name,
@@ -290,7 +296,6 @@ class LauncherExecutor(TaskExchanger):
             return False
 
         self.log_info(fl_ctx, f"Launcher successfully launched task ({task_name}).")
-        # wait for external execution to set up their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
             error = f"Failed external setup for task ({task_name})."

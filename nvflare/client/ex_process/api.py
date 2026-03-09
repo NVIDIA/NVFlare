@@ -198,6 +198,7 @@ class ExProcessClientAPI(APISpec):
 
                     if isinstance(pipe, _CellPipe):
                         pipe.pass_through_on_send = True
+                        self.logger.info("PASS_THROUGH enabled on subprocess CellPipe (reverse path)")
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
                     metric_pipe, metric_channel_name = _create_pipe_using_config(
