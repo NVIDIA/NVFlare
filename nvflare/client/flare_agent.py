@@ -397,33 +397,33 @@ class FlareAgent:
                 # _finalize_download_tx() runs synchronously inside send_to_peer().
                 # was_download_initiated() is True iff it created a download transaction
                 # (i.e. the result contained large tensors requiring via-downloader transfer).
-                # False means validate result (metrics only) — proceed immediately.
-                if not was_download_initiated():
+                # False means validate result (metrics only) — skip the download wait and
+                # fall through to the launch_once shutdown block below.
+                if was_download_initiated():
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        f"waiting up to {self._download_complete_timeout}s for server tensor download"
+                    )
+                    wait_start = time.time()
+                    if download_done.wait(timeout=self._download_complete_timeout):
+                        download_elapsed = time.time() - wait_start
+                        ds = download_status[0]
+                        if ds == TransactionDoneStatus.FINISHED:
+                            self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                        else:
+                            self.logger.warning(
+                                f"[subprocess] download transaction ended with status={ds} "
+                                f"after {download_elapsed:.2f}s"
+                            )
+                    else:
+                        self.logger.warning(
+                            f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
+                            "proceeding (server may still be downloading from this process)"
+                        )
+                else:
                     self.logger.info(
                         f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
                         "no tensors in result — proceeding immediately"
-                    )
-                    return True
-
-                self.logger.info(
-                    f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
-                    f"waiting up to {self._download_complete_timeout}s for server tensor download"
-                )
-                wait_start = time.time()
-                if download_done.wait(timeout=self._download_complete_timeout):
-                    download_elapsed = time.time() - wait_start
-                    ds = download_status[0]
-                    if ds == TransactionDoneStatus.FINISHED:
-                        self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
-                    else:
-                        self.logger.warning(
-                            f"[subprocess] download transaction ended with status={ds} "
-                            f"after {download_elapsed:.2f}s"
-                        )
-                else:
-                    self.logger.warning(
-                        f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
-                        "proceeding (server may still be downloading from this process)"
                     )
             finally:
                 # Always clear the callback so stale refs do not accumulate across rounds.

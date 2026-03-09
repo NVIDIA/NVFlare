@@ -109,6 +109,7 @@ class TaskExchanger(Executor):
             self._create_pipe_handler()
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            self._create_pipe_handler()
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_debug(fl_ctx, "Stopping pipe handler")
