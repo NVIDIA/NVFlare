@@ -253,9 +253,7 @@ def main():
             result = model.load_state_dict(lora_sd, strict=False)
             n_applied = len(lora_sd) - len(result.unexpected_keys)
             if n_applied == 0:
-                raise RuntimeError(
-                    "No LoRA keys matched the model. Check that --base_model matches the FL job base."
-                )
+                raise RuntimeError("No LoRA keys matched the model. Check that --base_model matches the FL job base.")
             print(f"LoRA checkpoint: loaded {n_applied} adapter keys.")
         else:
             # Full-model checkpoint: load base and apply full state dict
@@ -274,8 +272,7 @@ def main():
             if torch.equal(base_sample, ckpt_sample):
                 print(
                     "  Note: checkpoint weight sample matches base model (key=%s). "
-                    "FL_global_model.pt may be the initial save or the global model was never updated."
-                    % (_sample_key,)
+                    "FL_global_model.pt may be the initial save or the global model was never updated." % (_sample_key,)
                 )
             else:
                 diff = (ckpt_sample.float() - base_sample.float()).abs().max().item()
