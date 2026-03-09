@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
 import os
 import threading
 import time
@@ -424,16 +425,14 @@ class FlareAgent:
             finally:
                 # Always clear the callback so stale refs do not accumulate across rounds.
                 self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
-            # Server download is complete (or timed out). The subprocess has no further work
-            # to do; exit immediately so the deferred-stop poller on the CJ side unblocks.
-            # os._exit() bypasses Python's thread-join wait, which would otherwise block
-            # forever on the non-daemon CoreCell network threads.
-            self.logger.info("[subprocess] exiting after server download")
-            import sys
-
-            sys.stdout.flush()
-            sys.stderr.flush()
-            os._exit(0)
+            # Register an atexit handler (once) so that when the subprocess's main() returns
+            # — whether after one round (launch_once=False) or many (launch_once=True) —
+            # os._exit(0) is called to bypass Python's thread-join wait, which would otherwise
+            # block forever on the non-daemon CoreCell network threads.
+            if not getattr(self, "_atexit_registered", False):
+                atexit.register(os._exit, 0)
+                self._atexit_registered = True
+            return True
 
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
