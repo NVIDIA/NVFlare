@@ -156,7 +156,9 @@ the transfer alone exceeds this limit.
 .. note::
    ``submit_result_timeout`` is the subprocess-side wait for acknowledgment.
    It is distinct from ``submit_task_result_timeout``, which is the server-side wait
-   for the client to deliver a result.  For large models, set both consistently.
+   for the client to deliver a result.  For large models, set ``submit_task_result_timeout``
+   (server-side) to be at least as large as ``submit_result_timeout`` (subprocess-side)
+   so the server is still listening when the subprocess finishes sending.
 
 Swarm Learning P2P Transfer Timeout
 ------------------------------------
@@ -403,7 +405,7 @@ LLM/Foundation Model Training
 
    recipe.add_client_config({
        "get_task_timeout": 1200,
-       "submit_task_result_timeout": 1200,
+       "submit_task_result_timeout": 1800,  # server-side; must be >= submit_result_timeout
        "submit_result_timeout": 1800,       # subprocess mode only
        "tensor_min_download_timeout": 600,  # PyTorch; use np_min_download_timeout for NumPy
        "max_resends": 5,                    # subprocess mode only
