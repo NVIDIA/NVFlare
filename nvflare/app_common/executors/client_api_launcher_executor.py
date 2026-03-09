@@ -302,6 +302,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
             ConfigKey.MAX_RESENDS: self._max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
+            ConfigKey.LAUNCH_ONCE: not self.launcher.needs_deferred_stop(),
         }
 
         config_data = {

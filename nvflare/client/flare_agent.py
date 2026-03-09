@@ -14,6 +14,7 @@
 
 import atexit
 import os
+import sys
 import threading
 import time
 import traceback
@@ -83,6 +84,7 @@ class FlareAgent:
         close_metric_pipe: bool = True,
         decomposer_module: str = None,
         download_complete_timeout: float = 1800.0,
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent.
 
@@ -156,6 +158,7 @@ class FlareAgent:
         self._close_pipe = close_pipe
         self._close_metric_pipe = close_metric_pipe
         self._download_complete_timeout = download_complete_timeout
+        self._launch_once = launch_once
 
     def start(self):
         """Start the agent.
@@ -425,14 +428,21 @@ class FlareAgent:
             finally:
                 # Always clear the callback so stale refs do not accumulate across rounds.
                 self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
-            # Register an atexit handler (once) so that when the subprocess's main() returns
-            # — whether after one round (launch_once=False) or many (launch_once=True) —
-            # os._exit(0) is called to bypass Python's thread-join wait, which would otherwise
-            # block forever on the non-daemon CoreCell network threads.
-            if not getattr(self, "_atexit_registered", False):
-                atexit.register(os._exit, 0)
-                self._atexit_registered = True
-            return True
+            if self._launch_once:
+                # launch_once=True: subprocess handles multiple rounds; do NOT exit here.
+                # Register atexit once so os._exit(0) is called when main() finally returns,
+                # bypassing Python's thread-join wait on non-daemon CoreCell threads.
+                if not getattr(self, "_atexit_registered", False):
+                    atexit.register(os._exit, 0)
+                    self._atexit_registered = True
+                return True
+            else:
+                # launch_once=False: subprocess handles exactly one round; exit now so the
+                # deferred-stop poller on the CJ side unblocks immediately.
+                self.logger.info("[subprocess] exiting after server download")
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(0)
 
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
@@ -468,6 +478,7 @@ class FlareAgentWithCellPipe(FlareAgent):
         submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
         download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
 
@@ -520,4 +531,5 @@ class FlareAgentWithCellPipe(FlareAgent):
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
             download_complete_timeout=download_complete_timeout,
+            launch_once=launch_once,
         )

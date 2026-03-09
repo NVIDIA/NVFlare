@@ -113,6 +113,7 @@ def _make_agent(pipe, download_complete_timeout: float = 5.0):
     agent.task_lock = threading.Lock()
     agent.asked_to_stop = False
     agent.current_task = None
+    agent._launch_once = False  # direct os._exit(0) path; patched to no-op by _no_os_exit fixture
 
     # pipe_handler.send_to_peer returns True by default
     agent.pipe_handler = MagicMock()
