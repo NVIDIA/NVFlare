@@ -35,6 +35,7 @@ class GPUResourceManager(AutoCleanResourceManager):
         num_gpu_key: str = "num_of_gpus",
         gpu_mem_key: str = "mem_per_gpu_in_GiB",
         expiration_period: Union[int, float] = 30,
+        ignore_host: bool = False,
     ):
         """Resource manager for GPUs.
 
@@ -46,6 +47,9 @@ class GPUResourceManager(AutoCleanResourceManager):
             expiration_period: Number of seconds to hold the resources reserved.
                 If check_resources is called but after "expiration_period" no allocate resource is called,
                 then the reserved resources will be released.
+            ignore_host: Whether to skip validation against GPUs present on the local host. Set to True in
+                environments where the NVFlare process runs on a node without GPUs (for example, some
+                Kubernetes deployments) but GPU resources are managed externally.
         """
         if not isinstance(num_of_gpus, int):
             raise ValueError(f"num_of_gpus should be of type int, but got {type(num_of_gpus)}.")
@@ -62,17 +66,21 @@ class GPUResourceManager(AutoCleanResourceManager):
         if expiration_period < 0:
             raise ValueError("expiration_period should be greater than or equal to 0.")
 
-        if num_of_gpus > 0:
-            num_host_gpus = len(get_host_gpu_ids())
-            if num_of_gpus > num_host_gpus:
-                raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
+        if not isinstance(ignore_host, bool):
+            raise ValueError(f"ignore_host should be of type bool, but got {type(ignore_host)}.")
 
-            host_gpu_mem = get_host_gpu_memory_total()
-            for i in host_gpu_mem:
-                if mem_per_gpu_in_GiB * 1024 > i:
-                    raise ValueError(
-                        f"Memory per GPU specified ({mem_per_gpu_in_GiB * 1024}) exceeds available GPU memory: {i}."
-                    )
+        if not ignore_host:
+            if num_of_gpus > 0:
+                num_host_gpus = len(get_host_gpu_ids())
+                if num_of_gpus > num_host_gpus:
+                    raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
+
+                host_gpu_mem = get_host_gpu_memory_total()
+                for i in host_gpu_mem:
+                    if mem_per_gpu_in_GiB * 1024 > i:
+                        raise ValueError(
+                            f"Memory per GPU specified ({mem_per_gpu_in_GiB * 1024}) exceeds available GPU memory: {i}."
+                        )
 
         self.num_gpu_key = num_gpu_key
         self.gpu_mem_key = gpu_mem_key
