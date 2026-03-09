@@ -61,6 +61,16 @@ def _params_size_mb(params) -> float:
     return nbytes / (1024.0 * 1024.0)
 
 
+def _strip_model_prefix(params: dict) -> dict:
+    stripped = {}
+    for key, value in params.items():
+        if key.startswith("model."):
+            stripped[key[6:]] = value
+        else:
+            stripped[key] = value
+    return stripped
+
+
 def _free_memory_after_send() -> None:
     """Run GC and clear CUDA cache to reduce OOM risk before the next round."""
     gc.collect()
@@ -204,7 +214,9 @@ def train(
     report_to: str,
     lora_enable: bool = False,
     keep_process_group: bool = False,
-) -> None:
+    initial_state_dict: Optional[dict] = None,
+    return_state_dict: bool = False,
+) -> Optional[dict]:
     """Run vendored qwenvl.train.train_qwen in-process; tear down process group on exit."""
     # train_qwen.train() reads sys.argv via HfArgumentParser; set it before calling.
     train_limit = (
@@ -245,7 +257,11 @@ def train(
     try:
         from qwenvl.train import train_qwen as train_qwen_fn
 
-        train_qwen_fn(attn_implementation="flash_attention_2")
+        return train_qwen_fn(
+            attn_implementation="flash_attention_2",
+            initial_state_dict=initial_state_dict,
+            return_state_dict=return_state_dict,
+        )
     finally:
         sys.argv = old_argv
         if torch.distributed.is_initialized() and not keep_process_group and not pg_was_initialized:
@@ -347,12 +363,14 @@ def main():
     os.environ["PUBMEDVISION_IMAGE_ROOT"] = image_root
 
     lora_exchange = getattr(args, "lora_exchange", False)
+    use_in_memory_exchange = not _is_multi_rank(world_size)
     model = Qwen3VLModel(model_name_or_path=args.model_name_or_path) if (rank == 0 and not lora_exchange) else None
 
     while _is_running_from_rank0(rank, world_size):
         input_model = None
         current_round = None
         should_continue = True
+        round_initial_state_dict = None
 
         if rank == 0:
             input_model = flare.receive()
@@ -363,29 +381,32 @@ def main():
                 received_mb = _params_size_mb(input_model.params)
                 print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
 
-                os.makedirs(input_model_dir, exist_ok=True)
-                if lora_exchange:
-                    # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter
-                    _save_lora_adapter_for_training(
-                        input_model.params,
-                        input_model_dir,
-                        args.model_name_or_path,
-                    )
-                    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                    processor.save_pretrained(input_model_dir)
+                if use_in_memory_exchange:
+                    round_initial_state_dict = _strip_model_prefix(input_model.params)
                 else:
-                    # Full model: save received global model to HF format for train_qwen.py
-                    model.load_state_dict(input_model.params, strict=False)
-                    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                    tokenizer = getattr(processor, "tokenizer", processor)
-                    _align_model_config_to_tokenizer(model.model, tokenizer)
-                    model.model.save_pretrained(input_model_dir)
-                    processor.save_pretrained(input_model_dir)
+                    os.makedirs(input_model_dir, exist_ok=True)
+                    if lora_exchange:
+                        # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter
+                        _save_lora_adapter_for_training(
+                            input_model.params,
+                            input_model_dir,
+                            args.model_name_or_path,
+                        )
+                        processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                        processor.save_pretrained(input_model_dir)
+                    else:
+                        # Full model: save received global model to HF format for train_qwen.py
+                        model.load_state_dict(input_model.params, strict=False)
+                        processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                        tokenizer = getattr(processor, "tokenizer", processor)
+                        _align_model_config_to_tokenizer(model.model, tokenizer)
+                        model.model.save_pretrained(input_model_dir)
+                        processor.save_pretrained(input_model_dir)
 
-                # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
-                if os.path.isdir(output_model_dir):
-                    shutil.rmtree(output_model_dir)
-                os.makedirs(output_model_dir, exist_ok=True)
+                    # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
+                    if os.path.isdir(output_model_dir):
+                        shutil.rmtree(output_model_dir)
+                    os.makedirs(output_model_dir, exist_ok=True)
 
         should_continue = _broadcast_object_from_rank0(should_continue, world_size)
         current_round = _broadcast_object_from_rank0(current_round, world_size)
@@ -397,9 +418,11 @@ def main():
 
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
         local_error = None
+        trained_raw = None
         try:
-            train(
-                input_model_dir=input_model_dir,
+            model_name_or_path = args.model_name_or_path if use_in_memory_exchange else input_model_dir
+            trained_raw = train(
+                input_model_dir=model_name_or_path,
                 output_model_dir=output_model_dir,
                 dataset_use=args.dataset_use,
                 max_steps=args.max_steps,
@@ -408,6 +431,8 @@ def main():
                 report_to=args.report_to,
                 lora_enable=lora_exchange,
                 keep_process_group=_is_multi_rank(world_size),
+                initial_state_dict=round_initial_state_dict if rank == 0 else None,
+                return_state_dict=use_in_memory_exchange and rank == 0,
             )
         except Exception as e:
             local_error = f"rank {rank}: {e}"
@@ -419,11 +444,12 @@ def main():
                 # Keep the received global model by default so failed rounds don't contribute stale updates.
                 params = input_model.params
                 raw = None
-                try:
-                    raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
-                    params = {"model." + k: v for k, v in raw.items()}
-                except Exception:
-                    pass
+                if not use_in_memory_exchange:
+                    try:
+                        raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
+                        params = {"model." + k: v for k, v in raw.items()}
+                    except Exception:
+                        pass
                 output_model = flare.FLModel(
                     params=params,
                     metrics={"loss": float("nan")},
@@ -446,7 +472,12 @@ def main():
         # Load state_dict from checkpoint dir (no full model load) so we return to receive() quickly.
         # When lora_exchange, load only adapter weights to keep payload small.
         if rank == 0:
-            raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
+            if use_in_memory_exchange:
+                if trained_raw is None:
+                    raise RuntimeError("Expected trained state_dict from in-memory training path but got None.")
+                raw = trained_raw
+            else:
+                raw = load_state_dict_from_checkpoint(output_model_dir, lora_only=lora_exchange)
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}

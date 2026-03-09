@@ -20,6 +20,7 @@ import os
 import pathlib
 import sys
 from pathlib import Path
+from typing import Optional
 
 import torch
 import transformers
@@ -146,7 +147,38 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
     return model, model_type
 
 
-def train(attn_implementation="flash_attention_2"):
+def _to_cpu_state_dict(state_dict: dict) -> dict:
+    cpu_state = {}
+    for key, value in state_dict.items():
+        if isinstance(value, torch.Tensor):
+            cpu_state[key] = value.detach().cpu()
+        else:
+            cpu_state[key] = value
+    return cpu_state
+
+
+def _extract_fl_state_dict(model, lora_only: bool) -> dict:
+    model_to_export = model.module if hasattr(model, "module") else model
+    if lora_only:
+        from peft import get_peft_model_state_dict
+
+        return _to_cpu_state_dict(get_peft_model_state_dict(model_to_export))
+    return _to_cpu_state_dict(model_to_export.state_dict())
+
+
+def _load_initial_state_dict(model, state_dict: dict) -> None:
+    incompatible = model.load_state_dict(state_dict, strict=False)
+    rank0_print(
+        "Loaded initial FL state dict with "
+        f"{len(incompatible.missing_keys)} missing and {len(incompatible.unexpected_keys)} unexpected keys."
+    )
+
+
+def train(
+    attn_implementation="flash_attention_2",
+    initial_state_dict: Optional[dict] = None,
+    return_state_dict: bool = False,
+):
     global local_rank
 
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -254,6 +286,9 @@ def train(attn_implementation="flash_attention_2"):
         rank0_print("Disabling gradient_checkpointing for PeftModel to avoid backward grad_fn errors.")
         training_args.gradient_checkpointing = False
 
+    if initial_state_dict is not None:
+        _load_initial_state_dict(model, initial_state_dict)
+
     data_module = make_supervised_data_module(processor, data_args=data_args)
     trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
 
@@ -262,12 +297,15 @@ def train(attn_implementation="flash_attention_2"):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
-    trainer.save_state()
+    if not return_state_dict:
+        trainer.save_state()
 
     model.config.use_cache = True
 
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    if return_state_dict:
+        return _extract_fl_state_dict(trainer.model, lora_only=training_args.lora_enable or model_loaded_as_peft)
 
+    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
     processor.save_pretrained(training_args.output_dir)
 
 
