@@ -443,6 +443,7 @@ class FlareAgent:
                 sys.stdout.flush()
                 sys.stderr.flush()
                 os._exit(0)
+                return True
 
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
