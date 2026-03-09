@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
+import os
+import sys
 import threading
 import time
 import traceback
@@ -81,6 +84,7 @@ class FlareAgent:
         close_metric_pipe: bool = True,
         decomposer_module: str = None,
         download_complete_timeout: float = 1800.0,
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent.
 
@@ -154,6 +158,7 @@ class FlareAgent:
         self._close_pipe = close_pipe
         self._close_metric_pipe = close_metric_pipe
         self._download_complete_timeout = download_complete_timeout
+        self._launch_once = launch_once
 
     def start(self):
         """Start the agent.
@@ -383,44 +388,62 @@ class FlareAgent:
                 send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
                 if not sent:
+                    self.logger.warning(
+                        f"[subprocess] send_to_peer failed: task_ph.asked_to_stop={self.pipe_handler.asked_to_stop}"
+                    )
                     return False
                 send_elapsed = time.time() - send_start
 
                 # _finalize_download_tx() runs synchronously inside send_to_peer().
                 # was_download_initiated() is True iff it created a download transaction
                 # (i.e. the result contained large tensors requiring via-downloader transfer).
-                # False means validate result (metrics only) — proceed immediately.
-                if not was_download_initiated():
+                # False means validate result (metrics only) — skip the download wait and
+                # fall through to the launch_once shutdown block below.
+                if was_download_initiated():
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        f"waiting up to {self._download_complete_timeout}s for server tensor download"
+                    )
+                    wait_start = time.time()
+                    if download_done.wait(timeout=self._download_complete_timeout):
+                        download_elapsed = time.time() - wait_start
+                        ds = download_status[0]
+                        if ds == TransactionDoneStatus.FINISHED:
+                            self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                        else:
+                            self.logger.warning(
+                                f"[subprocess] download transaction ended with status={ds} "
+                                f"after {download_elapsed:.2f}s"
+                            )
+                    else:
+                        self.logger.warning(
+                            f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
+                            "proceeding (server may still be downloading from this process)"
+                        )
+                else:
                     self.logger.info(
                         f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
                         "no tensors in result — proceeding immediately"
                     )
-                    return True
-
-                self.logger.info(
-                    f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
-                    f"waiting up to {self._download_complete_timeout}s for server tensor download"
-                )
-                wait_start = time.time()
-                if download_done.wait(timeout=self._download_complete_timeout):
-                    download_elapsed = time.time() - wait_start
-                    ds = download_status[0]
-                    if ds == TransactionDoneStatus.FINISHED:
-                        self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
-                    else:
-                        self.logger.warning(
-                            f"[subprocess] download transaction ended with status={ds} "
-                            f"after {download_elapsed:.2f}s"
-                        )
-                else:
-                    self.logger.warning(
-                        f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
-                        "proceeding (server may still be downloading from this process)"
-                    )
             finally:
                 # Always clear the callback so stale refs do not accumulate across rounds.
                 self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
-            return True
+            if self._launch_once:
+                # launch_once=True: subprocess handles multiple rounds; do NOT exit here.
+                # Register atexit once so os._exit(0) is called when main() finally returns,
+                # bypassing Python's thread-join wait on non-daemon CoreCell threads.
+                if not getattr(self, "_atexit_registered", False):
+                    atexit.register(os._exit, 0)
+                    self._atexit_registered = True
+                return True
+            else:
+                # launch_once=False: subprocess handles exactly one round; exit now so the
+                # deferred-stop poller on the CJ side unblocks immediately.
+                self.logger.info("[subprocess] exiting after server download")
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(0)
+                return True
 
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
@@ -456,6 +479,7 @@ class FlareAgentWithCellPipe(FlareAgent):
         submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
         download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
 
@@ -508,4 +532,5 @@ class FlareAgentWithCellPipe(FlareAgent):
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
             download_complete_timeout=download_complete_timeout,
+            launch_once=launch_once,
         )

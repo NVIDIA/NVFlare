@@ -44,9 +44,23 @@ Tests verify:
 import threading
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.client.flare_agent import FlareAgent, _TaskContext
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import _tls, clear_download_initiated, was_download_initiated
+
+# ---------------------------------------------------------------------------
+# Prevent os._exit() from killing the pytest worker (same reason as in
+# test_download_complete_gating.py — _do_submit_result() calls os._exit(0)
+# for launch_once=False after the download gate).
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_os_exit(monkeypatch):
+    monkeypatch.setattr("nvflare.client.flare_agent.os._exit", lambda code: None)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,6 +87,7 @@ def _make_agent(pipe, download_complete_timeout=5.0):
     agent.task_lock = threading.Lock()
     agent.asked_to_stop = False
     agent.current_task = None
+    agent._launch_once = False  # direct os._exit(0) path; patched to no-op by _no_os_exit fixture
     agent.pipe_handler = MagicMock()
     agent.pipe_handler.send_to_peer.return_value = True
     return agent
