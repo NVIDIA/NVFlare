@@ -171,8 +171,12 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
 
 
 def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING, fobs_ctx: dict = None):
-    if isinstance(fobs_ctx, dict):
-        fobs_ctx[fobs.FOBSContextKey.MESSAGE] = message
+
+    # Always normalize to a dict and avoid mutating caller-owned context.
+    ctx = fobs_ctx.copy() if fobs_ctx is not None else {}
+    if MessageHeaderKey.PASS_THROUGH in message.headers:
+        ctx[fobs.FOBSContextKey.PASS_THROUGH] = bool(message.get_header(MessageHeaderKey.PASS_THROUGH))
+    ctx[fobs.FOBSContextKey.MESSAGE] = message
 
     size = buffer_len(message.payload)
     message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
@@ -185,7 +189,7 @@ def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
         return
 
     if encoding == Encoding.FOBS:
-        message.payload = fobs.loads(message.payload, fobs_ctx=fobs_ctx)
+        message.payload = fobs.loads(message.payload, fobs_ctx=ctx)
     elif encoding == Encoding.NONE:
         message.payload = None
     else:

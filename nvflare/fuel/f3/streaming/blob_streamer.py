@@ -22,7 +22,7 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
+from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, callback_thread_pool, stream_thread_pool, wrap_view
 from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_traceback
 
@@ -96,10 +96,18 @@ class BlobHandler:
         blob_task = BlobTask(future, stream)
 
         stream_thread_pool.submit(self._read_stream, blob_task)
-
-        self.blob_cb(future, *args, **kwargs)
+        callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
 
         return 0
+
+    def _run_blob_cb(self, future: StreamFuture, stream: Stream, args: tuple, kwargs: dict):
+        """Run blob_cb on the callback pool; preserve exception handling (log + task.stop) as in ByteReceiver."""
+        try:
+            self.blob_cb(future, *args, **kwargs)
+        except Exception as ex:
+            log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
+            if hasattr(stream, "task"):
+                stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
 
     def _read_stream(self, blob_task: BlobTask):
 
