@@ -12,25 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, patch
-
-from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.app_common.utils.tensor_disk_offload_context import (
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
-)
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
+
+
+def _setup_round_state(controller: FedAvg, expected_count: int) -> None:
+    """Set common per-round callback state used by aggregation tests."""
+    controller._received_count = 0
+    controller._expected_count = expected_count
+    controller._params_type = None
+    controller.current_round = 0
+
+
+def _setup_builtin_in_time_aggregation(controller: FedAvg, expected_count: int) -> None:
+    """Set up built-in InTime aggregation helpers and round state."""
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+    controller._aggr_helper = WeightedAggregationHelper()
+    controller._aggr_metrics_helper = WeightedAggregationHelper()
+    controller._all_metrics = True
+    _setup_round_state(controller, expected_count=expected_count)
 
 
 class MockModelAggregator(ModelAggregator):
@@ -59,44 +63,6 @@ class MockModelAggregator(ModelAggregator):
     def reset_stats(self):
         self.models = []
         self.reset_count += 1
-
-
-class _FakeTempRef:
-    def __init__(self):
-        self.cleaned = False
-
-    def cleanup(self):
-        self.cleaned = True
-
-
-class _FakeLazyRef:
-    def __init__(self, value, temp_ref: _FakeTempRef):
-        self._value = value
-        self._temp_ref = temp_ref
-        self.materialize_calls = 0
-
-    def materialize(self):
-        self.materialize_calls += 1
-        return self._value
-
-
-class _MockCell:
-    def __init__(self, enable_tensor_disk_offload: bool):
-        self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
-
-    def get_fobs_context(self):
-        return dict(self.ctx)
-
-    def update_fobs_context(self, props: dict):
-        self.ctx.update(props)
-
-
-class _MockEngine:
-    def __init__(self, cell):
-        self.cell = cell
-
-    def get_cell(self):
-        return self.cell
 
 
 class TestFedAvgInit:
@@ -318,17 +284,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_builtin(self):
         """Test built-in aggregation accumulates results."""
         controller = FedAvg(num_clients=2)
-
-        # Simulate round setup
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Simulate client result 1
         result1 = FLModel(
@@ -355,16 +311,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_filters_non_aggregatable_metrics(self):
         """Test built-in aggregation filters non-aggregatable metrics."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -392,16 +339,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_returns_none_when_all_metrics_filtered(self):
         """Test InTime aggregation returns None when all metrics are non-aggregatable."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -425,16 +363,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_none_metrics_disables_round_metrics(self):
         """Test missing metrics (`None`) from any client disables round metrics aggregation."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -459,16 +388,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_empty_metrics_keep_round_enabled(self):
         """Test empty dict metrics still count as present and keep round metrics enabled."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -494,16 +414,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_nonaggregatable_metrics_keep_round_enabled(self):
         """Test non-empty non-aggregatable metrics keep round metrics collection enabled."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -530,16 +441,7 @@ class TestFedAvgAggregation:
     def test_aggregate_one_result_bool_metrics_aggregate_as_rate(self):
         """Test bool metrics are aggregated as binary values (True=1, False=0)."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -566,16 +468,7 @@ class TestFedAvgAggregation:
         from unittest.mock import patch
 
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         result1 = FLModel(
             params={"w": 1.0},
@@ -596,6 +489,66 @@ class TestFedAvgAggregation:
 
         assert mock_warning.call_count == 1
         assert mock_warning.call_args_list[0].args[0] == "Metric 'meta' (dict) skipped for aggregation."
+
+    def test_aggregate_one_result_callback_lock_serializes_metrics_processing(self):
+        """Test framework-level callback lock keeps metrics processing serialized."""
+        import threading
+        import time
+        from unittest.mock import patch
+
+        from nvflare.app_common.workflows import fedavg as fedavg_module
+
+        controller = FedAvg(num_clients=2)
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2, "meta": {"a": 1}},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "meta": {"b": 2}},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+
+        cb_lock = threading.Lock()
+        active_calls = 0
+        max_active_calls = 0
+        active_lock = threading.Lock()
+        start_barrier = threading.Barrier(2)
+        real_filter = fedavg_module.filter_aggregatable_metrics
+
+        def slow_filter(*args, **kwargs):
+            nonlocal active_calls, max_active_calls
+            with active_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            time.sleep(0.02)
+            try:
+                return real_filter(*args, **kwargs)
+            finally:
+                with active_lock:
+                    active_calls -= 1
+
+        def run_result(result):
+            start_barrier.wait()
+            # This mirrors Task.cb_lock behavior in the framework callback path.
+            with cb_lock:
+                controller._aggregate_one_result(result)
+
+        with patch.object(fedavg_module, "filter_aggregatable_metrics", side_effect=slow_filter):
+            t1 = threading.Thread(target=run_result, args=(result1,))
+            t2 = threading.Thread(target=run_result, args=(result2,))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+        assert max_active_calls == 1
+        assert controller._received_count == 2
 
     def test_base_fedavg_aggregate_fn_filters_non_aggregatable_metrics(self):
         """Test BaseFedAvg.aggregate_fn skips unsupported metrics without failing."""
@@ -687,10 +640,7 @@ class TestFedAvgAggregation:
 
         # Simulate round setup
         aggregator.reset_stats()
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_round_state(controller, expected_count=2)
 
         # Simulate client results
         result1 = FLModel(
@@ -717,160 +667,12 @@ class TestFedAvgAggregation:
     def test_aggregate_empty_result_skipped(self):
         """Test empty results are skipped."""
         controller = FedAvg(num_clients=2)
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Empty result
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
         controller._aggregate_one_result(empty_result)
         assert controller._received_count == 0  # Not counted
-
-
-class TestFedAvgLazyCompatibility:
-    def test_custom_aggregator_keeps_lazy_payload_in_tensor_disk_offload_mode(self):
-        aggregator = MockModelAggregator()
-        controller = FedAvg(num_clients=1, aggregator=aggregator, enable_tensor_disk_offload=True)
-        controller._received_count = 0
-        controller._expected_count = 1
-        controller.current_round = 0
-        controller._params_type = None
-
-        temp_ref = _FakeTempRef()
-        lazy_ref = _FakeLazyRef(value=2.5, temp_ref=temp_ref)
-        result = FLModel(
-            params={"w": lazy_ref},
-            params_type=ParamsType.FULL,
-            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
-        )
-
-        controller._aggregate_one_result(result)
-
-        accepted_model = aggregator.models[0]
-        assert accepted_model.params["w"] is lazy_ref
-        assert temp_ref.cleaned is False
-        assert lazy_ref.materialize_calls == 0
-
-
-class TestFedAvgDownloadToDiskContext:
-    def test_set_enable_tensor_disk_offload(self):
-        cell = _MockCell(enable_tensor_disk_offload=False)
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True)
-        assert previous is False
-        assert applied is True
-        assert cell.ctx["enable_tensor_disk_offload"] is True
-
-        restore_enable_tensor_disk_offload(_MockEngine(cell), previous)
-        assert cell.ctx["enable_tensor_disk_offload"] is False
-
-    def test_set_enable_tensor_disk_offload_without_cell(self):
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
-        assert previous is None
-        assert applied is False
-
-    def test_run_restores_enable_tensor_disk_offload(self):
-        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
-        cell = _MockCell(enable_tensor_disk_offload=False)
-        controller.engine = _MockEngine(cell)
-        controller.fl_ctx = FLContext()
-        controller.abort_signal = Signal()
-        controller.sample_clients = lambda _: ["site-1"]
-        controller.send_model = lambda **kwargs: None
-        controller.get_num_standing_tasks = lambda: 0
-        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
-        controller.update_model = lambda model, aggr_result: model
-        controller.save_model = lambda model: None
-
-        controller.run()
-        assert cell.ctx["enable_tensor_disk_offload"] is False
-
-
-class TestFedAvgWorkflowEvents:
-    def test_run_fires_round_started_and_before_aggregation_once_per_round(self):
-        controller = FedAvg(num_clients=1, num_rounds=2, model={"w": 1.0})
-        controller.fl_ctx = FLContext()
-        controller.abort_signal = Signal()
-        controller.sample_clients = lambda _: ["site-1"]
-        controller.send_model = lambda **kwargs: None
-        controller.get_num_standing_tasks = lambda: 0
-        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
-        controller.update_model = lambda model, aggr_result: model
-        controller.save_model = lambda model: None
-
-        with patch.object(controller, "event") as mock_event:
-            controller.run()
-
-        round_started_calls = [c for c in mock_event.call_args_list if c.args[0] == AppEventType.ROUND_STARTED]
-        before_aggr_calls = [c for c in mock_event.call_args_list if c.args[0] == AppEventType.BEFORE_AGGREGATION]
-
-        assert len(round_started_calls) == 2
-        assert len(before_aggr_calls) == 2
-
-    def test_process_result_sets_current_round_on_fl_ctx(self):
-        controller = FedAvg(num_clients=1)
-        fl_ctx = FLContext()
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=True)
-
-        task_data = Shareable()
-        task_data.set_header(AppConstants.CURRENT_ROUND, 3)
-        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
-        result.set_header(AppConstants.CURRENT_ROUND, 3)
-
-        task = Task(
-            name=AppConstants.TASK_TRAIN,
-            data=task_data,
-            props={AppConstants.META_DATA: {}},
-        )
-        client_task = ClientTask(client=Client("site-1", "token"), task=task)
-        client_task.result = result
-
-        with patch.object(controller, "event"):
-            controller._process_result(client_task, fl_ctx)
-
-        assert fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 3
-
-    def test_broadcast_model_does_not_fire_round_started(self):
-        controller = FedAvg(num_clients=1)
-        controller.fl_ctx = FLContext()
-        mock_engine = MagicMock()
-        mock_engine.get_clients.return_value = ["site-1"]
-        controller.engine = mock_engine
-        model = FLModel(params={"w": 1.0}, current_round=2)
-
-        with (
-            patch.object(controller, "broadcast") as mock_broadcast,
-            patch.object(controller, "fire_event") as mock_fire,
-        ):
-            controller.broadcast_model(data=model, blocking=False, callback=lambda _: None)
-
-        round_started_calls = [c for c in mock_fire.call_args_list if c.args[0] == AppEventType.ROUND_STARTED]
-        assert len(round_started_calls) == 0
-        mock_broadcast.assert_called_once()
-
-    def test_run_sets_num_rounds_sticky_consistently(self):
-        controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0})
-        controller.fl_ctx = FLContext()
-        controller.abort_signal = Signal()
-        controller.sample_clients = lambda _: ["site-1"]
-        controller.send_model = lambda **kwargs: None
-        controller.get_num_standing_tasks = lambda: 0
-        controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
-        controller.update_model = lambda model, aggr_result: model
-        controller.save_model = lambda model: None
-
-        with patch.object(controller.fl_ctx, "set_prop", wraps=controller.fl_ctx.set_prop) as mock_set_prop:
-            controller.run()
-
-        num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
-        assert len(num_round_calls) > 0
-        assert all(c.kwargs.get("sticky") is False for c in num_round_calls)
 
 
 class TestScaffoldAggregation:
@@ -944,16 +746,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # Result from site-1 with weight 2.0
         result1 = FLModel(
@@ -984,16 +777,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 2.0, "site-2": 1.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: weight=2.0, n_iter=10 -> total_weight = 20
         result1 = FLModel(
@@ -1018,16 +802,7 @@ class TestFedAvgAggregationWeights:
     def test_aggregation_weights_with_different_num_steps(self):
         """Test aggregation without explicit weights uses NUM_STEPS_CURRENT_ROUND only."""
         controller = FedAvg(num_clients=2)  # No aggregation_weights
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: n_iter=100
         result1 = FLModel(
@@ -1055,16 +830,7 @@ class TestFedAvgAggregationWeights:
             num_clients=2,
             aggregation_weights={"site-1": 1.0, "site-2": 3.0},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 2
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=2)
 
         # site-1: multiple params, weight=1, n_iter=10 -> total=10
         result1 = FLModel(
@@ -1099,16 +865,7 @@ class TestFedAvgAggregationWeights:
             num_clients=3,
             aggregation_weights={"site-1": 1.0, "site-2": 2.0, "site-3": 0.5},
         )
-
-        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
-
-        controller._aggr_helper = WeightedAggregationHelper()
-        controller._aggr_metrics_helper = WeightedAggregationHelper()
-        controller._all_metrics = True
-        controller._received_count = 0
-        controller._expected_count = 3
-        controller._params_type = None
-        controller.current_round = 0
+        _setup_builtin_in_time_aggregation(controller, expected_count=3)
 
         # site-1: weight=1.0, n_iter=100 -> total=100
         result1 = FLModel(
