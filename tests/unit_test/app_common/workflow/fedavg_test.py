@@ -868,6 +868,8 @@ class TestFedAvgWorkflowEvents:
         num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
         assert len(num_round_calls) > 0
         assert all(c.kwargs.get("sticky") is True for c in num_round_calls)
+
+
 class TestScaffoldAggregation:
     """Test Scaffold aggregation behavior."""
 
