@@ -89,29 +89,6 @@ TensorFlow FedAvg
 - `examples/hello-world/hello-tf <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-tf>`_
 - `examples/advanced/cifar10/tf/cifar10_fedavg <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/tf/cifar10_fedavg>`_
 
-NumPy FedAvg
-------------
-
-For framework-agnostic or NumPy-based models.
-
-.. code-block:: python
-
-    from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = NumpyFedAvgRecipe(
-        name="fedavg-numpy",
-        min_clients=2,
-        num_rounds=5,
-        train_script="client.py",
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-**Examples:**
-
-- `examples/hello-world/hello-numpy <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy>`_
-
 Sklearn FedAvg
 --------------
 
@@ -260,7 +237,7 @@ PyTorch FedOpt
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -283,7 +260,7 @@ TensorFlow FedOpt
         num_rounds=5,
         model=MyTFModel(),
         train_script="client.py",
-        optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
+        optimizer_args={"class_path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -606,37 +583,6 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 - `examples/hello-world/hello-lightning-eval <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning-eval>`_
 
 
-Cross-Site Evaluation
-=====================
-
-Evaluate models across all client sites (compare each client's model against all datasets).
-
-.. code-block:: python
-
-    from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe
-    from nvflare.recipe import SimEnv
-
-    recipe = NumpyCrossSiteEvalRecipe(
-        name="cross-eval",
-        min_clients=2,
-        eval_script="evaluate.py",
-        eval_args="--data_root /path/to/data",
-        initial_ckpt="/path/to/pretrained_model.npy",  # Optional: evaluate specific model
-    )
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-.. note::
-   - Use ``eval_script`` to specify custom evaluation logic. If not provided, uses a built-in
-     dummy validator (for testing only).
-   - Use ``initial_ckpt`` to evaluate a specific pre-trained model. If not provided, the recipe
-     evaluates models from the training run directory.
-
-**Examples:**
-
-- `examples/hello-world/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val>`_
-
-
 Private Set Intersection (PSI)
 ==============================
 
@@ -689,22 +635,30 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm",
         model=MyModel(),
+        min_clients=3,
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
-   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
+   For large models (>2 GB), tune the following parameters:
+
+   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
+     Increase for 7B+ models where P2P tensor streaming can take several minutes.
+   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
+     is unavailable or for third-party subprocess integrations.
+   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
+     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes

@@ -262,7 +262,6 @@ Examples demonstrating different FL workflows:
 - [Scatter and Gather](./hello-numpy/) - Basic FedAvg pattern
 - [Cross-Site Validation](./hello-numpy-cross-val/) - Model evaluation across sites
 - [Cyclic Weight Transfer](./hello-cyclic/) - Sequential client training
-- [Client Controlled Workflows](../advanced/hello-ccwf/) - Swarm learning patterns
 
 ## Running with Different Environments
 

@@ -252,7 +252,11 @@ FlareAgent for external process integration (flare_agent.py):
      - Time without heartbeat before peer is dead
    * - submit_result_timeout
      - 60.0
-     - Timeout for submitting task result
+     - Timeout for submitting task result to the client training process. 60 s is too short
+       for large models; configure via ``add_client_config({"submit_result_timeout": 1800})``.
+   * - max_resends
+     - 3
+     - Maximum send retries on failure. Configurable via ``add_client_config({"max_resends": N})``.
 
 **Note**: FlareAgentWithCellPipe uses 30.0s defaults.
 
@@ -868,13 +872,15 @@ Client-side timeouts for task coordination (common.py:87-92):
      - Interval for checking new learning tasks
    * - learn_task_ack_timeout
      - 10
-     - Timeout for task acknowledgment
+     - P2P model-transfer ACK budget (seconds). 10 s is too short for models >2 GB.
+       Set via ``SwarmLearningRecipe(round_timeout=3600)`` which wires both
+       ``learn_task_ack_timeout`` and ``final_result_ack_timeout``.
    * - learn_task_abort_timeout
      - 5.0
      - Timeout for task abortion
    * - final_result_ack_timeout
      - 10
-     - Timeout for final result acknowledgment
+     - Timeout for final result acknowledgment. See ``learn_task_ack_timeout`` note above.
    * - get_model_timeout
      - 10
      - Timeout for getting model from peers
@@ -1453,6 +1459,18 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
    * - streaming_read_timeout
      - 300
      - Timeout for reading streaming data
+   * - np_min_download_timeout
+     - 300
+     - Minimum idle time (seconds) before an inactive NumPy array download transaction
+       is declared dead. Applies to NumPy/sklearn-based models.
+       Increase to 600 s for 70B+ models on congested networks.
+       Configure via ``add_client_config({"np_min_download_timeout": 600})``.
+   * - tensor_min_download_timeout
+     - 300
+     - Minimum idle time (seconds) before an inactive PyTorch tensor download transaction
+       is declared dead. Applies to PyTorch-based models.
+       Increase to 600 s for 70B+ models on congested networks.
+       Configure via ``add_client_config({"tensor_min_download_timeout": 600})``.
    * - np_download_chunk_size
      - 2097152
      - Chunk size for NumPy array downloads (bytes)
@@ -1467,20 +1485,29 @@ Recommended timeouts for large models in Swarm Learning:
 
 .. code-block:: python
 
-   # Server configuration
+   recipe = SwarmLearningRecipe(
+       name="swarm",
+       model=MyModel(),
+       min_clients=3,
+       num_rounds=5,
+       train_script="client.py",
+       round_timeout=7200,   # P2P ACK budget; covers learn_task_ack_timeout + final_result_ack_timeout
+       progress_timeout=7200,
+       start_task_timeout=300,
+   )
+
+   # Server-side streaming configuration
    recipe.add_server_config({
-       "start_task_timeout": 300,
-       "progress_timeout": 7200,
        "np_download_chunk_size": 2097152,
-       "streaming_per_request_timeout": 600
+       "streaming_per_request_timeout": 600,
    })
 
-   # Client configuration
-   {
-       "learn_task_timeout": 3600,
-       "learn_task_ack_timeout": 300,
-       "final_result_ack_timeout": 300
-   }
+   # Subprocess-mode timeouts (when launch_external_process=True)
+   recipe.add_client_config({
+       "submit_result_timeout": 1800,
+       "tensor_min_download_timeout": 600,
+       "max_resends": 5,
+   })
 
 
 XGBoost-Specific Timeouts
@@ -2584,6 +2611,7 @@ CCWF/Swarm Learning Configuration
        initial_model=model,
        train_script="train.py",
        cross_site_eval_timeout=600.0,
+       round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models
    )
 
 
