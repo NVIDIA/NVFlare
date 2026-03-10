@@ -210,9 +210,6 @@ def _load_initial_state_dict(model, state_dict: dict) -> None:
                 f"Example unmatched keys: {sample}"
             )
         incompatible = model.load_state_dict(mapped_state, strict=False)
-        if incompatible.unexpected_keys:
-            sample = ", ".join(incompatible.unexpected_keys[:3])
-            raise RuntimeError(f"Unexpected keys while loading PEFT weights (example: {sample})")
         rank0_print(
             "Loaded initial FL LoRA state dict with "
             f"{len(incompatible.missing_keys)} missing and {len(incompatible.unexpected_keys)} unexpected keys."

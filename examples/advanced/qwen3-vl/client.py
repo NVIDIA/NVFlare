@@ -363,6 +363,11 @@ def main():
                 received_mb = _params_size_mb(input_model.params)
                 print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
 
+                # Remove previous round artifacts so stale checkpoint dirs cannot trigger an unintended resume.
+                if os.path.isdir(output_model_dir):
+                    shutil.rmtree(output_model_dir)
+                os.makedirs(output_model_dir, exist_ok=True)
+
                 if use_in_memory_exchange:
                     round_initial_state_dict = _strip_model_prefix(input_model.params)
                 else:
@@ -388,11 +393,6 @@ def main():
                         _align_model_config_to_tokenizer(model.model, tokenizer)
                         model.model.save_pretrained(input_model_dir)
                         processor.save_pretrained(input_model_dir)
-
-                    # Remove previous round artifacts so a failed round cannot resend stale checkpoints.
-                    if os.path.isdir(output_model_dir):
-                        shutil.rmtree(output_model_dir)
-                    os.makedirs(output_model_dir, exist_ok=True)
 
         should_continue = _broadcast_object_from_rank0(should_continue, world_size)
         current_round = _broadcast_object_from_rank0(current_round, world_size)

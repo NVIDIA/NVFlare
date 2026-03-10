@@ -91,13 +91,10 @@ def _is_lora_checkpoint(state_dict: dict) -> bool:
 
 
 def _prepare_lora_state_dict(state_dict: dict) -> dict:
-    """Convert FL LoRA state dict (key 'model.' prefix, lora_A/B.weight) to PeftModel format."""
+    """Convert FL LoRA state dict to PeftModel format by stripping the FL wrapper prefix."""
     out = {}
     for k, v in state_dict.items():
         key = k[6:] if k.startswith("model.") else k
-        key = key.replace(".lora_A.weight", ".lora_A.default.weight").replace(
-            ".lora_B.weight", ".lora_B.default.weight"
-        )
         out[key] = v
     return out
 
