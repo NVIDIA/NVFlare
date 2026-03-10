@@ -363,14 +363,17 @@ class ClientRunner(TBI):
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
             add_job_audit_event(fl_ctx=fl_ctx, msg=f"invoked executor {executor_name}")
 
-            exec_exception = None
-            reply = None
             try:
                 reply = executor.execute(task.name, task.data, fl_ctx, abort_signal)
-            except Exception as e:
-                # Catch regular execution errors here so abort handling below can map to TASK_ABORTED.
-                # We intentionally do not catch BaseException (for example KeyboardInterrupt/SystemExit).
-                exec_exception = e
+            except BaseException:
+                if abort_signal.triggered:
+                    return self._reply_and_audit(
+                        reply=make_reply(ReturnCode.TASK_ABORTED),
+                        ref=server_audit_event_id,
+                        fl_ctx=fl_ctx,
+                        msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                    )
+                raise
 
             if abort_signal.triggered:
                 return self._reply_and_audit(
@@ -379,9 +382,6 @@ class ClientRunner(TBI):
                     fl_ctx=fl_ctx,
                     msg=f"submit result: {ReturnCode.TASK_ABORTED}",
                 )
-
-            if exec_exception:
-                raise exec_exception
 
             if not isinstance(reply, Shareable):
                 self.log_error(

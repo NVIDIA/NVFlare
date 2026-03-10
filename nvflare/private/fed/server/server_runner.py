@@ -127,7 +127,6 @@ class ServerRunner(TBI):
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
             wf = self.config.workflows[self.current_wf_index]
-            should_abort = False
             try:
                 with self.engine.new_context() as fl_ctx:
                     self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.controller)))
@@ -176,9 +175,7 @@ class ServerRunner(TBI):
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
 
                 # Stopped the server runner from the current responder, not continue the following responders.
-                if self.abort_signal.triggered:
-                    should_abort = True
-            if should_abort:
+            if self.abort_signal.triggered:
                 break
             self.current_wf_index += 1
 
