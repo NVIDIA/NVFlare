@@ -423,6 +423,9 @@ def main():
         except Exception as e:
             local_error = f"rank {rank}: {e}"
             print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
+        if round_initial_state_dict is not None:
+            del round_initial_state_dict
+            round_initial_state_dict = None
 
         round_error = _collect_first_error(local_error, world_size)
         if round_error:
@@ -453,6 +456,9 @@ def main():
                 if trained_raw is not None:
                     del trained_raw
                     trained_raw = None
+                if input_model is not None:
+                    del input_model
+                    input_model = None
                 del params, output_model
             _dist_barrier(world_size)
             _free_memory_after_send()
@@ -489,6 +495,9 @@ def main():
             if trained_raw is not None:
                 del trained_raw
                 trained_raw = None
+            if input_model is not None:
+                del input_model
+                input_model = None
         _dist_barrier(world_size)
         _free_memory_after_send()
 

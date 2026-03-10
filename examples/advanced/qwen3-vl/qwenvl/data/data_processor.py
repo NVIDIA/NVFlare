@@ -18,6 +18,7 @@
 import itertools
 import json
 import logging
+import os
 import random
 import re
 import time
@@ -40,7 +41,14 @@ VIDEO_TOKEN_INDEX = 151656
 DEFAULT_IMAGE_TOKEN = "<image>"
 DEFAULT_VIDEO_TOKEN = "<video>"
 
-local_rank = None
+
+def _resolve_local_rank() -> int:
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_rank()
+    return int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", 0)))
+
+
+local_rank = _resolve_local_rank()
 
 
 def rank0_print(*args):
@@ -327,9 +335,14 @@ class LazySupervisedDataset(Dataset):
                 time.sleep(1)
 
         # try other samples, in case it is file corruption issue
-        for attempt_idx in range(num_base_retries):
+        for attempt_idx in range(num_final_retries):
             try:
-                next_index = min(i + 1, len(self.list_data_dict) - 1)
+                if len(self.list_data_dict) == 1:
+                    next_index = i
+                else:
+                    next_index = random.randrange(len(self.list_data_dict) - 1)
+                    if next_index >= i:
+                        next_index += 1
                 sources = self.list_data_dict[next_index]
                 if isinstance(sources, dict):
                     sources = [sources]
@@ -574,6 +587,8 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
 
 def make_supervised_data_module(processor, data_args) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
+    global local_rank
+    local_rank = _resolve_local_rank()
     train_dataset = LazySupervisedDataset(processor, data_args=data_args)
     if data_args.data_flatten or data_args.data_packing:
         data_collator = FlattenedDataCollatorForSupervisedDataset(processor.tokenizer)

@@ -89,16 +89,27 @@ def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False
 
 
 def _get_qwen_vl_model_class(model_name_or_path: str):
-    """Return the correct ForConditionalGeneration class for the model's config (qwen2_5_vl vs qwen3_vl)."""
+    """Return the correct ForConditionalGeneration class for the model's config."""
     config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
-    if getattr(config, "model_type", None) == "qwen3_vl":
+    model_type = getattr(config, "model_type", None)
+    if model_type == "qwen3_vl_moe":
+        from transformers import Qwen3VLMoeForConditionalGeneration
+
+        return Qwen3VLMoeForConditionalGeneration
+    if model_type == "qwen3_vl":
         try:
             from transformers import Qwen3VLForConditionalGeneration
 
             return Qwen3VLForConditionalGeneration
         except ImportError:
             pass
-    return Qwen2_5_VLForConditionalGeneration
+    if model_type == "qwen2_5_vl":
+        return Qwen2_5_VLForConditionalGeneration
+    if model_type == "qwen2_vl":
+        from transformers import Qwen2VLForConditionalGeneration
+
+        return Qwen2VLForConditionalGeneration
+    raise ValueError(f"Unsupported Qwen VL model_type: {model_type!r} for {model_name_or_path}")
 
 
 def load_qwen_vl_from_pretrained(model_name_or_path: str, **kwargs):
@@ -213,10 +224,16 @@ class Qwen3VLLoRAModel(nn.Module):
         if not adapter_state:
             if strict:
                 raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
+            warnings.warn(
+                "No LoRA adapter keys found in provided state_dict; skipping adapter load because strict=False."
+            )
             try:
-                return self.model.load_state_dict({}, strict=False, assign=assign)
+                incompatible = self.model.load_state_dict({}, strict=False, assign=assign)
             except TypeError:
-                return self.model.load_state_dict({}, strict=False)
+                incompatible = self.model.load_state_dict({}, strict=False)
+            return _IncompatibleKeys(
+                incompatible.missing_keys, list(incompatible.unexpected_keys) + list(state_dict.keys())
+            )
 
         mapped_state, unmatched = _map_adapter_state_dict_for_peft_model(self.model, adapter_state)
         if strict and not mapped_state:
@@ -236,5 +253,9 @@ class Qwen3VLLoRAModel(nn.Module):
             incompatible = self.model.load_state_dict(mapped_state, strict=False)
 
         if unmatched:
+            warnings.warn(
+                f"Ignoring {len(unmatched)} unmatched LoRA adapter keys because strict=False. "
+                f"Example unmatched key: {unmatched[0]}"
+            )
             return _IncompatibleKeys(incompatible.missing_keys, list(incompatible.unexpected_keys) + unmatched)
         return incompatible

@@ -33,6 +33,7 @@ if str(_project_root) not in sys.path:
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
 from transformers import (
+    AutoConfig,
     AutoProcessor,
     Qwen2_5_VLForConditionalGeneration,
     Qwen2VLForConditionalGeneration,
@@ -112,7 +113,9 @@ def set_model(model_args, model):
 
 def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementation, bf16):
     """Load base (non-PEFT) model by path; used for full checkpoints and for base when loading adapter."""
-    if "qwen3" in model_name_or_path.lower() and "a" in Path(model_name_or_path.rstrip("/")).name.lower():
+    config = AutoConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir, trust_remote_code=True)
+    model_type = getattr(config, "model_type", None)
+    if model_type == "qwen3_vl_moe":
         model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -120,7 +123,7 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
             dtype=(torch.bfloat16 if bf16 else None),
         )
         model_type = "qwen3vl"
-    elif "qwen3" in model_name_or_path.lower():
+    elif model_type == "qwen3_vl":
         model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -128,7 +131,7 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
             dtype=(torch.bfloat16 if bf16 else None),
         )
         model_type = "qwen3vl"
-    elif "qwen2.5" in model_name_or_path.lower():
+    elif model_type == "qwen2_5_vl":
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -136,7 +139,7 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
             dtype=(torch.bfloat16 if bf16 else None),
         )
         model_type = "qwen2.5vl"
-    else:
+    elif model_type == "qwen2_vl":
         model = Qwen2VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -144,6 +147,8 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
             dtype=(torch.bfloat16 if bf16 else None),
         )
         model_type = "qwen2vl"
+    else:
+        raise ValueError(f"Unsupported Qwen VL model_type: {model_type!r} for {model_name_or_path}")
     return model, model_type
 
 
