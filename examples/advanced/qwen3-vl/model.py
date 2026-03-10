@@ -135,7 +135,7 @@ def _maybe_add_default_adapter_name(key: str) -> str:
     return key
 
 
-def _map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
+def map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
     model_keys = set(peft_model.state_dict().keys())
     mapped = {}
     unmatched = []
@@ -235,7 +235,7 @@ class Qwen3VLLoRAModel(nn.Module):
                 incompatible.missing_keys, list(incompatible.unexpected_keys) + list(state_dict.keys())
             )
 
-        mapped_state, unmatched = _map_adapter_state_dict_for_peft_model(self.model, adapter_state)
+        mapped_state, unmatched = map_adapter_state_dict_for_peft_model(self.model, adapter_state)
         if strict and not mapped_state:
             raise RuntimeError(
                 "No LoRA adapter keys matched target model parameters; refusing to continue with stale adapter weights."

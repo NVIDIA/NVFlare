@@ -65,6 +65,21 @@ def _make_abs_paths(base: Path, files: str) -> str:
     return f"{(base / files).resolve()}"
 
 
+def _get_assistant_label_markers(processor) -> tuple[list[int], int]:
+    tokenizer = getattr(processor, "tokenizer", processor)
+    assistant_prefix = tokenizer.encode("assistant\n", add_special_tokens=False)
+    if not assistant_prefix:
+        raise ValueError("Failed to derive assistant chat-template prefix token IDs from tokenizer.")
+
+    im_end_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    if im_end_id is None or im_end_id == getattr(tokenizer, "unk_token_id", None):
+        im_end_tokens = tokenizer.encode("<|im_end|>", add_special_tokens=False)
+        if len(im_end_tokens) != 1:
+            raise ValueError("Failed to derive a single <|im_end|> token ID from tokenizer.")
+        im_end_id = im_end_tokens[0]
+    return assistant_prefix, im_end_id
+
+
 def update_processor_pixels(processor, data_args):
     logger = logging.getLogger(__name__)
 
@@ -211,16 +226,18 @@ def preprocess_qwen_visual(
     labels = torch.full_like(input_ids, IGNORE_INDEX)
 
     input_ids_flat = input_ids[0].tolist()
+    assistant_prefix, im_end_id = _get_assistant_label_markers(processor)
     L = len(input_ids_flat)
     pos = 0
     while pos < L:
-        if input_ids_flat[pos] == 77091:
-            ans_start = pos + 2
+        if input_ids_flat[pos : pos + len(assistant_prefix)] == assistant_prefix:
+            ans_start = pos + len(assistant_prefix)
             ans_end = ans_start
-            while ans_end < L and input_ids_flat[ans_end] != 151645:
+            while ans_end < L and input_ids_flat[ans_end] != im_end_id:
                 ans_end += 1
             if ans_end < L:
-                labels[0, ans_start : ans_end + 2] = input_ids[0, ans_start : ans_end + 2]
+                label_end = min(ans_end + 2, L)
+                labels[0, ans_start:label_end] = input_ids[0, ans_start:label_end]
                 pos = ans_end
         pos += 1
 

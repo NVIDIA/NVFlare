@@ -30,6 +30,7 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from model import map_adapter_state_dict_for_peft_model
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
 from transformers import (
@@ -171,31 +172,6 @@ def _extract_fl_state_dict(model, lora_only: bool) -> dict:
     return _to_cpu_state_dict(model_to_export.state_dict())
 
 
-def _maybe_add_default_adapter_name(key: str) -> str:
-    for marker in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
-        token = f".{marker}."
-        default_token = f".{marker}.default."
-        if token in key and default_token not in key:
-            return key.replace(token, default_token, 1)
-    return key
-
-
-def _map_peft_state_dict_to_model_keys(model, state_dict: dict) -> tuple[dict, list]:
-    model_keys = set(model.state_dict().keys())
-    mapped = {}
-    unmatched = []
-    for key, value in state_dict.items():
-        if key in model_keys:
-            mapped[key] = value
-            continue
-        alt = _maybe_add_default_adapter_name(key)
-        if alt in model_keys:
-            mapped[alt] = value
-        else:
-            unmatched.append(key)
-    return mapped, unmatched
-
-
 def _load_initial_state_dict(model, state_dict: dict) -> None:
     try:
         from peft import PeftModel
@@ -203,7 +179,7 @@ def _load_initial_state_dict(model, state_dict: dict) -> None:
         PeftModel = None
 
     if PeftModel is not None and isinstance(model, PeftModel):
-        mapped_state, unmatched = _map_peft_state_dict_to_model_keys(model, state_dict)
+        mapped_state, unmatched = map_adapter_state_dict_for_peft_model(model, state_dict)
         if not mapped_state:
             raise RuntimeError(
                 "No incoming LoRA keys matched the PEFT model state_dict; refusing to continue with stale local weights."
