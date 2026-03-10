@@ -18,7 +18,6 @@
 from typing import Optional
 
 import torch
-from flash_attn.flash_attn_interface import flash_attn_varlen_func
 from transformers import Trainer
 from transformers.cache_utils import Cache
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
@@ -36,6 +35,11 @@ from transformers.utils.deprecation import deprecate_kwarg
 
 logger = logging.get_logger(__name__)
 
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_func
+except ImportError:
+    flash_attn_varlen_func = None
+
 
 def flash_attention_forward(
     module: torch.nn.Module,
@@ -49,6 +53,10 @@ def flash_attention_forward(
     softcap: Optional[float] = None,
     **kwargs,
 ) -> tuple[torch.Tensor, None]:
+    if flash_attn_varlen_func is None:
+        raise ImportError(
+            "flash_attn is required for Qwen3-VL flash_attention_2 training. Install flash-attn to use this path."
+        )
     if kwargs.get("output_attentions", False) or kwargs.get("head_mask") is not None:
         logger.warning_once(
             "`flash_attention_2` does not support `output_attentions=True` or `head_mask`."
@@ -206,6 +214,8 @@ def return_mask(config, input_embeds, attention_mask, cache_position, past_key_v
 
 
 def replace_qwen2_vl_attention_class():
+    if flash_attn_varlen_func is None:
+        raise ImportError("flash_attn is required for the Qwen3-VL attention patch used by data_flatten/data_packing.")
     import transformers
     import transformers.modeling_flash_attention_utils
 

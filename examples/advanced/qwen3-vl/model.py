@@ -24,6 +24,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from torch.nn.modules.module import _IncompatibleKeys
 from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration
 
 # LoRA config must match Qwen train_qwen.py (argument.py / train_qwen.py)
@@ -209,22 +210,31 @@ class Qwen3VLLoRAModel(nn.Module):
             elif "lora" in key.lower():
                 adapter_state[key] = value
 
-        if not adapter_state and strict:
-            raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
+        if not adapter_state:
+            if strict:
+                raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
+            try:
+                return self.model.load_state_dict({}, strict=False, assign=assign)
+            except TypeError:
+                return self.model.load_state_dict({}, strict=False)
 
         mapped_state, unmatched = _map_adapter_state_dict_for_peft_model(self.model, adapter_state)
-        if not mapped_state:
+        if strict and not mapped_state:
             raise RuntimeError(
                 "No LoRA adapter keys matched target model parameters; refusing to continue with stale adapter weights."
             )
-        if unmatched:
+        if strict and unmatched:
             sample = ", ".join(unmatched[:3])
             raise RuntimeError(
                 f"Failed to map {len(unmatched)}/{len(adapter_state)} LoRA adapter keys. Example unmatched keys: {sample}"
             )
 
         try:
-            return self.model.load_state_dict(mapped_state, strict=False, assign=assign)
+            incompatible = self.model.load_state_dict(mapped_state, strict=False, assign=assign)
         except TypeError:
             # Older torch versions do not support the `assign` argument.
-            return self.model.load_state_dict(mapped_state, strict=False)
+            incompatible = self.model.load_state_dict(mapped_state, strict=False)
+
+        if unmatched:
+            return _IncompatibleKeys(incompatible.missing_keys, list(incompatible.unexpected_keys) + unmatched)
+        return incompatible
