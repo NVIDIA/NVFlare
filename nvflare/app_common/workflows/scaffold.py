@@ -102,6 +102,12 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
             contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
             contribution_round=_result.current_round,
         )
+        if AlgorithmConstants.SCAFFOLD_CTRL_DIFF not in _result.meta:
+            client_name = _result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+            raise ValueError(
+                f"Client '{client_name}' did not return required "
+                f"FLModel.meta['{AlgorithmConstants.SCAFFOLD_CTRL_DIFF}'] for Scaffold aggregation."
+            )
         crtl_aggregation_helper.add(
             data=_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF],
             weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
