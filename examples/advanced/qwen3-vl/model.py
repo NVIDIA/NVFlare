@@ -114,6 +114,31 @@ def _get_peft_adapter_state_dict(peft_model) -> dict:
     return adapter_state
 
 
+def _maybe_add_default_adapter_name(key: str) -> str:
+    for marker in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
+        token = f".{marker}."
+        default_token = f".{marker}.default."
+        if token in key and default_token not in key:
+            return key.replace(token, default_token, 1)
+    return key
+
+
+def _map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
+    model_keys = set(peft_model.state_dict().keys())
+    mapped = {}
+    unmatched = []
+    for key, value in adapter_state.items():
+        if key in model_keys:
+            mapped[key] = value
+            continue
+        alt = _maybe_add_default_adapter_name(key)
+        if alt in model_keys:
+            mapped[alt] = value
+        else:
+            unmatched.append(key)
+    return mapped, unmatched
+
+
 class Qwen3VLModel(nn.Module):
     """Qwen3-VL model wrapper for use as initial_model in FedAvgRecipe.
 
@@ -187,8 +212,19 @@ class Qwen3VLLoRAModel(nn.Module):
         if not adapter_state and strict:
             raise RuntimeError("No LoRA adapter keys found in provided state_dict.")
 
+        mapped_state, unmatched = _map_adapter_state_dict_for_peft_model(self.model, adapter_state)
+        if not mapped_state:
+            raise RuntimeError(
+                "No LoRA adapter keys matched target model parameters; refusing to continue with stale adapter weights."
+            )
+        if unmatched:
+            sample = ", ".join(unmatched[:3])
+            raise RuntimeError(
+                f"Failed to map {len(unmatched)}/{len(adapter_state)} LoRA adapter keys. Example unmatched keys: {sample}"
+            )
+
         try:
-            return self.model.load_state_dict(adapter_state, strict=False, assign=assign)
+            return self.model.load_state_dict(mapped_state, strict=False, assign=assign)
         except TypeError:
             # Older torch versions do not support the `assign` argument.
-            return self.model.load_state_dict(adapter_state, strict=False)
+            return self.model.load_state_dict(mapped_state, strict=False)

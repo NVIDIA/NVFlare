@@ -166,7 +166,59 @@ def _extract_fl_state_dict(model, lora_only: bool) -> dict:
     return _to_cpu_state_dict(model_to_export.state_dict())
 
 
+def _maybe_add_default_adapter_name(key: str) -> str:
+    for marker in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
+        token = f".{marker}."
+        default_token = f".{marker}.default."
+        if token in key and default_token not in key:
+            return key.replace(token, default_token, 1)
+    return key
+
+
+def _map_peft_state_dict_to_model_keys(model, state_dict: dict) -> tuple[dict, list]:
+    model_keys = set(model.state_dict().keys())
+    mapped = {}
+    unmatched = []
+    for key, value in state_dict.items():
+        if key in model_keys:
+            mapped[key] = value
+            continue
+        alt = _maybe_add_default_adapter_name(key)
+        if alt in model_keys:
+            mapped[alt] = value
+        else:
+            unmatched.append(key)
+    return mapped, unmatched
+
+
 def _load_initial_state_dict(model, state_dict: dict) -> None:
+    try:
+        from peft import PeftModel
+    except ImportError:
+        PeftModel = None
+
+    if PeftModel is not None and isinstance(model, PeftModel):
+        mapped_state, unmatched = _map_peft_state_dict_to_model_keys(model, state_dict)
+        if not mapped_state:
+            raise RuntimeError(
+                "No incoming LoRA keys matched the PEFT model state_dict; refusing to continue with stale local weights."
+            )
+        if unmatched:
+            sample = ", ".join(unmatched[:3])
+            raise RuntimeError(
+                f"Failed to map {len(unmatched)}/{len(state_dict)} incoming LoRA keys. "
+                f"Example unmatched keys: {sample}"
+            )
+        incompatible = model.load_state_dict(mapped_state, strict=False)
+        if incompatible.unexpected_keys:
+            sample = ", ".join(incompatible.unexpected_keys[:3])
+            raise RuntimeError(f"Unexpected keys while loading PEFT weights (example: {sample})")
+        rank0_print(
+            "Loaded initial FL LoRA state dict with "
+            f"{len(incompatible.missing_keys)} missing and {len(incompatible.unexpected_keys)} unexpected keys."
+        )
+        return
+
     incompatible = model.load_state_dict(state_dict, strict=False)
     rank0_print(
         "Loaded initial FL state dict with "
