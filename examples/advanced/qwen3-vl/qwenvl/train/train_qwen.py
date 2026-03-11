@@ -320,14 +320,16 @@ def train(
     data_module = make_supervised_data_module(processor, data_args=data_args)
     trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
     trainer.train()
-    if not return_state_dict:
-        trainer.save_state()
+    # Preserve Trainer state in both FL exchange modes; only the model artifact handling differs.
+    trainer.save_state()
 
     model.config.use_cache = True
 
     if return_state_dict:
+        rank0_print("Using in-memory FL exchange; returning trained state_dict without writing model checkpoints.")
         return _extract_fl_state_dict(trainer.model, lora_only=training_args.lora_enable or model_loaded_as_peft)
 
+    rank0_print("Using checkpoint-based FL exchange; saving trained model artifacts to output_dir.")
     safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
     processor.save_pretrained(training_args.output_dir)
 
