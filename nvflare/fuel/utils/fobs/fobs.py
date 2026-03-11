@@ -224,7 +224,8 @@ def register_data_classes(*data_classes: Type[T]) -> None:
     """Register generic decomposers for data classes.
 
     Also adds each class to the type-name whitelist so that it can be lazily
-    re-loaded during deserialization even after fobs.reset() is called.
+    re-loaded during deserialization. The whitelist entry is cleared when
+    fobs.reset() is called.
 
     Args:
         data_classes: The classes to be registered
@@ -240,7 +241,8 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
     """Register generic decomposers for enum classes.
 
     Also adds each class to the type-name whitelist so that it can be lazily
-    re-loaded during deserialization even after fobs.reset() is called.
+    re-loaded during deserialization. The whitelist entry is cleared when
+    fobs.reset() is called.
 
     Args:
         enum_types: The enum classes to be registered

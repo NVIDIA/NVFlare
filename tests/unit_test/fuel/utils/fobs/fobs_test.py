@@ -95,6 +95,7 @@ class TestFobs:
         fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.fobs_test.ExampleDataClass")
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME
+        fobs.reset()
 
     def test_auto_registration(self):
         fobs.reset()
@@ -117,6 +118,7 @@ class TestFobs:
         assert isinstance(restored, DXO)
         assert restored.data_kind == DataKind.WEIGHTS
         assert restored.data == {"w": 1.0}
+        fobs.reset()
 
     def test_reset_mutates_whitelist_in_place(self):
         fobs.reset()
