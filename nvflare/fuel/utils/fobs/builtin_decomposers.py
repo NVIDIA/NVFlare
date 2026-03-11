@@ -100,4 +100,7 @@ BUILTIN_TYPES: set[str] = {
     # Analytics / tracking enums used in streaming and metrics
     "nvflare.apis.analytix.AnalyticsDataType",
     "nvflare.apis.analytix.LogWriterName",
+    # Found in integration test
+    "nvflare.apis.job_def.JobMetaKey",
+    
 }
