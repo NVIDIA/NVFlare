@@ -60,7 +60,6 @@ class TestDecomposers:
 
     def test_generic_str_enum_type(self):
         type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass"
-        fobs.add_type_name_whitelist(type_name)
         test_enum = EnumClass.A
         buffer = fobs.dumps(test_enum)
         fobs.reset()
@@ -74,7 +73,6 @@ class TestDecomposers:
 
     def test_generic_int_enum_type(self):
         type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass"
-        fobs.add_type_name_whitelist(type_name)
         test_enum = IntEnumClass.X
         buffer = fobs.dumps(test_enum)
         fobs.reset()

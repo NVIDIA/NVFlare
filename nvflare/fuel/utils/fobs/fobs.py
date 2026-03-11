@@ -181,7 +181,7 @@ class Packer:
                 # Maintaining backward compatibility with auto enum registration
                 if _enum_auto_registration:
                     if issubclass(cls, Enum):
-                        register_enum_types(cls)
+                        register(EnumTypeDecomposer(cls))
                         registered = True
             else:
                 decomposer_class = load_class(decomposer_name)
