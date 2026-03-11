@@ -36,6 +36,7 @@ from model import (
     DEFAULT_LORA_TARGET_MODULES,
     Qwen3VLModel,
     load_state_dict_from_checkpoint,
+    normalize_peft_adapter_key,
 )
 from transformers import AutoProcessor
 
@@ -94,10 +95,16 @@ def _save_lora_adapter_for_training(
 
     adapter_tensors = {}
     for key, value in stripped.items():
+        normalized_key = normalize_peft_adapter_key(key)
+        if normalized_key in adapter_tensors:
+            raise RuntimeError(f"Duplicate LoRA adapter key after PEFT normalization: {normalized_key}")
         if isinstance(value, torch.Tensor):
-            adapter_tensors[key] = value.detach().cpu().contiguous()
+            adapter_tensors[normalized_key] = value.detach().cpu().contiguous()
         else:
-            adapter_tensors[key] = torch.as_tensor(value).detach().cpu().contiguous()
+            adapter_tensors[normalized_key] = torch.as_tensor(value).detach().cpu().contiguous()
+
+    if not adapter_tensors:
+        raise RuntimeError("No LoRA adapter tensors were provided for checkpoint-based exchange.")
 
     os.makedirs(save_dir, exist_ok=True)
     save_file(adapter_tensors, os.path.join(save_dir, "adapter_model.safetensors"))
@@ -377,6 +384,7 @@ def main():
         current_round = None
         should_continue = True
         round_initial_state_dict = None
+        prep_error = None
 
         if rank == 0:
             input_model = flare.receive()
@@ -386,73 +394,77 @@ def main():
                 current_round = input_model.current_round
                 received_mb = _params_size_mb(input_model.params)
                 print(f"site={client_name}, round={current_round}, received model size: {received_mb:.2f} MB")
+                try:
+                    # Remove previous round artifacts so stale checkpoint dirs cannot trigger an unintended resume.
+                    if os.path.isdir(output_model_dir):
+                        shutil.rmtree(output_model_dir)
+                    os.makedirs(output_model_dir, exist_ok=True)
 
-                # Remove previous round artifacts so stale checkpoint dirs cannot trigger an unintended resume.
-                if os.path.isdir(output_model_dir):
-                    shutil.rmtree(output_model_dir)
-                os.makedirs(output_model_dir, exist_ok=True)
-
-                if use_in_memory_exchange:
-                    round_initial_state_dict = _strip_model_prefix(input_model.params)
-                else:
-                    os.makedirs(input_model_dir, exist_ok=True)
-                    if lora_exchange:
-                        # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter
-                        _save_lora_adapter_for_training(
-                            input_model.params,
-                            input_model_dir,
-                            args.model_name_or_path,
-                            args.lora_r,
-                            args.lora_alpha,
-                            args.lora_dropout,
-                        )
-                        processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                        processor.save_pretrained(input_model_dir)
+                    if use_in_memory_exchange:
+                        round_initial_state_dict = _strip_model_prefix(input_model.params)
                     else:
-                        # Full model: save received global model to HF format for train_qwen.py
-                        if model is None:
-                            raise RuntimeError(
-                                "Expected Qwen3VLModel to be initialized for checkpoint-based full-model exchange."
+                        os.makedirs(input_model_dir, exist_ok=True)
+                        if lora_exchange:
+                            # Exchange only LoRA adapter: save adapter + config so train_qwen can load base + adapter.
+                            _save_lora_adapter_for_training(
+                                input_model.params,
+                                input_model_dir,
+                                args.model_name_or_path,
+                                args.lora_r,
+                                args.lora_alpha,
+                                args.lora_dropout,
                             )
-                        model.load_state_dict(input_model.params, strict=False)
-                        processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-                        tokenizer = getattr(processor, "tokenizer", processor)
-                        _align_model_config_to_tokenizer(model.model, tokenizer)
-                        model.model.save_pretrained(input_model_dir)
-                        processor.save_pretrained(input_model_dir)
+                            processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                            processor.save_pretrained(input_model_dir)
+                        else:
+                            # Full model: save received global model to HF format for train_qwen.py.
+                            if model is None:
+                                raise RuntimeError(
+                                    "Expected Qwen3VLModel to be initialized for checkpoint-based full-model exchange."
+                                )
+                            model.load_state_dict(input_model.params, strict=False)
+                            processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+                            tokenizer = getattr(processor, "tokenizer", processor)
+                            _align_model_config_to_tokenizer(model.model, tokenizer)
+                            model.model.save_pretrained(input_model_dir)
+                            processor.save_pretrained(input_model_dir)
+                except Exception as e:
+                    prep_error = f"rank {rank}: setup failed before training: {e}"
+                    print(f"Qwen SFT setup failed on rank {rank}: {e}", file=sys.stderr)
 
         should_continue = _broadcast_object_from_rank0(should_continue, world_size)
         current_round = _broadcast_object_from_rank0(current_round, world_size)
+        prep_error = _broadcast_object_from_rank0(prep_error, world_size)
         if not should_continue:
             break
 
-        # Ensure rank 0 has prepared input/output model dirs before training starts.
-        _dist_barrier(world_size)
-
         # Run Qwen3-VL training in-process (we are already the torchrun process from the job command)
-        local_error = None
+        local_error = prep_error
         trained_raw = None
-        try:
-            model_name_or_path = args.model_name_or_path if use_in_memory_exchange else input_model_dir
-            trained_raw = train(
-                input_model_dir=model_name_or_path,
-                output_model_dir=output_model_dir,
-                dataset_use=args.dataset_use,
-                max_steps=args.max_steps,
-                num_train_epochs=args.num_train_epochs,
-                learning_rate=args.learning_rate,
-                report_to=args.report_to,
-                lora_enable=lora_exchange,
-                lora_r=args.lora_r,
-                lora_alpha=args.lora_alpha,
-                lora_dropout=args.lora_dropout,
-                keep_process_group=_is_multi_rank(world_size),
-                initial_state_dict=round_initial_state_dict if rank == 0 else None,
-                return_state_dict=use_in_memory_exchange and rank == 0,
-            )
-        except Exception as e:
-            local_error = f"rank {rank}: {e}"
-            print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
+        if prep_error is None:
+            # Ensure rank 0 has prepared input/output model dirs before training starts.
+            _dist_barrier(world_size)
+            try:
+                model_name_or_path = args.model_name_or_path if use_in_memory_exchange else input_model_dir
+                trained_raw = train(
+                    input_model_dir=model_name_or_path,
+                    output_model_dir=output_model_dir,
+                    dataset_use=args.dataset_use,
+                    max_steps=args.max_steps,
+                    num_train_epochs=args.num_train_epochs,
+                    learning_rate=args.learning_rate,
+                    report_to=args.report_to,
+                    lora_enable=lora_exchange,
+                    lora_r=args.lora_r,
+                    lora_alpha=args.lora_alpha,
+                    lora_dropout=args.lora_dropout,
+                    keep_process_group=_is_multi_rank(world_size),
+                    initial_state_dict=round_initial_state_dict if rank == 0 else None,
+                    return_state_dict=use_in_memory_exchange and rank == 0,
+                )
+            except Exception as e:
+                local_error = f"rank {rank}: {e}"
+                print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
         if round_initial_state_dict is not None:
             del round_initial_state_dict
             round_initial_state_dict = None

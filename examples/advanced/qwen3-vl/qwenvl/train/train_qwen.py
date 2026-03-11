@@ -15,9 +15,7 @@
 # Vendored/adapted from Qwen3-VL qwen-vl-finetune. See NOTICE and
 # https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE
 
-import logging
 import os
-import pathlib
 import sys
 from pathlib import Path
 from typing import Optional
@@ -218,7 +216,7 @@ def train(
     os.makedirs(training_args.output_dir, exist_ok=True)
 
     # Support adapter-only dir (e.g. from NVFlare LoRA exchange): load base from config then load adapter
-    adapter_config_path = pathlib.Path(model_args.model_name_or_path) / "adapter_config.json"
+    adapter_config_path = Path(model_args.model_name_or_path) / "adapter_config.json"
     model_loaded_as_peft = False
     if adapter_config_path.is_file():
         import json
@@ -321,12 +319,7 @@ def train(
 
     data_module = make_supervised_data_module(processor, data_args=data_args)
     trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
-
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        logging.info("checkpoint found, resume training")
-        trainer.train(resume_from_checkpoint=True)
-    else:
-        trainer.train()
+    trainer.train()
     if not return_state_dict:
         trainer.save_state()
 

@@ -126,7 +126,7 @@ def _get_peft_adapter_state_dict(peft_model) -> dict:
     return adapter_state
 
 
-def _maybe_add_default_adapter_name(key: str) -> str:
+def normalize_peft_adapter_key(key: str) -> str:
     for marker in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
         token = f".{marker}."
         default_token = f".{marker}.default."
@@ -143,7 +143,7 @@ def map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tu
         if key in model_keys:
             mapped[key] = value
             continue
-        alt = _maybe_add_default_adapter_name(key)
+        alt = normalize_peft_adapter_key(key)
         if alt in model_keys:
             mapped[alt] = value
         else:
