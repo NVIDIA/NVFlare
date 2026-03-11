@@ -15,6 +15,8 @@
 from collections import OrderedDict
 from enum import Enum, IntEnum
 
+import pytest
+
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
@@ -63,7 +65,10 @@ class TestDecomposers:
         test_enum = EnumClass.A
         buffer = fobs.dumps(test_enum)
         fobs.reset()
-        # Re-add to whitelist after reset so deserialization exercises the whitelist security check
+        with pytest.raises(ValueError, match="not allowed"):
+            fobs.loads(buffer)
+
+        # Re-add to whitelist after reset so deserialization exercises the whitelist gate.
         fobs.add_type_name_whitelist(type_name)
         new_data = fobs.loads(buffer)
         assert type(test_enum) == type(
@@ -76,7 +81,10 @@ class TestDecomposers:
         test_enum = IntEnumClass.X
         buffer = fobs.dumps(test_enum)
         fobs.reset()
-        # Re-add to whitelist after reset so deserialization exercises the whitelist security check
+        with pytest.raises(ValueError, match="not allowed"):
+            fobs.loads(buffer)
+
+        # Re-add to whitelist after reset so deserialization exercises the whitelist gate.
         fobs.add_type_name_whitelist(type_name)
         new_data = fobs.loads(buffer)
         assert type(test_enum) == type(

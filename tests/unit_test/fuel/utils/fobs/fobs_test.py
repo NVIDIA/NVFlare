@@ -101,7 +101,7 @@ class TestFobs:
     def test_auto_registration(self):
         fobs.reset()
         test_class = ExampleDataClass(TestFobs.NAME)
-        # No decomposer is registered for ExampleDataClass
+        # pack() auto-registers a session-scoped DataClassDecomposer for ExampleDataClass.
         buf = fobs.dumps(test_class)
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME

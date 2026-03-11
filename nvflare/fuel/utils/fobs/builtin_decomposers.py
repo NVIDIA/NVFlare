@@ -91,6 +91,7 @@ BUILTIN_TYPES: set[str] = {
     # --- Optional HE type handled by CKKSVectorDecomposer (tenseal integration) ---
     # tenseal is an optional dependency; this entry ensures reset() → deserialize works
     # for HE payloads when CKKSVectorDecomposer has not been explicitly re-registered.
+    # If tenseal is not installed, fobs.unpack() will still fail at load_class() with ImportError.
     "tenseal.CKKSVector",
     # --- Enum types auto-registered when core FL objects are serialized ---
     # DataKind is embedded in every DXO (str,Enum — triggers auto-registration)
