@@ -90,3 +90,22 @@ class TestPipeHandlerBrokenPipe:
 
         assert any(m.topic == Topic.PEER_GONE for m in messages)
         assert handler.reader is None
+
+    def test_graceful_stop_does_not_emit_peer_gone(self):
+        """BrokenPipeError raised after stop() is called must not emit PEER_GONE."""
+        pipe = _BrokenPipe("pipe is not open")
+        handler = self._make_handler(pipe)
+
+        received = []
+        handler.set_status_cb(lambda msg: received.append(msg))
+
+        handler.start()
+        # Stop immediately — asked_to_stop=True before _try_read can emit anything.
+        handler.stop()
+
+        # Give the reader thread time to finish.
+        deadline = time.time() + 1.0
+        while handler.reader is not None and time.time() < deadline:
+            time.sleep(0.01)
+
+        assert not any(m.topic == Topic.PEER_GONE for m in received)

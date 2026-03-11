@@ -347,9 +347,10 @@ class PipeHandler(object):
             try:
                 msg = p.receive()
             except BrokenPipeError as e:
-                self._add_message(
-                    self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
-                )
+                if not self.asked_to_stop:
+                    self._add_message(
+                        self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
+                    )
                 break
             now = time.time()
 
