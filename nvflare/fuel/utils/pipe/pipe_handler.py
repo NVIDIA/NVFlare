@@ -346,10 +346,9 @@ class PipeHandler(object):
 
             try:
                 msg = p.receive()
-            except BrokenPipeError:
-                # Transient TOCTOU race in FilePipe: a file disappeared between
-                # listdir and read. This is not a real pipe failure — retry next cycle.
-                continue
+            except BrokenPipeError as e:
+                self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
+                break
             now = time.time()
 
             if msg:
