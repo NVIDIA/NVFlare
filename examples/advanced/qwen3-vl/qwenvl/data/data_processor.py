@@ -420,12 +420,6 @@ class LazySupervisedDataset(Dataset):
         data_dict["position_ids"] = position_ids
         data_dict["attention_mask"] = [seq_len]
 
-        text = self.processor.tokenizer.decode(data_dict["input_ids"][0], skip_special_tokens=False)
-
-        labels = data_dict["labels"][0]
-        labels = [tid if tid != -100 else self.processor.tokenizer.pad_token_id for tid in labels]
-        label = self.processor.tokenizer.decode(labels, skip_special_tokens=False)
-
         return data_dict
 
     def _get_packed_item(self, sources) -> Dict[str, torch.Tensor]:

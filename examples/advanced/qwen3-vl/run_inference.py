@@ -43,6 +43,7 @@ from model import (
     DEFAULT_LORA_DROPOUT,
     DEFAULT_LORA_R,
     DEFAULT_LORA_TARGET_MODULES,
+    get_expected_peft_adapter_keys,
     load_qwen_vl_from_pretrained,
     map_adapter_state_dict_for_peft_model,
 )
@@ -299,6 +300,13 @@ def main():
                 raise RuntimeError(
                     f"Failed to map {len(unmatched)}/{len(adapter_state)} LoRA keys during inference. "
                     f"Example unmatched keys: {sample}"
+                )
+            missing_adapter_keys = sorted(get_expected_peft_adapter_keys(model) - set(mapped_state.keys()))
+            if missing_adapter_keys:
+                sample = ", ".join(missing_adapter_keys[:3])
+                raise RuntimeError(
+                    f"LoRA checkpoint is missing {len(missing_adapter_keys)} required adapter keys. "
+                    f"Example missing key: {sample}"
                 )
             model.load_state_dict(mapped_state, strict=False)
             print(f"LoRA checkpoint: loaded {len(mapped_state)} adapter keys.")

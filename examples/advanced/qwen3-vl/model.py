@@ -32,6 +32,7 @@ DEFAULT_LORA_R = 64
 DEFAULT_LORA_ALPHA = 128
 DEFAULT_LORA_DROPOUT = 0.0
 DEFAULT_LORA_TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj"]
+_PEFT_ADAPTER_MARKERS = ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B")
 
 
 def load_state_dict_from_checkpoint(checkpoint_dir: str, lora_only: bool = False) -> dict:
@@ -127,12 +128,20 @@ def _get_peft_adapter_state_dict(peft_model) -> dict:
 
 
 def normalize_peft_adapter_key(key: str) -> str:
-    for marker in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
+    for marker in _PEFT_ADAPTER_MARKERS:
         token = f".{marker}."
         default_token = f".{marker}.default."
         if token in key and default_token not in key:
             return key.replace(token, default_token, 1)
     return key
+
+
+def _is_peft_adapter_key(key: str) -> bool:
+    return any(f".{marker}." in key for marker in _PEFT_ADAPTER_MARKERS)
+
+
+def get_expected_peft_adapter_keys(peft_model) -> set:
+    return {key for key in peft_model.state_dict().keys() if _is_peft_adapter_key(key)}
 
 
 def map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
@@ -240,6 +249,7 @@ class Qwen3VLLoRAModel(nn.Module):
             )
 
         mapped_state, unmatched = map_adapter_state_dict_for_peft_model(self.model, adapter_state)
+        missing_adapter_keys = sorted(get_expected_peft_adapter_keys(self.model) - set(mapped_state.keys()))
         if strict and not mapped_state:
             raise RuntimeError(
                 "No LoRA adapter keys matched target model parameters; refusing to continue with stale adapter weights."
@@ -249,6 +259,11 @@ class Qwen3VLLoRAModel(nn.Module):
             raise RuntimeError(
                 f"Failed to map {len(unmatched)}/{len(adapter_state)} LoRA adapter keys. Example unmatched keys: {sample}"
             )
+        if strict and missing_adapter_keys:
+            sample = ", ".join(missing_adapter_keys[:3])
+            raise RuntimeError(
+                f"Missing {len(missing_adapter_keys)} required LoRA adapter keys. Example missing key: {sample}"
+            )
 
         try:
             incompatible = self.model.load_state_dict(mapped_state, strict=False, assign=assign)
@@ -256,10 +271,18 @@ class Qwen3VLLoRAModel(nn.Module):
             # Older torch versions do not support the `assign` argument.
             incompatible = self.model.load_state_dict(mapped_state, strict=False)
 
+        combined_missing_keys = list(dict.fromkeys(list(incompatible.missing_keys) + missing_adapter_keys))
+        combined_unexpected_keys = list(dict.fromkeys(list(incompatible.unexpected_keys) + unmatched))
+        if missing_adapter_keys:
+            warnings.warn(
+                f"Ignoring {len(missing_adapter_keys)} missing LoRA adapter keys because strict=False. "
+                f"Example missing key: {missing_adapter_keys[0]}"
+            )
         if unmatched:
             warnings.warn(
                 f"Ignoring {len(unmatched)} unmatched LoRA adapter keys because strict=False. "
                 f"Example unmatched key: {unmatched[0]}"
             )
-            return _IncompatibleKeys(incompatible.missing_keys, list(incompatible.unexpected_keys) + unmatched)
+        if missing_adapter_keys or unmatched:
+            return _IncompatibleKeys(combined_missing_keys, combined_unexpected_keys)
         return incompatible
