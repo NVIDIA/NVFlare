@@ -60,3 +60,38 @@ BUILTIN_DECOMPOSERS: set[str] = {
     "nvflare.fuel.utils.fobs.decomposers.core_decomposers.SetDecomposer",
     "nvflare.fuel.utils.fobs.decomposers.core_decomposers.TupleDecomposer",
 }
+
+# This set holds the fully-qualified names of all built-in types that are allowed
+# to be deserialized via generic decomposers (DataClassDecomposer / EnumTypeDecomposer)
+# even before an explicit register_data_classes() / register_enum_types() call.
+# It pre-populates the type_name whitelist in fobs.py and acts as a static allowlist
+# to prevent arbitrary class loading (RCE via deserialization).
+BUILTIN_TYPES: set[str] = {
+    # --- Data classes registered in flare_decomposers.py ---
+    "nvflare.apis.client.Client",
+    "nvflare.apis.fl_snapshot.RunSnapshot",
+    "nvflare.apis.signal.Signal",
+    "argparse.Namespace",
+    "nvflare.fuel.utils.fobs.datum.Datum",
+    "nvflare.fuel.utils.fobs.datum.DatumRef",
+    # --- Data classes registered in private_decomposers.py ---
+    "nvflare.private.admin_defs.Message",
+    "nvflare.private.fed.server.run_info.RunInfo",
+    "nvflare.private.fed.server.server_state.HotState",
+    "nvflare.private.fed.server.server_state.ColdState",
+    "nvflare.private.fed.server.server_state.Hot2ColdState",
+    "nvflare.private.fed.server.server_state.Cold2HotState",
+    "nvflare.private.fed.server.server_state.ShutdownState",
+    # --- Data classes registered in common_decomposers.py ---
+    "nvflare.app_common.widgets.event_recorder._CtxPropReq",
+    "nvflare.app_common.widgets.event_recorder._EventReq",
+    "nvflare.app_common.widgets.event_recorder._EventStats",
+    # --- Enum types auto-registered when core FL objects are serialized ---
+    # DataKind is embedded in every DXO (str,Enum — triggers auto-registration)
+    "nvflare.apis.dxo.DataKind",
+    # ParamsType is embedded in FLModel
+    "nvflare.app_common.abstract.fl_model.ParamsType",
+    # Analytics / tracking enums used in streaming and metrics
+    "nvflare.apis.analytix.AnalyticsDataType",
+    "nvflare.apis.analytix.LogWriterName",
+}
