@@ -103,4 +103,5 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.apis.analytix.LogWriterName",
     # Found in integration test
     "nvflare.apis.job_def.JobMetaKey",
+    "xgboost.core.DataSplitMode",
 }
