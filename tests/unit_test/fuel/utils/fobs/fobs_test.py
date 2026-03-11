@@ -80,6 +80,7 @@ class TestFobs:
             assert new_class.number == TestFobs.NUMBER
 
     def test_whitelist_enforcement(self):
+        fobs.reset()
         # Serialize ExampleDataClass (auto-registers it with DataClassDecomposer)
         test_class = ExampleDataClass(TestFobs.NAME)
         buf = fobs.dumps(test_class)

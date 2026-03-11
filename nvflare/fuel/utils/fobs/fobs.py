@@ -161,6 +161,10 @@ class Packer:
             return obj
 
         type_name = obj[FOBS_TYPE]
+        # Security boundary: types already present in _decomposers are implicitly trusted and
+        # bypass the whitelist and BUILTIN_DECOMPOSERS checks below. This is intentional — only
+        # explicitly registered decomposers are allowed, and registration is the trust grant.
+        # The whitelist only gates the first deserialization of a type (before it is registered).
         if type_name not in _decomposers:
             registered = False
             decomposer_name = obj.get(FOBS_DECOMPOSER)
