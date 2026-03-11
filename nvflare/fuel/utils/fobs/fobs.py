@@ -130,13 +130,17 @@ class Packer:
             registered = False
             if isinstance(obj, Enum):
                 if _enum_auto_registration:
-                    register_enum_types(type(obj))
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(EnumTypeDecomposer(type(obj)))
                     registered = True
             else:
                 if callable(obj) or (not hasattr(obj, "__dict__")):
                     raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
                 if _data_auto_registration:
-                    register_data_classes(type(obj))
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(DataClassDecomposer(type(obj)))
                     registered = True
 
             if not registered:
@@ -168,7 +172,8 @@ class Packer:
             # Validate type_name against whitelist to prevent arbitrary class loading (RCE)
             if type_name not in _type_name_whitelist:
                 raise ValueError(
-                    f"Type '{type_name}' is not allowed. " f"Use fobs.add_type_name_whitelist() to allow this type."
+                    f"Type '{type_name}' is not allowed. "
+                    f"Use fobs.register_data_classes() or fobs.add_type_name_whitelist() to allow this type."
                 )
 
             cls = load_class(type_name)
@@ -215,7 +220,10 @@ def add_type_name_whitelist(*type_names: str) -> None:
 
 
 def register_data_classes(*data_classes: Type[T]) -> None:
-    """Register generic decomposers for data classes
+    """Register generic decomposers for data classes.
+
+    Also adds each class to the type-name whitelist so that it can be lazily
+    re-loaded during deserialization even after fobs.reset() is called.
 
     Args:
         data_classes: The classes to be registered
@@ -224,10 +232,14 @@ def register_data_classes(*data_classes: Type[T]) -> None:
     for data_class in data_classes:
         decomposer = DataClassDecomposer(data_class)
         register(decomposer)
+        _type_name_whitelist.add(get_class_name(data_class))
 
 
 def register_enum_types(*enum_types: Type[Enum]) -> None:
-    """Register generic decomposers for enum classes
+    """Register generic decomposers for enum classes.
+
+    Also adds each class to the type-name whitelist so that it can be lazily
+    re-loaded during deserialization even after fobs.reset() is called.
 
     Args:
         enum_types: The enum classes to be registered
@@ -238,6 +250,7 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
             raise TypeError(f"Can't register class {enum_type}, which is not a subclass of Enum")
         decomposer = EnumTypeDecomposer(enum_type)
         register(decomposer)
+        _type_name_whitelist.add(get_class_name(enum_type))
 
 
 def auto_register_enum_types(enabled=True) -> None:
