@@ -168,8 +168,7 @@ class Packer:
             # Validate type_name against whitelist to prevent arbitrary class loading (RCE)
             if type_name not in _type_name_whitelist:
                 raise ValueError(
-                    f"Type '{type_name}' is not allowed. "
-                    f"Use fobs.add_type_name_whitelist() to allow this type."
+                    f"Type '{type_name}' is not allowed. " f"Use fobs.add_type_name_whitelist() to allow this type."
                 )
 
             cls = load_class(type_name)
