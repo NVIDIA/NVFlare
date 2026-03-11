@@ -70,7 +70,7 @@ _data_auto_registration = True
 # Pre-populated from BUILTIN_TYPES; grows as register_data_classes() / register_enum_types()
 # are called.  Never cleared by reset() so that types auto-registered during pack() in the
 # same process remain reachable after a reset (important for unit-test round-trip patterns).
-_type_name_whitelist: set = set(BUILTIN_TYPES)
+_type_name_whitelist: set[str] = set(BUILTIN_TYPES)
 
 
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
@@ -214,7 +214,6 @@ def add_type_name_whitelist(*type_names: str) -> None:
     Args:
         type_names: Fully qualified class names (e.g. "mypackage.MyClass")
     """
-    global _type_name_whitelist
     _type_name_whitelist.update(type_names)
 
 
@@ -228,7 +227,6 @@ def register_data_classes(*data_classes: Type[T]) -> None:
     for data_class in data_classes:
         decomposer = DataClassDecomposer(data_class)
         register(decomposer)
-        _type_name_whitelist.add(get_class_name(data_class))
 
 
 def register_enum_types(*enum_types: Type[Enum]) -> None:
@@ -243,7 +241,6 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
             raise TypeError(f"Can't register class {enum_type}, which is not a subclass of Enum")
         decomposer = EnumTypeDecomposer(enum_type)
         register(decomposer)
-        _type_name_whitelist.add(get_class_name(enum_type))
 
 
 def auto_register_enum_types(enabled=True) -> None:
