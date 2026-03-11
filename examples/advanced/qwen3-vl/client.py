@@ -82,6 +82,9 @@ def _save_lora_adapter_for_training(
     lora_state_dict: dict,
     save_dir: str,
     base_model_name_or_path: str,
+    lora_r: int,
+    lora_alpha: int,
+    lora_dropout: float,
 ) -> None:
     """Save adapter artifacts directly from FL LoRA params (no base-model load)."""
     from peft import LoraConfig, TaskType
@@ -100,9 +103,9 @@ def _save_lora_adapter_for_training(
     save_file(adapter_tensors, os.path.join(save_dir, "adapter_model.safetensors"))
 
     lora_config = LoraConfig(
-        r=DEFAULT_LORA_R,
-        lora_alpha=DEFAULT_LORA_ALPHA,
-        lora_dropout=DEFAULT_LORA_DROPOUT,
+        r=lora_r,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
         target_modules=DEFAULT_LORA_TARGET_MODULES,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
@@ -191,6 +194,9 @@ def train(
     learning_rate: str,
     report_to: str,
     lora_enable: bool = False,
+    lora_r: int = DEFAULT_LORA_R,
+    lora_alpha: int = DEFAULT_LORA_ALPHA,
+    lora_dropout: float = DEFAULT_LORA_DROPOUT,
     keep_process_group: bool = False,
     initial_state_dict: Optional[dict] = None,
     return_state_dict: bool = False,
@@ -222,7 +228,18 @@ def train(
         "False",
     ]
     if lora_enable:
-        base_args.extend(["--lora_enable", "True"])
+        base_args.extend(
+            [
+                "--lora_enable",
+                "True",
+                "--lora_r",
+                str(lora_r),
+                "--lora_alpha",
+                str(lora_alpha),
+                "--lora_dropout",
+                str(lora_dropout),
+            ]
+        )
     argv = (
         ["train_qwen.py", "--model_name_or_path", input_model_dir, "--output_dir", output_model_dir]
         + ["--dataset_use", dataset_use]
@@ -295,6 +312,13 @@ def main():
         "--lora_exchange",
         action="store_true",
         help="Exchange only LoRA adapter weights (set by job when --lora); smaller payloads.",
+    )
+    parser.add_argument("--lora_r", type=int, default=DEFAULT_LORA_R, help="LoRA rank for adapter-only exchange.")
+    parser.add_argument(
+        "--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA, help="LoRA alpha for adapter-only exchange."
+    )
+    parser.add_argument(
+        "--lora_dropout", type=float, default=DEFAULT_LORA_DROPOUT, help="LoRA dropout for adapter-only exchange."
     )
     parser.add_argument("--work_dir", type=str, default=None, help="Work dir for input/output models (default: temp)")
     args = parser.parse_args()
@@ -378,6 +402,9 @@ def main():
                             input_model.params,
                             input_model_dir,
                             args.model_name_or_path,
+                            args.lora_r,
+                            args.lora_alpha,
+                            args.lora_dropout,
                         )
                         processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
                         processor.save_pretrained(input_model_dir)
@@ -416,6 +443,9 @@ def main():
                 learning_rate=args.learning_rate,
                 report_to=args.report_to,
                 lora_enable=lora_exchange,
+                lora_r=args.lora_r,
+                lora_alpha=args.lora_alpha,
+                lora_dropout=args.lora_dropout,
                 keep_process_group=_is_multi_rank(world_size),
                 initial_state_dict=round_initial_state_dict if rank == 0 else None,
                 return_state_dict=use_in_memory_exchange and rank == 0,

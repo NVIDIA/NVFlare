@@ -219,6 +219,16 @@ def main():
         default="Qwen/Qwen3-VL-2B-Instruct",
         help="HuggingFace model ID for architecture and processor when --model_path is an NVFlare .pt file (default: Qwen/Qwen3-VL-2B-Instruct)",
     )
+    parser.add_argument("--lora_r", type=int, default=DEFAULT_LORA_R, help="LoRA rank for LoRA checkpoint inference.")
+    parser.add_argument(
+        "--lora_alpha", type=int, default=DEFAULT_LORA_ALPHA, help="LoRA alpha for LoRA checkpoint inference."
+    )
+    parser.add_argument(
+        "--lora_dropout",
+        type=float,
+        default=DEFAULT_LORA_DROPOUT,
+        help="LoRA dropout for LoRA checkpoint inference.",
+    )
     args = parser.parse_args()
 
     image_root = args.image_root or os.path.dirname(os.path.abspath(args.data_file))
@@ -238,9 +248,9 @@ def main():
             model = get_peft_model(
                 model,
                 LoraConfig(
-                    r=DEFAULT_LORA_R,
-                    lora_alpha=DEFAULT_LORA_ALPHA,
-                    lora_dropout=DEFAULT_LORA_DROPOUT,
+                    r=args.lora_r,
+                    lora_alpha=args.lora_alpha,
+                    lora_dropout=args.lora_dropout,
                     target_modules=DEFAULT_LORA_TARGET_MODULES,
                     bias="none",
                     task_type=TaskType.CAUSAL_LM,

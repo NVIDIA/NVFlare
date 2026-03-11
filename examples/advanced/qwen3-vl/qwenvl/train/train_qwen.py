@@ -33,15 +33,7 @@ if str(_project_root) not in sys.path:
 from model import map_adapter_state_dict_for_peft_model
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
-from transformers import (
-    AutoConfig,
-    AutoProcessor,
-    Qwen2_5_VLForConditionalGeneration,
-    Qwen2VLForConditionalGeneration,
-    Qwen3VLForConditionalGeneration,
-    Qwen3VLMoeForConditionalGeneration,
-    Trainer,
-)
+from transformers import AutoConfig, AutoProcessor, Trainer
 
 from .trainer import replace_qwen2_vl_attention_class
 
@@ -117,6 +109,8 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
     config = AutoConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir, trust_remote_code=True)
     model_type = getattr(config, "model_type", None)
     if model_type == "qwen3_vl_moe":
+        from transformers import Qwen3VLMoeForConditionalGeneration
+
         model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -125,6 +119,8 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
         )
         model_type = "qwen3vl"
     elif model_type == "qwen3_vl":
+        from transformers import Qwen3VLForConditionalGeneration
+
         model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -133,6 +129,8 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
         )
         model_type = "qwen3vl"
     elif model_type == "qwen2_5_vl":
+        from transformers import Qwen2_5_VLForConditionalGeneration
+
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,
@@ -141,6 +139,8 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
         )
         model_type = "qwen2.5vl"
     elif model_type == "qwen2_vl":
+        from transformers import Qwen2VLForConditionalGeneration
+
         model = Qwen2VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
             cache_dir=cache_dir,

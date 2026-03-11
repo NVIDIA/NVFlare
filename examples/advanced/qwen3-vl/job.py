@@ -71,6 +71,9 @@ def define_parser():
         action="store_true",
         help="Enable LoRA fine-tuning (passes --lora_enable True to Qwen train script).",
     )
+    parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank (default 64).")
+    parser.add_argument("--lora_alpha", type=int, default=128, help="LoRA alpha (default 128).")
+    parser.add_argument("--lora_dropout", type=float, default=0.0, help="LoRA dropout (default 0.0).")
     parser.add_argument(
         "--wandb",
         action="store_true",
@@ -150,7 +153,10 @@ def main():
             f"--report_to {report_to}"
         )
         if args.lora:
-            train_args += " --lora_exchange"
+            train_args += (
+                f" --lora_exchange --lora_r {args.lora_r} --lora_alpha {args.lora_alpha}"
+                f" --lora_dropout {args.lora_dropout}"
+            )
         # Per-site torchrun for distributed training (unique master_port per client)
         master_port = 29500 + (idx + 1)
         command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
@@ -160,7 +166,12 @@ def main():
     if args.lora:
         model = {
             "class_path": "model.Qwen3VLLoRAModel",
-            "args": {"model_name_or_path": args.model_name_or_path},
+            "args": {
+                "model_name_or_path": args.model_name_or_path,
+                "lora_r": args.lora_r,
+                "lora_alpha": args.lora_alpha,
+                "lora_dropout": args.lora_dropout,
+            },
         }
     else:
         model = {

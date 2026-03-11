@@ -21,19 +21,38 @@ import torch
 from transformers import Trainer
 from transformers.cache_utils import Cache
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VisionTransformerPretrainedModel, Qwen2_5_VLModel
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
     Qwen2VisionTransformerPretrainedModel,
     Qwen2VLModel,
     apply_multimodal_rotary_pos_emb,
 )
-from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel, Qwen3VLVisionModel, apply_rotary_pos_emb
-from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import Qwen3VLMoeModel, Qwen3VLMoeVisionModel
 from transformers.processing_utils import Unpack
 from transformers.utils import logging
 from transformers.utils.deprecation import deprecate_kwarg
 
 logger = logging.get_logger(__name__)
+
+try:
+    from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
+        Qwen2_5_VisionTransformerPretrainedModel,
+        Qwen2_5_VLModel,
+    )
+except ImportError:
+    Qwen2_5_VisionTransformerPretrainedModel = None
+    Qwen2_5_VLModel = None
+
+try:
+    from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel, Qwen3VLVisionModel, apply_rotary_pos_emb
+except ImportError:
+    Qwen3VLModel = None
+    Qwen3VLVisionModel = None
+    apply_rotary_pos_emb = None
+
+try:
+    from transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe import Qwen3VLMoeModel, Qwen3VLMoeVisionModel
+except ImportError:
+    Qwen3VLMoeModel = None
+    Qwen3VLMoeVisionModel = None
 
 try:
     from flash_attn.flash_attn_interface import flash_attn_varlen_func
@@ -178,6 +197,8 @@ def qwen3vl_forward(
     cache_position: Optional[torch.LongTensor] = None,
     **kwargs: Unpack[FlashAttentionKwargs],
 ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    if apply_rotary_pos_emb is None:
+        raise ImportError("Installed transformers package does not provide Qwen3-VL attention modules.")
     input_shape = hidden_states.shape[:-1]
     hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -223,15 +244,18 @@ def replace_qwen2_vl_attention_class():
     transformers.models.qwen2_vl.modeling_qwen2_vl.create_causal_mask = return_mask
     transformers.models.qwen2_vl.modeling_qwen2_vl.create_sliding_window_causal_mask = return_mask
     # qwen2_5_vl
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.Qwen2_5_VLAttention.forward = qwen2vl_forward
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_causal_mask = return_mask
-    transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_sliding_window_causal_mask = return_mask
+    if Qwen2_5_VLModel is not None:
+        transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.Qwen2_5_VLAttention.forward = qwen2vl_forward
+        transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_causal_mask = return_mask
+        transformers.models.qwen2_5_vl.modeling_qwen2_5_vl.create_sliding_window_causal_mask = return_mask
     # qwen3vl
-    transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = qwen3vl_forward
-    transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = return_mask
+    if Qwen3VLModel is not None:
+        transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextAttention.forward = qwen3vl_forward
+        transformers.models.qwen3_vl.modeling_qwen3_vl.create_causal_mask = return_mask
     # qwen3vl moe
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = qwen3vl_forward
-    transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = return_mask
+    if Qwen3VLMoeModel is not None:
+        transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.Qwen3VLMoeTextAttention.forward = qwen3vl_forward
+        transformers.models.qwen3_vl_moe.modeling_qwen3_vl_moe.create_causal_mask = return_mask
 
 
 def print_trainable_parameters_visual(self) -> None:
@@ -468,10 +492,14 @@ Trainer.create_optimizer = create_optimizer
 
 Qwen2VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
 Qwen2VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
-Qwen2_5_VLModel.print_trainable_parameters = print_trainable_parameters
+if Qwen2_5_VisionTransformerPretrainedModel is not None and Qwen2_5_VLModel is not None:
+    Qwen2_5_VisionTransformerPretrainedModel.print_trainable_parameters = print_trainable_parameters_visual
+    Qwen2_5_VLModel.print_trainable_parameters = print_trainable_parameters
 
-Qwen3VLVisionModel.print_trainable_parameters = print_trainable_parameters_visual
-Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
-Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
-Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters
+if Qwen3VLVisionModel is not None and Qwen3VLModel is not None:
+    Qwen3VLVisionModel.print_trainable_parameters = print_trainable_parameters_visual
+    Qwen3VLModel.print_trainable_parameters = print_trainable_parameters
+
+if Qwen3VLMoeVisionModel is not None and Qwen3VLMoeModel is not None:
+    Qwen3VLMoeVisionModel.print_trainable_parameters = print_trainable_parameters_visual
+    Qwen3VLMoeModel.print_trainable_parameters = print_trainable_parameters

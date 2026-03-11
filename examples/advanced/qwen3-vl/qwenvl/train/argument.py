@@ -29,6 +29,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     dataset_use: str = field(default="")
+    model_type: Optional[str] = field(default=None)
     data_flatten: bool = field(default=False)
     data_packing: bool = field(default=False)
     base_interval: int = field(default=2)
