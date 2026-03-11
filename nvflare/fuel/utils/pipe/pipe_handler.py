@@ -344,7 +344,12 @@ class PipeHandler(object):
                 # the pipe handler is most likely stopped, but we leave it for the while loop to decide
                 continue
 
-            msg = p.receive()
+            try:
+                msg = p.receive()
+            except BrokenPipeError:
+                # Transient TOCTOU race in FilePipe: a file disappeared between
+                # listdir and read. This is not a real pipe failure — retry next cycle.
+                continue
             now = time.time()
 
             if msg:
