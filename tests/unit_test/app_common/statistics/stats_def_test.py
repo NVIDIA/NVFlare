@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import random
 
 import pandas as pd
 
@@ -42,16 +41,14 @@ class TestStatsDef:
         even = [1, 3, 5, 7, 9]
         odd = [2, 4, 6, 8, 10]
         buckets = zip(even, odd)
-        bins = [Bin(low_value=b[0], high_value=b[1], sample_count=random.randint(10, 100)) for b in buckets]
+        bins = [Bin(low_value=b[0], high_value=b[1], sample_count=i) for i, b in enumerate(buckets, start=1)]
         hist = Histogram(HistogramType.STANDARD, bins)
         statistics = {"histogram": {"site-1": {"train": {"feat": hist}}}}
-        x = json.dumps(statistics, cls=ObjectEncoder)
-        assert x.__eq__(
+        x = json.loads(json.dumps(statistics, cls=ObjectEncoder))
+        assert x == (
             {
                 "histogram": {
-                    "site-1": {
-                        "train": {"feat": [0, [[1, 2, 83], [3, 4, 79], [5, 6, 69], [7, 8, 72], [9, 10, 20]], "null"]}
-                    }
+                    "site-1": {"train": {"feat": [0, [[1, 2, 1], [3, 4, 2], [5, 6, 3], [7, 8, 4], [9, 10, 5]], None]}}
                 }
             }
         )
