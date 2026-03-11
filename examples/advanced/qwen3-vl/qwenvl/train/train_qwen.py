@@ -78,28 +78,64 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
 
 
 def set_model(model_args, model):
+    visual_module = _get_qwen_vl_visual_module(model)
+    text_module = _get_qwen_vl_text_module(model)
+    lm_head = _get_qwen_vl_lm_head(model)
+
     if model_args.tune_mm_vision:
-        for n, p in model.visual.named_parameters():
+        for n, p in visual_module.named_parameters():
             p.requires_grad = True
     else:
-        for n, p in model.visual.named_parameters():
+        for n, p in visual_module.named_parameters():
             p.requires_grad = False
 
     if model_args.tune_mm_mlp:
-        for n, p in model.visual.merger.named_parameters():
+        for n, p in visual_module.merger.named_parameters():
             p.requires_grad = True
     else:
-        for n, p in model.visual.merger.named_parameters():
+        for n, p in visual_module.merger.named_parameters():
             p.requires_grad = False
 
     if model_args.tune_mm_llm:
-        for n, p in model.language_model.named_parameters():
+        for n, p in text_module.named_parameters():
             p.requires_grad = True
-        model.lm_head.requires_grad_(True)
+        lm_head.requires_grad_(True)
     else:
-        for n, p in model.language_model.named_parameters():
+        for n, p in text_module.named_parameters():
             p.requires_grad = False
-        model.lm_head.requires_grad_(False)
+        lm_head.requires_grad_(False)
+
+
+def _get_qwen_vl_visual_module(model):
+    for candidate in (model, getattr(model, "model", None)):
+        if candidate is not None and hasattr(candidate, "visual"):
+            return candidate.visual
+    raise AttributeError(f"Expected Qwen VL model with a visual tower, got {model.__class__.__name__}")
+
+
+def _get_qwen_vl_text_module(model):
+    candidates = (
+        model,
+        getattr(model, "model", None),
+        getattr(model, "language_model", None),
+        getattr(getattr(model, "model", None), "language_model", None),
+    )
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if hasattr(candidate, "embed_tokens") and hasattr(candidate, "layers"):
+            return candidate
+        language_model = getattr(candidate, "language_model", None)
+        if language_model is not None and hasattr(language_model, "embed_tokens") and hasattr(language_model, "layers"):
+            return language_model
+    raise AttributeError(f"Expected Qwen VL text backbone with embed_tokens/layers, got {model.__class__.__name__}")
+
+
+def _get_qwen_vl_lm_head(model):
+    for candidate in (model, getattr(model, "model", None), _get_qwen_vl_text_module(model)):
+        if candidate is not None and hasattr(candidate, "lm_head"):
+            return candidate.lm_head
+    raise AttributeError(f"Expected Qwen VL model with lm_head, got {model.__class__.__name__}")
 
 
 def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementation, bf16):
@@ -339,8 +375,8 @@ def train(
         set_model(model_args, model)
 
         if _is_rank0_or_single_process():
-            model.visual.print_trainable_parameters()
-            model.model.print_trainable_parameters()
+            _get_qwen_vl_visual_module(model).print_trainable_parameters()
+            _get_qwen_vl_text_module(model).print_trainable_parameters()
 
     # Disable gradient checkpointing for PeftModel to avoid "element 0 of tensors does not require grad"
     from peft import PeftModel

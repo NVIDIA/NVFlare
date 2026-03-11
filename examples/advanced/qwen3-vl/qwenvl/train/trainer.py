@@ -293,15 +293,16 @@ def print_trainable_parameters(self) -> None:
     Prints the trainable status of all LLM components including embeddings, layers, and normalization.
     Outputs the indices of trainable/non-trainable layers and other module statuses.
     """
+    text_model = _get_qwen_text_stack(self)
     # Check embed_tokens
-    is_embed_trainable = any(param.requires_grad for param in self.language_model.embed_tokens.parameters())
+    is_embed_trainable = any(param.requires_grad for param in text_model.embed_tokens.parameters())
     print(f"LLM Module - Embed Tokens Trainable: {is_embed_trainable}")
 
     # Check each decoder layer
     trainable_layers = []
     non_trainable_layers = []
 
-    for layer_idx, layer in enumerate(self.language_model.layers):
+    for layer_idx, layer in enumerate(text_model.layers):
         is_trainable = any(param.requires_grad for param in layer.parameters())
         if is_trainable:
             trainable_layers.append(layer_idx)
@@ -311,6 +312,15 @@ def print_trainable_parameters(self) -> None:
     # Print layer status
     print(f"LLM Module - Trainable Layer Indices: {trainable_layers if trainable_layers else 'None'}")
     print(f"LLM Module - Non-Trainable Layer Indices: {non_trainable_layers if non_trainable_layers else 'None'}")
+
+
+def _get_qwen_text_stack(model):
+    if hasattr(model, "embed_tokens") and hasattr(model, "layers"):
+        return model
+    language_model = getattr(model, "language_model", None)
+    if language_model is not None and hasattr(language_model, "embed_tokens") and hasattr(language_model, "layers"):
+        return language_model
+    raise AttributeError(f"Expected Qwen text module with embed_tokens/layers, got {model.__class__.__name__}")
 
 
 class QwenTrainer(Trainer):
