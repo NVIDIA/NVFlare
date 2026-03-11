@@ -28,7 +28,7 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from model import map_adapter_state_dict_for_peft_model
+from model import DEFAULT_LORA_TARGET_MODULES, map_adapter_state_dict_for_peft_model
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
 from transformers import AutoConfig, AutoProcessor
@@ -327,7 +327,7 @@ def train(
             r=training_args.lora_r or 64,
             lora_alpha=training_args.lora_alpha or 128,
             lora_dropout=training_args.lora_dropout,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen attention
+            target_modules=DEFAULT_LORA_TARGET_MODULES,
             bias="none",
             task_type=TaskType.CAUSAL_LM,
         )
