@@ -112,6 +112,10 @@ def flash_attention_forward(
             target_dtype = module.config._pre_quantization_dtype
         else:
             target_dtype = next(layer for layer in module.modules() if isinstance(layer, torch.nn.Linear)).weight.dtype
+    if target_dtype is not None:
+        query = query.to(target_dtype)
+        key = key.to(target_dtype)
+        value = value.to(target_dtype)
 
     query = query.squeeze(0)
     key = key.squeeze(0)

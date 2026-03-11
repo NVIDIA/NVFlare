@@ -402,6 +402,7 @@ def main():
 
                     if use_in_memory_exchange:
                         round_initial_state_dict = _strip_model_prefix(input_model.params)
+                        input_model.params = None
                     else:
                         os.makedirs(input_model_dir, exist_ok=True)
                         if lora_exchange:
@@ -465,15 +466,13 @@ def main():
             except Exception as e:
                 local_error = f"rank {rank}: {e}"
                 print(f"Qwen SFT script failed on rank {rank}: {e}", file=sys.stderr)
-        if round_initial_state_dict is not None:
-            del round_initial_state_dict
-            round_initial_state_dict = None
-
         round_error = _collect_first_error(local_error, world_size)
         if round_error:
             if rank == 0:
                 # Keep the received global model by default so failed rounds don't contribute stale updates.
-                params = input_model.params
+                params = input_model.params if input_model is not None else None
+                if use_in_memory_exchange and round_initial_state_dict is not None:
+                    params = {"model." + k: v for k, v in round_initial_state_dict.items()}
                 raw = None
                 if not use_in_memory_exchange:
                     try:
@@ -481,6 +480,8 @@ def main():
                         params = {"model." + k: v for k, v in raw.items()}
                     except Exception:
                         pass
+                if params is None:
+                    raise RuntimeError("No params available to send back after round failure.")
                 output_model = flare.FLModel(
                     params=params,
                     metrics={"loss": float("nan")},
@@ -498,6 +499,9 @@ def main():
                 if trained_raw is not None:
                     del trained_raw
                     trained_raw = None
+                if round_initial_state_dict is not None:
+                    del round_initial_state_dict
+                    round_initial_state_dict = None
                 if input_model is not None:
                     del input_model
                     input_model = None
@@ -537,6 +541,9 @@ def main():
             if trained_raw is not None:
                 del trained_raw
                 trained_raw = None
+            if round_initial_state_dict is not None:
+                del round_initial_state_dict
+                round_initial_state_dict = None
             if input_model is not None:
                 del input_model
                 input_model = None
