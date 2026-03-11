@@ -431,9 +431,7 @@ class LazySupervisedDataset(Dataset):
     def _get_packed_item(self, sources) -> Dict[str, torch.Tensor]:
 
         if isinstance(sources, dict):
-            sources = [sources]
-            assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
-            return self._get_item(sources)
+            return self._get_item([sources])
 
         if isinstance(sources, list):
             data_list = []
@@ -441,7 +439,12 @@ class LazySupervisedDataset(Dataset):
             for source in sources:
                 if isinstance(source, dict):
                     source = [source]
-                assert len(source) == 1, f"Don't know why it is wrapped to a list.\n {source}"  # FIXME
+                elif not isinstance(source, list):
+                    raise TypeError(f"Expected packed source to be dict or list, got {type(source)}")
+                if len(source) != 1:
+                    raise ValueError(
+                        f"Expected exactly one packed sample per source entry, got {len(source)}: {source}"
+                    )
                 data_list.append(self._get_item(source))
 
             input_ids = torch.cat([d["input_ids"] for d in data_list], dim=1)

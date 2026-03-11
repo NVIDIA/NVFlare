@@ -142,6 +142,8 @@ With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_clie
 
 By default, the server and clients exchange the **full model** each round (~4651 MB for Qwen3-VL-2B in bf16). With **`--lora`**, the job uses LoRA (Low-Rank Adaptation): only the **trainable LoRA adapter parameters** are sent and aggregated, so the communicated payload drops to roughly **~98 MB** per round. The base model stays fixed on each client; FedAvg is applied to the adapter weights only.
 
+LoRA mode reduces network transfer, but it does **not** eliminate the server-side base-model footprint: the server still instantiates the underlying Qwen3-VL model in bf16 and attaches LoRA modules before exposing adapter-only weights for FL exchange.
+
 - **Without `--lora`:** `sent updated weights, model size: 4651.45 MB`
 - **With `--lora`:** `sent model size: 98.00 MB`
 

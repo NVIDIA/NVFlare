@@ -44,6 +44,7 @@ from model import (
     DEFAULT_LORA_R,
     DEFAULT_LORA_TARGET_MODULES,
     load_qwen_vl_from_pretrained,
+    map_adapter_state_dict_for_peft_model,
 )
 from transformers import AutoProcessor
 
@@ -85,22 +86,18 @@ def _align_ckpt_to_model(state_dict: dict, model_keys: set) -> dict:
     return best
 
 
-def _is_lora_checkpoint(state_dict: dict) -> bool:
-    """True if this state dict is LoRA-only (adapter weights from FL --lora job)."""
-    return any("lora_" in k.lower() or "base_model.model" in k for k in state_dict) if state_dict else False
+def _extract_candidate_lora_state_dict(state_dict: dict) -> dict:
+    adapter_state = {}
+    for key, value in state_dict.items():
+        if key.startswith("model."):
+            adapter_state[key[6:]] = value
+        elif "lora" in key.lower():
+            adapter_state[key] = value
+    return adapter_state
 
 
-def _prepare_lora_state_dict(state_dict: dict) -> dict:
-    """Convert FL LoRA state dict to PeftModel format by stripping the FL wrapper prefix."""
-    out = {}
-    for k, v in state_dict.items():
-        key = k[6:] if k.startswith("model.") else k
-        out[key] = v
-    return out
-
-
-def _load_nvflare_global_pt(pt_path: str, model_keys: set = None) -> tuple[dict, bool]:
-    """Load state dict from NVFlare FL_global_model.pt. Returns (state_dict, is_lora)."""
+def _load_nvflare_global_pt(pt_path: str) -> dict:
+    """Load state dict from NVFlare FL_global_model.pt."""
     data = torch.load(pt_path, map_location="cpu", weights_only=True)
     if not isinstance(data, dict):
         raise ValueError(f"Expected dict from {pt_path}, got {type(data)}")
@@ -108,10 +105,7 @@ def _load_nvflare_global_pt(pt_path: str, model_keys: set = None) -> tuple[dict,
     if state_dict is None:
         raise ValueError(f"No key {NVFLARE_PT_MODEL_KEY!r} in {pt_path}. Keys: {list(data.keys())}")
     state_dict = _ensure_tensors(state_dict)
-    is_lora = _is_lora_checkpoint(state_dict)
-    if not is_lora and model_keys is not None:
-        state_dict = _align_ckpt_to_model(state_dict, model_keys)
-    return state_dict, is_lora
+    return state_dict
 
 
 def _abs_image_path(image_path: str, image_root: str) -> str:
@@ -237,40 +231,19 @@ def main():
     if is_nvflare_pt:
         base_path = args.base_model
         print(f"Loading NVFlare global weights from: {args.model_path}")
-        state_dict, is_lora = _load_nvflare_global_pt(args.model_path)
+        state_dict = _load_nvflare_global_pt(args.model_path)
 
-        if is_lora:
-            # LoRA checkpoint: load base, wrap with PEFT, load adapter (keys: strip "model." prefix, .lora_A/B.weight -> .default.weight)
-            print(f"Detected LoRA checkpoint. Loading base model from: {base_path}")
-            model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
-            from peft import LoraConfig, TaskType, get_peft_model
+        print(f"Loading base model and processor from: {base_path}")
+        model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
+        model_keys = set(model.state_dict().keys())
+        aligned_state_dict = _align_ckpt_to_model(state_dict, model_keys)
+        full_match_count = len(model_keys & set(aligned_state_dict.keys()))
 
-            model = get_peft_model(
-                model,
-                LoraConfig(
-                    r=args.lora_r,
-                    lora_alpha=args.lora_alpha,
-                    lora_dropout=args.lora_dropout,
-                    target_modules=DEFAULT_LORA_TARGET_MODULES,
-                    bias="none",
-                    task_type=TaskType.CAUSAL_LM,
-                ),
-            )
-            lora_sd = _prepare_lora_state_dict(state_dict)
-            result = model.load_state_dict(lora_sd, strict=False)
-            n_applied = len(lora_sd) - len(result.unexpected_keys)
-            if n_applied == 0:
-                raise RuntimeError("No LoRA keys matched the model. Check that --base_model matches the FL job base.")
-            print(f"LoRA checkpoint: loaded {n_applied} adapter keys.")
-        else:
-            # Full-model checkpoint: load base and apply full state dict
-            print(f"Loading base model and processor from: {base_path}")
-            model = load_qwen_vl_from_pretrained(base_path, dtype=torch.bfloat16)
-            model_keys = set(model.state_dict().keys())
-            state_dict = _align_ckpt_to_model(state_dict, model_keys)
+        if full_match_count > 0:
+            # Full-model checkpoint: load base and apply full state dict.
             _sample_key = next((k for k in model_keys if "weight" in k and "embed" in k), next(iter(model_keys)))
             base_sample = model.state_dict()[_sample_key].clone()
-            result = model.load_state_dict(state_dict, strict=False)
+            result = model.load_state_dict(aligned_state_dict, strict=False)
             n_missing = len(result.missing_keys)
             n_unexpected = len(result.unexpected_keys)
             n_applied = len(model_keys) - n_missing
@@ -285,7 +258,7 @@ def main():
                 diff = (ckpt_sample.float() - base_sample.float()).abs().max().item()
                 print(f"  Checkpoint differs from base (max abs diff on sample key {_sample_key!r}: {diff:.2e})")
             if n_applied == 0:
-                sample_ckpt = list(state_dict.keys())[:3]
+                sample_ckpt = list(aligned_state_dict.keys())[:3]
                 sample_model = list(model_keys)[:3]
                 print(f"  Checkpoint key sample: {sample_ckpt}")
                 print(f"  Model key sample:      {sample_model}")
@@ -297,6 +270,38 @@ def main():
                 print(f"  missing_keys: {result.missing_keys}")
             elif n_missing > 5:
                 print(f"  missing_keys (first 5): {result.missing_keys[:5]}")
+        else:
+            print("Checkpoint did not match base model weights; trying LoRA adapter load.")
+            from peft import LoraConfig, TaskType, get_peft_model
+
+            model = get_peft_model(
+                model,
+                LoraConfig(
+                    r=args.lora_r,
+                    lora_alpha=args.lora_alpha,
+                    lora_dropout=args.lora_dropout,
+                    target_modules=DEFAULT_LORA_TARGET_MODULES,
+                    bias="none",
+                    task_type=TaskType.CAUSAL_LM,
+                ),
+            )
+            adapter_state = _extract_candidate_lora_state_dict(state_dict)
+            mapped_state, unmatched = map_adapter_state_dict_for_peft_model(model, adapter_state)
+            if not mapped_state:
+                sample_ckpt = list(state_dict.keys())[:3]
+                raise RuntimeError(
+                    "Checkpoint matched neither full-model weights nor LoRA adapter weights. "
+                    "Check that --base_model and LoRA settings match the FL job. "
+                    f"Checkpoint key sample: {sample_ckpt}"
+                )
+            if unmatched:
+                sample = ", ".join(unmatched[:3])
+                raise RuntimeError(
+                    f"Failed to map {len(unmatched)}/{len(adapter_state)} LoRA keys during inference. "
+                    f"Example unmatched keys: {sample}"
+                )
+            model.load_state_dict(mapped_state, strict=False)
+            print(f"LoRA checkpoint: loaded {len(mapped_state)} adapter keys.")
 
         model = model.to(args.device)
         model.eval()

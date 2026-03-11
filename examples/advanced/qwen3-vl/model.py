@@ -178,6 +178,10 @@ class Qwen3VLLoRAModel(nn.Module):
     Used when --lora is set so the server and clients exchange only LoRA parameters
     instead of the full model. state_dict() returns only adapter weights with "model."
     prefix to match the wrapper format expected by the client.
+
+    This reduces the communicated payload, but not the server-side base-model footprint:
+    the server still instantiates the underlying Qwen3-VL model in bf16 and attaches
+    LoRA modules before exposing adapter-only state_dict values for FL exchange.
     """
 
     def __init__(

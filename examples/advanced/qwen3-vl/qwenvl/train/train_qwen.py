@@ -324,8 +324,8 @@ def train(
         for p in model.parameters():
             p.requires_grad = False
         lora_config = LoraConfig(
-            r=training_args.lora_r or 64,
-            lora_alpha=training_args.lora_alpha or 128,
+            r=training_args.lora_r,
+            lora_alpha=training_args.lora_alpha,
             lora_dropout=training_args.lora_dropout,
             target_modules=DEFAULT_LORA_TARGET_MODULES,
             bias="none",
