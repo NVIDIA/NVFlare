@@ -175,8 +175,8 @@ class ServerRunner(TBI):
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
 
                 # Stopped the server runner from the current responder, not continue the following responders.
-                if self.abort_signal.triggered:
-                    break
+            if self.abort_signal.triggered:
+                break
             self.current_wf_index += 1
 
     def run(self):

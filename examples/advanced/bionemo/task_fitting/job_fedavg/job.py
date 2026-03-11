@@ -15,7 +15,7 @@
 """
 Federated MLP Training using FedAvgRecipe with PyTorch
 
-This script uses PyTorch-based federated learning to train an MLP classifier 
+This script uses PyTorch-based federated learning to train an MLP classifier
 on protein embeddings for subcellular location prediction.
 Run this after inference to train an MLP classifier on the embeddings.
 """
