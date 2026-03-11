@@ -21,8 +21,8 @@ import pytest
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs import fobs as fobs_impl
 from nvflare.fuel.utils.fobs import Decomposer
+from nvflare.fuel.utils.fobs import fobs as fobs_impl
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
