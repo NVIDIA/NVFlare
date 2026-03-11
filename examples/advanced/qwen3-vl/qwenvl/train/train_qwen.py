@@ -31,9 +31,9 @@ if str(_project_root) not in sys.path:
 from model import map_adapter_state_dict_for_peft_model
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
-from transformers import AutoConfig, AutoProcessor, Trainer
+from transformers import AutoConfig, AutoProcessor
 
-from .trainer import replace_qwen2_vl_attention_class
+from .trainer import QwenTrainer, replace_qwen2_vl_attention_class
 
 local_rank = None
 
@@ -202,6 +202,43 @@ def _load_initial_state_dict(model, state_dict: dict) -> None:
     )
 
 
+def _load_processor_with_fallback(primary_path: str, fallback_path: Optional[str] = None):
+    try:
+        return AutoProcessor.from_pretrained(primary_path)
+    except OSError:
+        if fallback_path and fallback_path != primary_path:
+            rank0_print(
+                f"Processor artifacts not found in {primary_path}; falling back to base model processor from {fallback_path}."
+            )
+            return AutoProcessor.from_pretrained(fallback_path)
+        raise
+
+
+def _load_tokenizer_with_fallback(primary_path: str, cache_dir: Optional[str], model_max_length: int):
+    tokenizer_kwargs = {
+        "cache_dir": cache_dir,
+        "model_max_length": model_max_length,
+        "padding_side": "right",
+        "use_fast": False,
+    }
+    try:
+        return transformers.AutoTokenizer.from_pretrained(primary_path, **tokenizer_kwargs)
+    except OSError:
+        adapter_config_path = Path(primary_path) / "adapter_config.json"
+        if adapter_config_path.is_file():
+            import json
+
+            with open(adapter_config_path) as f:
+                adapter_config = json.load(f)
+            fallback_path = adapter_config.get("base_model_name_or_path")
+            if fallback_path and fallback_path != primary_path:
+                rank0_print(
+                    f"Tokenizer artifacts not found in {primary_path}; falling back to base model tokenizer from {fallback_path}."
+                )
+                return transformers.AutoTokenizer.from_pretrained(fallback_path, **tokenizer_kwargs)
+        raise
+
+
 def train(
     attn_implementation="flash_attention_2",
     initial_state_dict: Optional[dict] = None,
@@ -214,6 +251,7 @@ def train(
 
     local_rank = training_args.local_rank
     os.makedirs(training_args.output_dir, exist_ok=True)
+    processor_source = model_args.model_name_or_path
 
     # Support adapter-only dir (e.g. from NVFlare LoRA exchange): load base from config then load adapter
     adapter_config_path = Path(model_args.model_name_or_path) / "adapter_config.json"
@@ -226,6 +264,7 @@ def train(
         with open(adapter_config_path) as f:
             adapter_config = json.load(f)
         base_model_name_or_path = adapter_config.get("base_model_name_or_path", model_args.model_name_or_path)
+        processor_source = base_model_name_or_path
         base_model, data_args.model_type = _load_base_model_from_path(
             base_model_name_or_path,
             training_args.cache_dir,
@@ -252,9 +291,7 @@ def train(
         )
 
     rank0_print(f"the initlized model is {model_args.model_name_or_path} the class is {model.__class__.__name__}")
-    processor = AutoProcessor.from_pretrained(
-        model_args.model_name_or_path,
-    )
+    processor = _load_processor_with_fallback(model_args.model_name_or_path, processor_source)
 
     if data_args.data_flatten or data_args.data_packing:
         replace_qwen2_vl_attention_class()
@@ -270,12 +307,10 @@ def train(
 
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
+    tokenizer = _load_tokenizer_with_fallback(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
-        padding_side="right",
-        use_fast=False,
     )
 
     if model_loaded_as_peft:
@@ -291,7 +326,7 @@ def train(
         lora_config = LoraConfig(
             r=training_args.lora_r or 64,
             lora_alpha=training_args.lora_alpha or 128,
-            lora_dropout=training_args.lora_dropout if training_args.lora_dropout is not None else 0.0,
+            lora_dropout=training_args.lora_dropout,
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen attention
             bias="none",
             task_type=TaskType.CAUSAL_LM,
@@ -318,7 +353,7 @@ def train(
         _load_initial_state_dict(model, initial_state_dict)
 
     data_module = make_supervised_data_module(processor, data_args=data_args)
-    trainer = Trainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
+    trainer = QwenTrainer(model=model, processing_class=tokenizer, args=training_args, **data_module)
     trainer.train()
     # Preserve Trainer state in both FL exchange modes; only the model artifact handling differs.
     trainer.save_state()
