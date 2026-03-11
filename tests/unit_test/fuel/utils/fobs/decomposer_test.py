@@ -61,12 +61,12 @@ class TestDecomposers:
     def test_generic_str_enum_type(self):
         fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass")
         test_enum = EnumClass.A
-        self._check_decomposer(test_enum)
+        self._check_decomposer(test_enum, False)
 
     def test_generic_int_enum_type(self):
         fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass")
         test_enum = IntEnumClass.X
-        self._check_decomposer(test_enum)
+        self._check_decomposer(test_enum, False)
 
     def test_ordered_dict(self):
 
