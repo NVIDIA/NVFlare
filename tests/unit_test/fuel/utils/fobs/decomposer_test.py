@@ -59,14 +59,28 @@ class TestDecomposers:
         self._check_decomposer(data, False)
 
     def test_generic_str_enum_type(self):
-        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass")
+        type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass"
+        fobs.add_type_name_whitelist(type_name)
         test_enum = EnumClass.A
-        self._check_decomposer(test_enum, False)
+        buffer = fobs.dumps(test_enum)
+        fobs.reset()
+        # Re-add to whitelist after reset so deserialization exercises the whitelist security check
+        fobs.add_type_name_whitelist(type_name)
+        new_data = fobs.loads(buffer)
+        assert type(test_enum) == type(new_data), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_generic_int_enum_type(self):
-        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass")
+        type_name = "tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass"
+        fobs.add_type_name_whitelist(type_name)
         test_enum = IntEnumClass.X
-        self._check_decomposer(test_enum, False)
+        buffer = fobs.dumps(test_enum)
+        fobs.reset()
+        # Re-add to whitelist after reset so deserialization exercises the whitelist security check
+        fobs.add_type_name_whitelist(type_name)
+        new_data = fobs.loads(buffer)
+        assert type(test_enum) == type(new_data), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_ordered_dict(self):
 
