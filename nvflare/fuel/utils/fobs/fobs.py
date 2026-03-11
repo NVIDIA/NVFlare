@@ -67,9 +67,7 @@ _decomposers_registered = False
 _enum_auto_registration = True
 _data_auto_registration = True
 # Whitelist of type names allowed for deserialization when not already in _decomposers.
-# Pre-populated from BUILTIN_TYPES; grows as register_data_classes() / register_enum_types()
-# are called.  Never cleared by reset() so that types auto-registered during pack() in the
-# same process remain reachable after a reset (important for unit-test round-trip patterns).
+# Pre-populated from BUILTIN_TYPES; 
 _type_name_whitelist: set[str] = set(BUILTIN_TYPES)
 
 

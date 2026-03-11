@@ -71,7 +71,7 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.apis.client.Client",
     "nvflare.apis.fl_snapshot.RunSnapshot",
     "nvflare.apis.signal.Signal",
-    "argparse.Namespace",
+    "argparse.Namespace",  # Used by WorkspaceDecomposer; schema-free, accept only in trusted contexts
     "nvflare.fuel.utils.fobs.datum.Datum",
     "nvflare.fuel.utils.fobs.datum.DatumRef",
     # --- Data classes registered in private_decomposers.py ---
