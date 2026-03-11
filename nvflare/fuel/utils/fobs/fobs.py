@@ -67,7 +67,7 @@ _decomposers_registered = False
 _enum_auto_registration = True
 _data_auto_registration = True
 # Whitelist of type names allowed for deserialization when not already in _decomposers.
-# Pre-populated from BUILTIN_TYPES; 
+# Pre-populated from BUILTIN_TYPES;
 _type_name_whitelist: set[str] = set(BUILTIN_TYPES)
 
 
@@ -169,7 +169,7 @@ class Packer:
             if type_name not in _type_name_whitelist:
                 raise ValueError(
                     f"Type '{type_name}' is not allowed. "
-                    f"Use fobs.register_data_classes() or fobs.add_type_name_whitelist() to allow this type."
+                    f"Use fobs.add_type_name_whitelist() to allow this type."
                 )
 
             cls = load_class(type_name)
