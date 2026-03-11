@@ -162,7 +162,7 @@ class Packer:
             decomposer_name = obj.get(FOBS_DECOMPOSER)
 
             # For security reason, only builtin decomposers are allowed without registration
-            if decomposer_name not in BUILTIN_DECOMPOSERS:
+            if decomposer_name and decomposer_name not in BUILTIN_DECOMPOSERS:
                 raise ValueError(f"Decomposer {decomposer_name} must be registered")
 
             # Validate type_name against whitelist to prevent arbitrary class loading (RCE)
@@ -421,7 +421,8 @@ def get_dot_handler(dot: int):
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered, _dot_handlers
+    global _decomposers, _decomposers_registered, _dot_handlers, _type_name_whitelist
     _decomposers.clear()
     _dot_handlers.clear()
+    _type_name_whitelist = set(BUILTIN_TYPES)
     _decomposers_registered = False
