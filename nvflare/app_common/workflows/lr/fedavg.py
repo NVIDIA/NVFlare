@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-   Federated Averaging for Logistic Regression with Newton-Raphson method
-   using Numpy
+Federated Averaging for Logistic Regression with Newton-Raphson method
+using Numpy
 """
 from typing import List, Optional
 
