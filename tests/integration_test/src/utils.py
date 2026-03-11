@@ -77,7 +77,6 @@ def run_command_in_subprocess(command, stdin_data=None):
         # communicate() writes stdin and waits for the process to exit.
         # stdout/stderr are inherited from the parent process (not captured).
         process.communicate(input=stdin_data)
-        return process
     return process
 
 
