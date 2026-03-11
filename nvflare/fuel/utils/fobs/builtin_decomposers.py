@@ -67,6 +67,26 @@ BUILTIN_DECOMPOSERS: set[str] = {
 # It pre-populates the type_name whitelist in fobs.py and acts as a static allowlist
 # to prevent arbitrary class loading (RCE via deserialization).
 BUILTIN_TYPES: set[str] = {
+    # --- Types handled by custom built-in decomposers ---
+    "nvflare.apis.dxo.DXO",
+    "nvflare.apis.fl_context.FLContext",
+    "nvflare.apis.workspace.Workspace",
+    "nvflare.app_common.abstract.fl_model.FLModel",
+    "numpy.ndarray",
+    "numpy.float32",
+    "numpy.float64",
+    "numpy.int32",
+    "numpy.int64",
+    "nvflare.app_common.abstract.statistics_spec.Bin",
+    "nvflare.app_common.abstract.statistics_spec.BinRange",
+    "nvflare.app_common.abstract.statistics_spec.DataType",
+    "nvflare.app_common.abstract.statistics_spec.Feature",
+    "nvflare.app_common.abstract.statistics_spec.Histogram",
+    "nvflare.app_common.abstract.statistics_spec.HistogramType",
+    "nvflare.app_common.abstract.statistics_spec.StatisticConfig",
+    "nvflare.apis.shareable.Shareable",
+    "nvflare.app_common.abstract.learnable.Learnable",
+    "nvflare.app_common.abstract.model.ModelLearnable",
     # --- Data classes registered in flare_decomposers.py ---
     "nvflare.apis.client.Client",
     "nvflare.apis.fl_snapshot.RunSnapshot",

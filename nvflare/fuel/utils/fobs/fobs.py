@@ -434,8 +434,9 @@ def get_dot_handler(dot: int):
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered, _dot_handlers, _type_name_whitelist
+    global _decomposers, _decomposers_registered, _dot_handlers
     _decomposers.clear()
     _dot_handlers.clear()
-    _type_name_whitelist = set(BUILTIN_TYPES)
+    _type_name_whitelist.clear()
+    _type_name_whitelist.update(BUILTIN_TYPES)
     _decomposers_registered = False

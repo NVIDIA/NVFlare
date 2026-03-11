@@ -18,7 +18,10 @@ from typing import Any
 
 import pytest
 
+from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs import fobs as fobs_impl
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
@@ -100,6 +103,30 @@ class TestFobs:
         buf = fobs.dumps(test_class)
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME
+
+    def test_builtin_custom_decomposer_type_allowed_after_reset(self):
+        fobs.reset()
+        fobs.register(DXODecomposer)
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"w": 1.0})
+        buf = fobs.dumps(dxo)
+
+        # After reset, DXODecomposer will not be in _decomposers. The type name must still
+        # pass the whitelist gate so the builtin decomposer can be re-registered during unpack.
+        fobs.reset()
+        restored = fobs.loads(buf)
+        assert isinstance(restored, DXO)
+        assert restored.data_kind == DataKind.WEIGHTS
+        assert restored.data == {"w": 1.0}
+
+    def test_reset_mutates_whitelist_in_place(self):
+        fobs.reset()
+        whitelist_ref = fobs_impl._type_name_whitelist
+        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.fobs_test.ExampleDataClass")
+        assert "tests.unit_test.fuel.utils.fobs.fobs_test.ExampleDataClass" in whitelist_ref
+
+        fobs.reset()
+        assert fobs_impl._type_name_whitelist is whitelist_ref
+        assert "tests.unit_test.fuel.utils.fobs.fobs_test.ExampleDataClass" not in whitelist_ref
 
     def test_buffer_list(self):
         buf = fobs.dumps(TestFobs.test_data, buffer_list=True)
