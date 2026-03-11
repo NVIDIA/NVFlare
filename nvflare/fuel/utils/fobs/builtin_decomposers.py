@@ -106,6 +106,10 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.app_common.widgets.event_recorder._CtxPropReq",
     "nvflare.app_common.widgets.event_recorder._EventReq",
     "nvflare.app_common.widgets.event_recorder._EventStats",
+    # --- Optional HE type handled by CKKSVectorDecomposer (tenseal integration) ---
+    # tenseal is an optional dependency; this entry ensures reset() → deserialize works
+    # for HE payloads when CKKSVectorDecomposer has not been explicitly re-registered.
+    "tenseal.CKKSVector",
     # --- Enum types auto-registered when core FL objects are serialized ---
     # DataKind is embedded in every DXO (str,Enum — triggers auto-registration)
     "nvflare.apis.dxo.DataKind",
