@@ -67,7 +67,9 @@ class TestDecomposers:
         # Re-add to whitelist after reset so deserialization exercises the whitelist security check
         fobs.add_type_name_whitelist(type_name)
         new_data = fobs.loads(buffer)
-        assert type(test_enum) == type(new_data), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert type(test_enum) == type(
+            new_data
+        ), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
         assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_generic_int_enum_type(self):
@@ -79,7 +81,9 @@ class TestDecomposers:
         # Re-add to whitelist after reset so deserialization exercises the whitelist security check
         fobs.add_type_name_whitelist(type_name)
         new_data = fobs.loads(buffer)
-        assert type(test_enum) == type(new_data), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
+        assert type(test_enum) == type(
+            new_data
+        ), f"Original type {type(test_enum)} doesn't match new data type {type(new_data)}"
         assert test_enum == new_data, f"Original data {test_enum} doesn't match new data {new_data}"
 
     def test_ordered_dict(self):
