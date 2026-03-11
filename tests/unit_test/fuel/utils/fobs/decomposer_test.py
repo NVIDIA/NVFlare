@@ -59,12 +59,12 @@ class TestDecomposers:
         self._check_decomposer(data, False)
 
     def test_generic_str_enum_type(self):
-        # Decomposers for enum classes are auto-registered by default
+        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass")
         test_enum = EnumClass.A
         self._check_decomposer(test_enum)
 
     def test_generic_int_enum_type(self):
-        # Decomposers for enum classes are auto-registered by default
+        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass")
         test_enum = IntEnumClass.X
         self._check_decomposer(test_enum)
 

@@ -94,7 +94,4 @@ BUILTIN_TYPES: set[str] = {
     # Analytics / tracking enums used in streaming and metrics
     "nvflare.apis.analytix.AnalyticsDataType",
     "nvflare.apis.analytix.LogWriterName",
-    # Found in tests
-    "tests.unit_test.fuel.utils.fobs.decomposer_test.IntEnumClass",
-    "tests.unit_test.fuel.utils.fobs.decomposer_test.EnumClass",
 }
