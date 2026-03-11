@@ -76,6 +76,23 @@ class TestFobs:
             new_class = fobs.loads(buf)
             assert new_class.number == TestFobs.NUMBER
 
+    def test_whitelist_enforcement(self):
+        # Serialize ExampleDataClass (auto-registers it with DataClassDecomposer)
+        test_class = ExampleDataClass(TestFobs.NAME)
+        buf = fobs.dumps(test_class)
+        fobs.reset()
+
+        # After reset, ExampleDataClass is not in the whitelist.
+        # DataClassDecomposer is a builtin decomposer so the decomposer check passes,
+        # but the type whitelist check should block deserialization.
+        with pytest.raises(ValueError, match="not allowed"):
+            fobs.loads(buf)
+
+        # After explicitly adding to the whitelist, deserialization should succeed.
+        fobs.add_type_name_whitelist("tests.unit_test.fuel.utils.fobs.fobs_test.ExampleDataClass")
+        new_class = fobs.loads(buf)
+        assert new_class.name == TestFobs.NAME
+
     def test_auto_registration(self):
         fobs.reset()
         test_class = ExampleDataClass(TestFobs.NAME)
