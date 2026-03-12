@@ -196,12 +196,12 @@ TimberStrike is a model inversion attack that exploits ``sum_hessian`` values an
 
 .. note::
 
-   "Reconstruction accuracy" is measured with distance tolerance, not exact recovery. Even the closest reconstructed sample can differ substantially from the original (see example below).
-   
+   The above results were obtained **before** NVFlare's ``sum_hessian`` removal—i.e., with full model statistics available to the attacker. With NVFlare's built-in protection enabled (see below), TimberStrike's primary information source is eliminated. "Reconstruction accuracy" is measured with distance tolerance, not exact recovery.
+
 Risk Assessment
 ---------------
 
-On practical datasets (CreditCard), TimberStrike achieves <10% accuracy. To put this in perspective, we use `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ as a reference. SafeSynthesizer is a privacy-focused synthetic data generation tool purpose-built for compliance (GDPR, HIPAA), with built-in membership inference protection and optional differential privacy guarantees. Even with these privacy safeguards, its synthetic data still achieves 51.98% proximity to real samples—because preserving data utility requires some statistical similarity. TimberStrike's 8.72% falls well below this reference point. Acceptable privacy levels are inherently data-dependent; users are encouraged to run similar comparisons on their own datasets.
+On practical datasets (CreditCard), TimberStrike achieves <10% accuracy even with ``sum_hessian`` available. To put this in perspective, we use `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ as a reference. SafeSynthesizer is a privacy-focused synthetic data generation tool purpose-built for compliance (GDPR, HIPAA), with built-in membership inference protection and optional differential privacy guarantees. Even with these privacy safeguards, its synthetic data still achieves 51.98% proximity to real samples, because preserving data utility requires some statistical similarity. TimberStrike's 8.72% falls well below this reference point. Acceptable privacy levels are inherently data-dependent; users are encouraged to run similar comparisons on their own datasets.
 
 Protection
 ----------
@@ -211,6 +211,8 @@ Protection
 
 Closest Reconstructed Samples (CreditCard)
 -------------------------------------------
+
+Each example below shows the closest match (minimum distance) from its respective method. Note that these are different source records, shown to illustrate the reconstruction quality of each method independently.
 
 *TimberStrike (8.72% accuracy)*:
 
