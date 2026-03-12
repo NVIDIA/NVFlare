@@ -8,7 +8,7 @@ readme_am: |
   client.crt
   client.key
   fl_admin.sh
-  
+
   Please install the nvflare package by 'python3 -m pip nvflare.'  This will install a set of Python codes
   in your environment.  After installation, you can run the fl_admin.sh file to start communicating to the admin server.
 
@@ -538,7 +538,7 @@ start_svr_sh: |
   else
     $DIR/sub_start.sh &
   fi
-    
+
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -566,8 +566,24 @@ sub_start_sh: |
   mkdir -p $DIR/../transfer
   export PYTHONPATH=/local/custom:$PYTHONPATH
   echo "PYTHONPATH is $PYTHONPATH"
-  
-  # Memory management: limit glibc memory arenas to reduce RSS fragmentation
+
+  # Memory management configuration
+  # Opt-in jemalloc preload for PyTorch workloads.
+  # Enable by setting NVFLARE_ENABLE_JEMALLOC_PRELOAD=true.
+  if [ "${NVFLARE_ENABLE_JEMALLOC_PRELOAD:-false}" = "true" ]; then
+    for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                    /usr/lib64/libjemalloc.so.2 \
+                    /usr/local/lib/libjemalloc.so; do
+        if [ -f "$JEMALLOC" ]; then
+            export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
+            export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
+            echo "Using jemalloc: $JEMALLOC"
+            break
+        fi
+    done
+  fi
+
+  # Limit glibc memory arenas to reduce RSS fragmentation (ignored by jemalloc)
   # Recommended: MALLOC_ARENA_MAX=2 for clients, MALLOC_ARENA_MAX=4 for servers
   export MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-4}
 
@@ -588,11 +604,11 @@ sub_start_sh: |
   SECONDS=0
   lst=-400
   restart_count=0
-  
+
   start_python() {
     python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
   }
-    
+
   start_fl() {
     if [[ $(( $SECONDS - $lst )) -lt 300 ]]; then
       ((restart_count++))
@@ -625,7 +641,7 @@ sub_start_sh: |
     kill -9 $pid
     rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
   }
-    
+
   if [[ "$doVerify" == "true" ]]; then
     python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
     verification_status=$?
@@ -699,10 +715,10 @@ docker_cln_sh: |
   # export MY_DATA_DIR=$SOME_DIRECTORY
   # before running docker.sh
 
-  # for all gpus use line below 
+  # for all gpus use line below
   #GPU2USE='--gpus=all'
   # for 2 gpus use line below
-  #GPU2USE='--gpus=2' 
+  #GPU2USE='--gpus=2'
   # for specific gpus as gpu#0 and gpu#2 use line below
   #GPU2USE='--gpus="device=0,2"'
   # to use host network, use line below
@@ -956,7 +972,7 @@ helm_chart_values: |
 
 cloud_script_header: |
   #!/usr/bin/env bash
-  
+
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   function report_status() {
     status="$1"
