@@ -142,11 +142,51 @@ measured and confirmed RSS is stable without cleanup.
 Recommended Settings
 ====================
 
-+--------+-------------------------------+----------------------+
-| Role   | ``server_memory_gc_rounds``   | ``MALLOC_ARENA_MAX``   |
-+========+===============================+======================+
-| Server | 5                             | 4                    |
-+--------+-------------------------------+----------------------+
++--------+-----------------------------+-----------------------------+----------------------+----------------------+
+| Role   | ``server_memory_gc_rounds`` | ``client_memory_gc_rounds`` | ``MALLOC_ARENA_MAX`` | ``cuda_empty_cache`` |
++========+=============================+=============================+======================+======================+
+| Server | 5                           | N/A                         | 4                    | N/A                  |
++--------+-----------------------------+-----------------------------+----------------------+----------------------+
+| Client | N/A                         | 1                           | 2                    | True (for GPU)       |
++--------+-----------------------------+-----------------------------+----------------------+----------------------+
+
+Using jemalloc
+==============
+
+For PyTorch workloads, jemalloc is recommended over glibc malloc. NVFlare startup
+scripts preload jemalloc only when explicitly enabled via
+``NVFLARE_ENABLE_JEMALLOC_PRELOAD=true`` and jemalloc is available.
+
+Startup Script
+--------------
+
+The generated ``sub_start.sh`` script includes opt-in jemalloc preload:
+
+.. code-block:: bash
+
+    # Enable jemalloc preload only when opted in
+    if [ "${NVFLARE_ENABLE_JEMALLOC_PRELOAD:-false}" = "true" ]; then
+        for JEMALLOC in /usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+                        /usr/lib64/libjemalloc.so.2 \
+                        /usr/local/lib/libjemalloc.so; do
+            if [ -f "$JEMALLOC" ]; then
+                export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$JEMALLOC"
+                export MALLOC_CONF="${MALLOC_CONF:-dirty_decay_ms:5000,muzzy_decay_ms:5000}"
+                break
+            fi
+        done
+    fi
+
+Installing jemalloc
+-------------------
+
+.. code-block:: bash
+
+    # Ubuntu/Debian
+    apt-get install libjemalloc2
+
+    # RHEL/CentOS
+    yum install jemalloc
 
 API Reference
 =============
