@@ -205,13 +205,28 @@ class FilePipe(Pipe):
         except Exception:
             raise BrokenPipeError(f"error reading from {from_dir}")
 
-        if files:
-            files = [os.path.join(from_dir, f) for f in files]
-            files.sort(key=os.path.getmtime, reverse=False)
-            file_path = files[0]
-            return self._read_file(file_path)
-        else:
+        if not files:
             return None
+
+        files = [os.path.join(from_dir, f) for f in files]
+
+        def _safe_mtime(f):
+            try:
+                return os.path.getmtime(f)
+            except FileNotFoundError:
+                return float("inf")
+
+        files.sort(key=_safe_mtime)
+        for file_path in files:
+            try:
+                return self._read_file(file_path)
+            except BrokenPipeError:
+                # File was removed between listdir and read (TOCTOU race).
+                # This happens when the sender's heartbeat send times out and
+                # deletes its own file just as the receiver is about to read it.
+                # Skip this file and try the next one.
+                continue
+        return None
 
     def _get_from_dir(self, from_dir: str, timeout=None):
         if not timeout or timeout <= 0:
