@@ -10,6 +10,18 @@ This directory contains:
 - `az` installed and authenticated
 - `kubectl` installed
 
+If you need to log in:
+
+```bash
+az login
+```
+
+If browser login is awkward, use:
+
+```bash
+az login --use-device-code
+```
+
 If you need `kubectl`, install it with:
 
 ```bash

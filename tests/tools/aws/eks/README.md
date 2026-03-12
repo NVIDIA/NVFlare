@@ -12,6 +12,14 @@ This directory contains:
 - `eksctl` installed
 - `kubectl` installed
 
+If you need to log in with AWS IAM Identity Center (SSO):
+
+```bash
+aws configure sso
+aws sso login --profile my-sso-profile
+export AWS_PROFILE=my-sso-profile
+```
+
 ## Quick Start
 
 Run these commands from the `tests/tools/aws/eks` directory.
