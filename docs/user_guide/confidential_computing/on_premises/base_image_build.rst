@@ -91,7 +91,7 @@ Create the file ``/shared/launch_vm.sh`` with the following content:
    docc=true
    sev=""
 
-   while getopts "expc:" flag
+   while getopts "exp:c:" flag
    do
      case ${flag} in
        e) doecho=true;;
