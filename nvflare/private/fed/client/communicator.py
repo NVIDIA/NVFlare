@@ -273,9 +273,9 @@ class Communicator:
         start = time.time()
         while not self.cell:
             self.logger.info("Waiting for the client cell to be created.")
-            if time.time() - start > 15.0:
+            if time.time() - start > 600:
                 raise RuntimeError("Client cell could not be created. Failed to login the client.")
-            time.sleep(0.5)
+            time.sleep(10)
 
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         private_key_file = None
