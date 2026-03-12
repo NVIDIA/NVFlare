@@ -3,6 +3,7 @@
 This directory contains:
 
 - `cluster.yaml` for a minimal EKS Auto Mode cluster
+- `create_cluster.sh` and `delete_cluster.sh` as thin wrappers around `eksctl`
 - `inflate.yaml` for a tiny non-FLARE workload to verify the cluster can schedule pods
 
 ## Prerequisites
@@ -20,7 +21,7 @@ Edit `cluster.yaml` if you want a different cluster name or region.
 Create the cluster:
 
 ```bash
-eksctl create cluster -f cluster.yaml
+./create_cluster.sh
 ```
 
 Check the built-in Auto Mode node pools:
@@ -52,10 +53,11 @@ kubectl delete -f inflate.yaml
 Delete the cluster when you are done:
 
 ```bash
-eksctl delete cluster -f cluster.yaml --wait
+./delete_cluster.sh
 ```
 
 ## Notes
 
 - The sample workload is based on the AWS EKS Auto Mode `inflate` example.
 - The `eks.amazonaws.com/compute-type: auto` selector makes this workload land on Auto Mode nodes.
+- The scripts intentionally stay minimal and use `cluster.yaml` as the single source of truth.
