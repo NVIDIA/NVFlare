@@ -223,6 +223,13 @@ Edit ``cc_site-1.yml``:
 
 **2.4 Run Provision**
 
+Before running provisioning, ensure NBD (Network Block Device) devices are available, as the builder uses
+them to access disk images:
+
+.. code-block:: bash
+
+   sudo modprobe nbd max_part=8
+
 .. code-block:: bash
 
    nvflare provision -p project.yml
