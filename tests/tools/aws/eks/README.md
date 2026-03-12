@@ -42,7 +42,7 @@ New Auto Mode clusters can start with zero nodes. Deploy the sample workload to 
 
 ```bash
 kubectl apply -f inflate.yaml
-kubectl get events -w --sort-by '.lastTimestamp'
+kubectl get events -w
 ```
 
 In another terminal, verify the pod and node:

@@ -14,5 +14,4 @@ az aks create \
   --sku automatic
 az aks get-credentials \
   --resource-group "${RESOURCE_GROUP}" \
-  --name "${CLUSTER_NAME}" \
-  --overwrite-existing
+  --name "${CLUSTER_NAME}"
