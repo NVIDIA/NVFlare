@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import shlex
 import shutil
 import tempfile
 import time
@@ -34,14 +35,16 @@ PROD_FOLDER_NAME = "prod_00"
 
 
 def _start_site(site_properties: SiteProperties):
-    process = run_command_in_subprocess(f"bash {os.path.join(site_properties.root_dir, 'startup', 'start.sh')}")
+    process = run_command_in_subprocess(
+        f"bash {shlex.quote(os.path.join(site_properties.root_dir, 'startup', 'start.sh'))}"
+    )
     print(f"Starting {site_properties.name} ...")
     site_properties.process = process
 
 
 def _stop_site(site_properties: SiteProperties):
     run_command_in_subprocess(
-        f"bash {os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh')}", stdin_data=b"y\n"
+        f"bash {shlex.quote(os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh'))}", stdin_data=b"y\n"
     )
     print(f"Stopping {site_properties.name} ...")
 
