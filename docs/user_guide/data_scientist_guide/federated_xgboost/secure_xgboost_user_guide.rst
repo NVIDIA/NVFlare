@@ -172,6 +172,64 @@ The following table summarizes the available mitigations for different collabora
 
 - **The remaining two risks** will be discussed in the `Advanced Topics: Future Security Scenarios`_ section.
 
+TimberStrike Attack Analysis
+=============================
+
+TimberStrike is a model inversion attack that exploits ``sum_hessian`` values and tree structure to estimate training data distributions. Empirical testing shows limited practical risk:
+
+.. list-table:: Reconstruction Accuracy Results
+   :widths: 20 15 15 25
+   :header-rows: 1
+
+   * - Dataset
+     - Samples
+     - Features
+     - Reconstruction Accuracy
+   * - Diabetes (toy)
+     - 614
+     - 8
+     - 65.80%
+   * - CreditCard (realistic)
+     - 227,306
+     - 28
+     - 8.72%
+
+.. note::
+
+   "Reconstruction accuracy" is measured with distance tolerance, not exact recovery. Even the closest reconstructed sample can differ substantially from the original (see example below).
+
+Risk Assessment
+---------------
+
+Threat on realistic data may not be significant. On practical datasets (CreditCard), accuracy <10%, which is far lower than privacy-preserving synthesis tools like `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ (51.98% baseline). Users can run experimental comparisons on their datasets to verify.
+
+Protection
+----------
+
+- **Built-in**: NVFlare removes ``sum_hessian`` from model transmissions in horizontal tree-based mode, eliminating the attack's primary information source.
+- **Additional**: Increase ``min_child_weight`` to enforce minimum samples per leaf, further limiting exposure.
+
+Example—Closest Reconstructed Samples
+--------------------------------------
+
+**CreditCard dataset (28 features)**
+
+*TimberStrike reconstruction (8.72% accuracy)*:
+
+.. code-block::
+
+   Original:      [-27.0, -25.3, -12.1, -1.53, -3.67, -1.82, -3.34, -26.6, 1.08, -0.42, 3.61, -5.42, ...]
+   Reconstructed: [-30.0, -29.2, -10.5, 7.60, 2.20, -0.11, 4.55, -5.84, 5.50, 4.38, 3.07, 1.26, ...]
+
+*SafeSynthesizer baseline (51.98% accuracy)*:
+
+.. code-block::
+
+   Original:      [2.06, -0.03, -1.06, 0.42, -0.13, -1.21, 0.20, -0.35, 0.51, 0.07, -0.70, 0.54, ...]
+   Reconstructed: [2.06, -0.05, -1.07, 0.41, -0.12, -1.20, 0.20, -0.34, 0.50, 0.06, -0.68, 0.53, ...]
+
+Even on the closest matches, TimberStrike shows substantial deviations (e.g., feature 4: -1.53 → 7.60), while SafeSynthesizer achieves much tighter reconstruction.
+
 GPU Acceleration
 ================
 
