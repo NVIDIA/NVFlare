@@ -231,22 +231,31 @@ def _load_initial_state_dict(model, state_dict: dict) -> None:
         )
         return
 
+    model_keys = set(model.state_dict().keys())
+    matched_keys = model_keys & set(state_dict.keys())
+    if not matched_keys:
+        sample = ", ".join(list(state_dict.keys())[:3])
+        raise RuntimeError(
+            "No incoming FL keys matched the freshly loaded model state_dict; refusing to continue with stale local "
+            f"weights. Example incoming keys: {sample}"
+        )
     incompatible = model.load_state_dict(state_dict, strict=False)
     rank0_print(
         "Loaded initial FL state dict with "
-        f"{len(incompatible.missing_keys)} missing and {len(incompatible.unexpected_keys)} unexpected keys."
+        f"{len(incompatible.missing_keys)} missing, {len(incompatible.unexpected_keys)} unexpected, "
+        f"and {len(matched_keys)} matched keys."
     )
 
 
 def _load_processor_with_fallback(primary_path: str, fallback_path: Optional[str] = None):
     try:
-        return AutoProcessor.from_pretrained(primary_path)
+        return AutoProcessor.from_pretrained(primary_path, trust_remote_code=True)
     except OSError:
         if fallback_path and fallback_path != primary_path:
             rank0_print(
                 f"Processor artifacts not found in {primary_path}; falling back to base model processor from {fallback_path}."
             )
-            return AutoProcessor.from_pretrained(fallback_path)
+            return AutoProcessor.from_pretrained(fallback_path, trust_remote_code=True)
         raise
 
 
@@ -255,6 +264,7 @@ def _load_tokenizer_with_fallback(primary_path: str, cache_dir: Optional[str], m
         "cache_dir": cache_dir,
         "model_max_length": model_max_length,
         "padding_side": "right",
+        "trust_remote_code": True,
         "use_fast": False,
     }
     try:
