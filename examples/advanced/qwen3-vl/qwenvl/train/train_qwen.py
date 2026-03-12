@@ -143,7 +143,13 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
     config = AutoConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir, trust_remote_code=True)
     model_type = getattr(config, "model_type", None)
     if model_type == "qwen3_vl_moe":
-        from transformers import Qwen3VLMoeForConditionalGeneration
+        try:
+            from transformers import Qwen3VLMoeForConditionalGeneration
+        except ImportError as e:
+            raise ValueError(
+                "Installed transformers package does not provide Qwen3-VL-MoE support. "
+                f"Cannot load model_type={model_type!r} from {model_name_or_path}."
+            ) from e
 
         model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
             model_name_or_path,
@@ -153,7 +159,13 @@ def _load_base_model_from_path(model_name_or_path, cache_dir, attn_implementatio
         )
         model_type = "qwen3vl"
     elif model_type == "qwen3_vl":
-        from transformers import Qwen3VLForConditionalGeneration
+        try:
+            from transformers import Qwen3VLForConditionalGeneration
+        except ImportError as e:
+            raise ValueError(
+                "Installed transformers package does not provide Qwen3-VL support. "
+                f"Cannot load model_type={model_type!r} from {model_name_or_path}."
+            ) from e
 
         model = Qwen3VLForConditionalGeneration.from_pretrained(
             model_name_or_path,
@@ -391,8 +403,14 @@ def train(
     # Disable gradient checkpointing for PeftModel to avoid "element 0 of tensors does not require grad"
     from peft import PeftModel
 
-    if isinstance(model, PeftModel) and training_args.gradient_checkpointing:
-        rank0_print("Disabling gradient_checkpointing for PeftModel to avoid backward grad_fn errors.")
+    if (
+        isinstance(model, PeftModel)
+        and training_args.gradient_checkpointing
+        and attn_implementation == "flash_attention_2"
+    ):
+        rank0_print(
+            "Disabling gradient_checkpointing for PeftModel with flash_attention_2 to avoid backward grad_fn errors."
+        )
         training_args.gradient_checkpointing = False
 
     if initial_state_dict is not None:

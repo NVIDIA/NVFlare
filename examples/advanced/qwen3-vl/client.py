@@ -35,6 +35,7 @@ from model import (
     DEFAULT_LORA_R,
     DEFAULT_LORA_TARGET_MODULES,
     Qwen3VLModel,
+    is_peft_adapter_key,
     load_state_dict_from_checkpoint,
     normalize_peft_adapter_key,
 )
@@ -94,10 +95,16 @@ def _save_lora_adapter_for_training(
     stripped = _strip_model_prefix(lora_state_dict)
 
     adapter_tensors = {}
+    seen_target_modules = set()
     for key, value in stripped.items():
         normalized_key = normalize_peft_adapter_key(key)
+        if not is_peft_adapter_key(normalized_key):
+            raise RuntimeError(f"Expected only LoRA adapter keys for adapter exchange, got: {normalized_key}")
         if normalized_key in adapter_tensors:
             raise RuntimeError(f"Duplicate LoRA adapter key after PEFT normalization: {normalized_key}")
+        for target_module in DEFAULT_LORA_TARGET_MODULES:
+            if f".{target_module}." in normalized_key:
+                seen_target_modules.add(target_module)
         if isinstance(value, torch.Tensor):
             adapter_tensors[normalized_key] = value.detach().cpu().contiguous()
         else:
@@ -105,6 +112,12 @@ def _save_lora_adapter_for_training(
 
     if not adapter_tensors:
         raise RuntimeError("No LoRA adapter tensors were provided for checkpoint-based exchange.")
+    missing_target_modules = sorted(set(DEFAULT_LORA_TARGET_MODULES) - seen_target_modules)
+    if missing_target_modules:
+        sample = ", ".join(missing_target_modules[:3])
+        raise RuntimeError(
+            "LoRA adapter exchange is missing expected target modules. " f"Example missing target module: {sample}"
+        )
 
     os.makedirs(save_dir, exist_ok=True)
     save_file(adapter_tensors, os.path.join(save_dir, "adapter_model.safetensors"))

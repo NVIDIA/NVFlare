@@ -94,7 +94,13 @@ def _get_qwen_vl_model_class(model_name_or_path: str):
     config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
     model_type = getattr(config, "model_type", None)
     if model_type == "qwen3_vl_moe":
-        from transformers import Qwen3VLMoeForConditionalGeneration
+        try:
+            from transformers import Qwen3VLMoeForConditionalGeneration
+        except ImportError as e:
+            raise ValueError(
+                "Installed transformers package does not provide Qwen3-VL-MoE support. "
+                f"Cannot load model_type={model_type!r} from {model_name_or_path}."
+            ) from e
 
         return Qwen3VLMoeForConditionalGeneration
     if model_type == "qwen3_vl":
@@ -102,8 +108,11 @@ def _get_qwen_vl_model_class(model_name_or_path: str):
             from transformers import Qwen3VLForConditionalGeneration
 
             return Qwen3VLForConditionalGeneration
-        except ImportError:
-            pass
+        except ImportError as e:
+            raise ValueError(
+                "Installed transformers package does not provide Qwen3-VL support. "
+                f"Cannot load model_type={model_type!r} from {model_name_or_path}."
+            ) from e
     if model_type == "qwen2_5_vl":
         return Qwen2_5_VLForConditionalGeneration
     if model_type == "qwen2_vl":
@@ -136,12 +145,12 @@ def normalize_peft_adapter_key(key: str) -> str:
     return key
 
 
-def _is_peft_adapter_key(key: str) -> bool:
+def is_peft_adapter_key(key: str) -> bool:
     return any(f".{marker}." in key for marker in _PEFT_ADAPTER_MARKERS)
 
 
 def get_expected_peft_adapter_keys(peft_model) -> set:
-    return {key for key in peft_model.state_dict().keys() if _is_peft_adapter_key(key)}
+    return {key for key in peft_model.state_dict().keys() if is_peft_adapter_key(key)}
 
 
 def map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
