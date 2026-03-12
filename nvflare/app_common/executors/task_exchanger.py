@@ -24,6 +24,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_non_negative_int,
@@ -107,6 +108,8 @@ class TaskExchanger(Executor):
                 self.system_panic(f"component of {self.pipe_id} must be Pipe but got {type(self.pipe)}", fl_ctx)
                 return
             self.pipe.open(self.pipe_channel_name)
+            if isinstance(self.pipe, CellPipe):
+                self.pipe.pass_through_on_send = True
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
