@@ -17,6 +17,19 @@ gcloud container clusters delete "${CLUSTER_NAME}" \
   --project "${PROJECT_ID}" \
   --quiet
 
+# GKE can leave network-scoped firewall rules behind briefly after cluster deletion.
+while IFS= read -r firewall_rule; do
+  [[ -n "${firewall_rule}" ]] || continue
+  gcloud compute firewall-rules delete "${firewall_rule}" \
+    --project "${PROJECT_ID}" \
+    --quiet
+done < <(
+  gcloud compute firewall-rules list \
+    --filter="network=${NETWORK_NAME} AND name~'^gke-'" \
+    --format="value(name)" \
+    --project "${PROJECT_ID}"
+)
+
 if gcloud compute networks describe "${NETWORK_NAME}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
   gcloud compute networks delete "${NETWORK_NAME}" \
     --project "${PROJECT_ID}" \

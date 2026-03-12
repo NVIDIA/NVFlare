@@ -21,7 +21,7 @@ gcloud auth login
 If you need to select a project:
 
 ```bash
-gcloud config set project nv-nvflare-20260312202153
+gcloud config set project your-gcp-project-id
 ```
 
 If you need to enable the GKE API:
@@ -52,7 +52,7 @@ The script defaults to:
 ```bash
 CLUSTER_NAME=gke-auto-test
 LOCATION=us-central1
-PROJECT_ID=nv-nvflare-20260312202153
+PROJECT_ID=your-gcp-project-id
 NETWORK_NAME=gke-test
 ```
 
@@ -91,7 +91,7 @@ Delete the cluster when you are done:
 If you want to override the defaults:
 
 ```bash
-PROJECT_ID=nv-nvflare-20260312202153 CLUSTER_NAME=my-gke-test LOCATION=us-east1 NETWORK_NAME=my-gke-test ./create_cluster.sh
+PROJECT_ID=your-gcp-project-id CLUSTER_NAME=my-gke-test LOCATION=us-east1 NETWORK_NAME=my-gke-test ./create_cluster.sh
 ```
 
 Use the same environment variables with `./delete_cluster.sh` if you created the cluster with non-default names.
