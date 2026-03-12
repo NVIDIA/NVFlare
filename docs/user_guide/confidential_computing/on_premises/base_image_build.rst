@@ -6,6 +6,10 @@ CVM Base Image and Binary Building
 
 This document explains how to build the prerequisite base images and binaries required by the CVM builder before running ``nvflare provision``.
 
+The image builder is shipped as part of the NVFlare source tree under ``nvflare/lighter/cc/image_builder/``
+and contains the ``cvm_build.sh`` script along with Ansible playbooks and helper scripts. It is typically
+installed at ``~/cc/image_builder``, which is the path referenced by ``build_image_cmd`` in ``project.yml``.
+
 The following artifacts must be built and placed in the image builder directory:
 
 - ``base_images/ubuntu_base.qcow2`` — Ubuntu base disk image

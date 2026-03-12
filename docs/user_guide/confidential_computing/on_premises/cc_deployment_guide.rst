@@ -62,9 +62,16 @@ Software Requirements
 
 2. **Image Builder**
 
+   The image builder is the tool that constructs CVM images. It is shipped as part of the NVFlare source
+   tree under ``nvflare/lighter/cc/image_builder/`` and contains the ``cvm_build.sh`` script along with
+   Ansible playbooks and helper scripts.
+
    - Obtain the image builder code from the NVFlare team
    - Contact: federatedlearning@nvidia.com
    - Install location: ``~/cc/image_builder``
+
+   The path to ``cvm_build.sh`` inside this directory is referenced in ``project.yml`` as
+   ``build_image_cmd`` (see Step 2.1 of the Deployment Workflow).
 
 3. **Base Images**
 
