@@ -190,13 +190,15 @@ TimberStrike is a model inversion attack that exploits ``sum_hessian`` values an
      - 8
      - 65.80%
    * - CreditCard (realistic)
-     - 227,306
-     - 28
+     - 284,807
+     - 30
      - 8.72%
 
 .. note::
 
    "Reconstruction accuracy" is measured with distance tolerance, not exact recovery. Even the closest reconstructed sample can differ substantially from the original (see example below).
+   
+   The TimberStrike experiment used a preprocessed subset with 227,306 samples (80%) and 28 features (excluding ``Time`` and ``Amount`` columns), achieving the reported 8.72% accuracy.
 
 Risk Assessment
 ---------------

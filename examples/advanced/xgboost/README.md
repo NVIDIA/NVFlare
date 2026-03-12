@@ -111,9 +111,11 @@ TimberStrike is a model inversion attack that exploits `sum_hessian` values and 
 | Dataset | Samples | Features | Reconstruction Accuracy |
 |---------|---------|----------|------------------------|
 | Diabetes (toy) | 614 | 8 | 65.80% |
-| CreditCard (realistic) | 227,306 | 28 | 8.72% |
+| CreditCard (realistic) | 284,807 | 30 | 8.72% |
 
 > **Note**: "Reconstruction accuracy" is measured with distance tolerance, not exact recovery. Even the closest reconstructed sample can differ substantially from the original (see example below).
+> 
+> *The TimberStrike experiment used a preprocessed subset with 227,306 samples (80%) and 28 features (excluding `Time` and `Amount` columns), achieving the reported 8.72% accuracy.*
 
 **Risk Assessment**: Threat on realistic data may not be significant. On practical datasets (CreditCard), accuracy <10%, which is far lower than privacy-preserving synthesis tools like [NeMo SafeSynthesizer](https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html) (51.98% baseline). Users can run experimental comparisons on their datasets to verify.
 
