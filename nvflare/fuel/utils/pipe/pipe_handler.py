@@ -400,7 +400,7 @@ class PipeHandler(object):
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
                 try:
-                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
+                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""), timeout=600.0)
                 except Exception as ex:
                     if not self.asked_to_stop:
                         self.logger.debug(f"heartbeat send failed, stopping heartbeat: {ex}")

@@ -272,7 +272,7 @@ class FilePipe(Pipe):
         if not self.pipe_path:
             raise BrokenPipeError("pipe is not open")
 
-        if not timeout and msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+        if timeout is None and msg.topic == Topic.HEARTBEAT:
             timeout = 600.0
 
         return self.put_f(msg, timeout)
