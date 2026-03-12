@@ -30,7 +30,5 @@ class SignatureBuilder(Builder):
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
         for p in project.get_all_participants():
-            dest_dir = ctx.get_kit_dir(p)
-            sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-            dest_dir = ctx.get_local_dir(p)
+            dest_dir = ctx.get_ws_dir(p)
             sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
