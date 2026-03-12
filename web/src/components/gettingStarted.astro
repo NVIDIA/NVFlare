@@ -17,31 +17,32 @@ const walkthrough = [
   {
     id: "step2",
     step: "Step 2",
-    title: "Server Code",
+    title: "Job (Recipe)",
     description:
-      "Use the ModelController API to write a federated control flow for FedAvg.",
+      "Use the Recipe API to define the FL job in Python: job.py with FedAvgRecipe, model, and client script — no separate server file.",
     button_text: "View Source",
-    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/nvflare/app_common/workflows/fedavg.py`,
-    video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%202%20-%20Server.mp4",
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/hello-world/hello-pt/job.py`,
+    // Legacy "Part 2 - Server" video; when re-enabling videos, replace with Recipe/job-focused asset
+    video: "",
   },
   {
     id: "step3",
     step: "Step 3",
     title: "Client Code",
     description:
-      "Use the Client API to write local training code for a PyTorch CIFAR-10 trainer.",
+      "Use the Client API to convert your training script into federated learning code (client.py).",
     button_text: "View Source",
-    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/src/cifar10_fl.py`,
+    link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/hello-world/hello-pt/client.py`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%203%20-%20Client.mp4",
   },
   {
     id: "step4",
     step: "Step 4",
-    title: "FedJob and Simulator",
+    title: "Model & Run",
     description:
-      "Formulate the NVIDIA FLARE job and simulate a federated run with the multi-process simulator.",
-    button_text: "View Notebook",
-    link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb`,
+      "Model lives in model.py. Run the job with the simulator: python job.py, or open the hello-pt notebook in Colab.",
+    button_text: "View Example",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%204%20-%20Job.mp4",
   },
   {
@@ -105,7 +106,7 @@ const series = [
       <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
         Begin your NVIDIA FLARE journey with these guides
         designed to help you quickly grasp essential concepts.
-        Follow along with the videos below, and try it out yourself.
+        Follow the steps below and try it out yourself.
       </p>
     </div>
 
@@ -182,7 +183,8 @@ const series = [
             </div>
           </div>
 
-          <!-- Getting Started Videos -->
+          <!-- Getting Started Videos (hidden for now - Flare 2.5.0 videos are out of date) -->
+          <!--
           <div>
             {
               item.map((card) => (
@@ -194,10 +196,11 @@ const series = [
               ))
             }
           </div>
+          -->
         </div>
       ))
     }
-  
+
   </div>
 </div>
 
