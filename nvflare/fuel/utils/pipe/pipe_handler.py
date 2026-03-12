@@ -344,7 +344,14 @@ class PipeHandler(object):
                 # the pipe handler is most likely stopped, but we leave it for the while loop to decide
                 continue
 
-            msg = p.receive()
+            try:
+                msg = p.receive()
+            except BrokenPipeError as e:
+                if not self.asked_to_stop:
+                    self._add_message(
+                        self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
+                    )
+                break
             now = time.time()
 
             if msg:
