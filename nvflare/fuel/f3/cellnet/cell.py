@@ -76,13 +76,13 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        # PASS_THROUGH is scoped per-message via the MessageHeaderKey.PASS_THROUGH
-        # header.  Senders that want tensors to arrive as LazyDownloadRef
-        # placeholders (CellPipe.pass_through_on_send=True) stamp this header;
-        # all other messages (Swarm P2P, system) arrive without it and decode
-        # normally.  get_fobs_context(props=...) returns a fresh shallow-copy
-        # dict so the cell-level base context is never mutated.
+        # PASS_THROUGH can be requested per-message (sender stamps
+        # MessageHeaderKey.PASS_THROUGH) or per-cell (receiver sets
+        # cell.decode_pass_through = True).  Either source activates
+        # LazyDownloadRef decode so tensors are not downloaded at this hop.
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
+        if self.cell.decode_pass_through:
+            passthrough = True
         decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
 
@@ -128,6 +128,7 @@ class Cell(StreamCell):
         self.logger = get_obj_logger(self)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
+        self.decode_pass_through = False
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -400,10 +401,15 @@ class Cell(StreamCell):
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: receiving complete")
             waiter.result = Message(r_future.headers, r_future.result())
+            pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
+            if self.decode_pass_through:
+                pt = True
             decode_payload(
                 waiter.result,
                 encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
-                fobs_ctx=self.get_fobs_context(props={FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+                fobs_ctx=self.get_fobs_context(
+                    props={FOBSContextKey.ABORT_SIGNAL: abort_signal, FOBSContextKey.PASS_THROUGH: pt}
+                ),
             )
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)

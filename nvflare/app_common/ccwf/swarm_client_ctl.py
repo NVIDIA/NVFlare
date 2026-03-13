@@ -288,7 +288,6 @@ class SwarmClientController(ClientSideController):
         max_concurrent_submissions: int = 1,
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
-        forward_pass_through: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -385,7 +384,6 @@ class SwarmClientController(ClientSideController):
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
         self._aggr_round_count = 0
-        self.forward_pass_through = forward_pass_through
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -501,15 +499,6 @@ class SwarmClientController(ClientSideController):
         if self.learn_task_timeout:
             task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
 
-        # When forward_pass_through is enabled, request PASS_THROUGH decode at the
-        # receiving trainer CJ so tensors arrive as LazyDownloadRef placeholders.
-        # The subprocess then downloads the model directly from this aggregator's
-        # DownloadService, bypassing the trainer CJ entirely.
-        # aux_runner.py propagates ReservedHeaderKey.PASS_THROUGH → MessageHeaderKey.PASS_THROUGH
-        # on the outgoing cell message (same pattern as MSG_ROOT_TTL).
-        if self.forward_pass_through:
-            task_data.set_header(ReservedHeaderKey.PASS_THROUGH, True)
-
         targets = copy.copy(clients)
         if aggr not in targets:
             targets.append(aggr)
@@ -530,13 +519,7 @@ class SwarmClientController(ClientSideController):
         if should_queue_locally:
             self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
             local_task_data = copy.deepcopy(task_data)
-            if self.forward_pass_through and remote_targets:
-                # task_data may carry LazyDownloadRef placeholders from a forward PASS_THROUGH
-                # round.  The upstream transaction has num_receivers=1 — if both local _do_learn
-                # and remote subprocesses try to download from the same ref_id, the first to
-                # complete closes the transaction and the second gets "no ref found".
-                # Resolve locally so the local consumer uses real tensors; remote targets still
-                # receive the original LazyDownloadRef via send_learn_task below.
+            if self._has_lazy_refs(local_task_data):
                 local_task_data = self._resolve_lazy_refs(local_task_data, fl_ctx)
             if not self.set_learn_task(task_data=local_task_data, fl_ctx=fl_ctx):
                 self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
@@ -581,33 +564,14 @@ class SwarmClientController(ClientSideController):
             self.update_status(action="aggregate", error=ReturnCode.EXECUTION_EXCEPTION)
             return
 
-        # Defensive check: only relevant when forward_pass_through is active, because that
-        # is the only path that produces LazyDownloadRef objects in aggregation results.
-        # Skipping this check in the common (non-PASS_THROUGH) case avoids deserializing
-        # the full aggregated DXO just to inspect value types.
-        #
-        # Guard is limited to DXO Shareables (the only kind that carries tensor payloads).
-        # from_shareable() raises ValueError for non-DXO Shareables so we check the
-        # CONTENT_TYPE header first to avoid treating that as a guard failure.
-        # The except block uses logger.warning (not log_warning) to avoid calling
-        # generate_log_message(), which requires fl_ctx to have a real peer context.
-        if self.forward_pass_through:
-            try:
-                from nvflare.apis.dxo import from_shareable
-                from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
-
-                if aggr_result.get_header(ReservedHeaderKey.CONTENT_TYPE) == "DXO":
-                    _dxo = from_shareable(aggr_result)
-                    if _dxo.data and any(isinstance(v, LazyDownloadRef) for v in _dxo.data.values()):
-                        self.system_panic(
-                            "LazyDownloadRef objects reached _end_gather() — "
-                            "_resolve_lazy_refs() was not called on the local-aggr path. "
-                            "This is a code bug.",
-                            fl_ctx,
-                        )
-                        return
-            except Exception:
-                self.logger.warning(f"LazyDownloadRef guard check failed: {secure_format_traceback()}")
+        if self._has_lazy_refs(aggr_result):
+            self.system_panic(
+                "LazyDownloadRef objects reached _end_gather() — "
+                "_resolve_lazy_refs() was not called on the local-aggr path. "
+                "This is a code bug.",
+                fl_ctx,
+            )
+            return
 
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
@@ -732,6 +696,19 @@ class SwarmClientController(ClientSideController):
         self.log_debug(fl_ctx, f"got permission from gatherer: {rc}")
         return make_reply(rc)
 
+    @staticmethod
+    def _has_lazy_refs(obj) -> bool:
+        """Return True if obj (recursively) contains any LazyDownloadRef."""
+        from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+        if isinstance(obj, LazyDownloadRef):
+            return True
+        if isinstance(obj, dict):
+            return any(SwarmClientController._has_lazy_refs(v) for v in obj.values())
+        if isinstance(obj, (list, tuple)):
+            return any(SwarmClientController._has_lazy_refs(v) for v in obj)
+        return False
+
     def _resolve_lazy_refs(self, result: Shareable, fl_ctx: FLContext) -> Shareable:
         """Resolve any LazyDownloadRef objects in result by downloading from subprocess.
 
@@ -842,19 +819,12 @@ class SwarmClientController(ClientSideController):
         if not base_model:
             base_model = Learnable()
             fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, base_model, private=True, sticky=True)
-        # With forward_pass_through, task_data.dxo.data holds LazyDownloadRef placeholders.
-        # Resolve them before shareable_to_learnable so GLOBAL_MODEL receives real tensors —
-        # required by the WEIGHT_DIFF branch of _end_gather() (base_weights += diff).
-        # task_data (with refs intact) is still passed to execute_learn_task() below so
-        # the subprocess can download directly from the aggregator DownloadService.
-        #
-        # Memory note: when this CJ is also the aggregator (me == aggr), _resolve_lazy_refs
-        # downloads the full model into CJ memory here, while the subprocess independently
-        # downloads its own copy from the aggregator. This is an unavoidable cost of the
-        # local-aggr + forward_pass_through combination: the aggregator CJ needs real tensors
-        # for GLOBAL_MODEL, but cannot share the subprocess's download without a synchronous
-        # barrier that would defeat the purpose of PASS_THROUGH.
-        task_data_for_model = self._resolve_lazy_refs(task_data, fl_ctx) if self.forward_pass_through else task_data
+        # If task_data contains LazyDownloadRef (receiver-side decode_pass_through
+        # was active), resolve before shareable_to_learnable so GLOBAL_MODEL gets
+        # real tensors — required by the WEIGHT_DIFF branch of _end_gather().
+        # task_data itself keeps its refs intact for execute_learn_task() below so
+        # the subprocess can download directly from the source DownloadService.
+        task_data_for_model = self._resolve_lazy_refs(task_data, fl_ctx) if self._has_lazy_refs(task_data) else task_data
         global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         self.log_debug(fl_ctx, f"current global model: {global_weights}")
@@ -977,11 +947,9 @@ class SwarmClientController(ClientSideController):
                 # For the remote path, LazyDownloadRefs are resolved automatically during
                 # the FOBS encode/decode inside broadcast_and_wait() (Fix 14).  The local
                 # path has no such encode/decode, so we resolve them explicitly here.
-                # This is always required: ex_process/api.py sets pass_through_on_send=True
-                # unconditionally for CellPipe, so the subprocess result always arrives at
-                # CJ as LazyDownloadRef objects regardless of forward_pass_through.
-                # (forward_pass_through controls the forward path server→subprocess, not this
-                # reverse path subprocess→aggregator.)
+                # ex_process/api.py sets pass_through_on_send=True unconditionally for
+                # CellPipe, so the subprocess result always arrives at CJ as LazyDownloadRef.
+                # Resolve before local aggregation (no CellNet encode/decode on this path).
                 result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()

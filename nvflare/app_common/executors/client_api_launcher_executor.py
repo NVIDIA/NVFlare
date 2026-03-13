@@ -146,19 +146,29 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # PASS_THROUGH (reverse path only):
+        # PASS_THROUGH (reverse path — subprocess → CJ):
         # The subprocess-side CellPipe (pass_through_on_send=True, set in
         # ExProcessClientAPI.init()) stamps MessageHeaderKey.PASS_THROUGH on
         # result messages so CJ decodes them as LazyDownloadRef and forwards
         # the original subprocess datum to the server for direct download.
         #
-        # CJ's own pipe must NOT have pass_through_on_send=True: stamping
-        # PASS_THROUGH on task delivery messages (CJ → subprocess) causes the
-        # subprocess to create LazyDownloadRef objects instead of real tensors,
-        # which crashes user code (e.g. torch.as_tensor(LazyDownloadRef)).
-        # CJ downloads model tensors from the server normally and sends actual
-        # tensor data to the subprocess.
+        # PASS_THROUGH (forward path — server/aggregator → CJ):
+        # Receiver-side opt-in: set cell.decode_pass_through = True so that
+        # incoming task messages are decoded with PASS_THROUGH regardless of
+        # whether the sender stamped the header.  This lets the subprocess
+        # download tensors directly from the source (server or aggregator)
+        # via DownloadService, skipping materialisation inside the CJ.
+        # Safe because this executor IS an ext-process launcher — it never
+        # consumes the tensors itself; it just forwards them to the subprocess.
         super().initialize(fl_ctx)
+
+        engine = fl_ctx.get_engine()
+        get_cell_fn = getattr(engine, "get_cell", None)
+        if get_cell_fn:
+            cell = get_cell_fn()
+            if cell is not None:
+                cell.decode_pass_through = True
+                self.log_info(fl_ctx, "Receiver-side PASS_THROUGH enabled on CJ cell (forward path)")
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()

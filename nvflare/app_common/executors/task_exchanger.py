@@ -108,8 +108,6 @@ class TaskExchanger(Executor):
                 self.system_panic(f"component of {self.pipe_id} must be Pipe but got {type(self.pipe)}", fl_ctx)
                 return
             self.pipe.open(self.pipe_channel_name)
-            if isinstance(self.pipe, CellPipe):
-                self.pipe.pass_through_on_send = True
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)

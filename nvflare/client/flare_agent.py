@@ -233,6 +233,42 @@ class FlareAgent:
             self.logger.error(f"failed to extract DXO from shareable object: {ex}")
             raise ex
 
+    def _resolve_incoming_lazy_refs(self, shareable: Shareable) -> Shareable:
+        """Resolve any LazyDownloadRef placeholders in the incoming task shareable.
+
+        When CJ's cell has decode_pass_through=True, the task shareable forwarded
+        to this subprocess may still contain LazyDownloadRef placeholders (e.g. if
+        the CJ→subprocess pipe serialised them without triggering a download).
+        A FOBS round-trip with PASS_THROUGH=False resolves them so user code
+        receives real tensors.
+
+        No-op when the pipe has no cell (FilePipe) or no LazyDownloadRef exists.
+        """
+        from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+        cell = getattr(self.pipe, "cell", None) if self.pipe else None
+        if not cell:
+            return shareable
+
+        def _has_lazy(obj):
+            if isinstance(obj, LazyDownloadRef):
+                return True
+            if isinstance(obj, dict):
+                return any(_has_lazy(v) for v in obj.values())
+            if isinstance(obj, (list, tuple)):
+                return any(_has_lazy(v) for v in obj)
+            return False
+
+        if not _has_lazy(shareable):
+            return shareable
+
+        import nvflare.fuel.utils.fobs as fobs
+
+        self.logger.info("Resolving incoming LazyDownloadRef placeholders from CJ")
+        encoded = fobs.dumps(shareable)
+        decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+        return fobs.loads(encoded, fobs_ctx=decode_ctx)
+
     def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
         """Get a task from FLARE. This is a blocking call.
 
@@ -275,6 +311,7 @@ class FlareAgent:
                     raise RuntimeError("bad request data")
 
                 shareable = req.data
+                shareable = self._resolve_incoming_lazy_refs(shareable)
                 task_data = self.shareable_to_task_data(shareable)
                 task_id = shareable.get_header(FLContextKey.TASK_ID)
                 task_name = shareable.get_header(FLContextKey.TASK_NAME)
