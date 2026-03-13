@@ -52,12 +52,14 @@ Tests verify:
 import threading
 from unittest.mock import MagicMock, patch
 
-from nvflare.fuel.f3.cellnet.cell import Adapter
+from nvflare.fuel.f3.cellnet.cell import Adapter, Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.message import Message as F3Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Topic
+from nvflare.fuel.utils.waiter_utils import WaiterRC
 
 # ---------------------------------------------------------------------------
 # Helpers for Adapter tests
@@ -499,3 +501,118 @@ class TestPassThroughDirectionContract:
             "ViaDownloaderDecomposer.process_datum() then stores _LazyBatchInfo;\n"
             "recompose() returns LazyDownloadRef that CJ forwards to the server."
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for Cell._send_one_request() PASS_THROUGH on the REPLY decode path
+# (FedAvg GET_TASK response and any other request/reply exchange)
+# ---------------------------------------------------------------------------
+
+
+def _make_cell_stub(captured_ctx: dict, decode_pass_through: bool = False):
+    """Minimal stub for Cell._send_one_request() — only the attributes that
+    method touches are initialised; everything else stays as MagicMock."""
+    cell = MagicMock(spec=Cell)
+    cell.requests_dict = {}
+    cell.decode_pass_through = decode_pass_through
+    cell.logger = MagicMock()
+    cell._future_wait.return_value = True  # both sending-complete and receiving-complete
+    cell._get_result.return_value = MagicMock()
+
+    def _get_fobs_context(props=None):
+        ctx = {}
+        if props:
+            ctx.update(props)
+        captured_ctx.update(ctx)
+        return ctx
+
+    cell.get_fobs_context.side_effect = _get_fobs_context
+    return cell
+
+
+def _run_send_one_request(cell_stub, reply_headers: dict):
+    """Drive Cell._send_one_request() with a fake reply carrying reply_headers.
+
+    Patches SimpleWaiter so we can inject reply_headers into the receiving
+    future without wiring up real threading primitives, and patches
+    conditional_wait to skip the real event wait.
+    """
+    r_future = MagicMock()
+    r_future.headers = reply_headers
+    r_future.result.return_value = b""
+
+    mock_waiter = MagicMock()
+    mock_waiter.receiving_future = r_future
+
+    request = F3Message(headers={}, payload=b"")
+
+    with (
+        patch("nvflare.fuel.f3.cellnet.cell.SimpleWaiter", return_value=mock_waiter),
+        patch("nvflare.fuel.f3.cellnet.cell.conditional_wait", return_value=WaiterRC.IS_SET),
+        patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
+    ):
+        Cell._send_one_request(cell_stub, "ch", "target", "topic", request, timeout=5.0)
+
+
+class TestSendOneRequestPassThrough:
+    """Cell._send_one_request() must inject the correct PASS_THROUGH value into
+    the fobs_ctx passed to decode_payload() when decoding the reply.
+
+    This path covers the FedAvg GET_TASK reply (and any other send_request
+    exchange) — distinct from Adapter.call() which handles incoming REQUESTs.
+    """
+
+    def test_cell_flag_true_no_header_gives_pass_through_true(self):
+        """decode_pass_through=True + no reply header → PASS_THROUGH=True in fobs_ctx.
+
+        This is the FedAvg forward path: CJ (ext-process) sends GET_TASK,
+        server replies without stamping PASS_THROUGH.  CJ's decode_pass_through=True
+        activates PASS_THROUGH so tensors arrive as LazyDownloadRef(server)
+        rather than being downloaded inline.
+        """
+        captured = {}
+        cell = _make_cell_stub(captured, decode_pass_through=True)
+
+        _run_send_one_request(cell, reply_headers={})
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True, (
+            "decode_pass_through=True + no reply header must give PASS_THROUGH=True "
+            "so CJ creates LazyDownloadRef from the server reply."
+        )
+
+    def test_cell_flag_false_no_header_gives_pass_through_false(self):
+        """decode_pass_through=False + no reply header → PASS_THROUGH=False in fobs_ctx.
+
+        Default cell (in-process executor, subprocess): tensors are downloaded
+        immediately at this hop, not deferred as LazyDownloadRef.
+        """
+        captured = {}
+        cell = _make_cell_stub(captured, decode_pass_through=False)
+
+        _run_send_one_request(cell, reply_headers={})
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is False, (
+            "decode_pass_through=False + no reply header must give PASS_THROUGH=False."
+        )
+
+    def test_reply_header_true_with_cell_flag_false_gives_pass_through_true(self):
+        """Reply carries PASS_THROUGH=True header + cell flag False → PASS_THROUGH=True.
+
+        The per-message header alone is sufficient to activate PASS_THROUGH;
+        the cell flag is not required.
+        """
+        captured = {}
+        cell = _make_cell_stub(captured, decode_pass_through=False)
+
+        _run_send_one_request(cell, reply_headers={MessageHeaderKey.PASS_THROUGH: True})
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True
+
+    def test_reply_header_false_with_cell_flag_false_gives_pass_through_false(self):
+        """Explicit PASS_THROUGH=False in reply header + cell flag False → PASS_THROUGH=False."""
+        captured = {}
+        cell = _make_cell_stub(captured, decode_pass_through=False)
+
+        _run_send_one_request(cell, reply_headers={MessageHeaderKey.PASS_THROUGH: False})
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is False

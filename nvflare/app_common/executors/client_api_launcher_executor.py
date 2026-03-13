@@ -167,9 +167,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         if isinstance(self.pipe, _CellPipe):
             engine = fl_ctx.get_engine()
             get_cell_fn = getattr(engine, "get_cell", None)
-            if get_cell_fn:
+            if not get_cell_fn:
+                self.log_warning(
+                    fl_ctx,
+                    "engine.get_cell() is not available — receiver-side PASS_THROUGH "
+                    "cannot be enabled. Tensors will be fully materialised inside the CJ "
+                    "instead of being downloaded directly by the subprocess.",
+                )
+            else:
                 cell = get_cell_fn()
-                if cell is not None:
+                if cell is None:
+                    self.log_warning(
+                        fl_ctx,
+                        "engine.get_cell() returned None — receiver-side PASS_THROUGH "
+                        "cannot be enabled. Tensors will be fully materialised inside the CJ "
+                        "instead of being downloaded directly by the subprocess.",
+                    )
+                else:
                     cell.decode_pass_through = True
                     self.log_info(fl_ctx, "Receiver-side PASS_THROUGH enabled on CJ cell (forward path)")
 
