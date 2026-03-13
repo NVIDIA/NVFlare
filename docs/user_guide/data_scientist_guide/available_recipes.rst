@@ -682,6 +682,8 @@ Recipes for edge device federated learning.
 EdgeFedBuffRecipe
 -----------------
 
+Federated buffered aggregation for generic edge devices.
+
 .. code-block:: python
 
     from nvflare.edge.tools.edge_fed_buff_recipe import (
@@ -697,6 +699,43 @@ EdgeFedBuffRecipe
         device_manager_config=DeviceManagerConfig(device_selection_size=100),
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )
+
+**Examples:**
+
+- `examples/advanced/edge/jobs <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge/jobs>`_
+
+ETFedBuffRecipe
+---------------
+
+Federated buffered aggregation for `ExecuTorch <https://pytorch.org/executorch>`_-based edge devices.
+Extends ``EdgeFedBuffRecipe`` with a ``DeviceModel`` wrapper that handles ExecuTorch model export.
+Requires the ``executorch`` package.
+
+.. code-block:: python
+
+    from nvflare.edge.tools.et_fed_buff_recipe import ETFedBuffRecipe
+    from nvflare.edge.tools.edge_fed_buff_recipe import (
+        ModelManagerConfig,
+        DeviceManagerConfig,
+    )
+    from nvflare.edge.models.model import DeviceModel
+
+    recipe = ETFedBuffRecipe(
+        job_name="et-fedavg",
+        device_model=DeviceModel(MyModel()),
+        input_shape=(1, 3, 224, 224),
+        output_shape=(1, 10),
+        model_manager_config=ModelManagerConfig(max_num_active_model_versions=3, max_model_version=20),
+        device_manager_config=DeviceManagerConfig(device_selection_size=100),
+        initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
+        device_wait_timeout=300.0,  # Recommended when device_reuse=False with a finite device pool
+    )
+
+.. note::
+   ``device_wait_timeout`` sets how long (seconds) the job waits for sufficient devices
+   to join before stopping. When ``device_reuse=False`` with a finite device pool, set an
+   explicit timeout (e.g. ``300.0``) to avoid the job hanging indefinitely once the pool
+   is exhausted. Defaults to ``None`` (wait indefinitely).
 
 **Examples:**
 
