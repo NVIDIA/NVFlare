@@ -92,7 +92,6 @@ def _make_controller():
     ctl.memory_gc_rounds = 1
     ctl.cuda_empty_cache = False
     ctl._aggr_round_count = 0
-    ctl.forward_pass_through = False
     # component stubs
     ctl.shareable_generator = MagicMock()
     ctl.aggregator = MagicMock()
@@ -375,12 +374,10 @@ class TestDefensiveGuardInEndGather(unittest.TestCase):
         return ctl
 
     def test_defensive_guard_fires_system_panic_on_lazy_refs(self):
-        """YT1 fix: if LazyDownloadRefs survive into _end_gather(), call system_panic
+        """If LazyDownloadRefs survive into _end_gather(), call system_panic
         and return early.  Reaching this point is a code bug — _resolve_lazy_refs()
-        was not called on the local-aggregation path where it should have been.
-        The guard only runs when forward_pass_through=True."""
+        was not called on the local-aggregation path where it should have been."""
         ctl = self._build_end_gather_ctl()
-        ctl.forward_pass_through = True
 
         lazy_aggr = _make_shareable_with_lazy_refs()
 

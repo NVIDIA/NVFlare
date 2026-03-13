@@ -48,6 +48,7 @@ class _FakeCoreCell:
 class _FakeCell:
     def __init__(self, initial_ctx=None):
         self.core_cell = _FakeCoreCell(initial_ctx)
+        self.decode_pass_through_channels: set = set()
 
 
 class _FakeEngine:
