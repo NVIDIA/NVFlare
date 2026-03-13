@@ -326,13 +326,18 @@ class PipeHandler(object):
         try:
             self._try_read()
         except Exception as e:
-            self.logger.error(f"read error: {secure_format_exception(e)}")
-            self._add_message(self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}"))
+            if not self.asked_to_stop:
+                self.logger.error(f"read error: {secure_format_exception(e)}")
+                self._add_message(
+                    self._make_event_message(Topic.PEER_GONE, f"read error: {secure_format_exception(e)}")
+                )
 
     def _try_read(self):
         self._last_heartbeat_received_time = time.time()
         while not self.asked_to_stop:
             time.sleep(self.read_interval)
+            if self.asked_to_stop:
+                break
             if self._pause:
                 continue
 
