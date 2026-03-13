@@ -25,7 +25,6 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
@@ -137,9 +136,7 @@ class TestDoLearnTaskGlobalModel(unittest.TestCase):
         )
         fl_ctx = MagicMock()
 
-        task_data_for_model = (
-            ctl._resolve_lazy_refs(task_data, fl_ctx) if ctl._has_lazy_refs(task_data) else task_data
-        )
+        task_data_for_model = ctl._resolve_lazy_refs(task_data, fl_ctx) if ctl._has_lazy_refs(task_data) else task_data
         ctl.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         return resolve_calls, model_inputs[0] if model_inputs else None

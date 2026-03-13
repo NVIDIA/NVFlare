@@ -24,7 +24,6 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_non_negative_int,

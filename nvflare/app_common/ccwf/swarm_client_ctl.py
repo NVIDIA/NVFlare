@@ -824,7 +824,9 @@ class SwarmClientController(ClientSideController):
         # real tensors — required by the WEIGHT_DIFF branch of _end_gather().
         # task_data itself keeps its refs intact for execute_learn_task() below so
         # the subprocess can download directly from the source DownloadService.
-        task_data_for_model = self._resolve_lazy_refs(task_data, fl_ctx) if self._has_lazy_refs(task_data) else task_data
+        task_data_for_model = (
+            self._resolve_lazy_refs(task_data, fl_ctx) if self._has_lazy_refs(task_data) else task_data
+        )
         global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         self.log_debug(fl_ctx, f"current global model: {global_weights}")
