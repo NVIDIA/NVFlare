@@ -13,33 +13,40 @@
 # limitations under the License.
 
 """
-Unit tests for the per-message PASS_THROUGH mechanism (Fix 14).
+Unit tests for the PASS_THROUGH mechanism (Design 1: receiver-side opt-in).
 
-The PASS_THROUGH flag is carried as a cell-message header rather than being
-set globally on the engine cell.  Only the subprocess-side CellPipe has
-pass_through_on_send=True (set in ExProcessClientAPI.init()) — this stamps
-the header on result messages so CJ decodes them as LazyDownloadRef and
-forwards the original datum to the server for direct download (reverse path).
+PASS_THROUGH activates LazyDownloadRef decode so tensors are not downloaded at
+an intermediate hop.  It can be triggered by two independent sources:
 
-CJ's own pipe must NOT stamp PASS_THROUGH on outgoing task messages.
-Stamping it on the forward path (CJ → subprocess) would cause the subprocess
-to receive LazyDownloadRef objects instead of real tensors, crashing user
-code (e.g. torch.as_tensor(LazyDownloadRef)).
+  1. Per-message header: MessageHeaderKey.PASS_THROUGH stamped by the sender
+     (e.g. subprocess-side CellPipe with pass_through_on_send=True stamps this
+     on result messages so CJ decodes them as LazyDownloadRef for the reverse
+     path: subprocess → CJ → server direct download).
 
-Swarm P2P aggregation messages arrive on the same cell without the header
-and are decoded normally (no LazyDownloadRef, no crash).
+  2. Per-cell receiver flag: cell.decode_pass_through = True set on CJ by
+     ClientAPILauncherExecutor.initialize().  When set, ALL incoming messages
+     on that cell are decoded with PASS_THROUGH=True regardless of the sender
+     header, enabling the forward path (server/aggregator → CJ → subprocess
+     direct download) without the server needing to stamp anything.
+
+Either source activates PASS_THROUGH; both can coexist.  For cells where
+decode_pass_through=False (the default — in-process executors, subprocess),
+only an explicit sender header triggers PASS_THROUGH.
 
 Tests verify:
 
-  Adapter.call() (cell.py):
+  Adapter.call() (cell.py) — cell.decode_pass_through=False (default):
   1. PASS_THROUGH=True in message header  → decode_ctx[PASS_THROUGH] = True
-  2. No PASS_THROUGH header (Swarm P2P)   → decode_ctx[PASS_THROUGH] = False
+  2. No PASS_THROUGH header               → decode_ctx[PASS_THROUGH] = False
   3. Explicit PASS_THROUGH=False header   → decode_ctx[PASS_THROUGH] = False
 
+  Adapter.call() — cell.decode_pass_through=True (ext-process CJ):
+  4. No header, decode_pass_through=True  → decode_ctx[PASS_THROUGH] = True
+
   CellPipe.send() (cell_pipe.py):
-  4. pass_through_on_send=True  → PASS_THROUGH header stamped on request
-  5. pass_through_on_send=False → PASS_THROUGH header NOT stamped
-  6. Heartbeat messages skip PASS_THROUGH even when pass_through_on_send=True
+  5. pass_through_on_send=True  → PASS_THROUGH header stamped on request
+  6. pass_through_on_send=False → PASS_THROUGH header NOT stamped
+  7. Heartbeat messages skip PASS_THROUGH even when pass_through_on_send=True
 """
 
 import threading
@@ -57,9 +64,14 @@ from nvflare.fuel.utils.pipe.pipe import Message, Topic
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_cell(captured_ctx: dict):
-    """Return a mock Cell whose get_fobs_context() captures the props it receives."""
+def _make_mock_cell(captured_ctx: dict, decode_pass_through: bool = False):
+    """Return a mock Cell whose get_fobs_context() captures the props it receives.
+
+    decode_pass_through mirrors Cell.decode_pass_through (default False).
+    Set to True to simulate an ext-process CJ cell (receiver-side opt-in).
+    """
     cell = MagicMock()
+    cell.decode_pass_through = decode_pass_through
 
     def _get_fobs_context(props=None):
         ctx = {}
@@ -81,9 +93,9 @@ def _make_future(headers: dict, payload=b""):
     return future
 
 
-def _make_adapter(captured_ctx: dict):
+def _make_adapter(captured_ctx: dict, decode_pass_through: bool = False):
     """Return an Adapter backed by a mock cell and a trivial callback."""
-    cell = _make_mock_cell(captured_ctx)
+    cell = _make_mock_cell(captured_ctx, decode_pass_through=decode_pass_through)
     cb = MagicMock(return_value=MagicMock())
     return Adapter(cb=cb, my_info=None, cell=cell)
 
@@ -107,8 +119,9 @@ def _headers_without_pass_through(stream_req_id=""):
 
 
 class TestAdapterPassThroughHeader:
-    """Adapter.call() must build a per-call decode_ctx based solely on the
-    MessageHeaderKey.PASS_THROUGH header of the incoming message."""
+    """Adapter.call() must build a per-call decode_ctx from both the
+    MessageHeaderKey.PASS_THROUGH header and cell.decode_pass_through flag.
+    Either source alone is sufficient to activate PASS_THROUGH=True."""
 
     def test_header_true_sets_pass_through_in_decode_ctx(self):
         """PASS_THROUGH=True in the message header → decode_ctx[PASS_THROUGH] = True."""
@@ -165,6 +178,31 @@ class TestAdapterPassThroughHeader:
             adapter.call(future)
 
         assert captured.get(FOBSContextKey.PASS_THROUGH) is False
+
+    def test_cell_decode_pass_through_true_overrides_absent_header(self):
+        """cell.decode_pass_through=True → PASS_THROUGH=True even without a header.
+
+        This is the receiver-side opt-in for ext-process CJ cells (Design 1).
+        ClientAPILauncherExecutor.initialize() sets decode_pass_through=True so
+        incoming server/aggregator task messages are decoded with PASS_THROUGH=True
+        regardless of whether the sender stamped the header.
+        """
+        captured = {}
+        adapter = _make_adapter(captured, decode_pass_through=True)
+
+        # No PASS_THROUGH header — simulates server sending task without any stamp
+        headers = _headers_without_pass_through()
+        assert MessageHeaderKey.PASS_THROUGH not in headers  # guard
+
+        future = _make_future(headers)
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
+            adapter.call(future)
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True, (
+            "cell.decode_pass_through=True must activate PASS_THROUGH=True in the "
+            "decode context even when the sender did not stamp the header."
+        )
 
     def test_decode_payload_receives_the_per_call_decode_ctx(self):
         """decode_payload must be called with the per-call decode_ctx, not None."""
@@ -359,27 +397,26 @@ class TestCellPipePassThroughHeader:
 
 
 class TestPassThroughDirectionContract:
-    """Documents the two-direction PASS_THROUGH contract.
+    """Documents the two-direction PASS_THROUGH contract (Design 1).
 
-    Forward path (CJ → subprocess):
-      CJ's pipe has pass_through_on_send=False (the default after Fix 14).
-      No PASS_THROUGH header is stamped on task messages.
-      Subprocess Adapter.call() builds PASS_THROUGH=False in the decode context.
-      ViaDownloaderDecomposer.process_datum() downloads tensors normally →
-      subprocess receives real tensor values → torch.as_tensor() succeeds.
+    Forward path (server/aggregator → CJ → subprocess):
+      CJ cell has decode_pass_through=True (set by ClientAPILauncherExecutor).
+      CJ Adapter.call() builds PASS_THROUGH=True regardless of sender header.
+      ViaDownloaderDecomposer creates LazyDownloadRef(fqcn=server) at CJ.
+      CJ re-encodes via LazyDownloadRefDecomposer (re-emits original datum).
+      Subprocess Adapter.call() (decode_pass_through=False) downloads tensors
+      directly from the server's DownloadService → real tensors at subprocess.
+
+      Subprocess cell has decode_pass_through=False (never set by user code).
+      CJ pipe has pass_through_on_send=False → no PASS_THROUGH header on task msgs.
+      Subprocess Adapter.call() builds PASS_THROUGH=False → downloads normally.
 
     Reverse path (subprocess → CJ → server):
-      Subprocess-side CellPipe has pass_through_on_send=True (set in
-      ExProcessClientAPI.init()).  PASS_THROUGH header is stamped on result msgs.
-      CJ Adapter.call() builds PASS_THROUGH=True in the decode context.
-      ViaDownloaderDecomposer.process_datum() stores _LazyBatchInfo (no download) →
-      recompose() returns LazyDownloadRef → CJ forwards reference to server.
-
-    The bug (Fix 14 regression):
-      If CJ's pipe had pass_through_on_send=True, step 1 of the forward path
-      would stamp the header.  Subprocess would decode with PASS_THROUGH=True,
-      receive LazyDownloadRef, and torch.as_tensor() would raise
-      "RuntimeError: Could not infer dtype of LazyDownloadRef".
+      Subprocess-side CellPipe has pass_through_on_send=True (ExProcessClientAPI).
+      PASS_THROUGH header is stamped on result messages.
+      CJ Adapter.call() builds PASS_THROUGH=True (from header OR cell flag).
+      ViaDownloaderDecomposer stores _LazyBatchInfo → recompose() returns
+      LazyDownloadRef → CJ forwards the reference to the server for direct download.
     """
 
     def test_forward_path_cj_pipe_sends_task_without_pass_through_header(self):
@@ -401,16 +438,16 @@ class TestPassThroughDirectionContract:
         )
 
     def test_forward_path_no_header_gives_subprocess_pass_through_false_decode_ctx(self):
-        """Forward path step 2: no header → subprocess Adapter builds PASS_THROUGH=False.
+        """Forward path: subprocess (decode_pass_through=False) + no header → PASS_THROUGH=False.
 
-        Confirms that when CJ's pipe does NOT stamp the header (correct behaviour
-        after Fix 14), the subprocess FOBS decode context has PASS_THROUGH=False,
-        so ViaDownloaderDecomposer downloads tensors normally instead of returning
-        LazyDownloadRef objects.
+        The subprocess cell never has decode_pass_through=True set on it.
+        CJ's pipe has pass_through_on_send=False → no PASS_THROUGH header on task msgs.
+        Result: subprocess Adapter.call() builds PASS_THROUGH=False, so
+        ViaDownloaderDecomposer downloads tensors normally and torch.as_tensor() succeeds.
         """
         captured = {}
-        adapter = _make_adapter(captured)
-        # Subprocess receives the message CJ's pipe sent — no PASS_THROUGH header
+        # Subprocess cell: decode_pass_through=False (the default, never changed)
+        adapter = _make_adapter(captured, decode_pass_through=False)
         headers = _headers_without_pass_through()
         future = _make_future(headers)
 
@@ -418,7 +455,8 @@ class TestPassThroughDirectionContract:
             adapter.call(future)
 
         assert captured.get(FOBSContextKey.PASS_THROUGH) is False, (
-            "No PASS_THROUGH header → subprocess decode ctx must have PASS_THROUGH=False.\n"
+            "No PASS_THROUGH header + decode_pass_through=False → "
+            "subprocess decode ctx must have PASS_THROUGH=False.\n"
             "ViaDownloaderDecomposer.process_datum() then downloads tensors normally;\n"
             "torch.as_tensor() on the result works without error."
         )
