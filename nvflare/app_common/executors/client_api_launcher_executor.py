@@ -143,6 +143,19 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # kills the subprocess immediately, tearing down its cell connection before the
         # server can download tensors from it ("no path" / deadlock).
         self._stop_task_wait_timeout = download_complete_timeout
+        self._cell_with_pass_through = None  # track cell so finalize() can clean up
+        self._pass_through_channel = None  # channel name registered in decode_pass_through_channels
+
+    def finalize(self, fl_ctx: FLContext) -> None:
+        if self._cell_with_pass_through is not None and self._pass_through_channel is not None:
+            self._cell_with_pass_through.decode_pass_through_channels.discard(self._pass_through_channel)
+            self.log_info(
+                fl_ctx,
+                f"Receiver-side PASS_THROUGH disabled on CJ cell for channel '{self._pass_through_channel}'",
+            )
+            self._cell_with_pass_through = None
+            self._pass_through_channel = None
+        super().finalize(fl_ctx)
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
@@ -153,13 +166,14 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # the original subprocess datum to the server for direct download.
         #
         # PASS_THROUGH (forward path — server/aggregator → CJ):
-        # Receiver-side opt-in: set cell.decode_pass_through = True so that
-        # incoming task messages are decoded with PASS_THROUGH regardless of
-        # whether the sender stamped the header.  This lets the subprocess
-        # download tensors directly from the source (server or aggregator)
-        # via DownloadService, skipping materialisation inside the CJ.
-        # Safe because this executor IS an ext-process launcher — it never
-        # consumes the tensors itself; it just forwards them to the subprocess.
+        # Receiver-side opt-in: register this job's pipe channel in
+        # cell.decode_pass_through_channels so that incoming task messages on
+        # this channel are decoded with PASS_THROUGH regardless of whether the
+        # sender stamped the header.  This lets the subprocess download tensors
+        # directly from the source (server or aggregator) via DownloadService,
+        # skipping materialisation inside the CJ.  Per-channel registration is
+        # safe for concurrent jobs: each job opts in only for its own channel,
+        # so a concurrent in-process job on a different channel is unaffected.
         super().initialize(fl_ctx)
 
         from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
@@ -184,8 +198,14 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                         "instead of being downloaded directly by the subprocess.",
                     )
                 else:
-                    cell.decode_pass_through = True
-                    self.log_info(fl_ctx, "Receiver-side PASS_THROUGH enabled on CJ cell (forward path)")
+                    channel_name = self.get_pipe_channel_name()
+                    cell.decode_pass_through_channels.add(channel_name)
+                    self._cell_with_pass_through = cell
+                    self._pass_through_channel = channel_name
+                    self.log_info(
+                        fl_ctx,
+                        f"Receiver-side PASS_THROUGH enabled on CJ cell for channel '{channel_name}'",
+                    )
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()

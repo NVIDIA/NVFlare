@@ -757,9 +757,9 @@ class SwarmClientController(ClientSideController):
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
-            # When the aggregator CJ has decode_pass_through=True (set by
-            # ClientAPILauncherExecutor), Adapter.call() decodes incoming trainer
-            # results with PASS_THROUGH=True → LazyDownloadRef(trainer_subprocess).
+            # When the aggregator CJ has its pipe channel in decode_pass_through_channels
+            # (registered by ClientAPILauncherExecutor), Adapter.call() decodes incoming
+            # trainer results with PASS_THROUGH=True → LazyDownloadRef(trainer_subprocess).
             # The local-path caller already resolves before reaching here, so
             # _has_lazy_refs() returns False for that path (no-op double-check).
             # For the remote path the result arrives directly via Adapter.call()
@@ -960,8 +960,9 @@ class SwarmClientController(ClientSideController):
                 # CellPipe, so the subprocess result always arrives at CJ as LazyDownloadRef.
                 # Resolve here before local aggregation (no FOBS round-trip on this path).
                 # For the remote path, _process_learn_result() also calls _resolve_lazy_refs
-                # because the aggregator CJ may have decode_pass_through=True and would
-                # otherwise decode the incoming result as LazyDownloadRef too.
+                # because the aggregator CJ may have its pipe channel in
+                # decode_pass_through_channels and would otherwise decode the incoming
+                # result as LazyDownloadRef too.
                 result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
