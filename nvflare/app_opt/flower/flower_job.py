@@ -19,6 +19,7 @@ from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
@@ -42,6 +43,7 @@ class FlowerJob(FedJob):
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
+        run_config: Optional[dict] = None,
     ):
         """
         Flower Job.
@@ -61,9 +63,12 @@ class FlowerJob(FedJob):
             tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
+            run_config (dict, optional): optional dict for flwr run --run-config arguments
         """
         if not os.path.isdir(flower_content):
             raise ValueError(f"{flower_content} is not a valid directory")
+        if run_config is not None:
+            check_object_type("run_config", run_config, dict)
 
         super().__init__(name=name, min_clients=min_clients, mandatory_clients=mandatory_clients)
 
@@ -74,6 +79,7 @@ class FlowerJob(FedJob):
             start_task_timeout=start_task_timeout,
             max_client_op_interval=max_client_op_interval,
             progress_timeout=progress_timeout,
+            run_config=run_config,
         )
         self.to_server(controller)
         self.to_server(obj=flower_content)

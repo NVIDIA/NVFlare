@@ -31,10 +31,12 @@ from nvflare.client.tracking import SummaryWriter
 
 # Define FlowerClient and client_fn
 class FlowerClient(NumPyClient):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, learning_rate: float, momentum: float):
         super().__init__()
         self.writer = SummaryWriter()
         self.flwr_context = context
+        self.learning_rate = learning_rate
+        self.momentum = momentum
 
         if "step" not in context.state.metric_records:
             self.set_step(0)
@@ -50,7 +52,15 @@ class FlowerClient(NumPyClient):
     def fit(self, parameters, config):
         step = self.get_step()
         set_weights(net, parameters)
-        results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
+        results = train(
+            net,
+            trainloader,
+            testloader,
+            epochs=1,
+            device=DEVICE,
+            learning_rate=self.learning_rate,
+            momentum=self.momentum,
+        )
 
         self.writer.add_scalar("train_loss", results["train_loss"], step)
         self.writer.add_scalar("train_accuracy", results["train_accuracy"], step)
@@ -72,9 +82,22 @@ class FlowerClient(NumPyClient):
         return loss, len(testloader.dataset), {"accuracy": accuracy}
 
 
+def _get_required_hyperparameters(context: Context):
+    missing = [key for key in ("learning-rate", "momentum") if key not in context.run_config]
+    if missing:
+        missing_args = ", ".join(missing)
+        raise ValueError(
+            f"missing required run_config value(s): {missing_args}. "
+            "Define them in [tool.flwr.app.config] in pyproject.toml or pass them via run_config."
+        )
+
+    return context.run_config["learning-rate"], context.run_config["momentum"]
+
+
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    return FlowerClient(context).to_client()
+    learning_rate, momentum = _get_required_hyperparameters(context)
+    return FlowerClient(context, learning_rate, momentum).to_client()
 
 
 # Flower ClientApp
