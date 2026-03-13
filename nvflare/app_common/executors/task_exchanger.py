@@ -117,7 +117,7 @@ class TaskExchanger(Executor):
                 else:
                     skip = False
             if skip:
-                self.log_info(fl_ctx, "skipping pipe handler reset: execute() is in progress")
+                self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
                 return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
