@@ -18,6 +18,9 @@ import time as _real_time
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.shareable import make_reply
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
@@ -1181,3 +1184,287 @@ def test_swarm_initialize_never_blocks_on_event(monkeypatch):
         assert (
             executor._deferred_stop_event.is_set()
         ), f"Swarm: event must remain set before/after initialize for task '{task_name}'"
+
+
+# ---------------------------------------------------------------------------
+# _executing guard: prevents BEFORE_TASK_EXECUTION from replacing
+# the pipe handler mid-transaction (Swarm deadlock fix)
+# ---------------------------------------------------------------------------
+
+
+class _FakePipeHandler:
+    """Minimal PipeHandler stub that records stop() calls and provides get_next()."""
+
+    def __init__(self, identity="default"):
+        self.identity = identity
+        self.stopped = False
+        self.asked_to_stop = False
+        self._replies = []
+
+    def stop(self, close_pipe=True):
+        self.stopped = True
+
+    def start(self):
+        pass
+
+    def send_to_peer(self, msg, timeout=None, abort_signal=None):
+        return True
+
+    def get_next(self):
+        if self._replies:
+            return self._replies.pop(0)
+        return None
+
+    def notify_abort(self, task_id):
+        pass
+
+    def set_status_cb(self, cb):
+        pass
+
+
+def test_executing_flag_starts_unset():
+    """_executing must start as an unset threading.Event."""
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = TaskExchanger(pipe_id="test_pipe")
+    assert not executor._executing.is_set()
+
+
+def test_handle_event_skips_reset_when_executing(monkeypatch):
+    """BEFORE_TASK_EXECUTION must not replace the pipe handler when _executing is set."""
+    from unittest.mock import MagicMock
+
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = TaskExchanger(pipe_id="test_pipe")
+    monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+
+    original_handler = _FakePipeHandler(identity="original")
+    executor.pipe_handler = original_handler
+
+    executor._executing.set()
+    executor.handle_event(EventType.BEFORE_TASK_EXECUTION, MagicMock())
+
+    assert executor.pipe_handler is original_handler, "Handler must not be replaced while _executing is set"
+    assert not original_handler.stopped, "Original handler must not be stopped while _executing is set"
+
+
+def test_handle_event_resets_handler_when_not_executing(monkeypatch):
+    """BEFORE_TASK_EXECUTION must replace the pipe handler when _executing is not set."""
+    from unittest.mock import MagicMock
+
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+    from nvflare.fuel.utils.pipe.pipe import Pipe
+
+    executor = TaskExchanger(pipe_id="test_pipe")
+    monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+
+    old_handler = _FakePipeHandler(identity="old")
+    executor.pipe_handler = old_handler
+    executor.pipe = MagicMock(spec=Pipe)
+
+    assert not executor._executing.is_set()
+    executor.handle_event(EventType.BEFORE_TASK_EXECUTION, MagicMock())
+
+    assert old_handler.stopped, "Old handler must be stopped"
+    assert executor.pipe_handler is not old_handler, "Handler must be replaced when _executing is not set"
+
+
+def test_task_exchanger_execute_acquires_and_releases_flag(monkeypatch):
+    """TaskExchanger.execute() must set _executing during execution and clear it after."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = TaskExchanger(pipe_id="test_pipe")
+    monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_debug", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_error", lambda self, fl_ctx, msg: None)
+
+    observed_during = []
+
+    original_do_execute = TaskExchanger._do_execute
+
+    def _spy_do_execute(self, task_name, shareable, fl_ctx, abort_signal):
+        observed_during.append(self._executing.is_set())
+        return make_reply(ReturnCode.BAD_TASK_DATA)
+
+    monkeypatch.setattr(TaskExchanger, "_do_execute", _spy_do_execute)
+
+    shareable = Shareable()
+    fl_ctx = MagicMock()
+    fl_ctx.get_job_id.return_value = "j1"
+    fl_ctx.get_identity_name.return_value = "site1"
+    abort_signal = _FakeAbortSignal()
+
+    assert not executor._executing.is_set()
+    executor.execute("train", shareable, fl_ctx, abort_signal)
+    assert not executor._executing.is_set(), "_executing must be cleared after execute() returns"
+    assert observed_during == [True], "_executing must be set during _do_execute"
+
+
+def test_task_exchanger_execute_clears_flag_on_exception(monkeypatch):
+    """_executing must be cleared even if _do_execute raises an exception."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = TaskExchanger(pipe_id="test_pipe")
+    monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_debug", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_error", lambda self, fl_ctx, msg: None)
+
+    def _exploding_execute(self, task_name, shareable, fl_ctx, abort_signal):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(TaskExchanger, "_do_execute", _exploding_execute)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
+
+    assert not executor._executing.is_set(), "_executing must be cleared even after exception"
+
+
+def test_launcher_executor_sets_flag_before_initialize(monkeypatch):
+    """LauncherExecutor.execute() must set _executing before _initialize_external_execution."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+
+    observed_in_init = []
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    original_init = LauncherExecutor._initialize_external_execution
+
+    def _spy_init(self, task_name, shareable, fl_ctx, abort_signal):
+        observed_in_init.append(self._executing.is_set())
+        return False
+
+    monkeypatch.setattr(LauncherExecutor, "_initialize_external_execution", _spy_init)
+
+    executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
+
+    assert observed_in_init == [True], "_executing must be set before _initialize_external_execution runs"
+    assert not executor._executing.is_set(), "_executing must be cleared after execute() returns"
+
+
+def test_launcher_executor_clears_flag_after_full_lifecycle(monkeypatch):
+    """_executing must be cleared after the full LauncherExecutor.execute() lifecycle
+    (init + super().execute() + finalize)."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    result_shareable = Shareable()
+    result_shareable.set_return_code(ReturnCode.OK)
+
+    def _fake_do_execute(self, task_name, shareable, fl_ctx, abort_signal):
+        return result_shareable
+
+    monkeypatch.setattr(TaskExchanger, "_do_execute", _fake_do_execute)
+    monkeypatch.setattr(
+        LauncherExecutor, "_finalize_external_execution", lambda self, tn, sh, fl, ab: True
+    )
+
+    executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
+
+    assert not executor._executing.is_set(), "_executing must be cleared after full lifecycle"
+
+
+def test_ownership_super_execute_does_not_clear_flag(monkeypatch):
+    """When LauncherExecutor sets _executing, super().execute()'s finally block must NOT
+    clear it (acquired=False). The flag must remain set until LauncherExecutor's finally."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    flag_after_super = []
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    result_shareable = Shareable()
+    result_shareable.set_return_code(ReturnCode.OK)
+
+    def _fake_do_execute(self, task_name, shareable, fl_ctx, abort_signal):
+        return result_shareable
+
+    monkeypatch.setattr(TaskExchanger, "_do_execute", _fake_do_execute)
+
+    original_finalize = LauncherExecutor._finalize_external_execution
+
+    def _spy_finalize(self, task_name, shareable, fl_ctx, abort_signal):
+        flag_after_super.append(self._executing.is_set())
+        return True
+
+    monkeypatch.setattr(LauncherExecutor, "_finalize_external_execution", _spy_finalize)
+
+    executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
+
+    assert flag_after_super == [True], (
+        "_executing must still be set during _finalize_external_execution "
+        "(super().execute()'s finally must not clear it)"
+    )
+
+
+def test_concurrent_before_task_execution_blocked_during_initialize(monkeypatch):
+    """A BEFORE_TASK_EXECUTION event arriving on another thread during
+    _initialize_external_execution must be blocked by the _executing guard."""
+    from unittest.mock import MagicMock
+
+    from nvflare.apis.shareable import Shareable
+    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+    from nvflare.app_common.executors.task_exchanger import TaskExchanger
+
+    executor = _make_deferred_stop_executor(monkeypatch)
+    executor.launcher = _FakeLauncher(needs_deferred=False)
+
+    original_handler = _FakePipeHandler(identity="original")
+    executor.pipe_handler = original_handler
+    executor.pipe = MagicMock()
+
+    init_entered = threading.Event()
+    init_gate = threading.Event()
+    handler_replaced = []
+
+    original_initialize = LauncherExecutor._initialize_external_execution
+
+    def _blocking_init(self, task_name, shareable, fl_ctx, abort_signal):
+        init_entered.set()
+        init_gate.wait(timeout=10.0)
+        return False
+
+    monkeypatch.setattr(LauncherExecutor, "_initialize_external_execution", _blocking_init)
+
+    def run_execute():
+        executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
+
+    t = threading.Thread(target=run_execute, daemon=True)
+    t.start()
+
+    assert init_entered.wait(timeout=5.0), "_initialize_external_execution did not start"
+
+    handler_before = executor.pipe_handler
+    executor.handle_event(EventType.BEFORE_TASK_EXECUTION, MagicMock())
+    handler_after = executor.pipe_handler
+
+    handler_replaced.append(handler_before is not handler_after)
+
+    init_gate.set()
+    t.join(timeout=5.0)
+
+    assert handler_replaced == [False], (
+        "BEFORE_TASK_EXECUTION must NOT replace the handler during _initialize_external_execution"
+    )

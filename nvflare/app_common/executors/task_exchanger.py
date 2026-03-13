@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
 from typing import Optional
 
@@ -98,6 +99,7 @@ class TaskExchanger(Executor):
         self.pipe_channel_name = pipe_channel_name
         self.pipe = None
         self.pipe_handler = None
+        self._executing = threading.Event()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -108,6 +110,9 @@ class TaskExchanger(Executor):
                 return
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            if self._executing.is_set():
+                self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
+                return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
             self._create_pipe_handler()
@@ -158,6 +163,16 @@ class TaskExchanger(Executor):
         TaskExchanger generic and can be reused for any applications (e.g. Shareable based, DXO based, or any custom
         data based).
         """
+        acquired = not self._executing.is_set()
+        if acquired:
+            self._executing.set()
+        try:
+            return self._do_execute(task_name, shareable, fl_ctx, abort_signal)
+        finally:
+            if acquired:
+                self._executing.clear()
+
+    def _do_execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not self.check_input_shareable(task_name, shareable, fl_ctx):
             self.log_error(fl_ctx, "bad input task shareable")
             return make_reply(ReturnCode.BAD_TASK_DATA)
