@@ -25,6 +25,7 @@ trainloader, testloader = load_data()
 # Define FlowerClient and client_fn
 class FlowerClient(NumPyClient):
     def __init__(self, learning_rate, momentum):
+        super().__init__()
         self.learning_rate = learning_rate
         self.momentum = momentum
 
