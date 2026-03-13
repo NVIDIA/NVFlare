@@ -1284,8 +1284,6 @@ def test_task_exchanger_execute_acquires_and_releases_flag(monkeypatch):
 
     observed_during = []
 
-    original_do_execute = TaskExchanger._do_execute
-
     def _spy_do_execute(self, task_name, shareable, fl_ctx, abort_signal):
         observed_during.append(self._executing.is_set())
         return make_reply(ReturnCode.BAD_TASK_DATA)
@@ -1338,8 +1336,6 @@ def test_launcher_executor_sets_flag_before_initialize(monkeypatch):
 
     executor = _make_deferred_stop_executor(monkeypatch)
     executor.launcher = _FakeLauncher(needs_deferred=False)
-
-    original_init = LauncherExecutor._initialize_external_execution
 
     def _spy_init(self, task_name, shareable, fl_ctx, abort_signal):
         observed_in_init.append(self._executing.is_set())
@@ -1403,8 +1399,6 @@ def test_ownership_super_execute_does_not_clear_flag(monkeypatch):
 
     monkeypatch.setattr(TaskExchanger, "_do_execute", _fake_do_execute)
 
-    original_finalize = LauncherExecutor._finalize_external_execution
-
     def _spy_finalize(self, task_name, shareable, fl_ctx, abort_signal):
         flag_after_super.append(self._executing.is_set())
         return True
@@ -1438,8 +1432,6 @@ def test_concurrent_before_task_execution_blocked_during_initialize(monkeypatch)
     init_entered = threading.Event()
     init_gate = threading.Event()
     handler_replaced = []
-
-    original_initialize = LauncherExecutor._initialize_external_execution
 
     def _blocking_init(self, task_name, shareable, fl_ctx, abort_signal):
         init_entered.set()
