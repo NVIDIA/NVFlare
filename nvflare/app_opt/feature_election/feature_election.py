@@ -286,8 +286,13 @@ class FeatureElection:
             if feature_names is None and isinstance(X, pd.DataFrame):
                 feature_names = X.columns.tolist()
 
+            # Split into train/val so tuning scores are not evaluated on training data
+            X_train_sim, X_val_sim, y_train_sim, y_val_sim = train_test_split(
+                X_np, y_np, test_size=0.2, random_state=42 + i
+            )
+
             executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric="f1")
-            executor.set_data(X_np, y_np, feature_names=feature_names)
+            executor.set_data(X_train_sim, y_train_sim, X_val=X_val_sim, y_val=y_val_sim, feature_names=feature_names)
             executors.append(executor)
 
             # Local Selection
@@ -297,11 +302,12 @@ class FeatureElection:
             except (TypeError, ValueError) as e:
                 raise RuntimeError(f"Feature selection returned unexpected format: {e}")
 
-            initial_score = executor.evaluate_model(X_np, y_np, X_np, y_np)
+            initial_score = executor.evaluate_model(X_train_sim, y_train_sim, X_val_sim, y_val_sim)
 
-            # Apply mask to evaluate
-            X_sel = X_np[:, selected_mask]
-            fs_score = executor.evaluate_model(X_sel, y_np, X_sel, y_np)
+            # Apply mask to evaluate on held-out val set
+            X_sel_tr = X_train_sim[:, selected_mask]
+            X_sel_val = X_val_sim[:, selected_mask]
+            fs_score = executor.evaluate_model(X_sel_tr, y_train_sim, X_sel_val, y_val_sim)
 
             client_selections[f"client_{i}"] = {
                 "selected_features": selected_mask,
