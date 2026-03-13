@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 
 
@@ -493,8 +494,6 @@ def test_check_output_shareable_returns_true_on_success(monkeypatch):
     """check_output_shareable must return True when the parent returns True."""
     from unittest.mock import MagicMock, patch
 
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 0
 
@@ -509,8 +508,6 @@ def test_check_output_shareable_returns_false_when_parent_fails(monkeypatch):
     """check_output_shareable must return False when the parent returns False
     without calling log_rss or cleanup."""
     from unittest.mock import MagicMock, patch
-
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 1
@@ -531,8 +528,6 @@ def test_cj_cleanup_not_called_when_gc_rounds_zero(monkeypatch):
     """_maybe_cleanup_cj_memory must not call cleanup_memory when memory_gc_rounds=0."""
     from unittest.mock import MagicMock, patch
 
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 0
 
@@ -549,8 +544,6 @@ def test_cj_cleanup_not_called_when_gc_rounds_zero(monkeypatch):
 def test_cj_cleanup_called_every_n_rounds(monkeypatch):
     """cleanup_memory must be called exactly once per memory_gc_rounds sends."""
     from unittest.mock import MagicMock, patch
-
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 3
@@ -572,8 +565,6 @@ def test_cj_cleanup_called_every_n_rounds(monkeypatch):
 def test_cj_cleanup_passes_cuda_empty_cache(monkeypatch):
     """cleanup_memory must be called with cuda_empty_cache=True when configured."""
     from unittest.mock import MagicMock, patch
-
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     executor = ClientAPILauncherExecutor(pipe_id="p")
     executor._memory_gc_rounds = 1
@@ -1224,8 +1215,6 @@ class _FakePipeHandler:
 
 def test_executing_flag_starts_unset():
     """_executing must start as an unset threading.Event."""
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
-
     executor = TaskExchanger(pipe_id="test_pipe")
     assert not executor._executing.is_set()
 
@@ -1234,10 +1223,9 @@ def test_handle_event_skips_reset_when_executing(monkeypatch):
     """BEFORE_TASK_EXECUTION must not replace the pipe handler when _executing is set."""
     from unittest.mock import MagicMock
 
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
-
     executor = TaskExchanger(pipe_id="test_pipe")
     monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_debug", lambda self, fl_ctx, msg: None)
 
     original_handler = _FakePipeHandler(identity="original")
     executor.pipe_handler = original_handler
@@ -1253,7 +1241,6 @@ def test_handle_event_resets_handler_when_not_executing(monkeypatch):
     """BEFORE_TASK_EXECUTION must replace the pipe handler when _executing is not set."""
     from unittest.mock import MagicMock
 
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
     from nvflare.fuel.utils.pipe.pipe import Pipe
 
     executor = TaskExchanger(pipe_id="test_pipe")
@@ -1275,7 +1262,6 @@ def test_task_exchanger_execute_acquires_and_releases_flag(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
 
     executor = TaskExchanger(pipe_id="test_pipe")
     monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
@@ -1307,7 +1293,6 @@ def test_task_exchanger_execute_clears_flag_on_exception(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
 
     executor = TaskExchanger(pipe_id="test_pipe")
     monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
@@ -1330,7 +1315,6 @@ def test_launcher_executor_sets_flag_before_initialize(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 
     observed_in_init = []
 
@@ -1355,8 +1339,6 @@ def test_launcher_executor_clears_flag_after_full_lifecycle(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
 
     executor = _make_deferred_stop_executor(monkeypatch)
     executor.launcher = _FakeLauncher(needs_deferred=False)
@@ -1368,9 +1350,7 @@ def test_launcher_executor_clears_flag_after_full_lifecycle(monkeypatch):
         return result_shareable
 
     monkeypatch.setattr(TaskExchanger, "_do_execute", _fake_do_execute)
-    monkeypatch.setattr(
-        LauncherExecutor, "_finalize_external_execution", lambda self, tn, sh, fl, ab: True
-    )
+    monkeypatch.setattr(LauncherExecutor, "_finalize_external_execution", lambda self, tn, sh, fl, ab: True)
 
     executor.execute("train", Shareable(), MagicMock(), _FakeAbortSignal())
 
@@ -1383,8 +1363,6 @@ def test_ownership_super_execute_does_not_clear_flag(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
 
     flag_after_super = []
 
@@ -1419,8 +1397,6 @@ def test_concurrent_before_task_execution_blocked_during_initialize(monkeypatch)
     from unittest.mock import MagicMock
 
     from nvflare.apis.shareable import Shareable
-    from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-    from nvflare.app_common.executors.task_exchanger import TaskExchanger
 
     executor = _make_deferred_stop_executor(monkeypatch)
     executor.launcher = _FakeLauncher(needs_deferred=False)
@@ -1457,6 +1433,6 @@ def test_concurrent_before_task_execution_blocked_during_initialize(monkeypatch)
     init_gate.set()
     t.join(timeout=5.0)
 
-    assert handler_replaced == [False], (
-        "BEFORE_TASK_EXECUTION must NOT replace the handler during _initialize_external_execution"
-    )
+    assert handler_replaced == [
+        False
+    ], "BEFORE_TASK_EXECUTION must NOT replace the handler during _initialize_external_execution"
