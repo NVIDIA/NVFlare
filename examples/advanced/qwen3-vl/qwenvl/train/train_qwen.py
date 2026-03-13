@@ -33,7 +33,10 @@ from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
 from transformers import AutoConfig, AutoProcessor
 
-from .trainer import QwenTrainer, replace_qwen2_vl_attention_class
+from .trainer import QwenTrainer
+from .trainer import print_trainable_parameters as print_qwen_text_trainable_parameters
+from .trainer import print_trainable_parameters_visual as print_qwen_visual_trainable_parameters
+from .trainer import replace_qwen2_vl_attention_class
 
 local_rank = None
 
@@ -397,8 +400,8 @@ def train(
         set_model(model_args, model)
 
         if _is_rank0_or_single_process():
-            _get_qwen_vl_visual_module(model).print_trainable_parameters()
-            _get_qwen_vl_text_module(model).print_trainable_parameters()
+            print_qwen_visual_trainable_parameters(_get_qwen_vl_visual_module(model))
+            print_qwen_text_trainable_parameters(_get_qwen_vl_text_module(model))
 
     # Disable gradient checkpointing for PeftModel to avoid "element 0 of tensors does not require grad"
     from peft import PeftModel
