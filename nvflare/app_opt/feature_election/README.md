@@ -334,6 +334,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 ```bash
 pytest tests/unit_test/app_opt/feature_election/test.py -v
+```
+
 ## Support
 
 - **FLASH Repository**: [GitHub](https://github.com/parasecurity/FLASH)

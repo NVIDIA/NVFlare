@@ -283,7 +283,10 @@ class FeatureElectionExecutor(Executor):
                 mask[np.argsort(scores)[-k:]] = True
                 return mask, scores
 
-            model = PPIMBC(self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42)))
+            # Extract base model separately, then forward remaining fs_params as kwargs
+            base_model = self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42))
+            ppimbc_kwargs = {k: v for k, v in self.fs_params.items() if k != "model"}
+            model = PPIMBC(base_model, **ppimbc_kwargs)
             selected_features = model.fit(self.X_train, self.y_train)
             mask = np.zeros(n_features, dtype=bool)
             mask[selected_features] = True
