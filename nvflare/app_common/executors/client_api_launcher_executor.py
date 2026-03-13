@@ -159,21 +159,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # PASS_THROUGH (reverse path — subprocess → CJ):
-        # The subprocess-side CellPipe (pass_through_on_send=True, set in
-        # ExProcessClientAPI.init()) stamps MessageHeaderKey.PASS_THROUGH on
-        # result messages so CJ decodes them as LazyDownloadRef and forwards
-        # the original subprocess datum to the server for direct download.
-        #
-        # PASS_THROUGH (forward path — server/aggregator → CJ):
-        # Receiver-side opt-in: register this job's pipe channel in
-        # cell.decode_pass_through_channels so that incoming task messages on
-        # this channel are decoded with PASS_THROUGH regardless of whether the
-        # sender stamped the header.  This lets the subprocess download tensors
-        # directly from the source (server or aggregator) via DownloadService,
-        # skipping materialisation inside the CJ.  Per-channel registration is
-        # safe for concurrent jobs: each job opts in only for its own channel,
-        # so a concurrent in-process job on a different channel is unaffected.
+        # Register this job's pipe channel for receiver-side PASS_THROUGH so
+        # incoming task tensors arrive as LazyDownloadRef (subprocess downloads
+        # directly from source, skipping materialisation in CJ).  Per-channel
+        # registration is concurrent-job safe: only this job's channel opts in.
         super().initialize(fl_ctx)
 
         from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
