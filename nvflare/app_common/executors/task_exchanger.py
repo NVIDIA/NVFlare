@@ -113,8 +113,12 @@ class TaskExchanger(Executor):
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             with self._executing_lock:
                 if self._executing.is_set():
-                    self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
-                    return
+                    skip = True
+                else:
+                    skip = False
+            if skip:
+                self.log_info(fl_ctx, "skipping pipe handler reset: execute() is in progress")
+                return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
             self._create_pipe_handler()
