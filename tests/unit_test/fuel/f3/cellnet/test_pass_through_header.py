@@ -591,9 +591,9 @@ class TestSendOneRequestPassThrough:
 
         _run_send_one_request(cell, reply_headers={})
 
-        assert captured.get(FOBSContextKey.PASS_THROUGH) is False, (
-            "decode_pass_through=False + no reply header must give PASS_THROUGH=False."
-        )
+        assert (
+            captured.get(FOBSContextKey.PASS_THROUGH) is False
+        ), "decode_pass_through=False + no reply header must give PASS_THROUGH=False."
 
     def test_reply_header_true_with_cell_flag_false_gives_pass_through_true(self):
         """Reply carries PASS_THROUGH=True header + cell flag False → PASS_THROUGH=True.
