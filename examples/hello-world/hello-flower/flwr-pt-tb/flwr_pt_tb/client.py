@@ -76,8 +76,8 @@ class FlowerClient(NumPyClient):
 
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    learning_rate=context.run_config["learning-rate"]
-    momentum=context.run_config["momentum"]
+    learning_rate = context.run_config["learning-rate"]
+    momentum = context.run_config["momentum"]
     return FlowerClient(context, learning_rate, momentum).to_client()
 
 
