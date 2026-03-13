@@ -159,12 +159,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # Register this job's pipe channel for receiver-side PASS_THROUGH so
-        # incoming task tensors arrive as LazyDownloadRef (subprocess downloads
-        # directly from source, skipping materialisation in CJ).  Per-channel
-        # registration is concurrent-job safe: only this job's channel opts in.
         super().initialize(fl_ctx)
 
+        from nvflare.fuel.f3.cellnet.defs import CellChannel as _CellChannel
         from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
 
         if isinstance(self.pipe, _CellPipe):
@@ -187,7 +184,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                         "instead of being downloaded directly by the subprocess.",
                     )
                 else:
-                    channel_name = self.get_pipe_channel_name()
+                    channel_name = _CellChannel.SERVER_COMMAND
                     cell.decode_pass_through_channels.add(channel_name)
                     self._cell_with_pass_through = cell
                     self._pass_through_channel = channel_name

@@ -758,6 +758,78 @@ def test_cj_pipe_pass_through_on_send_false_after_initialize(monkeypatch):
     )
 
 
+# ---------------------------------------------------------------------------
+# Fix: forward-path PASS_THROUGH must register SERVER_COMMAND, not pipe channel
+# ---------------------------------------------------------------------------
+
+
+def test_initialize_registers_server_command_for_pass_through(monkeypatch):
+    """initialize() must add CellChannel.SERVER_COMMAND to decode_pass_through_channels.
+
+    GET_TASK replies carrying the global model arrive on CellChannel.SERVER_COMMAND.
+    For the CJ to receive them as LazyDownloadRef (so the subprocess downloads
+    directly from the server), SERVER_COMMAND must be in decode_pass_through_channels
+    on the CJ engine cell.
+
+    Regression guard: the old code registered get_pipe_channel_name() ("task"),
+    which lives on the CellPipe's own separate cell — never on the engine cell —
+    so the pass_through check in Cell._send_one_request() never fired and the CJ
+    downloaded the full model every round.
+    """
+    from nvflare.fuel.f3.cellnet.defs import CellChannel
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.pipe = _make_fake_cell_pipe()
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    executor.initialize(fl_ctx)
+
+    assert CellChannel.SERVER_COMMAND in cell.decode_pass_through_channels, (
+        f"CellChannel.SERVER_COMMAND ('{CellChannel.SERVER_COMMAND}') must be registered "
+        "in decode_pass_through_channels so GET_TASK replies are decoded as LazyDownloadRef."
+    )
+    # The pipe channel name must NOT be registered — it lives on the CellPipe's own
+    # cell, not the engine cell, so registering it here is a no-op and misleading.
+    pipe_channel = executor.get_pipe_channel_name()
+    assert pipe_channel not in cell.decode_pass_through_channels, (
+        f"Pipe channel '{pipe_channel}' must NOT be in decode_pass_through_channels on "
+        "the engine cell (it belongs to the CellPipe's own separate cell)."
+    )
+
+
+def test_finalize_deregisters_server_command_for_pass_through(monkeypatch):
+    """finalize() must remove CellChannel.SERVER_COMMAND from decode_pass_through_channels."""
+    from nvflare.fuel.f3.cellnet.defs import CellChannel
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "finalize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.pipe = _make_fake_cell_pipe()
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    executor.initialize(fl_ctx)
+    assert CellChannel.SERVER_COMMAND in cell.decode_pass_through_channels
+
+    executor.finalize(fl_ctx)
+    assert CellChannel.SERVER_COMMAND not in cell.decode_pass_through_channels, (
+        "finalize() must remove SERVER_COMMAND from decode_pass_through_channels "
+        "to avoid leaking the registration across jobs."
+    )
+
+
 def test_decomposer_prefix_default_is_numpy(monkeypatch):
     """Base class _decomposer_prefix() must return 'np_'."""
     executor = ClientAPILauncherExecutor(pipe_id="p")
