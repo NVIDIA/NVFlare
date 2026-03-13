@@ -80,6 +80,26 @@ def _free_memory_after_send() -> None:
         torch.cuda.empty_cache()
 
 
+def _json_safe_config_value(value):
+    if isinstance(value, dict):
+        return {k: _json_safe_config_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_config_value(v) for v in value]
+    if isinstance(value, set):
+        return [_json_safe_config_value(v) for v in sorted(value)]
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _serialize_peft_config(config) -> dict:
+    if hasattr(config, "to_dict"):
+        return _json_safe_config_value(config.to_dict())
+    if hasattr(config, "to_json_string"):
+        return json.loads(config.to_json_string())
+    return _json_safe_config_value(dict(vars(config)))
+
+
 def _save_lora_adapter_for_training(
     lora_state_dict: dict,
     save_dir: str,
@@ -130,7 +150,7 @@ def _save_lora_adapter_for_training(
         bias="none",
         task_type=TaskType.CAUSAL_LM,
     )
-    adapter_config = json.loads(lora_config.to_json_string())
+    adapter_config = _serialize_peft_config(lora_config)
     adapter_config["base_model_name_or_path"] = base_model_name_or_path
     with open(os.path.join(save_dir, "adapter_config.json"), "w") as f:
         json.dump(adapter_config, f, indent=2)
