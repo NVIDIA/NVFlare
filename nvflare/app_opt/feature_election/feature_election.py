@@ -394,9 +394,9 @@ class FeatureElection:
             "freedom_degree": float(self.freedom_degree),
             "fs_method": self.fs_method,
             "auto_tune": self.auto_tune,
-            "tuning_history": [(float(fd), float(s)) for fd, s in tuning_history]
-            if self.auto_tune and self.tuning_rounds > 0
-            else [],
+            "tuning_history": (
+                [(float(fd), float(s)) for fd, s in tuning_history] if self.auto_tune and self.tuning_rounds > 0 else []
+            ),
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
             "union_features": int(np.sum(np.any(masks, axis=0))),
             "client_stats": client_selections,
