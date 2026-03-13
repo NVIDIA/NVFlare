@@ -9,7 +9,8 @@ As in typical NVFlare examples (e.g. [hello-pt](../../hello-world/hello-pt/)):
 | File | Role |
 |------|------|
 | `model.py` | Qwen3-VL wrapper used as the FL model; server can save/load `state_dict`. Model config uses HuggingFace ID (e.g. `Qwen/Qwen3-VL-2B-Instruct`). |
-| `client.py` | Client entry point (launched by NVFlare via torchrun): rank 0 receives/sends FL models, all ranks run Qwen3-VL `train_qwen` per round, then rank 0 sends updated weights back. Requires Qwen repo and `fl_site` in data_list (see below). |
+| `client.py` | Client entry point (launched by NVFlare via torchrun): rank 0 receives/sends FL models, all ranks run the vendored training code (`qwenvl.train`) per round, then rank 0 sends updated weights back. |
+| `qwenvl/` | Vendored Qwen-style training and data modules (from [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) qwen-vl-finetune): model loading (full + adapter-only), `fl_site` data list, data processor, LoRA support. No separate Qwen repo or patches required. |
 | `job.py` | FedAvg recipe: 3 clients, per-site data paths; optional Weights & Biases tracking (`--wandb`); launches each client with a per-site torchrun command (unique `--master_port` per client, configurable `--nproc_per_client`). |
 | `download_data.py` | Downloads PubMedVision (git clone) and unzips image archives into `PubMedVision/` for a standard layout. |
 | `prepare_data.py` | Splits PubMedVision into `site-1`, `site-2`, `site-3` shards. |
@@ -33,44 +34,14 @@ source .venv/bin/activate
 ./install_requirements.sh
 ```
 
-## 2. Clone the Qwen3-VL repo (SFT scripts)
+## 2. Self-contained training code
 
-The official SFT training scripts and utilities (e.g. `qwen-vl-finetune/scripts/sft.sh`, data handling, and model configs) live in the [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) repo. Clone it next to (or inside) this example so the federated job can call into their scripts:
+This example **does not require a separate Qwen3-VL clone or any patches**. Training and data logic are vendored under `qwenvl/` (adapted from [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) qwen-vl-finetune). **Third-party attribution:** See [NOTICE](NOTICE) for acknowledgment of the vendored Qwen3-VL code and a link to its [license](https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE). The vendored code includes:
 
-```bash
-# From examples/advanced/qwen3-vl (or your preferred location)
-git clone https://github.com/QwenLM/Qwen3-VL.git
-```
+- **Model loading**: full checkpoints and adapter-only dirs (for `--lora` exchange); base model path is read from `adapter_config.json` when present.
+- **Data**: `fl_site` dataset that reads `FL_SITE_DATA_DIR/train.json` and `PUBMEDVISION_IMAGE_ROOT` (the job sets these via the client’s `--data_path` and `--image_root`).
 
-> **Tested with:** [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) at commit [`96588727e44c78b25ba03ea03b8e12f7e64fd0da`](https://github.com/QwenLM/Qwen3-VL/commit/96588727e44c78b25ba03ea03b8e12f7e64fd0da).
-
-Set the `QWEN3VL_ROOT` environment variable to the clone path so the example can find the SFT entrypoint and configs. E.g. if you cloned inside this example: 
-
-```bash
-export QWEN3VL_ROOT="${PWD}/Qwen3-VL"
-```
-(Use the absolute path to your `Qwen3-VL` clone if different.)
-
-### 2.1. Register the `fl_site` dataset in Qwen3-VL
-
-The FL client sets `FL_SITE_DATA_DIR` to each site’s data dir (e.g. `./data/site-1`) before calling the Qwen script. You must add a `fl_site` dataset entry in the Qwen repo so the script can load each site’s `train.json`.
-
-From the **root of your Qwen3-VL clone**, apply the provided patch (use the path to this example’s `patches` directory):
-
-```bash
-cd /path/to/Qwen3-VL
-git apply /path/to/examples/advanced/qwen3-vl/patches/fl_site_data_list.patch
-```
-
-If you cloned Qwen3-VL inside this example (e.g. `examples/advanced/qwen3-vl/Qwen3-VL`):
-
-```bash
-cd Qwen3-VL
-git apply ../patches/fl_site_data_list.patch
-cd ..
-```
-
-The patch adds `import os` and a `fl_site` branch in `data_list()` so that `annotation_path` points to `FL_SITE_DATA_DIR/train.json` and `data_path` uses `PUBMEDVISION_IMAGE_ROOT` (the folder containing `images/`). The job passes `--image_root` so the client sets this for you. If the patch does not apply (e.g. after a Qwen3-VL update), try `git apply --ignore-whitespace ../patches/fl_site_data_list.patch`, or apply the changes manually by adding `import os` and the `fl_site` branch as shown in `patches/fl_site_data_list.patch`.
+You only need to install dependencies (step 1) and prepare data (step 3).
 
 ## 3. Data: PubMedVision
 
@@ -153,7 +124,7 @@ With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_clie
 
 `job.py` defaults to `--data_dir ./data`. Training uses the official [Qwen3-VL fine-tuning script](https://github.com/QwenLM/Qwen3-VL/blob/main/qwen-vl-finetune/scripts/sft.sh) (`train_qwen`): the FL client (`client.py`) is started by NVFlare with torchrun, receives the global model, runs `train_qwen` in-process, and sends the updated weights back.
 
-**Prerequisites for the job:** Clone Qwen3-VL and set `QWEN3VL_ROOT` (see step 2), and add the `fl_site` dataset (step 2.1). The job passes `--image_root` (default `PubMedVision`) so the client sets `PUBMEDVISION_IMAGE_ROOT`; images in `train.json` (e.g. `images/pmc_xxx.jpg`) resolve to `image_root/images/...`. If your images live elsewhere, pass `--image_root /path/to/folder_containing_images`.
+**Prerequisites for the job:** Prepare data (step 3) so `./data/site-{1,2,3}/` exist with `train.json`. The job passes `--image_root` (default `PubMedVision`) so the client sets `PUBMEDVISION_IMAGE_ROOT`; images in `train.json` (e.g. `images/pmc_xxx.jpg`) resolve to `image_root/images/...`. If your images live elsewhere, pass `--image_root /path/to/folder_containing_images`.
 
 **Optional arguments:**
 
@@ -165,6 +136,20 @@ With 3 clients, omitting `--gpu` defaults to `[0],[1],[2]` for `--nproc_per_clie
 | `--gpu` | GPU IDs per client (comma-separated lists in brackets). | `python job.py --gpu "[0],[1],[2]"` (one GPU per client) |
 | `--nproc_per_client` | Number of torchrun processes (GPUs) per client. | `python job.py --nproc_per_client 2 --gpu "[0,1],[2,3],[4,5]"` (2 GPUs per client) |
 | `--wandb` | Enable Weights & Biases logging; set `WANDB_API_KEY` for online logging. | `python job.py --wandb` |
+| `--lora` | Enable LoRA fine-tuning and **exchange only LoRA adapter weights** between server and clients (~98 MB instead of ~4651 MB). See [LoRA and reduced communication](#lora-and-reduced-communication) below. | `python job.py --lora` |
+
+### LoRA and reduced communication cost
+
+By default, the server and clients exchange the **full model** each round (~4651 MB for Qwen3-VL-2B in bf16). With **`--lora`**, the job uses LoRA (Low-Rank Adaptation): only the **trainable LoRA adapter parameters** are sent and aggregated, so the communicated payload drops to roughly **~98 MB** per round. The base model stays fixed on each client; FedAvg is applied to the adapter weights only.
+
+LoRA mode reduces network transfer, but it does **not** eliminate the server-side base-model footprint: the server still instantiates the underlying Qwen3-VL model in bf16 and attaches LoRA modules before exposing adapter-only weights for FL exchange.
+
+- **Without `--lora`:** `sent updated weights, model size: 4651.45 MB`
+- **With `--lora`:** `sent model size: 98.00 MB`
+
+Use `--lora` when you want to reduce network transfer and speed up rounds. LoRA config (rank, alpha, target modules) matches the Qwen training script defaults; the client enables LoRA in the in-process training script automatically when `--lora` is set.
+
+The vendored training code in `qwenvl/` already supports adapter-only input dirs, so no extra setup is needed for `--lora`.
 
 ## Checkpoints and disk space
 
@@ -173,12 +158,12 @@ By default, the client saves received and trained model checkpoints under the **
 
 ## Timeouts and long runs
 
-After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the rank-0 process must return to `flare.receive()` within that time. This example avoids loading the full model after training by loading only the **state dict** from the checkpoint (`.safetensors` / `pytorch_model.bin`), so rank 0 can send the result and get back to `receive()` sooner and reduce the chance of "failed to send 'train' ... timeout" and subsequent FOBS download errors. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
+After each round the client sends the updated model weights back to the server; for large VL models this transfer can take several minutes. The executor that talks to the client script uses a **peer_read_timeout** (e.g. 300s in the framework) when sending the next round’s task: the rank-0 process must return to `flare.receive()` within that time. In the default single-process client path, this example now keeps updated parameters in memory and sends them directly without reloading from a saved checkpoint. In multi-rank (distributed) client runs, it still uses checkpoint state-dict loading (`.safetensors` / `pytorch_model.bin`) as a synchronization-safe fallback before sending. If you still see timeouts with very large models or slow links, you may need to increase the executor’s `peer_read_timeout` in the NVFlare codebase or wait for a configurable option.
 
 ### Client errors and model size
 
 - **One site shows "(after error)" every round:** Training failed on that client (e.g. OOM, missing data, GPU). Check that site’s log (e.g. `.../site-1/log.txt`) for `Qwen SFT script failed:` and the exception message; the client also prints a short error hint next to `(after error)`.
-- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the client sends the bf16 checkpoint (~4651 MB). On **error** the client first tries the current round checkpoint (if present), and otherwise sends the received global model unchanged.
+- **Received vs sent model size:** The initial model is loaded in bf16 in `model.py` so the server sends the global model in bf16 (~4651 MB for 2B); otherwise `from_pretrained` can default to float32 (~9302 MB). On **success** the default single-process path sends the trained bf16 parameters directly from memory (~4651 MB for full-model exchange). In multi-rank runs, it sends params loaded from the current round checkpoint. With **`--lora`**, only LoRA adapter weights are exchanged (~98 MB sent/received). On **error** the client sends the received global model unchanged (or, in checkpoint mode, first tries current-round checkpoint params if present).
 
 ## Inference (before/after comparison)
 
@@ -232,16 +217,14 @@ python run_inference.py --model_path ./path/to/checkpoint-xxx
 | Step | Action |
 |------|--------|
 | 1 | Create venv and run `./install_requirements.sh` |
-| 2 | Clone Qwen3-VL, set `QWEN3VL_ROOT` (example includes `fl_site` in data_dict per [Dataset config](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training)) |
+| 2 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
 | 3 | Data: `python download_data.py` then `python prepare_data.py` to get `./data/site-{1,2,3}/` |
-| 4 | (Optional) Set `WANDB_API_KEY` and pass `--wandb` for experiment tracking |
-| 5 | Run `python job.py` (optionally `--wandb`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
+| 4 | Run `python job.py` (optionally `--wandb`, `--lora`, `--max_steps N`, `--nproc_per_client N`, `--gpu "[0],[1],[2]"`) |
 
-Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`.
+Standard workflow from this directory: `python download_data.py` → `python prepare_data.py` → `python job.py`. No external Qwen repo or patches are required. Use `--lora` to exchange only adapter weights (~98 MB) instead of the full model (~4651 MB).
 
 ## References
 
-- [Qwen3-VL repo](https://github.com/QwenLM/Qwen3-VL) — SFT scripts and configs (e.g. `qwen-vl-finetune/scripts/sft.sh`)
-- [Dataset config for training](https://github.com/QwenLM/Qwen3-VL/tree/main/qwen-vl-finetune#dataset-config-for-training) — add/register datasets in `data/__init__.py`
+- [Qwen3-VL repo](https://github.com/QwenLM/Qwen3-VL) — upstream source for the vendored `qwenvl/` training and data code; [Qwen3-VL LICENSE](https://github.com/QwenLM/Qwen3-VL/blob/main/LICENSE) (Apache 2.0)
 - [PubMedVision](https://huggingface.co/datasets/FreedomIntelligence/PubMedVision) — medical VQA dataset
 - [NVIDIA FLARE](https://nvflare.readthedocs.io/) — federated learning framework
