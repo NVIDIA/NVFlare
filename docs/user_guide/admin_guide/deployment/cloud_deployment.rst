@@ -19,14 +19,13 @@ the startup kits for different FL clients will need to be distributed manually v
 The second way is to use the :ref:`NVFLARE Dashboard Web UI <dashboard_api>`, which allows project administrators to set up the FL project once
 participants are invited. Users can download the startup kit directly from the FLARE Dashboard without the need for manual distribution.
 
-Regardless of the approach, the user will essentially have a startup kit before trying to deploy the NVFLARE application. To deploy the NVFLARE FL
-system to the cloud. You just need the following commands (while substituting in the appropriate values):
+Regardless of the approach, the user will essentially have a startup kit before trying to deploy the NVFLARE application. To deploy the FL server and
+clients to the cloud using the startup kits, you just need the following commands (while substituting in the appropriate values):
 
 .. code-block:: shell
 
-    FL Server:    <startup dir>/start.sh     –cloud <csp>  [ –config config.json ]
-    FL Client:      <startup dir>/start.sh     –cloud <csp>  [ –config config.json ]
-    Dashboard:   <startup dir>/start.sh     –cloud <csp>  [ –config config.json ]
+    FL Server:    <startup dir>/start.sh     --cloud <csp>  [ --config <config_file> ]
+    FL Client:    <startup dir>/start.sh     --cloud <csp>  [ --config <config_file> ]
 
 
 Deploy NVFLARE Dashboard in the Cloud
@@ -314,4 +313,5 @@ To run ``system_info.ipynb`` on Azure ML Notebook, users have to upload their st
 FLARE On GOOGLE Cloud
 ---------------------------
 This is Google's FL Reference Architecture for NVIDIA FLARE
+
 https://github.com/GoogleCloudPlatform/accelerated-platforms/tree/main/platforms/gke/base/use-cases/federated-learning/examples/nvflare-tff
