@@ -404,10 +404,14 @@ def train(
             print_qwen_text_trainable_parameters(_get_qwen_vl_text_module(model))
 
     # Disable gradient checkpointing for PeftModel to avoid "element 0 of tensors does not require grad"
-    from peft import PeftModel
+    try:
+        from peft import PeftModel
+    except ImportError:
+        PeftModel = None
 
     if (
-        isinstance(model, PeftModel)
+        PeftModel is not None
+        and isinstance(model, PeftModel)
         and training_args.gradient_checkpointing
         and attn_implementation == "flash_attention_2"
     ):
