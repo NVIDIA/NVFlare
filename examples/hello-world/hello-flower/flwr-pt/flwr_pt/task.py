@@ -54,12 +54,12 @@ def load_data():
     return DataLoader(trainset, batch_size=32, shuffle=True), DataLoader(testset)
 
 
-def train(net, trainloader, valloader, epochs, device):
+def train(net, trainloader, valloader, epochs, device, learning_rate, momentum):
     """Train the model on the training set."""
     log(INFO, "Starting training...")
     net.to(device)  # move model to GPU if available
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum)
     net.train()
     for _ in range(epochs):
         for images, labels in trainloader:

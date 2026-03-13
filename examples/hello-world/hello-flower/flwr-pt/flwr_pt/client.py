@@ -24,9 +24,13 @@ trainloader, testloader = load_data()
 
 # Define FlowerClient and client_fn
 class FlowerClient(NumPyClient):
+    def __init__(self, learning_rate, momentum):
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+
     def fit(self, parameters, config):
         set_weights(net, parameters)
-        results = train(net, trainloader, testloader, epochs=1, device=DEVICE)
+        results = train(net, trainloader, testloader, epochs=1, device=DEVICE, learning_rate=self.learning_rate, momentum=self.momentum)
         return get_weights(net), len(trainloader.dataset), results
 
     def evaluate(self, parameters, config):
@@ -37,7 +41,9 @@ class FlowerClient(NumPyClient):
 
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    return FlowerClient().to_client()
+    learning_rate = context.run_config["learning-rate"]
+    momentum = context.run_config["momentum"]
+    return FlowerClient(learning_rate, momentum).to_client()
 
 
 # Flower ClientApp

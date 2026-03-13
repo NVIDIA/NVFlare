@@ -189,6 +189,7 @@ class FlowerServerApplet(Applet):
         superlink_ready_timeout: float,
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
+        run_config: dict = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -197,10 +198,12 @@ class FlowerServerApplet(Applet):
             superlink_ready_timeout: how long to wait for the superlink process to become ready
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
             superlink_min_query_interval: minimal interval for querying superlink for status
+            run_config: optional dict for flwr run --run-config arguments
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
         self.database = database
+        self.run_config = run_config
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
@@ -333,8 +336,13 @@ class FlowerServerApplet(Applet):
         # Validate that flwr is installed and executable
         _validate_flower_executable(FLOWER_CLI, flwr_path)
 
+        run_config_str = ""
+        if self.run_config and cmd_name == "run":
+            run_config_args = " ".join([f"{k}={v}" for k, v in self.run_config.items()])
+            run_config_str = f'--run-config "{run_config_args}" '
+
         return (
-            f"{flwr_path} {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
+            f"{flwr_path} {cmd_name} {run_config_str}--format json --federation-config 'address=\"{self.exec_api_addr}\"' "
             f"{cmd_args} {self.flower_app_dir}"
         )
 
