@@ -192,14 +192,6 @@ To provide a cleaner and more focused learning experience, we have consolidated 
 
     A few examples and tutorials still use older APIs. These will continue to be updated in upcoming releases.
 
-Edge Recipes
-~~~~~~~~~~~~
-
-- **``device_wait_timeout`` for ETFedBuffRecipe**: Sets an explicit timeout (seconds)
-  for waiting for devices to join before aborting the job.  Recommended when
-  ``device_reuse=False`` with a finite device pool to prevent indefinite hangs once
-  the pool is exhausted.  Defaults to ``None`` (wait indefinitely).
-
 MONAI Integration
 ~~~~~~~~~~~~~~~~~
 
