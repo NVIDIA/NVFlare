@@ -91,6 +91,36 @@ class TestPipeHandlerBrokenPipe:
         assert any(m.topic == Topic.PEER_GONE for m in messages)
         assert handler.reader is None
 
+    def test_heartbeat_passes_600s_timeout(self):
+        """_heartbeat() must call send_to_peer with timeout=600.0 so FilePipe keeps the file alive."""
+        from unittest.mock import patch
+
+        pipe = _BrokenPipe("pipe is not open")
+        handler = PipeHandler(
+            pipe=pipe,
+            read_interval=0.01,
+            heartbeat_interval=0.05,  # fast so we capture quickly
+            heartbeat_timeout=30.0,
+        )
+
+        captured = []
+        original = handler.send_to_peer
+
+        def capturing_send(msg, timeout=None, abort_signal=None):
+            if msg.topic == Topic.HEARTBEAT:
+                captured.append(timeout)
+            return True
+
+        with patch.object(handler, "send_to_peer", side_effect=capturing_send):
+            handler.start()
+            deadline = time.time() + 0.5
+            while not captured and time.time() < deadline:
+                time.sleep(0.01)
+            handler.stop()
+
+        assert captured, "no heartbeat was sent"
+        assert all(t == 600.0 for t in captured), f"expected timeout=600.0, got {captured}"
+
     def test_graceful_stop_does_not_emit_peer_gone(self):
         """BrokenPipeError raised after stop() is called must not emit PEER_GONE."""
         pipe = _BrokenPipe("pipe is not open")

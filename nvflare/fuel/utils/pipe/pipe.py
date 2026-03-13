@@ -21,6 +21,8 @@ from nvflare.fuel.utils.attributes_exportable import AttributesExportable, Expor
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
 
+HEARTBEAT_SEND_TIMEOUT = 600.0
+
 
 class Topic(object):
 
