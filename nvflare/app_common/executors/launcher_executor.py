@@ -168,21 +168,25 @@ class LauncherExecutor(TaskExchanger):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"execute for task ({task_name})")
 
-        if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self._executing.set()
+        try:
+            if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
+            result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
-        if result.get_return_code() != ReturnCode.OK:
-            abort_signal.trigger("execution exception in TaskExchanger")
-            self._execute_launcher_method_in_thread_executor(
-                method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
-            )
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            if result.get_return_code() != ReturnCode.OK:
+                abort_signal.trigger("execution exception in TaskExchanger")
+                self._execute_launcher_method_in_thread_executor(
+                    method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
+            self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 
-        return result
+            return result
+        finally:
+            self._executing.clear()
 
     def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         supported_tasks = [self._train_task_name, self._evaluate_task_name, self._submit_model_task_name]
