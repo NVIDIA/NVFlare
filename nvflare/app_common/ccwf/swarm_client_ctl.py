@@ -757,13 +757,12 @@ class SwarmClientController(ClientSideController):
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
-            # When the aggregator CJ has its pipe channel in decode_pass_through_channels
-            # (registered by ClientAPILauncherExecutor), Adapter.call() decodes incoming
-            # trainer results with PASS_THROUGH=True → LazyDownloadRef(trainer_subprocess).
-            # The local-path caller already resolves before reaching here, so
-            # _has_lazy_refs() returns False for that path (no-op double-check).
-            # For the remote path the result arrives directly via Adapter.call()
-            # with no prior resolution, so we resolve here before the gatherer.
+            # Remote trainer results arrive on CellChannel.AUX_COMMUNICATION, which is
+            # never in decode_pass_through_channels, so Adapter.call() uses PASS_THROUGH=False
+            # and tensors are downloaded inline — request already contains real tensors here.
+            # This check is a defensive guard: if a future caller path omits the pre-resolve
+            # step (as the local path does above), lazy refs are still resolved before the
+            # gatherer rather than crashing downstream.
             if self._has_lazy_refs(request):
                 request = self._resolve_lazy_refs(request, fl_ctx)
 
@@ -956,13 +955,11 @@ class SwarmClientController(ClientSideController):
             if aggr == self.me:
                 # Avoid synchronous self-message path through CoreCell._send_direct_message.
                 self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
-                # ex_process/api.py sets pass_through_on_send=True unconditionally for
-                # CellPipe, so the subprocess result always arrives at CJ as LazyDownloadRef.
-                # Resolve here before local aggregation (no FOBS round-trip on this path).
-                # For the remote path, _process_learn_result() also calls _resolve_lazy_refs
-                # because the aggregator CJ may have its pipe channel in
-                # decode_pass_through_channels and would otherwise decode the incoming
-                # result as LazyDownloadRef too.
+                # The subprocess result arrives at CJ as LazyDownloadRef (subprocess-side
+                # CellPipe has pass_through_on_send=True).  Resolve before local aggregation.
+                # The remote path goes through AUX_COMMUNICATION (not the pipe channel), so
+                # Adapter.call() downloads tensors inline and _process_learn_result() receives
+                # real tensors; its own _has_lazy_refs guard is purely defensive.
                 result = self._resolve_lazy_refs(result, fl_ctx)
                 engine = fl_ctx.get_engine()
                 local_fl_ctx = fl_ctx.clone()
