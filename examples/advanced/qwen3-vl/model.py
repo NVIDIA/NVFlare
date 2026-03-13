@@ -153,17 +153,31 @@ def get_expected_peft_adapter_keys(peft_model) -> set:
     return {key for key in peft_model.state_dict().keys() if is_peft_adapter_key(key)}
 
 
+def _adapter_key_to_model_key(adapter_key: str, model_keys: set) -> Optional[str]:
+    """Map a single adapter state key to the peft_model's expected key (handles module. and .default)."""
+    if adapter_key in model_keys:
+        return adapter_key
+    alt = normalize_peft_adapter_key(adapter_key)
+    if alt in model_keys:
+        return alt
+    # Multi-GPU: saved state may have "module." prefix; loading process expects keys without it
+    strip = adapter_key[7:] if adapter_key.startswith("module.") else adapter_key
+    if strip in model_keys:
+        return strip
+    alt_strip = normalize_peft_adapter_key(strip)
+    if alt_strip in model_keys:
+        return alt_strip
+    return None
+
+
 def map_adapter_state_dict_for_peft_model(peft_model, adapter_state: dict) -> tuple[dict, list]:
     model_keys = set(peft_model.state_dict().keys())
     mapped = {}
     unmatched = []
     for key, value in adapter_state.items():
-        if key in model_keys:
-            mapped[key] = value
-            continue
-        alt = normalize_peft_adapter_key(key)
-        if alt in model_keys:
-            mapped[alt] = value
+        model_key = _adapter_key_to_model_key(key, model_keys)
+        if model_key is not None:
+            mapped[model_key] = value
         else:
             unmatched.append(key)
     return mapped, unmatched

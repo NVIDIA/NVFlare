@@ -64,12 +64,12 @@ def _params_size_mb(params) -> float:
 
 
 def _strip_model_prefix(params: dict) -> dict:
+    """Strip 'model.' and optionally 'module.' (DDP) so keys match PeftModel.state_dict() format."""
     stripped = {}
     for key, value in params.items():
-        if key.startswith("model."):
-            stripped[key[6:]] = value
-        else:
-            stripped[key] = value
+        k = key[6:] if key.startswith("model.") else key
+        k = k[7:] if k.startswith("module.") else k
+        stripped[k] = value
     return stripped
 
 
@@ -114,10 +114,17 @@ def _save_lora_adapter_for_training(
 
     stripped = _strip_model_prefix(lora_state_dict)
 
+    # PeftModel.from_pretrained expects keys like base_model.model.model....lora_A.default.weight
+    # (keys from get_peft_model_state_dict / FL exchange may lack the base_model. prefix)
+    def key_for_peft(key: str) -> str:
+        if not key.startswith("base_model."):
+            key = "base_model." + key
+        return normalize_peft_adapter_key(key)
+
     adapter_tensors = {}
     seen_target_modules = set()
     for key, value in stripped.items():
-        normalized_key = normalize_peft_adapter_key(key)
+        normalized_key = key_for_peft(key)
         if not is_peft_adapter_key(normalized_key):
             raise RuntimeError(f"Expected only LoRA adapter keys for adapter exchange, got: {normalized_key}")
         if normalized_key in adapter_tensors:

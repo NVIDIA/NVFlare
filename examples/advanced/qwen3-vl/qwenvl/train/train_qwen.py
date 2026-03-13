@@ -28,7 +28,14 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from model import DEFAULT_LORA_TARGET_MODULES, map_adapter_state_dict_for_peft_model
+from model import (
+    DEFAULT_LORA_ALPHA,
+    DEFAULT_LORA_DROPOUT,
+    DEFAULT_LORA_R,
+    DEFAULT_LORA_TARGET_MODULES,
+    load_state_dict_from_checkpoint,
+    map_adapter_state_dict_for_peft_model,
+)
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import DataArguments, ModelArguments, TrainingArguments
 from transformers import AutoConfig, AutoProcessor
@@ -320,7 +327,7 @@ def train(
     if adapter_config_path.is_file():
         import json
 
-        from peft import PeftModel
+        from peft import LoraConfig, TaskType, get_peft_model
 
         with open(adapter_config_path) as f:
             adapter_config = json.load(f)
@@ -335,14 +342,39 @@ def train(
         base_model.config.use_cache = False
         if hasattr(base_model, "enable_input_require_grads"):
             base_model.enable_input_require_grads()
-        model = PeftModel.from_pretrained(base_model, model_args.model_name_or_path)
+        # Build PeftModel on this process and load adapter weights with key mapping so keys match
+        # regardless of single vs multi-GPU (avoids "missing adapter keys" when server/client key format differs)
+        lora_config = LoraConfig(
+            r=adapter_config.get("r", DEFAULT_LORA_R),
+            lora_alpha=adapter_config.get("lora_alpha", DEFAULT_LORA_ALPHA),
+            lora_dropout=adapter_config.get("lora_dropout", DEFAULT_LORA_DROPOUT),
+            target_modules=adapter_config.get("target_modules", DEFAULT_LORA_TARGET_MODULES),
+            bias=adapter_config.get("bias", "none"),
+            task_type=TaskType.CAUSAL_LM,
+        )
+        model = get_peft_model(base_model, lora_config)
+        adapter_state = load_state_dict_from_checkpoint(str(model_args.model_name_or_path), lora_only=True)
+        mapped_state, unmatched = map_adapter_state_dict_for_peft_model(model, adapter_state)
+        if not mapped_state:
+            raise RuntimeError(
+                "No adapter keys could be mapped to the model. Adapter keys may not match this process "
+                f"(e.g. multi-GPU). Unmatched sample: {unmatched[:3] if unmatched else 'none'}."
+            )
+        model.load_state_dict(mapped_state, strict=False)
         model.train()
-        # Ensure adapter params are trainable (same as Qwen3-VL --lora_enable: only LoRA is trainable)
         for name, param in model.named_parameters():
             if "lora" in name.lower():
                 param.requires_grad = True
+        n_trainable_lora = sum(1 for n, p in model.named_parameters() if "lora" in n.lower() and p.requires_grad)
+        if n_trainable_lora == 0:
+            raise RuntimeError(
+                "No LoRA parameters are trainable after loading adapter from " f"{model_args.model_name_or_path}."
+            )
         model_loaded_as_peft = True
-        rank0_print(f"Loaded base from {base_model_name_or_path} + adapter from {model_args.model_name_or_path}")
+        rank0_print(
+            f"Loaded base from {base_model_name_or_path} + adapter from {model_args.model_name_or_path} "
+            f"({len(mapped_state)} keys mapped)."
+        )
     else:
         model, data_args.model_type = _load_base_model_from_path(
             model_args.model_name_or_path,
