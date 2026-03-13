@@ -31,7 +31,6 @@ def _make_controller(memory_gc_rounds=1, cuda_empty_cache=False):
     ctrl.shareable_generator = Mock()
     ctrl.shareable_generator.shareable_to_learnable.return_value = Mock()
     ctrl.shareable_generator.learnable_to_shareable.return_value = Shareable()
-    ctrl.forward_pass_through = False
     ctrl.record_last_result = Mock()
     ctrl._distribute_final_results = Mock()
     ctrl._scatter = Mock()
