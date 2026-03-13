@@ -20,6 +20,7 @@ Provides an nn.Module interface so the PT persistor can save/load state_dict.
 import glob
 import os
 import warnings
+from collections import OrderedDict
 from typing import Optional
 
 import torch
@@ -243,10 +244,14 @@ class Qwen3VLLoRAModel(nn.Module):
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
-    def state_dict(self, *args, **kwargs):
+    def state_dict(self, *args, destination=None, prefix="", keep_vars=False, **kwargs):
         """Return only LoRA adapter weights with "model." prefix for FL exchange."""
         adapter = _get_peft_adapter_state_dict(self.model)
-        return {"model." + k: v for k, v in adapter.items()}
+        if destination is None:
+            destination = OrderedDict()
+        for key, value in adapter.items():
+            destination[prefix + "model." + key] = value if keep_vars else value.detach()
+        return destination
 
     def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
         """Load only LoRA adapter weights to avoid base-model missing-keys noise."""

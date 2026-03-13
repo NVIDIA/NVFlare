@@ -19,6 +19,7 @@ weights back. Uses FL_SITE_DATA_DIR and PUBMEDVISION_IMAGE_ROOT for site data (s
 """
 
 import argparse
+import enum
 import gc
 import json
 import os
@@ -87,7 +88,7 @@ def _json_safe_config_value(value):
         return [_json_safe_config_value(v) for v in value]
     if isinstance(value, set):
         return [_json_safe_config_value(v) for v in sorted(value)]
-    if hasattr(value, "value"):
+    if isinstance(value, enum.Enum):
         return value.value
     return value
 
