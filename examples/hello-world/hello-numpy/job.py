@@ -17,8 +17,8 @@ and run it under different environments
 """
 import argparse
 
-from nvflare.apis.dxo import DataKind
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -57,7 +57,7 @@ def main():
         train_script="client.py",
         train_args=train_args,
         launch_external_process=launch_process,
-        aggregator_data_kind=DataKind.WEIGHTS if args.update_type == "full" else DataKind.WEIGHT_DIFF,
+        params_transfer_type=TransferType.FULL if args.update_type == "full" else TransferType.DIFF,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
     if args.export_config:
