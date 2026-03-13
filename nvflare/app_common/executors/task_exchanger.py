@@ -98,6 +98,7 @@ class TaskExchanger(Executor):
         self.pipe_channel_name = pipe_channel_name
         self.pipe = None
         self.pipe_handler = None
+        self._executing = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -108,6 +109,14 @@ class TaskExchanger(Executor):
                 return
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            if self._executing:
+                # Skip handler replacement: execute() is active and depends on the
+                # current pipe_handler.  This happens when an unrelated task (e.g.
+                # swarm_report_learn_result handled by SwarmClientController) triggers
+                # the global BEFORE_TASK_EXECUTION event while this executor is waiting
+                # for a subprocess result.  Replacing the handler mid-transaction would
+                # silently drop the result and cause a permanent deadlock.
+                return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
             self._create_pipe_handler()
@@ -158,6 +167,13 @@ class TaskExchanger(Executor):
         TaskExchanger generic and can be reused for any applications (e.g. Shareable based, DXO based, or any custom
         data based).
         """
+        self._executing = True
+        try:
+            return self._do_execute(task_name, shareable, fl_ctx, abort_signal)
+        finally:
+            self._executing = False
+
+    def _do_execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not self.check_input_shareable(task_name, shareable, fl_ctx):
             self.log_error(fl_ctx, "bad input task shareable")
             return make_reply(ReturnCode.BAD_TASK_DATA)
