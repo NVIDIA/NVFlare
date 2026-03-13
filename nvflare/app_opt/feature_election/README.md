@@ -333,10 +333,8 @@ logging.basicConfig(level=logging.DEBUG)
 ## Running Tests
 
 ```bash
-pytest tests/unit_test/app_opt/feature_election/test_feature_election.py -v
-```
+```bash
 pytest tests/unit_test/app_opt/feature_election/test.py -v
-## Acknowledgments
 
 - NVIDIA FLARE team for the federated learning framework
 - FLASH paper authors (Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis) for the feature election algorithm
