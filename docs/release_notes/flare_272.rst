@@ -71,137 +71,45 @@ Key Highlights
 Memory Management
 -----------------
 
-FLARE 2.7.2 delivers a full memory management stack covering the server, the CJ relay process,
-and the client training process — addressing the peak memory challenges that arise when running
-large-model FL at scale.
+FLARE 2.7.2 delivers a full memory management stack for large-model FL, covering every tier
+from the FL server down to the client training subprocess.
 
-Memory Management with Tensor-based Downloader
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+**TensorDownloader** — Zero-code memory optimization for PyTorch large models. Model tensors
+are serialized incrementally (safetensors format) and distributed via a pull-based download
+service. Internal benchmarks on a 5 GB model with 4 FedAvg clients showed **20–50% peak
+memory reduction** on both server and client. NumPy arrays are supported via the companion
+``NpDownloader``.
 
-FLARE 2.7.2 introduces the **TensorDownloader** for PyTorch models, extending the FileDownloader concept introduced in 2.7.0 specifically for tensor data.
-This feature addresses critical memory challenges when working with large language models (LLMs) and other large-scale models in federated learning.
+**Zero-copy relay at the Client Job (CJ) process (Pass-Through)** — For subprocess-mode
+clients (``ClientAPILauncherExecutor``), the Client Job (CJ) relay process previously
+deserialized and re-serialized every model tensor before forwarding it to the training
+subprocess, doubling the relay-tier memory footprint per round. FLARE 2.7.2 introduces
+pass-through forwarding: the CJ holds lightweight ``LazyDownloadRef`` placeholders and the
+training subprocess downloads tensors directly from the FL server, making CJ memory
+independent of model size. Particularly impactful for LLM-scale models (7B–70B parameters).
 
-Key Features
-^^^^^^^^^^^^
+**Large-model subprocess reliability** — Send retries no longer accumulate per-attempt model
+copies in memory. Three timeout parameters previously hardcoded at values too short for large
+models (``submit_result_timeout``, ``tensor_min_download_timeout`` / ``np_min_download_timeout``,
+``max_resends``) are now configurable via ``recipe.add_client_config({...})``. Swarm Learning
+and SAG workflows also gain a ``min_clients`` fault-tolerance threshold so a job can proceed
+when a small number of configured clients are unavailable.
 
-- **Zero Code Changes Required**: Your existing PyTorch FL jobs benefit from memory optimization without any modification.
+Server and Client Memory Cleanup
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- **Incremental Tensor Serialization**: Instead of serializing all model parameters at once, tensors are serialized individually using safetensors format, significantly reducing peak memory consumption.
+FLARE 2.7.2 introduces automatic RSS (Resident Set Size) stabilization for long-running jobs,
+preventing unbounded memory growth across both the server and the full client pipeline:
 
-- **Pull-based Architecture**: Unlike push-based streaming, each recipient pulls data at its own pace, making it more reliable for heterogeneous network conditions.
-
-Performance Results
-^^^^^^^^^^^^^^^^^^^
-
-Based on our internal testing with a 5GB model and 4 clients using FedAvg, we observed **20% to 50% memory usage reduction** on both server and client sides.
-
-.. note::
-
-    Your results may vary depending on model size, number of clients, network conditions, and different FL algorithms and workflows.
-
-Benefits for LLM Training
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-- **Reduced Memory Footprint**: 20-50% reduction critical for large models that approach memory limits
-- **Improved Scalability**: Multiple clients can download at different rates without blocking
-- **Safetensors Format**: Secure and efficient tensor serialization without pickle vulnerabilities
-- **No Migration Required**: Existing PyTorch jobs automatically benefit from this optimization
-
-.. admonition:: Learn More
-
-    **Transparent & zero code changes** -- the TensorDownloader works automatically in all PyTorch workflows.
-    Supports **PyTorch tensors and NumPy arrays** (TensorFlow uses traditional serialization).
-
-    - User guide with configuration and tuning: :ref:`tensor_downloader`
-    - FOBS decomposer architecture: :ref:`decomposer_for_large_object`
-
-Zero Tensor Copy at the CJ Process (Pass-Through)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-For hierarchical and large-model deployments, the Client Job (CJ) relay process previously
-deserialized and re-serialized every model tensor before forwarding it to the client subprocess.
-This doubled the memory footprint at the relay tier for every round.
-
-FLARE 2.7.2 introduces a **pass-through architecture** for ``ClientAPILauncherExecutor``:
-
-- **Lazy references instead of full tensors**: The CJ process holds lightweight
-  ``LazyDownloadRef`` placeholders rather than materializing the full model, so the CJ
-  memory footprint is independent of model size.
-- **Direct subprocess download**: The training subprocess fetches tensors directly from the
-  FL server, eliminating the CJ as a memory bottleneck and halving network transfers between
-  the server and CJ tier.
-- **Zero code changes**: Existing jobs using ``ClientAPILauncherExecutor`` benefit
-  automatically.
-
-This is particularly impactful for LLM-scale models (7B–70B parameters) where CJ memory
-previously equalled the full model size.
-
-Large-Model Subprocess Reliability
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FLARE 2.7.2 adds a set of reliability improvements for jobs using subprocess-mode
-clients (``launch_external_process=True``) with large models.
-
-**Reduced memory on retry**: Send retries no longer accumulate per-attempt model
-copies in memory — a single serialized payload is reused across retries, preventing
-OOM growth on slow or congested networks.
-
-**Configurable large-model timeouts**: Three timeout parameters previously hardcoded
-at values too short for large models are now configurable via
-``recipe.add_client_config({...})``:
-
-- ``submit_result_timeout`` (default 60 s): time the training subprocess waits for
-  acknowledgment of its result.  Set to 1800 s for LLM-scale transfers.
-- ``tensor_min_download_timeout`` (PyTorch) / ``np_min_download_timeout`` (NumPy),
-  default 300 s: minimum idle time before an inactive download transaction is declared
-  dead.  Increase to 600 s for 70B+ models on congested networks.
-- ``max_resends`` (default 3): retry limit on persistent send failures.
-  Previously unlimited.
-
-**Timeout consistency validation**: At job start, FLARE logs warnings when timeout
-values are inconsistent (e.g., ``min_download_timeout < streaming_per_request_timeout``),
-making misconfiguration visible before a failure.
-
-**Client-Controlled Workflows min_clients fault tolerance**: Swarm Learning and SAG
-workflows now accept a ``min_clients`` threshold; if configured clients meet the
-threshold the workflow proceeds with a warning for missing participants rather than
-aborting.
-
-Client-Side Memory Management
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FLARE 2.7.2 extends memory lifecycle control to the client training process, complementing
-the existing server-side cleanup:
-
-- **Allocator-aware cleanup**: After each ``flare.send()`` call, FLARE automatically
-  invokes ``gc.collect()`` plus allocator-specific trimming — ``malloc_trim(0)`` for
-  glibc (Linux), jemalloc arena purge where available, and ``torch.cuda.empty_cache()``
-  for GPU memory — returning freed pages to the OS between rounds.
-- **Configurable frequency**: Cleanup runs every ``N`` rounds (default: every round),
-  configurable via recipe parameters (``client_memory_gc_rounds``) and ``ScriptRunner``.
-- **No training script changes**: Cleanup is injected transparently into the FLARE
-  client lifecycle without touching user training code.
-- **Combined with server-side cleanup**: Together with the server-side garbage collection
-  introduced in 2.7.2, this prevents unbounded RSS growth in both the server and client
-  processes across long-running jobs with many rounds.
-- **Full pipeline coverage for subprocess mode**: When using subprocess-mode clients
-  (``launch_external_process=True``), all stages of the client training process now
-  run the same GC and heap-trim cycle — not just the training subprocess — preventing
-  RSS growth across the entire client-side pipeline.
-
-Server-Side Memory Cleanup
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FLARE 2.7.2 adds automatic server-side memory management to address RSS (Resident Set Size — the actual physical memory used by a process) growth in long-running jobs:
-
-- **Periodic garbage collection and heap trimming**: Automatically runs ``gc.collect()`` and ``malloc_trim()`` to return freed memory back to the OS, preventing unbounded RSS growth over many training rounds.
-- **Environment variable tuning**: Guidance on ``MALLOC_ARENA_MAX`` settings to control glibc memory arena fragmentation for both server and client processes.
-- **Platform-aware**: Memory cleanup adapts to the runtime platform (Linux/glibc, musl, macOS), with full heap trimming on Linux/glibc and safe fallbacks elsewhere.
-- **Minimal overhead**: Cleanup takes 10-500ms per invocation — negligible compared to typical training round durations.
-
-On the client side, ``flare.send(..., clear_cache=True)`` (default) releases parameter references
-after serialization. This reference-release path is the primary mechanism to reclaim large tensor
-objects; ``gc.collect()`` is a supplemental safeguard mainly for cyclic references.
+- **Server**: Periodic ``gc.collect()`` + ``malloc_trim()`` after aggregation rounds returns
+  freed pages to the OS. Platform-aware: full heap trimming on Linux/glibc, safe fallbacks on
+  macOS/musl. Overhead is 10–500 ms per round — negligible compared to training time.
+- **Client (subprocess mode)**: The same GC and heap-trim cycle runs across the entire client
+  pipeline — both the Client Job (CJ) relay process and the training subprocess — after every
+  ``flare.send()`` call. Includes ``torch.cuda.empty_cache()`` for GPU memory. Configurable
+  via ``client_memory_gc_rounds``; no training script changes required.
+- ``MALLOC_ARENA_MAX`` tuning guidance provided for controlling glibc arena fragmentation on
+  both server and client.
 
 .. admonition:: Learn More
 
@@ -210,117 +118,36 @@ objects; ``gc.collect()`` is a supplemental safeguard mainly for cyclic referenc
 F3 Streaming Reliability and Performance
 -----------------------------------------
 
-A focused hardening effort on the F3 streaming layer addresses several concurrency and
-stability issues that manifested at scale, particularly in hierarchical and large-model
-deployments.
+FLARE 2.7.2 hardens the F3 streaming layer with fixes for four concurrency and stability
+issues that surfaced at scale, particularly in hierarchical and large-model deployments.
 
-Head-of-Line (HOL) Stall Mitigation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+**Head-of-line stall mitigation** — A slow or congested connection can no longer hold the
+SFM send lock indefinitely, blocking heartbeats and admin traffic behind a large frame send.
+A bounded send timeout, an ACK-progress watchdog, and optional connection reset
+(``SFM_CLOSE_STALLED_CONNECTION``) work together to detect and recover from stalls.
+See :ref:`timeout_troubleshooting` — *Streaming Stall Guardrail* for recommended settings.
 
-In 2.7.0/2.7.1, a slow or congested connection could hold the per-connection SFM send lock
-indefinitely, blocking all outgoing traffic on that relay — heartbeats, admin commands, and
-task requests — behind a single large frame send.
+**Concurrency fixes** — Three separate issues resolved: stream pool starvation (streaming
+callbacks were dispatched on the same thread pool they depended on, causing indefinite stall);
+an RxTask self-deadlock on stream error signals; and serialized cache-miss production that
+bottlenecked all concurrent clients behind a single lock at high client counts. Concurrent
+downloads now complete reliably with a dedicated callback pool and reduced lock scope.
 
-FLARE 2.7.2 eliminates this with a multi-layer guard:
-
-- **Bounded send timeout**: ``send_frame()`` now has a configurable deadline
-  (``STREAMING_SEND_TIMEOUT``); a send that exceeds it raises rather than blocking forever.
-- **ACK-progress watchdog**: A background monitor checks that ACKs advance within
-  ``STREAMING_ACK_PROGRESS_TIMEOUT``; if a connection stalls it is flagged.
-- **Stall detection and optional recovery**: Consecutive stall detections (configurable via
-  ``SFM_SEND_STALL_CONSECUTIVE_CHECKS``) can optionally trigger connection reset
-  (``SFM_CLOSE_STALLED_CONNECTION``), unblocking all pending traffic.
-
-For recommended settings, see :ref:`timeout_troubleshooting` — *Streaming Stall Guardrail* section.
-
-Stream Pool Starvation Fix
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Concurrent model downloads could stall indefinitely when streaming callbacks were dispatched
-on the same thread pool they depended on, exhausting it. The fix routes callbacks to a
-dedicated pool, keeping stream workers free. An end-to-end test validates that 8 concurrent
-downloads complete without starvation.
-
-Streaming Download Retry on Timeout
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Transient timeouts during streaming downloads (particularly in LLM swarming scenarios over
-congested networks) previously resulted in silent stream loss. FLARE 2.7.2 adds structured
-retry semantics:
-
-- **Exponential-backoff retry**: Up to 3 retries with configurable backoff, capped at 60 s.
-- **Abort-signal aware**: Retry loop respects abort signals; no stale retries after job stop.
-- **State-safe**: Retry is idempotent; re-requesting the same stream is safe for the server.
-
-RxTask Self-Deadlock Fix
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Stream error signals arriving during an active receive could cause a self-deadlock in the
-receiver cleanup path. The fix defers cleanup until after the critical section is exited,
-eliminating the deadlock without changing error-handling correctness.
-
-Lock Contention Reduction in Model Downloads
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-In the cacheable streaming layer, cache-miss production previously serialized all concurrent
-clients behind a single lock, increasing model-download latency at high client counts (e.g.,
-24 per relay). The lock scope has been reduced so production runs concurrently, significantly
-improving throughput when many clients request the same model chunk at once.
+**Streaming download retry** — Transient timeouts during tensor streaming (common in LLM
+swarming over congested networks) now trigger structured exponential-backoff retry (up to
+3 attempts, capped at 60 s), abort-signal aware and idempotent.
 
 Hierarchical FL Startup Stability
 -----------------------------------
 
-Large-scale hierarchical FL deployments (many clients across relay tiers) are subject to
-startup race conditions that can abort jobs before training begins. FLARE 2.7.2 addresses
-these with a set of coordinated fixes and new configuration controls.
-
-Deployment Timeout Now Treated as Failure
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Previously, a client that did not acknowledge job deployment within the timeout window
-(``reply=None``) was silently treated as successfully deployed. The server proceeded to
-start the job including that client in the participant list, creating a state inconsistency
-that led to premature dead-client detection and job abort.
-
-FLARE 2.7.2 correctly classifies deployment timeouts as failures, applying the existing
-``min_sites`` / ``required_sites`` tolerance check at the deployment phase. Timed-out
-clients are excluded from the job before ``start_client_job`` is called, preventing the
-state inconsistency from ever forming.
-
-Startup Grace Period for Dead-Client Detection
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The server's heartbeat monitor previously fired a dead-job notification on the very first
-heartbeat from a client that was not yet running the job — there was no startup grace period.
-For clients that were still initializing (slow filesystem, GPU allocation, subprocess
-spawning), this caused premature dead-client classification.
-
-FLARE 2.7.2 adds a debounce mechanism: a client must first be positively observed reporting
-the job in a heartbeat before a subsequent missing report triggers a dead-job notification.
-This gives clients the time they need to start without false alarms.
-
-This behavior is now the **default** (``sync_client_jobs_require_previous_report=true``).
-Operators who need the legacy aggressive detection can opt out via configuration.
-
-Selective Client Exclusion on Start-Job Timeout
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-When strict start-job reply checking is enabled
-(``strict_start_job_reply_check=true``), clients that time out at the start-job phase are
-now **excluded from the run** rather than causing a full job abort — provided the remaining
-active client count still satisfies ``min_clients``. A warning is logged identifying the
-excluded clients.
-
-This allows a job to proceed with e.g., 142 of 144 clients when 2 stragglers fail to
-respond, rather than aborting when the training majority is ready.
-
-Hardened Client Job Metadata Parsing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If a client process started after the job was already aborted, it would crash with an
-opaque ``TypeError: 'NoneType' object is not iterable`` when reading job client metadata.
-FLARE 2.7.2 replaces this with an explicit ``RuntimeError`` that names the missing field,
-making the failure actionable in logs.
+Large-scale hierarchical FL deployments are prone to startup race conditions that can abort
+jobs before training begins. FLARE 2.7.2 addresses these with a set of coordinated
+reliability fixes: deployment timeouts are now correctly classified as failures (triggering
+the existing ``min_sites`` tolerance check rather than silently proceeding); a startup grace
+period prevents premature dead-client detection while clients are still initializing; and
+stragglers that miss the start-job window are selectively excluded rather than aborting the
+entire job, provided the active count still satisfies ``min_clients``. Together these changes
+make large hierarchical jobs significantly more robust against transient startup delays.
 
 For recommended configuration settings for HPC environments (Slurm, Lustre filesystems),
 see :ref:`timeout_troubleshooting` — *Large-Scale Hierarchical / HPC Deployments* scenario.
