@@ -49,17 +49,21 @@ class FeatureElection:
         aggregation_mode: str = "weighted",
         auto_tune: bool = False,
         tuning_rounds: int = 5,
+        eval_metric: str = "f1",
     ):
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
         if aggregation_mode not in ["weighted", "uniform"]:
             raise ValueError("aggregation_mode must be 'weighted' or 'uniform'")
+        if eval_metric not in ["f1", "accuracy"]:
+            raise ValueError("eval_metric must be 'f1' or 'accuracy'")
 
         self.freedom_degree = freedom_degree
         self.fs_method = fs_method
         self.aggregation_mode = aggregation_mode
         self.auto_tune = auto_tune
         self.tuning_rounds = tuning_rounds
+        self.eval_metric = eval_metric
 
         # Storage for results
         self.global_mask = None
@@ -113,7 +117,7 @@ class FeatureElection:
                         "path": "nvflare.app_opt.feature_election.executor.FeatureElectionExecutor",
                         "args": {
                             "fs_method": self.fs_method,
-                            "eval_metric": "f1",
+                            "eval_metric": self.eval_metric,
                             "task_name": "feature_election",
                         },
                     },
@@ -286,12 +290,20 @@ class FeatureElection:
             if feature_names is None and isinstance(X, pd.DataFrame):
                 feature_names = X.columns.tolist()
 
-            # Split into train/val so tuning scores are not evaluated on training data
-            X_train_sim, X_val_sim, y_train_sim, y_val_sim = train_test_split(
-                X_np, y_np, test_size=0.2, random_state=42 + i
-            )
+            # Split into train/val so tuning scores are not evaluated on training data.
+            # Attempt stratified split so minority classes appear in both halves (mirrors
+            # _safe_train_test_split in prepare_data.py); fall back to random if any class
+            # has fewer than 2 samples (e.g. after a Dirichlet split).
+            try:
+                X_train_sim, X_val_sim, y_train_sim, y_val_sim = train_test_split(
+                    X_np, y_np, test_size=0.2, random_state=42 + i, stratify=y_np
+                )
+            except ValueError:
+                X_train_sim, X_val_sim, y_train_sim, y_val_sim = train_test_split(
+                    X_np, y_np, test_size=0.2, random_state=42 + i
+                )
 
-            executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric="f1")
+            executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric=self.eval_metric)
             executor.set_data(X_train_sim, y_train_sim, X_val=X_val_sim, y_val=y_val_sim, feature_names=feature_names)
             executors.append(executor)
 
@@ -378,11 +390,13 @@ class FeatureElection:
             "num_clients": len(client_data),
             "num_features_original": len(self.global_mask),
             "num_features_selected": int(np.sum(self.global_mask)),
-            "reduction_ratio": 1 - (np.sum(self.global_mask) / len(self.global_mask)),
-            "freedom_degree": self.freedom_degree,
+            "reduction_ratio": float(1 - (np.sum(self.global_mask) / len(self.global_mask))),
+            "freedom_degree": float(self.freedom_degree),
             "fs_method": self.fs_method,
             "auto_tune": self.auto_tune,
-            "tuning_history": tuning_history if self.auto_tune and self.tuning_rounds > 0 else [],
+            "tuning_history": [(float(fd), float(s)) for fd, s in tuning_history]
+            if self.auto_tune and self.tuning_rounds > 0
+            else [],
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
             "union_features": int(np.sum(np.any(masks, axis=0))),
             "client_stats": client_selections,
@@ -413,14 +427,15 @@ class FeatureElection:
     def save_results(self, filepath: str):
         """Save results to JSON."""
         results = {
-            "freedom_degree": self.freedom_degree,
+            "freedom_degree": float(self.freedom_degree),
             "fs_method": self.fs_method,
             "aggregation_mode": self.aggregation_mode,
             "auto_tune": self.auto_tune,
+            "eval_metric": self.eval_metric,
             "global_mask": self.global_mask.tolist() if self.global_mask is not None else None,
             "selected_feature_names": self.selected_feature_names,
             "election_stats": {
-                k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                k: (v.tolist() if isinstance(v, np.ndarray) else float(v) if isinstance(v, np.floating) else v)
                 for k, v in self.election_stats.items()
                 if k != "client_stats"  # Simplified saving for brevity
             },
@@ -437,6 +452,7 @@ class FeatureElection:
         self.fs_method = results.get("fs_method", "lasso")
         self.aggregation_mode = results.get("aggregation_mode", "weighted")
         self.auto_tune = results.get("auto_tune", False)
+        self.eval_metric = results.get("eval_metric", "f1")
 
         if results.get("global_mask"):
             self.global_mask = np.array(results["global_mask"])

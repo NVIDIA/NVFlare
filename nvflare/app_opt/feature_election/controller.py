@@ -82,7 +82,7 @@ class FeatureElectionController(Controller):
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
         results = {
             "global_mask": self.global_feature_mask.tolist() if self.global_feature_mask is not None else None,
-            "freedom_degree": self.freedom_degree,
+            "freedom_degree": float(self.freedom_degree),
             "num_features_selected": (
                 int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0
             ),
@@ -313,19 +313,24 @@ class FeatureElectionController(Controller):
                 # Initialize weighted_weights from first valid weights
                 if not weighted_weights:
                     weighted_weights = {k: np.zeros_like(np.array(v)) for k, v in weights.items()}
+                # Validate all keys before accumulating — a partial update would corrupt FedAvg
+                client_valid = True
                 for k, v in weights.items():
-                    # Ensure v is a numpy array before operations
                     v_array = np.array(v)
                     if k not in weighted_weights:
-                        logger.warning(f"Unexpected weight key '{k}' from client, skipping")
-                        continue
+                        logger.warning(f"Unexpected weight key '{k}' from client, skipping client")
+                        client_valid = False
+                        break
                     if weighted_weights[k].shape != v_array.shape:
                         logger.error(
                             f"Weight shape mismatch for key '{k}': expected {weighted_weights[k].shape}, got {v_array.shape}"
                         )
-                        continue
-                    weighted_weights[k] += v_array * n
-                total_samples += n
+                        client_valid = False
+                        break
+                if client_valid:
+                    for k, v in weights.items():
+                        weighted_weights[k] += np.array(v) * n
+                    total_samples += n
 
         if total_samples > 0:
             self.global_weights = {k: v / total_samples for k, v in weighted_weights.items()}
