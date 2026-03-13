@@ -143,22 +143,58 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # kills the subprocess immediately, tearing down its cell connection before the
         # server can download tensors from it ("no path" / deadlock).
         self._stop_task_wait_timeout = download_complete_timeout
+        self._cell_with_pass_through = None  # track cell so finalize() can clean up
+        self._pass_through_channel = None  # channel name registered in decode_pass_through_channels
+
+    def finalize(self, fl_ctx: FLContext) -> None:
+        if self._cell_with_pass_through is not None and self._pass_through_channel is not None:
+            self._cell_with_pass_through.decode_pass_through_channels.discard(self._pass_through_channel)
+            self.log_info(
+                fl_ctx,
+                f"Receiver-side PASS_THROUGH disabled on CJ cell for channel '{self._pass_through_channel}'",
+            )
+            self._cell_with_pass_through = None
+            self._pass_through_channel = None
+        super().finalize(fl_ctx)
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self.prepare_config_for_launch(fl_ctx)
-        # PASS_THROUGH (reverse path only):
-        # The subprocess-side CellPipe (pass_through_on_send=True, set in
-        # ExProcessClientAPI.init()) stamps MessageHeaderKey.PASS_THROUGH on
-        # result messages so CJ decodes them as LazyDownloadRef and forwards
-        # the original subprocess datum to the server for direct download.
-        #
-        # CJ's own pipe must NOT have pass_through_on_send=True: stamping
-        # PASS_THROUGH on task delivery messages (CJ → subprocess) causes the
-        # subprocess to create LazyDownloadRef objects instead of real tensors,
-        # which crashes user code (e.g. torch.as_tensor(LazyDownloadRef)).
-        # CJ downloads model tensors from the server normally and sends actual
-        # tensor data to the subprocess.
+        # Register this job's pipe channel for receiver-side PASS_THROUGH so
+        # incoming task tensors arrive as LazyDownloadRef (subprocess downloads
+        # directly from source, skipping materialisation in CJ).  Per-channel
+        # registration is concurrent-job safe: only this job's channel opts in.
         super().initialize(fl_ctx)
+
+        from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
+
+        if isinstance(self.pipe, _CellPipe):
+            engine = fl_ctx.get_engine()
+            get_cell_fn = getattr(engine, "get_cell", None)
+            if not get_cell_fn:
+                self.log_warning(
+                    fl_ctx,
+                    "engine.get_cell() is not available — receiver-side PASS_THROUGH "
+                    "cannot be enabled. Tensors will be fully materialised inside the CJ "
+                    "instead of being downloaded directly by the subprocess.",
+                )
+            else:
+                cell = get_cell_fn()
+                if cell is None:
+                    self.log_warning(
+                        fl_ctx,
+                        "engine.get_cell() returned None — receiver-side PASS_THROUGH "
+                        "cannot be enabled. Tensors will be fully materialised inside the CJ "
+                        "instead of being downloaded directly by the subprocess.",
+                    )
+                else:
+                    channel_name = self.get_pipe_channel_name()
+                    cell.decode_pass_through_channels.add(channel_name)
+                    self._cell_with_pass_through = cell
+                    self._pass_through_channel = channel_name
+                    self.log_info(
+                        fl_ctx,
+                        f"Receiver-side PASS_THROUGH enabled on CJ cell for channel '{channel_name}'",
+                    )
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()

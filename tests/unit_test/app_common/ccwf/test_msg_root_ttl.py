@@ -68,7 +68,6 @@ def _make_swarm_controller(learn_task_timeout=_LEARN_TASK_TIMEOUT):
     ctrl.update_status = MagicMock()
     ctrl.set_learn_task = MagicMock(return_value=True)
     ctrl.send_learn_task = MagicMock(return_value=True)
-    ctrl.forward_pass_through = False
     return ctrl
 
 
