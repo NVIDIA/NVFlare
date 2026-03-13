@@ -162,13 +162,16 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # consumes the tensors itself; it just forwards them to the subprocess.
         super().initialize(fl_ctx)
 
-        engine = fl_ctx.get_engine()
-        get_cell_fn = getattr(engine, "get_cell", None)
-        if get_cell_fn:
-            cell = get_cell_fn()
-            if cell is not None:
-                cell.decode_pass_through = True
-                self.log_info(fl_ctx, "Receiver-side PASS_THROUGH enabled on CJ cell (forward path)")
+        from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
+
+        if isinstance(self.pipe, _CellPipe):
+            engine = fl_ctx.get_engine()
+            get_cell_fn = getattr(engine, "get_cell", None)
+            if get_cell_fn:
+                cell = get_cell_fn()
+                if cell is not None:
+                    cell.decode_pass_through = True
+                    self.log_info(fl_ctx, "Receiver-side PASS_THROUGH enabled on CJ cell (forward path)")
 
         # Check for top-level config override for external_pre_init_timeout
         # This allows jobs to configure timeout via add_client_config()
