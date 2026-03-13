@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName
+from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 from nvflare.lighter.utils import sign_folders
 
@@ -30,16 +30,5 @@ class SignatureBuilder(Builder):
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
         for p in project.get_all_participants():
-            if p.get_prop(PropKey.CC_ENABLED):
-                # CC mode: sign from the root so the full startup kit can be verified
-                # before CVM launch
-                dest_dir = ctx.get_ws_dir(p)
-                sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-            else:
-                # Non-CC mode: sign only startup and local — these are the only dirs
-                # verified at runtime; signing the root pollutes transfer/ and breaks
-                # poc prepare on clean workspaces
-                dest_dir = ctx.get_kit_dir(p)
-                sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
-                dest_dir = ctx.get_local_dir(p)
-                sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+            dest_dir = ctx.get_ws_dir(p)
+            sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
