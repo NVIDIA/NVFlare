@@ -327,7 +327,7 @@ class FeatureElectionController(Controller):
                     weighted_weights[k] += v_array * n
                 total_samples += n
 
-        if total_samples > 0 and weighted_weights is not None:
+        if total_samples > 0:
             self.global_weights = {k: v / total_samples for k, v in weighted_weights.items()}
             logger.info(f"Aggregated weights from {len(results)} clients ({total_samples} samples)")
 

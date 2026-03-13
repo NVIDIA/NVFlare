@@ -40,7 +40,7 @@ def create_feature_election_job(
     n_features: int = 100,
     n_informative: int = 20,
     n_redundant: int = 30,
-    n_repeated: int = 30,
+    n_repeated: int = 10,
     export_dir: Optional[str] = None,
 ) -> FedJob:
     job = FedJob(name=job_name)
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--n-features", type=int, default=100)
     parser.add_argument("--n-informative", type=int, default=20)
     parser.add_argument("--n-redundant", type=int, default=30)
-    parser.add_argument("--n-repeated", type=int, default=30)
+    parser.add_argument("--n-repeated", type=int, default=10)
     parser.add_argument("--workspace", default="/tmp/nvflare/feature_election")
     parser.add_argument("--threads", type=int, default=1)
 

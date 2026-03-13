@@ -186,7 +186,7 @@ class FeatureElection:
         indices = np.arange(len(df))
 
         if split_strategy == "stratified":
-            remaining_X, remaining_y, remaining_indices = X, y, indices
+            remaining_y, remaining_indices = y, indices
             for i in range(num_clients - 1):
                 size = split_ratios[i] / sum(split_ratios[i:])
                 try:

@@ -197,6 +197,7 @@ class FeatureElectionExecutor(Executor):
 
             logger.info(f"Permanently applying mask: {np.sum(mask)} features selected")
 
+            self.global_feature_mask = mask
             self.X_train = self.X_train[:, mask]
             self.X_val = self.X_val[:, mask]
             return make_reply(ReturnCode.OK)
