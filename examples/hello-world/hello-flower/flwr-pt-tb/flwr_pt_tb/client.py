@@ -52,7 +52,15 @@ class FlowerClient(NumPyClient):
     def fit(self, parameters, config):
         step = self.get_step()
         set_weights(net, parameters)
-        results = train(net, trainloader, testloader, epochs=1, device=DEVICE, learning_rate=self.learning_rate, momentum=self.momentum)
+        results = train(
+            net,
+            trainloader,
+            testloader,
+            epochs=1,
+            device=DEVICE,
+            learning_rate=self.learning_rate,
+            momentum=self.momentum,
+        )
 
         self.writer.add_scalar("train_loss", results["train_loss"], step)
         self.writer.add_scalar("train_accuracy", results["train_accuracy"], step)
@@ -76,8 +84,8 @@ class FlowerClient(NumPyClient):
 
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    learning_rate = context.run_config["learning-rate"]
-    momentum = context.run_config["momentum"]
+    learning_rate = context.run_config.get("learning-rate", 0.001)
+    momentum = context.run_config.get("momentum", 0.9)
     return FlowerClient(context, learning_rate, momentum).to_client()
 
 

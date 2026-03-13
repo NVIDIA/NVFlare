@@ -13,9 +13,11 @@
 # limitations under the License.
 import json
 import os
+import shlex
 import sys
 import threading
 import time
+from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
@@ -83,6 +85,20 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"  chmod +x {executable_path}"
         )
         raise RuntimeError(error_msg)
+
+
+def _format_run_config_value(value) -> str:
+    """Format a Flower run_config value as a TOML-compatible scalar literal."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    if isinstance(value, str):
+        return json.dumps(value)
+
+    raise TypeError(f"invalid run_config value type {type(value)}: values must be bool, int, float, or str")
 
 
 class FlowerClientApplet(CLIApplet):
@@ -189,7 +205,7 @@ class FlowerServerApplet(Applet):
         superlink_ready_timeout: float,
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
-        run_config: dict = None,
+        run_config: Optional[dict] = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -336,15 +352,24 @@ class FlowerServerApplet(Applet):
         # Validate that flwr is installed and executable
         _validate_flower_executable(FLOWER_CLI, flwr_path)
 
-        run_config_str = ""
+        command_parts = [shlex.quote(flwr_path), cmd_name]
         if self.run_config and cmd_name == "run":
-            run_config_args = " ".join([f"{k}={v}" for k, v in self.run_config.items()])
-            run_config_str = f'--run-config "{run_config_args}" '
+            for key, value in self.run_config.items():
+                serialized = f"{key}={_format_run_config_value(value)}"
+                command_parts.extend(["--run-config", shlex.quote(serialized)])
 
-        return (
-            f"{flwr_path} {cmd_name} {run_config_str}--format json --federation-config 'address=\"{self.exec_api_addr}\"' "
-            f"{cmd_args} {self.flower_app_dir}"
+        command_parts.extend(
+            [
+                "--format",
+                "json",
+                "--federation-config",
+                shlex.quote(f'address="{self.exec_api_addr}"'),
+            ]
         )
+        if cmd_args:
+            command_parts.append(shlex.quote(cmd_args))
+        command_parts.append(shlex.quote(self.flower_app_dir))
+        return " ".join(command_parts)
 
     def _run_flower_command(self, command: str):
         self.logger.debug(f"running flower command: {command}")
