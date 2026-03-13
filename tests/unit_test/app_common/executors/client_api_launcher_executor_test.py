@@ -1506,6 +1506,7 @@ def test_concurrent_before_task_execution_blocked_during_initialize(monkeypatch)
 
     init_gate.set()
     t.join(timeout=5.0)
+    assert not t.is_alive(), "execute() thread did not finish after init_gate was set"
 
     assert handler_replaced == [
         False
