@@ -207,11 +207,14 @@ class FeatureElection:
             np.random.seed(random_state)
             np.random.shuffle(indices)
             start = 0
-            for ratio in split_ratios:
-                end = start + int(len(indices) * ratio)
-                c_idx = indices[start:end]
+            for i, ratio in enumerate(split_ratios):
+                if i == len(split_ratios) - 1:
+                    c_idx = indices[start:]  # last client gets all remaining
+                else:
+                    end = start + int(len(indices) * ratio)
+                    c_idx = indices[start:end]
+                    start = end
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
-                start = end
 
         elif split_strategy == "dirichlet":
             # Non-IID split logic
@@ -235,17 +238,25 @@ class FeatureElection:
                     client_indices[i].extend(idx_k[start : start + prop])
                     start += prop
 
-            for indices_i in client_indices:
+            for i, indices_i in enumerate(client_indices):
+                if len(indices_i) == 0:
+                    raise ValueError(
+                        f"Client {i} received 0 samples from Dirichlet split (alpha=0.5). "
+                        "Increase the dataset size or reduce the number of clients."
+                    )
                 client_data.append((X.iloc[indices_i], y.iloc[indices_i]))
 
         else:
             # Fallback for sequential or other
             start = 0
-            for ratio in split_ratios:
-                end = start + int(len(indices) * ratio)
-                c_idx = indices[start:end]
+            for i, ratio in enumerate(split_ratios):
+                if i == len(split_ratios) - 1:
+                    c_idx = indices[start:]  # last client gets all remaining
+                else:
+                    end = start + int(len(indices) * ratio)
+                    c_idx = indices[start:end]
+                    start = end
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
-                start = end
 
         return client_data
 
