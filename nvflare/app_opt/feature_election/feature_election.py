@@ -322,11 +322,11 @@ class FeatureElection:
             fs_score = executor.evaluate_model(X_sel_tr, y_train_sim, X_sel_val, y_val_sim)
 
             client_selections[f"client_{i}"] = {
-                "selected_features": selected_mask,
-                "feature_scores": feature_scores,
+                "selected_features": selected_mask.tolist(),
+                "feature_scores": feature_scores.tolist(),
                 "num_samples": len(X_np),
-                "initial_score": initial_score,
-                "fs_score": fs_score,
+                "initial_score": float(initial_score),
+                "fs_score": float(fs_score),
             }
 
         # Simulate Controller Aggregation with optional auto-tuning
