@@ -81,12 +81,12 @@ memory reduction** on both server and client. NumPy arrays are supported via the
 ``NpDownloader``.
 
 **Zero-copy relay at the Client Job (CJ) process (Pass-Through)** — For subprocess-mode
-clients (``ClientAPILauncherExecutor``), the Client Job (CJ) relay process previously
-deserialized and re-serialized every model tensor before forwarding it to the training
-subprocess, doubling the relay-tier memory footprint per round. FLARE 2.7.2 introduces
-pass-through forwarding: the CJ holds lightweight ``LazyDownloadRef`` placeholders and the
-training subprocess downloads tensors directly from the FL server, making CJ memory
-independent of model size. Particularly impactful for LLM-scale models (7B–70B parameters).
+clients (``ClientAPILauncherExecutor``), the CJ relay process previously deserialized and
+re-serialized every model tensor before forwarding it to the training subprocess, doubling
+the relay-tier memory footprint per round. FLARE 2.7.2 introduces pass-through forwarding:
+the CJ holds lightweight ``LazyDownloadRef`` placeholders and the training subprocess
+downloads tensors directly from the FL server, making CJ memory independent of model size.
+Particularly impactful for LLM-scale models (7B–70B parameters).
 
 **Large-model subprocess reliability** — Send retries no longer accumulate per-attempt model
 copies in memory. Three timeout parameters previously hardcoded at values too short for large
@@ -105,7 +105,7 @@ preventing unbounded memory growth across both the server and the full client pi
   freed pages to the OS. Platform-aware: full heap trimming on Linux/glibc, safe fallbacks on
   macOS/musl. Overhead is 10–500 ms per round — negligible compared to training time.
 - **Client (subprocess mode)**: The same GC and heap-trim cycle runs across the entire client
-  pipeline — both the Client Job (CJ) relay process and the training subprocess — after every
+  pipeline — both the CJ relay process and the training subprocess — after every
   ``flare.send()`` call. Includes ``torch.cuda.empty_cache()`` for GPU memory. Configurable
   via ``client_memory_gc_rounds``; no training script changes required.
 - ``MALLOC_ARENA_MAX`` tuning guidance provided for controlling glibc arena fragmentation on
@@ -118,7 +118,7 @@ preventing unbounded memory growth across both the server and the full client pi
 F3 Streaming Reliability and Performance
 -----------------------------------------
 
-FLARE 2.7.2 hardens the F3 streaming layer with fixes for four concurrency and stability
+FLARE 2.7.2 hardens the F3 streaming layer with fixes for five concurrency and stability
 issues that surfaced at scale, particularly in hierarchical and large-model deployments.
 
 **Head-of-line stall mitigation** — A slow or congested connection can no longer hold the
