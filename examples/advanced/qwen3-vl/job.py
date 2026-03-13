@@ -28,7 +28,7 @@ from nvflare.recipe import SimEnv, add_experiment_tracking
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated Qwen3-VL SFT (3 clients) via Qwen3-VL train_qwen.py")
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients (default 3)")
-    parser.add_argument("--num_rounds", type=int, default=5, help="FL rounds (default 5)")
+    parser.add_argument("--num_rounds", type=int, default=3, help="FL rounds (default 3)")
     parser.add_argument(
         "--gpu",
         type=str,
@@ -67,6 +67,14 @@ def define_parser():
         help="Peak learning rate for training (default 5e-7; try 1e-6 for faster convergence)",
     )
     parser.add_argument(
+        "--lora",
+        action="store_true",
+        help="Enable LoRA fine-tuning (passes --lora_enable True to Qwen train script).",
+    )
+    parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank (default 64).")
+    parser.add_argument("--lora_alpha", type=int, default=128, help="LoRA alpha (default 128).")
+    parser.add_argument("--lora_dropout", type=float, default=0.0, help="LoRA dropout (default 0.0).")
+    parser.add_argument(
         "--wandb",
         action="store_true",
         help="Enable Weights & Biases experiment tracking (optional).",
@@ -89,12 +97,33 @@ def _parse_gpu_string(gpu_str: str):
     return [max(1, len(g.split(","))) for g in groups]
 
 
+def _configure_timeouts(recipe, client_names, task_timeout=1200, tensor_timeout=600):
+    """Add client and server timeouts for large model / tensor streaming.
+
+    Ensures tensor_min_download_timeout >= tensor_streaming_per_request_timeout
+    so transactions are not killed mid-download.
+    """
+    recipe.add_client_config(
+        {
+            "get_task_timeout": task_timeout,
+            "submit_task_result_timeout": task_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+        },
+        clients=client_names,
+    )
+    recipe.add_server_config(
+        {
+            "streaming_per_request_timeout": tensor_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+        }
+    )
+
+
 def main():
     args = define_parser()
     n_clients = args.n_clients
     data_dir = os.path.abspath(args.data_dir)
     image_root = os.path.abspath(args.image_root)
-    qwen_root = os.environ.get("QWEN3VL_ROOT", "")
 
     client_names = [f"site-{i}" for i in range(1, n_clients + 1)]
     # Per-client process count: from --gpu when set (e.g. "[0,1,2,3]" -> 4), else nproc_per_client
@@ -123,18 +152,32 @@ def main():
             f"--learning_rate {args.learning_rate} "
             f"--report_to {report_to}"
         )
-        if qwen_root:
-            train_args = f"--qwen_root {qwen_root} " + train_args
-        # Per-site torchrun so Qwen train_qwen gets a proper distributed env (unique master_port per client)
+        if args.lora:
+            train_args += (
+                f" --lora_exchange --lora_r {args.lora_r} --lora_alpha {args.lora_alpha}"
+                f" --lora_dropout {args.lora_dropout}"
+            )
+        # Per-site torchrun for distributed training (unique master_port per client)
         master_port = 29500 + (idx + 1)
         command = f"torchrun --nproc_per_node={n_proc} --nnodes=1 --master_port {master_port}"
         per_site_config[site_name] = {"train_args": train_args, "command": command}
 
-    # Initial model: dict-based config (same pattern as llm_hf); model loaded from path/args.
-    model = {
-        "class_path": "model.Qwen3VLModel",
-        "args": {"model_name_or_path": args.model_name_or_path},
-    }
+    # Initial model: when --lora, use LoRA-only wrapper so server and clients exchange only adapter weights.
+    if args.lora:
+        model = {
+            "class_path": "model.Qwen3VLLoRAModel",
+            "args": {
+                "model_name_or_path": args.model_name_or_path,
+                "lora_r": args.lora_r,
+                "lora_alpha": args.lora_alpha,
+                "lora_dropout": args.lora_dropout,
+            },
+        }
+    else:
+        model = {
+            "class_path": "model.Qwen3VLModel",
+            "args": {"model_name_or_path": args.model_name_or_path},
+        }
 
     # Use native PyTorch tensor exchange (like llm_hf message_mode=tensor) so BFloat16
     # weights are not converted to numpy (numpy does not support BFloat16).
@@ -144,7 +187,6 @@ def main():
         num_rounds=args.num_rounds,
         model=model,
         train_script="client.py",
-        train_args="",  # overridden by per_site_config
         per_site_config=per_site_config,
         launch_external_process=True,
         server_expected_format="pytorch",
@@ -152,28 +194,8 @@ def main():
         key_metric="",
     )
 
-    # Client script is the only custom file; it runs Qwen train in-process
-
-    # Client timeouts: get_task_timeout for receiving the next task; submit_task_result_timeout for
-    # sending results (when unset, framework uses communication_timeout default 300s).
-    # tensor_min_download_timeout must be >= tensor_streaming_per_request_timeout (default 600s)
-    # to avoid transactions being killed mid-download.
-    recipe.add_client_config(
-        {
-            "get_task_timeout": 1200,
-            "submit_task_result_timeout": 1200,
-            "tensor_min_download_timeout": 600,
-        },
-        clients=client_names,
-    )
-
-    # Server tensor streaming: align timeouts so downloads are not killed mid-stream.
-    recipe.add_server_config(
-        {
-            "streaming_per_request_timeout": 600,
-            "tensor_min_download_timeout": 600,
-        }
-    )
+    # Configure timeouts for large model / tensor streaming.
+    _configure_timeouts(recipe, client_names)
 
     # Optional: add experiment tracking with Weights & Biases
     if args.wandb:
