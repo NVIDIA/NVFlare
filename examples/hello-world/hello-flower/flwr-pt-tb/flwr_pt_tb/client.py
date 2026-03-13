@@ -82,10 +82,21 @@ class FlowerClient(NumPyClient):
         return loss, len(testloader.dataset), {"accuracy": accuracy}
 
 
+def _get_required_hyperparameters(context: Context):
+    missing = [key for key in ("learning-rate", "momentum") if key not in context.run_config]
+    if missing:
+        missing_args = ", ".join(missing)
+        raise ValueError(
+            f"missing required run_config value(s): {missing_args}. "
+            "Define them in [tool.flwr.app.config] in pyproject.toml or pass them via run_config."
+        )
+
+    return context.run_config["learning-rate"], context.run_config["momentum"]
+
+
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
-    learning_rate = context.run_config.get("learning-rate", 0.001)
-    momentum = context.run_config.get("momentum", 0.9)
+    learning_rate, momentum = _get_required_hyperparameters(context)
     return FlowerClient(context, learning_rate, momentum).to_client()
 
 
