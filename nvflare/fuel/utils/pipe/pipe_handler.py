@@ -19,7 +19,7 @@ from typing import Optional
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from nvflare.fuel.utils.pipe.pipe import HEARTBEAT_SEND_TIMEOUT, Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
     check_non_negative_number,
@@ -400,7 +400,7 @@ class PipeHandler(object):
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
                 try:
-                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
+                    self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""), timeout=HEARTBEAT_SEND_TIMEOUT)
                 except Exception as ex:
                     if not self.asked_to_stop:
                         self.logger.debug(f"heartbeat send failed, stopping heartbeat: {ex}")

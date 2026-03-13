@@ -13,12 +13,13 @@
 # limitations under the License.
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+from nvflare.fuel.utils.pipe.pipe import Message, Topic
 
 
 class TestFilePipeDeferred:
@@ -145,3 +146,51 @@ class TestFilePipeGetNextTOCTOU:
         with patch("nvflare.fuel.utils.pipe.file_pipe.os.listdir", side_effect=OSError("dir gone")):
             with pytest.raises(BrokenPipeError):
                 pipe._get_next(from_dir)
+
+
+class TestFilePipeSendHeartbeatTimeout:
+    """FilePipe.send() must apply 600s default only for HEARTBEAT with timeout=None."""
+
+    def _make_pipe(self, tmp_path):
+
+        root = str(tmp_path / "pipe_root")
+        pipe = FilePipe(mode=Mode.PASSIVE, root_path=root)
+        pipe.open("test_pipe")
+        pipe.put_f = MagicMock(return_value=True)
+        return pipe
+
+    def test_heartbeat_none_timeout_applies_600s(self, tmp_path):
+        """send(HEARTBEAT, timeout=None) must pass 600.0 to put_f."""
+
+        pipe = self._make_pipe(tmp_path)
+        msg = Message.new_request(Topic.HEARTBEAT, "")
+        pipe.send(msg, timeout=None)
+        pipe.put_f.assert_called_once_with(msg, 600.0)
+
+    def test_heartbeat_explicit_timeout_not_overridden(self, tmp_path):
+        """send(HEARTBEAT, timeout=5.0) must not override the caller's explicit timeout."""
+        pipe = self._make_pipe(tmp_path)
+        msg = Message.new_request(Topic.HEARTBEAT, "")
+        pipe.send(msg, timeout=5.0)
+        pipe.put_f.assert_called_once_with(msg, 5.0)
+
+    def test_heartbeat_zero_timeout_not_overridden(self, tmp_path):
+        """send(HEARTBEAT, timeout=0) must not apply 600s — 0 is intentional, not unset."""
+        pipe = self._make_pipe(tmp_path)
+        msg = Message.new_request(Topic.HEARTBEAT, "")
+        pipe.send(msg, timeout=0)
+        pipe.put_f.assert_called_once_with(msg, 0)
+
+    def test_end_none_timeout_not_changed(self, tmp_path):
+        """send(END, timeout=None) must not apply 600s — only HEARTBEAT is special."""
+        pipe = self._make_pipe(tmp_path)
+        msg = Message.new_request(Topic.END, "")
+        pipe.send(msg, timeout=None)
+        pipe.put_f.assert_called_once_with(msg, None)
+
+    def test_abort_none_timeout_not_changed(self, tmp_path):
+        """send(ABORT, timeout=None) must not apply 600s."""
+        pipe = self._make_pipe(tmp_path)
+        msg = Message.new_request(Topic.ABORT, "")
+        pipe.send(msg, timeout=None)
+        pipe.put_f.assert_called_once_with(msg, None)
