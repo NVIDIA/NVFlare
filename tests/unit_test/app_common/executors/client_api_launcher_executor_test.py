@@ -1241,14 +1241,16 @@ def test_handle_event_resets_handler_when_not_executing(monkeypatch):
     """BEFORE_TASK_EXECUTION must replace the pipe handler when _executing is not set."""
     from unittest.mock import MagicMock
 
-    from nvflare.fuel.utils.pipe.pipe import Pipe
-
     executor = TaskExchanger(pipe_id="test_pipe")
     monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(
+        TaskExchanger,
+        "_create_pipe_handler",
+        lambda self: setattr(self, "pipe_handler", _FakePipeHandler(identity="new")) or self.pipe_handler,
+    )
 
     old_handler = _FakePipeHandler(identity="old")
     executor.pipe_handler = old_handler
-    executor.pipe = MagicMock(spec=Pipe)
 
     assert not executor._executing.is_set()
     executor.handle_event(EventType.BEFORE_TASK_EXECUTION, MagicMock())
