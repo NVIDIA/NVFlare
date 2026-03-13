@@ -100,6 +100,7 @@ class TaskExchanger(Executor):
         self.pipe = None
         self.pipe_handler = None
         self._executing = threading.Event()
+        self._executing_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -110,9 +111,10 @@ class TaskExchanger(Executor):
                 return
             self.pipe.open(self.pipe_channel_name)
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
-            if self._executing.is_set():
-                self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
-                return
+            with self._executing_lock:
+                if self._executing.is_set():
+                    self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
+                    return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
             self._create_pipe_handler()
@@ -163,9 +165,10 @@ class TaskExchanger(Executor):
         TaskExchanger generic and can be reused for any applications (e.g. Shareable based, DXO based, or any custom
         data based).
         """
-        acquired = not self._executing.is_set()
-        if acquired:
-            self._executing.set()
+        with self._executing_lock:
+            acquired = not self._executing.is_set()
+            if acquired:
+                self._executing.set()
         try:
             return self._do_execute(task_name, shareable, fl_ctx, abort_signal)
         finally:
