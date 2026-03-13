@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.12
+          python-version: 3.14
 
       # versions need to be consistent with setup.cfg
       - name: Install isort
@@ -30,7 +30,7 @@ jobs:
         run: python -m isort $DIRS
 
       - name: Install black
-        run: pip install black==24.8.0
+        run: pip install black==25.9.0
 
       - name: Run black
         run: python -m black $DIRS
@@ -48,4 +48,3 @@ jobs:
           git add .
           git diff --cached --quiet || git commit -m "Auto format with black"
           git push
-

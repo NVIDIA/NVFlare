@@ -75,6 +75,9 @@ Recipes accept model input in two formats, each with different trade-offs:
      is inefficient. Use the dictionary format to avoid unnecessary instantiation time and memory usage.
    * **Non-serializable state**: If your model carries state that cannot be reconstructed from JSON configuration
      (e.g., loaded data, open file handles), that state will be lost.
+   * **TensorFlow/Keras class instances**: Use a user-defined subclass (for example, subclassing
+     ``tf.keras.Model`` or ``tf.keras.Sequential``) so the model can be reconstructed from class path and args.
+     Passing raw inline Keras model objects may fail during job export.
    * **Trade-off**: Class instance is more Pythonic and catches errors early; dictionary format is more performant
      for large models.
 
@@ -103,7 +106,8 @@ Use ``initial_ckpt`` to specify a path to pre-trained model weights:
    * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
      dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
    * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
-     and weights, so ``initial_ckpt`` can be used without ``model``.
+     and weights, so ``initial_ckpt`` can be used without ``model``. If ``model`` is provided, use a subclassed
+     Keras class instance (or dict config).
 
 **Example: Resume training from pre-trained weights**
 
@@ -337,4 +341,3 @@ The goal of Job Recipes is to create a simple entry point into NVFlare that is m
 Examples
 --------
 To see more examples of Job Recipe in action, check out the quick start series :ref:`quickstart`, where several job recipes are demonstrated.
-

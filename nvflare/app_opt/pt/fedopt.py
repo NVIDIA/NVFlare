@@ -45,9 +45,9 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
 
         Args:
             optimizer_args: dictionary of optimizer arguments, e.g.
-                {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default).
+                {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}} (default). 'path' is also accepted.
             lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, e.g.
-                {'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None).
+                {'class_path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}} (default: None). 'path' is also accepted.
             source_model: either a valid torch model object or a component ID of a torch model object
             device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
                 (will default to cuda if available and no device is specified).
@@ -62,13 +62,13 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
 
         if not isinstance(optimizer_args, dict):
             raise TypeError(
-                "optimizer_args must be a dict of format, e.g. {'path': 'torch.optim.SGD', 'args': {'lr': 1.0}}."
+                "optimizer_args must be a dict of format, e.g. {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}}."
             )
         if lr_scheduler_args is not None:
             if not isinstance(lr_scheduler_args, dict):
                 raise TypeError(
-                    "optimizer_args must be a dict of format, e.g. "
-                    "{'path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}}."
+                    "lr_scheduler_args must be a dict of format, e.g. "
+                    "{'class_path': 'torch.optim.lr_scheduler.CosineAnnealingLR', 'args': {'T_max': 100}}."
                 )
         self.source_model = source_model
         self.optimizer_args = optimizer_args
@@ -82,7 +82,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
 
     def _get_component_name(self, component_args):
         if component_args is not None:
-            name = component_args.get("path", None)
+            name = component_args.get("path") or component_args.get("class_path")
             if name is None:
                 name = component_args.get("name", None)
             return name

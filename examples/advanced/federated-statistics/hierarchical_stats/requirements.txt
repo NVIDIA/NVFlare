@@ -1,7 +1,7 @@
 nvflare~=2.7.0rc
 ipywidgets
 numpy
-pandas
+pandas~=2.3
 matplotlib
 jupyterlab
 jupyter

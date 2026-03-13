@@ -210,6 +210,11 @@ Documentation
 
 - **Job Recipe Guide**: Updated :doc:`/user_guide/data_scientist_guide/job_recipe` with dict model config and initial checkpoint examples.
 
+Python Compatibility
+~~~~~~~~~~~~~~~~~~~~
+
+- Added official support for Python 3.13 and Python 3.14, including packaging metadata and CI test matrix updates.
+
 Bug Fixes
 ~~~~~~~~~
 
@@ -253,5 +258,3 @@ For more examples and tutorials, see:
 - `Hello World Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world>`_
 - `Advanced Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced>`_
 - `Self-Paced Training Tutorials <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training>`_
-
-

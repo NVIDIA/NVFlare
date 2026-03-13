@@ -24,14 +24,28 @@ Most training recipes accept the following model-related parameters:
 
     .. note::
        Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead.
+       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
+       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
 
 ``initial_ckpt``
     Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
     on the server when the model is loaded during job execution.
 
     * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model)
+    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
+      subclassed Keras class instance or dict config.
+
+``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
+    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
+
+    * ``False`` (default): materialize in memory
+    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
+
+    .. warning::
+
+       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
+       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
+       ``TMPDIR`` to a disk-backed mount for the server process.
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
@@ -258,7 +272,7 @@ PyTorch FedOpt
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -281,7 +295,7 @@ TensorFlow FedOpt
         num_rounds=5,
         model=MyTFModel(),
         train_script="client.py",
-        optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
+        optimizer_args={"class_path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -804,4 +818,3 @@ Deploy to production NVFlare infrastructure.
 
     env = ProdEnv(startup_kit_location="/path/to/startup_kit")
     run = recipe.execute(env)
-

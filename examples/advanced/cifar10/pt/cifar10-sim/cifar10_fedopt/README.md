@@ -86,19 +86,19 @@ python job.py --n_clients 16 --num_rounds 100 --alpha 0.1 --aggregation_epochs 2
 
 ### Server-Side Optimization
 
-FedOpt is configured in `job.py` by specifying the server optimizer:
+FedOpt is configured in `job.py` using `FedOptRecipe` with `optimizer_args` and optional `lr_scheduler_args`:
 
 ```python
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-recipe = FedAvgRecipe(
+recipe = FedOptRecipe(
     name="cifar10_fedopt",
     # ... other parameters ...
-    server_optimizer="sgd",           # Optimizer type
-    server_optimizer_args={
-        "lr": 1.0,                     # Server learning rate
-        "momentum": 0.9                # Momentum coefficient
-    }
+    optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+    lr_scheduler_args={
+        "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+        "args": {"T_max": num_rounds, "eta_min": 0.9},
+    },
 )
 ```
 
@@ -172,13 +172,12 @@ To try different server optimizers, modify `job.py`:
 
 ```python
 # Try Adam instead of SGD
-recipe = FedAvgRecipe(
+recipe = FedOptRecipe(
     # ... other parameters ...
-    server_optimizer="adam",
-    server_optimizer_args={
-        "lr": 0.01,
-        "betas": (0.9, 0.999)
-    }
+    optimizer_args={
+        "class_path": "torch.optim.Adam",
+        "args": {"lr": 0.01, "betas": (0.9, 0.999)},
+    },
 )
 ```
 
@@ -186,5 +185,5 @@ recipe = FedAvgRecipe(
 
 - [FedOpt Paper](https://arxiv.org/abs/2003.00295) - Reddi et al., 2020
 - [NVFlare Documentation](https://nvflare.readthedocs.io/)
-- [NVFlare FedAvgRecipe](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.recipes.fedavg.html)
+- [NVFlare FedOptRecipe](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.pt.recipes.fedopt.html)
 

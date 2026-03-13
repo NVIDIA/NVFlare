@@ -89,22 +89,11 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare examples tests integration research"
-    echo "checking license header in folder: $folders_to_check_license"
-    (grep -r --include "*.py" --exclude-dir "*protos*" --exclude "modeling_roberta.py" -L \
-    "\(# Copyright (c) \(2021\|2022\|2023\|2024\|2025\|2026\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
-    ${folders_to_check_license} || true) > no_license.lst
-    if [ -s no_license.lst ]; then
-        # The file is not-empty.
-        cat no_license.lst
-        echo "License text not found on the above files."
-        echo "Please fix them."
-        rm -f no_license.lst
-        exit 1
-    else
-        echo "All Python files in folder ${folders_to_check_license} have license header"
-        rm -f no_license.lst
-    fi
+    folders_to_check_license=("nvflare" "examples" "tests" "integration" "research")
+    echo "checking license header in folder: ${folders_to_check_license[*]}"
+    status=0
+    python3 ci/check_license_header.py "${folders_to_check_license[@]}" || status="$?"
+    report_status "${status}"
     echo "finished checking license header"
 }
 
@@ -212,6 +201,7 @@ function help() {
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
+    echo "         --numprocesses=<N|auto>  : used with -u command, set pytest xdist workers (default is 8)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
 #   echo "    -i | --integration-tests      : integration tests"
@@ -221,6 +211,7 @@ function help() {
 coverage_report=false
 unit_test_report=false
 dry_run_flag=false
+pytest_numprocesses=8
 
 
 # parse arguments
@@ -241,16 +232,10 @@ do
 
         -s |--check-format) # check format and styles
             cmd="check_style_type_import"
-            if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK[@]}"
-            fi
         ;;
 
         -f |--fix-format)
             cmd="fix_style_import"
-            if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK[@]}"
-            fi
         ;;
         -c|--coverage)
             coverage_report=true
@@ -267,21 +252,7 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="python3 -m pytest --numprocesses=8 -v "
-
-            echo "coverage_report=" ${coverage_report}
-            if [ "${coverage_report}" == true ]; then
-                cmd_prefix="${cmd_prefix} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"
-            fi
-
-            if [ "${unit_test_report}" == true ]; then
-                cmd_prefix="${cmd_prefix} --junitxml=unit_test.xml "
-            fi
-            cmd="$cmd_prefix"
-
-            if [[ -z $target ]]; then
-                target="tests/unit_test"
-            fi
+            cmd="unit_tests"
         ;;
 
         --clean)
@@ -292,6 +263,10 @@ do
             dry_run_flag=true
         ;;
 
+        --numprocesses=*)
+            pytest_numprocesses="${key#*=}"
+        ;;
+
         -*)
             help
         ;;
@@ -300,14 +275,38 @@ do
     shift
 done
 
-if [[ -z $cmd ]]; then
+if [[ -z "${cmd}" ]]; then
     cmd="check_license;
         check_style_type_import "${DIR_TO_CHECK[@]}";
         fix_style_import "${DIR_TO_CHECK[@]}";
-        python3 -m pytest --numprocesses=8 -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
+        python3 -m pytest --numprocesses=${pytest_numprocesses} -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
         "
+elif [[ "${cmd}" == "unit_tests" ]]; then
+    if [[ -z $target ]]; then
+        target="tests/unit_test"
+    fi
+
+    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} -v "
+
+    if [ "${coverage_report}" == true ]; then
+        cmd="${cmd} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"
+    fi
+
+    if [ "${unit_test_report}" == true ]; then
+        cmd="${cmd} --junitxml=unit_test.xml "
+    fi
+
+    cmd="${cmd} ${target}"
 else
-    cmd="$cmd $target"
+    if [[ "${cmd}" == "check_style_type_import" || "${cmd}" == "fix_style_import" ]]; then
+        if [[ -z $target ]]; then
+            target="${DIR_TO_CHECK[@]}"
+        fi
+    fi
+
+    if [[ "${cmd}" != " " && -n "$target" ]]; then
+        cmd="$cmd $target"
+    fi
 fi
 
 echo "running command: "
