@@ -229,7 +229,8 @@ class FedAvg(BaseFedAvg):
         weight = None
 
         if self.aggregator:
-            # Use custom aggregator
+            # Use custom aggregator; sync fl_ctx so accept_model sees the current round
+            self.aggregator.fl_ctx = self.fl_ctx
             self.aggregator.accept_model(result)
         else:
             # Use built-in InTime aggregation with weighted averaging
