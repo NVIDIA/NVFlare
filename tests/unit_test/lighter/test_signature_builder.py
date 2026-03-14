@@ -93,10 +93,10 @@ class TestSignatureBuilder:
         builder.build(project, ctx)
 
         signed_dirs = [c.args[0] for c in mock_sign.call_args_list]
-        assert "/cc_ws" in signed_dirs          # CC: root signed
+        assert "/cc_ws" in signed_dirs  # CC: root signed
         assert "/plain_ws/startup" in signed_dirs  # non-CC: startup signed
-        assert "/plain_ws/local" in signed_dirs    # non-CC: local signed
-        assert "/plain_ws" not in signed_dirs      # non-CC: root NOT signed
+        assert "/plain_ws/local" in signed_dirs  # non-CC: local signed
+        assert "/plain_ws" not in signed_dirs  # non-CC: root NOT signed
         assert mock_sign.call_count == 3
 
     @patch("nvflare.lighter.impl.signature.sign_folders")
