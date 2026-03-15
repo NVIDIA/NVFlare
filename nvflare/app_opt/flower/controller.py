@@ -19,7 +19,7 @@ from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
 from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
 
@@ -76,8 +76,6 @@ class FlowerController(TieController):
         check_positive_number("superlink_grace_period", superlink_grace_period)
         check_positive_number("monitor_interval", monitor_interval)
         check_positive_number("superlink_min_query_interval", superlink_min_query_interval)
-        if run_config is not None:
-            check_object_type("run_config", run_config, dict)
 
         self.num_rounds = num_rounds
         self.database = database

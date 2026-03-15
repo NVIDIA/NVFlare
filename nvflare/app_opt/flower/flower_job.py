@@ -19,7 +19,6 @@ from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
@@ -67,8 +66,6 @@ class FlowerJob(FedJob):
         """
         if not os.path.isdir(flower_content):
             raise ValueError(f"{flower_content} is not a valid directory")
-        if run_config is not None:
-            check_object_type("run_config", run_config, dict)
 
         super().__init__(name=name, min_clients=min_clients, mandatory_clients=mandatory_clients)
 
