@@ -46,7 +46,7 @@ A project is a named, immutable tenant boundary with these properties:
 
 ### Data Scientist (Recipe API)
 
-The recipe is unchanged. The project is specified via `ProdEnv` or `PocEnv`:
+The recipe is unchanged. The project is specified via `ProdEnv`:
 
 ```python
 recipe = FedAvgRecipe(
@@ -64,17 +64,7 @@ env = ProdEnv(
 run = recipe.execute(env)
 ```
 
-`PocEnv` supports the same parameter:
-
-```python
-env = PocEnv(
-    poc_workspace=args.poc_workspace,
-    project="cancer-research",
-)
-run = recipe.execute(env)
-```
-
-If `project` is omitted in either env, it remains `None` (no API default change).
+If `project` is omitted in `ProdEnv`, it remains `None` (no API default change).
 
 ### Admin (FLARE API / Admin Console)
 
@@ -472,7 +462,7 @@ Phase 1 delivers no access control, no job store partitioning, and no cert/regis
 
 ### Scope
 
-1. Add `project: Optional[str] = None` parameter to `ProdEnv` and `PocEnv`.
+1. Add `project: Optional[str] = None` parameter to `ProdEnv`.
 2. Pass `project` through to the job metadata at submission/clone time, with syntax validation before persistence.
 3. `K8sJobLauncher` reads `project` from job metadata and selects the corresponding project workspace volume.
 4. `DockerJobLauncher` reads `project` from job metadata and mounts `/data/<project>/` as the workspace volume.
