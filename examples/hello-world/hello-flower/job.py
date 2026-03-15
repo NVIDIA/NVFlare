@@ -47,7 +47,6 @@ def main():
         min_clients=num_of_clients,
         run_config=run_config if run_config else None,
     )
-    )
 
     if args.stream_metrics:
         add_experiment_tracking(recipe, tracking_type="tensorboard")
