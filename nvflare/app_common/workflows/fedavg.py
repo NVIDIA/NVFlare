@@ -151,6 +151,9 @@ class FedAvg(BaseFedAvg):
             self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
+            self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
+            if self.aggregator:
+                self.aggregator.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
 
             clients = self.sample_clients(self.num_clients)
 
@@ -229,8 +232,6 @@ class FedAvg(BaseFedAvg):
         weight = None
 
         if self.aggregator:
-            # Use custom aggregator; sync fl_ctx so accept_model sees the current round
-            self.aggregator.fl_ctx = self.fl_ctx
             self.aggregator.accept_model(result)
         else:
             # Use built-in InTime aggregation with weighted averaging
