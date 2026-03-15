@@ -153,7 +153,9 @@ class FedAvg(BaseFedAvg):
             model.current_round = self.current_round
             if self.aggregator:
                 # Use custom aggregator; set CURRENT_ROUND directly on its stable fl_ctx
-                self.aggregator.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
+                self.aggregator.fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False
+                )
 
             clients = self.sample_clients(self.num_clients)
 
