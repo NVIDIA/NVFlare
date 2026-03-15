@@ -618,7 +618,8 @@ Run Flower-based federated learning jobs.
     recipe = FlowerRecipe(
         name="flower-job",
         min_clients=2,
-        flower_app="path/to/flower/app",
+        flower_content="path/to/flower/app",
+        run_config={"num-server-rounds": 5}, # Optional: used to override default values in pyproject.toml
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
