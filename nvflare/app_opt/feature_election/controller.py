@@ -130,8 +130,11 @@ class FeatureElectionController(Controller):
                 int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0
             ),
         }
-        with open(os.path.join(run_dir, "feature_election_results.json"), "w") as f:
-            json.dump(results, f, indent=2)
+        try:
+            with open(os.path.join(run_dir, "feature_election_results.json"), "w") as f:
+                json.dump(results, f, indent=2)
+        except OSError as e:
+            logger.error(f"Failed to write feature election results to {run_dir}: {e}")
         logger.info("Stopping Feature Election Controller")
 
     def process_result_of_unknown_task(
@@ -161,6 +164,8 @@ class FeatureElectionController(Controller):
 
         except Exception as e:
             logger.exception(f"Workflow failed: {e}")
+            abort_signal.trigger()
+            raise
 
     # ==============================================================================
     # PHASE IMPLEMENTATIONS

@@ -221,6 +221,11 @@ class FeatureElection:
                     end = start + int(len(indices) * ratio)
                     c_idx = indices[start:end]
                     start = end
+                if len(c_idx) == 0:
+                    raise ValueError(
+                        f"Client {i} received 0 samples from random split. "
+                        "Increase the dataset size or adjust split_ratios."
+                    )
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
 
         elif split_strategy == "dirichlet":
@@ -263,6 +268,11 @@ class FeatureElection:
                     end = start + int(len(indices) * ratio)
                     c_idx = indices[start:end]
                     start = end
+                if len(c_idx) == 0:
+                    raise ValueError(
+                        f"Client {i} received 0 samples from sequential split. "
+                        "Increase the dataset size or adjust split_ratios."
+                    )
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
 
         return client_data
@@ -291,8 +301,17 @@ class FeatureElection:
         for i, (X, y) in enumerate(client_data):
             X_np = X.values if isinstance(X, pd.DataFrame) else X
             y_np = y.values if isinstance(y, pd.Series) else y
-            if feature_names is None and isinstance(X, pd.DataFrame):
-                feature_names = X.columns.tolist()
+            if isinstance(X, pd.DataFrame):
+                client_cols = X.columns.tolist()
+                if feature_names is None:
+                    feature_names = client_cols
+                elif client_cols != feature_names:
+                    raise ValueError(
+                        f"Client {i} has different column labels than client 0. "
+                        f"Expected {len(feature_names)} columns ({feature_names[:3]}...), "
+                        f"got {len(client_cols)} ({client_cols[:3]}...). "
+                        "All DataFrame clients must have identical feature columns."
+                    )
 
             # Split into train/val so tuning scores are not evaluated on training data.
             # Attempt stratified split so minority classes appear in both halves (mirrors
