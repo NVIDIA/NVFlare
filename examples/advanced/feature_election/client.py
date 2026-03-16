@@ -42,6 +42,7 @@ def get_executor(
     n_features: int = 100,
     n_informative: int = 20,
     n_redundant: int = 30,
+    n_repeated: int = 10,
 ) -> FeatureElectionExecutor:
     """
     Create and configure a FeatureElectionExecutor with data.
@@ -57,6 +58,7 @@ def get_executor(
         n_features: Number of features
         n_informative: Number of informative features
         n_redundant: Number of redundant features
+        n_repeated: Number of repeated features (must match SyntheticDataExecutor)
 
     Returns:
         Configured FeatureElectionExecutor
@@ -78,6 +80,7 @@ def get_executor(
         n_features=n_features,
         n_informative=n_informative,
         n_redundant=n_redundant,
+        n_repeated=n_repeated,
     )
 
     # Set data on executor
@@ -161,16 +164,17 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
                     client_id = int(match.group()) - 1
                 else:
                     client_id = 0
-
-            # Validate range
-            if not (0 <= client_id < self.num_clients):
-                raise ValueError(
-                    f"Extracted client_id {client_id} from '{site_name}' is out of range [0, {self.num_clients - 1}]"
-                )
-
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse client_id from '{site_name}': {e}. Defaulting to client_id=0")
             client_id = 0
+
+        # Range validation is deliberately outside the try/except so an out-of-range
+        # result raises unconditionally rather than being caught and silently falling
+        # back to client_id=0, which would load the wrong data without any hard error.
+        if not (0 <= client_id < self.num_clients):
+            raise ValueError(
+                f"Extracted client_id {client_id} from '{site_name}' is out of range " f"[0, {self.num_clients - 1}]"
+            )
 
         # Load data using the parsed ID
         X_train, y_train, X_val, y_val, feature_names = load_client_data(

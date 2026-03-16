@@ -160,10 +160,7 @@ class FeatureElectionController(Controller):
             logger.info("Feature Election Workflow Completed Successfully.")
 
         except Exception as e:
-            logger.error(f"Workflow failed: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.exception(f"Workflow failed: {e}")
 
     # ==============================================================================
     # PHASE IMPLEMENTATIONS
