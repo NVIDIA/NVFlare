@@ -448,7 +448,8 @@ class FeatureElection:
                     else int(v) if isinstance(v, np.integer) else float(v) if isinstance(v, np.floating) else v
                 )
                 for k, v in self.election_stats.items()
-                if k != "client_stats"  # Simplified saving for brevity
+                if k
+                != "client_stats"  # client_stats may contain arbitrary numpy types; excluded from persistence intentionally
             },
         }
         with open(filepath, "w") as f:

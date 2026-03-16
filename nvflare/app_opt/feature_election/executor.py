@@ -252,6 +252,8 @@ class FeatureElectionExecutor(Executor):
             self.global_feature_mask = mask
             self.X_train = self.X_train[:, mask]
             self.X_val = self.X_val[:, mask]
+            if self.feature_names is not None:
+                self.feature_names = [self.feature_names[i] for i in np.where(mask)[0]]
             self.scaler = None  # feature count changed; cached scaler is invalid
             return make_reply(ReturnCode.OK)
         except Exception as e:
@@ -331,7 +333,7 @@ class FeatureElectionExecutor(Executor):
             return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores
 
         elif self.fs_method == "mutual_info":
-            scores = mutual_info_classif(self.X_train, self.y_train, random_state=42)
+            scores = mutual_info_classif(self.X_train, self.y_train, random_state=42, **self.fs_params)
             mask = np.zeros(n_features, dtype=bool)
             k = max(1, n_features // 2)
             mask[np.argsort(scores)[-k:]] = True
