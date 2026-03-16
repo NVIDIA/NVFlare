@@ -281,29 +281,39 @@ class FeatureElectionExecutor(Executor):
                 self.scaler.fit(self.X_train)
             X_tr = self.scaler.transform(self.X_train)
 
-            # Load global parameters if available (from previous round's aggregation)
+            # Parse global parameters from the server if present.  We extract them
+            # here but assign them immediately before the warm-start fit below, so
+            # the weight assignment is always the last write to coef_/intercept_
+            # before model.fit() — regardless of whether the model needed an init fit.
+            global_coef = None
+            global_intercept = None
             if "params" in shareable:
                 p = shareable["params"]
                 if "weight_0" in p and "weight_1" in p:
-                    # Initialize model structure if needed
-                    if not self._model_initialized:
-                        # Quick fit to establish coef_ shape, then overwrite.
-                        # Guarantee at least one sample per class so LogisticRegression
-                        # does not raise "only one class in data" on sorted or tiny splits.
-                        unique_classes = np.unique(self.y_train)
-                        init_idx = [int(np.where(self.y_train == c)[0][0]) for c in unique_classes]
-                        remaining = [j for j in range(len(self.y_train)) if j not in set(init_idx)]
-                        n_extra = max(0, min(10, len(self.y_train)) - len(init_idx))
-                        init_idx += remaining[:n_extra]
-                        self.model.fit(X_tr[init_idx], self.y_train[init_idx])
-                        self._model_initialized = True
-                    # Set aggregated weights - handles both binary and multi-class:
-                    # Binary: coef_ shape (1, n_features), Multi-class: (n_classes, n_features)
                     coef = np.array(p["weight_0"])
                     if coef.ndim == 1:
                         coef = coef.reshape(1, -1)  # Binary: (n_features,) -> (1, n_features)
-                    self.model.coef_ = coef
-                    self.model.intercept_ = np.array(p["weight_1"])
+                    global_coef = coef
+                    global_intercept = np.array(p["weight_1"])
+
+            # Ensure model structure (coef_ shape) is established before any weight
+            # assignment.  Guarantee at least one sample per class so LogisticRegression
+            # does not raise "only one class in data" on sorted or tiny splits.
+            if not self._model_initialized:
+                unique_classes = np.unique(self.y_train)
+                init_idx = [int(np.where(self.y_train == c)[0][0]) for c in unique_classes]
+                remaining = [j for j in range(len(self.y_train)) if j not in set(init_idx)]
+                n_extra = max(0, min(10, len(self.y_train)) - len(init_idx))
+                init_idx += remaining[:n_extra]
+                self.model.fit(X_tr[init_idx], self.y_train[init_idx])
+                self._model_initialized = True
+
+            # Assign aggregated weights immediately before the warm-start fit so that
+            # model.fit() always starts from the global model — never from the init fit.
+            # Handles both binary (1, n_features) and multi-class (n_classes, n_features).
+            if global_coef is not None:
+                self.model.coef_ = global_coef
+                self.model.intercept_ = global_intercept
 
             # Train with warm_start=True continues from current weights
             self.model.fit(X_tr, self.y_train)
