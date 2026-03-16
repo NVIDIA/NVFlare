@@ -196,18 +196,34 @@ TimberStrike is a model inversion attack that exploits ``sum_hessian`` values an
 
 .. note::
 
-   The above results were obtained **before** NVFlare's ``sum_hessian`` removal—i.e., with full model statistics available to the attacker. With NVFlare's built-in protection enabled (see below), TimberStrike's primary information source is eliminated. "Reconstruction accuracy" is a distance-tolerance metric (not exact recovery); see the `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ for the precise definition.
+   The above results were obtained **before** NVFlare's ``sum_hessian`` removal—i.e., with full model statistics available to the attacker. With NVFlare's built-in protection enabled (see below), TimberStrike's primary information source is eliminated, which is expected to substantially degrade attack performance. "Reconstruction accuracy" is a distance-tolerance metric (not exact recovery); see the `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ for the precise definition.
 
 Risk Assessment
 ~~~~~~~~~~~~~~~
 
-On practical datasets (CreditCard), TimberStrike achieves <10% accuracy even with ``sum_hessian`` available. To put this in perspective, we use `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ as a reference. SafeSynthesizer is a privacy-focused synthetic data generation tool purpose-built for compliance (GDPR, HIPAA), with built-in membership inference protection and optional differential privacy guarantees. Even with these privacy safeguards, its synthetic data still achieves 51.98% proximity to real samples, because preserving data utility requires some statistical similarity. TimberStrike's 8.72% falls well below this reference point. Acceptable privacy levels are inherently data-dependent; users are encouraged to run similar comparisons on their own datasets.
+On practical datasets (`CreditCard <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>`_), TimberStrike achieves <10% accuracy even with ``sum_hessian`` available. To put this in perspective, we use `NeMo SafeSynthesizer <https://docs.nvidia.com/nemo/microservices/latest/studio/safe-synthesizer.html>`_ as a reference. SafeSynthesizer is a privacy-focused synthetic data generation tool purpose-built for compliance (GDPR, HIPAA), with built-in membership inference protection and optional differential privacy guarantees. Even with these privacy safeguards, its synthetic data still achieves 51.98% proximity to real samples, because preserving data utility requires some statistical similarity. TimberStrike's 8.72% falls well below this reference point. Acceptable privacy levels are inherently data-dependent; users are encouraged to run similar comparisons on their own datasets.
 
 Protection
 ~~~~~~~~~~
 
 - **Built-in**: NVFlare removes ``sum_hessian`` from model transmissions in horizontal tree-based mode, eliminating the attack's primary information source.
-- **Additional**: Increase ``min_child_weight`` to raise the minimum sum of instance weight (hessian) required per leaf, resulting in coarser tree structure with fewer splits. The `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ shows that tree depth (and by extension, number of splits) directly impacts reconstruction accuracy, so reducing tree granularity is expected to limit information exposure. Optimal values are task-dependent; refer to the paper for analysis of the privacy-utility trade-off.
+- **Additional**: Increase ``min_child_weight`` to raise the minimum sum of instance weight (hessian) required per leaf, resulting in coarser tree structure with fewer splits. The `TimberStrike paper <https://arxiv.org/abs/2506.07605>`_ shows that tree depth (and by extension, number of splits) directly impacts reconstruction accuracy, so reducing tree granularity is expected to limit information exposure. Optimal values are task-dependent; refer to the paper for analysis of the privacy-utility trade-off. This parameter can be added to ``xgb_params`` in the recipe:
+
+  .. code-block:: python
+
+     recipe = XGBHorizontalRecipe(
+         name="xgb_higgs_horizontal",
+         min_clients=2,
+         num_rounds=100,
+         xgb_params={
+             "max_depth": 8,
+             "eta": 0.1,
+             "objective": "binary:logistic",
+             "eval_metric": "auc",
+             "min_child_weight": 100,  # increase for coarser trees and reduced privacy exposure
+         },
+         per_site_config=per_site_config,
+     )
 
 Closest Reconstructed Samples (CreditCard)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
