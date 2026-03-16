@@ -129,7 +129,12 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
             for j, idx in enumerate(class_indices):
                 client_indices[chosen_clients[j]].append(idx)
     client_dfs = []
-    for indices in client_indices:
+    for i, indices in enumerate(client_indices):
+        if len(indices) == 0:
+            raise ValueError(
+                f"Client {i} received 0 samples in stratified split. "
+                "Increase the dataset size or reduce the number of clients."
+            )
         np.random.shuffle(indices)
         client_dfs.append(df.loc[indices].copy())
 

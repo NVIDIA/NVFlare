@@ -216,8 +216,15 @@ class FeatureElectionExecutor(Executor):
                 if "weight_0" in p and "weight_1" in p:
                     # Initialize model structure if needed
                     if not self._model_initialized:
-                        # Quick fit to establish coef_ shape, then overwrite
-                        self.model.fit(X_tr[: min(10, len(self.y_train))], self.y_train[: min(10, len(self.y_train))])
+                        # Quick fit to establish coef_ shape, then overwrite.
+                        # Guarantee at least one sample per class so LogisticRegression
+                        # does not raise "only one class in data" on sorted or tiny splits.
+                        unique_classes = np.unique(self.y_train)
+                        init_idx = [int(np.where(self.y_train == c)[0][0]) for c in unique_classes]
+                        remaining = [j for j in range(len(self.y_train)) if j not in set(init_idx)]
+                        n_extra = max(0, min(10, len(self.y_train)) - len(init_idx))
+                        init_idx += remaining[:n_extra]
+                        self.model.fit(X_tr[init_idx], self.y_train[init_idx])
                         self._model_initialized = True
                     # Set aggregated weights - handles both binary and multi-class:
                     # Binary: coef_ shape (1, n_features), Multi-class: (n_classes, n_features)
