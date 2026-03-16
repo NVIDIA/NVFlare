@@ -349,7 +349,9 @@ class FeatureElection:
                 if np.sum(candidate_mask) == 0:
                     score = 0.0
                 else:
-                    scores = []
+                    # Use the same weighting as the real controller so the tuning
+                    # objective is consistent with the actual aggregation_mode.
+                    weighted_score, total_weight = 0.0, 0.0
                     for i_exec, exec_i in enumerate(executors):
                         if exec_i.X_train.shape[1] != len(candidate_mask):
                             raise ValueError(
@@ -360,8 +362,10 @@ class FeatureElection:
                         X_masked = exec_i.X_train[:, candidate_mask]
                         X_val_masked = exec_i.X_val[:, candidate_mask]
                         s = exec_i.evaluate_model(X_masked, exec_i.y_train, X_val_masked, exec_i.y_val)
-                        scores.append(s)
-                    score = sum(scores) / len(scores) if scores else 0.0
+                        n = len(exec_i.X_train) if self.aggregation_mode == "weighted" else 1
+                        weighted_score += s * n
+                        total_weight += n
+                    score = weighted_score / total_weight if total_weight > 0 else 0.0
 
                 logger.info(
                     f"Tuning Round {t + 1}/{controller.tuning_rounds}: "

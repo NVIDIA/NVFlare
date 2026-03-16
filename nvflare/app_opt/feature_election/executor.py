@@ -295,13 +295,21 @@ class FeatureElectionExecutor(Executor):
         X_scaled = scaler.fit_transform(self.X_train)
 
         if self.fs_method == "lasso":
-            # Intentional use of Lasso for feature selection
+            # Intentional: Lasso regression is used on classification labels as a
+            # continuous proxy target.  This follows the FLASH paper methodology
+            # (Christofilogiannis et al., FLTA 2025): L1 regularisation drives
+            # irrelevant feature coefficients to exactly zero, giving a sparse
+            # boolean mask directly from the non-zero entries.  Using the regression
+            # form rather than LogisticRegression avoids multi-class coefficient
+            # expansion and keeps the output a single coefficient vector.
             s = Lasso(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
             return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores
 
         elif self.fs_method == "elastic_net":
-            # Intentional use of Elastic Net for feature selection
+            # Intentional: ElasticNet regression on classification labels (same
+            # rationale as Lasso above).  The L1+L2 mix handles correlated features
+            # better than pure Lasso while still producing exact zeros for selection.
             s = ElasticNet(**self.fs_params).fit(X_scaled, self.y_train)
             scores = np.abs(s.coef_)
             return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores

@@ -331,9 +331,12 @@ class FeatureElectionController(Controller):
     def _phase_three_aggregation(self, abort_signal: Signal, fl_ctx: FLContext):
         logger.info(f"=== PHASE 3: Aggregation Rounds (FL Training - {self.fl_rounds} Rounds) ===")
 
+        completed_rounds = 0
         for i in range(1, self.fl_rounds + 1):
             if abort_signal.triggered:
-                logger.warning("Abort signal received during FL training")
+                logger.warning(
+                    f"Abort signal received during FL training after {completed_rounds}/{self.fl_rounds} rounds"
+                )
                 break
 
             logger.info(f"--- FL Round {i}/{self.fl_rounds} ---")
@@ -348,8 +351,12 @@ class FeatureElectionController(Controller):
 
             # Aggregate Weights (FedAvg)
             self._aggregate_weights(results)
+            completed_rounds += 1
 
-        logger.info("FL Training phase complete")
+        if completed_rounds == self.fl_rounds:
+            logger.info(f"FL Training phase complete ({completed_rounds}/{self.fl_rounds} rounds)")
+        else:
+            logger.warning(f"FL Training phase ended early: {completed_rounds}/{self.fl_rounds} rounds completed")
 
     # ==============================================================================
     # HELPER METHODS
