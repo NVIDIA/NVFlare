@@ -209,6 +209,10 @@ class FeatureElectionExecutor(Executor):
             if self.X_train is None or np.sum(mask) == 0:
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+            if len(mask) != self.X_train.shape[1]:
+                logger.error(f"Tuning mask length ({len(mask)}) doesn't match feature count ({self.X_train.shape[1]})")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
             X_tr = self.X_train[:, mask]
             X_v = self.X_val[:, mask]
 
