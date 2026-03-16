@@ -189,9 +189,7 @@ class FeatureElection:
         if abs(sum(split_ratios) - 1.0) > 0.001:
             raise ValueError(f"Split ratios must sum to 1.0, got {sum(split_ratios)}")
         if len(split_ratios) != num_clients:
-            raise ValueError(
-                f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})"
-            )
+            raise ValueError(f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})")
 
         client_data = []
         indices = np.arange(len(df))
