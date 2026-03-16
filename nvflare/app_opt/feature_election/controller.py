@@ -286,7 +286,13 @@ class FeatureElectionController(Controller):
                     n = v.get("num_samples", 1) if self.aggregation_mode == "weighted" else 1
                     weighted_score += v["tuning_score"] * n
                     total_weight += n
-                score = weighted_score / total_weight if total_weight > 0 else 0.0
+                if total_weight == 0.0:
+                    logger.warning(
+                        f"Tuning round {i + 1}: no clients returned a valid score; "
+                        "skipping history entry to avoid corrupting hill-climbing signal."
+                    )
+                    continue
+                score = weighted_score / total_weight
 
                 logger.info(
                     f"Tuning Round {i + 1}/{self.tuning_rounds}: FD={self.freedom_degree:.4f} -> Score={score:.4f}"

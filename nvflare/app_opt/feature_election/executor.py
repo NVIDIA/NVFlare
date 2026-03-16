@@ -238,9 +238,21 @@ class FeatureElectionExecutor(Executor):
             # Idempotency guard: if this exact mask was already applied (e.g. task
             # retransmission), X_train is already sliced down to the selected features
             # so re-applying would raise an IndexError.  Return OK immediately.
-            if self.global_feature_mask is not None and np.array_equal(mask, self.global_feature_mask):
-                logger.info("Mask already applied (duplicate task delivery); returning OK")
-                return make_reply(ReturnCode.OK)
+            if self.global_feature_mask is not None:
+                if np.array_equal(mask, self.global_feature_mask):
+                    logger.info("Mask already applied (duplicate task delivery); returning OK")
+                    return make_reply(ReturnCode.OK)
+                # A different mask arrived after the first was already applied — the
+                # executor's feature space has already been permanently reduced, so
+                # this is an unrecoverable state.  Log clearly and fail fast.
+                logger.error(
+                    f"Received a different mask after mask was already applied. "
+                    f"Expected mask length {len(self.global_feature_mask)} "
+                    f"(checksum {self.global_feature_mask.sum()}), "
+                    f"got length {len(mask)} (checksum {mask.sum()}). "
+                    "This is unrecoverable — the executor feature space has already been reduced."
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             # Validate mask length against the *current* (pre-mask) feature count
             if len(mask) != self.X_train.shape[1]:

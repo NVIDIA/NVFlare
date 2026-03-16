@@ -188,6 +188,10 @@ class FeatureElection:
 
         if abs(sum(split_ratios) - 1.0) > 0.001:
             raise ValueError(f"Split ratios must sum to 1.0, got {sum(split_ratios)}")
+        if len(split_ratios) != num_clients:
+            raise ValueError(
+                f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})"
+            )
 
         client_data = []
         indices = np.arange(len(df))
@@ -201,7 +205,12 @@ class FeatureElection:
                         remaining_indices, test_size=1 - size, stratify=remaining_y, random_state=random_state + i
                     )
                 except ValueError as e:
-                    # Stratification failed due to class with <2 samples
+                    # Only fall back to non-stratified splitting for sklearn's own
+                    # stratification errors (e.g. a class with fewer than 2 samples).
+                    # Any other ValueError — such as test_size=0 from a zero ratio —
+                    # should propagate so the caller gets a meaningful error message.
+                    if "stratif" not in str(e).lower() and "least populated" not in str(e).lower():
+                        raise
                     c_idx, r_idx = train_test_split(
                         remaining_indices, test_size=1 - size, random_state=random_state + i
                     )
