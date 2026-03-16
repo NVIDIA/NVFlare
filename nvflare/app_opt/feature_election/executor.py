@@ -41,6 +41,36 @@ LASSO_ELASTIC_NET_ZERO_THRESHOLD: float = 1e-6
 
 
 class FeatureElectionExecutor(Executor):
+    """
+    Client-side executor for the Feature Election federated workflow.
+
+    Handles four request types dispatched by ``FeatureElectionController``:
+
+    * ``feature_selection`` — runs the configured FS method on local data and returns
+      a boolean feature mask and per-feature scores.
+    * ``tuning_eval`` — evaluates a candidate mask proposed by the controller during
+      the hill-climbing phase and returns the local score.
+    * ``apply_mask`` — permanently slices ``X_train`` / ``X_val`` to the selected
+      features.  **Idempotent**: if the same mask is received a second time (e.g. due
+      to task retransmission) the call returns ``OK`` immediately without modifying data.
+    * ``train`` — performs one FedAvg round on the masked feature set and returns the
+      updated model weights.
+
+    Args:
+        fs_method: Feature selection algorithm.  One of ``'lasso'``, ``'elastic_net'``,
+            ``'mutual_info'``, ``'random_forest'``, ``'pyimpetus'``.
+        fs_params: Extra keyword arguments forwarded to the FS algorithm.
+        eval_metric: ``'f1'`` (weighted) or ``'accuracy'``, used for tuning eval and
+            local scoring.
+        task_name: Must match the ``task_name`` on ``FeatureElectionController``.
+
+    Note:
+        Call :meth:`set_data` before the executor is registered with the FL runtime.
+        ``FeatureElectionExecutor`` has no ``client_id`` attribute; use
+        ``fl_ctx.get_identity_name()`` inside ``_load_data_if_needed`` to retrieve the
+        site name assigned by the FL platform.
+    """
+
     def __init__(
         self,
         fs_method: str = "lasso",
@@ -190,7 +220,14 @@ class FeatureElectionExecutor(Executor):
         try:
             mask = np.array(shareable.get("global_feature_mask"), dtype=bool)
 
-            # Validate mask length
+            # Idempotency guard: if this exact mask was already applied (e.g. task
+            # retransmission), X_train is already sliced down to the selected features
+            # so re-applying would raise an IndexError.  Return OK immediately.
+            if self.global_feature_mask is not None and np.array_equal(mask, self.global_feature_mask):
+                logger.info("Mask already applied (duplicate task delivery); returning OK")
+                return make_reply(ReturnCode.OK)
+
+            # Validate mask length against the *current* (pre-mask) feature count
             if len(mask) != self.X_train.shape[1]:
                 logger.error(f"Mask length ({len(mask)}) doesn't match number of features ({self.X_train.shape[1]})")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)

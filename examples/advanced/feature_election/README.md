@@ -50,7 +50,7 @@ feature_election/
 |
 |-- job.py             # Main entry point - creates and runs FL job
 |-- client.py          # Client-side executor with data loading and local feature selection
-|-- server.py          # Server configuration helpers
+|-- prepare_data.py    # Synthetic dataset generation and client data splitting utilities
 ```
 
 ## Data
@@ -185,7 +185,8 @@ controller = FeatureElectionController(
     min_clients=2,
     num_rounds=5,
     auto_tune=True,
-    tuning_rounds=4,
+    tuning_rounds=4,          # must be >= 2 when auto_tune=True
+    wait_time_after_min_received=10,  # seconds; use 0 only for local simulation
 )
 ```
 
@@ -195,11 +196,16 @@ controller = FeatureElectionController(
 |-----------|------|---------|-------------|
 | `freedom_degree` | float | `0.5` | Initial freedom degree |
 | `aggregation_mode` | str | `"weighted"` | Client vote weighting (`'weighted'` or `'uniform'`) |
-| `min_clients` | int | `2` | Minimum clients required |
+| `min_clients` | int | `2` | Minimum clients required per phase |
 | `num_rounds` | int | `5` | FL training rounds after feature selection |
-| `auto_tune` | bool | `False` | Enable auto-tuning of freedom degree |
-| `tuning_rounds` | int | `0` | Number of hill-climbing tuning rounds |
-| `train_timeout` | int | `300` | Training phase timeout (seconds) |
+| `auto_tune` | bool | `False` | Enable hill-climbing optimisation of `freedom_degree` |
+| `tuning_rounds` | int | `0` | Rounds of hill-climbing; **must be ≥ 2** when `auto_tune=True` (0 = no tuning, 1 = disabled with warning) |
+| `train_timeout` | int | `300` | Per-phase timeout in seconds |
+| `wait_time_after_min_received` | int | `10` | Seconds to wait for stragglers after `min_clients` have responded; set to `0` only for local simulation |
+
+> **Auto-tune note:** `auto_tune=True` has no effect when `tuning_rounds=0` (the default). The controller emits a warning and skips tuning in that case. Use `tuning_rounds >= 2` to activate hill-climbing.
+>
+> **Production note:** `wait_time_after_min_received=10` gives slower clients a window to participate in every phase. Setting it to `0` causes the controller to close each phase the instant `min_clients` responses arrive, silently excluding any later responders.
 
 ## Job
 
@@ -306,7 +312,13 @@ print(f"Freedom degree: {stats['freedom_degree']}")
 
 **"No feature votes received"** — Ensure client data is loaded before execution and that `task_name` matches between controller and executor.
 
-**"Poor performance after selection"** — Enable `auto_tune` to find the optimal `freedom_degree`, or switch to `weighted` aggregation mode.
+**"Poor performance after selection"** — Enable `auto_tune` with `tuning_rounds >= 2` to find the optimal `freedom_degree`, or switch to `weighted` aggregation mode.
+
+**"Auto-tune has no effect"** — `auto_tune=True` requires `tuning_rounds >= 2`. The default `tuning_rounds=0` is intentional for users who set `freedom_degree` manually; the controller logs a warning if `auto_tune=True` is combined with `tuning_rounds=0` or `tuning_rounds=1`.
+
+**"Slower clients are not participating"** — The default `wait_time_after_min_received=10` gives stragglers a 10-second window after the minimum quorum is reached. If clients are still being excluded, increase this value. Set to `0` only for local simulation where all clients run in the same process.
+
+**"Client excluded after mask distribution failure"** — If fewer than `min_clients` clients acknowledge the global mask, the entire workflow is aborted (not just Phase 3). Check network connectivity and client logs for the root cause.
 
 **"PyImpetus not available"** — Install with `pip install PyImpetus`. The framework falls back to mutual information if unavailable.
 

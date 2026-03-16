@@ -50,6 +50,7 @@ class FeatureElection:
         auto_tune: bool = False,
         tuning_rounds: int = 5,
         eval_metric: str = "f1",
+        wait_time_after_min_received: int = 10,
     ):
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
@@ -64,6 +65,7 @@ class FeatureElection:
         self.auto_tune = auto_tune
         self.tuning_rounds = tuning_rounds
         self.eval_metric = eval_metric
+        self.wait_time_after_min_received = wait_time_after_min_received
 
         # Storage for results
         self.global_mask = None
@@ -101,6 +103,7 @@ class FeatureElection:
                         "task_name": "feature_election",
                         "auto_tune": self.auto_tune,
                         "tuning_rounds": self.tuning_rounds,
+                        "wait_time_after_min_received": self.wait_time_after_min_received,
                     },
                 }
             ],
@@ -280,6 +283,7 @@ class FeatureElection:
             min_clients=len(client_data),
             auto_tune=self.auto_tune,
             tuning_rounds=self.tuning_rounds,
+            wait_time_after_min_received=self.wait_time_after_min_received,
         )
 
         client_selections = {}
@@ -434,11 +438,7 @@ class FeatureElection:
                 k: (
                     v.tolist()
                     if isinstance(v, np.ndarray)
-                    else int(v)
-                    if isinstance(v, np.integer)
-                    else float(v)
-                    if isinstance(v, np.floating)
-                    else v
+                    else int(v) if isinstance(v, np.integer) else float(v) if isinstance(v, np.floating) else v
                 )
                 for k, v in self.election_stats.items()
                 if k != "client_stats"  # Simplified saving for brevity

@@ -32,8 +32,37 @@ logger = logging.getLogger(__name__)
 
 class FeatureElectionController(Controller):
     """
-    Advanced controller that performs Feature Election, Auto-tuning, and downstream Training.
-    Inherits directly from base Controller for full workflow control.
+    Three-phase FL controller for federated feature selection and FedAvg training.
+
+    Phase 1 — Local Feature Selection: each client runs its configured FS method and
+    returns a feature mask and per-feature scores.
+
+    Phase 2 — Tuning & Global Mask Distribution: the server optionally runs hill-climbing
+    to find the optimal ``freedom_degree``, then aggregates client masks via weighted voting
+    and distributes the global feature mask to all clients.  If fewer than ``min_clients``
+    clients acknowledge the mask, the entire workflow is aborted.
+
+    Phase 3 — FedAvg Training: standard federated averaging on the reduced feature set
+    for ``num_rounds`` rounds.
+
+    Args:
+        freedom_degree: Threshold in [0, 1] controlling which features survive the vote.
+            0 = intersection (all clients must select), 1 = union (any client suffices).
+        aggregation_mode: ``'weighted'`` weights each client by sample count;
+            ``'uniform'`` treats all clients equally.
+        min_clients: Minimum number of clients that must respond in each phase.
+        num_rounds: Number of FedAvg training rounds in Phase 3.
+        task_name: Must match the ``task_name`` configured on ``FeatureElectionExecutor``.
+        train_timeout: Per-phase timeout in seconds.
+        auto_tune: If ``True``, Phase 2 runs hill-climbing to optimise ``freedom_degree``.
+            Has no effect when ``tuning_rounds=0`` (a warning is logged in that case).
+        tuning_rounds: Number of hill-climbing iterations.  Must be >= 2 for meaningful
+            tuning; ``tuning_rounds=0`` disables tuning (with a warning if ``auto_tune=True``);
+            ``tuning_rounds=1`` is also disabled (same warning).
+        wait_time_after_min_received: Seconds to wait for additional client responses after
+            ``min_clients`` have already replied.  Set to ``0`` only for local simulation;
+            a non-zero value (default 10 s) prevents slower clients from being silently
+            excluded in heterogeneous production networks.
     """
 
     def __init__(
@@ -46,6 +75,7 @@ class FeatureElectionController(Controller):
         train_timeout: int = 300,
         auto_tune: bool = False,
         tuning_rounds: int = 0,
+        wait_time_after_min_received: int = 10,
     ):
         super().__init__()
 
@@ -56,6 +86,7 @@ class FeatureElectionController(Controller):
         self.min_clients = min_clients
         self.fl_rounds = num_rounds
         self.train_timeout = train_timeout
+        self.wait_time_after_min_received = wait_time_after_min_received
         self.auto_tune = auto_tune
         self.tuning_rounds = tuning_rounds if auto_tune else 0
         if auto_tune and self.tuning_rounds == 0:
@@ -177,13 +208,13 @@ class FeatureElectionController(Controller):
             result_received_cb=self._result_received_cb,
         )
 
-        # Broadcast and wait for results
-        # NOTE: Reduced wait_time_after_min_received from 5 to 0 for faster execution
-        # The previous 5-second wait added significant latency per phase
+        # Broadcast and wait for results.
+        # wait_time_after_min_received > 0 gives slower clients a window to respond
+        # after min_clients have already replied, preventing silent exclusion.
         self.broadcast_and_wait(
             task=task,
             min_responses=self.min_clients,
-            wait_time_after_min_received=0,
+            wait_time_after_min_received=self.wait_time_after_min_received,
             fl_ctx=fl_ctx,
             abort_signal=abort_signal,
         )
@@ -339,9 +370,7 @@ class FeatureElectionController(Controller):
                 client_valid = True
                 missing_keys = [k for k in weighted_weights if k not in weights]
                 if missing_keys:
-                    logger.warning(
-                        f"Client weights are missing expected keys {missing_keys}; skipping client"
-                    )
+                    logger.warning(f"Client weights are missing expected keys {missing_keys}; skipping client")
                     client_valid = False
                 for k, v in weights.items():
                     if not client_valid:
