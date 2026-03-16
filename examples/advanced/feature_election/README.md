@@ -65,8 +65,10 @@ class MyDataExecutor(FeatureElectionExecutor):
         if self._data_loaded:
             return
 
-        # Load your data
-        X_train, y_train = load_my_data(self.client_id)
+        # Retrieve the site name assigned by the FL platform (e.g. "site-1").
+        # FeatureElectionExecutor has no client_id attribute; use fl_ctx instead.
+        site_name = fl_ctx.get_identity_name()
+        X_train, y_train = load_my_data(site_name)
         self.set_data(X_train, y_train)
         self._data_loaded = True
 ```

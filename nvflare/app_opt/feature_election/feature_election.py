@@ -335,9 +335,9 @@ class FeatureElection:
         # tuning_rounds=1 no-op guard) is respected and simulation stays in sync
         # with what the real FL deployment would do.
         if self.auto_tune and controller.tuning_rounds > 0:
-            logger.info(f"Starting local auto-tuning ({self.tuning_rounds} rounds)...")
+            logger.info(f"Starting local auto-tuning ({controller.tuning_rounds} rounds)...")
 
-            for t in range(self.tuning_rounds):
+            for t in range(controller.tuning_rounds):
                 # Generate mask at current freedom_degree
                 candidate_mask = controller.aggregate_selections(client_selections)
 
@@ -360,13 +360,13 @@ class FeatureElection:
                     score = sum(scores) / len(scores) if scores else 0.0
 
                 logger.info(
-                    f"Tuning Round {t + 1}/{self.tuning_rounds}: "
+                    f"Tuning Round {t + 1}/{controller.tuning_rounds}: "
                     f"FD={controller.freedom_degree:.4f} -> Score={score:.4f}"
                 )
                 # Append to controller's own history so _calculate_next_fd has the right state
                 controller.tuning_history.append((controller.freedom_degree, score))
 
-                if t < self.tuning_rounds - 1:
+                if t < controller.tuning_rounds - 1:
                     controller.freedom_degree = controller._calculate_next_fd(first_step=(t == 0))
 
             # Select best FD
