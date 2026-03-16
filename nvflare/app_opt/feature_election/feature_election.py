@@ -306,6 +306,11 @@ class FeatureElection:
             wait_time_after_min_received=self.wait_time_after_min_received,
         )
 
+        # Accumulate feature names from the first DataFrame client encountered;
+        # validate all subsequent DataFrame clients against that reference.
+        # Using a separate local variable avoids in-loop reassignment of the
+        # parameter, making the capture-once intent explicit.
+        resolved_feature_names = feature_names
         client_selections = {}
         executors = []
         for i, (X, y) in enumerate(client_data):
@@ -313,12 +318,12 @@ class FeatureElection:
             y_np = y.values if isinstance(y, pd.Series) else y
             if isinstance(X, pd.DataFrame):
                 client_cols = X.columns.tolist()
-                if feature_names is None:
-                    feature_names = client_cols
-                elif client_cols != feature_names:
+                if resolved_feature_names is None:
+                    resolved_feature_names = client_cols
+                elif client_cols != resolved_feature_names:
                     raise ValueError(
                         f"Client {i} has different column labels than client 0. "
-                        f"Expected {len(feature_names)} columns ({feature_names[:3]}...), "
+                        f"Expected {len(resolved_feature_names)} columns ({resolved_feature_names[:3]}...), "
                         f"got {len(client_cols)} ({client_cols[:3]}...). "
                         "All DataFrame clients must have identical feature columns."
                     )
@@ -337,7 +342,9 @@ class FeatureElection:
                 )
 
             executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric=self.eval_metric)
-            executor.set_data(X_train_sim, y_train_sim, X_val=X_val_sim, y_val=y_val_sim, feature_names=feature_names)
+            executor.set_data(
+                X_train_sim, y_train_sim, X_val=X_val_sim, y_val=y_val_sim, feature_names=resolved_feature_names
+            )
             executors.append(executor)
 
             # Local Selection
@@ -438,12 +445,12 @@ class FeatureElection:
             "client_stats": client_selections,
         }
 
-        if feature_names is not None:
-            if len(feature_names) != len(self.global_mask):
+        if resolved_feature_names is not None:
+            if len(resolved_feature_names) != len(self.global_mask):
                 raise ValueError(
-                    f"Feature names length ({len(feature_names)}) doesn't match global mask length ({len(self.global_mask)})"
+                    f"Feature names length ({len(resolved_feature_names)}) doesn't match global mask length ({len(self.global_mask)})"
                 )
-            self.selected_feature_names = [name for i, name in enumerate(feature_names) if self.global_mask[i]]
+            self.selected_feature_names = [name for i, name in enumerate(resolved_feature_names) if self.global_mask[i]]
 
         return self.election_stats
 

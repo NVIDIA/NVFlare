@@ -351,11 +351,16 @@ class FeatureElectionController(Controller):
 
             task_data = Shareable()
             task_data["request_type"] = "train"
-            if self.global_weights:
+            if self.global_weights is not None:
                 task_data["params"] = {
                     k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in self.global_weights.items()
                 }
             results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx, timeout=self.train_timeout)
+            if len(results) < self.min_clients:
+                logger.warning(
+                    f"FL Round {i}: only {len(results)}/{self.min_clients} clients responded; "
+                    "proceeding with partial results."
+                )
 
             # Aggregate Weights (FedAvg)
             self._aggregate_weights(results)
