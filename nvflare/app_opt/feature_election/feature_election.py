@@ -458,7 +458,7 @@ class FeatureElection:
         self.auto_tune = results.get("auto_tune", False)
         self.eval_metric = results.get("eval_metric", "f1")
 
-        if results.get("global_mask"):
+        if results.get("global_mask") is not None:
             self.global_mask = np.array(results["global_mask"])
 
         self.selected_feature_names = results.get("selected_feature_names")

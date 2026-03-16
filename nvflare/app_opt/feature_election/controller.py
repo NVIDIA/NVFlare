@@ -275,12 +275,16 @@ class FeatureElectionController(Controller):
 
                 results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
 
-                # Aggregate Scores
-                scores = []
+                # Aggregate scores using the same weighting as mask aggregation so
+                # the tuning objective is consistent with the actual aggregation_mode.
+                weighted_score, total_weight = 0.0, 0.0
                 for v in results.values():
-                    if "tuning_score" in v:
-                        scores.append(v["tuning_score"])
-                score = sum(scores) / len(scores) if scores else 0.0
+                    if "tuning_score" not in v:
+                        continue
+                    n = v.get("num_samples", 1) if self.aggregation_mode == "weighted" else 1
+                    weighted_score += v["tuning_score"] * n
+                    total_weight += n
+                score = weighted_score / total_weight if total_weight > 0 else 0.0
 
                 logger.info(
                     f"Tuning Round {i + 1}/{self.tuning_rounds}: FD={self.freedom_degree:.4f} -> Score={score:.4f}"

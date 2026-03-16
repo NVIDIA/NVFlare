@@ -218,6 +218,10 @@ class FeatureElectionExecutor(Executor):
 
     def _handle_apply_mask(self, shareable: Shareable) -> Shareable:
         try:
+            if self.X_train is None:
+                logger.error("apply_mask received before set_data was called")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
             mask = np.array(shareable.get("global_feature_mask"), dtype=bool)
 
             # Idempotency guard: if this exact mask was already applied (e.g. task
