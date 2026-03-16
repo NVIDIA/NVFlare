@@ -145,7 +145,7 @@ class FlowerRecipe(Recipe):
             )
 
         env[CLIENT_API_TYPE_KEY] = ClientAPIType.EX_PROCESS_API.value
-        
+
         job = _create_flower_job(
             name=name,
             flower_content=flower_content,
