@@ -329,8 +329,12 @@ class FeatureElection:
                 "fs_score": float(fs_score),
             }
 
-        # Simulate Controller Aggregation with optional auto-tuning
-        if self.auto_tune and self.tuning_rounds > 0:
+        # Simulate Controller Aggregation with optional auto-tuning.
+        # Use controller.tuning_rounds (not self.tuning_rounds) so that edge-case
+        # normalisation performed by FeatureElectionController.__init__ (e.g. the
+        # tuning_rounds=1 no-op guard) is respected and simulation stays in sync
+        # with what the real FL deployment would do.
+        if self.auto_tune and controller.tuning_rounds > 0:
             logger.info(f"Starting local auto-tuning ({self.tuning_rounds} rounds)...")
 
             for t in range(self.tuning_rounds):
@@ -386,7 +390,7 @@ class FeatureElection:
             "auto_tune": self.auto_tune,
             "tuning_history": (
                 [(float(fd), float(s)) for fd, s in controller.tuning_history]
-                if self.auto_tune and self.tuning_rounds > 0
+                if self.auto_tune and controller.tuning_rounds > 0
                 else []
             ),
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
@@ -427,7 +431,15 @@ class FeatureElection:
             "global_mask": self.global_mask.tolist() if self.global_mask is not None else None,
             "selected_feature_names": self.selected_feature_names,
             "election_stats": {
-                k: (v.tolist() if isinstance(v, np.ndarray) else float(v) if isinstance(v, np.floating) else v)
+                k: (
+                    v.tolist()
+                    if isinstance(v, np.ndarray)
+                    else int(v)
+                    if isinstance(v, np.integer)
+                    else float(v)
+                    if isinstance(v, np.floating)
+                    else v
+                )
                 for k, v in self.election_stats.items()
                 if k != "client_stats"  # Simplified saving for brevity
             },

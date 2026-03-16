@@ -286,9 +286,8 @@ class FeatureElectionController(Controller):
         if len(mask_results) < self.min_clients:
             logger.warning(
                 f"Global mask distribution incomplete: only {len(mask_results)}/{self.min_clients} "
-                "clients acknowledged. Clients that did not respond will be excluded from "
-                "Phase 3 aggregation — their weight updates will be silently dropped by "
-                "_aggregate_weights due to shape mismatch."
+                "clients acknowledged. The entire FL workflow is being aborted — "
+                "Phase 3 aggregation will not run."
             )
             return False
         logger.info(f"Global mask distributed to {len(mask_results)} clients")
@@ -335,9 +334,18 @@ class FeatureElectionController(Controller):
                 # Initialize weighted_weights from first valid weights
                 if not weighted_weights:
                     weighted_weights = {k: np.zeros_like(np.array(v)) for k, v in weights.items()}
-                # Validate all keys before accumulating — a partial update would corrupt FedAvg
+                # Validate all keys before accumulating — a partial update would corrupt FedAvg.
+                # Check both directions: unexpected client keys and missing client keys.
                 client_valid = True
+                missing_keys = [k for k in weighted_weights if k not in weights]
+                if missing_keys:
+                    logger.warning(
+                        f"Client weights are missing expected keys {missing_keys}; skipping client"
+                    )
+                    client_valid = False
                 for k, v in weights.items():
+                    if not client_valid:
+                        break
                     v_array = np.array(v)
                     if k not in weighted_weights:
                         logger.warning(f"Unexpected weight key '{k}' from client, skipping client")
