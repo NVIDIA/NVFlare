@@ -108,7 +108,7 @@ class FeatureElectionExecutor(Executor):
             "lasso": {"alpha": 0.01},
             "elastic_net": {"alpha": 0.01, "l1_ratio": 0.5},
             "mutual_info": {},
-            "random_forest": {"n_estimators": 100},
+            "random_forest": {"n_estimators": 100, "random_state": 42},
             "pyimpetus": {"p_val_thresh": 0.05},
         }
         if self.fs_method in defaults:

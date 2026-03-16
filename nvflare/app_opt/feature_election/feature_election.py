@@ -248,7 +248,10 @@ class FeatureElection:
                 idx_k = np.where(y_encoded == k)[0]
                 np.random.shuffle(idx_k)
                 proportions = (label_distribution[k] * len(idx_k)).astype(int)
-                # Ensure all samples are distributed and last client gets remainder
+                # Assign any rounding remainder to the last client so that every
+                # sample in this class is distributed exactly once.  This matches
+                # the convention used in prepare_data.py and the random/sequential
+                # split strategies above (last client takes indices[start:]).
                 total_assigned = proportions[:-1].sum()
                 proportions[-1] = max(0, len(idx_k) - total_assigned)
 

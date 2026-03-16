@@ -538,6 +538,9 @@ class FeatureElectionController(Controller):
         else:
             self.current_direction *= -1
             self.search_step = max(self.search_step * 0.5, 1e-3)
-            new_fd = prev_fd + (self.current_direction * self.search_step)
+            # Step from curr_fd (not prev_fd) so the explorer backtracks from its
+            # current position rather than skipping the region between the last two
+            # evaluated points.
+            new_fd = curr_fd + (self.current_direction * self.search_step)
 
         return np.clip(new_fd, MIN_FD, MAX_FD)
