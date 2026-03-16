@@ -134,7 +134,7 @@ class FlowerRecipe(Recipe):
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration
-        env = extra_env if extra_env else {}
+        env = extra_env.cpoy if extra_env else {}
         env[CLIENT_API_TYPE_KEY] = ClientAPIType.EX_PROCESS_API.value
 
         job = _create_flower_job(
