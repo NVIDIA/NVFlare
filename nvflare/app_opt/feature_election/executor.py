@@ -221,6 +221,7 @@ class FeatureElectionExecutor(Executor):
 
             resp = make_reply(ReturnCode.OK)
             resp["tuning_score"] = float(score)
+            resp["num_samples"] = len(self.y_train)
             return resp
         except Exception as e:
             logger.error(f"Tuning eval failed: {e}")
