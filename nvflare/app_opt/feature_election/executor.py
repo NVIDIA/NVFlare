@@ -90,6 +90,11 @@ class FeatureElectionExecutor(Executor):
         self.X_val = None
         self.y_val = None
 
+        # Scaler fitted on X_train; stored so _handle_train and _handle_tuning_eval
+        # use the same parameters rather than each reconstructing an identical instance.
+        # Reset to None whenever X_train changes (set_data, apply_mask).
+        self.scaler = None
+
         # Use LogisticRegression with LBFGS solver - much faster convergence than SGDClassifier
         # for small-to-medium datasets. warm_start=True allows incremental training across rounds.
         self.global_feature_mask = None
@@ -124,6 +129,7 @@ class FeatureElectionExecutor(Executor):
 
         self.X_train = X_train
         self.y_train = y_train
+        self.scaler = None  # invalidate cached scaler whenever X_train changes
 
         # If X_val is provided, ensure it has the same feature count as X_train
         if X_val is not None:
@@ -241,6 +247,7 @@ class FeatureElectionExecutor(Executor):
             self.global_feature_mask = mask
             self.X_train = self.X_train[:, mask]
             self.X_val = self.X_val[:, mask]
+            self.scaler = None  # feature count changed; cached scaler is invalid
             return make_reply(ReturnCode.OK)
         except Exception as e:
             logger.error(f"Mask application failed: {e}")
@@ -248,8 +255,12 @@ class FeatureElectionExecutor(Executor):
 
     def _handle_train(self, shareable: Shareable) -> Shareable:
         try:
-            scaler = StandardScaler()
-            X_tr = scaler.fit_transform(self.X_train)
+            # Fit the scaler once per feature set; reuse across rounds so training
+            # and evaluation always use identical normalisation parameters.
+            if self.scaler is None:
+                self.scaler = StandardScaler()
+                self.scaler.fit(self.X_train)
+            X_tr = self.scaler.transform(self.X_train)
 
             # Load global parameters if available (from previous round's aggregation)
             if "params" in shareable:

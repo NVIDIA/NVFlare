@@ -167,6 +167,20 @@ class TestSimulationLogic:
         assert "num_features_selected" in stats
         assert "reduction_ratio" in stats
 
+        # Verify that tuning actually ran: tuning_history must contain exactly
+        # tuning_rounds entries (one per hill-climbing iteration).  An empty list
+        # here means the tuning code path was silently skipped.
+        assert "tuning_history" in stats
+        assert len(stats["tuning_history"]) == 3, (
+            f"Expected 3 tuning history entries (one per tuning_round), " f"got {len(stats['tuning_history'])}"
+        )
+        # Each entry must be a (freedom_degree, score) pair with valid types
+        for fd, score in stats["tuning_history"]:
+            assert isinstance(fd, float), f"FD entry {fd!r} is not a float"
+            assert isinstance(score, float), f"Score entry {score!r} is not a float"
+            assert 0.0 <= fd <= 1.0, f"FD {fd} is outside [0, 1]"
+            assert score >= 0.0, f"Tuning score {score} is negative"
+
     def test_boundary_conditions(self, sample_data):
         """Test Intersection (FD=0) and Union (FD=1)."""
         client_data = FeatureElection().prepare_data_splits(sample_data, "target", num_clients=2)

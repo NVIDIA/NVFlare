@@ -328,7 +328,10 @@ class FeatureElection:
             client_selections[f"client_{i}"] = {
                 "selected_features": selected_mask.tolist(),
                 "feature_scores": feature_scores.tolist(),
-                "num_samples": len(X_np),
+                # Use the train-split size so this matches what the real executor
+                # reports via _handle_feature_selection (len(self.X_train)), keeping
+                # mask-aggregation weights and tuning-score weights consistent.
+                "num_samples": len(X_train_sim),
                 "initial_score": float(initial_score),
                 "fs_score": float(fs_score),
             }

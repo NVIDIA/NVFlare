@@ -153,6 +153,12 @@ def _split_random(df: pd.DataFrame, num_clients: int, random_state: int) -> List
     for i in range(num_clients):
         start = i * samples_per_client
         end = start + samples_per_client if i < num_clients - 1 else len(df)
+        if end <= start:
+            raise ValueError(
+                f"Client {i} received 0 samples in random split "
+                f"({len(df)} samples, {num_clients} clients). "
+                "Increase the dataset size or reduce the number of clients."
+            )
         client_dfs.append(df.iloc[indices[start:end]].copy())
 
     return client_dfs
