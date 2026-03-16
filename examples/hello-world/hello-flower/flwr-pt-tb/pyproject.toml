@@ -34,6 +34,8 @@ clientapp = "flwr_pt_tb.client:app"
 
 [tool.flwr.app.config]
 num-server-rounds = 3
+learning-rate = 0.001
+momentum = 0.9
 
 [tool.flwr.federations]
 default = "local-simulation"

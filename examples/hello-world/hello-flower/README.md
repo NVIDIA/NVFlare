@@ -82,6 +82,7 @@ Job Recipe contains the Flower app configuration and deployes it within NVFlare.
         num_rounds=num_rounds,
         content_dir=content_dir,
         stream_metrics=stream_metrics,
+        run_config=run_config,
     )
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
@@ -96,6 +97,11 @@ From terminal try to run the code
 We run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```
 python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
+```
+
+Customizing hyperparameters can be done by passing the hyperparameters to the job recipe, which are then passed to the Flower app through the `run_config` parameter. For example, to change the learning rate and momentum:
+```
+python job.py --job_name "flwr-pt" --content_dir "./flwr-pt" --learning_rate 0.01 --momentum 0.8
 ```
 
 ### Run flwr-pt with NVFlare simulation and NVFlare's TensorBoard streaming
