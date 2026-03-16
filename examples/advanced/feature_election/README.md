@@ -79,7 +79,7 @@ python job.py \
     --n-features 200 \
     --n-informative 40 \
     --n-redundant 60 \
-    --split-strategy dirichlet
+    --split-strategy non_iid
 ```
 
 ### Data Splitting Strategies
@@ -88,8 +88,7 @@ python job.py \
 |----------|-------------|
 | `stratified` | Maintains class distribution (recommended for classification) |
 | `random` | Random split |
-| `sequential` | Sequential split for ordered data |
-| `dirichlet` | Non-IID split with Dirichlet distribution (alpha=0.5) |
+| `non_iid ` | Non-IID split with Dirichlet distribution (alpha=0.5) |
 
 ## Model
 
