@@ -22,6 +22,7 @@ from packaging.version import InvalidVersion, Version
 from nvflare.app_common.tie.defs import Constant
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
 SUPPORTED_FLWR_MIN_VERSION_SPEC = ">=1.16"
@@ -102,6 +103,7 @@ class FlowerRecipe(Recipe):
         tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
         extra_env (dict, optional): optional extra env variables to be passed to Flower client.
+        run_config (dict, optional): optional dict for flwr run --run-config arguments.
     """
 
     def __init__(
@@ -120,12 +122,15 @@ class FlowerRecipe(Recipe):
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
         extra_env: Optional[dict] = None,
+        run_config: Optional[dict] = None,
     ):
         """Initialize the FlowerRecipe.
 
         Creates a FlowerJob and wraps it in the Recipe interface.
         """
         _validate_flwr_version()
+        if run_config is not None:
+            check_object_type("run_config", run_config, dict)
 
         # needs to init client api to stream metrics
         # only external client api works with the current flower integration
@@ -147,6 +152,7 @@ class FlowerRecipe(Recipe):
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
             extra_env=env,
+            run_config=run_config,
         )
 
         super().__init__(job)
