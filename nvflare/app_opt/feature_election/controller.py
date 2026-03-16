@@ -58,6 +58,13 @@ class FeatureElectionController(Controller):
         self.train_timeout = train_timeout
         self.auto_tune = auto_tune
         self.tuning_rounds = tuning_rounds if auto_tune else 0
+        if auto_tune and self.tuning_rounds == 1:
+            logger.warning(
+                "auto_tune requires tuning_rounds >= 2 to explore alternative freedom degrees "
+                "(one baseline evaluation plus at least one neighbour to compare). "
+                "Got tuning_rounds=1; auto-tuning will be disabled."
+            )
+            self.tuning_rounds = 0
 
         # State
         self.global_feature_mask = None
@@ -108,7 +115,8 @@ class FeatureElectionController(Controller):
                 return
 
             # --- PHASE 2: TUNING & GLOBAL MASKING ---
-            self._phase_two_tuning_and_masking(abort_signal, fl_ctx)
+            if not self._phase_two_tuning_and_masking(abort_signal, fl_ctx):
+                return
 
             # --- PHASE 3: AGGREGATION ROUNDS (FL TRAINING) ---
             self._phase_three_aggregation(abort_signal, fl_ctx)
@@ -269,8 +277,17 @@ class FeatureElectionController(Controller):
         task_data["request_type"] = "apply_mask"
         task_data["global_feature_mask"] = final_mask.tolist()
 
-        self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
-        logger.info("Global mask distributed to all clients")
+        mask_results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx)
+        if len(mask_results) < self.min_clients:
+            logger.warning(
+                f"Global mask distribution incomplete: only {len(mask_results)}/{self.min_clients} "
+                "clients acknowledged. Clients that did not respond will be excluded from "
+                "Phase 3 aggregation — their weight updates will be silently dropped by "
+                "_aggregate_weights due to shape mismatch."
+            )
+            return False
+        logger.info(f"Global mask distributed to {len(mask_results)} clients")
+        return True
 
     def _phase_three_aggregation(self, abort_signal: Signal, fl_ctx: FLContext):
         logger.info(f"=== PHASE 3: Aggregation Rounds (FL Training - {self.fl_rounds} Rounds) ===")

@@ -332,9 +332,6 @@ class FeatureElection:
         # Simulate Controller Aggregation with optional auto-tuning
         if self.auto_tune and self.tuning_rounds > 0:
             logger.info(f"Starting local auto-tuning ({self.tuning_rounds} rounds)...")
-            tuning_history = []
-            search_step = 0.1
-            current_direction = 1
 
             for t in range(self.tuning_rounds):
                 # Generate mask at current freedom_degree
@@ -356,28 +353,15 @@ class FeatureElection:
                     f"Tuning Round {t + 1}/{self.tuning_rounds}: "
                     f"FD={controller.freedom_degree:.4f} -> Score={score:.4f}"
                 )
-                tuning_history.append((controller.freedom_degree, score))
+                # Append to controller's own history so _calculate_next_fd has the right state
+                controller.tuning_history.append((controller.freedom_degree, score))
 
-                # Calculate next FD (mirrors controller._calculate_next_fd)
                 if t < self.tuning_rounds - 1:
-                    min_fd, max_fd = 0.05, 1.0
-                    if t == 0:
-                        new_fd = np.clip(controller.freedom_degree + search_step, min_fd, max_fd)
-                    else:
-                        curr_fd, curr_score = tuning_history[-1]
-                        prev_fd, prev_score = tuning_history[-2]
-                        if curr_score > prev_score:
-                            new_fd = curr_fd + (current_direction * search_step)
-                        else:
-                            current_direction *= -1
-                            search_step *= 0.5
-                            new_fd = prev_fd + (current_direction * search_step)
-                        new_fd = np.clip(new_fd, min_fd, max_fd)
-                    controller.freedom_degree = new_fd
+                    controller.freedom_degree = controller._calculate_next_fd(first_step=(t == 0))
 
             # Select best FD
-            if tuning_history:
-                best_fd, best_score = max(tuning_history, key=lambda x: x[1])
+            if controller.tuning_history:
+                best_fd, best_score = max(controller.tuning_history, key=lambda x: x[1])
                 controller.freedom_degree = best_fd
                 self.freedom_degree = best_fd
                 logger.info(f"Tuning Complete. Optimal Freedom Degree: {best_fd:.4f} (Score: {best_score:.4f})")
@@ -395,7 +379,9 @@ class FeatureElection:
             "fs_method": self.fs_method,
             "auto_tune": self.auto_tune,
             "tuning_history": (
-                [(float(fd), float(s)) for fd, s in tuning_history] if self.auto_tune and self.tuning_rounds > 0 else []
+                [(float(fd), float(s)) for fd, s in controller.tuning_history]
+                if self.auto_tune and self.tuning_rounds > 0
+                else []
             ),
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
             "union_features": int(np.sum(np.any(masks, axis=0))),
