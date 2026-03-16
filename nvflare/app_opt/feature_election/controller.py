@@ -58,7 +58,12 @@ class FeatureElectionController(Controller):
         self.train_timeout = train_timeout
         self.auto_tune = auto_tune
         self.tuning_rounds = tuning_rounds if auto_tune else 0
-        if auto_tune and self.tuning_rounds == 1:
+        if auto_tune and self.tuning_rounds == 0:
+            logger.warning(
+                "auto_tune=True has no effect when tuning_rounds=0 (the default). "
+                "Set tuning_rounds >= 2 to enable hill-climbing optimisation of freedom_degree."
+            )
+        elif auto_tune and self.tuning_rounds == 1:
             logger.warning(
                 "auto_tune requires tuning_rounds >= 2 to explore alternative freedom degrees "
                 "(one baseline evaluation plus at least one neighbour to compare). "
@@ -474,7 +479,7 @@ class FeatureElectionController(Controller):
             new_fd = curr_fd + (self.current_direction * self.search_step)
         else:
             self.current_direction *= -1
-            self.search_step *= 0.5
+            self.search_step = max(self.search_step * 0.5, 1e-3)
             new_fd = prev_fd + (self.current_direction * self.search_step)
 
         return np.clip(new_fd, MIN_FD, MAX_FD)

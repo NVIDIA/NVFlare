@@ -342,7 +342,12 @@ class FeatureElection:
                     score = 0.0
                 else:
                     scores = []
-                    for exec_i in executors:
+                    for i_exec, exec_i in enumerate(executors):
+                        assert exec_i.X_train.shape[1] == len(candidate_mask), (
+                            f"Executor {i_exec} X_train has {exec_i.X_train.shape[1]} features "
+                            f"but candidate_mask has {len(candidate_mask)} entries — "
+                            "X_train must remain full-width throughout the tuning loop"
+                        )
                         X_masked = exec_i.X_train[:, candidate_mask]
                         X_val_masked = exec_i.X_val[:, candidate_mask]
                         s = exec_i.evaluate_model(X_masked, exec_i.y_train, X_val_masked, exec_i.y_val)
