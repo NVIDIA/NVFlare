@@ -402,6 +402,8 @@ class FeatureElectionController(Controller):
         if total_samples > 0:
             self.global_weights = {k: v / total_samples for k, v in weighted_weights.items()}
             logger.info(f"Aggregated weights from {len(results)} clients ({total_samples} samples)")
+        else:
+            logger.warning("Weight aggregation skipped: no clients returned valid parameters; global weights unchanged")
 
     def _extract_client_data(self, results: Dict[str, Shareable]) -> Dict[str, Dict]:
         """Extract feature selection data from client results"""
@@ -499,7 +501,7 @@ class FeatureElectionController(Controller):
         if n_add > 0:
             diff_indices = np.where(diff_mask)[0]
             diff_scores = agg_scores[diff_indices]
-            top_indices = diff_indices[np.argsort(diff_scores)[-n_add:]]
+            top_indices = diff_indices[np.argsort(diff_scores, kind="stable")[-n_add:]]
             selected_diff = np.zeros_like(diff_mask)
             selected_diff[top_indices] = True
             return intersection | selected_diff

@@ -271,7 +271,7 @@ def load_client_data(
         split_strategy: Data splitting strategy
         test_size: Fraction of data for validation
         random_state: Random seed
-        n_samples: Total samples (will be divided among clients)
+        n_samples: Samples per client (total dataset will be n_samples × num_clients)
         n_features: Number of features
         n_informative: Number of informative features
         n_redundant: Number of redundant features
