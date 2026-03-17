@@ -184,6 +184,10 @@ class FeatureElection:
         X = df.drop(columns=[target_col])
         y = df[target_col]
 
+        # Track before auto-assignment so we can warn if the user supplied
+        # split_ratios for a strategy that does not use them.
+        user_provided_split_ratios = split_ratios is not None
+
         if split_ratios is None:
             if num_clients == 2:
                 split_ratios = [0.6, 0.4]
@@ -197,11 +201,17 @@ class FeatureElection:
         if len(split_ratios) != num_clients:
             raise ValueError(f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})")
 
-        # Accept "non_iid" as an alias for "dirichlet" so callers who learn the
-        # prepare_data.py / job.py CLI convention ("non_iid") get the same result
-        # without a confusing ValueError.
-        if split_strategy == "non_iid":
-            split_strategy = "dirichlet"
+        # "non_iid" is the canonical name (matches README / prepare_data.py / CLI).
+        # Accept "dirichlet" as a legacy alias so existing callers are not broken.
+        if split_strategy == "dirichlet":
+            split_strategy = "non_iid"
+
+        if split_strategy == "non_iid" and user_provided_split_ratios:
+            logger.warning(
+                "split_ratios is ignored by the 'non_iid' strategy; "
+                "class proportions are drawn from a Dirichlet distribution controlled "
+                "by dirichlet_alpha. The provided split_ratios will not be used."
+            )
 
         client_data = []
         indices = np.arange(len(df))
@@ -247,7 +257,7 @@ class FeatureElection:
                     )
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
 
-        elif split_strategy == "dirichlet":
+        elif split_strategy == "non_iid":
             # Non-IID split logic
             le = LabelEncoder()
             y_encoded = le.fit_transform(y)
@@ -528,7 +538,7 @@ class FeatureElection:
                 )
                 for k, v in self.election_stats.items()
                 if k
-                != "client_stats"  # client_stats may contain arbitrary numpy types; excluded from persistence intentionally
+                != "client_stats"  # client_stats is a nested dict excluded from top-level persistence by design
             },
         }
         with open(filepath, "w") as f:

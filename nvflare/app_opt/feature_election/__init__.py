@@ -54,8 +54,7 @@ from .controller import FeatureElectionController
 from .executor import FeatureElectionExecutor
 from .feature_election import FeatureElection, load_election_results, quick_election
 
-__version__ = "0.0.9"
-__author__ = "Ioannis Christofilogiannis"
+__version__ = "1.0.0"
 __all__ = [
     "FeatureElection",
     "FeatureElectionController",
