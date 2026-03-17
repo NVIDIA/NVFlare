@@ -121,6 +121,7 @@ class TaskExchanger(Executor):
                 return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
+            self.pipe.clear()
             self._create_pipe_handler()
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
