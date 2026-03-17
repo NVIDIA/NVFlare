@@ -100,7 +100,7 @@ class FeatureElection:
                     "id": "feature_election_workflow",
                     "path": "nvflare.app_opt.feature_election.controller.FeatureElectionController",
                     "args": {
-                        "freedom_degree": self.freedom_degree,
+                        "freedom_degree": float(self.freedom_degree),
                         "aggregation_mode": self.aggregation_mode,
                         "min_clients": min_clients,
                         "num_rounds": num_rounds,
@@ -126,6 +126,7 @@ class FeatureElection:
                             "fs_method": self.fs_method,
                             "eval_metric": self.eval_metric,
                             "task_name": "feature_election",
+                            "fs_params": self.fs_params if self.fs_params else None,
                         },
                     },
                 }
