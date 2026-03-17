@@ -112,7 +112,8 @@ client pipeline:
 Together, these three features significantly reduce peak memory usage, prevent RSS growth
 that leads to OOM errors, and eliminate redundant serialization/deserialization overhead
 when training in subprocess mode. In a 5 GB PyTorch model benchmark with FedAvg and 4
-clients, server peak memory dropped by up to 85% and client peak memory by up to 92%.
+clients, server peak memory dropped by up to 85% (in-process mode) and client peak memory
+by up to 92% (subprocess mode), as detailed in the tables below.
 Prior to 2.7.2, subprocess jobs with large models would OOM after a few rounds; with the
 full set of fixes they now complete stably across many rounds.
 
@@ -173,7 +174,7 @@ full set of fixes they now complete stably across many rounds.
    * - Site peak avg (GB)
      - 54.2
      - 26.2
-     - −51%
+     - −52%
 
 
 **External-process (subprocess) mode**
