@@ -173,8 +173,38 @@ If you need to send an object type that can potentially be very large, you shoul
          """
          pass
 
-All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare’s core, it should register its DOT values in ``nvflare.fuel.utils.fobs.dots.py``; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
+All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare's core, it should register its DOT values in ``nvflare.fuel.utils.fobs.dots.py``; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
 - NUMPY_BYTES = 1
 - NUMPY_FILE = 2
 - TENSOR_BYTES = 3
 - TENSOR_FILE = 4
+
+FOBS Security
+=============
+
+FOBS enforces two security rules during deserialization to prevent arbitrary class loading and remote code execution (RCE).
+
+Only Registered Decomposers Are Allowed
+----------------------------------------
+
+When FOBS deserializes an object, the decomposer embedded in the serialized data must have been explicitly registered. If an unrecognized decomposer is encountered, FOBS raises a ``ValueError`` and refuses to proceed. This ensures that only trusted, pre-registered decomposers can participate in deserialization.
+
+Type Whitelist for Generic Decomposers
+---------------------------------------
+
+Some decomposers are *generic* — they handle multiple types (e.g., ``EnumTypeDecomposer``, ``DataClassDecomposer``). Because these decomposers can reconstruct arbitrary classes by name, an additional type-name whitelist is enforced. A type must appear in the whitelist before FOBS will load it during deserialization.
+
+Types are automatically added to the whitelist when registered via:
+
+- ``fobs.register_data_classes(*classes)``
+- ``fobs.register_enum_types(*classes)``
+
+For other cases, types can be added explicitly:
+
+.. code-block:: python
+
+   import nvflare.fuel.utils.fobs as fobs
+
+   fobs.add_type_name_whitelist("mypackage.mymodule.MyClass")
+
+If a type is not in the whitelist and its decomposer has not been pre-registered, FOBS raises a ``ValueError`` with a message indicating which call to use to allow the type.
