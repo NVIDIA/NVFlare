@@ -572,11 +572,18 @@ class FeatureElectionController(Controller):
         MIN_FD, MAX_FD = 0.05, 1.0
 
         if first_step:
-            # Choose the initial direction so the first step stays within [MIN_FD, MAX_FD].
-            # Starting near 1.0 in the positive direction would clip immediately and waste
-            # a tuning round; prefer going negative when headroom above is smaller.
-            if self.freedom_degree + self.search_step > MAX_FD:
+            # Choose the initial direction so the first step stays within [MIN_FD, MAX_FD]
+            # without clipping, which would waste a tuning round on a no-op move.
+            # Check both boundaries symmetrically: prefer the direction with more headroom.
+            near_max = self.freedom_degree + self.search_step > MAX_FD
+            near_min = self.freedom_degree - self.search_step < MIN_FD
+            if near_max and not near_min:
                 self.current_direction = -1
+            elif near_min and not near_max:
+                self.current_direction = 1
+            # If near both (search_step is very large relative to the range), keep
+            # current_direction and let np.clip handle the boundary; the step will
+            # land at the nearer bound, which is the best available move.
             return np.clip(self.freedom_degree + (self.current_direction * self.search_step), MIN_FD, MAX_FD)
 
         if len(self.tuning_history) < 2:

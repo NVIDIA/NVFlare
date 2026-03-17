@@ -182,16 +182,24 @@ class TestSimulationLogic:
             assert 0.0 <= score <= 1.0, f"Tuning score {score} is outside [0, 1]"
 
     def test_boundary_conditions(self, sample_data):
-        """Test Intersection (FD=0) and Union (FD=1)."""
-        client_data = FeatureElection().prepare_data_splits(sample_data, "target", num_clients=2)
+        """Test Intersection (FD=0) and Union (FD=1).
+
+        Uses 'mutual_info' rather than the default Lasso because mutual_info
+        always selects the top-k features (never an all-False mask), so the
+        intersection at FD=0 is guaranteed to be non-empty.  Lasso can zero out
+        all coefficients on some splits and raise ValueError, which would make
+        the test a flaky assertion about FS hyperparameters rather than about
+        the FD boundary logic being tested.
+        """
+        client_data = FeatureElection(fs_method="mutual_info").prepare_data_splits(sample_data, "target", num_clients=2)
 
         # Intersection
-        fe_int = FeatureElection(freedom_degree=0.0)
+        fe_int = FeatureElection(freedom_degree=0.0, fs_method="mutual_info")
         stats_int = fe_int.simulate_election(client_data)
         n_int = stats_int["num_features_selected"]
 
         # Union
-        fe_union = FeatureElection(freedom_degree=1.0)
+        fe_union = FeatureElection(freedom_degree=1.0, fs_method="mutual_info")
         stats_union = fe_union.simulate_election(client_data)
         n_union = stats_union["num_features_selected"]
 

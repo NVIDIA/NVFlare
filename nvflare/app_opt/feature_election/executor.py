@@ -209,6 +209,18 @@ class FeatureElectionExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         try:
             mask, scores = self.perform_feature_selection()
+            if not np.any(mask):
+                # Warn here so the server log shows a client-side explanation.
+                # The controller's _extract_client_data will independently skip
+                # this vote, but without this message the silence there looks like
+                # a missing client rather than a regularisation issue.
+                logger.warning(
+                    f"Feature selection produced an all-False mask "
+                    f"(fs_method={self.fs_method!r}, fs_params={self.fs_params}). "
+                    "This client's vote will be excluded from global mask aggregation. "
+                    "Consider lowering the regularisation strength "
+                    "(e.g. reduce 'alpha' for Lasso/ElasticNet)."
+                )
             resp = make_reply(ReturnCode.OK)
             resp["selected_features"] = mask.tolist()
             resp["feature_scores"] = scores.tolist()

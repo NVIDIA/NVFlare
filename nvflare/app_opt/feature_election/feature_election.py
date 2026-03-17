@@ -444,10 +444,14 @@ class FeatureElection:
                     weighted_score, total_weight = 0.0, 0.0
                     for i_exec, exec_i in enumerate(executors):
                         if exec_i.X_train.shape[1] != len(candidate_mask):
-                            raise ValueError(
+                            # RuntimeError (not ValueError) signals an internal invariant
+                            # violation rather than user-facing input validation, so callers
+                            # see a clear distinction between bad arguments and bugs.
+                            raise RuntimeError(
                                 f"Executor {i_exec} X_train has {exec_i.X_train.shape[1]} features "
                                 f"but candidate_mask has {len(candidate_mask)} entries — "
-                                "X_train must remain full-width throughout the tuning loop"
+                                "X_train must remain full-width throughout the tuning loop. "
+                                "This is an internal invariant violation, not a user input error."
                             )
                         X_masked = exec_i.X_train[:, candidate_mask]
                         X_val_masked = exec_i.X_val[:, candidate_mask]
