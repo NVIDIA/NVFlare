@@ -28,6 +28,7 @@ from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.mem_utils import log_rss
 
 TOPIC_LOG_DATA = "LOG_DATA"
 TOPIC_STOP = "STOP"
@@ -44,6 +45,8 @@ class InProcessClientAPI(APISpec):
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
         """
+        super().__init__()  # Initialize memory management from base class
+
         self.data_bus = DataBus()
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
         self.data_bus.subscribe([TOPIC_ABORT, TOPIC_STOP], self.__ask_to_abort)
@@ -98,9 +101,25 @@ class InProcessClientAPI(APISpec):
     def set_meta(self, meta: dict):
         self.meta = meta
 
+    def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
+        """Configure memory management settings.
+
+        Args:
+            gc_rounds: Cleanup every N rounds. 0 = disabled.
+            cuda_empty_cache: If True, call torch.cuda.empty_cache() on cleanup.
+        """
+        self._memory_gc_rounds = gc_rounds
+        self._cuda_empty_cache = cuda_empty_cache
+        if gc_rounds > 0:
+            self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
+
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
+        if result is not None:
+            self._mem_round = result.current_round
+            self._mem_site = self.get_site_name()
+            log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
     def __receive(self) -> Optional[FLModel]:
@@ -136,8 +155,22 @@ class InProcessClientAPI(APISpec):
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
+            # Serialization is complete. Release the sent model's params and the
+            # received model's params — both are dead weight after flare.send().
+            # NOTE: model.params and input_model.params will be None after this.
+            model.params = None
+            model.optimizer_params = None
+            # Keep a local reference so we can clear input_model params before
+            # dropping self.fl_model.
+            received_model = self.fl_model
             self.fl_model = None
+            if received_model:
+                received_model.params = None
+                received_model.optimizer_params = None
             self.receive_called = False
+
+        self._maybe_cleanup_memory()
+        log_rss(f"CA s={getattr(self, '_mem_site', '?')} r={getattr(self, '_mem_round', None)} send")
 
     def system_info(self) -> Dict:
         return self.sys_info

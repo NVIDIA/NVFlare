@@ -36,6 +36,7 @@ class ReservedHeaderKey(object):
     PEER_CTX = ServerCommandKey.PEER_FL_CONTEXT
     MSG_ROOT_ID = "__msg_root_id__"
     MSG_ROOT_TTL = "__msg_root_ttl__"  # TTL = time to live
+    PASS_THROUGH = "__pass_through__"  # request PASS_THROUGH decode at receiving CJ
 
 
 class Shareable(dict):

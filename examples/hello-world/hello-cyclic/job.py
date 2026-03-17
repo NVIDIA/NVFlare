@@ -24,6 +24,7 @@ if __name__ == "__main__":
 
     recipe = CyclicRecipe(
         num_rounds=num_rounds,
+        min_clients=n_clients,
         # Model can be specified as class instance or dict config:
         model=Net(),
         # Alternative: model={"class_path": "model.Net", "args": {}},

@@ -41,8 +41,11 @@ Prepare the Trainer
 Let's prepare the trainer code first, we will modify the "project.yml" in the
 next section for project setup.
 
-You need to modify your trainer code to integrate with the :class:`FlareAgent<nvflare.client.flare_agent>` API.
-This API provides simple ``get_task()`` and ``submit_result()`` methods to interact with the FL client.
+You can integrate a trainer either with low-level pipe control
+(:class:`FlareAgent<nvflare.client.flare_agent>`) or with the higher-level
+Client API (``nvflare.client``). The Client API path uses
+:class:`FlareAgentWithFLModel<nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel>`
+internally for FLModel conversion.
 
 We will go through the steps one by one:
 
@@ -52,30 +55,28 @@ We will go through the steps one by one:
 The :class:`FlareAgent<nvflare.client.flare_agent.FlareAgent>` is responsible
 for interacting with the FL client to exchange task data.
 
-If using FLModel, :class:`FlareAgentWithFLModel<nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel>`
-subclasses FlareAgent and provides conversion from shareables to task using the FLModel data structure.
-
-If using CellPipe, a convenient class :class:`FlareAgentWithCellPipe<nvflare.client.flare_agent.FlareAgentWithCellPipe>`
-can be used.
-
 Please refer to their API page for detailed explanations of each argument:
 
   - :class:`FlareAgent<nvflare.client.flare_agent.FlareAgent>`
-  - :class:`FlareAgentWithFLModel<nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel>`
-  - :class:`FlareAgentWithCellPipe<nvflare.client.flare_agent.FlareAgentWithCellPipe>`
 
-You can create the FlareAgentWithCellPipe as the following code:
+You can create a FlareAgent with an explicit CellPipe as follows:
 
 .. code-block:: python
 
-    from nvflare.client.flare_agent import FlareAgentWithCellPipe
+    from nvflare.client.flare_agent import FlareAgent
+    from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+    from nvflare.fuel.utils.pipe.pipe import Mode
 
-    agent = FlareAgentWithCellPipe(
-        root_url="grpc://server:8002",
+    pipe = CellPipe(
+        mode=Mode.ACTIVE,
+        token=args.agent_id,
         site_name=args.site_name,
-        agent_id=args.agent_id,
+        root_url="grpc://server:8002",
         workspace_dir=args.workspace,
         secure_mode=True,
+    )
+    agent = FlareAgent(
+        pipe=pipe,
         submit_result_timeout=2.0,
         heartbeat_timeout=120.0,
     )
@@ -150,6 +151,33 @@ example code of this usage pattern:
 
 .. literalinclude:: ../../resources/3rd_party_trainer.py
     :language: python
+
+
+Client API Pattern (FLModel)
+----------------------------
+
+If your trainer already works with FLModel semantics, you can use Client API
+directly instead of manually creating a CellPipe-based agent.
+
+In this pattern, ``nvflare.client`` handles the underlying agent wiring, and
+uses :class:`FlareAgentWithFLModel<nvflare.client.flare_agent_with_fl_model.FlareAgentWithFLModel>`
+internally.
+
+.. code-block:: python
+
+    import nvflare.client as flare
+
+    flare.init()
+    while flare.is_running():
+        model = flare.receive()
+        if model is None:
+            break
+
+        # train/evaluate with your framework here
+        trained_model = model
+        flare.send(trained_model)
+
+    flare.shutdown()
 
 
 Notes:
@@ -270,16 +298,17 @@ setup the trainer process on each client site:
     - Copy the "startup" folder of the client site to this "workspace" folder
       If needed, any additional config files required by the trainer can also
       be placed in this "workspace" folder.
-    - Create the trainer script following the steps in the above section.
-      Please set the FlareAgentWithCellPipe's "workspace_dir" to the path of
-      this "workspace" folder that you just created.
-      Please make sure the "agent_id" value of FlareAgentWithCellPipe is the same
-      as the "token" value in the above
+    - For low-level FlareAgent usage, create your trainer script following
+      the steps above and set CellPipe ``workspace_dir`` to this "workspace"
+      folder. Also make sure the trainer ``agent_id`` matches the ``token``
+      value in the pipe component config.
+    - For the Client API pattern, point ``flare.init()`` to the generated client
+      API config in the job workspace and use ``receive/send`` in your trainer loop.
 
 Verification
 ============
 
-The FL client (TaskExchanger) and your trainer process (FlareAgentWithCellPipe)
+For low-level TaskExchanger integration, the FL client and trainer process
 do not have to be started at exactly the same time.
 
 Whichever is started first will wait for the other for ``heartbeat_timeout`` seconds.

@@ -183,3 +183,7 @@ CLAUDE.local.md
 
 # local Codex artifacts
 .codex/
+
+# memory profiler output
+tests/memory_profile/**/*.dat
+/HEAD
