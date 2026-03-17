@@ -62,6 +62,7 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
     ):
         # Validate initial_ckpt early (base class won't see it since we pass None)
         from nvflare.recipe.utils import validate_ckpt
@@ -93,6 +94,8 @@ class CyclicRecipe(BaseCyclicRecipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=False,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

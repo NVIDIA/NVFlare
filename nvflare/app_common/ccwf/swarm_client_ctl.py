@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import gc
 import random
 import threading
 import time
@@ -109,9 +108,6 @@ class Gatherer(FLComponent):
                     client_status = self.trainer_statuses.get(client_name)
                     if client_status:
                         client_status.busy = False
-
-                # force garbage collection after each gather
-                gc.collect()
 
     def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
         with self.perm_lock:
@@ -295,6 +291,8 @@ class SwarmClientController(ClientSideController):
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
         enable_tensor_disk_offload: bool = False,
+        memory_gc_rounds: int = 1,
+        cuda_empty_cache: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -325,6 +323,12 @@ class SwarmClientController(ClientSideController):
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
             enable_tensor_disk_offload: download tensors to disk during FOBS streaming instead of into memory.
                 Reduces peak memory during aggregation. Aggregators must handle lazy refs.
+            memory_gc_rounds: run gc.collect() + malloc_trim on the aggregator every N FL rounds.
+                Defaults to 1 (every round) to match legacy behavior where gc.collect() was called
+                unconditionally after each trainer submission. Set to 0 to disable.
+            cuda_empty_cache: also call torch.cuda.empty_cache() during aggregator-side cleanup.
+                In swarm learning the aggregator runs on the same client as the trainer, so GPU
+                memory may be relevant. Defaults to False.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on
@@ -386,6 +390,9 @@ class SwarmClientController(ClientSideController):
         self.last_aggr_round_done = -1
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self._previous_enable_tensor_disk_offload = None
+        self.memory_gc_rounds = memory_gc_rounds
+        self.cuda_empty_cache = cuda_empty_cache
+        self._aggr_round_count = 0
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -585,22 +592,29 @@ class SwarmClientController(ClientSideController):
 
             # determine the best global result
             self._distribute_final_results(aggr_result, fl_ctx)
-            return
 
-        # continue next round
-        next_round_data = self.shareable_generator.learnable_to_shareable(global_weights, fl_ctx)
-        assert isinstance(next_round_data, Shareable)
+        else:
+            # continue next round
+            next_round_data = self.shareable_generator.learnable_to_shareable(global_weights, fl_ctx)
+            assert isinstance(next_round_data, Shareable)
 
-        best_round = aggr_result.get_header(Constant.ROUND)
-        best_metric = aggr_result.get_header(Constant.METRIC)
-        best_client = aggr_result.get_header(Constant.CLIENT)
+            best_round = aggr_result.get_header(Constant.ROUND)
+            best_metric = aggr_result.get_header(Constant.METRIC)
+            best_client = aggr_result.get_header(Constant.CLIENT)
 
-        if best_client:
-            next_round_data.set_header(Constant.ROUND, best_round)
-            next_round_data.set_header(Constant.CLIENT, best_client)
-            next_round_data.set_header(Constant.METRIC, best_metric)
+            if best_client:
+                next_round_data.set_header(Constant.ROUND, best_round)
+                next_round_data.set_header(Constant.CLIENT, best_client)
+                next_round_data.set_header(Constant.METRIC, best_metric)
 
-        self._scatter(next_round_data, gatherer.for_round + 1, gatherer.fl_ctx)
+            self._scatter(next_round_data, gatherer.for_round + 1, gatherer.fl_ctx)
+
+        if self.memory_gc_rounds > 0:
+            self._aggr_round_count += 1
+            if self._aggr_round_count % self.memory_gc_rounds == 0:
+                from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+                cleanup_memory(cuda_empty_cache=self.cuda_empty_cache)
 
     def _ask_to_share_best_result(self, client: str, metric, fl_ctx: FLContext):
         # other client has best model - ask it to distribute its result

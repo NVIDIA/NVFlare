@@ -62,6 +62,8 @@ class BaseScriptRunner:
         pipe_connect_type: str = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
+        memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -172,6 +174,8 @@ class BaseScriptRunner:
         self._task_pipe = task_pipe
         self._executor = executor
         self._launcher = launcher
+        self._memory_gc_rounds = memory_gc_rounds
+        self._cuda_empty_cache = cuda_empty_cache
 
     def _create_cell_pipe(self):
         ct = self._pipe_connect_type
@@ -230,6 +234,8 @@ class BaseScriptRunner:
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
                     server_expected_format=self._server_expected_format,
+                    memory_gc_rounds=self._memory_gc_rounds,
+                    cuda_empty_cache=self._cuda_empty_cache,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -264,6 +270,8 @@ class BaseScriptRunner:
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
                     server_expected_format=self._server_expected_format,
+                    memory_gc_rounds=self._memory_gc_rounds,
+                    cuda_empty_cache=self._cuda_empty_cache,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -309,6 +317,8 @@ class ScriptRunner(BaseScriptRunner):
         pipe_connect_type: PipeConnectType = PipeConnectType.VIA_CP,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
+        memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -341,4 +351,6 @@ class ScriptRunner(BaseScriptRunner):
             pipe_connect_type=pipe_connect_type,
             launch_once=launch_once,
             shutdown_timeout=shutdown_timeout,
+            memory_gc_rounds=memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
