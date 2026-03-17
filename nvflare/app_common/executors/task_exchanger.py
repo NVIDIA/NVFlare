@@ -119,6 +119,10 @@ class TaskExchanger(Executor):
             if skip:
                 self.log_debug(fl_ctx, "skipping pipe handler reset: execute() is in progress")
                 return
+            # Ensure pipe is initialized and is a Pipe before operating on it.
+            if not isinstance(self.pipe, Pipe):
+                self.log_debug(fl_ctx, "pipe not initialized or not a Pipe; skipping pipe handler reset")
+                return
             if self.pipe_handler:
                 self.pipe_handler.stop(close_pipe=False)
             self.pipe.clear()
