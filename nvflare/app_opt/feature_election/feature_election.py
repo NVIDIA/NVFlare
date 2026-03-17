@@ -537,8 +537,7 @@ class FeatureElection:
                     )
                 )
                 for k, v in self.election_stats.items()
-                if k
-                != "client_stats"  # client_stats is a nested dict excluded from top-level persistence by design
+                if k != "client_stats"  # client_stats is a nested dict excluded from top-level persistence by design
             },
         }
         with open(filepath, "w") as f:
