@@ -35,6 +35,18 @@ Most training recipes accept the following model-related parameters:
     * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
       subclassed Keras class instance or dict config.
 
+``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
+    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
+
+    * ``False`` (default): materialize in memory
+    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
+
+    .. warning::
+
+       Temporary files use the process temp directory (``TMPDIR`` / OS default such as ``/tmp``). In
+       containers, ``/tmp`` may be tmpfs (RAM-backed), which can reduce memory offload impact. Set
+       ``TMPDIR`` to a disk-backed mount for the server process.
+
 See :ref:`job_recipe` for detailed explanations of these options.
 
 Federated Averaging (FedAvg)
@@ -88,6 +100,29 @@ TensorFlow FedAvg
 
 - `examples/hello-world/hello-tf <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-tf>`_
 - `examples/advanced/cifar10/tf/cifar10_fedavg <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/tf/cifar10_fedavg>`_
+
+NumPy FedAvg
+------------
+
+For framework-agnostic or NumPy-based models.
+
+.. code-block:: python
+
+    from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+    from nvflare.recipe import SimEnv
+
+    recipe = NumpyFedAvgRecipe(
+        name="fedavg-numpy",
+        min_clients=2,
+        num_rounds=5,
+        train_script="client.py",
+    )
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+**Examples:**
+
+- `examples/hello-world/hello-numpy <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy>`_
 
 Sklearn FedAvg
 --------------
@@ -583,6 +618,37 @@ Evaluate a pre-trained PyTorch model by sending it to all clients for evaluation
 - `examples/hello-world/hello-lightning-eval <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning-eval>`_
 
 
+Cross-Site Evaluation
+=====================
+
+Evaluate models across all client sites (compare each client's model against all datasets).
+
+.. code-block:: python
+
+    from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe
+    from nvflare.recipe import SimEnv
+
+    recipe = NumpyCrossSiteEvalRecipe(
+        name="cross-eval",
+        min_clients=2,
+        eval_script="evaluate.py",
+        eval_args="--data_root /path/to/data",
+        initial_ckpt="/path/to/pretrained_model.npy",  # Optional: evaluate specific model
+    )
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+.. note::
+   - Use ``eval_script`` to specify custom evaluation logic. If not provided, uses a built-in
+     dummy validator (for testing only).
+   - Use ``initial_ckpt`` to evaluate a specific pre-trained model. If not provided, the recipe
+     evaluates models from the training run directory.
+
+**Examples:**
+
+- `examples/hello-world/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val>`_
+
+
 Private Set Intersection (PSI)
 ==============================
 
@@ -618,7 +684,8 @@ Run Flower-based federated learning jobs.
     recipe = FlowerRecipe(
         name="flower-job",
         min_clients=2,
-        flower_app="path/to/flower/app",
+        flower_content="path/to/flower/app",
+        run_config={"num-server-rounds": 5}, # Optional: used to override default values in pyproject.toml
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -645,20 +712,14 @@ Decentralized federated learning without a central server.
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
-        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
 
 .. note::
-   For large models (>2 GB), tune the following parameters:
-
-   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
-     Increase for 7B+ models where P2P tensor streaming can take several minutes.
-   - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
-     is unavailable or for third-party subprocess integrations.
-   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
-     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
+   ``SimpleSwarmLearningRecipe`` is a backward-compatible alias for ``SwarmLearningRecipe``.
+   It is also available from the original location:
+   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
 
 
 Edge Recipes
