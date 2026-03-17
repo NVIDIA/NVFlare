@@ -22,7 +22,7 @@ from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 from nvflare.fuel.utils.pipe.file_name_utils import file_name_to_message, message_to_file_name
 from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from nvflare.fuel.utils.pipe.pipe import HEARTBEAT_SEND_TIMEOUT, Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 
@@ -42,14 +42,6 @@ class FilePipe(Pipe):
         check_str("root_path", root_path)
 
         self._remove_root = False
-        if not os.path.exists(root_path):
-            try:
-                # create the root path
-                os.makedirs(root_path)
-                self._remove_root = True
-            except Exception:
-                pass
-
         self.root_path = root_path
         self.file_check_interval = file_check_interval
         self.pipe_path = None
@@ -87,6 +79,10 @@ class FilePipe(Pipe):
     def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
+
+        if not os.path.exists(self.root_path):
+            os.makedirs(self.root_path)
+            self._remove_root = True
 
         pipe_path = os.path.join(self.root_path, name)
 
@@ -209,13 +205,28 @@ class FilePipe(Pipe):
         except Exception:
             raise BrokenPipeError(f"error reading from {from_dir}")
 
-        if files:
-            files = [os.path.join(from_dir, f) for f in files]
-            files.sort(key=os.path.getmtime, reverse=False)
-            file_path = files[0]
-            return self._read_file(file_path)
-        else:
+        if not files:
             return None
+
+        files = [os.path.join(from_dir, f) for f in files]
+
+        def _safe_mtime(f):
+            try:
+                return os.path.getmtime(f)
+            except FileNotFoundError:
+                return float("inf")
+
+        files.sort(key=_safe_mtime)
+        for file_path in files:
+            try:
+                return self._read_file(file_path)
+            except BrokenPipeError:
+                # File was removed between listdir and read (TOCTOU race).
+                # This happens when the sender's heartbeat send times out and
+                # deletes its own file just as the receiver is about to read it.
+                # Skip this file and try the next one.
+                continue
+        return None
 
     def _get_from_dir(self, from_dir: str, timeout=None):
         if not timeout or timeout <= 0:
@@ -261,8 +272,8 @@ class FilePipe(Pipe):
         if not self.pipe_path:
             raise BrokenPipeError("pipe is not open")
 
-        if not timeout and msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
-            timeout = 5.0
+        if timeout is None and msg.topic == Topic.HEARTBEAT:
+            timeout = HEARTBEAT_SEND_TIMEOUT
 
         return self.put_f(msg, timeout)
 

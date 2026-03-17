@@ -17,19 +17,44 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, WorkspaceConstants
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.converter_utils import create_default_params_converters
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
 from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.fobs import fobs
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.log_utils import apply_log_config, get_obj_logger
+from nvflare.fuel.utils.mem_utils import log_rss
 from nvflare.fuel.utils.pipe.pipe import Pipe
+
+_ROTATING_HANDLER_CLASSES = {
+    "logging.handlers.RotatingFileHandler",
+    "logging.handlers.TimedRotatingFileHandler",
+}
+_ROTATING_ONLY_KEYS = {"maxBytes", "backupCount", "when", "interval", "utc", "atTime"}
+
+
+def _downgrade_rotating_handlers(dict_config: dict) -> None:
+    """Replace rotating file handlers with plain FileHandler in subprocess log config.
+
+    Both the CJ and the subprocess write to the same log files.  Only the CJ
+    should trigger rotation; RotatingFileHandler is not process-safe and two
+    processes rotating the same file concurrently can corrupt it.  The subprocess
+    uses plain FileHandler (append-only, no rotation) so the CJ remains the sole
+    rotation manager.
+    """
+    for handler_cfg in dict_config.get("handlers", {}).values():
+        if handler_cfg.get("class") in _ROTATING_HANDLER_CLASSES:
+            handler_cfg["class"] = "logging.FileHandler"
+            for key in _ROTATING_ONLY_KEYS:
+                handler_cfg.pop(key, None)
 
 
 def _create_client_config(config: str) -> ClientConfig:
@@ -92,6 +117,37 @@ class ExProcessClientAPI(APISpec):
         self.flare_agent = None
         # Memory settings will be read from config in init()
 
+    def _configure_subprocess_logging(self, client_config: ClientConfig) -> None:
+        """Configure Python logging in the subprocess using the site's log config file.
+
+        Uses ConfigFactory.load_config() so all supported variants (.json, .conf,
+        .yml, .default) are found automatically — the hardcoded `.json` suffix is
+        not assumed.  RotatingFileHandler entries in the config are downgraded to
+        plain FileHandler before applying: both the CJ and the subprocess share the
+        same log files, and only the CJ should trigger rotation (RotatingFileHandler
+        is not process-safe).  consoleHandler output reaches stdout, where
+        SubprocessLauncher routes it to the terminal or wraps it with logger.info()
+        for raw print() lines from user training scripts.
+        """
+        try:
+            task_exchange = client_config.config.get(ConfigKey.TASK_EXCHANGE, {})
+            pipe_args = task_exchange.get(ConfigKey.PIPE, {}).get(ConfigKey.ARG, {})
+            workspace_dir = pipe_args.get("workspace_dir", "")
+            if not workspace_dir:
+                return
+
+            local_dir = os.path.join(workspace_dir, "local")
+            conf = ConfigFactory.load_config(WorkspaceConstants.LOGGING_CONFIG, search_dirs=[local_dir])
+            if not conf:
+                return
+
+            dict_config = conf.to_dict()
+            _downgrade_rotating_handlers(dict_config)
+            apply_log_config(dict_config, workspace_dir)
+        except Exception as e:
+            # Logging setup failure must never crash the training script.
+            self.logger.warning(f"Unable to configure subprocess logging: {e}")
+
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
         if self.model_registry is None:
@@ -115,6 +171,12 @@ class ExProcessClientAPI(APISpec):
 
         client_config = _create_client_config(config=self.config_file)
 
+        # Configure logging for the subprocess using the site's log_config.json.
+        # Without this the subprocess Python logging is unconfigured — logger.info()
+        # is silently dropped. With it, all NVFlare loggers write to sys.stdout
+        # (captured by SubprocessLauncher) and to the site's log.txt file.
+        self._configure_subprocess_logging(client_config)
+
         flare_agent = None
         try:
             if rank == "0":
@@ -126,11 +188,29 @@ class ExProcessClientAPI(APISpec):
                     pipe, task_channel_name = _create_pipe_using_config(
                         client_config=client_config, section=ConfigKey.TASK_EXCHANGE
                     )
+                    # Enable per-message PASS_THROUGH on the subprocess-side CellPipe
+                    # (reverse path: subprocess → CJ → FL Server).  Every result message
+                    # sent from the subprocess will carry MessageHeaderKey.PASS_THROUGH=True
+                    # so CJ's Adapter.call() builds a per-call decode context with
+                    # PASS_THROUGH=True → LazyDownloadRef at CJ.  CJ never materialises
+                    # the trained tensors; the server downloads directly from the subprocess.
+                    from nvflare.fuel.utils.pipe.cell_pipe import CellPipe as _CellPipe
+
+                    if isinstance(pipe, _CellPipe):
+                        pipe.pass_through_on_send = True
+                        self.logger.info("PASS_THROUGH enabled on subprocess CellPipe (reverse path)")
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
                     metric_pipe, metric_channel_name = _create_pipe_using_config(
                         client_config=client_config, section=ConfigKey.METRICS_EXCHANGE
                     )
+                from_nvflare_converter, to_nvflare_converter = create_default_params_converters(
+                    server_expected_format=client_config.get_server_expected_format(),
+                    params_exchange_format=client_config.get_exchange_format(),
+                    train_task_name=client_config.get_train_task(),
+                    eval_task_name=client_config.get_eval_task(),
+                    submit_model_task_name=client_config.get_submit_model_task(),
+                )
 
                 flare_agent = FlareAgentWithFLModel(
                     pipe=pipe,
@@ -138,6 +218,12 @@ class ExProcessClientAPI(APISpec):
                     metric_pipe=metric_pipe,
                     metric_channel_name=metric_channel_name,
                     heartbeat_timeout=client_config.get_heartbeat_timeout(),
+                    submit_result_timeout=client_config.get_submit_result_timeout(),
+                    max_resends=client_config.get_max_resends(),
+                    download_complete_timeout=client_config.get_download_complete_timeout(),
+                    launch_once=client_config.get_launch_once(),
+                    from_nvflare_converter=from_nvflare_converter,
+                    to_nvflare_converter=to_nvflare_converter,
                 )
                 flare_agent.start()
 
@@ -164,6 +250,10 @@ class ExProcessClientAPI(APISpec):
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         result = self.__receive()
         self.receive_called = True
+        if result is not None:
+            self._mem_round = result.current_round
+            self._mem_site = self.get_site_name()
+            log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
@@ -176,10 +266,14 @@ class ExProcessClientAPI(APISpec):
             raise RuntimeError('"receive" needs to be called before sending model!')
         model_registry.submit_model(model=model)
         if clear_cache:
+            # Serialization is complete. Release the sent model's params and the
+            # received model's params — both are dead weight after flare.send().
+            # NOTE: model.params and input_model.params will be None after this.
+            model_registry.release_params(model)
             self.clear()
 
-        # Perform memory cleanup if configured
         self._maybe_cleanup_memory()
+        log_rss(f"CA s={getattr(self, '_mem_site', '?')} r={getattr(self, '_mem_round', None)} send")
 
     def system_info(self) -> Dict:
         model_registry = self.get_model_registry()

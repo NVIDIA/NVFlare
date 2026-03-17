@@ -18,7 +18,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils import fobs
@@ -51,6 +50,9 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         config_file_name: str = CLIENT_API_CONFIG,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        submit_result_timeout: float = 300.0,
+        max_resends: int = 3,
+        download_complete_timeout: float = 1800.0,
     ) -> None:
         ClientAPILauncherExecutor.__init__(
             self,
@@ -78,22 +80,14 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
             config_file_name=config_file_name,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            submit_result_timeout=submit_result_timeout,
+            max_resends=max_resends,
+            download_complete_timeout=download_complete_timeout,
         )
+
+    def _decomposer_prefix(self) -> str:
+        return "tensor_"
 
     def initialize(self, fl_ctx: FLContext) -> None:
         fobs.register(TensorDecomposer)
         super().initialize(fl_ctx)
-
-        if (
-            self._server_expected_format == ExchangeFormat.NUMPY
-            and self._params_exchange_format == ExchangeFormat.PYTORCH
-        ):
-            if self._from_nvflare_converter is None:
-                self._from_nvflare_converter = NumpyToPTParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-                )
-
-            if self._to_nvflare_converter is None:
-                self._to_nvflare_converter = PTToNumpyParamsConverter(
-                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-                )

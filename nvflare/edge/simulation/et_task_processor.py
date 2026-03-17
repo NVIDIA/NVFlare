@@ -17,7 +17,6 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from executorch.extension.training import _load_for_executorch_for_training_from_buffer, get_sgd_optimizer
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.apis.dxo import DXO, from_dict
@@ -25,6 +24,22 @@ from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNat
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.fuel.utils.import_utils import optional_import
+
+_load_for_executorch_for_training_from_buffer, _ = optional_import(
+    "executorch.extension.training",
+    name="_load_for_executorch_for_training_from_buffer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
+get_sgd_optimizer, _ = optional_import(
+    "executorch.extension.training",
+    name="get_sgd_optimizer",
+    descriptor=(
+        "executorch is required for {}. " "See: https://pytorch.org/executorch/stable/getting-started-setup.html"
+    ),
+)
 
 log = logging.getLogger(__name__)
 
@@ -219,6 +234,9 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         try:
             model_bytes = base64.b64decode(payload.data)
             et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
+        except ImportError:
+            log.error("executorch is not installed; cannot load model")
+            raise
         except Exception as e:
             log.error(f"Failed to load model: {e}")
             raise RuntimeError("Failed to load model") from e
@@ -232,6 +250,9 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 "kind": "et_tensor_diff",
             }
             return dxo_dict
+        except ImportError:
+            log.error("executorch is not installed; cannot run training")
+            raise
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e
