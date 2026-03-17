@@ -372,6 +372,10 @@ class FeatureElectionExecutor(Executor):
 
         elif self.fs_method == "pyimpetus":
             if not PYIMPETUS_AVAILABLE:
+                # This fallback uses X_scaled (StandardScaler-transformed) while the
+                # real PyImpetus path below uses raw self.X_train.  Feature scores will
+                # differ across environments where PyImpetus is or is not installed.
+                # PyImpetus works best without data scaling.
                 logger.warning("PyImpetus not available, falling back to mutual_info")
                 scores = mutual_info_classif(X_scaled, self.y_train, random_state=42)
                 mask = np.zeros(n_features, dtype=bool)

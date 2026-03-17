@@ -51,6 +51,7 @@ class FeatureElection:
         tuning_rounds: int = 5,
         eval_metric: str = "f1",
         wait_time_after_min_received: int = 10,
+        fs_params: Optional[Dict] = None,
     ):
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
@@ -66,6 +67,9 @@ class FeatureElection:
         self.tuning_rounds = tuning_rounds
         self.eval_metric = eval_metric
         self.wait_time_after_min_received = wait_time_after_min_received
+        # FS hyperparameters (e.g. {"alpha": 0.1} for Lasso) forwarded to the
+        # executor; None means the executor uses its own defaults.
+        self.fs_params = fs_params or {}
 
         # Storage for results
         self.global_mask = None
@@ -341,7 +345,9 @@ class FeatureElection:
                     X_np, y_np, test_size=0.2, random_state=42 + i
                 )
 
-            executor = FeatureElectionExecutor(fs_method=self.fs_method, eval_metric=self.eval_metric)
+            executor = FeatureElectionExecutor(
+                fs_method=self.fs_method, eval_metric=self.eval_metric, fs_params=self.fs_params
+            )
             executor.set_data(
                 X_train_sim, y_train_sim, X_val=X_val_sim, y_val=y_val_sim, feature_names=resolved_feature_names
             )
@@ -353,6 +359,14 @@ class FeatureElection:
                 selected_mask, feature_scores = executor.perform_feature_selection()
             except (TypeError, ValueError) as e:
                 raise RuntimeError(f"Feature selection returned unexpected format: {e}")
+
+            if not np.any(selected_mask):
+                logger.warning(
+                    f"Client {i}: feature selection rejected all features "
+                    f"(fs_method='{self.fs_method}', fs_params={self.fs_params}). "
+                    "The global mask may be all-False. Consider lowering the regularisation "
+                    "strength (e.g. reduce 'alpha' for Lasso/ElasticNet)."
+                )
 
             initial_score = executor.evaluate_model(X_train_sim, y_train_sim, X_val_sim, y_val_sim)
 

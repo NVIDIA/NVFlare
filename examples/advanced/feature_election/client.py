@@ -155,6 +155,11 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
         # Extract client ID from site name
         site_name = fl_ctx.get_identity_name()
 
+        # Site names are assumed to use 1-based trailing numbers (e.g. "site-1",
+        # "hospital-2"), so we subtract 1 to get a 0-based client_id.  Zero-based
+        # names (e.g. "worker-0") would yield client_id = -1, which the range check
+        # below will catch and raise as an explicit error rather than silently loading
+        # the wrong client's data.
         try:
             if site_name.startswith("site-"):
                 client_id = int(site_name.split("-")[1]) - 1
