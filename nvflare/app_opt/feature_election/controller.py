@@ -79,6 +79,12 @@ class FeatureElectionController(Controller):
     ):
         super().__init__()
 
+        if aggregation_mode not in ("weighted", "uniform"):
+            raise ValueError(
+                f"aggregation_mode must be 'weighted' or 'uniform', got {aggregation_mode!r}. "
+                "Check the 'aggregation_mode' field in your job configuration."
+            )
+
         # Configuration
         self.freedom_degree = freedom_degree
         self.aggregation_mode = aggregation_mode

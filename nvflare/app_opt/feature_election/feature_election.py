@@ -224,7 +224,13 @@ class FeatureElection:
         indices = np.arange(len(df))
 
         if split_strategy == "stratified":
-            remaining_y, remaining_indices = y, indices
+            # Keep remaining_y as a plain numpy array (not a pandas Series) so
+            # that its positional alignment with remaining_indices is always
+            # unambiguous.  Using y.iloc[...] would carry the original DataFrame
+            # index labels into remaining_y, creating a latent mismatch if the
+            # variable were ever used for label-based indexing in future changes.
+            remaining_indices = indices
+            remaining_y = y.to_numpy()
             for i in range(num_clients - 1):
                 size = split_ratios[i] / sum(split_ratios[i:])
                 try:
@@ -243,7 +249,9 @@ class FeatureElection:
                     )
                 client_data.append((X.iloc[c_idx], y.iloc[c_idx]))
                 remaining_indices = r_idx
-                remaining_y = y.iloc[remaining_indices]
+                # Index into the numpy array positionally to stay consistent with
+                # remaining_indices (which holds positional references into y).
+                remaining_y = y.to_numpy()[remaining_indices]
             client_data.append((X.iloc[remaining_indices], y.iloc[remaining_indices]))
 
         elif split_strategy == "random":

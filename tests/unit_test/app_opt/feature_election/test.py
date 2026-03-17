@@ -25,6 +25,7 @@ import json
 import sys
 from importlib.util import find_spec
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,7 @@ import pytest
 from sklearn.datasets import make_classification
 
 from nvflare.app_opt.feature_election import FeatureElection, quick_election
+from nvflare.app_opt.feature_election.executor import FeatureElectionExecutor
 
 PYIMPETUS_AVAILABLE = find_spec("PyImpetus") is not None
 
@@ -213,6 +215,27 @@ class TestSimulationLogic:
         assert n_int <= n_union
         # Intersection should match intersection_features stat
         assert n_int == stats_int["intersection_features"]
+
+    def test_autotune_plateau_early_exit(self, sample_data):
+        """Plateau early-exit must fire and shorten tuning when scores are flat.
+
+        evaluate_model is patched to return a constant 0.75 so the plateau
+        detector (range < 1e-4 over last 3 rounds) fires after the 3rd round.
+        With tuning_rounds=10 a working early-exit produces fewer than 10
+        history entries; if the detector were broken the loop would run all 10.
+        """
+        fe = FeatureElection(freedom_degree=0.5, fs_method="mutual_info", auto_tune=True, tuning_rounds=10)
+        client_data = fe.prepare_data_splits(sample_data, "target", num_clients=2)
+
+        with mock.patch.object(FeatureElectionExecutor, "evaluate_model", return_value=0.75):
+            stats = fe.simulate_election(client_data)
+
+        # Plateau fires at round 3 (first time len(history) >= 3 with flat scores),
+        # so history has exactly 3 entries — not the full 10.
+        assert len(stats["tuning_history"]) < 10, (
+            f"Plateau early-exit did not fire: got {len(stats['tuning_history'])} "
+            "history entries instead of the expected < 10"
+        )
 
     def test_unknown_fs_method_raises(self, sample_data):
         """A typo in fs_method must raise ValueError, not silently select all features."""
