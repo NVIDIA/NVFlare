@@ -177,6 +177,7 @@ class FeatureElection:
         split_strategy: str = "stratified",
         split_ratios: Optional[List[float]] = None,
         random_state: int = 42,
+        dirichlet_alpha: float = 0.5,
     ) -> List[Tuple[pd.DataFrame, pd.Series]]:
         """Prepare data splits for federated clients."""
         X = df.drop(columns=[target_col])
@@ -245,7 +246,7 @@ class FeatureElection:
             y_encoded = le.fit_transform(y)
             n_classes = len(le.classes_)
             np.random.seed(random_state)
-            label_distribution = np.random.dirichlet([0.5] * num_clients, n_classes)
+            label_distribution = np.random.dirichlet([dirichlet_alpha] * num_clients, n_classes)
 
             client_indices = [[] for _ in range(num_clients)]
             for k in range(n_classes):
@@ -315,11 +316,22 @@ class FeatureElection:
         # Using a separate local variable avoids in-loop reassignment of the
         # parameter, making the capture-once intent explicit.
         resolved_feature_names = feature_names
+        n_features_ref = None  # established from the first client; all others must match
         client_selections = {}
         executors = []
         for i, (X, y) in enumerate(client_data):
             X_np = X.values if isinstance(X, pd.DataFrame) else X
             y_np = y.values if isinstance(y, pd.Series) else y
+
+            # Validate feature count consistency across all clients (DataFrame and ndarray).
+            if n_features_ref is None:
+                n_features_ref = X_np.shape[1]
+            elif X_np.shape[1] != n_features_ref:
+                raise ValueError(
+                    f"Client {i} has {X_np.shape[1]} features but client 0 has {n_features_ref}. "
+                    "All clients must have the same number of features."
+                )
+
             if isinstance(X, pd.DataFrame):
                 client_cols = X.columns.tolist()
                 if resolved_feature_names is None:

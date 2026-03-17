@@ -112,7 +112,6 @@ class FeatureElectionController(Controller):
         self.tuning_history = []
         self.search_step = 0.1
         self.current_direction = 1
-        self.current_tuning_score = 0.0
 
         self.n_features = None
 
@@ -530,7 +529,12 @@ class FeatureElectionController(Controller):
         MIN_FD, MAX_FD = 0.05, 1.0
 
         if first_step:
-            return np.clip(self.freedom_degree + self.search_step, MIN_FD, MAX_FD)
+            # Choose the initial direction so the first step stays within [MIN_FD, MAX_FD].
+            # Starting near 1.0 in the positive direction would clip immediately and waste
+            # a tuning round; prefer going negative when headroom above is smaller.
+            if self.freedom_degree + self.search_step > MAX_FD:
+                self.current_direction = -1
+            return np.clip(self.freedom_degree + (self.current_direction * self.search_step), MIN_FD, MAX_FD)
 
         if len(self.tuning_history) < 2:
             return self.freedom_degree
