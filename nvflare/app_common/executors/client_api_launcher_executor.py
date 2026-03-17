@@ -51,6 +51,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
         server_expected_format: str = ExchangeFormat.NUMPY,
+        memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -187,6 +189,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ConfigKey.ARG: pipe_export_args,
             },
             ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
+            ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
+            ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
         }
 
         config_data = {
