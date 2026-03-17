@@ -502,23 +502,23 @@ This section shows how to set up swarm learning using recipes (recommended) and 
 Using Recipes (Recommended)
 ---------------------------
 
-Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
+Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 
 .. code-block:: python
 
-    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm_learning",
         model=MyModel(),
+        min_clients=3,
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
-        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
     )
 
     # Configure large model parameters if needed (server-side only)
@@ -557,34 +557,6 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
         server_config=server_config,
         client_config=client_config,
     )
-
-.. note::
-   When using ``BaseSwarmLearningRecipe`` with explicit ``SwarmClientConfig``, set
-   ``learn_task_ack_timeout`` and ``final_result_ack_timeout`` manually for large
-   models.  With ``SwarmLearningRecipe``, set ``round_timeout`` instead — it wires
-   both values for you.
-
-Client Dropout Tolerance (min_clients)
----------------------------------------
-
-By default, a Swarm Learning workflow requires all configured clients to participate.
-Setting ``min_clients`` allows the workflow to proceed if at least that many clients
-configure successfully — missing participants are logged as a warning rather than
-causing a job abort.
-
-.. code-block:: python
-
-    recipe = SwarmLearningRecipe(
-        name="swarm",
-        model=MyModel(),
-        min_clients=3,    # Workflow proceeds if >= 3 of the configured clients are ready;
-        num_rounds=10,    # remaining clients are logged as warnings
-        train_script="train.py",
-    )
-
-The default ``min_clients=0`` means all configured clients are required (backward
-compatible behavior).  This is distinct from the job-scheduler ``min_clients`` parameter
-that controls the deployment phase.
 
 Using JSON Configuration (Advanced)
 -----------------------------------
@@ -818,6 +790,14 @@ The following SwarmClientController parameters are particularly important for la
 - ``max_concurrent_submissions``: Maximum concurrent submissions. **Default: 1**. **Suggested: 1** to reduce memory pressure.
 - ``min_responses_required``: Minimum client results required to begin aggregation. **Default: 1**. **Suggested: 2** for 3-client runs.
 - ``wait_time_after_min_resps_received``: Extra wait time after minimum responses. **Default: 10.0**. **Suggested: 120 to 300**.
+- ``enable_tensor_disk_offload``: Materialize streamed PyTorch tensors to temporary disk files (lazy refs) instead of fully in memory. **Default: False**. **Suggested: True** for very large-model swarm jobs.
+
+.. warning::
+
+   With ``enable_tensor_disk_offload=True``, temporary files are created under the process temp directory
+   (``TMPDIR`` or OS default such as ``/tmp``). In containerized environments, ``/tmp`` is often tmpfs
+   (RAM-backed), which can negate memory offload benefits. Set ``TMPDIR`` to a disk-backed mount on
+   aggregator clients.
 
 **Example client config for large models:**
 
@@ -903,6 +883,7 @@ If you only adjust a few parameters for large models, start with:
 3. ``request_to_submit_result_max_wait`` - Provides adequate aggregation window
 4. ``progress_timeout`` - Prevents premature workflow termination
 5. ``np_download_chunk_size`` and ``tensor_download_chunk_size`` - Enables memory-efficient streaming
+6. ``enable_tensor_disk_offload`` - Reduces peak memory during streamed tensor consumption
 
 .. _ccwf_cross_site_evaluation:
 
@@ -1026,24 +1007,24 @@ Using Recipes (Recommended)
 
 **Swarm Learning with Cross-Site Evaluation:**
 
-Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
+Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
 
 .. code-block:: python
 
-    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe with cross-site evaluation enabled
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm_with_cse",
         model=MyModel(),
+        min_clients=3,
         num_rounds=3,
         train_script="train.py",
         do_cross_site_eval=True,
         cross_site_eval_timeout=300,
-        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
     )
 
     # Configure large model parameters if needed (server-side only)
