@@ -14,4 +14,5 @@ Guide for project Admin and Org Admin
    deployment/index
    configurations/configurations.rst
    monitoring
+   diagnostic_commands
 

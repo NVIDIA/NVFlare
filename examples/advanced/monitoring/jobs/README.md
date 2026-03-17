@@ -79,7 +79,7 @@ This is done by adding additional components on top of the existing code:
 
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, model=SimpleNetwork())
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
 
     # add server side monitoring components
 

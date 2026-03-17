@@ -13,7 +13,7 @@ System Architecture
 
 - :doc:`System Architecture Overview <programming_guide/system_architecture>`
 - :doc:`FLARE System Architecture <flare_system_architecture>`
-- :doc:`CellNet Architecture <cellnet_architecture>`
+- :doc:`CellNet Architecture <system_architecture/cellnet_architecture>`
 
 .. toctree::
    :maxdepth: 1
@@ -21,7 +21,7 @@ System Architecture
 
    programming_guide/system_architecture
    flare_system_architecture
-   cellnet_architecture
+   system_architecture/cellnet_architecture
 
 Core Concepts
 =============
