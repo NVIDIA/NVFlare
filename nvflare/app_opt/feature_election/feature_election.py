@@ -240,8 +240,11 @@ class FeatureElection:
             client_data.append((X.iloc[remaining_indices], y.iloc[remaining_indices]))
 
         elif split_strategy == "random":
-            np.random.seed(random_state)
-            np.random.shuffle(indices)
+            # Use a local RandomState instance rather than np.random.seed() to
+            # avoid mutating global NumPy random state, which can interfere with
+            # other code (tests, concurrent callers) running in the same process.
+            rng = np.random.RandomState(random_state)
+            rng.shuffle(indices)
             start = 0
             for i, ratio in enumerate(split_ratios):
                 if i == len(split_ratios) - 1:
@@ -262,13 +265,16 @@ class FeatureElection:
             le = LabelEncoder()
             y_encoded = le.fit_transform(y)
             n_classes = len(le.classes_)
-            np.random.seed(random_state)
-            label_distribution = np.random.dirichlet([dirichlet_alpha] * num_clients, n_classes)
+            # Use a local RandomState instance rather than np.random.seed() to
+            # avoid mutating global NumPy random state (same rationale as the
+            # 'random' strategy above).
+            rng = np.random.RandomState(random_state)
+            label_distribution = rng.dirichlet([dirichlet_alpha] * num_clients, n_classes)
 
             client_indices = [[] for _ in range(num_clients)]
             for k in range(n_classes):
                 idx_k = np.where(y_encoded == k)[0]
-                np.random.shuffle(idx_k)
+                rng.shuffle(idx_k)
                 proportions = (label_distribution[k] * len(idx_k)).astype(int)
                 # Assign any rounding remainder to the last client so that every
                 # sample in this class is distributed exactly once.  This matches
@@ -457,6 +463,19 @@ class FeatureElection:
                 )
                 if t < controller.tuning_rounds - 1:
                     controller.advance_tuning(score, first_step=(t == 0))
+                    # Early exit when the last 3 evaluated scores are indistinguishably
+                    # flat — mirrors the same guard in _phase_two_tuning_and_masking so
+                    # simulation and the real FL path behave consistently.
+                    if len(controller.tuning_history) >= 3:
+                        recent = [s for _, s in controller.tuning_history[-3:]]
+                        score_range = max(recent) - min(recent)
+                        if score_range < 1e-4:
+                            logger.info(
+                                f"Tuning early exit at round {t + 1}: score plateau detected "
+                                f"(range {score_range:.2e} < 1e-4 over last 3 rounds). "
+                                "Selecting best freedom_degree from evaluated history."
+                            )
+                            break
                 else:
                     # Final round: record the score but do not advance to a new FD.
                     controller.tuning_history.append((controller.freedom_degree, score))
@@ -557,11 +576,34 @@ class FeatureElection:
         with open(filepath, "r") as f:
             results = json.load(f)
 
-        self.freedom_degree = results.get("freedom_degree", 0.5)
+        # Validate loaded parameters with the same guards used in __init__ so
+        # that a corrupted or hand-edited JSON cannot produce a silently invalid
+        # FeatureElection object.
+        fd = results.get("freedom_degree", 0.5)
+        if not 0 <= fd <= 1:
+            raise ValueError(
+                f"Loaded freedom_degree ({fd}) is out of range [0, 1]. " "The results file may be corrupted."
+            )
+
+        aggregation_mode = results.get("aggregation_mode", "weighted")
+        if aggregation_mode not in ["weighted", "uniform"]:
+            raise ValueError(
+                f"Loaded aggregation_mode ({aggregation_mode!r}) is not valid. "
+                "Expected 'weighted' or 'uniform'. The results file may be corrupted."
+            )
+
+        eval_metric = results.get("eval_metric", "f1")
+        if eval_metric not in ["f1", "accuracy"]:
+            raise ValueError(
+                f"Loaded eval_metric ({eval_metric!r}) is not valid. "
+                "Expected 'f1' or 'accuracy'. The results file may be corrupted."
+            )
+
+        self.freedom_degree = fd
         self.fs_method = results.get("fs_method", "lasso")
-        self.aggregation_mode = results.get("aggregation_mode", "weighted")
+        self.aggregation_mode = aggregation_mode
         self.auto_tune = results.get("auto_tune", False)
-        self.eval_metric = results.get("eval_metric", "f1")
+        self.eval_metric = eval_metric
 
         if results.get("global_mask") is not None:
             self.global_mask = np.array(results["global_mask"])

@@ -168,18 +168,28 @@ class FeatureElectionExecutor(Executor):
         else:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def evaluate_model(self, X_train, y_train, X_val, y_val) -> float:
+    def evaluate_model(self, X_train, y_train, X_val, y_val, scaler=None) -> float:
         """
         Helper method to train and evaluate a model locally.
         Required for the 'simulate_election' functionality and tests.
+
+        Args:
+            scaler: Optional pre-fitted ``StandardScaler``.  When provided the data
+                is transformed (not fit-transformed), ensuring the same normalisation
+                parameters are used as those established on the same feature set by the
+                caller.  When ``None`` a fresh scaler is fitted on ``X_train``.
         """
         if len(y_train) == 0 or len(y_val) == 0:
             return 0.0
 
         try:
-            # Scale
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
+            # Scale — reuse a caller-supplied scaler when available so that
+            # tuning-eval and training normalise with identical parameters.
+            if scaler is None:
+                scaler = StandardScaler()
+                X_train_scaled = scaler.fit_transform(X_train)
+            else:
+                X_train_scaled = scaler.transform(X_train)
             X_val_scaled = scaler.transform(X_val)
 
             # Quick train
@@ -221,8 +231,14 @@ class FeatureElectionExecutor(Executor):
             X_tr = self.X_train[:, mask]
             X_v = self.X_val[:, mask]
 
-            # Use helper
-            score = self.evaluate_model(X_tr, self.y_train, X_v, self.y_val)
+            # Fit a dedicated scaler for this candidate mask so that the
+            # normalisation used during tuning evaluation is identical to what
+            # _handle_train would apply for the same feature set.  Passing it
+            # into evaluate_model avoids a redundant fit_transform on the same
+            # data and ensures consistent per-feature statistics.
+            tuning_scaler = StandardScaler()
+            tuning_scaler.fit(X_tr)
+            score = self.evaluate_model(X_tr, self.y_train, X_v, self.y_val, scaler=tuning_scaler)
 
             resp = make_reply(ReturnCode.OK)
             resp["tuning_score"] = float(score)
@@ -393,11 +409,21 @@ class FeatureElectionExecutor(Executor):
 
         elif self.fs_method == "pyimpetus":
             if not PYIMPETUS_AVAILABLE:
-                # This fallback uses X_scaled (StandardScaler-transformed) while the
-                # real PyImpetus path below uses raw self.X_train.  Feature scores will
-                # differ across environments where PyImpetus is or is not installed.
-                # PyImpetus works best without data scaling.
-                logger.warning("PyImpetus not available, falling back to mutual_info")
+                # REPRODUCIBILITY NOTE: This fallback uses StandardScaler-transformed
+                # data (X_scaled), while the real PyImpetus path below operates on raw
+                # self.X_train — PyImpetus performs its own internal conditional
+                # independence tests and works best without pre-scaling.  As a result,
+                # feature scores and the selected feature set will differ between
+                # environments where PyImpetus is and is not installed, making
+                # simulation results non-reproducible across them.
+                # Install PyImpetus (`pip install PyImpetus`) to remove this
+                # inconsistency and use the full PPIMBC algorithm.
+                logger.warning(
+                    "PyImpetus is not installed — falling back to mutual_info with "
+                    "StandardScaler-transformed data.  Feature scores will differ from "
+                    "a PyImpetus-enabled environment because PyImpetus operates on raw "
+                    "(unscaled) data.  Install PyImpetus for consistent, reproducible results."
+                )
                 scores = mutual_info_classif(X_scaled, self.y_train, random_state=42)
                 mask = np.zeros(n_features, dtype=bool)
                 k = max(1, n_features // 2)
@@ -416,4 +442,7 @@ class FeatureElectionExecutor(Executor):
             return mask, scores
 
         else:
-            return np.ones(n_features, dtype=bool), np.ones(n_features)
+            raise ValueError(
+                f"Unknown fs_method: {self.fs_method!r}. "
+                "Supported methods: 'lasso', 'elastic_net', 'mutual_info', 'random_forest', 'pyimpetus'."
+            )

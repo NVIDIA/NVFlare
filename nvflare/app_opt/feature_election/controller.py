@@ -314,6 +314,20 @@ class FeatureElectionController(Controller):
                 )
                 self.tuning_history.append((self.freedom_degree, score))
 
+                # Early exit when the last 3 evaluated scores are indistinguishably
+                # flat — further hill-climbing cannot improve freedom_degree on a
+                # plateau and would only waste FL communication rounds.
+                if len(self.tuning_history) >= 3:
+                    recent = [s for _, s in self.tuning_history[-3:]]
+                    score_range = max(recent) - min(recent)
+                    if score_range < 1e-4:
+                        logger.info(
+                            f"Tuning early exit at round {i + 1}: score plateau detected "
+                            f"(range {score_range:.2e} < 1e-4 over last 3 rounds). "
+                            "Selecting best freedom_degree from evaluated history."
+                        )
+                        break
+
                 # Calculate next FD for next iteration (if not last round)
                 if i < self.tuning_rounds - 1:
                     self.freedom_degree = self._calculate_next_fd(first_step=(i == 0))
@@ -447,6 +461,19 @@ class FeatureElectionController(Controller):
                 if self.n_features is None:
                     self.n_features = len(selected)
                     logger.debug(f"Inferred n_features={self.n_features} from {key}")
+
+                # Reject all-zero masks: a client that selected no features would
+                # silently bias the global mask toward the intersection of other clients'
+                # masks without contributing any signal of its own.  This mirrors the
+                # ValueError raised in the simulation path (simulate_election).
+                if not np.any(selected):
+                    logger.warning(
+                        f"Client {key} returned an all-False feature mask; skipping this "
+                        "client's vote to avoid corrupting the global mask. "
+                        "Consider lowering the regularisation strength "
+                        "(e.g. reduce 'alpha' for Lasso/ElasticNet)."
+                    )
+                    continue
 
                 client_data[key] = {
                     "selected_features": selected,
