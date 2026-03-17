@@ -214,6 +214,17 @@ Via Configuration Files
    get_task_timeout = 300.0
    submit_task_result_timeout = 300.0
 
+   # Server startup/dead-job safety flags
+   strict_start_job_reply_check = false
+   sync_client_jobs_require_previous_report = true
+
+Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
+
+- ``strict_start_job_reply_check`` (default ``false``): keep default for backward-compatible startup behavior;
+  set to ``true`` to enforce stricter START_JOB reply checks.
+- ``sync_client_jobs_require_previous_report`` (default ``true``): keep enabled to avoid false dead-job reports
+  caused by transient startup or sync races.
+
 **comm_config.json** (system-level, in startup kit):
 
 .. code-block:: json

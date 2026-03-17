@@ -66,15 +66,17 @@ def run_command_in_subprocess(command, stdin_data=None):
     new_env = os.environ.copy()
     python_path = ":".join(sys.path)[1:]  # strip leading colon
     new_env["PYTHONPATH"] = python_path
+    tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
     process = subprocess.Popen(
-        shlex.split(command),
+        tokens,
         stdin=subprocess.PIPE if stdin_data else None,
         preexec_fn=os.setsid,
         env=new_env,
     )
     if stdin_data:
-        process.stdin.write(stdin_data)
-        process.stdin.close()
+        # communicate() writes stdin and waits for the process to exit.
+        # stdout/stderr are inherited from the parent process (not captured).
+        process.communicate(input=stdin_data)
     return process
 
 

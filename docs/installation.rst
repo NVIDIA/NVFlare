@@ -10,7 +10,7 @@ from the :ref:`fl_introduction` and have reviewed the :ref:`flare_overview` to u
 
 Prerequisites
 =============
-- Python 3.9+
+- Python 3.9+ (tested through Python 3.14, including Python 3.13)
 - pip
 - Git
 
@@ -35,7 +35,7 @@ Virtual Environments and Packages
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Python's official document explains the main idea about virtual environments.
-The module used to create and manage virtual environments is called `venv <https://docs.python.org/3.10/library/venv.html>`_.
+The module used to create and manage virtual environments is called `venv <https://docs.python.org/3/library/venv.html>`_.
 You can find more information there. We only describe a few necessary steps for a virtual environment for NVIDIA FLARE.
 
 Depending on your OS and the Python distribution, you may need to install the Python's venv package separately. For example, in Ubuntu
@@ -89,11 +89,21 @@ NVFlare provides several optional dependency groups that you can install based o
 
      $ pip install nvflare[HE]
 
+  .. note::
+
+     ``nvflare[HE]`` currently supports Python 3.9-3.13.
+     On Python 3.14, ``tenseal`` is not available yet, so the HE extra is not installed.
+
 * **PSI** - Private Set Intersection support:
 
   .. code-block:: shell
 
      $ pip install nvflare[PSI]
+
+  .. note::
+
+     ``nvflare[PSI]`` currently supports Python 3.9-3.13.
+     On Python 3.14, ``openmined.psi`` is not available yet, so the PSI extra is not installed.
 
 * **PT** - PyTorch support:
 
@@ -205,7 +215,7 @@ To build wheels for specific platforms or Python versions, you can use the follo
 .. code-block:: shell
 
   # For a specific Python version
-  $ PYTHON=python3.9 python -m build
+  $ PYTHON=python3.14 python -m build
 
   # For a specific platform
   $ PLATFORM=linux_x86_64 python -m build

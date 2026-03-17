@@ -43,23 +43,8 @@ class MyComponentWithPathArgs:
 
 
 def is_python_greater_than_309():
-    version = python_version()
-    version_value = 0
-    if version.startswith("3.7."):
-        version_value = 307
-    elif version.startswith("3.8."):
-        version_value = 308
-    elif version.startswith("3.9."):
-        version_value = 309
-    elif version.startswith("3.10."):
-        version_value = 310
-    elif version.startswith("3.11."):
-        version_value = 311
-    elif version.startswith("3.12."):
-        version_value = 312
-    else:
-        raise ValueError("unknown version")
-    return version_value > 309
+    major, minor, _ = python_version().split(".")
+    return (int(major), int(minor)) > (3, 9)
 
 
 class TestComponentBuilder:

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
@@ -39,6 +41,7 @@ class FlowerController(TieController):
         max_client_op_interval: float = TieConstant.MAX_CLIENT_OP_INTERVAL,
         progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
         int_client_grpc_options=None,
+        run_config: Optional[dict] = None,
     ):
         """Constructor of FlowerController
 
@@ -56,6 +59,7 @@ class FlowerController(TieController):
             max_client_op_interval: max time allowed for missing client requests
             progress_timeout: max time allowed for missing overall progress
             int_client_grpc_options: internal grpc client options
+            run_config: optional dict for flwr run --run-config arguments
         """
         TieController.__init__(
             self,
@@ -80,6 +84,7 @@ class FlowerController(TieController):
         self.superlink_min_query_interval = superlink_min_query_interval
         self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
+        self.run_config = run_config
 
     def get_connector(self, fl_ctx: FLContext):
         return GrpcServerConnector(
@@ -93,6 +98,7 @@ class FlowerController(TieController):
             superlink_ready_timeout=self.superlink_ready_timeout,
             superlink_grace_period=self.superlink_grace_period,
             superlink_min_query_interval=self.superlink_min_query_interval,
+            run_config=self.run_config,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:

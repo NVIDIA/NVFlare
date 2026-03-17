@@ -50,8 +50,10 @@ set to finetune its behavior, as shown below:
             self,
             num_rounds=1,
             database: str = "",
-            server_app_args: list = None,
             superlink_ready_timeout: float = 10.0,
+            superlink_grace_period: float = 2.0,
+            superlink_min_query_interval=10.0,
+            monitor_interval: float = 0.5,
             configure_task_name=TieConstant.CONFIG_TASK_NAME,
             configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
             start_task_name=TieConstant.START_TASK_NAME,
@@ -60,14 +62,17 @@ set to finetune its behavior, as shown below:
             max_client_op_interval: float = TieConstant.MAX_CLIENT_OP_INTERVAL,
             progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
             int_client_grpc_options=None,
+            run_config: Optional[dict] = None,
         ):
             """Constructor of FlowerController
 
             Args:
                 num_rounds: number of rounds. Not used in this version.
                 database: database name
-                server_app_args: additional server app CLI args
                 superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
+                superlink_grace_period: how long to wait for superlink to gracefully shutdown
+                superlink_min_query_interval: minimal interval for querying superlink for status
+                monitor_interval: how often to check flower run status
                 configure_task_name: name of the config task
                 configure_task_timeout: max time allowed for config task to complete
                 start_task_name: name of the start task
@@ -76,9 +81,10 @@ set to finetune its behavior, as shown below:
                 max_client_op_interval: max time allowed for missing client requests
                 progress_timeout: max time allowed for missing overall progress
                 int_client_grpc_options: internal grpc client options
+                run_config: optional dict for flwr run --run-config arguments
             """
 
-The args ``num_rounds``, ``database``, and ``server_app_args`` are not currently used. 
+The args ``num_rounds`` and ``database`` are not currently used. 
 
 Default values for most args should be good enough. You may need to adjust the following args in some special cases.
 
