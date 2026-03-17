@@ -52,3 +52,11 @@ class FOBSContextKey:
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
     SEC_CREDS = "sec_creds"
     NUM_RECEIVERS = "num_receivers"
+    # When True, ViaDownloaderDecomposer will NOT download tensors at this hop.
+    # Instead it creates LazyDownloadRef placeholders that preserve the original
+    # source FQCN/ref_id so the reference can be forwarded verbatim to the next
+    # hop (e.g. a subprocess agent), which then downloads directly from the
+    # originating source.  This eliminates intermediate tensor copies at the
+    # forwarding node (the CJ) and is the foundation of the B1 pass-through
+    # architecture.
+    PASS_THROUGH = "pass_through"
