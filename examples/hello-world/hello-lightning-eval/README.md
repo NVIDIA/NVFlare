@@ -99,7 +99,7 @@ recipe = FedEvalRecipe(
 
 The `model` parameter accepts class instance or dict config:
 - `model=LitNet(checkpoint="...")` - Class instance
-- `model={"path": "model.LitNet", "args": {"checkpoint": "..."}}` - Dict config
+- `model={"class_path": "model.LitNet", "args": {"checkpoint": "..."}}` - Dict config
 
 For separate checkpoint loading, use `initial_ckpt`:
 ```python

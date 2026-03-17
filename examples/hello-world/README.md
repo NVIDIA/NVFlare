@@ -82,7 +82,7 @@ Here's a complete example:
 The `model` parameter accepts two formats:
 
 1. **Class instance**: `model=SimpleNetwork()` - Convenient, catches errors early
-2. **Dict config**: `model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
+2. **Dict config**: `model={"class_path": "model.SimpleNetwork", "args": {}}` - Better for large models
 
 To resume training from pre-trained weights:
 ```python
