@@ -85,7 +85,7 @@ FLARE supports layered privacy:
   additional protection against infrastructure attacks
 - **DP + Secure Aggregation**: Combine DP noise with secure aggregation protocols
 
-See :doc:`/flare_security_overview` for an overview of all security mechanisms.
+See :doc:`/system_architecture/security_overview` for an overview of all security mechanisms.
 
 Resources
 =========
