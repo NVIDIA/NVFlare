@@ -360,18 +360,28 @@ class FeatureElectionExecutor(Executor):
             return scores > LASSO_ELASTIC_NET_ZERO_THRESHOLD, scores
 
         elif self.fs_method == "mutual_info":
-            scores = mutual_info_classif(self.X_train, self.y_train, random_state=42, **self.fs_params)
+            # "k" controls how many top features to select; defaults to top 50%.
+            # Pop it before forwarding the rest to mutual_info_classif so sklearn
+            # does not receive an unexpected keyword argument.
+            mi_params = dict(self.fs_params)
+            k_raw = mi_params.pop("k", None)
+            k = max(1, int(k_raw)) if k_raw is not None else max(1, n_features // 2)
+            scores = mutual_info_classif(self.X_train, self.y_train, random_state=42, **mi_params)
             mask = np.zeros(n_features, dtype=bool)
-            k = max(1, n_features // 2)
             mask[np.argsort(scores)[-k:]] = True
             return mask, scores
 
         elif self.fs_method == "random_forest":
-            rf = RandomForestClassifier(**self.fs_params)
+            # "k" controls how many top features to select; defaults to top 50%.
+            # Pop it before forwarding the rest to RandomForestClassifier so sklearn
+            # does not receive an unexpected keyword argument.
+            rf_params = dict(self.fs_params)
+            k_raw = rf_params.pop("k", None)
+            k = max(1, int(k_raw)) if k_raw is not None else max(1, n_features // 2)
+            rf = RandomForestClassifier(**rf_params)
             rf.fit(self.X_train, self.y_train)
             scores = rf.feature_importances_
             mask = np.zeros(n_features, dtype=bool)
-            k = max(1, n_features // 2)
             mask[np.argsort(scores)[-k:]] = True
             return mask, scores
 

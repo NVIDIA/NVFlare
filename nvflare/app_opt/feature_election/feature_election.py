@@ -380,11 +380,13 @@ class FeatureElection:
                 raise RuntimeError(f"Feature selection returned unexpected format: {e}")
 
             if not np.any(selected_mask):
-                logger.warning(
+                raise ValueError(
                     f"Client {i}: feature selection rejected all features "
                     f"(fs_method='{self.fs_method}', fs_params={self.fs_params}). "
-                    "The global mask may be all-False. Consider lowering the regularisation "
-                    "strength (e.g. reduce 'alpha' for Lasso/ElasticNet)."
+                    "An all-False client mask would bias the global mask toward the intersection "
+                    "of other clients' masks without any signal from this client. "
+                    "Consider lowering the regularisation strength "
+                    "(e.g. reduce 'alpha' for Lasso/ElasticNet)."
                 )
 
             initial_score = executor.evaluate_model(X_train_sim, y_train_sim, X_val_sim, y_val_sim)

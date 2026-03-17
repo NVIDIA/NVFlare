@@ -283,6 +283,11 @@ def load_client_data(
     # Check for pre-generated data
     if data_root:
         data_path = Path(data_root) / f"client_{client_id}.csv"
+        if not data_path.exists():
+            logger.warning(
+                f"data_root was provided but expected file not found: {data_path}. "
+                "Falling back to synthetic data generation."
+            )
         if data_path.exists():
             logger.info(f"Loading pre-generated data from {data_path}")
             df = pd.read_csv(data_path)
