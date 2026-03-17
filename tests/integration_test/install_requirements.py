@@ -65,12 +65,8 @@ def main():
     fd, tmp_path = tempfile.mkstemp(suffix=".txt", dir=req_dir)
     result = 1
     try:
-        try:
-            with os.fdopen(fd, "w") as tmp:
-                tmp.writelines(filtered)
-        except Exception:
-            os.close(fd)
-            raise
+        with os.fdopen(fd, "w") as tmp:
+            tmp.writelines(filtered)
         cmd = [sys.executable, "-m", "pip", "install", "-r", tmp_path]
         if args.quiet:
             cmd.append("--quiet")

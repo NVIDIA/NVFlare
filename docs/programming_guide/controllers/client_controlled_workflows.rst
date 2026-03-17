@@ -502,19 +502,20 @@ This section shows how to set up swarm learning using recipes (recommended) and 
 Using Recipes (Recommended)
 ---------------------------
 
-Use ``SimpleSwarmLearningRecipe`` for a streamlined swarm learning setup:
+Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
 
 .. code-block:: python
 
-    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm_learning",
         model=MyModel(),
+        min_clients=3,
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
@@ -1006,19 +1007,20 @@ Using Recipes (Recommended)
 
 **Swarm Learning with Cross-Site Evaluation:**
 
-Use ``SimpleSwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
+Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluation:
 
 .. code-block:: python
 
-    from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe.sim_env import SimEnv
 
     # Create swarm learning recipe with cross-site evaluation enabled
     # Model can be class instance or dict config
     # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm_with_cse",
         model=MyModel(),
+        min_clients=3,
         num_rounds=3,
         train_script="train.py",
         do_cross_site_eval=True,

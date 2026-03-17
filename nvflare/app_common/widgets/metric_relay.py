@@ -72,13 +72,13 @@ class MetricRelay(Widget, AttributesExportable):
         elif event_type == EventType.BEFORE_TASK_EXECUTION:
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
-            self.log_info(fl_ctx, "Stopping pipe handler")
+            self.log_debug(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
                 self.pipe_handler.stop()
 
     def _pipe_status_cb(self, msg: Message):
-        self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}")
+        self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}: {msg.data}")
         self.pipe_handler.stop()
 
     def _pipe_msg_cb(self, msg: Message):

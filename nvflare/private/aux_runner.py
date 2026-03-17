@@ -394,6 +394,9 @@ class AuxRunner(FLComponent):
             if msg_root_ttl:
                 cell_msg.set_header(MessageHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
 
+            if request.get_header(ReservedHeaderKey.PASS_THROUGH, False):
+                cell_msg.set_header(MessageHeaderKey.PASS_THROUGH, True)
+
             cell_replies = cell.broadcast_request(
                 channel=channel,
                 topic=topic,

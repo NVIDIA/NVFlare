@@ -491,23 +491,24 @@ class TestPTSpecialRecipesComponentConfig(unittest.TestCase):
         print("\n  Testing PT Swarm (PR3)...")
         import torch.nn as nn
 
-        from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        # SimpleSwarmLearningRecipe requires an actual nn.Module
+        # SwarmLearningRecipe requires an actual nn.Module
         simple_model = nn.Linear(10, 2)
 
-        recipe = SimpleSwarmLearningRecipe(
+        recipe = SwarmLearningRecipe(
             name="test-pt-swarm",
             model=simple_model,
-            initial_ckpt=self.checkpoint_path,
             num_rounds=2,
             train_script=self.train_script,
+            min_clients=2,
+            initial_ckpt=self.checkpoint_path,
         )
 
         job_dir = os.path.join(self.temp_dir, "export_swarm")
         recipe.export(job_dir=job_dir)
 
-        # SimpleSwarmLearningRecipe puts persistor on client side (swarm topology)
+        # SwarmLearningRecipe puts persistor on client side (swarm topology)
         client_config_path = os.path.join(job_dir, "test-pt-swarm", "app/config/config_fed_client.json")
         with open(client_config_path, "r") as f:
             config = json.load(f)

@@ -48,6 +48,7 @@ class SwarmServerConfig:
         private_p2p: bool = True,
         aggr_clients=None,
         train_clients=None,
+        min_clients=None,
     ):
         self.num_rounds = num_rounds
         self.start_round = start_round
@@ -61,6 +62,7 @@ class SwarmServerConfig:
         self.private_p2p = private_p2p
         self.aggr_clients = aggr_clients
         self.train_clients = train_clients
+        self.min_clients = min_clients
 
 
 class SwarmClientConfig:
@@ -252,6 +254,7 @@ class CCWFJob(FedJob):
             private_p2p=server_config.private_p2p,
             aggr_clients=server_config.aggr_clients,
             train_clients=server_config.train_clients,
+            min_clients=server_config.min_clients,
         )
         self.to_server(controller)
 
@@ -268,6 +271,7 @@ class CCWFJob(FedJob):
             persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
             metric_comparator_id=metric_comparator_id,
+            learn_task_check_interval=client_config.learn_task_check_interval,
             learn_task_abort_timeout=client_config.learn_task_abort_timeout,
             learn_task_ack_timeout=client_config.learn_task_ack_timeout,
             learn_task_timeout=client_config.learn_task_timeout,

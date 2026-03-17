@@ -47,6 +47,11 @@ class MessageHeaderKey:
     OPTIONAL = CELLNET_PREFIX + "optional"
     MSG_ROOT_ID = CELLNET_PREFIX + "msg_root_id"
     MSG_ROOT_TTL = CELLNET_PREFIX + "msg_root_ttl"
+    # When True on an incoming cell message, Adapter.call() builds a per-call
+    # FOBS decode context with FOBSContextKey.PASS_THROUGH=True so that tensors
+    # in that message arrive as LazyDownloadRef placeholders rather than being
+    # downloaded inline.  Set by CellPipe.send() when pass_through_on_send=True.
+    PASS_THROUGH = CELLNET_PREFIX + "pass_through"
 
 
 class ReturnReason:
