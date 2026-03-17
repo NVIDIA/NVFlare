@@ -288,7 +288,7 @@ def load_client_data(
                 f"data_root was provided but expected file not found: {data_path}. "
                 "Falling back to synthetic data generation."
             )
-        if data_path.exists():
+        else:
             logger.info(f"Loading pre-generated data from {data_path}")
             df = pd.read_csv(data_path)
             feature_names = [c for c in df.columns if c != "target"]

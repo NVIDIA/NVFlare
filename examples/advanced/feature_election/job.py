@@ -53,6 +53,9 @@ def create_feature_election_job(
         task_name="feature_election",
         auto_tune=auto_tune,
         tuning_rounds=tuning_rounds,
+        # All clients run locally in the simulator, so there are no stragglers;
+        # skip the straggler wait window to avoid ~10 s overhead per phase.
+        wait_time_after_min_received=0,
     )
     job.to_server(controller)
     job.to_server(ValidationJsonGenerator())
