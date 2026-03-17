@@ -89,7 +89,7 @@ from model import LitNet
 
 recipe = FedEvalRecipe(
     min_clients=n_clients,
-    initial_model=LitNet(checkpoint="pretrained_model.pt"),
+    model=LitNet(checkpoint="pretrained_model.pt"),
     eval_script="client.py",
     eval_args=f"--batch_size {batch_size}",
 )
@@ -97,14 +97,14 @@ recipe = FedEvalRecipe(
 
 **Model Input Options:**
 
-The `initial_model` parameter accepts class instance or dict config:
-- `initial_model=LitNet(checkpoint="...")` - Class instance
-- `initial_model={"path": "model.LitNet", "args": {"checkpoint": "..."}}` - Dict config
+The `model` parameter accepts class instance or dict config:
+- `model=LitNet(checkpoint="...")` - Class instance
+- `model={"path": "model.LitNet", "args": {"checkpoint": "..."}}` - Dict config
 
 For separate checkpoint loading, use `initial_ckpt`:
 ```python
 recipe = FedEvalRecipe(
-    initial_model=LitNet(),
+    model=LitNet(),
     initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
     ...
 )

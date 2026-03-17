@@ -2200,7 +2200,7 @@ For billion-parameter models (examples/advanced/llm_hf):
    # Recipe configuration
    recipe = FedAvgRecipe(
        name="llm_training",
-       initial_model=None,  # Use dict config for large models
+       model=None,  # Use dict config for large models
        shutdown_timeout=120.0,
    )
 
@@ -2584,7 +2584,7 @@ Recipe with Extended Timeouts
 
    recipe = FedAvgRecipe(
        name="large_model_training",
-       initial_model={"path": "model.LargeModel", "args": {}},
+       model={"path": "model.LargeModel", "args": {}},
        min_clients=8,
        num_rounds=100,
        shutdown_timeout=120.0,
@@ -2608,7 +2608,7 @@ CCWF/Swarm Learning Configuration
    recipe = SimpleSwarmLearningRecipe(
        min_clients=3,
        num_rounds=10,
-       initial_model=model,
+       model=model,
        train_script="train.py",
        cross_site_eval_timeout=600.0,
        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models
