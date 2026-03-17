@@ -122,7 +122,10 @@ class K8sJobHandle(JobHandleSpec):
                 "imagePullPolicy": "Always",
             }
         ]
-        self.container_args_python_args_list = ["-u", "-m", job_config.get("command")]
+        command = job_config.get("command")
+        if not command:
+            raise ValueError("job_config must contain a non-empty 'command' key")
+        self.container_args_python_args_list = ["-u", "-m", command]
         self.container_volume_mount_list = []
         self._make_manifest(job_config)
         self._last_phase = None
@@ -195,7 +198,7 @@ class K8sJobHandle(JobHandleSpec):
     def _query_state(self):
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
-        except ApiException:
+        except ApiException as e:
             return JobState.UNKNOWN
         if self._stuck(resp.status.phase):
             self.terminate()
@@ -209,10 +212,16 @@ class K8sJobHandle(JobHandleSpec):
             self._stuck_count += 1
             if self._stuck_count > self._max_stuck_count:
                 return True
-            return False
+        return False
 
     def wait(self):
-        self.enter_states([JobState.SUCCEEDED, JobState.TERMINATED])
+        while True:
+            if self.terminal_state is not None:
+                return
+            job_state = self._query_state()
+            if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
+                return
+            time.sleep(1)
 
 
 class K8sJobLauncher(JobLauncherSpec):
@@ -235,6 +244,8 @@ class K8sJobLauncher(JobLauncherSpec):
         self.namespace = namespace
         with open(data_pvc_file_path, "rt") as f:
             data_pvc_dict = yaml.safe_load(f)
+        if not data_pvc_dict:
+            raise ValueError(f"data_pvc_file_path '{data_pvc_file_path}' is empty or contains no PVC entries.")
         # data_pvc_dict will be pvc: mountPath
         # currently, support one pvc and always mount to /var/tmp/nvflare/data
         # ie, ignore the mountPath in data_pvc_dict

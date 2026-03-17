@@ -51,7 +51,7 @@ Abstract base class for launching jobs. Extends `FLComponent`, which gives it ac
 
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
-| `launch_job(job_meta, fl_ctx)` | `(dict, FLContext) -> JobHandleSpec` | Start a job and return its handle. Returns `None` on failure. |
+| `launch_job(job_meta, fl_ctx)` | `(dict, FLContext) -> JobHandleSpec` | Start a job and return its handle. |
 
 ### 2.3 Supporting Types
 

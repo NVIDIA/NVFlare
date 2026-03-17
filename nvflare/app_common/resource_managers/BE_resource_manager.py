@@ -31,7 +31,7 @@ class BEResourceManager(ResourceManagerSpec, FLComponent):
         return None
 
     def allocate_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext) -> dict:
-        return True
+        return {}
 
     def free_resources(self, resources: dict, token: str, fl_ctx: FLContext):
         pass
