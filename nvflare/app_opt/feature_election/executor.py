@@ -369,7 +369,10 @@ class FeatureElectionExecutor(Executor):
             mi_params = dict(self.fs_params)
             k_raw = mi_params.pop("k", None)
             k = max(1, int(k_raw)) if k_raw is not None else max(1, n_features // 2)
-            scores = mutual_info_classif(self.X_train, self.y_train, random_state=42, **mi_params)
+            # Pop random_state so the caller can override it via fs_params without
+            # triggering "got multiple values for keyword argument 'random_state'".
+            random_state = mi_params.pop("random_state", 42)
+            scores = mutual_info_classif(self.X_train, self.y_train, random_state=random_state, **mi_params)
             mask = np.zeros(n_features, dtype=bool)
             mask[np.argsort(scores)[-k:]] = True
             return mask, scores

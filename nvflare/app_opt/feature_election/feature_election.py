@@ -470,6 +470,15 @@ class FeatureElection:
 
         self.global_mask = controller.aggregate_selections(client_selections)
 
+        if not np.any(self.global_mask):
+            raise ValueError(
+                f"Global feature mask selects zero features "
+                f"(freedom_degree={float(self.freedom_degree):.4f}, "
+                f"aggregation_mode='{self.aggregation_mode}'). "
+                "Raise freedom_degree to include more features, or switch "
+                "aggregation_mode from 'weighted' to 'uniform'."
+            )
+
         # Build Stats
         masks = np.array([sel["selected_features"] for sel in client_selections.values()])
         self.election_stats = {
