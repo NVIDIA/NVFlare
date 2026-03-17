@@ -23,7 +23,7 @@ from pydantic import BaseModel, conint, model_validator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
-from nvflare.recipe.utils import _collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts
 from nvflare.tool.poc.poc_commands import (
     _clean_poc,
     _start_poc,
@@ -66,7 +66,7 @@ class _PocEnvValidator(BaseModel):
             )
 
         # Check if num_clients is valid when clients is None
-        if self.clients is None and self.num_clients <= 0:
+        if self.clients is None and (self.num_clients is None or self.num_clients <= 0):
             raise ValueError("num_clients must be greater than 0")
 
         return self
@@ -142,7 +142,7 @@ class PocEnv(ExecEnv):
             ValueError: If scripts do not exist locally.
         """
         # Validate scripts exist locally for POC
-        non_local_scripts = _collect_non_local_scripts(job)
+        non_local_scripts = collect_non_local_scripts(job)
         if non_local_scripts:
             raise ValueError(
                 f"The following scripts do not exist locally: {non_local_scripts}. "
