@@ -61,7 +61,7 @@ Here's a complete example:
        name="hello-pt",
        min_clients=2,
        num_rounds=2,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
    )
    
@@ -79,15 +79,15 @@ Here's a complete example:
 
 ### Model Input Options
 
-The `initial_model` parameter accepts two formats:
+The `model` parameter accepts two formats:
 
-1. **Class instance**: `initial_model=SimpleNetwork()` - Convenient, catches errors early
-2. **Dict config**: `initial_model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
+1. **Class instance**: `model=SimpleNetwork()` - Convenient, catches errors early
+2. **Dict config**: `model={"path": "model.SimpleNetwork", "args": {}}` - Better for large models
 
 To resume training from pre-trained weights:
 ```python
 recipe = FedAvgRecipe(
-    initial_model=SimpleNetwork(),
+    model=SimpleNetwork(),
     initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
     ...
 )
@@ -239,7 +239,7 @@ The job recipe defines the FL workflow:
        name="my-job",
        min_clients=2,
        num_rounds=3,
-       initial_model=MyModel(),
+       model=MyModel(),
        train_script="client.py",
    )
    
