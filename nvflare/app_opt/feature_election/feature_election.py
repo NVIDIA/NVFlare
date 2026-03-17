@@ -516,15 +516,15 @@ class FeatureElection:
                 k: (
                     v.tolist()
                     if isinstance(v, np.ndarray)
-                    else int(v)
-                    if isinstance(v, np.integer)
-                    else float(v)
-                    if isinstance(v, np.floating)
-                    else bool(v)
-                    if isinstance(v, np.bool_)
-                    else v.item()
-                    if isinstance(v, np.generic)
-                    else v
+                    else (
+                        int(v)
+                        if isinstance(v, np.integer)
+                        else (
+                            float(v)
+                            if isinstance(v, np.floating)
+                            else bool(v) if isinstance(v, np.bool_) else v.item() if isinstance(v, np.generic) else v
+                        )
+                    )
                 )
                 for k, v in self.election_stats.items()
                 if k
