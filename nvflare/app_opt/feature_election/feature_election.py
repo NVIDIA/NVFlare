@@ -445,11 +445,11 @@ class FeatureElection:
                     f"Tuning Round {t + 1}/{controller.tuning_rounds}: "
                     f"FD={controller.freedom_degree:.4f} -> Score={score:.4f}"
                 )
-                # Append to controller's own history so _calculate_next_fd has the right state
-                controller.tuning_history.append((controller.freedom_degree, score))
-
                 if t < controller.tuning_rounds - 1:
-                    controller.freedom_degree = controller._calculate_next_fd(first_step=(t == 0))
+                    controller.advance_tuning(score, first_step=(t == 0))
+                else:
+                    # Final round: record the score but do not advance to a new FD.
+                    controller.tuning_history.append((controller.freedom_degree, score))
 
             # Select best FD
             if controller.tuning_history:
@@ -516,7 +516,15 @@ class FeatureElection:
                 k: (
                     v.tolist()
                     if isinstance(v, np.ndarray)
-                    else int(v) if isinstance(v, np.integer) else float(v) if isinstance(v, np.floating) else v
+                    else int(v)
+                    if isinstance(v, np.integer)
+                    else float(v)
+                    if isinstance(v, np.floating)
+                    else bool(v)
+                    if isinstance(v, np.bool_)
+                    else v.item()
+                    if isinstance(v, np.generic)
+                    else v
                 )
                 for k, v in self.election_stats.items()
                 if k

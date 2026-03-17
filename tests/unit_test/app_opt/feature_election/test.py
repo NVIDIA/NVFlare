@@ -179,7 +179,7 @@ class TestSimulationLogic:
             assert isinstance(fd, float), f"FD entry {fd!r} is not a float"
             assert isinstance(score, float), f"Score entry {score!r} is not a float"
             assert 0.0 <= fd <= 1.0, f"FD {fd} is outside [0, 1]"
-            assert score >= 0.0, f"Tuning score {score} is negative"
+            assert 0.0 <= score <= 1.0, f"Tuning score {score} is outside [0, 1]"
 
     def test_boundary_conditions(self, sample_data):
         """Test Intersection (FD=0) and Union (FD=1)."""

@@ -115,6 +115,22 @@ class FeatureElectionController(Controller):
 
         self.n_features = None
 
+    def advance_tuning(self, score: float, first_step: bool = False) -> None:
+        """Record a tuning-round score and update freedom_degree for the next round.
+
+        This is the public interface for the simulation path in
+        :meth:`FeatureElection.simulate_election` so that the simulation does not
+        need to mutate private controller state directly.  The real FL path in
+        ``control_flow`` uses the same internal helpers.
+
+        Args:
+            score: Weighted evaluation score for the current ``freedom_degree``.
+            first_step: ``True`` only on the very first tuning round; passed
+                through to ``_calculate_next_fd`` to seed the initial direction.
+        """
+        self.tuning_history.append((self.freedom_degree, score))
+        self.freedom_degree = self._calculate_next_fd(first_step=first_step)
+
     def start_controller(self, fl_ctx: FLContext) -> None:
         logger.info("Initializing FeatureElectionController (Base Controller Mode)")
 

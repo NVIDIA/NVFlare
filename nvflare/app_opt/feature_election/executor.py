@@ -307,9 +307,12 @@ class FeatureElectionExecutor(Executor):
             if not self._model_initialized:
                 unique_classes = np.unique(self.y_train)
                 init_idx = [int(np.where(self.y_train == c)[0][0]) for c in unique_classes]
-                remaining = [j for j in range(len(self.y_train)) if j not in set(init_idx)]
                 n_extra = max(0, min(10, len(self.y_train)) - len(init_idx))
-                init_idx += remaining[:n_extra]
+                # np.setdiff1d avoids building a full O(n) intermediate list before
+                # slicing; assume_unique=True skips the dedup sort since init_idx
+                # already contains one distinct index per class.
+                remaining = np.setdiff1d(np.arange(len(self.y_train)), init_idx, assume_unique=True)
+                init_idx += remaining[:n_extra].tolist()
                 self.model.fit(X_tr[init_idx], self.y_train[init_idx])
                 self._model_initialized = True
 
