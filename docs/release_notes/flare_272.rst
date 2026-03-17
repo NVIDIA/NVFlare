@@ -72,13 +72,14 @@ Memory Management
 -----------------
 
 FLARE 2.7.2 delivers a full memory management stack for large-model FL, covering every tier
-from the FL server down to the client training subprocess.
+from the FL server down to the client training subprocess. Three complementary features work
+together to reduce peak memory usage, prevent RSS (Resident Set Size) growth across rounds,
+and eliminate unnecessary serialization overhead in subprocess mode.
 
 **TensorDownloader** — Zero-code memory optimization for PyTorch large models. Model tensors
-are serialized incrementally (safetensors format) and distributed via a pull-based download
-service. Internal benchmarks on a 5 GB model with 4 FedAvg clients showed **20–50% peak
-memory reduction** on both server and client. NumPy arrays are supported via the companion
-``NpDownloader``.
+are serialized incrementally in safetensors format and distributed via a pull-based download
+service. The Downloader Service reduces peak memory on both server and client, in both
+in-process and subprocess (external-process) modes.
 
 **Zero-copy relay at the Client Job (CJ) process (Pass-Through)** — For subprocess-mode
 clients (``ClientAPILauncherExecutor``), the CJ relay process previously deserialized and
@@ -86,36 +87,113 @@ re-serialized every model tensor before forwarding it to the training subprocess
 the relay-tier memory footprint per round. FLARE 2.7.2 introduces pass-through forwarding:
 the CJ holds lightweight ``LazyDownloadRef`` placeholders and the training subprocess
 downloads tensors directly from the FL server, making CJ memory independent of model size.
-Particularly impactful for LLM-scale models (7B–70B parameters).
+This is particularly impactful for LLM-scale models (7B–70B parameters).
 
-**Large-model subprocess reliability** — Send retries no longer accumulate per-attempt model
-copies in memory. Three timeout parameters previously hardcoded at values too short for large
-models (``submit_result_timeout``, ``tensor_min_download_timeout`` / ``np_min_download_timeout``,
-``max_resends``) are now configurable via ``recipe.add_client_config({...})``. Swarm Learning
-and SAG workflows also gain a ``min_clients`` fault-tolerance threshold so a job can proceed
-when a small number of configured clients are unavailable.
-
-Server and Client Memory Cleanup
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-FLARE 2.7.2 introduces automatic RSS (Resident Set Size) stabilization for long-running jobs,
-preventing unbounded memory growth across both the server and the full client pipeline:
+**Server and Client Memory Cleanup** — FLARE 2.7.2 introduces automatic RSS stabilization
+for long-running jobs, preventing unbounded memory growth across both the server and the full
+client pipeline:
 
 - **Server**: Periodic ``gc.collect()`` + ``malloc_trim()`` after aggregation rounds returns
-  freed pages to the OS. Platform-aware: full heap trimming on Linux/glibc, safe fallbacks on
-  macOS/musl. Overhead is 10–500 ms per round — negligible compared to training time.
+  freed pages to the OS. Platform-aware: full heap trimming on Linux/glibc, with safe
+  fallbacks on macOS/musl. Overhead is 10–500 ms per round — negligible compared to
+  training time.
 - **Client (subprocess mode)**: The same GC and heap-trim cycle runs across the entire client
   pipeline — both the CJ relay process and the training subprocess — after every
-  ``flare.send()`` call. Includes ``torch.cuda.empty_cache()`` for GPU memory. Configurable
-  via ``client_memory_gc_rounds``; no training script changes required.
-- ``MALLOC_ARENA_MAX`` tuning guidance provided for controlling glibc arena fragmentation on
-  both server and client.
+  ``flare.send()`` call. Optionally includes ``torch.cuda.empty_cache()`` for GPU memory.
+  Configurable via ``client_memory_gc_rounds``; no training script changes required.
+- ``MALLOC_ARENA_MAX`` tuning guidance is provided for controlling glibc arena fragmentation
+  on both server and client.
 
 .. admonition:: Learn More
 
-    For configuration details, platform compatibility, recommended settings, and API reference, see :doc:`/programming_guide/memory_management`.
+   For configuration details, platform compatibility, recommended settings, and API reference,
+   see :doc:`/programming_guide/memory_management`.
 
-F3 Streaming Reliability and Performance
+Together, these three features significantly reduce peak memory usage, prevent RSS growth
+that leads to OOM errors, and eliminate redundant serialization/deserialization overhead
+when training in subprocess mode. In a 5 GB PyTorch model benchmark with FedAvg and 4
+clients, server peak memory dropped by up to 85% (in-process mode) and client peak memory
+by up to 92% (subprocess mode), as detailed in the tables below.
+Prior to 2.7.2, subprocess jobs with large models would OOM after a few rounds; with the
+full set of fixes they now complete stably across many rounds.
+
+**FedAvg — 5 GB model, 4 clients**
+
+**In-process mode**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 20 20
+
+   * - Metric
+     - v2.7.0
+     - v2.7.2
+     - Improvement
+   * - Server peak (GB)
+     - 264
+     - 40
+     - −85%
+   * - Client peak avg (GB)
+     - ~23
+     - ~5.6
+     - −76%
+
+
+**External-process (subprocess) mode**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 20 20
+
+   * - Metric
+     - v2.7.0
+     - v2.7.2
+     - Improvement
+   * - Server peak (GB)
+     - 193.7
+     - 48.3
+     - −75%
+   * - Client peak avg (GB)
+     - 62.6
+     - 5.3
+     - −92%
+
+
+**Swarm Learning — 2.5 GB model, 3 sites**
+
+**In-process mode**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 20 20
+
+   * - Metric
+     - v2.7.0
+     - v2.7.2
+     - Improvement
+   * - Site peak avg (GB)
+     - 54.2
+     - 26.2
+     - −52%
+
+
+**External-process (subprocess) mode**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 20 20 20
+
+   * - Metric
+     - v2.7.0
+     - v2.7.2
+     - Improvement
+   * - Site peak avg (GB)
+     - 54.2
+     - 27.8
+     - −49%
+
+
+Reliability and Performance
 -----------------------------------------
 
 FLARE 2.7.2 hardens the F3 streaming layer with fixes for five concurrency and stability
@@ -136,6 +214,14 @@ downloads now complete reliably with a dedicated callback pool and reduced lock 
 **Streaming download retry** — Transient timeouts during tensor streaming (common in LLM
 swarming over congested networks) now trigger structured exponential-backoff retry (up to
 3 attempts, capped at 60 s), abort-signal aware and idempotent.
+
+
+**Large-model subprocess reliability** — Send retries no longer accumulate per-attempt model
+copies in memory. Three timeout parameters previously hardcoded at values too short for large
+models (``submit_result_timeout``, ``tensor_min_download_timeout`` / ``np_min_download_timeout``,
+``max_resends``) are now configurable via ``recipe.add_client_config({...})``. Swarm Learning
+and SAG workflows also gain a ``min_clients`` fault-tolerance threshold so a job can proceed
+when a small number of configured clients are unavailable.
 
 Hierarchical FL Startup Stability
 -----------------------------------
@@ -243,7 +329,8 @@ Bug Fixes
 - Fixed TensorBoard analytics receiver import error.
 - Improved error handling in FOBS serialization (raise exception on errors).
 - Improved error messages in Client API.
-- Fixed a path traversal vulnerability in ``FileRetriever`` by enforcing source-directory boundary checks on requested files.
+- Security fix: Fixed a Remote Code Execution vulnerability in FOBS deserialization. The ``Packer.unpack()`` method failed to validate the attacker-controlled ``type_name`` before passing it to ``load_class()``, allowing authenticated participants to execute arbitrary Python code on the aggregation server. Fixed by introducing a ``BUILTIN_TYPES`` allowlist and validating ``type_name`` before class loading. A public API ``add_type_name_whitelist()`` is provided for runtime extension with custom types.
+- Security fix: Fixed a path traversal vulnerability in ``FileRetriever`` by enforcing source-directory boundary checks on requested files, preventing ``../`` traversal attacks from escaping the allowed directory.
 - Updated PEFT/TRL integration for latest API compatibility.
 - Updated HuggingFace LLM integration.
 - Security dependency updates for web components.
