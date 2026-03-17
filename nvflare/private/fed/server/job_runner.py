@@ -21,12 +21,21 @@ from typing import Dict, List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SiteType, SystemComponents
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConfigVarName,
+    FLContextKey,
+    RunProcessKey,
+    SiteType,
+    SystemComponents,
+    SystemConfigs,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -214,7 +223,12 @@ class JobRunner(FLComponent):
                     else:
                         deploy_detail.append(f"{client_name}: OK")
                 else:
-                    deploy_detail.append(f"{client_name}: unknown")
+                    # No reply means the client timed out during deployment.
+                    # Count this as a failure so the min_sites / required_sites check
+                    # can decide whether to abort, rather than silently treating a
+                    # timed-out client as successfully deployed.
+                    failed_clients.append(client_name)
+                    deploy_detail.append(f"{client_name}: no reply (deployment timeout)")
 
             # see whether any of the failed clients are required
             if failed_clients:
@@ -248,15 +262,63 @@ class JobRunner(FLComponent):
         # job_clients is a dict of: token => Client
         assert isinstance(job_clients, dict)
         participating_clients = [c.to_dict() for c in job_clients.values()]
+        # start_client_job serializes job.meta into request headers; make sure
+        # JOB_CLIENTS is available before client startup.
         job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
         err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
         replies = engine.start_client_job(job, client_sites, fl_ctx)
-        client_sites_names = list(client_sites.keys())
-        check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
-        display_sites = ",".join(client_sites_names)
+        all_client_sites = list(client_sites.keys())
+        active_client_sites = list(all_client_sites)
+        strict_start_reply_check = ConfigService.get_bool_var(
+            name=ConfigVarName.STRICT_START_JOB_REPLY_CHECK,
+            conf=SystemConfigs.APPLICATION_CONF,
+            default=False,
+        )
+        timed_out = check_client_replies(
+            replies=replies,
+            client_sites=all_client_sites,
+            command=f"start job ({job_id})",
+            strict=strict_start_reply_check,
+        )
+        if timed_out:
+            active_count = len(all_client_sites) - len(timed_out)
+
+            # A required site timing out is fatal regardless of min_sites, same as deploy phase.
+            if job.required_sites:
+                for c in timed_out:
+                    if c in job.required_sites:
+                        raise RuntimeError(f"start job ({job_id}): required client {c} timed out")
+
+            if job.min_sites and active_count < job.min_sites:
+                raise RuntimeError(
+                    f"start job ({job_id}): {len(timed_out)} client(s) timed out and remaining "
+                    f"{active_count} < min_sites {job.min_sites}: {timed_out}"
+                )
+            self.log_warning(
+                fl_ctx,
+                f"start job ({job_id}): {len(timed_out)} client(s) timed out at start-job: {timed_out}; "
+                f"{active_count} of {len(all_client_sites)} clients started successfully.",
+            )
+            active_client_sites = [c for c in all_client_sites if c not in timed_out]
+
+        if not strict_start_reply_check:
+            # In non-strict mode, check_client_replies() does not return timed-out clients.
+            # Build active clients directly from actual replies so JOB_CLIENTS stays accurate.
+            replies_by_client = {r.client_name: r for r in replies}
+            active_client_sites = []
+            for client_name in all_client_sites:
+                client_reply = replies_by_client.get(client_name)
+                if client_reply and client_reply.reply:
+                    active_client_sites.append(client_name)
+
+        # Set metadata once, after any timeout exclusion, so it always reflects active participants.
+        active_sites = set(active_client_sites)
+        participating_clients = [c.to_dict() for c in job_clients.values() if c.name in active_sites]
+        job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
+        display_sites = ",".join(active_client_sites)
 
         self.log_info(fl_ctx, f"Started run: {job_id} for clients: {display_sites}")
         self.fire_event(EventType.JOB_STARTED, fl_ctx)
