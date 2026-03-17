@@ -268,7 +268,7 @@ class FeatureElection:
             for i, indices_i in enumerate(client_indices):
                 if len(indices_i) == 0:
                     raise ValueError(
-                        f"Client {i} received 0 samples from Dirichlet split (alpha=0.5). "
+                        f"Client {i} received 0 samples from Dirichlet split (alpha={dirichlet_alpha}). "
                         "Increase the dataset size or reduce the number of clients."
                     )
                 client_data.append((X.iloc[indices_i], y.iloc[indices_i]))
@@ -538,6 +538,22 @@ class FeatureElection:
 # --- HELPER FUNCTIONS ---
 
 
+_FEATURE_ELECTION_INIT_PARAMS = {
+    "aggregation_mode",
+    "auto_tune",
+    "tuning_rounds",
+    "eval_metric",
+    "wait_time_after_min_received",
+    "fs_params",
+}
+
+_PREPARE_DATA_PARAMS = {
+    "split_ratios",
+    "random_state",
+    "dirichlet_alpha",
+}
+
+
 def quick_election(
     df: pd.DataFrame,
     target_col: str,
@@ -549,16 +565,24 @@ def quick_election(
 ) -> Tuple[np.ndarray, Dict]:
     """
     Quick Feature Election for tabular data (one-line solution).
+
+    ``**kwargs`` are routed to either :class:`FeatureElection` or
+    :meth:`FeatureElection.prepare_data_splits` based on the parameter name.
+    Recognised split parameters: ``split_ratios``, ``random_state``,
+    ``dirichlet_alpha``.  All other kwargs are forwarded to
+    :class:`FeatureElection` (e.g. ``aggregation_mode``, ``auto_tune``,
+    ``fs_params``).
     """
-    # Initialize Feature Election
-    fe = FeatureElection(freedom_degree=freedom_degree, fs_method=fs_method, **kwargs)
+    init_kwargs = {k: v for k, v in kwargs.items() if k not in _PREPARE_DATA_PARAMS}
+    split_kwargs = {k: v for k, v in kwargs.items() if k in _PREPARE_DATA_PARAMS}
 
-    # Prepare client data
-    client_data = fe.prepare_data_splits(df, target_col, num_clients, split_strategy=split_strategy)
+    unknown = set(kwargs) - _FEATURE_ELECTION_INIT_PARAMS - _PREPARE_DATA_PARAMS
+    if unknown:
+        raise TypeError(f"quick_election() got unexpected keyword argument(s): {sorted(unknown)}")
 
-    # Run election
+    fe = FeatureElection(freedom_degree=freedom_degree, fs_method=fs_method, **init_kwargs)
+    client_data = fe.prepare_data_splits(df, target_col, num_clients, split_strategy=split_strategy, **split_kwargs)
     stats = fe.simulate_election(client_data)
-
     return fe.global_mask, stats
 
 
