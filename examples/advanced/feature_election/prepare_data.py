@@ -107,7 +107,10 @@ def split_data_for_clients(
 
 def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Stratified split maintaining class distribution across clients."""
-    np.random.seed(random_state)
+    # Use a local RandomState instance rather than np.random.seed() to avoid
+    # mutating global NumPy random state, which can interfere with other code
+    # (tests, concurrent callers) running in the same process.
+    rng = np.random.RandomState(random_state)
 
     if len(df) < num_clients:
         logger.warning(f"Not enough samples ({len(df)}) for {num_clients} clients. Using simple split.")
@@ -117,7 +120,7 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
 
     for class_label in df["target"].unique():
         class_indices = df.index[df["target"] == class_label].tolist()
-        np.random.shuffle(class_indices)
+        rng.shuffle(class_indices)
 
         if len(class_indices) >= num_clients:
             # Enough samples: distribute round-robin
@@ -125,7 +128,7 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
                 client_indices[i % num_clients].append(idx)
         else:
             # Fewer samples than clients: randomly assign each sample to a distinct client
-            chosen_clients = np.random.choice(num_clients, size=len(class_indices), replace=False)
+            chosen_clients = rng.choice(num_clients, size=len(class_indices), replace=False)
             for j, idx in enumerate(class_indices):
                 client_indices[chosen_clients[j]].append(idx)
     client_dfs = []
@@ -135,7 +138,7 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
                 f"Client {i} received 0 samples in stratified split. "
                 "Increase the dataset size or reduce the number of clients."
             )
-        np.random.shuffle(indices)
+        rng.shuffle(indices)
         client_dfs.append(df.loc[indices].copy())
 
     return client_dfs
@@ -143,9 +146,9 @@ def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> 
 
 def _split_random(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Random split without stratification."""
-    np.random.seed(random_state)
+    rng = np.random.RandomState(random_state)
     indices = np.arange(len(df))
-    np.random.shuffle(indices)
+    rng.shuffle(indices)
 
     client_dfs = []
     samples_per_client = len(df) // num_clients
@@ -183,16 +186,16 @@ def _split_non_iid(
         y = le.fit_transform(y)
 
     num_classes = len(np.unique(y))
-    np.random.seed(random_state)
+    rng = np.random.RandomState(random_state)
 
     # Dirichlet distribution for label assignment
-    label_distribution = np.random.dirichlet([alpha] * num_clients, num_classes)
+    label_distribution = rng.dirichlet([alpha] * num_clients, num_classes)
 
     client_indices = [[] for _ in range(num_clients)]
 
     for k in range(num_classes):
         idx_k = np.where(y == k)[0]
-        np.random.shuffle(idx_k)
+        rng.shuffle(idx_k)
 
         proportions = (label_distribution[k] * len(idx_k)).astype(int)
         # Ensure proportions sum correctly and no negative values

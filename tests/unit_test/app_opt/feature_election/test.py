@@ -72,6 +72,9 @@ class TestConfigurationAndValidation:
         with pytest.raises(ValueError, match="aggregation_mode"):
             FeatureElection(aggregation_mode="invalid_mode")
 
+        with pytest.raises(ValueError, match="tuning_rounds"):
+            FeatureElection(tuning_rounds=-1)
+
     def test_create_flare_job_structure(self, tmp_path):
         """Test that the generated FL job contains all new fields (auto_tune, phases)."""
         fe = FeatureElection(freedom_degree=0.5, auto_tune=True, tuning_rounds=3)
@@ -106,6 +109,10 @@ class TestConfigurationAndValidation:
 
         exec_args = client_config["executors"][0]["executor"]["args"]
         assert exec_args["task_name"] == "feature_election"
+        # Verify FS parameters are forwarded to the executor so clients use the
+        # correct method and metric — omitting these would silently fall back to defaults.
+        assert exec_args["fs_method"] == "lasso"
+        assert exec_args["eval_metric"] == "f1"
 
 
 class TestDataPreparation:
@@ -207,6 +214,13 @@ class TestSimulationLogic:
         # Intersection should match intersection_features stat
         assert n_int == stats_int["intersection_features"]
 
+    def test_unknown_fs_method_raises(self, sample_data):
+        """A typo in fs_method must raise ValueError, not silently select all features."""
+        fe = FeatureElection(fs_method="lasoo")  # intentional typo
+        client_data = fe.prepare_data_splits(sample_data, "target", num_clients=2)
+        with pytest.raises((ValueError, RuntimeError), match="lasoo"):
+            fe.simulate_election(client_data)
+
     def test_apply_mask_consistency(self, sample_data):
         """Ensure applying the mask returns the correct dataframe shape."""
         fe = FeatureElection(freedom_degree=0.5)
@@ -222,6 +236,39 @@ class TestSimulationLogic:
         assert X_filtered.shape[1] == num_selected
         assert X_filtered.shape[0] == 200
 
+    def test_save_load_results_roundtrip(self, sample_data, tmp_path):
+        """save_results / load_results must round-trip all scalar fields correctly."""
+        fe = FeatureElection(freedom_degree=0.7, fs_method="mutual_info", aggregation_mode="uniform")
+        client_data = fe.prepare_data_splits(sample_data, "target", num_clients=2)
+        fe.simulate_election(client_data)
+
+        path = str(tmp_path / "results.json")
+        fe.save_results(path)
+
+        fe2 = FeatureElection()
+        fe2.load_results(path)
+
+        assert fe2.freedom_degree == pytest.approx(fe.freedom_degree)
+        assert fe2.fs_method == fe.fs_method
+        assert fe2.aggregation_mode == fe.aggregation_mode
+        assert np.array_equal(fe2.global_mask, fe.global_mask)
+
+    def test_load_results_rejects_corrupt_values(self, tmp_path):
+        """load_results must raise ValueError for out-of-range values from corrupted JSON."""
+        corrupt = {
+            "freedom_degree": 2.5,  # out of [0, 1]
+            "fs_method": "lasso",
+            "aggregation_mode": "weighted",
+            "auto_tune": False,
+            "eval_metric": "f1",
+        }
+        path = str(tmp_path / "corrupt.json")
+        with open(path, "w") as f:
+            json.dump(corrupt, f)
+
+        with pytest.raises(ValueError, match="freedom_degree"):
+            FeatureElection().load_results(path)
+
 
 class TestQuickElectionHelper:
     """Test the 'one-line' helper function."""
@@ -235,6 +282,11 @@ class TestQuickElectionHelper:
         assert isinstance(mask, np.ndarray)
         assert mask.dtype == bool
         assert stats["num_clients"] == 2
+
+    def test_quick_election_rejects_unknown_kwargs(self, sample_data):
+        """Unknown kwargs must raise TypeError, not be silently forwarded."""
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+            quick_election(sample_data, target_col="target", num_clients=2, unknown_param=True)
 
 
 @pytest.mark.skipif(not PYIMPETUS_AVAILABLE, reason="PyImpetus not installed")

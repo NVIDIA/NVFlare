@@ -59,6 +59,8 @@ class FeatureElection:
             raise ValueError("aggregation_mode must be 'weighted' or 'uniform'")
         if eval_metric not in ["f1", "accuracy"]:
             raise ValueError("eval_metric must be 'f1' or 'accuracy'")
+        if tuning_rounds < 0:
+            raise ValueError(f"tuning_rounds must be >= 0, got {tuning_rounds}")
 
         self.freedom_degree = freedom_degree
         self.fs_method = fs_method
@@ -202,8 +204,13 @@ class FeatureElection:
             raise ValueError(f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})")
 
         # "non_iid" is the canonical name (matches README / prepare_data.py / CLI).
-        # Accept "dirichlet" as a legacy alias so existing callers are not broken.
+        # Accept "dirichlet" as a legacy alias so existing callers are not broken,
+        # but emit a deprecation warning so users can migrate.
         if split_strategy == "dirichlet":
+            logger.warning(
+                "split_strategy='dirichlet' is deprecated; use split_strategy='non_iid' instead. "
+                "The alias will be removed in a future release."
+            )
             split_strategy = "non_iid"
 
         if split_strategy == "non_iid" and user_provided_split_ratios:

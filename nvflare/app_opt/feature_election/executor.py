@@ -232,7 +232,15 @@ class FeatureElectionExecutor(Executor):
 
     def _handle_tuning_eval(self, shareable: Shareable) -> Shareable:
         try:
-            mask = np.array(shareable.get("tuning_mask"), dtype=bool)
+            raw_mask = shareable.get("tuning_mask")
+            if raw_mask is None:
+                logger.error(
+                    "'tuning_mask' key is absent from the shareable received by _handle_tuning_eval. "
+                    "This indicates a controller-side bug: the server should always set "
+                    "'request_type'='tuning_eval' and 'tuning_mask' together."
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            mask = np.array(raw_mask, dtype=bool)
             if self.X_train is None or np.sum(mask) == 0:
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
