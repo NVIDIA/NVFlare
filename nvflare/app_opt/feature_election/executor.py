@@ -16,6 +16,7 @@ import logging
 from typing import Dict, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
@@ -127,22 +128,26 @@ class FeatureElectionExecutor(Executor):
                     f"number of features in X_train ({X_train.shape[1]})."
                 )
 
-        self.X_train = X_train
-        self.y_train = y_train
+        # Coerce pandas inputs to numpy so positional indexing inside _handle_train
+        # and elsewhere is always consistent regardless of the DataFrame/Series index.
+        self.X_train = X_train.values if isinstance(X_train, pd.DataFrame) else X_train
+        self.y_train = y_train.values if isinstance(y_train, pd.Series) else y_train
         self.scaler = None  # invalidate cached scaler whenever X_train changes
 
         # If X_val is provided, ensure it has the same feature count as X_train
         if X_val is not None:
-            if X_val.shape[1] != X_train.shape[1]:
+            X_val = X_val.values if isinstance(X_val, pd.DataFrame) else X_val
+            y_val = y_val.values if isinstance(y_val, pd.Series) else y_val
+            if X_val.shape[1] != self.X_train.shape[1]:
                 raise ValueError(
                     f"X_val feature count ({X_val.shape[1]}) does not match "
-                    f"X_train feature count ({X_train.shape[1]})."
+                    f"X_train feature count ({self.X_train.shape[1]})."
                 )
             self.X_val = X_val
             self.y_val = y_val
         else:
-            self.X_val = X_train
-            self.y_val = y_train
+            self.X_val = self.X_train
+            self.y_val = self.y_train
 
         self.feature_names = feature_names
 

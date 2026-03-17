@@ -196,6 +196,12 @@ class FeatureElection:
         if len(split_ratios) != num_clients:
             raise ValueError(f"len(split_ratios) ({len(split_ratios)}) must equal num_clients ({num_clients})")
 
+        # Accept "non_iid" as an alias for "dirichlet" so callers who learn the
+        # prepare_data.py / job.py CLI convention ("non_iid") get the same result
+        # without a confusing ValueError.
+        if split_strategy == "non_iid":
+            split_strategy = "dirichlet"
+
         client_data = []
         indices = np.arange(len(df))
 

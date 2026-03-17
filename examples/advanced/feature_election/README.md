@@ -90,7 +90,7 @@ python job.py \
 |----------|-------------|
 | `stratified` | Maintains class distribution (recommended for classification) |
 | `random` | Random split |
-| `non_iid ` | Non-IID split with Dirichlet distribution (alpha=0.5) |
+| `non_iid` | Non-IID split with Dirichlet distribution (alpha=0.5) |
 
 ## Model
 
