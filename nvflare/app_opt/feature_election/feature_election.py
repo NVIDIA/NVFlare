@@ -564,8 +564,10 @@ class FeatureElection:
         results = {
             "freedom_degree": float(self.freedom_degree),
             "fs_method": self.fs_method,
+            "fs_params": self.fs_params,
             "aggregation_mode": self.aggregation_mode,
             "auto_tune": self.auto_tune,
+            "tuning_rounds": self.tuning_rounds,
             "eval_metric": self.eval_metric,
             "global_mask": self.global_mask.tolist() if self.global_mask is not None else None,
             "selected_feature_names": self.selected_feature_names,
@@ -618,10 +620,19 @@ class FeatureElection:
                 "Expected 'f1' or 'accuracy'. The results file may be corrupted."
             )
 
+        tuning_rounds = results.get("tuning_rounds", 0)
+        if not isinstance(tuning_rounds, int) or tuning_rounds < 0:
+            raise ValueError(
+                f"Loaded tuning_rounds ({tuning_rounds!r}) must be a non-negative integer. "
+                "The results file may be corrupted."
+            )
+
         self.freedom_degree = fd
         self.fs_method = results.get("fs_method", "lasso")
+        self.fs_params = results.get("fs_params") or {}
         self.aggregation_mode = aggregation_mode
         self.auto_tune = results.get("auto_tune", False)
+        self.tuning_rounds = tuning_rounds
         self.eval_metric = eval_metric
 
         if results.get("global_mask") is not None:

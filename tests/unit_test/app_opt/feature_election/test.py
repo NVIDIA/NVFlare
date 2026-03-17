@@ -176,13 +176,16 @@ class TestSimulationLogic:
         assert "num_features_selected" in stats
         assert "reduction_ratio" in stats
 
-        # Verify that tuning actually ran: tuning_history must contain exactly
-        # tuning_rounds entries (one per hill-climbing iteration).  An empty list
-        # here means the tuning code path was silently skipped.
+        # Verify that tuning actually ran: tuning_history must be non-empty
+        # (an empty list means the tuning code path was silently skipped) and
+        # must not exceed tuning_rounds entries.  We intentionally avoid
+        # asserting an exact count because plateau early-exit is allowed to
+        # shorten the history when scores converge.
         assert "tuning_history" in stats
-        assert len(stats["tuning_history"]) == 3, (
-            f"Expected 3 tuning history entries (one per tuning_round), " f"got {len(stats['tuning_history'])}"
-        )
+        n_history = len(stats["tuning_history"])
+        assert (
+            1 <= n_history <= fe.tuning_rounds
+        ), f"Expected 1..{fe.tuning_rounds} tuning history entries, got {n_history}"
         # Each entry must be a (freedom_degree, score) pair with valid types
         for fd, score in stats["tuning_history"]:
             assert isinstance(fd, float), f"FD entry {fd!r} is not a float"
@@ -273,7 +276,10 @@ class TestSimulationLogic:
 
         assert fe2.freedom_degree == pytest.approx(fe.freedom_degree)
         assert fe2.fs_method == fe.fs_method
+        assert fe2.fs_params == fe.fs_params
         assert fe2.aggregation_mode == fe.aggregation_mode
+        assert fe2.auto_tune == fe.auto_tune
+        assert fe2.tuning_rounds == fe.tuning_rounds
         assert np.array_equal(fe2.global_mask, fe.global_mask)
 
     def test_load_results_rejects_corrupt_values(self, tmp_path):
