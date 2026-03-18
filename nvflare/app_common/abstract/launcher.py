@@ -43,6 +43,18 @@ class Launcher(FLComponent, ABC):
         app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
         return os.path.abspath(app_dir)
 
+    def needs_deferred_stop(self) -> bool:
+        """Returns True if stop_task() should be deferred to a background thread.
+
+        Deferred stop is needed when the launcher terminates the external process on
+        each stop_task() call (launch_once=False), so the process can stay alive long
+        enough for the server to finish downloading large tensors from it.
+
+        For launch_once=True launchers the subprocess lives for the entire job, so
+        deferring would block the next round's launch indefinitely — return False.
+        """
+        return False
+
     @abstractmethod
     def launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         """Launches external system to handle a task.
@@ -65,6 +77,13 @@ class Launcher(FLComponent, ABC):
         Args:
             task_name (str): task name.
             fl_ctx (FLContext): fl context.
+
+        Note:
+            Implementations must be idempotent and thread-safe. LauncherExecutor may call
+            stop_task() from a deferred background thread and, in extreme timeout scenarios,
+            concurrently from the main task thread as a fallback. A second concurrent or
+            sequential call must be a safe no-op (e.g. guard on a null process reference
+            inside a lock, as SubprocessLauncher does).
         """
         pass
 

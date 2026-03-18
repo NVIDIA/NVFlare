@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.filter import Filter
@@ -30,7 +31,7 @@ class ExecEnv(ABC):
         Args:
             extra: a dict of extra properties
         """
-        if not extra:
+        if extra is None:
             extra = {}
         if not isinstance(extra, dict):
             raise ValueError(f"extra must be dict but got {type(extra)}")
@@ -94,6 +95,19 @@ class ExecEnv(ABC):
         """
         pass
 
+    def stop(self, clean_up: bool = False) -> None:
+        """Stop the execution environment and optionally clean up resources.
+
+        This method is called after job execution to ensure proper cleanup.
+        Default implementation is a no-op. Override in subclasses that need cleanup.
+
+        Args:
+            clean_up: If True, remove workspace and temporary files after stopping.
+                      If False, only stop running processes but preserve workspace.
+                      Defaults to False.
+        """
+        pass
+
 
 class Recipe(ABC):
 
@@ -113,6 +127,47 @@ class Recipe(ABC):
         Script validation is handled by each ExecEnv subclass in deploy().
         """
         pass
+
+    def _snapshot_additional_params(self) -> Dict[str, Dict]:
+        snapshot = {}
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                snapshot[target] = dict(params)
+        return snapshot
+
+    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                original = snapshot.get(target, {})
+                params.clear()
+                params.update(original)
+
+    @contextmanager
+    def _temporary_exec_params(self, server_exec_params: dict = None, client_exec_params: dict = None):
+        params_snapshot = None
+        if server_exec_params or client_exec_params:
+            params_snapshot = self._snapshot_additional_params()
+
+        try:
+            if server_exec_params:
+                self.job.to_server(server_exec_params)
+
+            if client_exec_params:
+                self._add_to_client_apps(client_exec_params)
+            yield
+        finally:
+            if params_snapshot is not None:
+                self._restore_additional_params(params_snapshot)
 
     def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
         """Add an object to client apps, preserving existing per-site structure.
@@ -328,16 +383,10 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
-
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
-
-        if env:
-            self.process_env(env)
-
-        self.job.export_job(job_dir)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            if env:
+                self.process_env(env)
+            self.job.export_job(job_dir)
 
     def execute(
         self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
@@ -352,15 +401,10 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            self.process_env(env)
+            job_id = env.deploy(self.job)
+            from nvflare.recipe.run import Run
 
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
-
-        self.process_env(env)
-        job_id = env.deploy(self.job)
-        from nvflare.recipe.run import Run
-
-        run = Run(env, job_id)
-        return run
+            run = Run(env, job_id)
+            return run

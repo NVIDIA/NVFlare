@@ -21,7 +21,10 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
-from nvflare.fuel.f3.streaming.tools.utils import RX_CELL, TEST_CHANNEL, TEST_TOPIC, TX_CELL, make_buffer
+from nvflare.fuel.f3.streaming.tools.utils import TEST_CHANNEL, TEST_TOPIC, make_buffer
+
+_STREAM_RX_CELL = "stream_test_server"
+_STREAM_TX_CELL = "stream_test_sender"
 from nvflare.fuel.utils.network_utils import get_open_ports
 
 WAIT_SEC = 10
@@ -47,7 +50,7 @@ class TestStreamCell:
         # Patch STREAM_ACK_WAIT in the byte_streamer module
         with patch("nvflare.fuel.f3.streaming.byte_streamer.STREAM_ACK_WAIT", 400):
             listening_url = f"tcp://localhost:{port}"
-            cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
+            cell = CoreCell(_STREAM_RX_CELL, listening_url, secure=False, credentials={})
             stream_cell = StreamCell(cell)
             stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
             cell.start()
@@ -59,7 +62,7 @@ class TestStreamCell:
     def client_cell(self, port, state):
         with patch("nvflare.fuel.f3.streaming.byte_streamer.STREAM_ACK_WAIT", 400):
             connect_url = f"tcp://localhost:{port}"
-            cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
+            cell = CoreCell(_STREAM_TX_CELL, connect_url, secure=False, credentials={})
             stream_cell = StreamCell(cell)
             cell.start()
 
@@ -71,7 +74,7 @@ class TestStreamCell:
         size = 64 * 1024 * 1024 + 123
         buffer = make_buffer(size)
 
-        send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, RX_CELL, Message(None, buffer))
+        send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, _STREAM_RX_CELL, Message(None, buffer))
         bytes_sent = send_future.result()
         assert bytes_sent == len(buffer)
 
@@ -91,7 +94,7 @@ class TestStreamCell:
         buf_list.append(buffer[2 * interval : 3 * interval])
         buf_list.append(buffer[3 * interval : size])
 
-        send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, RX_CELL, Message(None, buf_list))
+        send_future = client_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, _STREAM_RX_CELL, Message(None, buf_list))
         bytes_sent = send_future.result()
         assert bytes_sent == len(buffer)
 

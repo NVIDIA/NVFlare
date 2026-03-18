@@ -422,7 +422,7 @@ class FedJobConfig:
                     continue
 
                 if attr_key in attrs.keys() and self._values_differ(parameters[param].default, attrs[attr_key]):
-                    if type(attrs[attr_key]).__name__ in dir(builtins):
+                    if attrs[attr_key] is None or type(attrs[attr_key]).__name__ in dir(builtins):
                         args[param] = attrs[attr_key]
                     elif issubclass(attrs[attr_key].__class__, Enum):
                         args[param] = attrs[attr_key].value

@@ -87,31 +87,31 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
 
-Optional Tensor Disk Offload Control
-------------------------------------
+Client Memory Note for Large Models
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Tensor streaming is automatic, but disk-backed tensor materialization is opt-in via
-``enable_tensor_disk_offload``.
+TensorDownloader reduces transfer-time memory pressure, and client-side parameter references are
+also released after ``flare.send()`` when ``clear_cache=True`` (default). In CPython, tensors are
+typically reclaimed as soon as their last reference is dropped.
 
-- ``enable_tensor_disk_offload=False`` (default): downloaded tensors are materialized in memory.
-- ``enable_tensor_disk_offload=True``: downloaded tensors are written to temporary safetensors files and consumed through lazy refs, reducing memory spikes during aggregation.
+For multi-GB payloads, avoid keeping extra references longer than needed:
 
-This parameter is available on key workflow/controller configs, including:
+.. code-block:: python
 
-- ``FedAvgRecipe`` / ``FedAvg`` (server-side FedAvg workflow)
-- ``SwarmClientConfig`` / ``SwarmClientController`` (client-controlled workflows)
+    import nvflare.client as flare
 
-.. note::
+    flare.init()
+    while flare.is_running():
+        input_model = flare.receive()
+        output_model = train(input_model)
+        flare.send(output_model)  # clear_cache=True by default
 
-   Tensor disk offload applies to PyTorch tensor payloads in streaming paths. If streaming is disabled
-   (for example, by setting tensor chunk size to 0), the native in-memory path is used.
+        # Optional: release script-local references promptly.
+        del input_model
+        del output_model
 
-.. warning::
-
-   Disk offload temporary files use Python's process temp directory (``tempfile.mkdtemp``), which follows
-   ``TMPDIR`` (or OS defaults such as ``/tmp``). In container deployments, default ``/tmp`` may be tmpfs
-   (RAM-backed), which can reduce or eliminate memory savings. For production usage, set ``TMPDIR`` to a
-   disk-backed mount for the server/aggregator process.
+``gc.collect()`` remains a supplemental safeguard for cyclic objects; it is not the primary
+mechanism for releasing tensor memory in this flow.
 
 Example: Using PyTorch FedAvg Recipe
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
