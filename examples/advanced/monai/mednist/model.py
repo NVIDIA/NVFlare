@@ -14,6 +14,7 @@
 
 from monai.networks.nets import DenseNet121
 
+from nvflare.app_opt.monai import decomposers
 from nvflare.fuel.utils import fobs
 
 
@@ -28,4 +29,4 @@ class FLDenseNet121(DenseNet121):
         super().__init__(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=out_channels)
 
         # For security, FOBS only allows explicitly whitelisted types.
-        fobs.add_type_name_whitelist("monai.utils.enums.CommonKeys")
+        decomposers.register_monai_types()
