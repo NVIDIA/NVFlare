@@ -75,11 +75,13 @@ class MetricRelay(Widget, AttributesExportable):
             self.log_debug(fl_ctx, "Stopping pipe handler")
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
-                self.pipe_handler.stop()
+                self.pipe_handler.stop(close_pipe=False)
+            if self.pipe:
+                self.pipe.close()
 
     def _pipe_status_cb(self, msg: Message):
         self.logger.info(f"{self.pipe_channel_name} pipe status changed to {msg.topic}: {msg.data}")
-        self.pipe_handler.stop()
+        self.pipe_handler.stop(close_pipe=False)
 
     def _pipe_msg_cb(self, msg: Message):
         if not isinstance(msg.data, DXO):

@@ -108,7 +108,10 @@ class FilePipe(Pipe):
 
     @staticmethod
     def _clear_dir(p: str):
-        file_list = os.listdir(p)
+        try:
+            file_list = os.listdir(p)
+        except FileNotFoundError:
+            return
         if file_list:
             for f in file_list:
                 try:
