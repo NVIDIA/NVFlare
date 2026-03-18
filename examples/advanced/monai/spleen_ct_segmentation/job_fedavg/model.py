@@ -14,6 +14,8 @@
 
 from monai.networks.nets import UNet
 
+from nvflare.app_opt.monai import decomposers
+
 
 class FLUNet(UNet):
     def __init__(
@@ -44,3 +46,5 @@ class FLUNet(UNet):
             num_res_units=num_res_units,
             norm=norm,
         )
+
+        decomposers.register_monai_type()
