@@ -47,4 +47,4 @@ class FLUNet(UNet):
             norm=norm,
         )
 
-        decomposers.register_monai_type()
+        decomposers.register_monai_types()
