@@ -15,7 +15,6 @@
 from monai.networks.nets import DenseNet121
 
 from nvflare.app_opt.monai import decomposers
-from nvflare.fuel.utils import fobs
 
 
 class FLDenseNet121(DenseNet121):
