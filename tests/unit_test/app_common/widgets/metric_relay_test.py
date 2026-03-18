@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.dxo import DXO
@@ -54,6 +56,7 @@ def _make_fl_ctx(pipe):
     engine.get_component.return_value = pipe
     fl_ctx = MagicMock()
     fl_ctx.get_engine.return_value = engine
+    fl_ctx.get_peer_context.return_value = None  # prevent FLContext type-check in logging path
     return fl_ctx
 
 
@@ -110,6 +113,37 @@ class TestMetricRelayHandlerLifecycle:
             relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
 
         h1.stop.assert_called_once_with(close_pipe=False)
+
+    def test_pipe_closed_on_end_run_when_handler_was_started(self):
+        """ABOUT_TO_END_RUN must close the pipe even when a handler exists."""
+        relay = MetricRelay(pipe_id="pipe")
+        pipe = MagicMock(spec=_FakePipe)
+        pipe.open = MagicMock()
+        fl_ctx = _make_fl_ctx(pipe)
+        relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
+
+        mock_handler = MagicMock()
+        with patch("nvflare.app_common.widgets.metric_relay.PipeHandler", return_value=mock_handler):
+            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+
+        relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+        pipe.close.assert_called_once()
+
+    def test_pipe_closed_on_end_run_when_no_task_ever_executed(self):
+        """ABOUT_TO_END_RUN must close the pipe even if BEFORE_TASK_EXECUTION never fired."""
+        relay = MetricRelay(pipe_id="pipe")
+        pipe = MagicMock(spec=_FakePipe)
+        pipe.open = MagicMock()
+        fl_ctx = _make_fl_ctx(pipe)
+        relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
+
+        # No BEFORE_TASK_EXECUTION — pipe_handler remains None
+        assert relay.pipe_handler is None
+
+        relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+        pipe.close.assert_called_once()
 
 
 class TestMetricRelayStatusCallback:
@@ -199,3 +233,93 @@ class TestMetricRelayMessageCallback:
             relay._pipe_msg_cb(msg)
 
         mock_send.assert_called_once_with(relay, dxo, relay._fl_ctx, relay._event_type, fire_fed_event=relay._fed_event)
+
+
+# ---------------------------------------------------------------------------
+# Thread-level tests — real PipeHandler (no mock) to prove lifecycle and
+# message-callback behaviour end-to-end within a single process.
+# ---------------------------------------------------------------------------
+
+_THREAD_TIMEOUT = 2.0  # seconds to wait for a background thread to change state
+
+
+def _wait_for(condition, timeout=_THREAD_TIMEOUT, poll=0.02):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if condition():
+            return True
+        time.sleep(poll)
+    return False
+
+
+class _IdlePipe(_FakePipe):
+    """Pipe whose receive() blocks briefly then returns None — keeps the reader alive."""
+
+    def receive(self, timeout=None):
+        time.sleep(0.01)
+        return None
+
+
+class _SingleMessagePipe(_FakePipe):
+    """Pipe that delivers one caller-supplied message then idles."""
+
+    def __init__(self, message):
+        super().__init__()
+        self._message = message
+        self._delivered = False
+        self.delivered_event = threading.Event()
+
+    def receive(self, timeout=None):
+        if not self._delivered:
+            self._delivered = True
+            self.delivered_event.set()
+            return self._message
+        time.sleep(0.01)
+        return None
+
+
+class TestMetricRelayWithRealHandler:
+    def test_second_round_handler_has_live_threads(self):
+        """After H1 is stopped (simulating heartbeat timeout), BEFORE_TASK_EXECUTION
+        must create H2 with a live reader thread — not a start() no-op on nulled threads."""
+        relay = MetricRelay(pipe_id="pipe", heartbeat_timeout=0)
+        fl_ctx = _start_run(relay, _IdlePipe())
+
+        # Round 1
+        relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+        h1 = relay.pipe_handler
+        assert h1.reader is not None and h1.reader.is_alive()
+
+        # Simulate heartbeat timeout
+        h1.stop(close_pipe=False)
+        assert _wait_for(lambda: h1.reader is None), "H1 reader must exit after stop()"
+
+        # Round 2
+        relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+        h2 = relay.pipe_handler
+
+        assert h2 is not h1
+        assert h2.reader is not None and h2.reader.is_alive()
+
+        h2.stop(close_pipe=False)
+
+    def test_non_dxo_message_does_not_kill_reader_thread(self):
+        """A non-DXO message must be dropped by _pipe_msg_cb without raising —
+        the real reader thread must remain alive afterwards."""
+        bad_msg = Message.new_request("metric", data="not_a_dxo")
+        pipe = _SingleMessagePipe(bad_msg)
+
+        relay = MetricRelay(pipe_id="pipe", heartbeat_timeout=0)
+        fl_ctx = _start_run(relay, pipe)
+        relay._fl_ctx = MagicMock()
+
+        with patch("nvflare.app_common.widgets.metric_relay.send_analytic_dxo"):
+            relay.handle_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+            handler = relay.pipe_handler
+
+            assert pipe.delivered_event.wait(timeout=_THREAD_TIMEOUT), "message never delivered"
+            time.sleep(0.05)  # one more reader cycle to process it
+
+            assert handler.reader is not None and handler.reader.is_alive()
+
+            handler.stop(close_pipe=False)
