@@ -182,24 +182,26 @@ All you need to do is to provide the four methods required by this base class. T
 FOBS Security
 =============
 
-FOBS enforces two security rules during deserialization to prevent arbitrary class loading and remote code execution (RCE).
+FOBS enforces two independent security checks during deserialization to prevent arbitrary class loading and remote code execution (RCE).
 
-Only Registered Decomposers Are Allowed
-----------------------------------------
+Non-Builtin Decomposers Must Be Registered
+-------------------------------------------
 
-When FOBS deserializes an object, the decomposer embedded in the serialized data must have been explicitly registered. If an unrecognized decomposer is encountered, FOBS raises a ``ValueError`` and refuses to proceed. This ensures that only trusted, pre-registered decomposers can participate in deserialization.
+When the serialized data specifies a decomposer by name, FOBS checks whether it is a builtin decomposer (i.e., listed in ``BUILTIN_DECOMPOSERS``). Builtin decomposers — such as ``NumpyArrayDecomposer``, ``DXODecomposer``, ``EnumTypeDecomposer``, ``DataClassDecomposer``, and others shipped with FLARE — are always trusted without explicit registration. Any decomposer *not* in ``BUILTIN_DECOMPOSERS`` must be explicitly registered before deserialization, otherwise FOBS raises::
 
-Type Whitelist for Generic Decomposers
----------------------------------------
+   ValueError: Decomposer <name> must be registered
 
-Some decomposers are *generic* — they handle multiple types (e.g., ``EnumTypeDecomposer``, ``DataClassDecomposer``). Because these decomposers can reconstruct arbitrary classes by name, an additional type-name whitelist is enforced. A type must appear in the whitelist before FOBS will load it during deserialization.
+Type Whitelist
+--------------
 
-Types are automatically added to the whitelist when registered via:
+Independently of the decomposer check, FOBS also enforces a type-name whitelist. For any type not already cached in the internal decomposer registry, the fully-qualified type name must appear in the whitelist before the class is loaded. This applies to all types — not just those handled by generic decomposers.
+
+The whitelist is pre-populated with all builtin FLARE types (defined in ``BUILTIN_TYPES``). Types are also added automatically when registered via:
 
 - ``fobs.register_data_classes(*classes)``
 - ``fobs.register_enum_types(*classes)``
 
-For other cases, types can be added explicitly:
+For application-specific types that use a custom non-builtin decomposer, the type must also be whitelisted explicitly:
 
 .. code-block:: python
 
@@ -207,4 +209,7 @@ For other cases, types can be added explicitly:
 
    fobs.add_type_name_whitelist("mypackage.mymodule.MyClass")
 
-If a type is not in the whitelist and its decomposer has not been pre-registered, FOBS raises a ``ValueError`` with a message indicating which call to use to allow the type.
+If the type is not whitelisted, FOBS raises::
+
+   ValueError: Type '<name>' is not allowed. Use fobs.register_data_classes(),
+   fobs.register_enum_types(), or fobs.add_type_name_whitelist() to allow this type.
