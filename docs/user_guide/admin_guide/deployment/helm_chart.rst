@@ -24,13 +24,15 @@ Kubernetes instances (e.g., microk8s).
 
     The generated Helm Chart is a starting point and serves as a reference. Depending on the Kubernetes cluster,
     users may need to modify and/or perform additional operations to successfully deploy the chart.
-    
+
 
 .. note::
 
     The following document assumes users have microk8s (common bundle in ubuntu server 20.04 and above) running on his local machine.
     With the helm chart, users are able to start the servers in the k8s cluster after provisioning.
     The clients and admin console can connect to the servers in the k8s cluster.
+
+For exposing the server with TLS (ingress TLS or TCP passthrough with server TLS/mTLS), see :ref:`kubernetes_ingress_tls`.
 
 
 ***************************
@@ -46,8 +48,8 @@ In order to generate the helm chart, add the HelmChartBuilder to the project.yml
         docker_image: localhost:32000/nvfl-min:0.0.1
 
 
-The ``docker_image`` is the actual image used for all pods running in the k8s.  The provisioners have 
-to build it separately and make sure it is available to the k8s cluster.  For microk8s, enabling the docker registry 
+The ``docker_image`` is the actual image used for all pods running in the k8s.  The provisioners have
+to build it separately and make sure it is available to the k8s cluster.  For microk8s, enabling the docker registry
 server by running this:
 
 .. code-block:: shell
@@ -221,7 +223,7 @@ that folder and feel free to change them for your own environment.
 
     Here we use the host's /tmp/nvflare as the persist storage space for all pods in microk8s.  Please make sure
     that directory exists before running the above command
-    
+
 ****************************************
 Verifying NVIDIA FLARE is up and running
 ****************************************
@@ -281,10 +283,10 @@ For more details on the pods inside Kubernetes cluster, you can run the followin
         /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-f4sxs (ro)
     Conditions:
     Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
+    Initialized       True
+    Ready             True
+    ContainersReady   True
+    PodScheduled      True
     Volumes:
     kube-api-access-f4sxs:
         Type:                    Projected (a volume that contains injected data from multiple sources)
@@ -345,10 +347,10 @@ For more details on the pods inside Kubernetes cluster, you can run the followin
         /workspace from workspace (rw)
     Conditions:
     Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
+    Initialized       True
+    Ready             True
+    ContainersReady   True
+    PodScheduled      True
     Volumes:
     workspace:
         Type:          HostPath (bare host directory volume)
@@ -417,10 +419,10 @@ For more details on the pods inside Kubernetes cluster, you can run the followin
         /workspace from workspace (rw)
     Conditions:
     Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
+    Initialized       True
+    Ready             True
+    ContainersReady   True
+    PodScheduled      True
     Volumes:
     workspace:
         Type:          HostPath (bare host directory volume)
@@ -448,9 +450,9 @@ For more details on the pods inside Kubernetes cluster, you can run the followin
 Login with admin console
 ************************
 
-Now on another terminal, with nvflare installed and /etc/hosts modified to 
-include the IP of server1 and server2, which is the IP of the 
-machine running the microk8s cluster, run fl_admin.sh of admin@nvidia.com/startup.  
+Now on another terminal, with nvflare installed and /etc/hosts modified to
+include the IP of server1 and server2, which is the IP of the
+machine running the microk8s cluster, run fl_admin.sh of admin@nvidia.com/startup.
 Login as admin@nvidia.com.
 
 For example: /etc/hosts is modified as (if microk8s is running at 192.168.1.123 and clients and admin console is running at slowdesktop machine)
@@ -476,6 +478,5 @@ Uninstalling helm chart
 Users can uninstall the chart by running (note ``nvflare-helm-chart-demo`` is the release name we used when installing the chart)
 
 .. code-block:: shell
-    
-    $ microk8s helm3 uninstall nvflare-helm-chart-demo
 
+    $ microk8s helm3 uninstall nvflare-helm-chart-demo

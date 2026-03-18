@@ -60,6 +60,7 @@ class HelmChartBuilder(Builder):
     def _build_server(self, server: Participant, ctx: ProvisionContext, idx: int):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT, 30002)
         admin_port = ctx.get(CtxKey.ADMIN_PORT, 30003)
+        single_port = fed_learn_port == admin_port
 
         self.deployment_server["metadata"]["name"] = f"{server.name}"
         self.deployment_server["metadata"]["labels"]["system"] = f"{server.name}"
@@ -71,10 +72,12 @@ class HelmChartBuilder(Builder):
         self.deployment_server["spec"]["template"]["spec"]["volumes"][1]["hostPath"]["path"] = "{{ .Values.persist }}"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["name"] = f"{server.name}"
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["image"] = self.docker_image
-        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][0][
-            "containerPort"
-        ] = fed_learn_port
-        self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"][1]["containerPort"] = admin_port
+        container_ports = self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"]
+        container_ports[0]["containerPort"] = fed_learn_port
+        if single_port:
+            container_ports.pop(1)
+        else:
+            container_ports[1]["containerPort"] = admin_port
         cmd_args = self.deployment_server["spec"]["template"]["spec"]["containers"][0]["args"]
         for i, item in enumerate(cmd_args):
             if "/workspace/server" in item:
@@ -89,12 +92,16 @@ class HelmChartBuilder(Builder):
         self.service_server["metadata"]["labels"]["system"] = f"{server.name}"
 
         self.service_server["spec"]["selector"]["system"] = f"{server.name}"
-        self.service_server["spec"]["ports"][0]["name"] = "fl-port"
-        self.service_server["spec"]["ports"][0]["port"] = fed_learn_port
-        self.service_server["spec"]["ports"][0]["targetPort"] = fed_learn_port
-        self.service_server["spec"]["ports"][1]["name"] = "admin-port"
-        self.service_server["spec"]["ports"][1]["port"] = admin_port
-        self.service_server["spec"]["ports"][1]["targetPort"] = admin_port
+        service_ports = self.service_server["spec"]["ports"]
+        service_ports[0]["name"] = "fl-port"
+        service_ports[0]["port"] = fed_learn_port
+        service_ports[0]["targetPort"] = fed_learn_port
+        if single_port:
+            service_ports.pop(1)
+        else:
+            service_ports[1]["name"] = "admin-port"
+            service_ports[1]["port"] = admin_port
+            service_ports[1]["targetPort"] = admin_port
 
         with open(os.path.join(self.helm_chart_templates_directory, f"service_server{idx}.yaml"), "wt") as f:
             yaml.dump(self.service_server, f)
