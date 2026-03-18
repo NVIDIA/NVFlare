@@ -114,8 +114,9 @@ class TestMetricRelayHandlerLifecycle:
 
         h1.stop.assert_called_once_with(close_pipe=False)
 
-    def test_pipe_closed_on_end_run_when_handler_was_started(self):
-        """ABOUT_TO_END_RUN must close the pipe even when a handler exists."""
+    def test_pipe_never_closed_on_end_run(self):
+        """ABOUT_TO_END_RUN must NOT close the pipe: MetricRelay does not own the
+        shared root and closing it would wipe the task pipe's directories."""
         relay = MetricRelay(pipe_id="pipe")
         pipe = MagicMock(spec=_FakePipe)
         pipe.open = MagicMock()
@@ -128,22 +129,21 @@ class TestMetricRelayHandlerLifecycle:
 
         relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
 
-        pipe.close.assert_called_once()
+        pipe.close.assert_not_called()
 
-    def test_pipe_closed_on_end_run_when_no_task_ever_executed(self):
-        """ABOUT_TO_END_RUN must close the pipe even if BEFORE_TASK_EXECUTION never fired."""
+    def test_pipe_never_closed_on_end_run_when_no_task_ever_executed(self):
+        """ABOUT_TO_END_RUN must NOT close the pipe even if no task was ever executed."""
         relay = MetricRelay(pipe_id="pipe")
         pipe = MagicMock(spec=_FakePipe)
         pipe.open = MagicMock()
         fl_ctx = _make_fl_ctx(pipe)
         relay.handle_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
 
-        # No BEFORE_TASK_EXECUTION — pipe_handler remains None
         assert relay.pipe_handler is None
 
         relay.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
 
-        pipe.close.assert_called_once()
+        pipe.close.assert_not_called()
 
 
 class TestMetricRelayStatusCallback:

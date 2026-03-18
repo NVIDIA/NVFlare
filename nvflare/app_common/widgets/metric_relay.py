@@ -71,8 +71,6 @@ class MetricRelay(Widget, AttributesExportable):
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
                 self.pipe_handler.stop(close_pipe=False)
-            if self.pipe:
-                self.pipe.close()
 
     def _create_pipe_handler(self):
         handler = PipeHandler(
