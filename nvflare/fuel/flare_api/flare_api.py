@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -69,6 +70,7 @@ class Session(SessionSpec):
         startup_path: str,
         secure_mode: bool = True,
         debug: bool = False,
+        project: Optional[str] = None,
     ):
         """Initializes a session with the NVFLARE system.
 
@@ -77,11 +79,11 @@ class Session(SessionSpec):
             startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
             secure_mode (bool): whether to log in with secure mode
             debug (bool): turn on debug or not
+            project (Optional[str]): project name to tag submitted/cloned jobs; None keeps existing behavior
         """
         assert isinstance(username, str), "username must be str"
         assert isinstance(startup_path, str), "startup_path must be str"
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
-
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
         admin_config = conf.get_admin_config()
@@ -105,6 +107,11 @@ class Session(SessionSpec):
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
+        if project is not None:
+            err, reason = name_check(project, "project")
+            if err:
+                raise ValueError(reason)
+        self._project = project
 
     def close(self):
         """Close the session."""
@@ -209,7 +216,8 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.CLONE_JOB + " " + job_id)
+        props = {JobMetaKey.PROJECT.value: self._project} if self._project else None
+        result = self._do_command(AdminCommandNames.CLONE_JOB + " " + job_id, props=props)
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         info = meta.get(MetaKey.INFO, "")
@@ -241,7 +249,8 @@ class Session(SessionSpec):
             else:
                 raise InvalidJobDefinition(f"job_definition_path '{job_definition_path}' is not a valid folder")
 
-        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
+        props = {JobMetaKey.PROJECT.value: self._project} if self._project else None
+        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path, props=props)
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         if not job_id:
@@ -935,13 +944,26 @@ def new_session(
     secure_mode: bool = True,
     debug: bool = False,
     timeout: float = 10.0,
+    project: Optional[str] = None,
 ) -> Session:
-    session = Session(username=username, startup_path=startup_kit_location, debug=debug, secure_mode=secure_mode)
+    session = Session(
+        username=username,
+        startup_path=startup_kit_location,
+        debug=debug,
+        secure_mode=secure_mode,
+        project=project,
+    )
     session.try_connect(timeout)
     return session
 
 
-def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
+def new_secure_session(
+    username: str,
+    startup_kit_location: str,
+    debug: bool = False,
+    timeout: float = 10.0,
+    project: Optional[str] = None,
+) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
     Args:
@@ -949,20 +971,27 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
         startup_kit_location (str): path to the provisioned startup folder, the root admin dir containing the startup folder
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
+        project (Optional[str]): project name to tag submitted/cloned jobs
 
     Returns: a Session object
 
     """
-    return new_session(username, startup_kit_location, True, debug, timeout)
+    return new_session(username, startup_kit_location, True, debug, timeout, project=project)
 
 
-def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
+def new_insecure_session(
+    startup_kit_location: str,
+    debug: bool = False,
+    timeout: float = 10.0,
+    project: Optional[str] = None,
+) -> Session:
     """Create a new insecure FLARE API session with the NVFLARE system.
 
     Args:
         startup_kit_location (str): path to the provisioned startup folder
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
+        project (Optional[str]): project name to tag submitted/cloned jobs
 
     Returns: a Session object
 
@@ -970,5 +999,10 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
 
     """
     return new_session(
-        username="", startup_kit_location=startup_kit_location, secure_mode=False, debug=debug, timeout=timeout
+        username="",
+        startup_kit_location=startup_kit_location,
+        secure_mode=False,
+        debug=debug,
+        timeout=timeout,
+        project=project,
     )

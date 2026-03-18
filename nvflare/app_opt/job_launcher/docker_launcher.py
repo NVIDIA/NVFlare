@@ -20,6 +20,7 @@ import docker
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
 from nvflare.utils.job_launcher_utils import extract_job_image, generate_client_command, generate_server_command
@@ -104,6 +105,23 @@ class DockerJobLauncher(JobLauncherSpec):
         self.network = network
         self.timeout = timeout
 
+    def _resolve_docker_workspace(self, job_id: str, project) -> str:
+        docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
+        if not docker_workspace:
+            self.logger.error(f"Failed to launch job {job_id}: NVFL_DOCKER_WORKSPACE is not set.")
+            return ""
+
+        # Keep legacy jobs on the existing workspace root; only non-default projects
+        # get a project-specific subdirectory under the configured Docker workspace.
+        if isinstance(project, str) and project and project != "default":
+            docker_workspace = os.path.join(docker_workspace, project)
+
+        if not os.path.isdir(docker_workspace):
+            self.logger.error(f"Failed to launch job {job_id}: Docker workspace does not exist: {docker_workspace}")
+            return ""
+
+        return docker_workspace
+
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         self.logger.debug("DockerJobLauncher start to launch job")
         job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
@@ -117,8 +135,13 @@ class DockerJobLauncher(JobLauncherSpec):
         command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
         self.logger.info(f"Launch image:{job_image}, run command: {command}")
 
-        docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
-        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
+        project = job_meta.get(JobMetaKey.PROJECT.value, "")
+        docker_workspace = self._resolve_docker_workspace(job_id, project)
+        if not docker_workspace:
+            return None
+
+        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace} (project={project})")
+
         docker_client = docker.from_env()
         try:
             container = docker_client.containers.run(

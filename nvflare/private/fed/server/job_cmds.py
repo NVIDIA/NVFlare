@@ -25,6 +25,7 @@ from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
+from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -53,7 +54,10 @@ CLONED_META_KEYS = {
     JobMetaKey.MIN_CLIENTS.value,
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
+    JobMetaKey.PROJECT.value,
 }
+
+PROJECT_CMD_PROP_KEY = JobMetaKey.PROJECT.value
 
 
 def _create_list_job_cmd_parser():
@@ -77,6 +81,34 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def __init__(self):
         super().__init__()
         self.logger = get_obj_logger(self)
+
+    @staticmethod
+    def _add_project_to_meta(meta: dict, conn: Connection) -> bool:
+        """Validate optional project from command props and persist it into job metadata."""
+
+        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
+        project = ""
+        error = ""
+
+        if isinstance(cmd_props, dict):
+            candidate = cmd_props.get(PROJECT_CMD_PROP_KEY)
+            if candidate:
+                if not isinstance(candidate, str):
+                    error = f"project must be str but got {type(candidate)}"
+                else:
+                    invalid, reason = name_check(candidate, "project")
+                    if invalid:
+                        error = reason
+                    else:
+                        project = candidate
+
+        if error:
+            conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
+            return False
+
+        if project:
+            meta[JobMetaKey.PROJECT.value] = project
+        return True
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -502,6 +534,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG)
                 job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE)
                 job_meta[JobMetaKey.CLONED_FROM.value] = job_id
+                if not self._add_project_to_meta(job_meta, conn):
+                    return
 
                 meta = job_def_manager.clone(from_jid=job_id, meta=job_meta, fl_ctx=fl_ctx)
                 new_job_id = meta.get(JobMetaKey.JOB_ID)
@@ -582,6 +616,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     raise TypeError(
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
+
+                if not self._add_project_to_meta(meta, conn):
+                    return
 
                 fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
                 engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)
