@@ -36,6 +36,12 @@ MONAI_ENUM_TYPES: set[str] = {
     "monai.utils.enums.AdversarialKeys",
     "monai.handlers.metric_logger.MetricLoggerKeys",
     "monai.apps.nuclick.transforms.NuclickKeys",
+    "monai.fl.utils.constants.WeightType",
+    "monai.fl.utils.constants.ModelType",
+    "monai.fl.utils.constants.ExtraItems",
+    "monai.fl.utils.constants.FlPhase",
+    "monai.fl.utils.constants.FlStatistics",
+    "monai.fl.utils.constants.FiltersType",
 }
 
 
