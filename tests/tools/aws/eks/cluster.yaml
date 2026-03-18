@@ -1,0 +1,10 @@
+# Edit `name` and `region` if you want different values.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: nvflare-auto-test
+  region: us-west-2
+
+autoModeConfig:
+  enabled: true
