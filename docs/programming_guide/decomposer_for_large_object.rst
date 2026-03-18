@@ -194,14 +194,14 @@ When the serialized data specifies a decomposer by name, FOBS checks whether it 
 Type Whitelist
 --------------
 
-Independently of the decomposer check, FOBS also enforces a type-name whitelist. For any type not already cached in the internal decomposer registry, the fully-qualified type name must appear in the whitelist before the class is loaded. This applies to all types — not just those handled by generic decomposers.
+Independently of the decomposer check, FOBS also enforces a type-name whitelist. The whitelist is consulted only when a type is *not* already in the internal decomposer registry (``_decomposers``). If the type is already registered (e.g., via ``fobs.register()``), the whitelist check is bypassed entirely.
 
-The whitelist is pre-populated with all builtin FLARE types (defined in ``BUILTIN_TYPES``). Types are also added automatically when registered via:
+The whitelist is relevant for types handled by generic builtin decomposers (``EnumTypeDecomposer``, ``DataClassDecomposer``) that have not been pre-registered via ``register_data_classes()`` or ``register_enum_types()``. The whitelist is pre-populated with all builtin FLARE types (defined in ``BUILTIN_TYPES``). Application types are added automatically when registered via:
 
 - ``fobs.register_data_classes(*classes)``
 - ``fobs.register_enum_types(*classes)``
 
-For application-specific types that use a custom non-builtin decomposer, the type must also be whitelisted explicitly:
+For application types that need lazy loading through a generic builtin decomposer without calling the above registration functions, types can be added to the whitelist explicitly:
 
 .. code-block:: python
 
@@ -209,7 +209,7 @@ For application-specific types that use a custom non-builtin decomposer, the typ
 
    fobs.add_type_name_whitelist("mypackage.mymodule.MyClass")
 
-If the type is not whitelisted, FOBS raises::
+If the type is not in the whitelist, FOBS raises::
 
    ValueError: Type '<name>' is not allowed. Use fobs.register_data_classes(),
    fobs.register_enum_types(), or fobs.add_type_name_whitelist() to allow this type.
