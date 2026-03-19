@@ -59,7 +59,6 @@ class Communicator:
         client_register_interval=2,
         timeout=5.0,
         maint_msg_timeout=5.0,
-        cell_creation_timeout=15.0,
     ):
         """To init the Communicator.
 
@@ -80,7 +79,7 @@ class Communicator:
         self.client_register_interval = client_register_interval
         self.timeout = timeout
         self.maint_msg_timeout = maint_msg_timeout
-        self.creation_timeout = cell_creation_timeout
+
         # token and token_signature are issued by the Server after the client is authenticated
         # they are added to every message going to the server as proof of authentication
         self.token = None
@@ -274,9 +273,9 @@ class Communicator:
         start = time.time()
         while not self.cell:
             self.logger.info("Waiting for the client cell to be created.")
-            if time.time() - start > self.creation_timeout:
+            if time.time() - start > 15.0:
                 raise RuntimeError("Client cell could not be created. Failed to login the client.")
-            time.sleep(1)
+            time.sleep(0.5)
 
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         private_key_file = None
