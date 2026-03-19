@@ -52,7 +52,7 @@ for _mod_name, _mod_obj in [
     sys.modules.setdefault(_mod_name, _mod_obj)
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
@@ -66,6 +66,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     K8sJobHandle,
     POD_Phase,
     _job_args_dict,
+    uuid4_to_rfc1123,
 )
 
 
@@ -91,6 +92,57 @@ def _make_job_config(**overrides):
 
 def _make_api_instance():
     return MagicMock()
+
+
+def _make_handle(job_id="job-1", api=None, cfg=None, **kwargs):
+    if api is None:
+        api = _make_api_instance()
+    if cfg is None:
+        cfg = _make_job_config()
+    handle = K8sJobHandle(job_id, api, cfg, **kwargs)
+    handle.job_id = job_id
+    return handle
+
+
+# ---------------------------------------------------------------------------
+# uuid4_to_rfc1123
+# ---------------------------------------------------------------------------
+class TestUuid4ToRfc1123:
+    def test_lowercase(self):
+        assert uuid4_to_rfc1123("ABCD-1234") == "abcd-1234"
+
+    def test_strips_invalid_chars(self):
+        assert uuid4_to_rfc1123("abc_def.ghi") == "abcdefghi"
+
+    def test_prefixes_leading_digit(self):
+        result = uuid4_to_rfc1123("1234-abcd")
+        assert result[0] == "j"
+        assert result == "j1234-abcd"
+
+    def test_strips_trailing_hyphens(self):
+        assert uuid4_to_rfc1123("abc-") == "abc"
+
+    def test_strips_trailing_hyphen_exposed_by_truncation(self):
+        # 62 'a's followed by '-' followed by more chars: truncation exposes the hyphen
+        name = "a" * 62 + "-" + "b" * 10
+        result = uuid4_to_rfc1123(name)
+        assert not result.endswith("-"), f"trailing hyphen in {result!r}"
+        assert len(result) == 62
+
+    def test_truncates_to_63_chars(self):
+        long_str = "a" * 100
+        assert len(uuid4_to_rfc1123(long_str)) == 63
+
+    def test_typical_uuid_gets_prefixed(self):
+        result = uuid4_to_rfc1123("550e8400-e29b-41d4-a716-446655440000")
+        assert result == "j550e8400-e29b-41d4-a716-446655440000"
+
+    def test_letter_leading_uuid_no_prefix(self):
+        result = uuid4_to_rfc1123("abcd1234-e29b-41d4-a716-446655440000")
+        assert result == "abcd1234-e29b-41d4-a716-446655440000"
+
+    def test_empty_string(self):
+        assert uuid4_to_rfc1123("") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -150,15 +202,20 @@ class TestK8sJobHandle:
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=30)
         assert handle._stuck_count == 0
 
-    def test_max_stuck_count_includes_grace_period(self):
+    def test_max_stuck_count_equals_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=30)
-        assert handle._max_stuck_count == 30 + handle._stuck_grace_period
+        assert handle._max_stuck_count == 30
 
-    def test_max_stuck_count_is_none_with_no_timeout(self):
+    def test_max_stuck_count_uses_pending_timeout_when_no_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None)
-        assert handle._max_stuck_count is None
+        assert handle._max_stuck_count == 30
+
+    def test_max_stuck_count_uses_custom_pending_timeout(self):
+        cfg = _make_job_config()
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None, pending_timeout=60)
+        assert handle._max_stuck_count == 60
 
     # -- manifest -------------------------------------------------------------
     def test_manifest_metadata_name(self):
@@ -178,12 +235,16 @@ class TestK8sJobHandle:
         container = handle.get_manifest()["spec"]["containers"][0]
         assert container["name"] == "container-test-job-123"
 
-    def test_manifest_default_image(self):
+    def test_manifest_raises_on_missing_image(self):
         cfg = _make_job_config()
         del cfg["image"]
-        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
-        container = handle.get_manifest()["spec"]["containers"][0]
-        assert container["image"] == "nvflare/nvflare:2.8.0"
+        with pytest.raises(ValueError, match="image"):
+            K8sJobHandle("job-1", _make_api_instance(), cfg)
+
+    def test_manifest_raises_on_empty_image(self):
+        cfg = _make_job_config(image="")
+        with pytest.raises(ValueError, match="image"):
+            K8sJobHandle("job-1", _make_api_instance(), cfg)
 
     def test_manifest_default_container_name(self):
         cfg = _make_job_config()
@@ -251,6 +312,14 @@ class TestK8sJobHandle:
         assert "keep" in args
         assert "-b" not in args
 
+    def test_manifest_non_string_module_arg_values_are_stringified(self):
+        cfg = _make_job_config(module_args={"-p": 8080, "-n": 42})
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        args = handle.get_manifest()["spec"]["containers"][0]["args"]
+        assert "8080" in args
+        assert "42" in args
+        assert all(isinstance(a, str) for a in args), "all container args must be str"
+
     def test_manifest_default_module_args_copies_dict(self):
         cfg = _make_job_config()
         cfg["module_args"] = None
@@ -274,7 +343,27 @@ class TestK8sJobHandle:
         cfg = _make_job_config(resources={"limits": {"nvidia.com/gpu": None}})
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
-        assert container["resources"] is None
+        assert "resources" not in container
+
+    def test_manifest_no_resources_key(self):
+        cfg = _make_job_config()
+        del cfg["resources"]
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        assert "resources" not in container
+
+    def test_get_manifest_returns_independent_copy(self):
+        handle = K8sJobHandle("job-1", _make_api_instance(), _make_job_config())
+        manifest = handle.get_manifest()
+        # Mutate the returned copy at every mutable level
+        manifest["metadata"]["name"] = "MUTATED"
+        manifest["spec"]["containers"][0]["image"] = "MUTATED"
+        manifest["spec"]["volumes"].clear()
+        # Internal state must be unchanged
+        internal = handle.pod_manifest
+        assert internal["metadata"]["name"] == "test-job-123"
+        assert internal["spec"]["containers"][0]["image"] == "nvflare/nvflare:test"
+        assert len(internal["spec"]["volumes"]) > 0
 
     # -- poll -----------------------------------------------------------------
     def test_poll_returns_unknown_when_running(self):
@@ -282,7 +371,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.RUNNING.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.UNKNOWN
 
     def test_poll_returns_success_when_succeeded(self):
@@ -290,7 +379,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.SUCCESS
 
     def test_poll_returns_aborted_when_failed(self):
@@ -298,12 +387,12 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.FAILED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.ABORTED
 
     def test_poll_uses_terminal_state_if_set(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.terminal_state = JobState.TERMINATED
         assert handle.poll() == JobReturnCode.ABORTED
         api.read_namespaced_pod.assert_not_called()
@@ -311,7 +400,7 @@ class TestK8sJobHandle:
     # -- terminate ------------------------------------------------------------
     def test_terminate_deletes_pod_and_sets_terminated(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.terminate()
         api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="default", grace_period_seconds=0)
         assert handle.terminal_state == JobState.TERMINATED
@@ -319,20 +408,27 @@ class TestK8sJobHandle:
     def test_terminate_sets_terminated_on_404(self):
         api = _make_api_instance()
         api.delete_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.terminate()
         assert handle.terminal_state == JobState.TERMINATED
 
-    def test_terminate_does_not_set_state_on_non_404_error(self):
+    def test_terminate_sets_terminated_on_non_404_api_error(self):
         api = _make_api_instance()
         api.delete_namespaced_pod.side_effect = _FakeApiException(status=500, reason="Internal")
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.terminate()
-        assert handle.terminal_state is None
+        assert handle.terminal_state == JobState.TERMINATED
+
+    def test_terminate_sets_terminated_on_network_error(self):
+        api = _make_api_instance()
+        api.delete_namespaced_pod.side_effect = ConnectionError("network unreachable")
+        handle = _make_handle(api=api)
+        handle.terminate()
+        assert handle.terminal_state == JobState.TERMINATED
 
     def test_terminate_custom_namespace(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config(), namespace="custom-ns")
+        handle = _make_handle(api=api, namespace="custom-ns")
         handle.terminate()
         api.delete_namespaced_pod.assert_called_once_with(name="job-1", namespace="custom-ns", grace_period_seconds=0)
 
@@ -340,38 +436,69 @@ class TestK8sJobHandle:
     def test_query_phase_returns_unknown_on_api_error(self):
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = _FakeApiException(status=500, reason="Error")
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle._query_phase() == POD_Phase.UNKNOWN.value
 
-    # -- _stuck ---------------------------------------------------------------
-    def test_stuck_returns_false_when_no_timeout_and_grace_only(self):
+    def test_query_phase_returns_unknown_on_generic_exception(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None)
-        assert handle._stuck(POD_Phase.PENDING.value) is False
+        api.read_namespaced_pod.side_effect = RuntimeError("connection lost")
+        handle = _make_handle(api=api)
+        assert handle._query_phase() == POD_Phase.UNKNOWN.value
 
-    def test_stuck_returns_true_after_max_count_with_grace(self):
+    # -- _stuck_in_pending ----------------------------------------------------
+    def test_stuck_in_pending_returns_true_at_max_count(self):
+        # With _stuck_count seeded to max-1, one more PENDING call increments to
+        # exactly max, which should fire (>=, not >).
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
-        handle._stuck_count = handle._max_stuck_count
-        assert handle._stuck(POD_Phase.PENDING.value) is True
+        handle._stuck_count = handle._max_stuck_count - 1
+        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is True
 
-    def test_stuck_returns_false_for_non_pending(self):
+    def test_stuck_in_pending_returns_false_one_before_max(self):
+        # One iteration before the threshold must not fire.
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
+        handle._stuck_count = handle._max_stuck_count - 2
+        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
+
+    def test_stuck_in_pending_returns_false_for_non_pending(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
         handle._stuck_count = 9999
-        assert handle._stuck(POD_Phase.RUNNING.value) is False
+        assert handle._stuck_in_pending(POD_Phase.RUNNING.value) is False
 
-    def test_stuck_increments_count_on_pending(self):
+    def test_stuck_in_pending_resets_count_on_non_pending(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
+        handle._stuck_count = 3
+        handle._stuck_in_pending(POD_Phase.RUNNING.value)
+        assert handle._stuck_count == 0
+
+    def test_stuck_in_pending_increments_count(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=100)
         initial = handle._stuck_count
-        handle._stuck(POD_Phase.PENDING.value)
+        handle._stuck_in_pending(POD_Phase.PENDING.value)
         assert handle._stuck_count == initial + 1
+
+    def test_stuck_in_pending_returns_false_when_under_max(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=100)
+        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
+
+    def test_stuck_in_pending_never_fires_when_pending_timeout_none(self):
+        # pending_timeout=None with timeout=None → _max_stuck_count=None → stuck detection disabled
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=None)
+        assert handle._max_stuck_count is None
+        # Drive _stuck_count very high — must not raise and must return False
+        handle._stuck_count = 10_000
+        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
 
     # -- wait -----------------------------------------------------------------
     def test_wait_returns_immediately_if_terminal_state_set(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.terminal_state = JobState.TERMINATED
         handle.wait()
         api.read_namespaced_pod.assert_not_called()
@@ -381,7 +508,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.wait()
         assert handle.terminal_state == JobState.SUCCEEDED
 
@@ -390,7 +517,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.FAILED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.wait()
         assert handle.terminal_state == JobState.TERMINATED
 
@@ -399,7 +526,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         handle.wait()
         assert handle.poll() == JobReturnCode.SUCCESS
 
@@ -409,7 +536,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.RUNNING.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is True
 
     def test_enter_states_accepts_single_state(self):
@@ -417,7 +544,7 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle(api=api)
         assert handle.enter_states(JobState.SUCCEEDED) is True
 
     def test_enter_states_returns_false_on_timeout(self):
@@ -425,14 +552,104 @@ class TestK8sJobHandle:
         resp = Mock()
         resp.status.phase = POD_Phase.PENDING.value
         api.read_namespaced_pod.return_value = resp
-        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None)
-        assert handle.enter_states([JobState.RUNNING], timeout=0) is False
+        handle = _make_handle(api=api, timeout=0)
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+    def test_enter_states_terminates_on_timeout(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.PENDING.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=0)
+        handle.enter_states([JobState.RUNNING])
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+
+    def test_enter_states_returns_false_on_terminal_pod_phase(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.FAILED.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+        assert handle.enter_states([JobState.RUNNING]) is False
+        assert handle.terminal_state == JobState.TERMINATED
+
+    def test_enter_states_returns_false_on_succeeded_when_waiting_for_running(self):
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+        assert handle.enter_states([JobState.RUNNING]) is False
+        assert handle.terminal_state == JobState.SUCCEEDED
 
     def test_enter_states_raises_on_invalid_state(self):
-        api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config())
+        handle = _make_handle()
         with pytest.raises(ValueError, match="expect job_states_to_enter"):
             handle.enter_states(["not_a_state"])
+
+    # -- enter_states: wall-clock timeout branch ------------------------------
+    # The pod is placed in UNKNOWN phase (non-pending so stuck detection does
+    # not fire, non-terminal so the terminal-phase branch is skipped) and
+    # time.time is mocked so the elapsed-time check fires on the first
+    # iteration.  This is the branch that existing tests miss because they
+    # use timeout=0 with a PENDING pod, which hits stuck detection instead.
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_wall_clock_timeout_returns_false(self, mock_time):
+        mock_time.time.side_effect = [0.0, 100.0]  # start=0, check=100 → 100 > timeout=10
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.UNKNOWN.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=10)
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_wall_clock_timeout_calls_terminate_and_sets_terminal_state(self, mock_time):
+        mock_time.time.side_effect = [0.0, 100.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.UNKNOWN.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=10)
+        handle.enter_states([JobState.RUNNING])
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_wall_clock_not_fired_when_timeout_none(self, mock_time):
+        # With timeout=None the wall-clock guard (self.timeout is not None) is
+        # unconditionally False; the loop exits through the terminal-phase path.
+        mock_time.time.return_value = 9999.0
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        resp = Mock()
+        resp.status.phase = POD_Phase.SUCCEEDED.value
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api, timeout=None)
+        handle.enter_states([JobState.RUNNING])
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_wall_clock_not_fired_before_elapsed(self, mock_time):
+        # First iteration: time not yet elapsed → wall-clock skipped, loop continues.
+        # Second iteration: pod completes → exits via terminal-phase path, no terminate().
+        mock_time.time.side_effect = [0.0, 0.5]  # start=0, first check=0.5 < timeout=10
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        resp_unknown = Mock()
+        resp_unknown.status.phase = POD_Phase.UNKNOWN.value
+        resp_succeeded = Mock()
+        resp_succeeded.status.phase = POD_Phase.SUCCEEDED.value
+        api.read_namespaced_pod.side_effect = [resp_unknown, resp_succeeded]
+        handle = _make_handle(api=api, timeout=10)
+        result = handle.enter_states([JobState.RUNNING])
+        assert result is False
+        api.delete_namespaced_pod.assert_not_called()
+        assert handle.terminal_state == JobState.SUCCEEDED
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +805,27 @@ class TestK8sJobLauncherInit:
         finally:
             _exit_patches(patches)
 
+    def test_init_raises_on_non_dict_pvc_file(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        patches = _make_k8s_launcher_patches()
+        mock_cfg, mock_conf, mock_core, mock_open, mock_yaml = _enter_patches(patches)
+        try:
+            mock_yaml.safe_load.return_value = "not-a-dict"
+            mock_conf_instance = MagicMock()
+            mock_conf.return_value = mock_conf_instance
+            mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
+
+            with pytest.raises(ValueError, match="dictionary"):
+                ClientK8sJobLauncher(
+                    config_file_path="/fake/kube/config",
+                    workspace_pvc="ws-pvc",
+                    etc_pvc="etc-pvc",
+                    data_pvc_file_path="/fake/data_pvc.yaml",
+                )
+        finally:
+            _exit_patches(patches)
+
 
 # ---------------------------------------------------------------------------
 # ClientK8sJobLauncher.get_module_args
@@ -662,5 +900,275 @@ class TestServerK8sJobLauncherGetModuleArgs:
             fl_ctx = FLContext()
             with pytest.raises(RuntimeError, match="job_process_args"):
                 launcher.get_module_args("job-1", fl_ctx)
+        finally:
+            _exit_patches(patches)
+
+
+# ---------------------------------------------------------------------------
+# K8sJobLauncher launch_job — integration-style happy path
+# ---------------------------------------------------------------------------
+
+_WORKER_MODULE = "nvflare.private.fed.app.client.worker_process"
+_JOB_UUID = "550e8400-e29b-41d4-a716-446655440000"
+_EXPECTED_JOB_ID = uuid4_to_rfc1123(_JOB_UUID)
+
+
+def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gpu=None):
+    meta = {
+        JobConstants.JOB_ID: _JOB_UUID,
+        JobMetaKey.DEPLOY_MAP.value: {"app": [{"sites": [site_name], "image": image}]},
+    }
+    if gpu is not None:
+        meta[JobMetaKey.RESOURCE_SPEC.value] = {site_name: {"num_of_gpus": gpu}}
+    return meta
+
+
+def _make_launch_fl_ctx(site_name="site-1", set_items=None):
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name, private=False, sticky=True)
+    job_args = {
+        JobProcessArgs.EXE_MODULE: ("-m", _WORKER_MODULE),
+        JobProcessArgs.WORKSPACE: ("-w", "/var/tmp/nvflare/workspace"),
+        JobProcessArgs.JOB_ID: ("-n", "job-abc"),
+    }
+    fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args, private=True, sticky=False)
+    if set_items is not None:
+        args_obj = Mock()
+        args_obj.set = set_items
+        fl_ctx.set_prop(FLContextKey.ARGS, args_obj, private=False, sticky=False)
+    return fl_ctx
+
+
+class TestK8sJobLauncherLaunchJob:
+    """Integration-style tests that exercise the full launch_job() code path.
+
+    The kubernetes API is mocked but the rest of the code — uuid sanitization,
+    manifest construction, enter_states polling, and handle construction — runs
+    for real.  read_namespaced_pod is primed to return Running immediately so
+    enter_states returns True on the first iteration without sleeping.
+    """
+
+    def _setup(self, patches, namespace="test-ns"):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        mock_cfg, mock_conf, mock_core_module, mock_open, mock_yaml = _enter_patches(patches)
+        mock_yaml.safe_load.return_value = {"data-pvc": "/data"}
+        mock_conf_instance = MagicMock()
+        mock_conf.return_value = mock_conf_instance
+        mock_conf.get_default_copy = Mock(return_value=mock_conf_instance)
+        mock_api = MagicMock()
+        mock_core_module.CoreV1Api.return_value = mock_api
+        launcher = ClientK8sJobLauncher(
+            config_file_path="/fake/kube/config",
+            workspace_pvc="ws-pvc",
+            etc_pvc="etc-pvc",
+            data_pvc_file_path="/fake/data_pvc.yaml",
+            namespace=namespace,
+        )
+        return launcher, mock_api
+
+    def _prime_running(self, mock_api):
+        resp = Mock()
+        resp.status.phase = POD_Phase.RUNNING.value
+        mock_api.read_namespaced_pod.return_value = resp
+
+    # -- return value ---------------------------------------------------------
+
+    def test_returns_k8s_job_handle(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import K8sJobHandle
+
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert isinstance(handle, K8sJobHandle)
+        finally:
+            _exit_patches(patches)
+
+    def test_terminal_state_is_none_after_clean_launch(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.terminal_state is None
+        finally:
+            _exit_patches(patches)
+
+    # -- API call -------------------------------------------------------------
+
+    def test_create_namespaced_pod_called_once(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_called_once()
+        finally:
+            _exit_patches(patches)
+
+    def test_create_namespaced_pod_uses_launcher_namespace(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, namespace="prod-ns")
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert mock_api.create_namespaced_pod.call_args.kwargs["namespace"] == "prod-ns"
+        finally:
+            _exit_patches(patches)
+
+    # -- pod manifest: identity fields ----------------------------------------
+
+    def test_pod_manifest_name_is_rfc1123_of_job_id(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["metadata"]["name"] == _EXPECTED_JOB_ID
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_image_from_job_meta(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(image="myrepo/myimage:v2"), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["image"] == "myrepo/myimage:v2"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_restart_policy_never(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["restartPolicy"] == "Never"
+        finally:
+            _exit_patches(patches)
+
+    # -- pod manifest: container args -----------------------------------------
+
+    def test_pod_manifest_container_args_contain_worker_module(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            args = manifest["spec"]["containers"][0]["args"]
+            assert "-u" in args
+            assert "-m" in args
+            assert _WORKER_MODULE in args
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_set_list_propagated_from_args(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            fl_ctx = _make_launch_fl_ctx(set_items=["lr=0.01", "epochs=5"])
+            launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            args = manifest["spec"]["containers"][0]["args"]
+            assert "--set" in args
+            assert "lr=0.01" in args
+            assert "epochs=5" in args
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_no_set_list_when_args_not_set(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            args = manifest["spec"]["containers"][0]["args"]
+            assert "--set" not in args
+        finally:
+            _exit_patches(patches)
+
+    # -- pod manifest: volumes ------------------------------------------------
+
+    def test_pod_manifest_pvcs_use_launcher_pvc_names(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            claims = {v["name"]: v["persistentVolumeClaim"]["claimName"] for v in manifest["spec"]["volumes"]}
+            assert claims[PV_NAME.WORKSPACE.value] == "ws-pvc"
+            assert claims[PV_NAME.DATA.value] == "data-pvc"
+            assert claims[PV_NAME.ETC.value] == "etc-pvc"
+        finally:
+            _exit_patches(patches)
+
+    # -- pod manifest: GPU resources ------------------------------------------
+
+    def test_pod_manifest_includes_gpu_limit_when_specified(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(gpu=2), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == 2
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_omits_gpu_limit_when_not_specified(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert "resources" not in manifest["spec"]["containers"][0]
+        finally:
+            _exit_patches(patches)
+
+    # -- create_namespaced_pod failure paths ----------------------------------
+
+    def test_network_error_on_create_returns_handle_with_terminal_state(self):
+        """Non-ApiException (e.g. network timeout) must not leave terminal_state=None."""
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.create_namespaced_pod.side_effect = ConnectionError("network unreachable")
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert isinstance(handle, K8sJobHandle)
+            assert handle.terminal_state == JobState.TERMINATED
+        finally:
+            _exit_patches(patches)
+
+    def test_network_error_on_create_does_not_call_terminate_api(self):
+        """Pod was never created; no delete API call should be made."""
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.create_namespaced_pod.side_effect = ConnectionError("network unreachable")
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            mock_api.delete_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_network_error_on_create_does_not_call_enter_states(self):
+        """enter_states must not be reached when pod creation fails."""
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.create_namespaced_pod.side_effect = ConnectionError("network unreachable")
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            # read_namespaced_pod is the backing call for _query_phase / enter_states
+            mock_api.read_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)

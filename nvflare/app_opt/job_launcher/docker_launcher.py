@@ -45,10 +45,10 @@ JOB_RETURN_CODE_MAPPING = {
 
 
 class DockerJobHandle(JobHandleSpec):
-    def __init__(self, timeout=None):
+    def __init__(self, container, timeout=None):
         super().__init__()
 
-        self.container = None
+        self.container = container
         self.timeout = timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -67,9 +67,6 @@ class DockerJobHandle(JobHandleSpec):
     def wait(self):
         if self.container:
             self.enter_states([DOCKER_STATE.EXITED, DOCKER_STATE.DEAD], self.timeout)
-
-    def _set_container(self, container):
-        self.container = container
 
     def _get_container(self):
         try:
@@ -123,7 +120,6 @@ class DockerJobLauncher(JobLauncherSpec):
         docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
         self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
         docker_client = docker.from_env()
-        handle = DockerJobHandle()
         try:
             container = docker_client.containers.run(
                 job_image,
@@ -141,22 +137,24 @@ class DockerJobLauncher(JobLauncherSpec):
                 # ports=ports,  # Map container ports to host ports (optional)
             )
             self.logger.info(f"Launch the job in DockerJobLauncher using image: {job_image}")
-            handle._set_container(container)
+
+            handle = DockerJobHandle(container)
             try:
-                launched = handle.enter_states([DOCKER_STATE.RUNNING], timeout=self.timeout)
-                if not launched:
+                if handle.enter_states([DOCKER_STATE.RUNNING], timeout=self.timeout):
+                    return handle
+                else:
                     handle.terminate()
-                return handle
+                    return None
             except:
                 handle.terminate()
-                return handle
+                return None
 
         except docker.errors.ImageNotFound:
             self.logger.error(f"Failed to launcher job: {job_id} in DockerJobLauncher. Image '{job_image}' not found.")
-            return handle
+            return None
         except docker.errors.APIError as e:
             self.logger.error(f"Error starting container: {e}")
-            return handle
+            return None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:

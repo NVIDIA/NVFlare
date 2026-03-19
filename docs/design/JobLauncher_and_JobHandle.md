@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-NVFlare runs each federated job as an isolated execution unit -- a subprocess, Docker container, or Kubernetes pod. Two abstractions govern this:
+NVFlare runs each federated job as an isolated execution unit -- a subprocess or Kubernetes pod. Two abstractions govern this:
 
 - **JobLauncherSpec** -- starts a job and returns a handle.
 - **JobHandleSpec** -- represents the running job and provides lifecycle control (poll, wait, terminate).
@@ -14,21 +14,21 @@ The upper layers (server engine, client executor) program exclusively against th
 │                    Upper Layer                           │
 │     ServerEngine  /  ClientExecutor                      │
 │                                                          │
-│  1. Build JOB_PROCESS_ARGS                               │
-│  2. get_job_launcher(job_meta, fl_ctx) → launcher        │
+│  1. get_job_launcher(job_meta, fl_ctx) → launcher        │
+│  2. Build JOB_PROCESS_ARGS                               │
 │  3. launcher.launch_job(job_meta, fl_ctx) → job_handle   │
 │  4. job_handle.wait()  /  job_handle.terminate()         │
 └──────────┬──────────────────────┬────────────────────────┘
            │   BEFORE_JOB_LAUNCH  │
            │   event selects one  │
            ▼                      ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│ ProcessJob      │  │ DockerJob       │  │ K8sJob          │
-│ Launcher        │  │ Launcher        │  │ Launcher        │
-│ ─────────────── │  │ ─────────────── │  │ ─────────────── │
-│ ProcessHandle   │  │ DockerJobHandle │  │ K8sJobHandle    │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-    subprocess           container              pod
+┌─────────────────┐           ┌─────────────────┐
+│ ProcessJob      │           │ K8sJob          │
+│ Launcher        │           │ Launcher        │
+│ ─────────────── │           │ ─────────────── │
+│ ProcessHandle   │           │ K8sJobHandle    │
+└─────────────────┘           └─────────────────┘
+    subprocess                     pod
 ```
 
 ---
@@ -37,7 +37,7 @@ The upper layers (server engine, client executor) program exclusively against th
 
 ### 2.1 JobHandleSpec
 
-Abstract base class representing a running job. All methods are `@abstractmethod`.
+Abstract base class representing a running job (`class JobHandleSpec(ABC)`). All methods are decorated with `@abstractmethod`; Python enforces that any concrete subclass implements all three. Attempting to instantiate a subclass with any abstract method unimplemented raises `TypeError` at instantiation time.
 
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
@@ -47,7 +47,7 @@ Abstract base class representing a running job. All methods are `@abstractmethod
 
 ### 2.2 JobLauncherSpec
 
-Abstract base class for launching jobs. Extends `FLComponent`, which gives it access to the event system.
+Abstract base class for launching jobs (`class JobLauncherSpec(FLComponent, ABC)`). Extends `FLComponent` for event-system access. Adding `ABC` to the bases means Python selects `ABCMeta` as the metaclass automatically (since `ABCMeta` is a subclass of `type`), so `@abstractmethod` on `launch_job` is enforced at runtime for all subclasses.
 
 | Method | Signature | Semantics |
 |--------|-----------|-----------|
@@ -55,7 +55,7 @@ Abstract base class for launching jobs. Extends `FLComponent`, which gives it ac
 
 ### 2.3 Supporting Types
 
-**JobProcessArgs** -- String constants for the keys the upper layer places in `FLContextKey.JOB_PROCESS_ARGS`. These are the standardized parameters every job process needs (workspace path, auth token, job ID, parent URL, etc.).
+**JobProcessArgs** -- String constants for the keys the upper layer places in `FLContextKey.JOB_PROCESS_ARGS`. Each value in the dict is a `(flag, value)` tuple, e.g. `JobProcessArgs.JOB_ID → ("-n", job_id)`. These are the standardized parameters every job process needs (workspace path, auth token, job ID, parent URL, etc.).
 
 | Constant | Value | Used by |
 |----------|-------|---------|
@@ -63,7 +63,7 @@ Abstract base class for launching jobs. Extends `FLComponent`, which gives it ac
 | `WORKSPACE` | `"workspace"` | Server, Client |
 | `STARTUP_DIR` | `"startup_dir"` | Client |
 | `APP_ROOT` | `"app_root"` | Server |
-| `AUTH_TOKEN` | `"auth_token"` | Client |
+| `AUTH_TOKEN` | `"auth_token"` | Server, Client |
 | `TOKEN_SIGNATURE` | `"auth_signature"` | Server, Client |
 | `SSID` | `"ssid"` | Server, Client |
 | `JOB_ID` | `"job_id"` | Server, Client |
@@ -77,7 +77,7 @@ Abstract base class for launching jobs. Extends `FLComponent`, which gives it ac
 | `TARGET` | `"target"` | Client |
 | `SCHEME` | `"scheme"` | Client |
 | `STARTUP_CONFIG_FILE` | `"startup_config_file"` | Server, Client |
-| `RESTORE_SNAPSHOT` | `"restore_snapshot"` | Server |
+| `RESTORE_SNAPSHOT` | `"restore_snapshot"` | (defined but not set as a standalone entry; server embeds `restore_snapshot=<bool>` into `OPTIONS` via `--set`) |
 | `OPTIONS` | `"options"` | Server, Client |
 
 **JobReturnCode** -- Standard exit semantics (extends `ProcessExitCode`):
@@ -104,10 +104,14 @@ def get_job_launcher(job_meta, fl_ctx) -> JobLauncherSpec:
     engine = fl_ctx.get_engine()
     with engine.new_context() as job_launcher_ctx:
         job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
-        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, ...)
+        job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
         engine.fire_event(EventType.BEFORE_JOB_LAUNCH, job_launcher_ctx)
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
-        ...
+        if not (job_launcher and isinstance(job_launcher, list)):
+            raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+    launcher = job_launcher[0]
+    if not isinstance(launcher, JobLauncherSpec):
+        raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
     return job_launcher[0]
 ```
 
@@ -118,7 +122,7 @@ Every registered `FLComponent` receives the `BEFORE_JOB_LAUNCH` event. Each laun
 | Condition | Launcher selected |
 |-----------|-------------------|
 | `extract_job_image(job_meta, site_name)` returns `None` | **ProcessJobLauncher** (no container image → run as subprocess) |
-| `extract_job_image(job_meta, site_name)` returns an image | **DockerJobLauncher** or **K8sJobLauncher** (whichever is configured as a component) |
+| `extract_job_image(job_meta, site_name)` returns an image | **K8sJobLauncher** (configured as a component) |
 
 ### 3.2 Server Side (`ServerEngine`)
 
@@ -127,20 +131,26 @@ Location: `nvflare/private/fed/server/server_engine.py`
 ```
 _start_runner_process(job, job_clients, snapshot, fl_ctx)
 │
-├─ 1. Build job_args dict with server-specific JobProcessArgs
-│     (WORKSPACE, APP_ROOT, PARENT_URL, AUTH_TOKEN, HA_MODE, ...)
+├─ 1. job_launcher = get_job_launcher(job.meta, fl_ctx)
+│     (fires BEFORE_JOB_LAUNCH; JOB_PROCESS_ARGS not yet set)
 │
-├─ 2. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
+├─ 2. Build job_args dict with server-specific JobProcessArgs
+│     (EXE_MODULE, JOB_ID, WORKSPACE, STARTUP_CONFIG_FILE,
+│      APP_ROOT, HA_MODE, AUTH_TOKEN, TOKEN_SIGNATURE,
+│      PARENT_URL, ROOT_URL, SERVICE_HOST, SERVICE_PORT,
+│      SSID, OPTIONS)
 │
-├─ 3. job_launcher = get_job_launcher(job.meta, fl_ctx)
+├─ 3. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
 │
 ├─ 4. job_handle = job_launcher.launch_job(job.meta, fl_ctx)
 │
-├─ 5. Store in run_processes[job_id][RunProcessKey.JOB_HANDLE]
+├─ 5. Store in run_processes[job_id]
+│        {JOB_HANDLE: job_handle, JOB_ID: job_id, PARTICIPANTS: job_clients}
 │
 └─ 6. Start background thread → wait_for_complete(workspace, job_id, job_handle)
        │
        ├─ job_handle.wait()          # blocks until job finishes
+       ├─ wait up to 2s for UPDATE_RUN_STATUS message to arrive
        └─ get_return_code(job_handle, job_id, workspace, logger)
 ```
 
@@ -156,18 +166,24 @@ Location: `nvflare/private/fed/client/client_executor.py`
 ```
 start_app(job_id, job_meta, ...)
 │
-├─ 1. Build job_args dict with client-specific JobProcessArgs
-│     (WORKSPACE, STARTUP_DIR, CLIENT_NAME, PARENT_URL, AUTH_TOKEN, ...)
+├─ 1. job_launcher = get_job_launcher(job_meta, fl_ctx)
+│     (fires BEFORE_JOB_LAUNCH; JOB_PROCESS_ARGS not yet set)
 │
-├─ 2. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
+├─ 2. Build job_args dict with client-specific JobProcessArgs
+│     (EXE_MODULE, JOB_ID, CLIENT_NAME, AUTH_TOKEN, TOKEN_SIGNATURE,
+│      SSID, WORKSPACE, STARTUP_DIR, PARENT_URL, SCHEME, TARGET,
+│      STARTUP_CONFIG_FILE, OPTIONS, optionally PARENT_CONN_SEC)
 │
-├─ 3. job_launcher = get_job_launcher(job_meta, fl_ctx)
+├─ 3. fl_ctx.set_prop(FLContextKey.JOB_PROCESS_ARGS, job_args)
 │
 ├─ 4. job_handle = job_launcher.launch_job(job_meta, fl_ctx)
 │
-├─ 5. Store in run_processes[job_id][RunProcessKey.JOB_HANDLE]
+├─ 5. Fire EventType.AFTER_JOB_LAUNCH event
 │
-└─ 6. Start background thread → _wait_child_process_finish(...)
+├─ 6. Store in run_processes[job_id]
+│        {JOB_HANDLE: job_handle, STATUS: ClientStatus.STARTING}
+│
+└─ 7. Start background thread → _wait_child_process_finish(...)
        │
        ├─ job_handle.wait()
        └─ get_return_code(job_handle, job_id, workspace, logger)
@@ -175,8 +191,8 @@ start_app(job_id, job_meta, ...)
 
 **Abort path** (`_terminate_job`):
 
-1. Wait up to 10 seconds for the child to exit gracefully (polling `job_handle.poll()`).
-2. Call `job_handle.terminate()`.
+1. Poll `self.run_processes.get(job_id)` every 50 ms for up to 10 seconds; if the entry disappears the job finished gracefully.
+2. Always call `job_handle.terminate()` regardless of whether the graceful exit was detected.
 
 ### 3.4 Return Code Resolution
 
@@ -187,7 +203,7 @@ start_app(job_id, job_meta, ...)
 
 ---
 
-## 4. The Three Implementations
+## 4. The Two Implementations
 
 ### 4.1 Process Launcher (Subprocess)
 
@@ -213,7 +229,7 @@ JobLauncherSpec (FLComponent)
 
 #### ProcessHandle
 
-Wraps a `ProcessAdapter` (from `nvflare/utils/process_utils.py`) that manages a `subprocess.Popen` or a PID.
+Wraps a `ProcessAdapter` (from `nvflare/utils/process_utils.py`) that manages a `subprocess.Popen` or a PID. The constructor accepts any one of: a `ProcessAdapter` directly, a `subprocess.Popen` object, or an integer `pid`.
 
 | Method | Implementation |
 |--------|---------------|
@@ -225,9 +241,9 @@ Wraps a `ProcessAdapter` (from `nvflare/utils/process_utils.py`) that manages a 
 
 | Step | Action |
 |------|--------|
-| 1 | Copy `os.environ` and add `app_custom_folder` to `PYTHONPATH`. |
+| 1 | Copy `os.environ`. If `app_custom_folder` is non-empty, call `add_custom_dir_to_path()`: appends the folder to `sys.path` and serializes the result into `PYTHONPATH` in the child environment. |
 | 2 | Call `self.get_command(job_meta, fl_ctx)` (abstract -- implemented by server/client subclasses). |
-| 3 | Parse command with `shlex.split()`, spawn the process via `spawn_process(argv, new_env)`. |
+| 3 | Parse command with `shlex.split(command, posix=True)`, spawn the process via `spawn_process(argv, new_env)`. |
 | 4 | Return `ProcessHandle(process_adapter=...)`. |
 
 **Event registration:**
@@ -243,94 +259,38 @@ def handle_event(self, event_type, fl_ctx):
 
 **Server/Client subclasses** only override `get_command()`:
 
-- `ServerProcessJobLauncher.get_command()` → `generate_server_command(fl_ctx)` → `python -m <module> -w <workspace> ...`
-- `ClientProcessJobLauncher.get_command()` → `generate_client_command(fl_ctx)` → `python -m <module> -w <workspace> -n <client_name> ...`
+- `ServerProcessJobLauncher.get_command()` → `generate_server_command(fl_ctx)` → `sys.executable -m <module> -w <workspace> ...`
+- `ClientProcessJobLauncher.get_command()` → `generate_client_command(fl_ctx)` → `sys.executable -m <module> -w <workspace> -n <client_name> ...`
 
 ---
 
-### 4.2 Docker Launcher
-
-**File:** `nvflare/app_opt/job_launcher/docker_launcher.py`
-
-**Class hierarchy:**
-
-```
-JobHandleSpec
-  └── DockerJobHandle
-
-JobLauncherSpec (FLComponent)
-  └── DockerJobLauncher
-        ├── ClientDockerJobLauncher
-        └── ServerDockerJobLauncher
-```
-
-#### DockerJobHandle
-
-Wraps a Docker SDK `Container` object.
-
-| Method | Implementation |
-|--------|---------------|
-| `terminate()` | `container.stop()`. |
-| `poll()` | Re-fetches container via `docker.from_env().containers.get(id)`. Maps status: `EXITED` → `SUCCESS`, `DEAD` → `ABORTED`, all others → `UNKNOWN`. Removes the container on terminal states. |
-| `wait()` | `enter_states([EXITED, DEAD], timeout)` -- polls container status in a 1-second loop until a terminal state is reached. |
-
-Docker container states and their mappings:
-
-| Docker Status | JobReturnCode |
-|---------------|---------------|
-| `created` | `UNKNOWN` |
-| `restarting` | `UNKNOWN` |
-| `running` | `UNKNOWN` |
-| `paused` | `UNKNOWN` |
-| `exited` | `SUCCESS` |
-| `dead` | `ABORTED` |
-
-#### DockerJobLauncher
-
-Constructor parameters:
-
-| Parameter | Default | Purpose |
-|-----------|---------|---------|
-| `mount_path` | `"/workspace"` | Container-side mount point for the host workspace. |
-| `network` | `"nvflare-network"` | Docker network the container joins. |
-| `timeout` | `None` | Maximum seconds to wait for the container to reach `RUNNING`. |
-
-Launch sequence:
-
-| Step | Action |
-|------|--------|
-| 1 | Extract `job_image` from `job_meta` via `extract_job_image()`. |
-| 2 | Build `PYTHONPATH` with `app_custom_folder`. |
-| 3 | Call `self.get_command(job_meta, fl_ctx)` → `(container_name, command_string)`. |
-| 4 | Read `NVFL_DOCKER_WORKSPACE` env var for the host-side workspace path. |
-| 5 | `docker_client.containers.run(image, command, name, network, volumes, detach=True)`. |
-| 6 | `DockerJobHandle(container).enter_states([RUNNING], timeout)`. |
-| 7 | If timeout or error → `handle.terminate()`, return `None`. Otherwise return handle. |
-
-**Event registration:** Same pattern as Process but with the opposite condition -- registers when `extract_job_image()` returns a truthy value.
-
-**Server/Client subclasses** override `get_command()`:
-
-- `ClientDockerJobLauncher` → returns `("{client_name}-{job_id}", generate_client_command(fl_ctx))`.
-- `ServerDockerJobLauncher` → returns `("server-{job_id}", generate_server_command(fl_ctx))`.
-
----
-
-### 4.3 Kubernetes Launcher
+### 4.2 Kubernetes Launcher
 
 **File:** `nvflare/app_opt/job_launcher/k8s_launcher.py`
 
 **Class hierarchy:**
 
 ```
-JobHandleSpec
+JobHandleSpec (ABC)
   └── K8sJobHandle
 
-JobLauncherSpec (FLComponent)
+JobLauncherSpec (FLComponent, ABC)
   └── K8sJobLauncher
         ├── ClientK8sJobLauncher
         └── ServerK8sJobLauncher
 ```
+
+#### Pod Name Sanitization
+
+`launch_job` calls `uuid4_to_rfc1123(job_meta.get(JobConstants.JOB_ID))` before constructing the pod. This converts a raw UUID4 job ID into an RFC 1123-compliant Kubernetes pod name:
+
+1. Lowercase the string.
+2. Strip characters that are not alphanumeric or hyphens (`[^a-z0-9-]`).
+3. Prefix with `"j"` if the first character is a digit (Kubernetes pod names must start with a letter).
+4. Strip trailing hyphens.
+5. Truncate to 63 characters.
+
+The sanitized name is used as both the pod name (`metadata.name`) and the `job_id` stored in `K8sJobHandle` for all subsequent API calls (`terminate`, `_query_phase`).
 
 #### K8sJobHandle
 
@@ -338,12 +298,12 @@ Wraps a Kubernetes Pod managed through the `CoreV1Api`.
 
 | Method | Implementation |
 |--------|---------------|
-| `terminate()` | Calls `delete_namespaced_pod(grace_period_seconds=0)` in a try/except. `terminal_state = TERMINATED` is set when the delete succeeds, or when the `ApiException` has status 404 (pod already gone). For any other `ApiException`, the error is logged and `terminal_state` is left unchanged. |
+| `terminate()` | Calls `delete_namespaced_pod(grace_period_seconds=0)`. `terminal_state = TERMINATED` is always set regardless of outcome: on success, on 404 `ApiException` (pod already gone, logged at `info`), on any other `ApiException` (logged at `error`), and on any other `Exception` such as network or serialization errors (also logged at `error`). This guarantees that callers holding a handle never poll indefinitely after calling `terminate()`, even when the K8s API is unreachable. |
 | `poll()` | If `terminal_state` is set, maps it through `JOB_RETURN_CODE_MAPPING` and returns a `JobReturnCode`. Otherwise calls `_query_state()` and maps the result the same way. Both paths consistently return `JobReturnCode`. |
 | `wait()` | Direct while loop: returns immediately if `terminal_state` is set; otherwise calls `_query_state()` and when `SUCCEEDED` or `TERMINATED` is reached, persists that state into `terminal_state` (so subsequent `poll()` calls remain accurate) and returns. Sleeps 1 second per iteration. No timeout. |
-| `_query_phase()` | Calls `read_namespaced_pod` and returns the raw pod phase string (e.g. `"Pending"`, `"Running"`). On `ApiException`, returns `POD_Phase.UNKNOWN.value`. |
+| `_query_phase()` | Calls `read_namespaced_pod` and returns the raw pod phase string (e.g. `"Pending"`, `"Running"`). On `ApiException`, logs the error and returns `POD_Phase.UNKNOWN.value`. On any other `Exception` (e.g. network errors, `urllib3.exceptions.MaxRetryError`), logs the error and also returns `POD_Phase.UNKNOWN.value` — preventing unhandled exceptions from propagating through `enter_states`/`wait`/`poll` and orphaning running pods. |
 | `_query_state()` | Calls `_query_phase()` and maps the raw phase through `POD_STATE_MAPPING` to a `JobState`. Used by `poll()` and `wait()`. |
-| `enter_states()` | Per iteration: calls `_query_phase()` once, passes the raw phase to both `_stuck()` and directly to `POD_STATE_MAPPING.get()` — single K8s API call per poll cycle. Returns `True` when target state is reached, `False` on timeout or stuck detection. |
+| `enter_states()` | Takes only `job_states_to_enter`; no `timeout` parameter — reads `self.timeout` from the instance. Per iteration: calls `_query_phase()` once, passes the raw phase to `_stuck_in_pending()` and to `POD_STATE_MAPPING.get()` — single K8s API call per poll cycle. Three early-exit paths, evaluated in this order: (1) **Stuck detection** — calls `self.terminate()` (sets `terminal_state = TERMINATED`) then returns `False`; (2) **Terminal phase** — if `pod_phase` is `"Failed"` or `"Succeeded"`, sets `terminal_state` from `POD_STATE_MAPPING` then returns `False` *without* calling `terminate()`. The terminal-phase check is evaluated before the plain-timeout check so that a job completing exactly when the timeout expires is recorded as `SUCCEEDED`/`TERMINATED` (per `POD_STATE_MAPPING`) rather than being misclassified as `TERMINATED` by `terminate()`; (3) **Plain timeout** (`self.timeout` elapsed) — calls `self.terminate()`, sets `terminal_state = TERMINATED`, returns `False`. Setting `terminal_state` in all `False`-return paths prevents `wait()` from looping indefinitely if the pod is GC'd before `wait()` runs. Returns `True` when target state is reached. |
 
 Pod phase mapping:
 
@@ -355,9 +315,7 @@ Pod phase mapping:
 | `Failed` | `TERMINATED` | `ABORTED` |
 | `Unknown` | `UNKNOWN` | `UNKNOWN` |
 
-> Note: `POD_Phase.TERMINATED` has been removed from the enum. `POD_STATE_MAPPING` now covers only the five real Kubernetes pod phases: `Pending`, `Running`, `Succeeded`, `Failed`, `Unknown`.
-
-**Stuck detection:** `_stuck_count` starts at `0`. A separate `_stuck_grace_period = 10` is added to `timeout` to form `_max_stuck_count = timeout + _stuck_grace_period`, giving a grace window of ~10 extra poll cycles before stuck detection activates. If `timeout` is `None`, `_max_stuck_count` is also `None` and stuck detection is disabled entirely. `enter_states()` passes the raw phase string from `_query_phase()` directly to `_stuck()`. `_stuck()` compares `current_phase == POD_Phase.PENDING.value` (i.e. `"Pending" == "Pending"`), incrementing `_stuck_count` on each match. When `_stuck_count > _max_stuck_count`, `_stuck()` returns `True`, `enter_states()` calls `terminate()` (which sets `terminal_state = TERMINATED` when the delete call succeeds or returns 404) and returns `False`. Note: `_stuck_count` and `_max_stuck_count` are poll-iteration counts (each ~1 second), not wall-clock seconds — the semantics coincide only because each poll sleeps exactly 1 second.
+**Stuck detection:** `_stuck_count` starts at `0`. `_max_stuck_count` is set in the constructor as: `timeout if timeout is not None else pending_timeout`. So stuck detection is **always active** — if `timeout` is provided, `_max_stuck_count = timeout`; if `timeout` is `None`, `_max_stuck_count = pending_timeout` (default 30). The method `_stuck_in_pending(current_phase)` increments `_stuck_count` each time `current_phase == "Pending"` and returns `True` when `_stuck_count >= _max_stuck_count`. When the phase is **not** `Pending`, `_stuck_count` is **reset to 0** — so a pod that transitions out of Pending (e.g. briefly reaches Running then goes back to Pending) starts its stuck count fresh. When it returns `True`, `enter_states()` calls `terminate()` and returns `False`. Plain startup timeout (wall-clock elapsed > `timeout`) also calls `terminate()` before returning `False`. In both cases `terminal_state` is always set to `TERMINATED` by `terminate()`, regardless of whether the API call succeeds or raises. Note: `_stuck_count` and `_max_stuck_count` are poll-iteration counts (~1 second each).
 
 #### K8sJobHandle Pod Manifest
 
@@ -373,7 +331,7 @@ spec:
   containers:
     - name: container-<job_id>
       image: <job_image>
-      command: ["/usr/local/bin/python"]
+      command: ["<python_path>"]   # default: /usr/local/bin/python; configurable via K8sJobLauncher.python_path
       args: ["-u", "-m", "<exe_module>", "-w", "<workspace>", ...]
       volumeMounts:
         - name: nvflws
@@ -402,33 +360,37 @@ spec:
 
 Constructor parameters:
 
-| Parameter | Purpose |
-|-----------|---------|
-| `config_file_path` | Path to kubeconfig file. Loaded via `config.load_kube_config()`. |
-| `workspace_pvc` | PVC claim name for the NVFlare workspace. |
-| `etc_pvc` | PVC claim name for configuration/etc data. |
-| `data_pvc_file_path` | Path to a YAML file mapping PVC names to mount paths for training data. |
-| `timeout` | Maximum seconds to wait for pod to reach `Running` (also used as stuck threshold). |
-| `namespace` | Kubernetes namespace (default: `"default"`). |
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `config_file_path` | (required) | Path to kubeconfig file. Loaded via `config.load_kube_config()` at init time. |
+| `workspace_pvc` | (required) | PVC claim name for the NVFlare workspace. |
+| `etc_pvc` | (required) | PVC claim name for configuration/etc data. |
+| `data_pvc_file_path` | (required) | Path to a YAML file mapping PVC names to mount paths for training data. Read and validated at init time; raises `ValueError` if the file is empty/contains no entries, or if the parsed YAML is not a `dict`. Only the first key (PVC name) is used. |
+| `timeout` | `None` | Maximum wall-clock seconds for `enter_states([RUNNING])`. Also used as `_max_stuck_count`. If `None`, `pending_timeout` governs stuck detection instead. |
+| `namespace` | `"default"` | Kubernetes namespace. |
+| `pending_timeout` | `30` | Stuck-detection threshold (poll iterations) when `timeout` is `None`. Passed to `K8sJobHandle`. |
+| `python_path` | `"/usr/local/bin/python"` | Absolute path to the Python executable used as the container `command`. Override for non-standard images where Python is not at `/usr/local/bin/python` (e.g. `/usr/bin/python3`). Passed through to `K8sJobHandle`. |
 
 Launch sequence:
 
 | Step | Action |
 |------|--------|
-| 1 | Extract `job_image`, `site_name`, and optional `num_of_gpus` from `job_meta`. |
-| 2 | Read `JOB_PROCESS_ARGS` from `fl_ctx`; extract `EXE_MODULE` as the container command. |
-| 3 | Build `job_config` dict: name, image, container name, command, volume mounts/PVCs, `module_args` from `get_module_args()`, set list, GPU resources. |
-| 4 | Create `K8sJobHandle(job_id, core_v1, job_config, namespace, timeout)` which builds the pod manifest. |
-| 5 | `core_v1.create_namespaced_pod(body=pod_manifest, namespace)`. |
-| 6 | Call `job_handle.enter_states([RUNNING], timeout)`. The return value is not checked. If stuck detection fires, `terminate()` is called inside `enter_states` (sets `terminal_state = TERMINATED` via `finally`) before returning the handle, so the caller can detect failure via `poll()`. On plain timeout (no stuck), the handle is returned with `terminal_state` unset and the pod may still be starting. |
-| 7 | On `ApiException` from `create_namespaced_pod` → `job_handle.terminate()` then return the handle. Unlike Docker (which returns `None` on failure), the K8s launcher always returns a handle; callers detect failure when `poll()` or `wait()` resolves. |
+| 1 | Validate and sanitize job ID: `raw_job_id = job_meta.get(JobConstants.JOB_ID)`; raises `RuntimeError` if missing or falsy. Then `job_id = uuid4_to_rfc1123(raw_job_id)`. All subsequent operations use this RFC 1123-compliant name. Extract `job_image`, `site_name`, and optional `num_of_gpus` from `job_meta`. |
+| 2 | Read `JOB_PROCESS_ARGS` from `fl_ctx`; raises `RuntimeError` if the dict is absent. Raises `RuntimeError` if `EXE_MODULE` is missing or falsy. Extract the module name via `_, job_cmd = exe_module_entry`. |
+| 3 | Build `job_config` dict: name (`job_id`), image, container name (`container-{job_id}`), command, volume mounts/PVCs, `module_args` from `get_module_args()`. `set_list` is conditionally set: if `fl_ctx.get_prop(FLContextKey.ARGS)` is non-None and `getattr(args, "set", None)` is non-None, `set_list = args.set` is added (see note below). Using `getattr` rather than direct attribute access guards against non-standard `ARGS` objects that lack a `set` attribute. If `num_of_gpus` is truthy (non-None **and** non-zero), adds `job_config["resources"] = {"limits": {"nvidia.com/gpu": num_of_gpus}}`; a value of `0` is intentionally excluded to avoid injecting `nvidia.com/gpu: 0` into the pod spec, which would explicitly request zero GPUs and can affect scheduling on GPU-enabled clusters differently than omitting the limit entirely. |
+| 4 | Create `K8sJobHandle(job_id, core_v1, job_config, namespace=self.namespace, timeout=self.timeout, pending_timeout=self.pending_timeout)` which builds the pod manifest. |
+| 5 | `core_v1.create_namespaced_pod(body=pod_manifest, namespace)` in a `try/except Exception` block. On any exception — including `ApiException` (K8s API error) and lower-level errors such as network timeouts or serialization failures — `job_handle.terminate()` is called (always sets `terminal_state = TERMINATED`) and the handle is returned. The scope of this handler is intentionally limited to this single API call; it does not swallow exceptions from the polling loop in step 6. |
+| 6 | Call `job_handle.enter_states([RUNNING])` in a separate `try/except BaseException` block. On any exception (including `KeyboardInterrupt`) → `job_handle.terminate()` then re-raise. This ensures a pod already created in step 5 is not orphaned if the blocking poll loop is interrupted. The return value is captured: if `False`, logs a warning `"unable to enter running phase {job_id}"`. Inside `enter_states`: stuck detection and plain timeout both call `terminate()` (always sets `terminal_state = TERMINATED`) then return `False`; if the pod reaches a terminal phase (`Failed`/`Succeeded`), `terminal_state` is set from `POD_STATE_MAPPING` and `enter_states` returns `False` without calling `terminate()`. Setting `terminal_state` in all `False`-return paths prevents `wait()` from looping if the pod is GC'd before `wait()` runs. |
+| 7 | Return `job_handle`. The K8s launcher always returns a handle; callers detect launch failure when `poll()` or `wait()` resolves. |
+
+> **`set_list` note:** `args.set` is the CLI `--set` items stored in `FLContextKey.ARGS` at the time `launch_job` is called. The server and client both make a deep copy of `FLContextKey.ARGS`, append `print_conf=True` (and server also appends `restore_snapshot=<bool>`) to that copy, and embed the expanded string into `JOB_PROCESS_ARGS[OPTIONS]`. They do **not** write the modified copy back to `FLContextKey.ARGS`. As a result, the K8s launcher's `set_list` contains only the original CLI `--set` items — **without** `print_conf=True` or `restore_snapshot=...`. The Process launcher receives those extra flags through `OPTIONS`, which K8s excludes from `module_args` (`get_*_job_args(include_set_options=False)`).
 
 **Server/Client subclasses** override `get_module_args()`:
 
-- `ClientK8sJobLauncher` → Filters `JOB_PROCESS_ARGS` through `get_client_job_args(include_exe_module=False, include_set_options=False)` to produce the dict of `-flag value` pairs for the container args list.
-- `ServerK8sJobLauncher` → Same pattern with `get_server_job_args(...)`.
+- `ClientK8sJobLauncher` → Calls `_job_args_dict(job_args, get_client_job_args(False, False))` — filters `JOB_PROCESS_ARGS` excluding `EXE_MODULE` and `OPTIONS`, producing a `{flag: value}` dict for the container `args` list.
+- `ServerK8sJobLauncher` → Same pattern with `get_server_job_args(False, False)`.
 
-**Key difference from Process/Docker:** The K8s launcher does not build a shell command string. Instead, it passes the Python executable as `command` and constructs a structured `args` list (`["-u", "-m", "<module>", "-w", "<workspace>", ...]`) directly in the pod spec.
+**Key difference from Process:** The K8s launcher does not build a shell command string. Instead, it passes the Python executable as `command` and constructs a structured `args` list (`["-u", "-m", "<module>", "-w", "<workspace>", ...]`) directly in the pod spec.
 
 ---
 
@@ -437,19 +399,15 @@ Launch sequence:
 ### 5.1 Full Class Hierarchy
 
 ```
-JobHandleSpec (abstract)
+JobHandleSpec (ABC)
 ├── ProcessHandle          (wraps ProcessAdapter / subprocess.Popen)
-├── DockerJobHandle        (wraps docker.Container)
 └── K8sJobHandle           (wraps CoreV1Api + pod name)
 
-JobLauncherSpec (abstract, extends FLComponent)
+JobLauncherSpec (FLComponent, ABC)
 ├── ProcessJobLauncher     (abstract: get_command)
 │   ├── ServerProcessJobLauncher
 │   └── ClientProcessJobLauncher
-├── DockerJobLauncher      (abstract: get_command)
-│   ├── ServerDockerJobLauncher
-│   └── ClientDockerJobLauncher
-└── K8sJobLauncher         (abstract: get_module_args)
+└── K8sJobLauncher         (abstract: get_module_args; inherits ABCMeta from JobLauncherSpec)
     ├── ServerK8sJobLauncher
     └── ClientK8sJobLauncher
 ```
@@ -458,12 +416,11 @@ JobLauncherSpec (abstract, extends FLComponent)
 
 **Strategy Pattern** -- Each launcher is a strategy for running jobs. The engine programs against `JobLauncherSpec`; the concrete strategy is selected at runtime through the event system.
 
-**Template Method Pattern** -- Each base launcher (`ProcessJobLauncher`, `DockerJobLauncher`, `K8sJobLauncher`) implements `launch_job()` with a fixed algorithm, delegating the variable part to an abstract method:
+**Template Method Pattern** -- Each base launcher (`ProcessJobLauncher`, `K8sJobLauncher`) implements `launch_job()` with a fixed algorithm, delegating the variable part to an abstract method:
 
 | Base Launcher | Template method calls | Abstract hook |
 |---------------|----------------------|---------------|
 | `ProcessJobLauncher` | `launch_job()` → `get_command()` | `get_command(job_meta, fl_ctx) -> str` |
-| `DockerJobLauncher` | `launch_job()` → `get_command()` | `get_command(job_meta, fl_ctx) -> (str, str)` |
 | `K8sJobLauncher` | `launch_job()` → `get_module_args()` | `get_module_args(job_id, fl_ctx) -> dict` |
 
 Server and client subclasses provide the implementation of these hooks, producing the correct command-line arguments for each role.
@@ -472,23 +429,23 @@ Server and client subclasses provide the implementation of these hooks, producin
 
 ---
 
-## 6. Comparison: Process vs Docker vs Kubernetes
+## 6. Comparison: Process vs Kubernetes
 
-| Aspect | Process | Docker | Kubernetes |
-|--------|---------|--------|------------|
-| **When selected** | No `job_image` for site | `job_image` present | `job_image` present |
-| **Execution unit** | OS subprocess | Docker container | Kubernetes Pod |
-| **Isolation** | Shared host, inherited env | Container isolation, mounted workspace | Pod isolation, PVC-backed volumes |
-| **Command format** | Shell command string (`python -m ...`) | Shell command inside `/bin/bash -c` | Structured `command` + `args` list in pod spec |
-| **Workspace access** | Direct filesystem (same host) | Host directory bind-mounted to container | PersistentVolumeClaims |
-| **Data access** | Direct filesystem | Via bind mount | Via PVC (configured in YAML) |
-| **Start verification** | None (spawn returns immediately) | Poll for `RUNNING` state with timeout | `enter_states([RUNNING], timeout)` with stuck detection; return value not checked — on stuck, `terminal_state` is set so caller can detect via `poll()` |
-| **Wait mechanism** | `subprocess.Popen.wait()` (OS-level block) | Poll container status for `EXITED`/`DEAD` | Direct while loop via `_query_state()`; no timeout; exits when `terminal_state` set or `SUCCEEDED`/`TERMINATED` reached |
-| **Terminate** | `SIGTERM`/`SIGKILL` via `ProcessAdapter` | `container.stop()` | `delete_namespaced_pod(grace_period=0)`; `terminal_state` set to `TERMINATED` on success or 404; left unchanged (error logged) for other exceptions |
-| **Return code source** | Process exit code or RC file | Container status mapping or RC file | Pod phase mapping or RC file; `poll()` now consistently returns `JobReturnCode` via `JOB_RETURN_CODE_MAPPING` |
-| **GPU support** | Inherited from host environment | Not explicitly managed | `nvidia.com/gpu` resource limit in pod spec |
-| **Dependencies** | stdlib only | `docker` Python SDK | `kubernetes` Python client + kubeconfig |
-| **Typical use case** | Simulator, single-machine POC | Multi-container on single host | Production cluster with shared storage |
+| Aspect | Process | Kubernetes |
+|--------|---------|------------|
+| **When selected** | No `job_image` for site | `job_image` present |
+| **Execution unit** | OS subprocess | Kubernetes Pod |
+| **Isolation** | Shared host, inherited env | Pod isolation, PVC-backed volumes |
+| **Command format** | Shell command string (`sys.executable -m ...`) | Structured `command: ["/usr/local/bin/python"]` + `args` list in pod spec |
+| **Workspace access** | Direct filesystem (same host) | PersistentVolumeClaims |
+| **Data access** | Direct filesystem | Via PVC (configured in YAML) |
+| **Start verification** | None (spawn returns immediately) | `enter_states([RUNNING])` called (reads `self.timeout`); return value is checked — `False` logs a debug message but handle is still always returned; on stuck detection or plain timeout, `terminate()` is called (sets `terminal_state = TERMINATED`); callers detect failure via `poll()` |
+| **Wait mechanism** | `subprocess.Popen.wait()` (OS-level block) | Direct while loop via `_query_state()`; no timeout; exits when `terminal_state` set or `SUCCEEDED`/`TERMINATED` reached |
+| **Terminate** | `SIGTERM`/`SIGKILL` via `ProcessAdapter` | `delete_namespaced_pod(grace_period=0)`; `terminal_state` always set to `TERMINATED` — on success, 404, other `ApiException`, or any lower-level `Exception` (network/serialization). Errors are logged but never propagated. |
+| **Return code source** | Process exit code or RC file | Pod phase mapping or RC file; `poll()` consistently returns `JobReturnCode` via `JOB_RETURN_CODE_MAPPING` |
+| **GPU support** | Inherited from host environment | `nvidia.com/gpu` resource limit set in pod spec from `job_meta` resource spec (`num_of_gpus`); omitted if not specified |
+| **Dependencies** | stdlib only | `kubernetes` Python client + kubeconfig |
+| **Typical use case** | Simulator, single-machine POC | Production cluster with shared storage |
 
 ---
 
@@ -540,8 +497,7 @@ The following shows the end-to-end flow for launching and managing a job, applic
     │  launcher.launch_job(job_meta, fl_ctx)        │                      │
     │─────────────────────────────────────────────->│                      │
     │                        │                      │  create exec unit    │
-    │                        │                      │  (process/container  │
-    │                        │                      │   /pod)              │
+    │                        │                      │  (process/pod)       │
     │                        │                      │─────────────────────>│
     │                        │                      │  return handle       │
     │<─────────────────────────────────────────────────────────────────────│
@@ -583,23 +539,7 @@ Launchers are registered as FL components in the site's `resources.json`. The co
 }
 ```
 
-### 9.2 Docker Launcher
-
-```json
-{
-  "id": "job_launcher",
-  "path": "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
-  "args": {
-    "mount_path": "/workspace",
-    "network": "nvflare-network",
-    "timeout": 60
-  }
-}
-```
-
-Requires the `NVFL_DOCKER_WORKSPACE` environment variable to be set on the host to identify the workspace directory to bind-mount.
-
-### 9.3 Kubernetes Launcher
+### 9.2 Kubernetes Launcher
 
 ```json
 {
@@ -628,14 +568,14 @@ my-data-pvc: /var/tmp/nvflare/data
 
 ## 10. Future Improvements
 
-1. **Explicit launcher selection** -- Today "has image" → Docker or K8s, "no image" → Process. Allow an explicit `launcher_type` field in job meta or deploy map so a site can support multiple container backends or provide fallback ordering (e.g., try K8s, fall back to Docker).
+1. **Explicit launcher selection** -- Today "has image" → K8s, "no image" → Process. Allow an explicit `launcher_type` field in job meta or deploy map so a site can support multiple backends or provide fallback ordering.
 
-2. **Consistent GPU handling** -- The K8s launcher reads `num_of_gpus` from the resource spec; the Docker and Process launchers do not. Standardize resource declaration so job definitions remain portable across backends.
+2. **Consistent GPU handling** -- The K8s launcher applies `num_of_gpus` from the job resource spec as a pod `nvidia.com/gpu` limit; the Process launcher ignores it entirely. Standardize resource declaration so job definitions remain portable across backends.
 
-3. **Unified cleanup** -- Standardize container/pod cleanup policy across launchers (auto-remove on exit, configurable retention for debugging) and centralize it in the handle or engine.
+3. **Unified cleanup** -- Standardize pod cleanup policy (auto-remove on exit, configurable retention for debugging) and centralize it in the handle or engine.
 
-4. **Consistent timeout policy and failure semantics** -- The Process launcher has no start timeout. Docker polls for `RUNNING` and returns `None` on failure. K8s polls for `Running` with stuck detection (terminates and sets `terminal_state` on stuck) but does not act on plain startup timeout — if a pod is slow to start but not stuck in `Pending`, the handle is returned with `terminal_state` unset. Consider terminating explicitly on timeout and unifying failure return across all launchers (either always `None` or always a terminated handle).
+4. **Consistent timeout policy and failure semantics** -- The Process launcher has no start timeout. K8s checks the `enter_states` return value and logs a debug message on failure (termination already happens inside `enter_states` for stuck/timeout paths), always returning a handle. Consider exposing a distinct "startup failed" state on the handle so callers can react without polling.
 
-5. **Observability** -- Add an optional `get_info()` method to `JobHandleSpec` so the engine can log launcher-specific details (container ID, pod name, namespace, PID) for debugging and operations.
+5. **Observability** -- Add an optional `get_info()` method to `JobHandleSpec` so the engine can log launcher-specific details (pod name, namespace, PID) for debugging and operations.
 
-6. **Testing** -- Provide `MockJobLauncher` and `MockJobHandle` implementations for unit tests that verify server/client flow without starting real processes or containers.
+6. **Testing** -- Provide `MockJobLauncher` and `MockJobHandle` implementations for unit tests that verify server/client flow without starting real processes or pods.
