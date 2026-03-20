@@ -275,7 +275,7 @@ We can see the three curves align well.
 ![sft](./figs/callback_multigpu.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
+Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using the [Client API](../../../docs/programming_guide/execution_api_type/client_api.rst).
 
 The major code modifications are for replacing the fixed model reloading processing with 
 receiving and returning the global model, as shown below:
