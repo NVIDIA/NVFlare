@@ -76,3 +76,35 @@ def test_set_result_raises_on_double_call():
 
     with pytest.raises(StreamError, match="already done"):
         future.set_result(2)
+
+
+def test_set_exception_ignores_double_call(caplog):
+    import logging
+
+    future = StreamFuture(stream_id=12)
+    calls = []
+    future.add_done_callback(lambda: calls.append("cb"))
+
+    first_error = StreamError("first")
+    future.set_exception(first_error)
+    assert calls == ["cb"]
+
+    with caplog.at_level(logging.WARNING):
+        future.set_exception(StreamError("second"))
+
+    # original error preserved, callback not fired a second time
+    assert future.exception(timeout=0.1) is first_error
+    assert calls == ["cb"]
+    assert any("already-done" in r.message for r in caplog.records)
+
+
+def test_set_exception_ignores_call_after_cancel():
+    future = StreamFuture(stream_id=13)
+    future.cancel()
+
+    calls = []
+    future.add_done_callback(lambda: calls.append("cb"))
+    future.set_exception(StreamError("late"))
+
+    assert future.cancelled() is True
+    assert calls == ["cb"]  # registered after done, invoked immediately; not a second time

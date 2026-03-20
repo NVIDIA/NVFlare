@@ -241,6 +241,9 @@ class StreamFuture:
     def set_exception(self, exception):
         """Sets the result of the future as being the given exception."""
         with self.lock:
+            if self.error or self.waiter.is_set():
+                log.warning(f"set_exception called on already-done future {self.stream_id}: {exception}")
+                return
             self.error = exception
             self.waiter.set()
 
