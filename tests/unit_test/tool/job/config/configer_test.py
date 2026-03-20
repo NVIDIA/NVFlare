@@ -32,7 +32,7 @@ MERGE_CONFIG_TEST_CASES = [
     (
         "launch_once",
         [
-            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
+            ["app/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
             ["meta.conf", "min_clients=3"],
         ],
         "launch_everytime",
@@ -50,7 +50,7 @@ MERGE_CONFIG_TEST_CASES = [
     (
         "launch_once",
         [
-            ["app/config/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=False"],
+            ["app/config/config_fed_client.conf", "app_script=cifar10_fl.py", "launch_once=false"],
             ["meta.conf", "min_clients=3"],
         ],
         "launch_everytime",
