@@ -112,85 +112,10 @@ client pipeline:
 Together, these three features significantly reduce peak memory usage, prevent RSS growth
 that leads to OOM errors, and eliminate redundant serialization/deserialization overhead
 when training in subprocess mode. In a 5 GB PyTorch model benchmark with FedAvg and 4
-clients, server peak memory dropped by up to 85% (in-process mode) and client peak memory
-by up to 92% (subprocess mode), as detailed in the tables below.
-Prior to 2.7.2, subprocess jobs with large models would OOM after a few rounds; with the
-full set of fixes they now complete stably across many rounds.
-
-**FedAvg — 5 GB model, 4 clients**
-
-**In-process mode**
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 20 20 20
-
-   * - Metric
-     - v2.7.0
-     - v2.7.2
-     - Improvement
-   * - Server peak (GB)
-     - 264
-     - 40
-     - −85%
-   * - Client peak avg (GB)
-     - ~23
-     - ~5.6
-     - −76%
-
-
-**External-process (subprocess) mode**
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 20 20 20
-
-   * - Metric
-     - v2.7.0
-     - v2.7.2
-     - Improvement
-   * - Server peak (GB)
-     - 193.7
-     - 48.3
-     - −75%
-   * - Client peak avg (GB)
-     - 62.6
-     - 5.3
-     - −92%
-
-
-**Swarm Learning — 2.5 GB model, 3 sites**
-
-**In-process mode**
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 20 20 20
-
-   * - Metric
-     - v2.7.0
-     - v2.7.2
-     - Improvement
-   * - Site peak avg (GB)
-     - 54.2
-     - 26.2
-     - −52%
-
-
-**External-process (subprocess) mode**
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 20 20 20
-
-   * - Metric
-     - v2.7.0
-     - v2.7.2
-     - Improvement
-   * - Site peak avg (GB)
-     - 54.2
-     - 27.8
-     - −49%
+clients, server peak memory dropped by 60–75% (in-process mode) and client peak memory
+by 70–82% (subprocess mode). Swarm Learning jobs see similarly significant peak memory
+reductions. Prior to 2.7.2, subprocess jobs with large models would OOM after a few rounds;
+with the full set of fixes they now complete stably across many rounds.
 
 
 Reliability and Performance
