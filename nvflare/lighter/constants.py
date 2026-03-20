@@ -197,6 +197,7 @@ class ProvFileName:
     SERVER_CONTEXT_TENSEAL = "server_context.tenseal"
     CLIENT_CONTEXT_TENSEAL = "client_context.tenseal"
     HELM_CHART_DIR = "nvflare_hc"
+    HELM_CHART_CLIENT_DIR = "nvflare_hc_clients"
     DEPLOYMENT_OVERSEER_YAML = "deployment_overseer.yaml"
     SERVICE_OVERSEER_YAML = "service_overseer.yaml"
     CHART_YAML = "Chart.yaml"
