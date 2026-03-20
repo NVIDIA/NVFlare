@@ -127,10 +127,12 @@ class BlobHandler:
                         remaining = len(blob_task.buffer) - buf_size
                         if length > remaining:
                             log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            if remaining > 0:
-                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
-                                buf_size += remaining
-                            break
+                            blob_task.future.set_exception(
+                                StreamError(
+                                    f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
+                                )
+                            )
+                            return
                         else:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
@@ -145,7 +147,10 @@ class BlobHandler:
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(f"Stream {blob_task} Size doesn't match: {blob_task.size} <> {buf_size} {thread_id=}")
+                blob_task.future.set_exception(
+                    StreamError(f"Size mismatch: declared {blob_task.size} but received {buf_size} bytes")
+                )
+                return
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer

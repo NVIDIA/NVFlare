@@ -139,13 +139,16 @@ class StreamFuture:
         """
 
         with self.lock:
-            if self.error or self.result:
+            if self.error or self.waiter.is_set():
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
             if self.task_handle:
                 self.task_handle.cancel()
-            return True
+            self.waiter.set()
+
+        self._invoke_callbacks()
+        return True
 
     def cancelled(self):
         with self.lock:

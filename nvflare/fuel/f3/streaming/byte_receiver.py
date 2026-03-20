@@ -215,7 +215,8 @@ class RxTask:
         else:
             log.error(msg)
 
-        self.stream_future.set_exception(error)
+        if self.stream_future:
+            self.stream_future.set_exception(error)
 
         if notify:
             message = Message()
@@ -307,7 +308,7 @@ class RxStream(Stream):
         return self.task.read(size)
 
     def close(self):
-        if not self.task.stream_future.done():
+        if self.task.stream_future and not self.task.stream_future.done():
             self.task.stream_future.set_result(self.task.offset)
         self.closed = True
 
