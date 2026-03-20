@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nvflare-server.name" . }}-ingress-controller
+  labels:
+    {{- include "nvflare-server.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "nvflare-server.name" . }}-ingress-controller
+  template:
+    metadata:
+      labels:
+        app: {{ include "nvflare-server.name" . }}-ingress-controller
+    spec:
+      containers:
+        - name: ingress-nginx-controller
+          image: {{ .Values.ingressController.image.repository }}:{{ .Values.ingressController.image.tag }}
+          args:
+            - /nginx-ingress-controller
+            - --tcp-services-configmap=$(POD_NAMESPACE)/nvflare-server-tcp-services
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: fl-port
+              containerPort: {{ .Values.fedLearnPort }}
+              protocol: TCP

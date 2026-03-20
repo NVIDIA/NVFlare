@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-ingress-microk8s-conf
+  namespace: ingress
+data:
+  {{ .Values.fedLearnPort | quote }}: {{ printf "%s/nvflare-server:%v" .Release.Namespace .Values.fedLearnPort | quote }}
