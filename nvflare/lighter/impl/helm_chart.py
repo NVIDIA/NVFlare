@@ -74,8 +74,10 @@ class HelmChartBuilder(Builder):
         self.deployment_server["spec"]["template"]["spec"]["containers"][0]["image"] = self.docker_image
         container_ports = self.deployment_server["spec"]["template"]["spec"]["containers"][0]["ports"]
         container_ports[0]["containerPort"] = fed_learn_port
+        container_ports[0]["containerPort"] = fed_learn_port
         if single_port:
-            container_ports.pop(1)
+            if len(container_ports) > 1:
+                container_ports.pop(1)
         else:
             container_ports[1]["containerPort"] = admin_port
         cmd_args = self.deployment_server["spec"]["template"]["spec"]["containers"][0]["args"]
