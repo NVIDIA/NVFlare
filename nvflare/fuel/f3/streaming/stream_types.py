@@ -228,7 +228,11 @@ class StreamFuture:
         return self.error
 
     def set_result(self, value: Any):
-        """Sets the return value of work associated with the future."""
+        """Sets the return value of work associated with the future.
+
+        Raises StreamError if called on an already-done future — a duplicate
+        set_result is always a programming error.
+        """
 
         with self.lock:
             if self.error or self.waiter.is_set():
@@ -239,7 +243,12 @@ class StreamFuture:
         self._invoke_callbacks()
 
     def set_exception(self, exception):
-        """Sets the result of the future as being the given exception."""
+        """Sets the result of the future as being the given exception.
+
+        Idempotent: a duplicate call is logged and silently ignored because
+        race conditions can legitimately produce multiple set_exception calls
+        (e.g. _read_stream error racing with the outer blob_cb exception handler).
+        """
         with self.lock:
             if self.error or self.waiter.is_set():
                 log.warning(f"set_exception called on already-done future {self.stream_id}: {exception}")
@@ -250,7 +259,8 @@ class StreamFuture:
         self._invoke_callbacks()
 
     def _invoke_callbacks(self):
-        for callback, args, kwargs in self.done_callbacks:
+        callbacks, self.done_callbacks = self.done_callbacks, []
+        for callback, args, kwargs in callbacks:
             try:
                 callback(*args, **kwargs)
             except Exception as ex:
