@@ -146,7 +146,7 @@ Server deployment
        cd /path/on/server/to/prod_00
        microk8s helm3 install \
          -n default \
-         --set workspace=$(pwd) \
+         --set workspace="$(pwd)" \
          --set persist=/tmp/nvflare \
          nvflare-k8s-demo \
          nvflare_hc/
