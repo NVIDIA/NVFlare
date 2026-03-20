@@ -171,6 +171,7 @@ class FedAvg(BaseFedAvg):
                 self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
                 model.current_round = self.current_round
+                self.fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False)
                 if self.aggregator and self.aggregator.fl_ctx:
                     self.aggregator.fl_ctx.set_prop(
                         AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=False
