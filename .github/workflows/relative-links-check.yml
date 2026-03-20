@@ -17,7 +17,7 @@ name: Check Relative Doc Links
 on:
   pull_request:
     paths:
-      - "examples/advanced/**"
+      - "**/*.md"
       - ".github/workflows/relative-links-check.yml"
       - "ci/check_relative_doc_links.py"
       - "tests/unit_test/ci/test_check_relative_doc_links.py"
@@ -31,8 +31,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Collect advanced markdown files
-        run: find examples/advanced -type f -name "*.md" | sort > advanced_doc_files.txt
+      - name: Collect tracked markdown files
+        run: git ls-files "*.md" | sort > markdown_files.txt
 
-      - name: Check advanced relative links
-        run: python3 ci/check_relative_doc_links.py --files-from advanced_doc_files.txt --repo-root "$PWD"
+      - name: Check repo markdown relative links
+        run: python3 ci/check_relative_doc_links.py --files-from markdown_files.txt --repo-root "$PWD"
