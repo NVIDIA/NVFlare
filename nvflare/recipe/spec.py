@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.filter import Filter
@@ -24,13 +25,13 @@ from nvflare.job_config.defs import FilterType
 
 class ExecEnv(ABC):
 
-    def __init__(self, extra: dict = None):
+    def __init__(self, extra: Optional[dict] = None):
         """Constructor of ExecEnv
 
         Args:
             extra: a dict of extra properties
         """
-        if not extra:
+        if extra is None:
             extra = {}
         if not isinstance(extra, dict):
             raise ValueError(f"extra must be dict but got {type(extra)}")
@@ -94,6 +95,19 @@ class ExecEnv(ABC):
         """
         pass
 
+    def stop(self, clean_up: bool = False) -> None:
+        """Stop the execution environment and optionally clean up resources.
+
+        This method is called after job execution to ensure proper cleanup.
+        Default implementation is a no-op. Override in subclasses that need cleanup.
+
+        Args:
+            clean_up: If True, remove workspace and temporary files after stopping.
+                      If False, only stop running processes but preserve workspace.
+                      Defaults to False.
+        """
+        pass
+
 
 class Recipe(ABC):
 
@@ -114,6 +128,77 @@ class Recipe(ABC):
         """
         pass
 
+    def _snapshot_additional_params(self) -> Dict[str, Dict]:
+        snapshot = {}
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                snapshot[target] = dict(params)
+        return snapshot
+
+    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        for target, app in deploy_map.items():
+            app_config = getattr(app, "app_config", None)
+            if app_config is None:
+                continue
+            params = getattr(app_config, "additional_params", None)
+            if isinstance(params, dict):
+                original = snapshot.get(target, {})
+                params.clear()
+                params.update(original)
+
+    @contextmanager
+    def _temporary_exec_params(self, server_exec_params: dict = None, client_exec_params: dict = None):
+        params_snapshot = None
+        if server_exec_params or client_exec_params:
+            params_snapshot = self._snapshot_additional_params()
+
+        try:
+            if server_exec_params:
+                self.job.to_server(server_exec_params)
+
+            if client_exec_params:
+                self._add_to_client_apps(client_exec_params)
+            yield
+        finally:
+            if params_snapshot is not None:
+                self._restore_additional_params(params_snapshot)
+
+    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
+        """Add an object to client apps, preserving existing per-site structure.
+
+        Args:
+            obj: Object to add to clients.
+            clients: Optional list of specific client names. If None, applies to all clients.
+            **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
+        """
+        if clients is None:
+            from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+            from nvflare.job_config.defs import JobTargetType
+
+            # FedJob has no public API to list per-site deploy targets, so we inspect
+            # private deploy map to preserve existing per-site client topology.
+            deploy_map = getattr(self.job, "_deploy_map", {})
+            existing_client_sites = [
+                target
+                for target in deploy_map.keys()
+                if target not in [ALL_SITES, SERVER_SITE_NAME]
+                and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+            ]
+            if existing_client_sites:
+                for site in existing_client_sites:
+                    self.job.to(obj, site, **kwargs)
+            else:
+                self.job.to_clients(obj, **kwargs)
+        else:
+            for client in clients:
+                self.job.to(obj, client, **kwargs)
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -127,11 +212,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
-        else:
-            for client in clients:
-                self.job.to(filter, client, filter_type=FilterType.TASK_DATA, tasks=tasks)
+        self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_client_output_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -146,11 +227,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if clients is None:
-            self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
-        else:
-            for client in clients:
-                self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+        self._add_to_client_apps(filter, clients=clients, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
         """Add top-level configuration parameters to config_fed_client.json.
@@ -165,11 +242,32 @@ class Recipe(ABC):
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
 
-        if clients is None:
-            self.job.to_clients(config)
-        else:
-            for client in clients:
-                self.job.to(obj=config, target=client)
+        self._add_to_client_apps(config, clients=clients)
+
+    def add_client_file(self, file_path: str, clients: Optional[List[str]] = None):
+        """Add a file or directory to client apps.
+
+        The file will be added to the client's custom directory and bundled with the job.
+        Can be a script, configuration file, or any resource needed by clients.
+
+        Args:
+            file_path: Path to the file or directory to add to clients.
+            clients: Optional list of specific client names. If None, applies to all clients.
+
+        Raises:
+            TypeError: If file_path is not a string.
+
+        Example:
+            # Add a wrapper script to all clients
+            recipe.add_client_file("client_wrapper.sh")
+
+            # Add a script to specific clients
+            recipe.add_client_file("custom_script.py", clients=["site1", "site2"])
+        """
+        if not isinstance(file_path, str):
+            raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
+
+        self._add_to_client_apps(file_path, clients=clients)
 
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
@@ -209,6 +307,27 @@ class Recipe(ABC):
 
         self.job.to_server(config)
 
+    def add_server_file(self, file_path: str):
+        """Add a file or directory to server app.
+
+        The file will be added to the server's custom directory and bundled with the job.
+        Can be a script, configuration file, or any resource needed by the server.
+
+        Args:
+            file_path: Path to the file or directory to add to server.
+
+        Raises:
+            TypeError: If file_path is not a string.
+
+        Example:
+            # Add a wrapper script to server
+            recipe.add_server_file("server_wrapper.sh")
+        """
+        if not isinstance(file_path, str):
+            raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
+
+        self.job.to_server(file_path)
+
     @staticmethod
     def _get_full_class_name(obj):
         """
@@ -243,13 +362,14 @@ class Recipe(ABC):
 
         reg = DecomposerRegister(class_names)
         self.job.to_server(reg, id="decomposer_reg")
-        self.job.to_clients(reg, id="decomposer_reg")
+
+        self._add_to_client_apps(reg, id="decomposer_reg")
 
     def export(
         self,
         job_dir: str,
-        server_exec_params: dict = None,
-        client_exec_params: dict = None,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
         env: ExecEnv = None,
     ):
         """Export the recipe to a job definition.
@@ -263,18 +383,14 @@ class Recipe(ABC):
         Returns: None
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            if env:
+                self.process_env(env)
+            self.job.export_job(job_dir)
 
-        if client_exec_params:
-            self.job.to_clients(client_exec_params)
-
-        if env:
-            self.process_env(env)
-
-        self.job.export_job(job_dir)
-
-    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> "Run":
+    def execute(
+        self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ) -> "Run":
         """Execute the recipe in a specified execution environment.
 
         Args:
@@ -285,15 +401,10 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
+        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
+            self.process_env(env)
+            job_id = env.deploy(self.job)
+            from nvflare.recipe.run import Run
 
-        if client_exec_params:
-            self.job.to_clients(client_exec_params)
-
-        self.process_env(env)
-        job_id = env.deploy(self.job)
-        from nvflare.recipe.run import Run
-
-        run = Run(env, job_id)
-        return run
+            run = Run(env, job_id)
+            return run
