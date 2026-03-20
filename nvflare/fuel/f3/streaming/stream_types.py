@@ -162,7 +162,7 @@ class StreamFuture:
     def done(self):
         """Return True of the future was cancelled or finished executing."""
         with self.lock:
-            return self.error or self.waiter.is_set()
+            return bool(self.error or self.waiter.is_set())
 
     def add_done_callback(self, done_cb: Callable, *args, **kwargs):
         """Attaches a callable that will be called when the future finishes.
@@ -171,7 +171,14 @@ class StreamFuture:
             done_cb: A callable that will be called with this future completes
         """
         with self.lock:
-            self.done_callbacks.append((done_cb, args, kwargs))
+            if not self.waiter.is_set():
+                self.done_callbacks.append((done_cb, args, kwargs))
+                return
+        # Future is already done — invoke immediately outside the lock
+        try:
+            done_cb(*args, **kwargs)
+        except Exception as ex:
+            log.error(f"Exception calling callback for {done_cb}: {ex}")
 
     def result(self, timeout=None) -> Any:
         """Return the result of the call that the future represents.
@@ -224,8 +231,8 @@ class StreamFuture:
         """Sets the return value of work associated with the future."""
 
         with self.lock:
-            if self.error:
-                raise StreamError("Invalid state, future already failed")
+            if self.error or self.waiter.is_set():
+                raise StreamError("Invalid state, future is already done")
             self.value = value
             self.waiter.set()
 

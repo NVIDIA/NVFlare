@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.fuel.f3.streaming.stream_types import StreamCancelled, StreamFuture, StreamTaskSpec
+from nvflare.fuel.f3.streaming.stream_types import StreamCancelled, StreamError, StreamFuture, StreamTaskSpec
 
 
 class _TaskHandle(StreamTaskSpec):
@@ -50,3 +50,29 @@ def test_stream_future_cancel_returns_false_after_completion_with_none_result():
     future.set_result(None)
 
     assert future.cancel() is False
+
+
+def test_done_returns_bool():
+    future = StreamFuture(stream_id=9)
+    assert future.done() is False
+
+    future.set_exception(StreamError("err"))
+    assert future.done() is True
+
+
+def test_add_done_callback_invoked_immediately_when_future_already_done():
+    future = StreamFuture(stream_id=10)
+    future.set_result(42)
+
+    calls = []
+    future.add_done_callback(lambda: calls.append("late"))
+
+    assert calls == ["late"]
+
+
+def test_set_result_raises_on_double_call():
+    future = StreamFuture(stream_id=11)
+    future.set_result(1)
+
+    with pytest.raises(StreamError, match="already done"):
+        future.set_result(2)
