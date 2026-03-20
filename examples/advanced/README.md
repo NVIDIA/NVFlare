@@ -8,11 +8,11 @@ Please also install "./requirements.txt" in each example folder.
 
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
-  * [Simulated Federated Learning with CIFAR-10](./cifar10/cifar10-sim/README.md)
+  * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
     * This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
   [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
   and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL simulator.
-  * [Real-world Federated Learning with CIFAR-10](./cifar10/cifar10-real-world/README.md)
+  * [Real-world Federated Learning with CIFAR-10](./cifar10/pt/cifar10-real-world/README.md)
     * Includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with streaming 
   of TensorBoard metrics to the server during training 
   and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
