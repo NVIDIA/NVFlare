@@ -1,0 +1,38 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Check Relative Doc Links
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - ".github/workflows/relative-links-check.yml"
+      - "ci/check_relative_doc_links.py"
+      - "tests/unit_test/ci/test_check_relative_doc_links.py"
+  workflow_dispatch:
+
+jobs:
+  check-relative-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect tracked markdown files
+        run: git ls-files "*.md" | sort > markdown_files.txt
+
+      - name: Check repo markdown relative links
+        run: python3 ci/check_relative_doc_links.py --files-from markdown_files.txt --repo-root "$PWD"
