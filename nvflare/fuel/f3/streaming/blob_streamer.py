@@ -104,6 +104,10 @@ class BlobHandler:
         """Run blob_cb on the callback pool; preserve exception handling (log + task.stop) as in ByteReceiver."""
         try:
             self.blob_cb(future, *args, **kwargs)
+        except StreamError:
+            # StreamError was already set on the future by _read_stream; suppress re-log to avoid
+            # a misleading double-error that implies blob_cb misbehaved.
+            pass
         except Exception as ex:
             log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
             if hasattr(stream, "task"):

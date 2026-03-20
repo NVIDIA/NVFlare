@@ -259,6 +259,10 @@ class StreamFuture:
         self._invoke_callbacks()
 
     def _invoke_callbacks(self):
+        # Swap out the list before invoking so callbacks are released after firing.
+        # This is safe without the lock: waiter.set() (always called inside the lock before
+        # _invoke_callbacks) ensures any concurrent add_done_callback caller sees
+        # waiter.is_set()==True and invokes directly rather than appending here.
         callbacks, self.done_callbacks = self.done_callbacks, []
         for callback, args, kwargs in callbacks:
             try:

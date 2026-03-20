@@ -277,7 +277,8 @@ class RxTask:
                 self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
                 self.offset_ack = self.offset
 
-            self.stream_future.set_progress(self.offset)
+            if self.stream_future:
+                self.stream_future.set_progress(self.offset)
 
             return RESULT_DATA, result
 
