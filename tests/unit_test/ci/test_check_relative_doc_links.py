@@ -15,6 +15,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_module():
     script_path = Path(__file__).resolve().parents[3] / "ci" / "check_relative_doc_links.py"
@@ -25,24 +27,26 @@ def _load_module():
     return module
 
 
-check_relative_doc_links = _load_module()
+@pytest.fixture(scope="module")
+def checker():
+    return _load_module()
 
 
-def test_detects_broken_markdown_relative_link(tmp_path):
+def test_detects_broken_markdown_relative_link(tmp_path, checker):
     repo_root = tmp_path
     docs_dir = repo_root / "docs"
     docs_dir.mkdir()
     readme = docs_dir / "README.md"
     readme.write_text("[broken](./missing.md)\n", encoding="utf-8")
 
-    problems = check_relative_doc_links.check_relative_doc_links([readme], repo_root)
+    problems = checker.check_relative_doc_links([readme], repo_root)
 
     assert len(problems) == 1
     assert problems[0].line == 1
     assert problems[0].target == "./missing.md"
 
 
-def test_ignores_literal_file_uri_examples_and_fenced_code(tmp_path):
+def test_ignores_literal_file_uri_examples_and_fenced_code(tmp_path, checker):
     repo_root = tmp_path
     docs_dir = repo_root / "docs"
     docs_dir.mkdir()
@@ -63,12 +67,52 @@ def test_ignores_literal_file_uri_examples_and_fenced_code(tmp_path):
         encoding="utf-8",
     )
 
-    problems = check_relative_doc_links.check_relative_doc_links([readme], repo_root)
+    problems = checker.check_relative_doc_links([readme], repo_root)
 
     assert problems == []
 
 
-def test_checks_html_src_inside_markdown(tmp_path):
+def test_fenced_block_stays_masked_when_inner_line_looks_like_opening_fence(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    target = docs_dir / "target.md"
+    target.write_text("ok\n", encoding="utf-8")
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "\n".join(
+            [
+                "```shell",
+                "#!/bin/bash",
+                "```python",
+                "[broken](./missing.md)",
+                "```",
+                "```",
+                "[good](./target.md)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert problems == []
+
+
+def test_ignores_whitespace_only_markdown_target(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    readme = docs_dir / "README.md"
+    readme.write_text("[empty]( )\n", encoding="utf-8")
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert problems == []
+
+
+def test_checks_html_src_inside_markdown(tmp_path, checker):
     repo_root = tmp_path
     docs_dir = repo_root / "docs"
     figs_dir = docs_dir / "figs"
@@ -77,6 +121,6 @@ def test_checks_html_src_inside_markdown(tmp_path):
     readme = docs_dir / "README.md"
     readme.write_text('<img src="./figs/plot.png" alt="plot"/>\n', encoding="utf-8")
 
-    problems = check_relative_doc_links.check_relative_doc_links([readme], repo_root)
+    problems = checker.check_relative_doc_links([readme], repo_root)
 
     assert problems == []

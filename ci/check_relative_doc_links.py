@@ -29,8 +29,8 @@ MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 MARKDOWN_REFERENCE_DEF_RE = re.compile(r"(?m)^\s*\[([^\]]+)\]:\s*(\S.*)$")
 MARKDOWN_REFERENCE_USE_RE = re.compile(r"(?<!\!)\[([^\]]+)\]\[([^\]]*)\]")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+MARKDOWN_FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,}).*$")
 SUPPORTED_EXTENSIONS = {".md", ".html"}
-SKIPPED_SCHEMES = {"", "data", "file", "ftp", "http", "https", "javascript", "mailto", "tel"}
 
 
 @dataclass(frozen=True)
@@ -54,13 +54,14 @@ def _mask_markdown_fences(text: str) -> str:
     for line in text.splitlines(keepends=True):
         stripped = line.lstrip()
         if fence_marker is not None:
-            if stripped.startswith(fence_marker):
+            if re.match(rf"^{re.escape(fence_marker[0])}{{{len(fence_marker)},}}\s*$", stripped):
                 fence_marker = None
             masked_lines.append("\n" if line.endswith("\n") else "")
             continue
 
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            fence_marker = stripped[:3]
+        match = MARKDOWN_FENCE_OPEN_RE.match(stripped)
+        if match:
+            fence_marker = match.group(1)
             masked_lines.append("\n" if line.endswith("\n") else "")
             continue
 
@@ -77,7 +78,8 @@ def _normalize_markdown_target(raw_target: str) -> str:
     if target.startswith("<"):
         end = target.find(">")
         return target[1:end] if end != -1 else target
-    return target.split()[0]
+    parts = target.split()
+    return parts[0] if parts else ""
 
 
 def _clean_target(raw_target: str) -> str | None:
@@ -90,10 +92,7 @@ def _clean_target(raw_target: str) -> str | None:
         return None
 
     parsed = urlparse(target)
-    if parsed.scheme in SKIPPED_SCHEMES:
-        if parsed.scheme:
-            return None
-    elif parsed.scheme:
+    if parsed.scheme:
         return None
 
     return unquote(target)
