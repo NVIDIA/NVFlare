@@ -105,9 +105,10 @@ class BlobHandler:
         try:
             self.blob_cb(future, *args, **kwargs)
         except StreamError as ex:
-            # Only suppress if the future already failed via _read_stream; otherwise log and
-            # stop the task so genuine blob_cb StreamErrors are not silently dropped.
-            if not future.done():
+            # Suppress only when the future already carries an error: blob_cb likely
+            # re-raised after calling future.result(), which raised the stream error.
+            # If the future succeeded or is still running, this is a genuine blob_cb bug.
+            if not future.error:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
                     stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
