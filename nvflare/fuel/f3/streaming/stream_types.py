@@ -253,6 +253,8 @@ class StreamFuture:
         race conditions can legitimately produce multiple set_exception calls
         (e.g. _read_stream error racing with the outer blob_cb exception handler).
         """
+        if not isinstance(exception, StreamError):
+            exception = StreamError(str(exception))
         with self.lock:
             if self.error or self.waiter.is_set():
                 log.warning(f"set_exception called on already-done future {self.stream_id}: {exception}")

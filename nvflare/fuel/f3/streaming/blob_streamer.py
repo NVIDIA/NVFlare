@@ -119,7 +119,7 @@ class BlobHandler:
             else:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
-                    stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
+                    stream.task.stop(StreamError(f"blob_cb threw {type(ex).__name__}: {ex}"))
 
     def _read_stream(self, blob_task: BlobTask):
 

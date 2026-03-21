@@ -182,3 +182,4 @@ def test_stop_with_notify_true_ignores_missing_stream_future():
 
     with RxTask.map_lock:
         assert (origin, sid) not in RxTask.rx_task_map
+    assert len(fire_and_forget_calls) > 0
