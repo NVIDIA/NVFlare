@@ -171,7 +171,7 @@ class StreamFuture:
             done_cb: A callable that will be called with this future completes
         """
         with self.lock:
-            if not self.waiter.is_set():
+            if not (self.error or self.waiter.is_set()):
                 self.done_callbacks.append((done_cb, args, kwargs))
                 return
         # Future is already done — invoke immediately outside the lock

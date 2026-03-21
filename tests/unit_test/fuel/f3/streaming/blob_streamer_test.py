@@ -98,6 +98,22 @@ def test_run_blob_cb_logs_and_stops_task_when_future_not_failed():
     assert "blob_cb threw" in str(error)
 
 
+def test_run_blob_cb_logs_and_stops_task_for_generic_exception():
+    """blob_cb raises a non-StreamError; must still log and stop the task."""
+    future = StreamFuture(stream_id=6)
+    stream = _make_stream_with_task(future)
+
+    def bad_blob_cb(f):
+        raise ValueError("unexpected value")
+
+    handler = BlobHandler(bad_blob_cb)
+    handler._run_blob_cb(future, stream, args=(), kwargs={})
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "blob_cb threw" in str(error)
+
+
 def test_run_blob_cb_suppresses_stream_error_when_future_already_failed(caplog):
     """blob_cb re-raises the StreamError from future.result(); should be suppressed with DEBUG log."""
     import logging

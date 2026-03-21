@@ -104,7 +104,7 @@ class BlobHandler:
         """Run blob_cb on the callback pool; preserve exception handling (log + task.stop) as in ByteReceiver."""
         try:
             self.blob_cb(future, *args, **kwargs)
-        except StreamError as ex:
+        except Exception as ex:
             # Check under the lock whether the future already carries an error, meaning
             # blob_cb likely re-raised after future.result() threw the stream's own error.
             # Note: there is a narrow TOCTOU window — _read_stream may set the exception
@@ -114,19 +114,8 @@ class BlobHandler:
             with future.lock:
                 already_failed = future.error is not None
             if already_failed:
-                log.debug(f"StreamError from blob_cb suppressed; future already failed: {ex}")
-            else:
-                log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
-                if hasattr(stream, "task"):
-                    stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
-        except Exception as ex:
-            # Apply the same already_failed guard as the StreamError handler above so that
-            # a non-StreamError raised by blob_cb as a downstream consequence of a stream
-            # error doesn't produce spurious log noise.
-            with future.lock:
-                already_failed = future.error is not None
-            if already_failed:
-                log.debug(f"Exception from blob_cb suppressed; future already failed: {ex}")
+                kind = "StreamError" if isinstance(ex, StreamError) else "Exception"
+                log.debug(f"{kind} from blob_cb suppressed; future already failed: {ex}")
             else:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
