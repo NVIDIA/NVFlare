@@ -112,7 +112,7 @@ class BlobHandler:
             # task.stop() → set_exception() will emit a benign idempotency WARNING and
             # return without crashing.
             with future.lock:
-                already_failed = future.error is not None
+                already_failed = future.error is not None or future.waiter.is_set()
             if already_failed:
                 kind = "StreamError" if isinstance(ex, StreamError) else "Exception"
                 log.debug(f"{kind} from blob_cb suppressed; future already failed: {ex}")

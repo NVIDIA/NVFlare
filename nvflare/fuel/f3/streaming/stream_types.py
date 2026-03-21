@@ -254,7 +254,9 @@ class StreamFuture:
         (e.g. _read_stream error racing with the outer blob_cb exception handler).
         """
         if not isinstance(exception, StreamError):
-            exception = StreamError(str(exception))
+            wrapped = StreamError(str(exception))
+            wrapped.__cause__ = exception
+            exception = wrapped
         with self.lock:
             if self.error or self.waiter.is_set():
                 log.warning(f"set_exception called on already-done future {self.stream_id}: {exception}")
