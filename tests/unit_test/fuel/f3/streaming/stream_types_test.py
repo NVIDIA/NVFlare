@@ -78,6 +78,15 @@ def test_set_result_raises_on_double_call():
         future.set_result(2)
 
 
+def test_set_result_ignored_after_cancel():
+    # cancel() races with _read_stream completing normally; set_result must not raise
+    future = StreamFuture(stream_id=14)
+    future.cancel()
+
+    future.set_result(42)  # should be silently ignored, not raise
+    assert future.cancelled() is True
+
+
 def test_set_exception_ignores_double_call(caplog):
     import logging
 

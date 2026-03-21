@@ -230,12 +230,16 @@ class StreamFuture:
     def set_result(self, value: Any):
         """Sets the return value of work associated with the future.
 
-        Raises StreamError if called on an already-done future — a duplicate
-        set_result is always a programming error.
+        Silently ignored if the future already has an error (e.g. cancel() raced with
+        a completing _read_stream). Raises StreamError if called twice with a result,
+        as that is always a programming error.
         """
 
         with self.lock:
-            if self.error or self.waiter.is_set():
+            if self.error:
+                log.debug(f"set_result on already-failed future {self.stream_id}, ignoring")
+                return
+            if self.waiter.is_set():
                 raise StreamError("Invalid state, future is already done")
             self.value = value
             self.waiter.set()
