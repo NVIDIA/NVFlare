@@ -259,7 +259,7 @@ class StreamFuture:
             exception = wrapped
         with self.lock:
             if self.error or self.waiter.is_set():
-                log.warning(f"set_exception called on already-done future {self.stream_id}: {exception}")
+                log.debug(f"set_exception called on already-done future {self.stream_id}: {exception}")
                 return
             self.error = exception
             self.waiter.set()

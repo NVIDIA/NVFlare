@@ -98,7 +98,7 @@ def test_set_exception_ignores_double_call(caplog):
     future.set_exception(first_error)
     assert calls == ["cb"]
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.DEBUG):
         future.set_exception(StreamError("second"))
 
     # original error preserved, callback not fired a second time
