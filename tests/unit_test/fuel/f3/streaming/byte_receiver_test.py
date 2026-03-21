@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_receiver import RxTask
+from nvflare.fuel.f3.streaming.byte_receiver import RxStream, RxTask
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 
@@ -139,3 +139,47 @@ def test_find_or_create_task_stops_outside_map_lock(monkeypatch):
     assert returned_task is None
     assert stop_invocation["called"] is True
     assert stop_invocation["lock_held"] is False
+
+
+def test_stop_ignores_missing_stream_future():
+    origin = "site-1"
+    sid = 321
+    fake_cell = SimpleNamespace()
+
+    task = RxTask(sid=sid, origin=origin, cell=fake_cell)
+    with RxTask.map_lock:
+        RxTask.rx_task_map[(origin, sid)] = task
+
+    task.stop(StreamError("stream failed"), notify=False)
+
+    with RxTask.map_lock:
+        assert (origin, sid) not in RxTask.rx_task_map
+
+
+def test_rxstream_close_ignores_missing_stream_future():
+    task = RxTask(sid=456, origin="site-1", cell=SimpleNamespace())
+    stream = RxStream(task)
+
+    stream.close()
+
+    assert stream.closed is True
+
+
+def test_stop_with_notify_true_ignores_missing_stream_future():
+    """stop(notify=True) before the first chunk (stream_future=None) must not raise AttributeError."""
+    origin = "site-2"
+    sid = 789
+    fire_and_forget_calls = []
+
+    fake_cell = SimpleNamespace(fire_and_forget=lambda *a, **kw: fire_and_forget_calls.append(a))
+
+    task = RxTask(sid=sid, origin=origin, cell=fake_cell)
+    with RxTask.map_lock:
+        RxTask.rx_task_map[(origin, sid)] = task
+
+    # notify=True is the default; stream_future is None at this point
+    task.stop(StreamError("too many out-of-sequence chunks"), notify=True)
+
+    with RxTask.map_lock:
+        assert (origin, sid) not in RxTask.rx_task_map
+    assert len(fire_and_forget_calls) > 0

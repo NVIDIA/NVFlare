@@ -215,7 +215,8 @@ class RxTask:
         else:
             log.error(msg)
 
-        self.stream_future.set_exception(error)
+        if self.stream_future:
+            self.stream_future.set_exception(error)
 
         if notify:
             message = Message()
@@ -276,7 +277,8 @@ class RxTask:
                 self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
                 self.offset_ack = self.offset
 
-            self.stream_future.set_progress(self.offset)
+            if self.stream_future:
+                self.stream_future.set_progress(self.offset)
 
             return RESULT_DATA, result
 
@@ -307,7 +309,7 @@ class RxStream(Stream):
         return self.task.read(size)
 
     def close(self):
-        if not self.task.stream_future.done():
+        if self.task.stream_future and not self.task.stream_future.done():
             self.task.stream_future.set_result(self.task.offset)
         self.closed = True
 

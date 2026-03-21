@@ -105,9 +105,18 @@ class BlobHandler:
         try:
             self.blob_cb(future, *args, **kwargs)
         except Exception as ex:
-            log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
-            if hasattr(stream, "task"):
-                stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
+            # Suppress callback-side failures once the stream has already completed
+            # or failed; otherwise we risk sending a spurious error back to sender
+            # after the stream itself finished normally.
+            with future.lock:
+                already_finished = future.error is not None or future.waiter.is_set()
+            if already_finished:
+                kind = "StreamError" if isinstance(ex, StreamError) else "Exception"
+                log.debug(f"{kind} from blob_cb suppressed; future already finished: {ex}")
+            else:
+                log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
+                if hasattr(stream, "task"):
+                    stream.task.stop(StreamError(f"blob_cb threw {type(ex).__name__}: {ex}"))
 
     def _read_stream(self, blob_task: BlobTask):
 
@@ -127,10 +136,12 @@ class BlobHandler:
                         remaining = len(blob_task.buffer) - buf_size
                         if length > remaining:
                             log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            if remaining > 0:
-                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
-                                buf_size += remaining
-                            break
+                            blob_task.future.set_exception(
+                                StreamError(
+                                    f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
+                                )
+                            )
+                            return
                         else:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
@@ -145,7 +156,10 @@ class BlobHandler:
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(f"Stream {blob_task} Size doesn't match: {blob_task.size} <> {buf_size} {thread_id=}")
+                blob_task.future.set_exception(
+                    StreamError(f"Size mismatch: declared {blob_task.size} but received {buf_size} bytes")
+                )
+                return
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer
