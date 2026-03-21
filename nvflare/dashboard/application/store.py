@@ -106,6 +106,21 @@ class Store(object):
         project_dict["num_users"] = User.query.count()
         return project_dict
 
+    _PROJECT_WRITABLE = {
+        "title",
+        "description",
+        "app_location",
+        "ha_mode",
+        "starting_date",
+        "end_date",
+        "overseer",
+        "server1",
+        "server2",
+        "frozen",
+        "public",
+        "cc_mode",
+    }
+
     @classmethod
     def set_project(cls, req):
         project = Project.query.first()
@@ -128,7 +143,8 @@ class Store(object):
             project.server_props = json.dumps(server_props)
 
         for k, v in req.items():
-            setattr(project, k, v)
+            if k in cls._PROJECT_WRITABLE:
+                setattr(project, k, v)
 
         db.session.add(project)
         db.session.commit()
@@ -212,6 +228,8 @@ class Store(object):
         client = Client.query.get(id)
         return add_ok({"client": _dict_or_empty(client)})
 
+    _CLIENT_ADMIN_WRITABLE = {"name", "description", "approval_state"}
+
     @classmethod
     def patch_client_by_project_admin(cls, id, req):
         client = Client.query.get(id)
@@ -230,7 +248,8 @@ class Store(object):
             client.props = json.dumps(props)
 
         for k, v in req.items():
-            setattr(client, k, v)
+            if k in cls._CLIENT_ADMIN_WRITABLE:
+                setattr(client, k, v)
 
         try:
             db.session.add(client)
@@ -240,15 +259,13 @@ class Store(object):
             return None
         return add_ok({"client": _dict_or_empty(client)})
 
+    _CLIENT_CREATOR_WRITABLE = {"name", "description"}
+
     @classmethod
     def patch_client_by_creator(cls, id, req):
         client = Client.query.get(id)
         _ = req.pop("approval_state", None)
-
-        organization = req.pop("organization", None)
-        if organization is not None:
-            org = get_or_create(db.session, Organization, name=organization)
-            client.organization_id = org.id
+        _ = req.pop("organization", None)
 
         capacity = req.pop("capacity", None)
         if capacity:
@@ -259,7 +276,8 @@ class Store(object):
             client.props = json.dumps(props)
 
         for k, v in req.items():
-            setattr(client, k, v)
+            if k in cls._CLIENT_CREATOR_WRITABLE:
+                setattr(client, k, v)
 
         try:
             db.session.add(client)
@@ -315,6 +333,8 @@ class Store(object):
     def verify_user(cls, email, password):
         user = User.query.filter_by(email=email).first()
         if user is not None and check_password_hash(user.password_hash, password):
+            if user.approval_state < 0:
+                return None
             return user
         else:
             return None
@@ -341,6 +361,8 @@ class Store(object):
         user = User.query.get(id)
         return add_ok({"user": _dict_or_empty(user)})
 
+    _USER_ADMIN_WRITABLE = {"name", "description", "approval_state"}
+
     @classmethod
     def patch_user_by_project_admin(cls, id, req):
         user = User.query.get(id)
@@ -357,10 +379,13 @@ class Store(object):
             password_hash = generate_password_hash(password)
             user.password_hash = password_hash
         for k, v in req.items():
-            setattr(user, k, v)
+            if k in cls._USER_ADMIN_WRITABLE:
+                setattr(user, k, v)
         db.session.add(user)
         db.session.commit()
         return add_ok({"user": _dict_or_empty(user)})
+
+    _USER_CREATOR_WRITABLE = {"name", "description"}
 
     @classmethod
     def patch_user_by_creator(cls, id, req):
@@ -381,7 +406,8 @@ class Store(object):
             password_hash = generate_password_hash(password)
             user.password_hash = password_hash
         for k, v in req.items():
-            setattr(user, k, v)
+            if k in cls._USER_CREATOR_WRITABLE:
+                setattr(user, k, v)
         db.session.add(user)
         db.session.commit()
         return add_ok({"user": _dict_or_empty(user)})
