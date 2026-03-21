@@ -105,12 +105,17 @@ class BlobHandler:
         try:
             self.blob_cb(future, *args, **kwargs)
         except StreamError as ex:
-            # Suppress only when the future already carries an error: blob_cb likely
-            # re-raised after calling future.result(), which raised the stream error.
-            # If the future succeeded or is still running, this is a genuine blob_cb bug.
+            # Check under the lock whether the future already carries an error, meaning
+            # blob_cb likely re-raised after future.result() threw the stream's own error.
+            # Note: there is a narrow TOCTOU window — _read_stream may set the exception
+            # between releasing future.lock and reaching stream.task.stop(). In that case
+            # task.stop() → set_exception() will emit a benign idempotency WARNING and
+            # return without crashing.
             with future.lock:
                 already_failed = future.error is not None
-            if not already_failed:
+            if already_failed:
+                log.debug(f"StreamError from blob_cb suppressed; future already failed: {ex}")
+            else:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
                     stream.task.stop(StreamError(f"blob_cb threw: {ex}"))

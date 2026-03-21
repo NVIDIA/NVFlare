@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
+
 import pytest
 
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
@@ -57,3 +59,46 @@ def test_read_stream_fails_on_size_mismatch_underrun():
 
     with pytest.raises(StreamError, match="Size mismatch"):
         future.result(timeout=0.1)
+
+
+def _make_stream_with_task(future):
+    """Return a fake stream whose .task.stop() sets an exception on the future."""
+    task = SimpleNamespace(stop=lambda err: future.set_exception(err))
+    stream = SimpleNamespace(task=task)
+    return stream
+
+
+def test_run_blob_cb_logs_and_stops_task_when_future_not_failed():
+    """blob_cb raises StreamError but future has no error — treated as a genuine bug."""
+    future = StreamFuture(stream_id=3)
+    stream = _make_stream_with_task(future)
+
+    def bad_blob_cb(f):
+        raise StreamError("independent blob_cb error")
+
+    handler = BlobHandler(bad_blob_cb)
+    handler._run_blob_cb(future, stream, args=(), kwargs={})
+
+    # task.stop() should have called set_exception on the future
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "blob_cb threw" in str(error)
+
+
+def test_run_blob_cb_suppresses_stream_error_when_future_already_failed(caplog):
+    """blob_cb re-raises the StreamError from future.result(); should be suppressed with DEBUG log."""
+    import logging
+
+    future = StreamFuture(stream_id=4)
+    future.set_exception(StreamError("stream failed"))
+
+    stream = SimpleNamespace()  # no .task — suppression path must not call stop()
+
+    def reraise_blob_cb(f):
+        f.result(timeout=0.1)  # raises the stored StreamError
+
+    handler = BlobHandler(reraise_blob_cb)
+    with caplog.at_level(logging.DEBUG):
+        handler._run_blob_cb(future, stream, args=(), kwargs={})
+
+    assert any("suppressed" in r.message for r in caplog.records)
