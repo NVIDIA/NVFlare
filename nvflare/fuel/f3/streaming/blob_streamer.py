@@ -120,9 +120,17 @@ class BlobHandler:
                 if hasattr(stream, "task"):
                     stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
         except Exception as ex:
-            log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
-            if hasattr(stream, "task"):
-                stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
+            # Apply the same already_failed guard as the StreamError handler above so that
+            # a non-StreamError raised by blob_cb as a downstream consequence of a stream
+            # error doesn't produce spurious log noise.
+            with future.lock:
+                already_failed = future.error is not None
+            if already_failed:
+                log.debug(f"Exception from blob_cb suppressed; future already failed: {ex}")
+            else:
+                log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
+                if hasattr(stream, "task"):
+                    stream.task.stop(StreamError(f"blob_cb threw: {ex}"))
 
     def _read_stream(self, blob_task: BlobTask):
 

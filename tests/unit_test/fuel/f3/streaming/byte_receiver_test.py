@@ -163,3 +163,22 @@ def test_rxstream_close_ignores_missing_stream_future():
     stream.close()
 
     assert stream.closed is True
+
+
+def test_stop_with_notify_true_ignores_missing_stream_future():
+    """stop(notify=True) before the first chunk (stream_future=None) must not raise AttributeError."""
+    origin = "site-2"
+    sid = 789
+    fire_and_forget_calls = []
+
+    fake_cell = SimpleNamespace(fire_and_forget=lambda *a, **kw: fire_and_forget_calls.append(a))
+
+    task = RxTask(sid=sid, origin=origin, cell=fake_cell)
+    with RxTask.map_lock:
+        RxTask.rx_task_map[(origin, sid)] = task
+
+    # notify=True is the default; stream_future is None at this point
+    task.stop(StreamError("too many out-of-sequence chunks"), notify=True)
+
+    with RxTask.map_lock:
+        assert (origin, sid) not in RxTask.rx_task_map
