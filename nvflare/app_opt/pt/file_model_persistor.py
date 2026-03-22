@@ -42,7 +42,7 @@ class PTFileModelPersistor(ModelPersistor):
         best_global_model_file_name: str = DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name: Optional[str] = None,
         filter_id: Optional[str] = None,
-        load_weights_only: bool = False,
+        load_weights_only: bool = True,
         allow_numpy_conversion: bool = True,
     ):
         """Persist pytorch-based model to/from file system.
