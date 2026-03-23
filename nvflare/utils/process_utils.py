@@ -162,7 +162,7 @@ def spawn_process(cmd_args: List[str], env: dict) -> ProcessAdapter:
             log.warning("posix_spawn failed (%s); falling back to subprocess.", exc)
 
     preexec_fn = os.setsid if hasattr(os, "setsid") else None
-    process = subprocess.Popen(cmd_args, preexec_fn=preexec_fn, env=env)
+    process = subprocess.Popen(cmd_args, shell=False, preexec_fn=preexec_fn, env=env)
     log.info("Launch the job in process ID: %s (subprocess)", process.pid)
 
     return ProcessAdapter(process=process)
