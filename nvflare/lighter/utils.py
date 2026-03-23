@@ -102,7 +102,9 @@ def generate_cert(
 
 
 def serialize_pri_key(pri_key, passphrase=None):
-    if passphrase is None or not isinstance(passphrase, bytes):
+    if passphrase is not None and not isinstance(passphrase, bytes):
+        raise TypeError(f"passphrase must be bytes or None, got {type(passphrase)}")
+    if passphrase is None:
         return pri_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
