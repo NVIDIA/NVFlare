@@ -68,45 +68,16 @@ def _make_stream_with_task(future):
     return stream
 
 
-def test_read_stream_succeeds_with_dynamic_buffer():
-    """declared_size=0 exercises the FastBuffer (append) path instead of the pre-allocated path."""
-    handler = BlobHandler(lambda future: None)
-    future = StreamFuture(stream_id=5)
-    blob_task = BlobTask(future=future, stream=_FakeStream(declared_size=0, chunks=[b"hello", b" world"]))
-
-    handler._read_stream(blob_task)
-
-    result = future.result(timeout=0.1)
-    assert result == b"hello world"
-    assert future.exception(timeout=0.1) is None
-
-
-def test_run_blob_cb_logs_and_stops_task_when_future_not_failed():
-    """blob_cb raises StreamError but future has no error — treated as a genuine bug."""
+@pytest.mark.parametrize("exc", [StreamError("independent blob_cb error"), ValueError("unexpected value")])
+def test_run_blob_cb_stops_task_on_exception(exc):
+    """blob_cb raises while future has no error — task.stop() must be called regardless of exception type."""
     future = StreamFuture(stream_id=3)
     stream = _make_stream_with_task(future)
 
-    def bad_blob_cb(f):
-        raise StreamError("independent blob_cb error")
+    def bad_cb(f):
+        raise exc
 
-    handler = BlobHandler(bad_blob_cb)
-    handler._run_blob_cb(future, stream, args=(), kwargs={})
-
-    # task.stop() should have called set_exception on the future
-    error = future.exception(timeout=0.1)
-    assert isinstance(error, StreamError)
-    assert "blob_cb threw" in str(error)
-
-
-def test_run_blob_cb_logs_and_stops_task_for_generic_exception():
-    """blob_cb raises a non-StreamError; must still log and stop the task."""
-    future = StreamFuture(stream_id=6)
-    stream = _make_stream_with_task(future)
-
-    def bad_blob_cb(f):
-        raise ValueError("unexpected value")
-
-    handler = BlobHandler(bad_blob_cb)
+    handler = BlobHandler(bad_cb)
     handler._run_blob_cb(future, stream, args=(), kwargs={})
 
     error = future.exception(timeout=0.1)

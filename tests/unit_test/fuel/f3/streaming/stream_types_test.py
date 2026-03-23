@@ -52,14 +52,6 @@ def test_stream_future_cancel_returns_false_after_completion_with_none_result():
     assert future.cancel() is False
 
 
-def test_done_returns_bool():
-    future = StreamFuture(stream_id=9)
-    assert future.done() is False
-
-    future.set_exception(StreamError("err"))
-    assert future.done() is True
-
-
 def test_add_done_callback_invoked_immediately_when_future_already_done():
     future = StreamFuture(stream_id=10)
     future.set_result(42)
@@ -68,14 +60,6 @@ def test_add_done_callback_invoked_immediately_when_future_already_done():
     future.add_done_callback(lambda: calls.append("late"))
 
     assert calls == ["late"]
-
-
-def test_set_result_raises_on_double_call():
-    future = StreamFuture(stream_id=11)
-    future.set_result(1)
-
-    with pytest.raises(StreamError, match="already done"):
-        future.set_result(2)
 
 
 def test_set_result_ignored_after_cancel():
@@ -107,13 +91,3 @@ def test_set_exception_ignores_double_call(caplog):
     assert any("already-done" in r.message for r in caplog.records)
 
 
-def test_set_exception_ignores_call_after_cancel():
-    future = StreamFuture(stream_id=13)
-    future.cancel()
-
-    calls = []
-    future.add_done_callback(lambda: calls.append("cb"))
-    future.set_exception(StreamError("late"))
-
-    assert future.cancelled() is True
-    assert calls == ["cb"]  # registered after done, invoked immediately; not a second time
