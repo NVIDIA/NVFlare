@@ -170,7 +170,12 @@ class SubprocessLauncher(Launcher):
 
                 command_seq = shlex.split(command)
                 self._process = subprocess.Popen(
-                    command_seq, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
+                    command_seq,
+                    shell=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=self._app_dir,
+                    env=env,
                 )
                 self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
                 self._log_thread.start()
