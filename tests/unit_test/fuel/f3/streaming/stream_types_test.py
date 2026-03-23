@@ -89,5 +89,3 @@ def test_set_exception_ignores_double_call(caplog):
     assert future.exception(timeout=0.1) is first_error
     assert calls == ["cb"]
     assert any("already-done" in r.message for r in caplog.records)
-
-
