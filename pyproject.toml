@@ -34,3 +34,8 @@ exclude = '''
   | _version.py
 )
 '''
+
+[tool.pytest.ini_options]
+markers = [
+    "timeout: mark tests with an execution time limit",
+]
