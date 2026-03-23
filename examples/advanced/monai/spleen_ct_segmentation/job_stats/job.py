@@ -31,7 +31,7 @@ from nvflare.recipe.fedstats import FedStatsRecipe
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--bundle_root", type=str, default="bundles/spleen_ct_segmentation", help="Path to MONAI bundle"
+        "--bundle_root", type=str, default="../bundles/spleen_ct_segmentation", help="Path to MONAI bundle"
     )
     parser.add_argument("--n_clients", type=int, default=2, help="Number of simulated clients")
     parser.add_argument(
