@@ -1,0 +1,12 @@
+nvflare~=2.7.2rc
+torch==2.6.0
+torchvision==0.21.0
+accelerate>=1.7.0
+bitsandbytes
+datasets>=2.18.0
+peft
+Pillow>=10.0.0
+tensorboard
+transformers>=4.57.1
+trl
+wandb
