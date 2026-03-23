@@ -71,6 +71,56 @@ def _mask_markdown_fences(text: str) -> str:
     return "".join(masked_lines)
 
 
+def _mask_preserving_newlines(text: str) -> str:
+    return "".join("\n" if char == "\n" else " " for char in text)
+
+
+def _find_matching_code_span(text: str, start_index: int, delimiter_len: int) -> int | None:
+    index = start_index
+    while index < len(text):
+        if text[index] != "`":
+            index += 1
+            continue
+
+        run_len = 1
+        while index + run_len < len(text) and text[index + run_len] == "`":
+            run_len += 1
+
+        if run_len == delimiter_len:
+            return index
+
+        index += run_len
+
+    return None
+
+
+def _mask_markdown_code_spans(text: str) -> str:
+    masked_parts = []
+    index = 0
+
+    while index < len(text):
+        if text[index] != "`":
+            masked_parts.append(text[index])
+            index += 1
+            continue
+
+        delimiter_len = 1
+        while index + delimiter_len < len(text) and text[index + delimiter_len] == "`":
+            delimiter_len += 1
+
+        closing_index = _find_matching_code_span(text, index + delimiter_len, delimiter_len)
+        if closing_index is None:
+            masked_parts.append(text[index : index + delimiter_len])
+            index += delimiter_len
+            continue
+
+        span_end = closing_index + delimiter_len
+        masked_parts.append(_mask_preserving_newlines(text[index:span_end]))
+        index = span_end
+
+    return "".join(masked_parts)
+
+
 def _line_number(text: str, start_index: int) -> int:
     return text.count("\n", 0, start_index) + 1
 
@@ -129,7 +179,7 @@ class _HTMLLinkParser(HTMLParser):
 
 
 def _extract_markdown_targets(text: str) -> list[tuple[int, str]]:
-    masked = _mask_html_comments(_mask_markdown_fences(text))
+    masked = _mask_markdown_code_spans(_mask_html_comments(_mask_markdown_fences(text)))
     targets = []
 
     reference_definitions: dict[str, str] = {}
