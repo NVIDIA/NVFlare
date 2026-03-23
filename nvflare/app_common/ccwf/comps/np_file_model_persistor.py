@@ -148,7 +148,7 @@ class NPFileModelPersistor(ModelPersistor):
         if os.path.isfile(location):
             try:
                 # try loading previous model
-                data = np.load(location)
+                data = np.load(location, allow_pickle=False)
             except Exception as e:
                 self.log_error(fl_ctx, f"Unable to load model from {location}: {secure_format_exception(e)}.")
                 return None
