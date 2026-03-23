@@ -28,6 +28,7 @@ from urllib.parse import unquote, urlparse
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)]+?)\s*\)")
+MARKDOWN_BADGE_LINK_RE = re.compile(r"\[\!\[[^\]]*\]\(\s*([^)]+?)\s*\)\]\(\s*([^)]+?)\s*\)")
 MARKDOWN_REFERENCE_DEF_RE = re.compile(r"(?m)^\s*\[([^\]]+)\]:\s*(\S.*)$")
 MARKDOWN_REFERENCE_USE_RE = re.compile(r"(?<!\!)\[([^\]]+)\]\[([^\]]*)\]")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -187,6 +188,9 @@ def _extract_markdown_targets(text: str) -> list[tuple[int, str]]:
         normalized_label = label.strip().lower()
         normalized_target = _normalize_markdown_target(target)
         reference_definitions.setdefault(normalized_label, normalized_target)
+
+    for match in MARKDOWN_BADGE_LINK_RE.finditer(masked):
+        targets.append((_line_number(masked, match.start()), _normalize_markdown_target(match.group(2))))
 
     for pattern in (MARKDOWN_LINK_RE, MARKDOWN_IMAGE_RE):
         for match in pattern.finditer(masked):

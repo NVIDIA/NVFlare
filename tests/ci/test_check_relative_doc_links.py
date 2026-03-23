@@ -176,3 +176,20 @@ def test_duplicate_reference_definitions_keep_first_match(tmp_path, checker):
 
     assert len(problems) == 1
     assert problems[0].target == "./missing.md"
+
+
+def test_detects_outer_target_for_clickable_badge_links(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "[![License](https://img.shields.io/badge/license-apache-blue.svg)](./missing-license)\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert len(problems) == 1
+    assert problems[0].line == 1
+    assert problems[0].target == "./missing-license"
