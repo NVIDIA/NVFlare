@@ -20,7 +20,7 @@ import pytest
 
 
 def _load_module():
-    script_path = Path(__file__).resolve().parents[3] / "ci" / "check_relative_doc_links.py"
+    script_path = Path(__file__).resolve().parents[2] / "ci" / "check_relative_doc_links.py"
     spec = importlib.util.spec_from_file_location("check_relative_doc_links", script_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

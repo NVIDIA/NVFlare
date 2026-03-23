@@ -20,7 +20,7 @@ on:
       - "**/*.md"
       - ".github/workflows/relative-links-check.yml"
       - "ci/check_relative_doc_links.py"
-      - "tests/unit_test/ci/test_check_relative_doc_links.py"
+      - "tests/ci/test_check_relative_doc_links.py"
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
         run: python3 -m pip install --upgrade pip pytest
 
       - name: Run checker unit tests
-        run: python3 -m pytest -q tests/unit_test/ci/test_check_relative_doc_links.py
+        run: python3 -m pytest -q tests/ci/test_check_relative_doc_links.py
 
       - name: Collect tracked markdown files
         run: git ls-files "*.md" | sort > markdown_files.txt
