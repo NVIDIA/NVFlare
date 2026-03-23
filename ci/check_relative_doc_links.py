@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import unquote, urlparse
 
-
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*([^)]+?)\s*\)")
 MARKDOWN_BADGE_LINK_RE = re.compile(r"\[\!\[[^\]]*\]\(\s*([^)]+?)\s*\)\]\(\s*([^)]+?)\s*\)")
