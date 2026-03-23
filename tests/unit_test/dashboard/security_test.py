@@ -49,6 +49,7 @@ class TestMassAssignment:
         """PATCH password_hash directly should be ignored; original password still works."""
         client.post(NS + "/api/v1/users", json={"email": "hashtest@test.com", "password": "original", "name": "x"})
         resp = client.post(NS + "/api/v1/login", json={"email": "hashtest@test.com", "password": "original"})
+        assert resp.status_code == 200
         token = resp.json["access_token"]
         user_id = resp.json["user"]["id"]
 
@@ -65,6 +66,7 @@ class TestMassAssignment:
         """User should not be able to self-approve via PATCH approval_state."""
         client.post(NS + "/api/v1/users", json={"email": "selfapprove@test.com", "password": "p", "name": "x"})
         resp = client.post(NS + "/api/v1/login", json={"email": "selfapprove@test.com", "password": "p"})
+        assert resp.status_code == 200
         token = resp.json["access_token"]
         user_id = resp.json["user"]["id"]
 

@@ -22,6 +22,21 @@ from .models import Client, Organization, Project, Role, User, db
 
 log = logging.getLogger(__name__)
 
+_PROJECT_WRITABLE = {
+    "title",
+    "description",
+    "app_location",
+    "ha_mode",
+    "starting_date",
+    "end_date",
+    "overseer",
+    "server1",
+    "server2",
+    "frozen",
+    "public",
+    "cc_mode",
+}
+
 
 def check_role(id, claims, requester):
     is_creator = requester == Store._get_email_by_id(id)
@@ -106,21 +121,6 @@ class Store(object):
         project_dict["num_users"] = User.query.count()
         return project_dict
 
-    _PROJECT_WRITABLE = {
-        "title",
-        "description",
-        "app_location",
-        "ha_mode",
-        "starting_date",
-        "end_date",
-        "overseer",
-        "server1",
-        "server2",
-        "frozen",
-        "public",
-        "cc_mode",
-    }
-
     @classmethod
     def set_project(cls, req):
         project = Project.query.first()
@@ -143,7 +143,7 @@ class Store(object):
             project.server_props = json.dumps(server_props)
 
         for k, v in req.items():
-            if k in cls._PROJECT_WRITABLE:
+            if k in _PROJECT_WRITABLE:
                 setattr(project, k, v)
 
         db.session.add(project)
@@ -228,8 +228,6 @@ class Store(object):
         client = Client.query.get(id)
         return add_ok({"client": _dict_or_empty(client)})
 
-    _CLIENT_ADMIN_WRITABLE = {"name", "description", "approval_state"}
-
     @classmethod
     def patch_client_by_project_admin(cls, id, req):
         client = Client.query.get(id)
@@ -248,7 +246,7 @@ class Store(object):
             client.props = json.dumps(props)
 
         for k, v in req.items():
-            if k in cls._CLIENT_ADMIN_WRITABLE:
+            if k in {"name", "description", "approval_state"}:
                 setattr(client, k, v)
 
         try:
@@ -258,8 +256,6 @@ class Store(object):
             log.error(f"Error while patching client: {e}")
             return None
         return add_ok({"client": _dict_or_empty(client)})
-
-    _CLIENT_CREATOR_WRITABLE = {"name", "description"}
 
     @classmethod
     def patch_client_by_creator(cls, id, req):
@@ -276,7 +272,7 @@ class Store(object):
             client.props = json.dumps(props)
 
         for k, v in req.items():
-            if k in cls._CLIENT_CREATOR_WRITABLE:
+            if k in {"name", "description"}:
                 setattr(client, k, v)
 
         try:
@@ -361,8 +357,6 @@ class Store(object):
         user = User.query.get(id)
         return add_ok({"user": _dict_or_empty(user)})
 
-    _USER_ADMIN_WRITABLE = {"name", "description", "approval_state"}
-
     @classmethod
     def patch_user_by_project_admin(cls, id, req):
         user = User.query.get(id)
@@ -379,13 +373,11 @@ class Store(object):
             password_hash = generate_password_hash(password)
             user.password_hash = password_hash
         for k, v in req.items():
-            if k in cls._USER_ADMIN_WRITABLE:
+            if k in {"name", "description", "approval_state"}:
                 setattr(user, k, v)
         db.session.add(user)
         db.session.commit()
         return add_ok({"user": _dict_or_empty(user)})
-
-    _USER_CREATOR_WRITABLE = {"name", "description"}
 
     @classmethod
     def patch_user_by_creator(cls, id, req):
@@ -406,7 +398,7 @@ class Store(object):
             password_hash = generate_password_hash(password)
             user.password_hash = password_hash
         for k, v in req.items():
-            if k in cls._USER_CREATOR_WRITABLE:
+            if k in {"name", "description"}:
                 setattr(user, k, v)
         db.session.add(user)
         db.session.commit()
