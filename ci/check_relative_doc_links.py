@@ -72,6 +72,41 @@ def _mask_markdown_fences(text: str) -> str:
     return "".join(masked_lines)
 
 
+def _is_markdown_indented_code_line(line: str) -> bool:
+    return line.startswith("\t") or line.startswith("    ")
+
+
+def _mask_markdown_indented_code_blocks(text: str) -> str:
+    masked_lines = []
+    in_code_block = False
+    previous_nonblank_was_blank = True
+
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        is_blank = stripped == ""
+        is_indented_code = _is_markdown_indented_code_line(line)
+
+        if in_code_block:
+            if is_indented_code or is_blank:
+                masked_lines.append("\n" if line.endswith("\n") else "")
+                continue
+            in_code_block = False
+
+        if not in_code_block and is_indented_code and previous_nonblank_was_blank:
+            in_code_block = True
+            masked_lines.append("\n" if line.endswith("\n") else "")
+            continue
+
+        masked_lines.append(line)
+
+        if not is_blank:
+            previous_nonblank_was_blank = False
+        else:
+            previous_nonblank_was_blank = True
+
+    return "".join(masked_lines)
+
+
 def _mask_preserving_newlines(text: str) -> str:
     return "".join("\n" if char == "\n" else " " for char in text)
 
@@ -180,7 +215,9 @@ class _HTMLLinkParser(HTMLParser):
 
 
 def _extract_markdown_targets(text: str) -> list[tuple[int, str]]:
-    masked = _mask_markdown_code_spans(_mask_html_comments(_mask_markdown_fences(text)))
+    masked = _mask_markdown_code_spans(
+        _mask_html_comments(_mask_markdown_indented_code_blocks(_mask_markdown_fences(text)))
+    )
     targets = []
 
     reference_definitions: dict[str, str] = {}

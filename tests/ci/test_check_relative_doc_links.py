@@ -193,3 +193,47 @@ def test_detects_outer_target_for_clickable_badge_links(tmp_path, checker):
     assert len(problems) == 1
     assert problems[0].line == 1
     assert problems[0].target == "./missing-license"
+
+
+def test_ignores_links_inside_indented_code_blocks(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "\n".join(
+            [
+                "",
+                "    [code-only](./missing.md)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert problems == []
+
+
+def test_does_not_mask_indented_links_that_continue_a_paragraph(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "\n".join(
+            [
+                "Paragraph line",
+                "    [broken](./missing.md)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert len(problems) == 1
+    assert problems[0].line == 2
+    assert problems[0].target == "./missing.md"

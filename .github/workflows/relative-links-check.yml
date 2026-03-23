@@ -16,11 +16,6 @@ name: Check Relative Doc Links
 
 on:
   pull_request:
-    paths:
-      - "**/*.md"
-      - ".github/workflows/relative-links-check.yml"
-      - "ci/check_relative_doc_links.py"
-      - "tests/ci/test_check_relative_doc_links.py"
   workflow_dispatch:
 
 jobs:
