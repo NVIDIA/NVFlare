@@ -271,8 +271,8 @@ def test_checks_relative_links_in_html_files(tmp_path, checker):
     html_file.write_text(
         "\n".join(
             [
-                "<!-- <a href=\"./ignored.html\">ignored</a> -->",
-                "<a href=\"./missing.html\">Broken</a>",
+                '<!-- <a href="./ignored.html">ignored</a> -->',
+                '<a href="./missing.html">Broken</a>',
             ]
         )
         + "\n",
