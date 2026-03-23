@@ -37,6 +37,9 @@ def create_one_client():
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", methods=["GET"])
 @jwt_required()
 def get_all_clients():
+    claims = get_jwt()
+    if not claims.get("approved"):
+        return jsonify({"status": "not approved yet"}), 403
     result = Store.get_clients()
     return jsonify(result)
 
@@ -44,8 +47,11 @@ def get_all_clients():
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["GET"])
 @jwt_required()
 def get_one_client(id):
-    result = Store.get_client(id)
-    return jsonify(result)
+    claims = get_jwt()
+    if not claims.get("approved"):
+        return jsonify({"status": "not approved yet"}), 403
+    client = Store.get_client(id)
+    return jsonify(client)
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
