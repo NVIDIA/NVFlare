@@ -28,8 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python3 -m pip install --upgrade pip pytest
+
+      - name: Run checker unit tests
+        run: python3 -m pytest -q tests/unit_test/ci/test_check_relative_doc_links.py
 
       - name: Collect tracked markdown files
         run: git ls-files "*.md" | sort > markdown_files.txt

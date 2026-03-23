@@ -130,10 +130,11 @@ def _extract_markdown_targets(text: str) -> list[tuple[int, str]]:
     masked = _mask_html_comments(_mask_markdown_fences(text))
     targets = []
 
-    reference_definitions = {
-        label.strip().lower(): _normalize_markdown_target(target)
-        for label, target in MARKDOWN_REFERENCE_DEF_RE.findall(masked)
-    }
+    reference_definitions: dict[str, str] = {}
+    for label, target in MARKDOWN_REFERENCE_DEF_RE.findall(masked):
+        normalized_label = label.strip().lower()
+        normalized_target = _normalize_markdown_target(target)
+        reference_definitions.setdefault(normalized_label, normalized_target)
 
     for pattern in (MARKDOWN_LINK_RE, MARKDOWN_IMAGE_RE):
         for match in pattern.finditer(masked):

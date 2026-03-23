@@ -124,3 +124,29 @@ def test_checks_html_src_inside_markdown(tmp_path, checker):
     problems = checker.check_relative_doc_links([readme], repo_root)
 
     assert problems == []
+
+
+def test_duplicate_reference_definitions_keep_first_match(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    target = docs_dir / "target.md"
+    target.write_text("ok\n", encoding="utf-8")
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "\n".join(
+            [
+                "[ref-link][shared]",
+                "",
+                "[shared]: ./missing.md",
+                "[shared]: ./target.md",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert len(problems) == 1
+    assert problems[0].target == "./missing.md"
