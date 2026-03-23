@@ -61,9 +61,8 @@ def test_read_stream_fails_on_size_mismatch_underrun():
         future.result(timeout=0.1)
 
 
-def _make_stream_with_task(future):
-    """Return a fake stream whose .task.stop() sets an exception on the future."""
-    task = SimpleNamespace(stop=lambda err: future.set_exception(err))
+def _make_stream_with_task(stop_cb):
+    task = SimpleNamespace(stop=stop_cb)
     stream = SimpleNamespace(task=task)
     return stream
 
@@ -72,7 +71,13 @@ def _make_stream_with_task(future):
 def test_run_blob_cb_stops_task_on_exception(exc):
     """blob_cb raises while future has no error — task.stop() must be called regardless of exception type."""
     future = StreamFuture(stream_id=3)
-    stream = _make_stream_with_task(future)
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+        future.set_exception(err)
+
+    stream = _make_stream_with_task(stop)
 
     def bad_cb(f):
         raise exc
@@ -83,6 +88,7 @@ def test_run_blob_cb_stops_task_on_exception(exc):
     error = future.exception(timeout=0.1)
     assert isinstance(error, StreamError)
     assert "blob_cb threw" in str(error)
+    assert stopped["error"] is error
 
 
 def test_run_blob_cb_suppresses_stream_error_when_future_already_failed(caplog):
@@ -102,3 +108,25 @@ def test_run_blob_cb_suppresses_stream_error_when_future_already_failed(caplog):
         handler._run_blob_cb(future, stream, args=(), kwargs={})
 
     assert any("suppressed" in r.message for r in caplog.records)
+
+
+def test_run_blob_cb_stops_task_when_post_processing_fails_after_success():
+    future = StreamFuture(stream_id=5)
+    future.set_result(b"ok")
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+
+    stream = _make_stream_with_task(stop)
+
+    def bad_cb(f):
+        assert f.result(timeout=0.1) == b"ok"
+        raise ValueError("post-processing failed")
+
+    handler = BlobHandler(bad_cb)
+    handler._run_blob_cb(future, stream, args=(), kwargs={})
+
+    error = stopped["error"]
+    assert isinstance(error, StreamError)
+    assert "blob_cb threw ValueError: post-processing failed" == str(error)

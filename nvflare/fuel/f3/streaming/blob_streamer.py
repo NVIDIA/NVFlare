@@ -105,14 +105,15 @@ class BlobHandler:
         try:
             self.blob_cb(future, *args, **kwargs)
         except Exception as ex:
-            # Suppress callback-side failures once the stream has already completed
-            # or failed; otherwise we risk sending a spurious error back to sender
-            # after the stream itself finished normally.
+            # Suppress only when blob_cb is surfacing an already-recorded stream
+            # failure (for example by calling future.result()). If blob_cb fails
+            # after the future completed successfully, we still need to stop the
+            # task so the sender receives the callback error.
             with future.lock:
-                already_finished = future.error is not None or future.waiter.is_set()
-            if already_finished:
+                already_failed = future.error is not None
+            if already_failed:
                 kind = "StreamError" if isinstance(ex, StreamError) else "Exception"
-                log.debug(f"{kind} from blob_cb suppressed; future already finished: {ex}")
+                log.debug(f"{kind} from blob_cb suppressed; future already failed: {ex}")
             else:
                 log.error(f"blob_cb threw: {ex}\n{secure_format_traceback()}")
                 if hasattr(stream, "task"):
