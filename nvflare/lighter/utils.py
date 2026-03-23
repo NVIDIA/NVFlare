@@ -15,8 +15,9 @@
 import datetime
 import json
 import os
-import random
+import secrets
 import shutil
+import string
 from base64 import b64decode, b64encode
 from pathlib import Path
 
@@ -159,8 +160,8 @@ def cert_to_dict(cert):
 
 
 def generate_password(passlen=16):
-    s = "abcdefghijklmnopqrstuvwxyz01234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    p = "".join(random.sample(s, passlen))
+    s = string.ascii_letters + string.digits
+    p = "".join(secrets.choice(s) for _ in range(passlen))
     return p
 
 
