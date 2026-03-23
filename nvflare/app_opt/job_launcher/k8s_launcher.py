@@ -228,6 +228,13 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
         _, job_cmd = job_args[JobProcessArgs.EXE_MODULE]
+        # TODO: Make the K8s launcher project-aware with minimal code churn.
+        # The intended change is only to read the optional job_meta["project"]
+        # and use it to resolve project-specific Kubernetes settings before pod
+        # launch. That settings lookup may include workspace volume/path plus
+        # any other K8s deployment settings required for the selected project.
+        # Keep the existing launch flow unchanged; only the settings resolution
+        # should become project-aware.
         job_config = {
             "name": job_id,
             "image": job_image,
