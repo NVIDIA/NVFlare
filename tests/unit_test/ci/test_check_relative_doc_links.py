@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,7 @@ def _load_module():
     spec = importlib.util.spec_from_file_location("check_relative_doc_links", script_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -57,10 +59,10 @@ def test_ignores_literal_file_uri_examples_and_fenced_code(tmp_path, checker):
         "\n".join(
             [
                 "```python",
-                '[code only](./missing.md)',
+                "[code only](./missing.md)",
                 "```",
                 '`tracking_uri = "file:///tmp/mlruns"`',
-                '[good](./target.md)',
+                "[good](./target.md)",
             ]
         )
         + "\n",
