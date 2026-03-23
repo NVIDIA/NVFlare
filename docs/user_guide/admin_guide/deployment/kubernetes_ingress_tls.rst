@@ -11,6 +11,9 @@ You can expose a FLARE server running in Kubernetes with TLS in either of these 
 
 For connection-security modes (clear, TLS, mTLS), see :ref:`communication_security`. For common failures and workarounds, see :ref:`k8s_ingress_tls_troubleshooting`.
 
+.. note::
+   **One server endpoint per Ingress (TLS at ingress).** If you run NVFlare in Kubernetes and use **TLS at ingress**, design for **one** FLARE server Service behind that hostname (one public entry point for that federation). Do not route multiple independent FL server deployments through the same Ingress host/path unless you deliberately split traffic (for example separate hostnames). If you need a **dedicated open TCP port** and server-terminated TLS or mTLS—or a topology that does not fit L7 Ingress—use **TCP passthrough** (below) instead of HTTP(S) Ingress.
+
 ***************************
 TLS at ingress
 ***************************
@@ -27,7 +30,20 @@ TLS at ingress
          --cert=path/to/your/tls.crt \
          --key=path/to/your/tls.key
 
-   Replace ``fl.example.com`` with your hostname. The backend port must match the server Service port in your project (example uses 8002):
+   **Match your project’s ``scheme``**
+
+   The Ingress configuration must align with the **transport scheme** you set in your project (or its default). Verify it in the provisioned server kit: ``startup/fed_server.json`` → ``servers[0].service.scheme`` (``grpc``, ``grpcs``, ``http``, or ``https``). Use the matching subsection below—annotations differ between gRPC and HTTP/WebSocket.
+
+   .. note::
+      **Ingress YAML always says ``http:``:** Kubernetes Ingress rules are declared under ``spec.rules[].http`` regardless of whether the backend is gRPC, WebSockets, or REST. That field is **API structure**, not a claim about the pod’s protocol. Use your project’s ``scheme`` (visible in ``fed_server.json``) to choose Ingress annotations, not the word ``http`` in the Ingress spec.
+
+   **gRPC / ``grpcs``** — Traffic is gRPC over HTTP/2. When TLS terminates at the Ingress and the pod uses ``connection_security: clear``, the controller must speak **HTTP/2 (cleartext gRPC)** to the backend Service. For **ingress-nginx**, it is **correct** to set ``nginx.ingress.kubernetes.io/backend-protocol: "GRPC"`` in that case (``scheme`` ``grpc`` or ``grpcs`` only). Omit it for HTTP/WebSocket ``scheme``. Without it, gRPC-through-Ingress often fails. Other ingress controllers need their own gRPC or HTTP/2 backend settings.
+
+   **HTTP / ``https`` (WebSocket driver)** — Many kits use ``scheme: http`` (or ``https`` with TLS on the server). The aio HTTP driver listens for **WebSocket** upgrades on path ``/f3`` (not gRPC). **Do not** set ``backend-protocol: GRPC`` in that case—it can break a working setup. For **ingress-nginx**, enable WebSocket proxying (for example ``nginx.ingress.kubernetes.io/websocket-services: "server"`` using your Service **name**), keep a path prefix that includes ``/f3`` (often ``path: /`` with ``pathType: Prefix`` is enough), and consider longer proxy read timeouts for long-lived connections. If your test already passes with a minimal HTTP Ingress, your scheme is likely HTTP/WebSocket and the gRPC annotation is unnecessary.
+
+   **Single backend port** — The example below routes **one** Service port (for example ``8002``). It matches deployments where **federated learning and admin share the same listening port** (``fed_learn_port`` and ``admin_port`` are the same in the provisioned kit’s ``sp_end_point``, or your chart exposes a single port for both). If **``fed_learn_port`` and ``admin_port`` differ**, a single ``path: /`` rule to one port is not enough: use a **second** Ingress rule (different host or path) to the admin Service port, merge to one port in the project/Helm values, or use **TCP passthrough** (later section on this page) so the server terminates TLS on one TCP port for all traffic.
+
+   Replace ``fl.example.com`` with your hostname. The backend port must match the server Service port in your project (example uses 8002). **Ingress manifest (gRPC scheme)** — include the ``GRPC`` annotation only when ``service.scheme`` is ``grpc`` or ``grpcs``:
 
    .. code-block:: yaml
 
@@ -38,6 +54,7 @@ TLS at ingress
          namespace: default
          annotations:
            nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+           nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
        spec:
          ingressClassName: nginx
          tls:
@@ -336,3 +353,7 @@ Do not edit ``fed_client.json`` or other signed files. Re-provision and redistri
 **Moving the server to a new machine**
 
 You can reuse the same kits: deploy the same server output on the new host and make the **original** hostname resolve to the new address (DNS or ``/etc/hosts`` on clients and admin). The existing server certificate still matches that hostname. Re-provision only when you want a new hostname in the certificates and in every kit.
+
+**TLS at ingress: clients fail to connect**
+
+Verify your project’s ``scheme`` (in ``fed_server.json`` → ``service.scheme``) matches the Ingress annotations. For **gRPC / grpcs**, confirm **ingress-nginx** has ``backend-protocol: "GRPC"`` when TLS ends at the Ingress and the pod is ``clear``. For **http / https**, ensure WebSockets to ``/f3`` are allowed and **remove** the gRPC annotation if you added it by mistake. If ``fed_learn_port`` and ``admin_port`` differ in the signed ``sp_end_point``, ensure both ports are reachable—two Ingress backends, one merged server port, or TCP passthrough instead of HTTP Ingress.
