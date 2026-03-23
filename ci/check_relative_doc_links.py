@@ -32,7 +32,7 @@ MARKDOWN_BADGE_LINK_RE = re.compile(r"\[\!\[[^\]]*\]\(\s*([^)]+?)\s*\)\]\(\s*([^
 MARKDOWN_REFERENCE_DEF_RE = re.compile(r"(?m)^\s*\[([^\]]+)\]:\s*(\S.*)$")
 MARKDOWN_REFERENCE_USE_RE = re.compile(r"(?<!\!)\[([^\]]+)\]\[([^\]]*)\]")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-MARKDOWN_FENCE_OPEN_RE = re.compile(r"^(`{3,}|~{3,}).*$")
+MARKDOWN_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,}|~{3,}).*$")
 SUPPORTED_EXTENSIONS = {".md", ".html"}
 
 
@@ -55,14 +55,13 @@ def _mask_markdown_fences(text: str) -> str:
     masked_lines = []
     fence_marker = None
     for line in text.splitlines(keepends=True):
-        stripped = line.lstrip()
         if fence_marker is not None:
-            if re.match(rf"^{re.escape(fence_marker[0])}{{{len(fence_marker)},}}\s*$", stripped):
+            if re.match(rf"^ {{0,3}}{re.escape(fence_marker[0])}{{{len(fence_marker)},}}\s*$", line):
                 fence_marker = None
             masked_lines.append("\n" if line.endswith("\n") else "")
             continue
 
-        match = MARKDOWN_FENCE_OPEN_RE.match(stripped)
+        match = MARKDOWN_FENCE_OPEN_RE.match(line)
         if match:
             fence_marker = match.group(1)
             masked_lines.append("\n" if line.endswith("\n") else "")

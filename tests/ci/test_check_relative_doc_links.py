@@ -237,3 +237,50 @@ def test_does_not_mask_indented_links_that_continue_a_paragraph(tmp_path, checke
     assert len(problems) == 1
     assert problems[0].line == 2
     assert problems[0].target == "./missing.md"
+
+
+def test_four_space_indented_fence_like_text_is_not_masked(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    readme = docs_dir / "README.md"
+    readme.write_text(
+        "\n".join(
+            [
+                "",
+                "    ```python",
+                "[broken](./missing.md)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([readme], repo_root)
+
+    assert len(problems) == 1
+    assert problems[0].line == 3
+    assert problems[0].target == "./missing.md"
+
+
+def test_checks_relative_links_in_html_files(tmp_path, checker):
+    repo_root = tmp_path
+    docs_dir = repo_root / "docs"
+    docs_dir.mkdir()
+    html_file = docs_dir / "index.html"
+    html_file.write_text(
+        "\n".join(
+            [
+                "<!-- <a href=\"./ignored.html\">ignored</a> -->",
+                "<a href=\"./missing.html\">Broken</a>",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    problems = checker.check_relative_doc_links([html_file], repo_root)
+
+    assert len(problems) == 1
+    assert problems[0].line == 2
+    assert problems[0].target == "./missing.html"
