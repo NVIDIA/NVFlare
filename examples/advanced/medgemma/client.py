@@ -223,6 +223,8 @@ def main():
 
     print(f"site={client_name}, train_samples={len(train_dataset)}, validation_samples={len(eval_dataset or [])}")
     model = create_peft_medgemma_model(model_name_or_path=args.model_name_or_path, quantized=True, device_map={"": 0})
+    print(f"site={client_name}")
+    model.print_trainable_parameters()
 
     if args.work_dir is None:
         work_dir = os.path.join(os.getcwd(), "medgemma_checkpoints")
