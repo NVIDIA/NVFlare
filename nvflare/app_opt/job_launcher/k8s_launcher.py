@@ -309,7 +309,6 @@ class K8sJobLauncher(JobLauncherSpec):
             c.assert_hostname = False
         Configuration.set_default(c)
         self.core_v1 = core_v1_api.CoreV1Api()
-        self.job_handle = None
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         site_name = fl_ctx.get_identity_name()
