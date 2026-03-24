@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 import urllib.request
 import zipfile
@@ -26,9 +25,47 @@ TRAIN_ARCHIVE_NAME = "NCT-CRC-HE-100K.zip"
 EXTRACTED_DIR_NAME = "NCT-CRC-HE-100K"
 
 
-def download_file(url: str, output_path: str) -> None:
+def _format_bytes(n: float) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    idx = 0
+    while n >= 1024.0 and idx < len(units) - 1:
+        n /= 1024.0
+        idx += 1
+    unit = units[idx]
+    return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+
+
+def download_file(url: str, output_path: str, chunk_size: int = 1024 * 1024) -> None:
     with urllib.request.urlopen(url) as response, open(output_path, "wb") as output_file:
-        shutil.copyfileobj(response, output_file)
+        total_header = response.headers.get("Content-Length")
+        total = None
+        if total_header:
+            try:
+                total = int(total_header.strip())
+            except ValueError:
+                total = None
+        downloaded = 0
+        bar_width = 40
+
+        while True:
+            chunk = response.read(chunk_size)
+            if not chunk:
+                break
+            output_file.write(chunk)
+            downloaded += len(chunk)
+
+            if total is not None:
+                ratio = min(downloaded / total, 1.0)
+                filled = int(bar_width * ratio)
+                bar = "=" * filled + "-" * (bar_width - filled)
+                pct = 100.0 * ratio
+                sys.stdout.write(f"\r[{bar}] {pct:5.1f}%  {_format_bytes(downloaded)} / {_format_bytes(total)}")
+            else:
+                sys.stdout.write(f"\rDownloaded {_format_bytes(downloaded)}")
+            sys.stdout.flush()
+
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
 
 def main():

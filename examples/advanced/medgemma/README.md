@@ -49,14 +49,13 @@ python prepare_data.py
 
 By default, `prepare_data.py` creates 3 client shards with `3333` samples per client and `333` validation samples per client. That keeps the total dataset size close to the official MedGemma notebook's 10k-sample walkthrough while preserving a site-based FL layout.
 
-Prepared output:
+Output:
 
-- `./data/site-1/train.json`
-- `./data/site-1/validation.json`
-- `./data/site-2/train.json`
-- `./data/site-2/validation.json`
-- `./data/site-3/train.json`
-- `./data/site-3/validation.json`
+```
+  site-1: train=3000 -> ./data/site-1/train.json, validation=333 -> ./data/site-1/validation.json
+  site-2: train=3000 -> ./data/site-2/train.json, validation=333 -> ./data/site-2/validation.json
+  site-3: train=3000 -> ./data/site-3/train.json, validation=333 -> ./data/site-3/validation.json
+```
 
 Useful flags:
 
@@ -83,6 +82,7 @@ Useful flags:
 | Option | Description | Example |
 |--------|-------------|---------|
 | `--workspace` | Override the simulator workspace root. | `python job.py --workspace /data/nvflare/sim` |
+| `--n_clients` | Number of federated clients (default: 3). Must match the number of `--gpu` groups and prepared `data/site-*` directories. | `python job.py --n_clients 5` |
 | `--num_rounds` | Number of FL rounds. | `python job.py --num_rounds 5` |
 | `--max_steps` | Limit local steps per round for quick tests. | `python job.py --max_steps 50` |
 | `--learning_rate` | Peak learning rate for local SFT. | `python job.py --learning_rate 1e-4` |
