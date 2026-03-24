@@ -11,10 +11,12 @@ Publications: 2026
 ~~~~~~~~~~~~~~~~~~
 * **2026-03** `Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE <https://arxiv.org/abs/2603.13617>`__ (preprint)
 * **2026-02** `Standardized Methods and Recommendations for Green Federated Learning <https://arxiv.org/abs/2602.00343>`__ (preprint)
+* **2026-01** `FedUMM: A General Framework for Federated Learning with Unified Multimodal Models <https://arxiv.org/abs/2601.15390>`__ (`FL@FM 2026 <https://federated-learning.org/fl@fm-www-2026/>`__)
 * **2026-01** `FeTTL: Federated Template and Task Learning for Multi-Institutional Medical Imaging <https://arxiv.org/abs/2601.16302>`__ (preprint)
 
 Publications: 2025
 ~~~~~~~~~~~~~~~~~~
+* **2025-12** `Cyst-X: AI-Powered Pancreatic Cancer Risk Prediction from Multicenter MRI in Centralized and Federated Learning <https://doi.org/10.21203/rs.3.rs-7236860/v1>`__ (preprint)
 * **2025-11** `Reviving Stale Updates: Data-Free Knowledge Distillation for Asynchronous Federated Learning <https://arxiv.org/abs/2511.00655>`__ (preprint)
 * **2025-09** `Equitable Federated Learning with NCA <https://arxiv.org/abs/2506.21735>`__ (`MICCAI 2025 <https://papers.miccai.org/miccai-2025/0306-Paper2510.html>`__)
 * **2025-04** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (`Federated Learning Systems: Towards Privacy-Preserving Distributed AI <https://link.springer.com/book/10.1007/978-3-031-78841-3>`__)
