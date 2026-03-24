@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -126,7 +126,9 @@ def train_one_epoch(model, dataloader, optimizer, device, grad_accum, backend) -
     model.train()
     optimizer.zero_grad(set_to_none=True)
     total_loss, num_steps = 0.0, len(dataloader)
-
+    if num_steps == 0:
+        raise ValueError("Dataloader is empty - check data preparation and filtering")
+        
     for step, batch in enumerate(dataloader, 1):
         loss = backend.train_step(model, batch, device)
         total_loss += loss.item()
