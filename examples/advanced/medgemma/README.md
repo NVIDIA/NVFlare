@@ -1,8 +1,17 @@
 # Federated MedGemma Fine-Tuning
 
-This example adapts Google's centralized [MedGemma fine-tuning notebook](https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hugging_face.ipynb) into an NVFlare federated workflow. It fine-tunes [MedGemma 4B IT](https://huggingface.co/google/medgemma-4b-it) on the [NCT-CRC-HE-100K](https://zenodo.org/records/1214456) histopathology dataset using Hugging Face `TRL`, QLoRA, and FedAvg across 3 clients.
+This example adapts Google's centralized [MedGemma fine-tuning notebook](https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hugging_face.ipynb) into an NVFlare federated workflow. It fine-tunes [MedGemma 4B IT](https://huggingface.co/google/medgemma-4b-it) on the [NCT-CRC-HE-100K](https://zenodo.org/records/1214456) histopathology dataset using Hugging Face `TRL`, [QLoRA](https://arxiv.org/abs/2305.14314), and FedAvg across 3 clients.
 
 The example is self-contained: data download/prep scripts live next to the FL client, model wrapper, and job recipe.
+
+## Before you start: Hugging Face gated model
+
+Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it) are **gated** on Hugging Face. The repo is visible to everyone, but you must accept the license terms and be allowlisted before file downloads work.
+
+1. Sign in at [huggingface.co](https://huggingface.co) and open [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it).
+2. On the model page, follow **Access MedGemma on Hugging Face**: review and agree to the **Health AI Developer Foundations** terms so your account is authorized (this is often instant after you accept).
+3. If you see an error such as *access is restricted and you are not in the authorized list*, you are not allowlisted yet—repeat the access step on the model page while logged into the correct account, or wait if access is pending.
+4. On every machine that downloads or trains the model, use that **same** Hugging Face account: run `huggingface-cli login` or set the `HF_TOKEN` environment variable.
 
 ## Code structure
 
@@ -18,10 +27,9 @@ The example is self-contained: data download/prep scripts live next to the FL cl
 
 ## Prerequisites
 
+- **Hugging Face:** allowlisted access and local auth for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it), as described in [Before you start: Hugging Face gated model](#before-you-start-hugging-face-gated-model).
 - Python 3.10+
 - A CUDA GPU per client that supports `bfloat16` and has enough memory for MedGemma QLoRA. The upstream notebook recommends at least 40 GB GPU memory.
-- Access to [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it) on Hugging Face
-- A Hugging Face login/token already configured locally for gated-model access
 
 ## 1. Install dependencies
 
