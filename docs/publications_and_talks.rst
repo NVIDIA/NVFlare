@@ -19,6 +19,7 @@ Publications: 2025
 * **2025-12** `Cyst-X: AI-Powered Pancreatic Cancer Risk Prediction from Multicenter MRI in Centralized and Federated Learning <https://doi.org/10.21203/rs.3.rs-7236860/v1>`__ (preprint)
 * **2025-11** `Reviving Stale Updates: Data-Free Knowledge Distillation for Asynchronous Federated Learning <https://arxiv.org/abs/2511.00655>`__ (preprint)
 * **2025-09** `Equitable Federated Learning with NCA <https://arxiv.org/abs/2506.21735>`__ (`MICCAI 2025 <https://papers.miccai.org/miccai-2025/0306-Paper2510.html>`__)
+* **2025-05** `Secure Federated XGBoost with CUDA-Accelerated Homomorphic Encryption via NVIDIA FLARE <https://arxiv.org/abs/2504.03909>`__ (`CAI 2025 <https://ieeexplore.ieee.org/abstract/document/11050584>`__)
 * **2025-04** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (`Federated Learning Systems: Towards Privacy-Preserving Distributed AI <https://link.springer.com/book/10.1007/978-3-031-78841-3>`__)
 * **2025-03** `Supercharging Federated Learning with Flower and NVIDIA FLARE <https://arxiv.org/abs/2407.00031>`__ (`Federated Learning in the Age of Foundation Models - FL 2024 International Workshops <https://link.springer.com/book/10.1007/978-3-031-82240-7>`__)
 
