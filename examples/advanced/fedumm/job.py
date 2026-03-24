@@ -93,7 +93,7 @@ def main() -> None:
         num_rounds=args.num_rounds,
     )
     job.to(controller, "server")
-    job.to(IntimeModelSelector(key_metric="global_acc", negate=False), "server")
+    job.to(IntimeModelSelector(key_metric="val_accuracy", negate=False), "server")
 
     # ---- Build script_args ----
     script_args = (
