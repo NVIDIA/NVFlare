@@ -93,6 +93,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=
                 [command] + args,
                 cwd=cwd,
                 env=env,
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=(subprocess.PIPE if hide_stderr else None),
             )
