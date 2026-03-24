@@ -7,9 +7,20 @@ Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the `Clara Train SDK <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk>`__.
 
+Publications: 2026
+~~~~~~~~~~~~~~~~~~
+* **2026-03** `Privacy-Preserving Federated Fraud Detection in Payment Transactions with NVIDIA FLARE <https://arxiv.org/abs/2603.13617>`__ (preprint)
+* **2026-02** `Standardized Methods and Recommendations for Green Federated Learning <https://arxiv.org/abs/2602.00343>`__ (preprint)
+* **2026-01** `FedUMM: A General Framework for Federated Learning with Unified Multimodal Models <https://arxiv.org/abs/2601.15390>`__ (`FL@FM 2026 <https://federated-learning.org/fl@fm-www-2026/>`__)
+* **2026-01** `FeTTL: Federated Template and Task Learning for Multi-Institutional Medical Imaging <https://arxiv.org/abs/2601.16302>`__ (preprint)
+
 Publications: 2025
 ~~~~~~~~~~~~~~~~~~
+* **2025-11** `Reviving Stale Updates: Data-Free Knowledge Distillation for Asynchronous Federated Learning <https://arxiv.org/abs/2511.00655>`__ (preprint)
 * **2025-09** `Equitable Federated Learning with NCA <https://arxiv.org/abs/2506.21735>`__ (`MICCAI 2025 <https://papers.miccai.org/miccai-2025/0306-Paper2510.html>`__)
+* **2025-05** `Secure Federated XGBoost with CUDA-Accelerated Homomorphic Encryption via NVIDIA FLARE <https://arxiv.org/abs/2504.03909>`__ (`CAI 2025 <https://ieeexplore.ieee.org/abstract/document/11050584>`__)
+* **2025-04** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (`Federated Learning Systems: Towards Privacy-Preserving Distributed AI <https://link.springer.com/book/10.1007/978-3-031-78841-3>`__)
+* **2025-03** `Supercharging Federated Learning with Flower and NVIDIA FLARE <https://arxiv.org/abs/2407.00031>`__ (`Federated Learning in the Age of Foundation Models - FL 2024 International Workshops <https://link.springer.com/book/10.1007/978-3-031-82240-7>`__)
 
 Publications: 2024
 ~~~~~~~~~~~~~~~~~~
@@ -18,16 +29,16 @@ Publications: 2024
 * **2024-07** `FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models <https://arxiv.org/abs/2310.01467>`__ (`ICML 2024 <https://icml.cc/virtual/2024/poster/34753>`__)
 * **2024-07** `Fair evaluation of federated learning algorithms for automated breast density classification: The results of the 2022 ACR-NCI-NVIDIA federated learning challenge <https://arxiv.org/abs/2405.14900>`__ (`Medical Image Analysis, Volume 95, July 2024 <https://www.sciencedirect.com/science/article/abs/pii/S1361841524001312>`__)
 * **2024-07** `Easy and Scalable Federated Learning in the Age of Large Language Models with NVIDIA FLARE <https://federated-learning.org/fl@fm-icme-2024/HRoth.pdf>`__ (`FL@FM-ICME'24 <https://federated-learning.org/fl@fm-icme-2024/#k3>`__)
+* **2024-06** `FedHCA2: Towards Hetero-Client Federated Multi-Task Learning <https://arxiv.org/abs/2311.13250>`__ (`CVPR 2024 <https://openaccess.thecvf.com/content/CVPR2024/html/Lu_FedHCA2_Towards_Hetero-Client_Federated_Multi-Task_Learning_CVPR_2024_paper.html>`__)
 * **2024-05** `Federated Learning Privacy: Attacks, Defenses, Applications, and Policy Landscape - A Survey <https://arxiv.org/abs/2405.03636>`__ (preprint)
-* **2024-05** `Supercharging Federated Learning with Flower and NVIDIA FLARE <https://arxiv.org/abs/2407.00031>`__ (Presented at `FL@FM-IJCAI <https://federated-learning.org/fl@fm-ijcai-2024>`__ In preparation for Lecture Notes in AI)
 * **2024-05** `An in-depth evaluation of federated learning on biomedical natural language processing for information extraction <https://www.nature.com/articles/s41746-024-01126-4>`__ (`Nature Digital Medicine 7, 127, 2024 <https://www.nature.com/npjdigitalmed>`__)
-* **2024-02** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (Presented at `FL@FM-TheWebConf'24 <https://federated-learning.org/fl@fm-www-2024>`__, `Springer Book Chapter <https://link.springer.com/book/9783031788406#about-this-book>`__))
 
 Publications: 2023
 ~~~~~~~~~~~~~~~~~~
 * **2023-10** `Communication-Efficient Vertical Federated Learning with Limited Overlapping Samples <https://arxiv.org/abs/2303.16270>`__ (`ICCV 2023 <https://iccv2023.thecvf.com/>`__)
 * **2023-10** `FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models <https://arxiv.org/abs/2310.01467>`__ (preprint)
 * **2023-10** `ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data <https://arxiv.org/abs/2308.04070>`__ (`DeCaF @ MICCAI 2023 <https://decaf-workshop.github.io/decaf-2023/>`__)
+* **2023-08** `FedOBD: Opportunistic Block Dropout for Efficiently Training Large-scale Neural Networks through Federated Learning <https://arxiv.org/abs/2208.05174>`__ (`IJCAI 2023 <https://www.ijcai.org/proceedings/2023/394>`__)
 * **2023-06** `Fair Federated Medical Image Segmentation via Client Contribution Estimation <https://arxiv.org/abs/2303.16520>`__ (`CVPR 2023 <https://cvpr2023.thecvf.com/Conferences/2023/>`__)
 * **2023-03** `FLARE: Federated Learning from Simulation to Real-World <https://arxiv.org/abs/2210.13291>`__ (`IEEE Data Eng. Bull. March 2023, Vol. 46, No. 1, <http://sites.computer.org/debull/A23mar/issue1.htm>`__)
 
@@ -61,8 +72,17 @@ Blogs & Videos
 --------------
 NVIDIA FLARE related blogs and other media.
 
+Blogs & Videos: 2025
+~~~~~~~~~~~~~~~~~~~~
+* **2025-10** `Training Federated AI Models to Predict Protein Properties <https://developer.nvidia.com/blog/training-federated-ai-models-to-predict-protein-properties/>`__ (NVIDIA Technical Blog)
+* **2025-04** `Efficient Federated Learning in the Era of LLMs with Message Quantization and Streaming <https://developer.nvidia.com/blog/efficient-federated-learning-in-the-era-of-llms-with-message-quantization-and-streaming/>`__ (NVIDIA Technical Blog)
+* **2025-04** `Effortless Federated Learning on Mobile with NVIDIA FLARE and Meta ExecuTorch <https://developer.nvidia.com/blog/effortless-federated-learning-on-mobile-with-nvidia-flare-and-meta-executorch/>`__ (NVIDIA Technical Blog)
+* **2025-03** `Supercharging the Federated Learning Ecosystem by Integrating Flower and NVIDIA FLARE <https://developer.nvidia.com/blog/supercharging-the-federated-learning-ecosystem-by-integrating-flower-and-nvidia-flare/>`__ (NVIDIA Technical Blog)
+
 Blogs & Videos: 2024
 ~~~~~~~~~~~~~~~~~~~~
+* **2024-10** `Federated Learning in Autonomous Vehicles Using Cross-Border Training <https://developer.nvidia.com/blog/federated-learning-in-autonomous-vehicles-using-cross-border-training/>`__ (NVIDIA Technical Blog)
+* **2024-06** `Federated XGBoost Made Practical and Productive with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-xgboost-made-practical-and-productive-with-nvidia-flare/>`__ (NVIDIA Technical Blog)
 * **2024-04** `Differential Privacy and Federated Learning for Medical Data <https://towardsdatascience.com/differential-privacy-and-federated-learning-for-medical-data-0f2437d6ece9>`__ (Roche Technical Blog)
 * **2024-03** `Announcing NVIDIA and Flower Collaboration <https://flower.ai/blog/2024-03-15-announcing-nvidia-and-flower-collaboration/>`__ (Flower Blog)
 * **2024-03** `Turning Machine Learning to Federated Learning in Minutes with NVIDIA FLARE 2.4 <https://developer.nvidia.com/blog/turning-machine-learning-to-federated-learning-in-minutes-with-nvidia-flare-2-4/>`__ (NVIDIA Technical Blog)

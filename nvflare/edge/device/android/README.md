@@ -146,11 +146,11 @@ Once you open this project folder in Android Studio, you should be able to emula
 
 ![Android Studio Screenshot - AVD](resources/android_studio_avd.png)
 
-Next, you connect to the proxy server IP shown when running start_rp.sh (see [Start the NVFlare System](../../../examples/advanced/edge/README.md#start-the-nvflare-system)) and click on **Start Training**.
+Next, you connect to the proxy server IP shown when running start_rp.sh (see [Start the NVFlare System](../../../../examples/advanced/edge/README.md#start-the-nvflare-system)) and click on **Start Training**.
 
 ![Android Studio Screenshot - Start Training](resources/android_studio_start_training.png)
 
-Once you submitted the training job as described in [Run with the real device](../../../examples/advanced/edge/README.md#run-with-the-real-device), you will see the training for subsequent FL rounds proceeding on your Android Virtual Device:
+Once you submitted the training job as described in [Run with the real device](../../../../examples/advanced/edge/README.md#run-with-the-real-device), you will see the training for subsequent FL rounds proceeding on your Android Virtual Device:
 
 ![Android Studio Screenshot - FL Rounds](resources/android_studio_rounds.png)
 

@@ -76,11 +76,11 @@ The result will be saved to the job workspace in json format, which can be loade
 In the jupyter notebook, one can visualize via provided visualization utility
 For example, this table shows the statistics for a particular feature "Age" on each site and each dataset. 
 
-![stats](df_stats/demo/df_stats.png)
+![stats](../../../docs/resources/stats_df.png)
 You can compare global features and clients feature statistics side-by-side for each dataset for all features.   
 
 Here is an example for histograms comparison
-![histogram plot](df_stats/demo/hist_plot.png)
+![histogram plot](../../../docs/resources/hist_plot.png)
 
 The main steps are 
 * provide server side configuration to specify target statistics and their configurations and output location
@@ -95,7 +95,7 @@ The detailed example instructions can be found [Data frame statistics](df_stats/
 The second example provided is an image histogram example. Unlike the **Tabular** data example:
 
 The image examples show the following:
-* The [image_statistics.py](image_stats/jobs/image_stats/app/custom/image_statistics.py) only needs
+* The [client.py](image_stats/client.py) implementation only needs
 to calculate the count and histogram target statistics. Users only need to provide the count, failure_count, and histogram calculation functions. There is no need to implement other metrics functions
 (sum, mean, std_dev etc.) (by default, get_failure_count returns 0)
 * For each site's dataset, there are several thousand images; the local histogram is an aggregate histogram of all the image histograms
@@ -113,7 +113,7 @@ An example of image histogram (the underlying image files have only 1 channel)
 
 ### Monai Stats with Spleen CT Image example
 
-This example [Spleen CT Image Statistics](../../../integration/monai/examples/spleen_ct_segmentation_sim) demonstrated
+This example [Spleen CT Image Statistics](../monai/spleen_ct_segmentation/README.md) demonstrated
 few more details in Federated statistics.
 
 * instead of locally calculating the histogram on each image, this example shows how to get the local statistics from monai
@@ -340,4 +340,4 @@ sequenceDiagram
 ## Summary
 
 We provide federated statistics operators that can easily aggregate and visualize the local statistics for
-different data site and features. We hope this feature will make it easier to perform federated data analysis. 
+different data site and features. We hope this feature will make it easier to perform federated data analysis.
