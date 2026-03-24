@@ -131,6 +131,59 @@ Result Submission Timeout
    })
 
 
+Subprocess Large-Model Result Submission Timeout
+-------------------------------------------------
+
+**Applies to**: Subprocess-mode clients (``launch_external_process=True``) with large models
+
+**Symptom**: Training completes in the subprocess but the job hangs or fails immediately
+after, with no result acknowledgment received.
+
+**Cause**: ``submit_result_timeout`` (default 60 s) is the time the training subprocess
+waits for the client training process to acknowledge its result.  For large models (5 GB+),
+the transfer alone exceeds this limit.
+
+**Solution**:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "submit_result_timeout": 1800,      # 30 min for LLM-scale results
+       "tensor_min_download_timeout": 600, # PyTorch: increase if inter-chunk gaps exceed 300s default
+       # "np_min_download_timeout": 600,   # NumPy/sklearn: same, use instead of tensor variant
+   })
+
+.. note::
+   ``submit_result_timeout`` is the subprocess-side wait for acknowledgment.
+   It is distinct from ``submit_task_result_timeout``, which is the server-side wait
+   for the client to deliver a result.  For large models, set ``submit_task_result_timeout``
+   (server-side) to be at least as large as ``submit_result_timeout`` (subprocess-side)
+   so the server is still listening when the subprocess finishes sending.
+
+Swarm Learning P2P Transfer Timeout
+------------------------------------
+
+**Applies to**: ``SwarmLearningRecipe`` with large models
+
+**Symptom**: Swarm Learning job fails with P2P ACK timeout during model scatter between peers.
+
+**Cause**: ``round_timeout`` (which sets the P2P model-transfer ACK budget between peers)
+defaults to 3600 s.  For very large models (7B+) on congested networks, peer-to-peer
+tensor streaming can approach this limit.
+
+**Solution**: Set ``round_timeout`` directly on the recipe:
+
+.. code-block:: python
+
+   recipe = SwarmLearningRecipe(
+       name="swarm",
+       model=MyModel(),
+       min_clients=3,
+       num_rounds=5,
+       train_script="client.py",
+       round_timeout=7200,  # 2 hours for 70B+ models
+   )
+
 Cross-Site Evaluation Timeout
 -----------------------------
 
@@ -167,6 +220,18 @@ Most Commonly Adjusted Timeouts
    * - submit_task_result_timeout
      - None
      - Large result payloads
+   * - submit_result_timeout (subprocess mode only)
+     - 60 s
+     - Large model result transfers from subprocess; set 1800 s for LLMs
+   * - tensor_min_download_timeout / np_min_download_timeout (subprocess mode only)
+     - 300 s
+     - 70B+ models on congested networks; increase to 600 s (tensor = PyTorch, np = NumPy/sklearn)
+   * - max_resends (subprocess mode only)
+     - 3
+     - Persistent network failures; increase to 5–10
+   * - round_timeout (Swarm Learning only)
+     - 3600 s
+     - 7B+ model P2P transfers between Swarm peers
    * - external_pre_init_timeout (Client API subprocess only)
      - 60-300s
      - LLMs, heavy imports before ``flare.init()``
@@ -214,17 +279,6 @@ Via Configuration Files
    get_task_timeout = 300.0
    submit_task_result_timeout = 300.0
 
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
-
-Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
-
-- ``strict_start_job_reply_check`` (default ``false``): keep default for backward-compatible startup behavior;
-  set to ``true`` to enforce stricter START_JOB reply checks.
-- ``sync_client_jobs_require_previous_report`` (default ``true``): keep enabled to avoid false dead-job reports
-  caused by transient startup or sync races.
-
 **comm_config.json** (system-level, in startup kit):
 
 .. code-block:: json
@@ -256,6 +310,8 @@ Large Model Training (100M+ parameters)
    recipe.add_client_config({
        "get_task_timeout": 600,
        "submit_task_result_timeout": 600,
+       "submit_result_timeout": 600,        # subprocess mode only
+       "tensor_min_download_timeout": 300,  # subprocess mode only; use np_min_download_timeout for NumPy
    })
 
 
@@ -266,7 +322,10 @@ LLM/Foundation Model Training
 
    recipe.add_client_config({
        "get_task_timeout": 1200,
-       "submit_task_result_timeout": 1200,
+       "submit_task_result_timeout": 1800,  # server-side; must be >= submit_result_timeout
+       "submit_result_timeout": 1800,       # subprocess mode only
+       "tensor_min_download_timeout": 600,  # PyTorch; use np_min_download_timeout for NumPy
+       "max_resends": 5,                    # subprocess mode only
    })
 
 

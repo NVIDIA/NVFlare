@@ -133,6 +133,9 @@ The content of this section is specific to the server app code. The ``server.py`
 
         return ServerAppComponents(strategy=strategy, config=config)
 
+Note that you can also pass `run_config` arguments directly through the job definition via 
+`FlowerRecipe(..., run_config={"num-server-rounds": 5})` to override the default values listed in `pyproject.toml`.
+
 Supernode Count
 ~~~~~~~~~~~~~~~
 If you run the Flower job with its simulation (not as a FLARE job), you need to specify how many clients (supernodes) to use

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -839,6 +839,9 @@ class TestFedAvgWorkflowEvents:
     def test_broadcast_model_does_not_fire_round_started(self):
         controller = FedAvg(num_clients=1)
         controller.fl_ctx = FLContext()
+        mock_engine = MagicMock()
+        mock_engine.get_clients.return_value = ["site-1"]
+        controller.engine = mock_engine
         model = FLModel(params={"w": 1.0}, current_round=2)
 
         with (
@@ -867,7 +870,7 @@ class TestFedAvgWorkflowEvents:
 
         num_round_calls = [c for c in mock_set_prop.call_args_list if c.args and c.args[0] == AppConstants.NUM_ROUNDS]
         assert len(num_round_calls) > 0
-        assert all(c.kwargs.get("sticky") is True for c in num_round_calls)
+        assert all(c.kwargs.get("sticky") is False for c in num_round_calls)
 
 
 class TestScaffoldAggregation:

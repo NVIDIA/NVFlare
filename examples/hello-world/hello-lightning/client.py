@@ -13,7 +13,6 @@
 # limitations under the License.
 import argparse
 
-import torch
 import torchvision
 import torchvision.transforms as transforms
 from model import LitNet
@@ -86,10 +85,7 @@ def main():
 
     model = LitNet()
     cifar10_dm = CIFAR10DataModule(batch_size=batch_size)
-    if torch.cuda.is_available():
-        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None)
-    else:
-        trainer = Trainer(max_epochs=1, devices=None)
+    trainer = Trainer(max_epochs=1, accelerator="auto", devices="auto")
 
     # (2) patch the lightning trainer
     flare.patch(trainer)

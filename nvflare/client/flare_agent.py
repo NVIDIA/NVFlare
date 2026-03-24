@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
+import os
+import sys
 import threading
 import time
 import traceback
@@ -24,7 +27,10 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.utils.constants import PipeChannelName
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import clear_download_initiated, was_download_initiated
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
@@ -76,7 +82,9 @@ class FlareAgent:
         metric_channel_name: str = PipeChannelName.METRIC,
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
-        decomposer_module: Optional[str] = None,
+        decomposer_module: str = None,
+        download_complete_timeout: float = 1800.0,
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent.
 
@@ -102,6 +110,10 @@ class FlareAgent:
             close_metric_pipe (bool): whether to close the metric pipe when stopped. Defaults to True.
                 Usually for ``FilePipe`` we set to False, for ``CellPipe`` we set to True.
             decomposer_module (str): the module name which contains the external decomposers.
+            download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the
+                server to finish downloading tensors from this subprocess's DownloadService.
+                Only active when pipe is a CellPipe with pass_through_on_send=True.
+                Defaults to 1800.0.
         """
         if pipe is None and metric_pipe is None:
             raise RuntimeError(
@@ -145,6 +157,8 @@ class FlareAgent:
         self.asked_to_stop = False
         self._close_pipe = close_pipe
         self._close_metric_pipe = close_metric_pipe
+        self._download_complete_timeout = download_complete_timeout
+        self._launch_once = launch_once
 
     def start(self):
         """Start the agent.
@@ -339,8 +353,98 @@ class FlareAgent:
         return result
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
-        result = self.task_result_to_shareable(result, rc)
-        reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result)
+        result_shareable = self.task_result_to_shareable(result, rc)
+        reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result_shareable)
+
+        # Gate subprocess exit on download completion for the reverse PASS_THROUGH path
+        # (subprocess → CJ → server).  CJ ACKs send_to_peer() immediately after creating
+        # LazyDownloadRef objects; the server then downloads tensors asynchronously from
+        # this subprocess's DownloadService.  Registering DOWNLOAD_COMPLETE_CB before
+        # serialisation ensures _create_downloader() wires it as the transaction_done_cb,
+        # so the event is set exactly when the last receiver finishes downloading.
+        #
+        # For validate results (metrics only, no tensors), _finalize_download_tx() creates
+        # no download transaction and never fires DOWNLOAD_COMPLETE_CB.  We detect this via
+        # was_download_initiated() (thread-local set by _finalize_download_tx()) and return
+        # immediately without waiting — fixing the 1800s hang on CSE round 2+ (RC12 Bug 3).
+        if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
+            download_done = threading.Event()
+            download_status = [None]
+
+            def _on_download_done(tid, status, objs):
+                download_status[0] = status
+                download_done.set()
+
+            self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done})
+            # Tell cell_pipe.py to use download_complete_timeout as MSG_ROOT_TTL so the
+            # subprocess's DownloadService transaction stays alive long enough for the server
+            # to finish pulling tensors.  submit_result_timeout is the CJ-ACK timeout and is
+            # unrelated to transfer duration — using it here would kill the transaction too early.
+            reply._dl_ttl = self._download_complete_timeout
+            # Reset thread-local so a stale True from a previous training round does not
+            # carry over to the current validate round (no tensors → False expected).
+            clear_download_initiated()
+            try:
+                send_start = time.time()
+                sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+                if not sent:
+                    self.logger.warning(
+                        f"[subprocess] send_to_peer failed: task_ph.asked_to_stop={self.pipe_handler.asked_to_stop}"
+                    )
+                    return False
+                send_elapsed = time.time() - send_start
+
+                # _finalize_download_tx() runs synchronously inside send_to_peer().
+                # was_download_initiated() is True iff it created a download transaction
+                # (i.e. the result contained large tensors requiring via-downloader transfer).
+                # False means validate result (metrics only) — skip the download wait and
+                # fall through to the launch_once shutdown block below.
+                if was_download_initiated():
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        f"waiting up to {self._download_complete_timeout}s for server tensor download"
+                    )
+                    wait_start = time.time()
+                    if download_done.wait(timeout=self._download_complete_timeout):
+                        download_elapsed = time.time() - wait_start
+                        ds = download_status[0]
+                        if ds == TransactionDoneStatus.FINISHED:
+                            self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                        else:
+                            self.logger.warning(
+                                f"[subprocess] download transaction ended with status={ds} "
+                                f"after {download_elapsed:.2f}s"
+                            )
+                    else:
+                        self.logger.warning(
+                            f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
+                            "proceeding (server may still be downloading from this process)"
+                        )
+                else:
+                    self.logger.info(
+                        f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; "
+                        "no tensors in result — proceeding immediately"
+                    )
+            finally:
+                # Always clear the callback so stale refs do not accumulate across rounds.
+                self.pipe.cell.update_fobs_context({FOBSContextKey.DOWNLOAD_COMPLETE_CB: None})
+            if self._launch_once:
+                # launch_once=True: subprocess handles multiple rounds; do NOT exit here.
+                # Register atexit once so os._exit(0) is called when main() finally returns,
+                # bypassing Python's thread-join wait on non-daemon CoreCell threads.
+                if not getattr(self, "_atexit_registered", False):
+                    atexit.register(os._exit, 0)
+                    self._atexit_registered = True
+                return True
+            else:
+                # launch_once=False: subprocess handles exactly one round; exit now so the
+                # deferred-stop poller on the CJ side unblocks immediately.
+                self.logger.info("[subprocess] exiting after server download")
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(0)
+                return True
+
         return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
 
     def log(self, record: DXO) -> bool:
@@ -369,11 +473,13 @@ class FlareAgentWithCellPipe(FlareAgent):
         workspace_dir: str,
         read_interval=0.1,
         heartbeat_interval=5.0,
-        heartbeat_timeout=30.0,
+        heartbeat_timeout=60.0,  # increased from 30.0 — 30s too tight under large-model GC/relay
         resend_interval=2.0,
         max_resends=None,
-        submit_result_timeout=30.0,
+        submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
+        download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
+        launch_once: bool = False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.
 
@@ -386,12 +492,15 @@ class FlareAgentWithCellPipe(FlareAgent):
             read_interval (float): how often to read from the pipe.
             heartbeat_interval (float): how often to send a heartbeat to the peer.
             heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
-                0 means DO NOT check for heartbeat.
+                0 means DO NOT check for heartbeat. Defaults to 60.0.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
             max_resends (int, optional): max number of resend. None means no limit.
             submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
+                Defaults to 60.0.
             has_metrics (bool): has metric pipe or not.
+            download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the server to finish
+                downloading tensors from this subprocess's DownloadService. Defaults to 1800.0.
         """
         pipe = CellPipe(
             mode=Mode.ACTIVE,
@@ -422,4 +531,6 @@ class FlareAgentWithCellPipe(FlareAgent):
             max_resends=max_resends,
             submit_result_timeout=submit_result_timeout,
             metric_pipe=metric_pipe,
+            download_complete_timeout=download_complete_timeout,
+            launch_once=launch_once,
         )

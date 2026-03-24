@@ -684,7 +684,8 @@ Run Flower-based federated learning jobs.
     recipe = FlowerRecipe(
         name="flower-job",
         min_clients=2,
-        flower_app="path/to/flower/app",
+        flower_content="path/to/flower/app",
+        run_config={"num-server-rounds": 5}, # Optional: used to override default values in pyproject.toml
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -701,12 +702,13 @@ Decentralized federated learning without a central server.
 
 .. code-block:: python
 
-    from nvflare.app_opt.pt.recipes.swarm import SimpleSwarmLearningRecipe
+    from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
     from nvflare.recipe import SimEnv
 
-    recipe = SimpleSwarmLearningRecipe(
+    recipe = SwarmLearningRecipe(
         name="swarm",
         model=MyModel(),
+        min_clients=3,
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
@@ -715,7 +717,8 @@ Decentralized federated learning without a central server.
     run = recipe.execute(env)
 
 .. note::
-   ``SimpleSwarmLearningRecipe`` is also available from the original location for backward compatibility:
+   ``SimpleSwarmLearningRecipe`` is a backward-compatible alias for ``SwarmLearningRecipe``.
+   It is also available from the original location:
    ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
 
 

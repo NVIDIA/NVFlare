@@ -19,6 +19,8 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
+from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
 
 
@@ -58,15 +60,10 @@ def base_recipe_params():
 
 
 class TestBaseCyclicRecipe:
-    """Test cases for base CyclicRecipe class.
-
-    Note: Base CyclicRecipe doesn't directly support nn.Module or dict config.
-    Use framework-specific recipes (PTCyclicRecipe, TFCyclicRecipe) for those.
-    """
+    """Test cases for base CyclicRecipe class."""
 
     def test_initial_ckpt_must_exist_for_relative_path(self):
         """Test that non-existent relative paths are rejected (no mock - validation must run)."""
-        # Don't use mock_file_system fixture - we need real validation
         with pytest.raises(ValueError, match="does not exist locally"):
             BaseCyclicRecipe(
                 name="test_relative",
@@ -87,6 +84,76 @@ class TestBaseCyclicRecipe:
                 **base_recipe_params,
             )
 
+    def test_rejects_non_wrapper_model_for_base_recipe(self, mock_file_system, base_recipe_params):
+        """Base CyclicRecipe no longer owns PT/TF model persistence for raw model inputs."""
+        with pytest.raises(ValueError, match="Use a framework-specific CyclicRecipe subclass"):
+            BaseCyclicRecipe(
+                name="test_base_pt_dict",
+                model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
+
+    def test_rejects_pytorch_checkpoint_without_model(self, mock_file_system, base_recipe_params):
+        """Base recipe requires framework-specific subclass for PT checkpoint-only setup."""
+        with pytest.raises(ValueError, match="Use a framework-specific CyclicRecipe subclass"):
+            BaseCyclicRecipe(
+                name="test_base_pt_ckpt_no_model",
+                model=None,
+                initial_ckpt="/abs/path/to/model.pt",
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
+
+    def test_rejects_ckpt_only_for_default_framework(self, mock_file_system, base_recipe_params):
+        """Fail fast for ckpt-only usage when no supported framework/wrapper is provided."""
+        with pytest.raises(ValueError, match="Unsupported framework"):
+            BaseCyclicRecipe(
+                name="test_ckpt_only_default_framework",
+                model=None,
+                initial_ckpt="/abs/path/to/model.pt",
+                **base_recipe_params,
+            )
+
+    def test_applies_initial_ckpt_to_wrapper_model(self, mock_file_system, base_recipe_params, simple_model):
+        """When wrapper model is used, recipe-level initial_ckpt should be applied to persistor."""
+        recipe = BaseCyclicRecipe(
+            name="test_wrapper_ckpt",
+            model=PTModel(model=simple_model),
+            initial_ckpt="/abs/path/to/model.pt",
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+
+        server_app = recipe.job._deploy_map.get("server")
+        persistor = server_app.app_config.components.get("persistor")
+        assert persistor is not None
+        assert getattr(persistor, "source_ckpt_file_full_name", None) == "/abs/path/to/model.pt"
+
+    def test_rejects_unsupported_framework_without_wrapper(self, mock_file_system, base_recipe_params):
+        """Fail fast for unsupported base framework/model persistence combinations."""
+        with pytest.raises(ValueError, match="Unsupported framework"):
+            BaseCyclicRecipe(
+                name="test_unsupported_framework",
+                model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+                framework=FrameworkType.NUMPY,
+                **base_recipe_params,
+            )
+
+
+class TestBaseCyclicRecipeAttributes:
+    """Test that CyclicRecipe stores validated attributes correctly."""
+
+    def test_min_clients_attribute(self, mock_file_system, base_recipe_params, simple_model):
+        """min_clients must be accessible as an instance attribute after construction."""
+        recipe = BaseCyclicRecipe(
+            name="test_min_clients",
+            model=PTModel(model=simple_model),
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+        assert recipe.min_clients == base_recipe_params["min_clients"]
+
 
 class TestPTCyclicRecipe:
     """Test cases for PyTorch CyclicRecipe."""
@@ -104,6 +171,22 @@ class TestPTCyclicRecipe:
 
         assert recipe.name == "test_pt_cyclic"
         assert recipe.job is not None
+
+    def test_pt_cyclic_with_ptmodel_wrapper_returns_persistor_id(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """PTModel wrapper path must correctly extract persistor_id from dict return."""
+        from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe as PTCyclicRecipe
+
+        recipe = PTCyclicRecipe(
+            name="test_pt_wrapper",
+            model=PTModel(model=simple_model),
+            **base_recipe_params,
+        )
+
+        server_app = recipe.job._deploy_map.get("server")
+        assert server_app is not None
+        assert "persistor" in server_app.app_config.components
 
 
 class TestTFCyclicRecipe:

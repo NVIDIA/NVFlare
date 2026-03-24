@@ -9,7 +9,7 @@ Activations and corresponding gradients are being exchanged between the clients 
 <img src="./figs/split_learning.svg" alt="Split learning setup" width="300"/>
 
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
-see the example on ["Real-world Federated Learning with CIFAR-10"](../../cifar10/cifar10-real-world/README.md).
+see the example on ["Real-world Federated Learning with CIFAR-10"](../../cifar10/pt/cifar10-real-world/README.md).
 
 ## 1. Setup
 This examples uses [JupyterLab](https://jupyter.org).
