@@ -32,7 +32,7 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 
 - **Hugging Face:** allowlisted access and local auth for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it), as described in [Before you start: Hugging Face gated model](#before-you-start-hugging-face-gated-model).
 - Python 3.10+
-- A CUDA GPU per client that supports `bfloat16` and has enough memory for MedGemma QLoRA. The upstream notebook recommends at least 40 GB GPU memory.
+- A CUDA GPU per client that supports `bfloat16` and has at least 40 GB of memory for MedGemma QLoRA.
 
 ## 1. Install dependencies
 
