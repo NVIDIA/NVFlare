@@ -13,6 +13,7 @@
 # limitations under the License.
 from nvflare.fuel.utils.fobs.decomposer import Decomposer
 from nvflare.fuel.utils.fobs.fobs import (
+    add_type_name_whitelist,
     auto_register_enum_types,
     deserialize,
     deserialize_stream,

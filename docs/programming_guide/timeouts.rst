@@ -252,7 +252,11 @@ FlareAgent for external process integration (flare_agent.py):
      - Time without heartbeat before peer is dead
    * - submit_result_timeout
      - 60.0
-     - Timeout for submitting task result
+     - Timeout for submitting task result to the client training process. 60 s is too short
+       for large models; configure via ``add_client_config({"submit_result_timeout": 1800})``.
+   * - max_resends
+     - 3
+     - Maximum send retries on failure. Configurable via ``add_client_config({"max_resends": N})``.
 
 **Note**: FlareAgentWithCellPipe uses 30.0s defaults.
 
@@ -868,13 +872,15 @@ Client-side timeouts for task coordination (common.py:87-92):
      - Interval for checking new learning tasks
    * - learn_task_ack_timeout
      - 10
-     - Timeout for task acknowledgment
+     - P2P model-transfer ACK budget (seconds). 10 s is too short for models >2 GB.
+       Set via ``SwarmLearningRecipe(round_timeout=3600)`` which wires both
+       ``learn_task_ack_timeout`` and ``final_result_ack_timeout``.
    * - learn_task_abort_timeout
      - 5.0
      - Timeout for task abortion
    * - final_result_ack_timeout
      - 10
-     - Timeout for final result acknowledgment
+     - Timeout for final result acknowledgment. See ``learn_task_ack_timeout`` note above.
    * - get_model_timeout
      - 10
      - Timeout for getting model from peers
@@ -1453,6 +1459,18 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
    * - streaming_read_timeout
      - 300
      - Timeout for reading streaming data
+   * - np_min_download_timeout
+     - 300
+     - Minimum idle time (seconds) before an inactive NumPy array download transaction
+       is declared dead. Applies to NumPy/sklearn-based models.
+       Increase to 600 s for 70B+ models on congested networks.
+       Configure via ``add_client_config({"np_min_download_timeout": 600})``.
+   * - tensor_min_download_timeout
+     - 300
+     - Minimum idle time (seconds) before an inactive PyTorch tensor download transaction
+       is declared dead. Applies to PyTorch-based models.
+       Increase to 600 s for 70B+ models on congested networks.
+       Configure via ``add_client_config({"tensor_min_download_timeout": 600})``.
    * - np_download_chunk_size
      - 2097152
      - Chunk size for NumPy array downloads (bytes)
@@ -1467,20 +1485,29 @@ Recommended timeouts for large models in Swarm Learning:
 
 .. code-block:: python
 
-   # Server configuration
+   recipe = SwarmLearningRecipe(
+       name="swarm",
+       model=MyModel(),
+       min_clients=3,
+       num_rounds=5,
+       train_script="client.py",
+       round_timeout=7200,   # P2P ACK budget; covers learn_task_ack_timeout + final_result_ack_timeout
+       progress_timeout=7200,
+       start_task_timeout=300,
+   )
+
+   # Server-side streaming configuration
    recipe.add_server_config({
-       "start_task_timeout": 300,
-       "progress_timeout": 7200,
        "np_download_chunk_size": 2097152,
-       "streaming_per_request_timeout": 600
+       "streaming_per_request_timeout": 600,
    })
 
-   # Client configuration
-   {
-       "learn_task_timeout": 3600,
-       "learn_task_ack_timeout": 300,
-       "final_result_ack_timeout": 300
-   }
+   # Subprocess-mode timeouts (when launch_external_process=True)
+   recipe.add_client_config({
+       "submit_result_timeout": 1800,
+       "tensor_min_download_timeout": 600,
+       "max_resends": 5,
+   })
 
 
 XGBoost-Specific Timeouts
@@ -2519,45 +2546,6 @@ application.conf Settings
    # Shutdown
    end_run_readiness_timeout = 10.0
 
-   # Server startup/dead-job safety flags
-   strict_start_job_reply_check = false
-   sync_client_jobs_require_previous_report = true
-
-
-.. _server_startup_dead_job_safety_flags:
-
-Server Startup and Dead-Job Safety Flags
-----------------------------------------
-
-These ``application.conf`` flags are server-side safety controls used during job startup
-and client heartbeat synchronization:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 36 12 52
-
-   * - Parameter
-     - Default
-     - Purpose
-   * - strict_start_job_reply_check
-     - false
-     - Enables strict START_JOB reply validation (detects missing/timeout replies and non-OK return codes).
-   * - sync_client_jobs_require_previous_report
-     - true
-     - Requires a prior positive heartbeat report before treating "missing job on client" as a dead-job signal.
-
-Recommended usage:
-
-- ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
-  Enable it (``true``) for large-scale or hierarchical deployments where startup timeouts
-  are expected and you want the server to proceed with the subset of clients that responded,
-  rather than failing the entire job. With ``false``, a timed-out reply is treated as a
-  silent success, which can mask startup problems.
-- Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
-  dead-job reports during startup races and transient heartbeat delays.
-- Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
-  where the first missing-job heartbeat immediately triggers dead-job detection.
-
 
 Admin Client Session (Python API)
 ---------------------------------
@@ -2615,14 +2603,15 @@ CCWF/Swarm Learning Configuration
 
 .. code-block:: python
 
-   from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+   from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
 
-   recipe = SwarmLearningRecipe(
+   recipe = SimpleSwarmLearningRecipe(
        min_clients=3,
        num_rounds=10,
        model=model,
        train_script="train.py",
        cross_site_eval_timeout=600.0,
+       round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models
    )
 
 
