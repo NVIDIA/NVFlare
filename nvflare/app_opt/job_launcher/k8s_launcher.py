@@ -238,7 +238,11 @@ class K8sJobHandle(JobHandleSpec):
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
         except ApiException as e:
-            self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
+            if getattr(e, "status", None) == 404:
+                self.logger.info(f"job {self.job_id} pod not found during querying; assuming terminated")
+                self.terminal_state = JobState.TERMINATED
+            else:
+                self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
             return POD_Phase.UNKNOWN.value
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod phase {self.job_id}: {e}")
@@ -396,7 +400,7 @@ def _job_args_dict(job_args: dict, arg_names: list) -> dict:
     result = {}
     for name in arg_names:
         e = job_args.get(name)
-        if not e:
+        if e is None:
             continue
 
         n, v = e
