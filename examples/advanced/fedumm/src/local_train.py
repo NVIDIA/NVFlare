@@ -21,7 +21,9 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 
-import src  # noqa: F401  - triggers backend registration
+import sys, os as _os  # noqa: F401  - triggers backend registration
+sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import src
 from src.common import (
     count_trainable_params, maybe_subsample, set_seed, train_one_epoch,
 )
@@ -54,10 +56,14 @@ def main() -> None:
     cache_dir = args.data_path or os.environ.get("HF_HOME", "/tmp/hf_cache")
     backend = get_backend(args.model_backend)
 
+    import aiohttp
+    _timeout = {'client_kwargs': {'timeout': aiohttp.ClientTimeout(total=3600)}}
     train_hf = load_dataset(backend.hf_dataset_name(),
-                            split=backend.hf_train_split(), cache_dir=cache_dir)
+                            split=backend.hf_train_split(), cache_dir=cache_dir,
+                            storage_options=_timeout)
     eval_hf = load_dataset(backend.hf_dataset_name(),
-                           split=backend.hf_eval_split(), cache_dir=cache_dir)
+                           split=backend.hf_eval_split(), cache_dir=cache_dir,
+                           storage_options=_timeout)
     keep = set(backend.keep_columns())
     train_hf = train_hf.remove_columns([c for c in train_hf.column_names if c not in keep])
     eval_hf = eval_hf.remove_columns([c for c in eval_hf.column_names if c not in keep])
