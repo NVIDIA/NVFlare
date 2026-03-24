@@ -23,13 +23,6 @@ each round, reducing communication by **99.7%** compared to full model fine-tuni
           local)     local)     local)
 ```
 
-## Supported Models
-
-| Backend key | Model | LoRA target | Trainable params |
-|---|---|---|---|
-| `blip_vqa` | Salesforce/blip-vqa-base | text_encoder + text_decoder (q/k/v) | ~1.2 M |
-| `januspro` | deepseek-ai/Janus-Pro-1B | language_model (q_proj/k_proj/v_proj) | ~2.4 M |
-
 ## Project Structure
 
 ```
@@ -87,8 +80,8 @@ python src/local_train.py \
 Expected output:
 ```
 Train: 500, Eval: 100
-trainable: 1,179,648 / 252,562,178 (0.4672%)
-Epoch 1/1  loss=2.3456  acc=0.3200
+trainable: 3,538,944 / 364,769,084 (0.9702%)
+Epoch 1/1  loss=8.9767  acc=0.6567
 ```
 
 ### Step 3: Run Federated Learning
