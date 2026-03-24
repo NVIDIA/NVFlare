@@ -1,7 +1,8 @@
 ---
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH || "main";
+const base_url = import.meta.env.BASE_URL;
 
 const walkthrough = [
   {
@@ -52,7 +53,7 @@ const walkthrough = [
     description:
       "Learn more about NVIDIA FLARE and taking federated learning from simulation to the real world.",
     button_text: "Tutorial Catalog",
-    link: "catalog",
+    link: `${base_url}/catalog`,
     video: "https://developer.download.nvidia.com/assets/Clara/flare/Flare%202.5.0%20Getting%20Started%20-%20Part%205%20-%20Next%20Steps.mp4",
   },
 ];
