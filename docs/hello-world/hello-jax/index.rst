@@ -40,6 +40,7 @@ Code Structure
    |
    |-- client.py         # client local training script
    |-- model.py          # JAX/Flax model helpers
+   |-- prepare_data.py   # helper that downloads MNIST and writes .npy files
    |-- prepare_model.py  # helper that writes the initial flattened checkpoint
    |-- job.py            # job recipe that defines client and server configurations
    |-- requirements.txt  # dependencies
@@ -47,7 +48,7 @@ Code Structure
 Data
 ----
 
-This example uses the `MNIST <https://www.tensorflow.org/datasets/catalog/mnist>`_ dataset and downloads it automatically through ``tensorflow-datasets``.
+This example uses the `MNIST <https://www.tensorflow.org/datasets/catalog/mnist>`_ dataset. The job script downloads the raw MNIST files once before the simulator starts and converts them into ``.npy`` files. Each client then loads from that prepared cache.
 
 Model
 -----
@@ -76,7 +77,10 @@ Server Code
 
 This example uses the base ``FedAvgRecipe`` configured for NumPy parameter exchange. The JAX parameter tree is flattened into a single NumPy vector before it is exchanged with the server, then reconstructed on the client before each training round.
 
-The initial flattened checkpoint is prepared by a small helper subprocess before the simulator starts so the main job launcher does not import JAX before NVFlare forks/spawns its runtime processes.
+The job script prepares two resources before the simulator starts:
+
+- The initial flattened checkpoint is prepared by a small helper subprocess so the main job launcher does not import JAX before NVFlare forks/spawns its runtime processes.
+- The shared MNIST ``.npy`` cache is prepared once up front so both simulated clients do not try to download the dataset at the same time or rely on TensorFlow-only data utilities.
 
 Job Recipe Code
 ---------------
@@ -105,5 +109,4 @@ You can adjust the main hyperparameters from the command line as needed:
 Output Summary
 --------------
 
-- **TensorBoard**: Logs are written to ``/tmp/nvflare/simulation/hello-jax/server/simulate_job/tb_events``.
 - **Workflow**: The simulator sends the flattened global parameter vector to each site, each site trains locally in JAX, and FedAvg aggregates the returned updates.

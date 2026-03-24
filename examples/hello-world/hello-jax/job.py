@@ -24,7 +24,7 @@ import tempfile
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.recipe import FedAvgRecipe, SimEnv, add_experiment_tracking
+from nvflare.recipe import FedAvgRecipe, SimEnv
 
 
 def define_parser():
@@ -35,6 +35,7 @@ def define_parser():
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default=0.05)
     parser.add_argument("--momentum", type=float, default=0.9)
+    parser.add_argument("--data_dir", type=str, default="/tmp/nvflare/data/hello-jax/mnist")
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument(
         "--launch_external_process",
@@ -52,16 +53,23 @@ def prepare_initial_model_ckpt() -> str:
     return ckpt_path
 
 
+def prepare_dataset(data_dir: str) -> None:
+    data_script = os.path.join(os.path.dirname(__file__), "prepare_data.py")
+    subprocess.run([sys.executable, data_script, "--data_dir", data_dir], check=True)
+
+
 def main():
     args = define_parser()
 
     initial_ckpt = prepare_initial_model_ckpt()
+    prepare_dataset(args.data_dir)
     train_args = (
         f"--epochs {args.epochs} "
         f"--batch_size {args.batch_size} "
         f"--learning_rate {args.learning_rate} "
         f"--momentum {args.momentum} "
-        f"--num_partitions {args.n_clients}"
+        f"--num_partitions {args.n_clients} "
+        f"--data_dir {args.data_dir}"
     )
 
     recipe = FedAvgRecipe(
@@ -75,7 +83,6 @@ def main():
         framework=FrameworkType.NUMPY,
         server_expected_format=ExchangeFormat.NUMPY,
     )
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=args.n_clients)
     run = recipe.execute(env)

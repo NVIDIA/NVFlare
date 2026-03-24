@@ -24,13 +24,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tensorflow_datasets as tfds
 from model import MODEL, create_train_state, flatten_params, unflatten_params
 
 import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.np.constants import NPConstants
-from nvflare.client.tracking import SummaryWriter
 
 
 def parse_args():
@@ -40,27 +38,17 @@ def parse_args():
     parser.add_argument("--learning_rate", type=float, default=0.05)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--num_partitions", type=int, default=2)
+    parser.add_argument("--data_dir", type=str, default="/tmp/nvflare/data/hello-jax/mnist")
     return parser.parse_args()
 
 
-def load_mnist():
-    train_ds, test_ds = tfds.load(
-        "mnist",
-        split=["train", "test"],
-        batch_size=-1,
-        as_supervised=True,
-    )
-    train_images, train_labels = tfds.as_numpy(train_ds)
-    test_images, test_labels = tfds.as_numpy(test_ds)
+def load_mnist(data_dir: str):
+    train_images = np.load(f"{data_dir}/train_images.npy").astype(np.float32) / 255.0
+    train_labels = np.load(f"{data_dir}/train_labels.npy").astype(np.int32)
+    test_images = np.load(f"{data_dir}/test_images.npy").astype(np.float32) / 255.0
+    test_labels = np.load(f"{data_dir}/test_labels.npy").astype(np.int32)
 
-    train_images = train_images.astype(np.float32) / 255.0
-    test_images = test_images.astype(np.float32) / 255.0
-
-    if train_images.ndim == 3:
-        train_images = train_images[..., np.newaxis]
-        test_images = test_images[..., np.newaxis]
-
-    return (train_images, train_labels.astype(np.int32)), (test_images, test_labels.astype(np.int32))
+    return (train_images, train_labels), (test_images, test_labels)
 
 
 def split_for_client(images, labels, client_name: str, num_partitions: int):
@@ -141,9 +129,8 @@ def main():
 
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
-    summary_writer = SummaryWriter()
 
-    (train_images, train_labels), (test_images, test_labels) = load_mnist()
+    (train_images, train_labels), (test_images, test_labels) = load_mnist(args.data_dir)
     train_images, train_labels = split_for_client(train_images, train_labels, client_name, args.num_partitions)
     test_images, test_labels = split_for_client(test_images, test_labels, client_name, args.num_partitions)
 
@@ -178,10 +165,6 @@ def main():
                 args.batch_size,
                 epoch_rng,
             )
-            global_step = current_round * args.epochs * steps_per_epoch + (epoch + 1) * steps_per_epoch
-            summary_writer.add_scalar(tag="train_loss", scalar=train_loss, global_step=global_step)
-            summary_writer.add_scalar(tag="train_accuracy", scalar=train_accuracy, global_step=global_step)
-            summary_writer.add_scalar(tag="eval_accuracy", scalar=accuracy, global_step=global_step)
             print(
                 f"site={client_name}, round={current_round}, epoch={epoch + 1}, "
                 f"train_loss={train_loss:.4f}, train_accuracy={train_accuracy:.4f}"

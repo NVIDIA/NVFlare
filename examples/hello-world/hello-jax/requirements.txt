@@ -2,6 +2,3 @@ nvflare~=2.7.2rc
 jax[cpu]
 flax
 optax
-tensorflow-datasets
-tensorboard
-torch
