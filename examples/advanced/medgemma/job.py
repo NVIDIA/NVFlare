@@ -95,15 +95,24 @@ def _parse_gpu_string(gpu_str: str) -> list[str]:
     return re.findall(r"\[[^\]]*\]", gpu_str.strip())
 
 
-def _configure_timeouts(recipe, client_names, timeout: int = 1800):
+def _configure_timeouts(
+    recipe, client_names, task_timeout: int = 1800, tensor_timeout: int = 600, max_resends: int = 3
+):
     recipe.add_client_config(
         {
-            "get_task_timeout": timeout,
-            "submit_task_result_timeout": timeout,
+            "get_task_timeout": task_timeout,
+            "submit_task_result_timeout": task_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+            "max_resends": max_resends,
         },
         clients=client_names,
     )
-    recipe.add_server_config({"streaming_per_request_timeout": timeout})
+    recipe.add_server_config(
+        {
+            "streaming_per_request_timeout": tensor_timeout,
+            "tensor_min_download_timeout": tensor_timeout,
+        }
+    )
 
 
 def main():
