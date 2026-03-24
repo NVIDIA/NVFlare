@@ -165,7 +165,7 @@ class CellRunner:
         print(f"Start Cell Command: {command}")
 
         if start_it:
-            return subprocess.Popen(shlex.split(command), preexec_fn=os.setsid, env=os.environ.copy())
+            return subprocess.Popen(shlex.split(command), shell=False, preexec_fn=os.setsid, env=os.environ.copy())
         else:
             return None
 
