@@ -144,7 +144,7 @@ def main() -> None:
             print(f"[{site}] validate round={cur_round} acc={acc:.4f}", flush=True)
             flare.send(flare.FLModel(
                 params=None,
-                metrics={"global_acc": float(acc), "n_eval": len(eval_ds)},
+                metrics={"val_accuracy": float(acc), "n_eval": len(eval_ds)},
                 meta={"n_eval": len(eval_ds)},
             ))
             continue
