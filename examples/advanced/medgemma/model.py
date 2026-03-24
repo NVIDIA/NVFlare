@@ -44,6 +44,7 @@ def create_lora_config():
         lora_dropout=DEFAULT_LORA_DROPOUT,
         r=DEFAULT_LORA_R,
         bias="none",
+        ensure_weight_tying=True,
         target_modules=DEFAULT_TARGET_MODULES,
         task_type="CAUSAL_LM",
         modules_to_save=list(DEFAULT_MODULES_TO_SAVE),
