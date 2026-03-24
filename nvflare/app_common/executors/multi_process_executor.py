@@ -197,7 +197,9 @@ class MultiProcessExecutor(Executor):
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
-            self.exe_process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=os.environ.copy())
+            self.exe_process = subprocess.Popen(
+                shlex.split(command, " "), shell=False, preexec_fn=os.setsid, env=os.environ.copy()
+            )
 
             # send the init data to all the child processes
             cell.register_request_cb(

@@ -782,9 +782,9 @@ def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict
 def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
     my_env = prepare_env(service_name, gpu_ids, service_config)
     if my_env:
-        subprocess.Popen(cmd_path.split(" "), env=my_env)
+        subprocess.Popen(cmd_path.split(" "), env=my_env, shell=False)
     else:
-        subprocess.Popen(cmd_path.split(" "))
+        subprocess.Popen(cmd_path.split(" "), shell=False)
 
 
 def sync_process(service_name, cmd_path):
