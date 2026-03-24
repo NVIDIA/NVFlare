@@ -91,7 +91,11 @@ def login():
     password = req.get("password", None)
     user = Store.verify_user(email, password)
     if user:
-        additional_claims = {"role": user.role.name, "organization": user.organization.name}
+        additional_claims = {
+            "role": user.role.name,
+            "organization": user.organization.name,
+            "approved": user.approval_state >= 100,
+        }
         access_token = create_access_token(identity=user.email, additional_claims=additional_claims)
         return jsonify(
             {
