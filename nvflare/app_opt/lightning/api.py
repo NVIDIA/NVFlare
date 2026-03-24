@@ -20,7 +20,7 @@ from pytorch_lightning.callbacks import Callback
 from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.app_opt.pt.decomposers import LazyRefDecomposer, TensorDecomposer
 from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_model, is_train, receive, send
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils import fobs
@@ -73,6 +73,7 @@ def patch(
 
     """
     fobs.register(TensorDecomposer)
+    fobs.register(LazyRefDecomposer)
     callbacks = trainer.callbacks
     if isinstance(callbacks, Callback):
         callbacks = [callbacks]

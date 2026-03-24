@@ -15,7 +15,7 @@ from typing import Optional
 
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.app_opt.pt.decomposers import LazyRefDecomposer, TensorDecomposer
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.client.converter_utils import create_default_params_converters
 from nvflare.fuel.utils import fobs
@@ -60,6 +60,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             cuda_empty_cache=cuda_empty_cache,
         )
         fobs.register(TensorDecomposer)
+        fobs.register(LazyRefDecomposer)
         from_nvflare_converter, to_nvflare_converter = create_default_params_converters(
             server_expected_format=self._server_expected_format,
             params_exchange_format=self._params_exchange_format,

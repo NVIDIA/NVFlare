@@ -726,10 +726,14 @@ class SwarmClientController(ClientSideController):
 
     @staticmethod
     def _has_lazy_refs(obj) -> bool:
-        """Return True if obj (recursively) contains any LazyDownloadRef."""
+        """Return True if obj (recursively) contains any LazyDownloadRef or _LazyRef."""
         from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
         if isinstance(obj, LazyDownloadRef):
+            return True
+        # Detect disk-offload _LazyRef (has callable materialize() but no tensor shape)
+        materialize_fn = getattr(obj, "materialize", None)
+        if callable(materialize_fn) and not hasattr(obj, "shape"):
             return True
         if isinstance(obj, dict):
             return any(SwarmClientController._has_lazy_refs(v) for v in obj.values())
@@ -774,7 +778,10 @@ class SwarmClientController(ClientSideController):
         if not cell:
             return result
         encoded = fobs.dumps(result)
-        decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+        decode_ctx = cell.get_fobs_context(props={
+            fobs.FOBSContextKey.PASS_THROUGH: False,
+            "enable_tensor_disk_offload": False,
+        })
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

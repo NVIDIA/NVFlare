@@ -23,8 +23,34 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
 from ...fuel.f3.cellnet.cell import Cell
-from .lazy_tensor_dict import LazyTensorDict
+from .lazy_tensor_dict import LazyTensorDict, _LazyRef
 from .tensor_downloader import TensorDownloadable, download_tensors, download_tensors_to_disk
+
+
+import nvflare.fuel.utils.fobs as fobs
+
+
+class LazyRefDecomposer(fobs.Decomposer):
+    """FOBS decomposer for _LazyRef: auto-materializes to real tensor on serialize.
+
+    _LazyRef is a lightweight on-disk placeholder created by tensor disk offload.
+    It should only exist in the local aggregation path. If it escapes to a
+    serialization boundary (broadcast, pipe, etc.), this decomposer transparently
+    materializes it so downstream consumers receive real tensors.
+    """
+
+    def supported_type(self):
+        return _LazyRef
+
+    def decompose(self, target, manager=None) -> bytes:
+        tensor = target.materialize()
+        return save({"t": tensor})
+
+    def recompose(self, data: bytes, manager=None):
+        dummy = load(data)
+        if not isinstance(dummy, dict):
+            raise ValueError(f"failed to load data: should be dict but got {type(dummy)}")
+        return dummy.get("t")
 
 
 class SerializationModule(torch.nn.Module):

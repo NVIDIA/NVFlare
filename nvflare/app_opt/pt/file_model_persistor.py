@@ -28,7 +28,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.app_opt.pt.decomposers import LazyRefDecomposer, TensorDecomposer
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.fuel.utils import fobs
 
@@ -218,6 +218,7 @@ class PTFileModelPersistor(ModelPersistor):
 
         fl_ctx.sync_sticky()
         fobs.register(TensorDecomposer)
+        fobs.register(LazyRefDecomposer)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Convert initialised model into Learnable/Model format.

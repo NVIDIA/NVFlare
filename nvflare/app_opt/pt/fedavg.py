@@ -18,7 +18,7 @@ import torch
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.app_opt.pt.decomposers import LazyRefDecomposer, TensorDecomposer
 from nvflare.fuel.utils import fobs
 
 
@@ -104,6 +104,7 @@ class PTFedAvg(FedAvg):
         """Run FedAvg workflow with PyTorch tensor serialization support."""
         # Register TensorDecomposer for FOBS serialization of PyTorch tensors
         fobs.register(TensorDecomposer)
+        fobs.register(LazyRefDecomposer)
         super().run()
 
     def save_model_file(self, model: FLModel, filepath: str) -> None:
