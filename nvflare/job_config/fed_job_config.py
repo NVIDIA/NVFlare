@@ -192,7 +192,7 @@ class FedJobConfig:
                     command += " -l" + str(log_config)
 
                 new_env = os.environ.copy()
-                process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+                process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
 
                 process.wait()
 

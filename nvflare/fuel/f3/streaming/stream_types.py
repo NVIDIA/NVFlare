@@ -139,13 +139,16 @@ class StreamFuture:
         """
 
         with self.lock:
-            if self.error or self.result:
+            if self.error or self.waiter.is_set():
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
             if self.task_handle:
                 self.task_handle.cancel()
-            return True
+            self.waiter.set()
+
+        self._invoke_callbacks()
+        return True
 
     def cancelled(self):
         with self.lock:
@@ -159,7 +162,7 @@ class StreamFuture:
     def done(self):
         """Return True of the future was cancelled or finished executing."""
         with self.lock:
-            return self.error or self.waiter.is_set()
+            return bool(self.error or self.waiter.is_set())
 
     def add_done_callback(self, done_cb: Callable, *args, **kwargs):
         """Attaches a callable that will be called when the future finishes.
@@ -168,7 +171,14 @@ class StreamFuture:
             done_cb: A callable that will be called with this future completes
         """
         with self.lock:
-            self.done_callbacks.append((done_cb, args, kwargs))
+            if not (self.error or self.waiter.is_set()):
+                self.done_callbacks.append((done_cb, args, kwargs))
+                return
+        # Future is already done — invoke immediately outside the lock
+        try:
+            done_cb(*args, **kwargs)
+        except Exception as ex:
+            log.error(f"Exception calling callback for {done_cb}: {ex}")
 
     def result(self, timeout=None) -> Any:
         """Return the result of the call that the future represents.
@@ -218,26 +228,48 @@ class StreamFuture:
         return self.error
 
     def set_result(self, value: Any):
-        """Sets the return value of work associated with the future."""
+        """Sets the return value of work associated with the future.
+
+        Silently ignored if the future already has an error (e.g. cancel() raced with
+        a completing _read_stream). Raises StreamError if called twice with a result,
+        as that is always a programming error.
+        """
 
         with self.lock:
             if self.error:
-                raise StreamError("Invalid state, future already failed")
+                log.debug(f"set_result on already-failed future {self.stream_id}, ignoring")
+                return
+            if self.waiter.is_set():
+                raise StreamError("Invalid state, future is already done")
             self.value = value
             self.waiter.set()
 
         self._invoke_callbacks()
 
     def set_exception(self, exception):
-        """Sets the result of the future as being the given exception."""
+        """Sets the result of the future as being the given exception.
+
+        Idempotent: a duplicate call is logged and silently ignored because
+        race conditions can legitimately produce multiple set_exception calls
+        (e.g. _read_stream error racing with the outer blob_cb exception handler).
+        """
+        if not isinstance(exception, StreamError):
+            wrapped = StreamError(str(exception))
+            wrapped.__cause__ = exception
+            exception = wrapped
         with self.lock:
+            if self.error or self.waiter.is_set():
+                log.debug(f"set_exception called on already-done future {self.stream_id}: {exception}")
+                return
             self.error = exception
             self.waiter.set()
 
         self._invoke_callbacks()
 
     def _invoke_callbacks(self):
-        for callback, args, kwargs in self.done_callbacks:
+        with self.lock:
+            callbacks, self.done_callbacks = self.done_callbacks, []
+        for callback, args, kwargs in callbacks:
             try:
                 callback(*args, **kwargs)
             except Exception as ex:

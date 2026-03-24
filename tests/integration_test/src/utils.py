@@ -69,6 +69,7 @@ def run_command_in_subprocess(command, stdin_data=None):
     tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
     process = subprocess.Popen(
         tokens,
+        shell=False,
         stdin=subprocess.PIPE if stdin_data else None,
         preexec_fn=os.setsid,
         env=new_env,

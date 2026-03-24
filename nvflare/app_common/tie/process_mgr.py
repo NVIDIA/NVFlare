@@ -139,6 +139,7 @@ class ProcessManager:
         command_seq = shlex.split(self.cmd_desc.cmd)
         self.process = subprocess.Popen(
             command_seq,
+            shell=False,
             stderr=subprocess.STDOUT,
             cwd=self.cmd_desc.cwd,
             env=env,
@@ -240,6 +241,7 @@ def run_command(cmd_desc: CommandDescriptor) -> str:
     command_seq = shlex.split(cmd_desc.cmd)
     p = subprocess.Popen(
         command_seq,
+        shell=False,
         stderr=subprocess.PIPE,
         cwd=cmd_desc.cwd,
         env=env,
