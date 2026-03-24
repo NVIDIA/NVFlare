@@ -26,6 +26,7 @@ from data_utils import (  # noqa: E402
     collect_image_records,
     format_training_example,
     parse_prediction_label,
+    sample_records,
     split_records_for_clients,
 )
 
@@ -81,6 +82,15 @@ class MedGemmaDataUtilsTest(unittest.TestCase):
 
         self.assertEqual({record["raw_label"] for record in records}, {"ADI", "TUM"})
         self.assertEqual({record["label_name"] for record in records}, {TISSUE_CLASSES[0], TISSUE_CLASSES[8]})
+
+    def test_sample_records_is_deterministic_and_respects_limit(self):
+        records = [{"image": f"img_{idx}.tif"} for idx in range(10)]
+
+        sampled_once = sample_records(records, max_samples=4, seed=7)
+        sampled_twice = sample_records(records, max_samples=4, seed=7)
+
+        self.assertEqual(sampled_once, sampled_twice)
+        self.assertEqual(len(sampled_once), 4)
 
 
 if __name__ == "__main__":

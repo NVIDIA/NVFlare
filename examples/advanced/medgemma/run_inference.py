@@ -22,28 +22,13 @@ import json
 import os
 import sys
 
-import torch
-from data_utils import DEFAULT_MODEL_NAME_OR_PATH, PROMPT, TISSUE_CLASSES, parse_prediction_label, resolve_image_path
-from model import apply_adapter_state, create_peft_medgemma_model, load_medgemma_base_model
-from peft import PeftModel
+from data_utils import DEFAULT_MODEL_NAME_OR_PATH, TISSUE_CLASSES, resolve_image_path
+from inference_utils import load_model_and_processor, predict_label
 from PIL import Image
-from transformers import AutoProcessor
-
-NVFLARE_PT_MODEL_KEY = "model"
 
 
 def _abs_path(path: str) -> str:
     return os.path.abspath(os.path.expanduser(path))
-
-
-def _load_nvflare_global_pt(pt_path: str) -> dict:
-    data = torch.load(pt_path, map_location="cpu", weights_only=True)
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected dict from {pt_path}, got {type(data)}")
-    state_dict = data.get(NVFLARE_PT_MODEL_KEY)
-    if state_dict is None:
-        raise ValueError(f"No key {NVFLARE_PT_MODEL_KEY!r} in {pt_path}. Keys: {list(data.keys())}")
-    return state_dict
 
 
 def _load_records(data_file: str, image_root: str, max_samples: int):
@@ -62,42 +47,6 @@ def _load_records(data_file: str, image_root: str, max_samples: int):
         sample["image"] = Image.open(image_path).convert("RGB")
         samples.append(sample)
     return samples
-
-
-def _load_model_and_processor(model_path: str, base_model: str, device: str):
-    quantized = device.startswith("cuda")
-    processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True, use_fast=False)
-    processor.tokenizer.padding_side = "left"
-
-    if os.path.isfile(model_path) and model_path.endswith(".pt"):
-        print(f"Loading NVFlare global adapter weights from: {model_path}")
-        model = create_peft_medgemma_model(base_model, quantized=quantized, device_map={"": 0} if quantized else None)
-        apply_adapter_state(model, _load_nvflare_global_pt(model_path))
-    elif os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, "adapter_config.json")):
-        print(f"Loading base model + adapter directory from: {model_path}")
-        base = load_medgemma_base_model(base_model, quantized=quantized, device_map={"": 0} if quantized else None)
-        model = PeftModel.from_pretrained(base, model_path, is_trainable=False)
-    else:
-        print(f"Loading model directly from: {model_path}")
-        model = load_medgemma_base_model(
-            model_name_or_path=model_path,
-            quantized=quantized,
-            device_map={"": 0} if quantized else None,
-        )
-        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
-        processor.tokenizer.padding_side = "left"
-
-    model.eval()
-    model.generation_config.do_sample = False
-    model.generation_config.pad_token_id = processor.tokenizer.eos_token_id
-    return model, processor
-
-
-def _get_model_device(model) -> torch.device:
-    device = getattr(model, "device", None)
-    if device is not None:
-        return device
-    return next(model.parameters()).device
 
 
 def main():
@@ -152,29 +101,12 @@ def main():
     print(f"Running inference on {len(samples)} sample(s)\n")
 
     for index, sample in enumerate(samples, start=1):
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": sample["image"]},
-                    {"type": "text", "text": PROMPT},
-                ],
-            }
-        ]
-        inputs = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-            add_generation_prompt=True,
+        response_text, predicted_index, predicted_label = predict_label(
+            model=model,
+            processor=processor,
+            image=sample["image"],
+            max_new_tokens=args.max_new_tokens,
         )
-        inputs = inputs.to(_get_model_device(model))
-        with torch.no_grad():
-            output_ids = model.generate(**inputs, max_new_tokens=args.max_new_tokens)
-        generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
-        response_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-        predicted_index = parse_prediction_label(response_text)
-        predicted_label = TISSUE_CLASSES[predicted_index] if predicted_index >= 0 else "<unparsed>"
         ground_truth = sample.get("label_name") or TISSUE_CLASSES[int(sample["label"])]
 
         print(f"--- Sample {index} ---")

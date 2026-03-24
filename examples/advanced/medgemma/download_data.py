@@ -23,6 +23,9 @@ import zipfile
 TRAIN_ARCHIVE_URL = "https://zenodo.org/records/1214456/files/NCT-CRC-HE-100K.zip"
 TRAIN_ARCHIVE_NAME = "NCT-CRC-HE-100K.zip"
 EXTRACTED_DIR_NAME = "NCT-CRC-HE-100K"
+EVAL_ARCHIVE_URL = "https://zenodo.org/records/1214456/files/CRC-VAL-HE-7K.zip"
+EVAL_ARCHIVE_NAME = "CRC-VAL-HE-7K.zip"
+EVAL_EXTRACTED_DIR_NAME = "CRC-VAL-HE-7K"
 
 # Plain text progress with flush=True so it is visible when streams are block-buffered (non-TTY, logs, pipes).
 _DOWNLOAD_REPORT_BYTES = 16 * 1024 * 1024
@@ -96,6 +99,48 @@ def download_file(url: str, output_path: str) -> None:
         raise
 
 
+def download_and_extract_dataset(
+    *,
+    url: str,
+    archive_name: str,
+    extracted_dir_name: str,
+    output_dir: str,
+    skip_extract: bool,
+) -> None:
+    archive_path = os.path.join(output_dir, archive_name)
+    extracted_dir = os.path.join(output_dir, extracted_dir_name)
+
+    if archive_is_valid_zip(archive_path):
+        print(f"Archive already exists: {archive_path}")
+    else:
+        if os.path.isfile(archive_path):
+            print(
+                f"Existing file is missing or not a valid zip (corrupt or incomplete); "
+                f"re-downloading:\n  {archive_path}"
+            )
+            os.remove(archive_path)
+        print(f"Downloading {url} -> {archive_path}", flush=True)
+        download_file(url, archive_path)
+
+    if skip_extract:
+        print(f"Skipping extraction for {archive_name} (--skip_extract).")
+        return
+
+    if os.path.isdir(extracted_dir):
+        print(f"Dataset already extracted at {extracted_dir}")
+        return
+
+    print(f"Extracting {archive_path} into {output_dir}", flush=True)
+    with zipfile.ZipFile(archive_path, "r") as zip_file:
+        members = zip_file.infolist()
+        n = len(members)
+        report_every = max(2000, n // 40)
+        for i, member in enumerate(members, start=1):
+            zip_file.extract(member, output_dir)
+            if i % report_every == 0 or i == n:
+                _log_progress(f"Extracted {i}/{n} zip entries ({100.0 * i / n:.1f}%)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download and extract NCT-CRC-HE-100K for the MedGemma example.")
     parser.add_argument(
@@ -108,6 +153,11 @@ def main():
         "--skip_extract",
         action="store_true",
         help="Download the archive but skip extraction.",
+    )
+    parser.add_argument(
+        "--include_eval",
+        action="store_true",
+        help="Also download/extract CRC-VAL-HE-7K for accuracy evaluation.",
     )
     args = parser.parse_args()
 
@@ -123,40 +173,25 @@ def main():
     output_dir = os.path.abspath(os.path.expanduser(args.output_dir))
     os.makedirs(output_dir, exist_ok=True)
 
-    archive_path = os.path.join(output_dir, TRAIN_ARCHIVE_NAME)
-    extracted_dir = os.path.join(output_dir, EXTRACTED_DIR_NAME)
+    download_and_extract_dataset(
+        url=TRAIN_ARCHIVE_URL,
+        archive_name=TRAIN_ARCHIVE_NAME,
+        extracted_dir_name=EXTRACTED_DIR_NAME,
+        output_dir=output_dir,
+        skip_extract=args.skip_extract,
+    )
+    if args.include_eval:
+        download_and_extract_dataset(
+            url=EVAL_ARCHIVE_URL,
+            archive_name=EVAL_ARCHIVE_NAME,
+            extracted_dir_name=EVAL_EXTRACTED_DIR_NAME,
+            output_dir=output_dir,
+            skip_extract=args.skip_extract,
+        )
 
-    if archive_is_valid_zip(archive_path):
-        print(f"Archive already exists: {archive_path}")
-    else:
-        if os.path.isfile(archive_path):
-            print(
-                f"Existing file is missing or not a valid zip (corrupt or incomplete); "
-                f"re-downloading:\n  {archive_path}"
-            )
-            os.remove(archive_path)
-        print(f"Downloading {TRAIN_ARCHIVE_URL} -> {archive_path}", flush=True)
-        download_file(TRAIN_ARCHIVE_URL, archive_path)
-
-    if args.skip_extract:
-        print("Skipping extraction (--skip_extract).")
-        return 0
-
-    if os.path.isdir(extracted_dir):
-        print(f"Dataset already extracted at {extracted_dir}")
-        return 0
-
-    print(f"Extracting {archive_path} into {output_dir}", flush=True)
-    with zipfile.ZipFile(archive_path, "r") as zip_file:
-        members = zip_file.infolist()
-        n = len(members)
-        report_every = max(2000, n // 40)
-        for i, member in enumerate(members, start=1):
-            zip_file.extract(member, output_dir)
-            if i % report_every == 0 or i == n:
-                _log_progress(f"Extracted {i}/{n} zip entries ({100.0 * i / n:.1f}%)")
-
-    print(f"Done. Dataset available at {extracted_dir}")
+    print(f"Done. Training dataset available at {os.path.join(output_dir, EXTRACTED_DIR_NAME)}")
+    if args.include_eval:
+        print(f"Done. Evaluation dataset available at {os.path.join(output_dir, EVAL_EXTRACTED_DIR_NAME)}")
     return 0
 
 

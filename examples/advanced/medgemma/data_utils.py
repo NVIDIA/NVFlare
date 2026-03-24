@@ -19,6 +19,7 @@ import random
 from typing import Any
 
 DEFAULT_MODEL_NAME_OR_PATH = "google/medgemma-4b-it"
+DEFAULT_EVAL_DATASET_DIR = "CRC-VAL-HE-7K"
 
 RAW_TISSUE_CODES = ["ADI", "BACK", "DEB", "LYM", "MUC", "MUS", "NORM", "STR", "TUM"]
 TISSUE_CLASSES = [
@@ -88,6 +89,14 @@ def parse_prediction_label(response_text: str) -> int:
         if label_name in response_text or ALT_TISSUE_LABELS[label_name] in response_text:
             return label_index
     return -1
+
+
+def sample_records(records: list[dict[str, Any]], max_samples: int | None, seed: int) -> list[dict[str, Any]]:
+    shuffled = list(records)
+    random.Random(seed).shuffle(shuffled)
+    if max_samples is None or max_samples <= 0:
+        return shuffled
+    return shuffled[:max_samples]
 
 
 def collect_image_records(dataset_dir: str) -> list[dict[str, Any]]:

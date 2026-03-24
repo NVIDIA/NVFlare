@@ -26,6 +26,7 @@ Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-
 | `download_data.py` | Downloads and extracts `NCT-CRC-HE-100K.zip` from Zenodo. |
 | `prepare_data.py` | Discovers image files, builds random site shards, and writes `train.json` / `validation.json` for each client. |
 | `run_inference.py` | Runs before/after inference on prepared validation samples using either the base model, an adapter directory, or NVFlare `FL_global_model.pt`. |
+| `run_evaluation.py` | Evaluates base vs fine-tuned accuracy on `CRC-VAL-HE-7K`, following the MedGemma notebook's evaluation setup. |
 
 ## Prerequisites
 
@@ -49,6 +50,12 @@ Download and extract the NCT-CRC-HE-100K archive:
 
 ```bash
 python download_data.py
+```
+
+To also download the `CRC-VAL-HE-7K` evaluation dataset used in the notebook's evaluation section:
+
+```bash
+python download_data.py --include_eval
 ```
 
 Then create client splits:
@@ -121,6 +128,74 @@ python run_inference.py --model_path /path/to/adapter-checkpoint
 ```
 
 `run_inference.py` prints the ground-truth tissue label, the parsed model prediction, and the raw generated text for each sample.
+
+Example output before fine-tuning:
+
+```text
+--- Sample 1 ---
+Ground truth: A: adipose
+Prediction:   G: normal colon mucosa
+Raw output:   Based on the image, the most likely tissue type is **G: normal colon mucosa**.
+
+Here's why:
+
+*   The image shows a relatively uniform, pink-ish background with some
+
+--- Sample 2 ---
+Ground truth: I: colorectal adenocarcinoma epithelium
+Prediction:   I: colorectal adenocarcinoma epithelium
+Raw output:   Based on the image, the most likely tissue type is **(I) colorectal adenocarcinoma epithelium**.
+
+Here's why:
+
+*   **Epithelial cells:** The image shows a collection of
+```
+
+Global model after fine-tuning:
+
+```text
+--- Sample 1 ---
+Ground truth: A: adipose
+Prediction:   A: adipose
+Raw output:   A: adipose
+
+--- Sample 2 ---
+Ground truth: I: colorectal adenocarcinoma epithelium
+Prediction:   I: colorectal adenocarcinoma epithelium
+Raw output:   I: colorectal adenocarcinoma epithelium
+```
+
+This qualitative shift suggests that fine-tuning is capturing the downstream task well. Before fine-tuning, the base model often answers in a more open-ended, explanatory style and can miss the target class label. After fine-tuning, the global model responds in the compact label format used during training and aligns more directly with the expected tissue-classification output.
+
+## 5. Evaluate accuracy before and after fine-tuning
+
+The MedGemma notebook evaluates on the separate [CRC-VAL-HE-7K](https://zenodo.org/records/1214456) dataset rather than on the fine-tuning split. This example now includes `run_evaluation.py` to mirror that setup and compute accuracy for the base model and the fine-tuned global model on the same evaluation subset.
+
+First, download the evaluation dataset if you have not already:
+
+```bash
+python download_data.py --include_eval
+```
+
+Then run:
+
+```bash
+python run_evaluation.py \
+  --dataset_dir ./CRC-VAL-HE-7K \
+  --tuned_model_path /tmp/nvflare/simulation/medgemma/server/simulate_job/app_server/FL_global_model.pt
+```
+
+By default, `run_evaluation.py`:
+
+- uses `google/medgemma-4b-it` as the before-fine-tuning baseline,
+- evaluates on a shuffled subset of 1000 samples, matching the notebook's default,
+- computes accuracy for both models and reports the delta.
+
+Useful flags:
+
+- `--max_samples 0` evaluates the full CRC-VAL-HE-7K dataset.
+- `--show_examples 2` prints a couple of qualitative prediction examples per model before the summary.
+- `--base_model_path /path/to/model` evaluates a different unfine-tuned checkpoint as the baseline.
 
 ## Sources
 
