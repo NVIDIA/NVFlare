@@ -45,7 +45,6 @@ class BLIPVQADataset(Dataset):
                                   padding="max_length", truncation=True,
                                   max_length=self.max_a, return_tensors="pt")
         labels = lab["input_ids"].squeeze(0).clone()
-        labels[labels == self.proc.tokenizer.pad_token_id] = -100
         return {
             "pixel_values": enc["pixel_values"].squeeze(0),
             "input_ids": enc["input_ids"].squeeze(0),
