@@ -24,48 +24,76 @@ TRAIN_ARCHIVE_URL = "https://zenodo.org/records/1214456/files/NCT-CRC-HE-100K.zi
 TRAIN_ARCHIVE_NAME = "NCT-CRC-HE-100K.zip"
 EXTRACTED_DIR_NAME = "NCT-CRC-HE-100K"
 
-
-def _format_bytes(n: float) -> str:
-    units = ("B", "KiB", "MiB", "GiB", "TiB")
-    idx = 0
-    while n >= 1024.0 and idx < len(units) - 1:
-        n /= 1024.0
-        idx += 1
-    unit = units[idx]
-    return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+# Plain text progress with flush=True so it is visible when streams are block-buffered (non-TTY, logs, pipes).
+_DOWNLOAD_REPORT_BYTES = 16 * 1024 * 1024
 
 
-def download_file(url: str, output_path: str, chunk_size: int = 1024 * 1024) -> None:
-    with urllib.request.urlopen(url) as response, open(output_path, "wb") as output_file:
-        total_header = response.headers.get("Content-Length")
-        total = None
-        if total_header:
+def archive_is_valid_zip(path: str) -> bool:
+    """Return True if path is a non-empty file that opens as a zip (central directory readable)."""
+    if not os.path.isfile(path) or os.path.getsize(path) == 0:
+        return False
+    try:
+        with zipfile.ZipFile(path, "r"):
+            pass
+        return True
+    except zipfile.BadZipFile:
+        return False
+
+
+def _log_progress(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def download_file(url: str, output_path: str) -> None:
+    # Write to .partial first so an interrupted download does not leave a corrupt .zip in place.
+    partial_path = output_path + ".partial"
+    try:
+        _log_progress("Connecting to server (this can take a while for large files)...")
+        with urllib.request.urlopen(url) as response:
+            content_length = response.headers.get("Content-Length")
             try:
-                total = int(total_header.strip())
+                total = int(content_length) if content_length else None
             except ValueError:
                 total = None
-        downloaded = 0
-        bar_width = 40
-
-        while True:
-            chunk = response.read(chunk_size)
-            if not chunk:
-                break
-            output_file.write(chunk)
-            downloaded += len(chunk)
-
             if total is not None:
-                ratio = min(downloaded / total, 1.0)
-                filled = int(bar_width * ratio)
-                bar = "=" * filled + "-" * (bar_width - filled)
-                pct = 100.0 * ratio
-                sys.stdout.write(f"\r[{bar}] {pct:5.1f}%  {_format_bytes(downloaded)} / {_format_bytes(total)}")
+                _log_progress(f"Expected download size: {total / (1024 ** 2):.1f} MiB")
             else:
-                sys.stdout.write(f"\rDownloaded {_format_bytes(downloaded)}")
-            sys.stdout.flush()
+                _log_progress("Expected download size: unknown (streaming); reporting bytes received.")
 
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+            block_size = 1024 * 1024
+            downloaded = 0
+            next_report_at = _DOWNLOAD_REPORT_BYTES
+            first_chunk = True
+            with open(partial_path, "wb") as output_file:
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    output_file.write(chunk)
+                    downloaded += len(chunk)
+                    if first_chunk:
+                        _log_progress("Receiving data...")
+                        first_chunk = False
+                    if downloaded >= next_report_at:
+                        if total is not None:
+                            pct = min(100.0, 100.0 * downloaded / total)
+                            _log_progress(
+                                f"Downloaded {downloaded / (1024 ** 2):.1f} MiB of "
+                                f"{total / (1024 ** 2):.1f} MiB ({pct:.1f}%)"
+                            )
+                        else:
+                            _log_progress(f"Downloaded {downloaded / (1024 ** 2):.1f} MiB so far")
+                        next_report_at += _DOWNLOAD_REPORT_BYTES
+
+            _log_progress(f"Download finished: {downloaded / (1024 ** 2):.1f} MiB written.")
+        os.replace(partial_path, output_path)
+    except BaseException:
+        if os.path.isfile(partial_path):
+            try:
+                os.remove(partial_path)
+            except OSError:
+                pass
+        raise
 
 
 def main():
@@ -83,17 +111,32 @@ def main():
     )
     args = parser.parse_args()
 
+    # Reduce block-buffering on stderr/stdout so progress lines show up under nohup, pipes, and some batch systems.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(line_buffering=True)
+            except (OSError, ValueError, AttributeError):
+                pass
+
     output_dir = os.path.abspath(os.path.expanduser(args.output_dir))
     os.makedirs(output_dir, exist_ok=True)
 
     archive_path = os.path.join(output_dir, TRAIN_ARCHIVE_NAME)
     extracted_dir = os.path.join(output_dir, EXTRACTED_DIR_NAME)
 
-    if not os.path.isfile(archive_path):
-        print(f"Downloading {TRAIN_ARCHIVE_URL} -> {archive_path}")
-        download_file(TRAIN_ARCHIVE_URL, archive_path)
-    else:
+    if archive_is_valid_zip(archive_path):
         print(f"Archive already exists: {archive_path}")
+    else:
+        if os.path.isfile(archive_path):
+            print(
+                f"Existing file is missing or not a valid zip (corrupt or incomplete); "
+                f"re-downloading:\n  {archive_path}"
+            )
+            os.remove(archive_path)
+        print(f"Downloading {TRAIN_ARCHIVE_URL} -> {archive_path}", flush=True)
+        download_file(TRAIN_ARCHIVE_URL, archive_path)
 
     if args.skip_extract:
         print("Skipping extraction (--skip_extract).")
@@ -103,9 +146,15 @@ def main():
         print(f"Dataset already extracted at {extracted_dir}")
         return 0
 
-    print(f"Extracting {archive_path} into {output_dir}")
+    print(f"Extracting {archive_path} into {output_dir}", flush=True)
     with zipfile.ZipFile(archive_path, "r") as zip_file:
-        zip_file.extractall(output_dir)
+        members = zip_file.infolist()
+        n = len(members)
+        report_every = max(2000, n // 40)
+        for i, member in enumerate(members, start=1):
+            zip_file.extract(member, output_dir)
+            if i % report_every == 0 or i == n:
+                _log_progress(f"Extracted {i}/{n} zip entries ({100.0 * i / n:.1f}%)")
 
     print(f"Done. Dataset available at {extracted_dir}")
     return 0

@@ -214,7 +214,7 @@ def main():
     flare.init()
     client_name = flare.system_info().get("site_name", "unknown")
 
-    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(args.model_name_or_path, trust_remote_code=True, use_fast=False)
     processor.tokenizer.padding_side = "right"
     collate_fn = _build_collate_fn(processor)
 

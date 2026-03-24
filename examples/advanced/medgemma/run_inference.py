@@ -23,17 +23,11 @@ import os
 import sys
 
 import torch
-from data_utils import (
-    DEFAULT_MODEL_NAME_OR_PATH,
-    TISSUE_CLASSES,
-    format_inference_example,
-    parse_prediction_label,
-    resolve_image_path,
-)
+from data_utils import DEFAULT_MODEL_NAME_OR_PATH, PROMPT, TISSUE_CLASSES, parse_prediction_label, resolve_image_path
 from model import apply_adapter_state, create_peft_medgemma_model, load_medgemma_base_model
 from peft import PeftModel
 from PIL import Image
-from transformers import AutoProcessor, pipeline
+from transformers import AutoProcessor
 
 NVFLARE_PT_MODEL_KEY = "model"
 
@@ -66,14 +60,13 @@ def _load_records(data_file: str, image_root: str, max_samples: int):
             continue
         sample = dict(record)
         sample["image"] = Image.open(image_path).convert("RGB")
-        sample["messages"] = format_inference_example(record)["messages"]
         samples.append(sample)
     return samples
 
 
 def _load_model_and_processor(model_path: str, base_model: str, device: str):
     quantized = device.startswith("cuda")
-    processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True, use_fast=False)
     processor.tokenizer.padding_side = "left"
 
     if os.path.isfile(model_path) and model_path.endswith(".pt"):
@@ -91,19 +84,20 @@ def _load_model_and_processor(model_path: str, base_model: str, device: str):
             quantized=quantized,
             device_map={"": 0} if quantized else None,
         )
-        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
         processor.tokenizer.padding_side = "left"
 
     model.eval()
-    text_pipe = pipeline(
-        task="image-text-to-text",
-        model=model,
-        processor=processor,
-        torch_dtype=torch.bfloat16,
-    )
-    text_pipe.model.generation_config.do_sample = False
-    text_pipe.model.generation_config.pad_token_id = processor.tokenizer.eos_token_id
-    return text_pipe
+    model.generation_config.do_sample = False
+    model.generation_config.pad_token_id = processor.tokenizer.eos_token_id
+    return model, processor
+
+
+def _get_model_device(model) -> torch.device:
+    device = getattr(model, "device", None)
+    if device is not None:
+        return device
+    return next(model.parameters()).device
 
 
 def main():
@@ -154,18 +148,31 @@ def main():
         print("No valid samples found. Check --data_file and --image_root.")
         return 1
 
-    medgemma_pipe = _load_model_and_processor(model_path, args.base_model, args.device)
+    model, processor = _load_model_and_processor(model_path, args.base_model, args.device)
     print(f"Running inference on {len(samples)} sample(s)\n")
 
     for index, sample in enumerate(samples, start=1):
-        output = medgemma_pipe(
-            text=[sample["messages"]],
-            images=[sample["image"]],
-            max_new_tokens=args.max_new_tokens,
-            batch_size=1,
-            return_full_text=False,
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": sample["image"]},
+                    {"type": "text", "text": PROMPT},
+                ],
+            }
+        ]
+        inputs = processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            add_generation_prompt=True,
         )
-        response_text = output[0][0]["generated_text"].strip()
+        inputs = inputs.to(_get_model_device(model))
+        with torch.no_grad():
+            output_ids = model.generate(**inputs, max_new_tokens=args.max_new_tokens)
+        generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+        response_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
         predicted_index = parse_prediction_label(response_text)
         predicted_label = TISSUE_CLASSES[predicted_index] if predicted_index >= 0 else "<unparsed>"
         ground_truth = sample.get("label_name") or TISSUE_CLASSES[int(sample["label"])]

@@ -4,6 +4,8 @@ This example adapts Google's centralized [MedGemma fine-tuning notebook](https:/
 
 The example is self-contained: data download/prep scripts live next to the FL client, model wrapper, and job recipe.
 
+The fine-tuning data follows the official notebook's setup: [NCT-CRC-HE-100K](https://zenodo.org/records/1214456), a dataset of histopathology image patches from human colorectal cancer and normal tissue. The downstream task is a vision classification task framed as multimodal instruction tuning: for each image patch, the model is prompted with a multiple-choice tissue-type question and learns to generate one of nine labels (`adipose`, `background`, `debris`, `lymphocytes`, `mucus`, `smooth muscle`, `normal colon mucosa`, `cancer-associated stroma`, or `colorectal adenocarcinoma epithelium`).
+
 ## Before you start: Hugging Face gated model
 
 Weights for [`google/medgemma-4b-it`](https://huggingface.co/google/medgemma-4b-it) are **gated** on Hugging Face. The repo is visible to everyone, but you must accept the license terms and be allowlisted before file downloads work.

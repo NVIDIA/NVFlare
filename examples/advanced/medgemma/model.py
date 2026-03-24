@@ -100,7 +100,7 @@ def load_medgemma_base_model(
 ):
     model_kwargs = {
         "attn_implementation": "eager",
-        "torch_dtype": torch.bfloat16,
+        "dtype": torch.bfloat16,
         "trust_remote_code": True,
     }
     if device_map is not None:
