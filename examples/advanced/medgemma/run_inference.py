@@ -97,7 +97,7 @@ def main():
         print("No valid samples found. Check --data_file and --image_root.")
         return 1
 
-    model, processor = _load_model_and_processor(model_path, args.base_model, args.device)
+    model, processor = load_model_and_processor(model_path, args.base_model, args.device)
     print(f"Running inference on {len(samples)} sample(s)\n")
 
     for index, sample in enumerate(samples, start=1):
