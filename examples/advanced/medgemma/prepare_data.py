@@ -11,6 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+Prepare site-based MedGemma training and validation splits from NCT-CRC-HE-100K.
+
+Task setup adapted from the Google Health MedGemma Hugging Face fine-tuning notebook:
+https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hugging_face.ipynb
+"""
 
 from __future__ import annotations
 

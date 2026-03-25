@@ -13,6 +13,9 @@
 # limitations under the License.
 """
 Client script for federated MedGemma fine-tuning with TRL SFTTrainer and LoRA-only exchange.
+
+Adapted from the Google Health MedGemma Hugging Face fine-tuning notebook:
+https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hugging_face.ipynb
 """
 
 from __future__ import annotations
