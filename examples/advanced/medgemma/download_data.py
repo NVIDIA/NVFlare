@@ -47,6 +47,14 @@ def _log_progress(msg: str) -> None:
     print(msg, flush=True)
 
 
+def resolve_extraction_path(output_dir: str, member_name: str) -> str:
+    output_dir = os.path.realpath(output_dir)
+    dest_path = os.path.realpath(os.path.join(output_dir, member_name))
+    if os.path.commonpath([output_dir, dest_path]) != output_dir:
+        raise ValueError(f"Refusing to extract unsafe path outside {output_dir}: {member_name}")
+    return dest_path
+
+
 def download_file(url: str, output_path: str) -> None:
     # Write to .partial first so an interrupted download does not leave a corrupt .zip in place.
     partial_path = output_path + ".partial"
@@ -136,6 +144,7 @@ def download_and_extract_dataset(
         n = len(members)
         report_every = max(2000, n // 40)
         for i, member in enumerate(members, start=1):
+            resolve_extraction_path(output_dir, member.filename)
             zip_file.extract(member, output_dir)
             if i % report_every == 0 or i == n:
                 _log_progress(f"Extracted {i}/{n} zip entries ({100.0 * i / n:.1f}%)")

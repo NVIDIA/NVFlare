@@ -22,6 +22,7 @@ if str(EXAMPLE_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLE_DIR))
 
 from data_utils import (  # noqa: E402
+    ALT_TISSUE_LABELS,
     TISSUE_CLASSES,
     collect_image_records,
     format_training_example,
@@ -45,6 +46,9 @@ class MedGemmaDataUtilsTest(unittest.TestCase):
         self.assertEqual(parse_prediction_label("Answer: A: adipose"), 0)
         self.assertEqual(parse_prediction_label("I would choose (B) background."), 1)
         self.assertEqual(parse_prediction_label("No known label"), -1)
+
+    def test_alt_tissue_labels_match_parenthesized_format(self):
+        self.assertEqual(ALT_TISSUE_LABELS[TISSUE_CLASSES[1]], "(B) background")
 
     def test_split_records_for_clients_creates_non_overlapping_shards(self):
         records = [

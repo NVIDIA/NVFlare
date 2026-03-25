@@ -41,10 +41,17 @@ TISSUE_CLASSES = [
 ]
 
 RAW_TISSUE_TO_INDEX = {label: idx for idx, label in enumerate(RAW_TISSUE_CODES)}
-ALT_TISSUE_LABELS = {label: f"({label.replace(': ', ') ')}" for label in TISSUE_CLASSES}
 IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 
 PROMPT = "What is the most likely tissue type shown in the histopathology image?\n" + "\n".join(TISSUE_CLASSES)
+
+
+def _to_alt_tissue_label(label: str) -> str:
+    code, description = label.split(": ", 1)
+    return f"({code}) {description}"
+
+
+ALT_TISSUE_LABELS = {label: _to_alt_tissue_label(label) for label in TISSUE_CLASSES}
 
 
 def resolve_image_path(image_path: str, image_root: str) -> str:

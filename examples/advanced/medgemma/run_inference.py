@@ -47,7 +47,8 @@ def _load_records(data_file: str, image_root: str, max_samples: int):
             print(f"Warning: image not found: {image_path}", file=sys.stderr)
             continue
         sample = dict(record)
-        sample["image"] = Image.open(image_path).convert("RGB")
+        with Image.open(image_path) as image_file:
+            sample["image"] = image_file.convert("RGB")
         samples.append(sample)
     return samples
 

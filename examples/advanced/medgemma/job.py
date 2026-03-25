@@ -56,6 +56,12 @@ def define_parser():
         default=None,
         help="Optional max steps per client round. If omitted, each round trains one local epoch.",
     )
+    parser.add_argument(
+        "--num_train_epochs",
+        type=int,
+        default=1,
+        help="Local epochs per client round when --max_steps is not set (default: 1).",
+    )
     parser.add_argument("--learning_rate", type=float, default=2e-4, help="Peak learning rate (default: 2e-4).")
     parser.add_argument(
         "--per_device_train_batch_size",
@@ -126,7 +132,11 @@ def main():
     report_to = "wandb" if args.wandb else "none"
     for site_name in client_names:
         site_data_path = os.path.join(data_dir, site_name)
-        step_or_epoch = f"--max_steps {args.max_steps} " if args.max_steps is not None else "--num_train_epochs 1 "
+        step_or_epoch = (
+            f"--max_steps {args.max_steps} "
+            if args.max_steps is not None
+            else f"--num_train_epochs {args.num_train_epochs} "
+        )
         train_args = (
             f"--data_path {site_data_path} "
             f"--image_root {image_root} "
