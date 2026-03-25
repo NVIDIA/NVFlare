@@ -18,7 +18,6 @@ import argparse
 import os
 
 import numpy as np
-
 from model import create_initial_params, flatten_params
 
 DEFAULT_OUTPUT = "/tmp/nvflare/data/hello-jax/initial_model.npy"
