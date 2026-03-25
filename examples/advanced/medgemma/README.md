@@ -121,12 +121,6 @@ Federated fine-tuned global model:
 python run_inference.py --model_path /tmp/nvflare/simulation/medgemma/server/simulate_job/app_server/FL_global_model.pt
 ```
 
-Adapter directory saved by a trainer/client:
-
-```bash
-python run_inference.py --model_path /path/to/adapter-checkpoint
-```
-
 `run_inference.py` prints the ground-truth tissue label, the parsed model prediction, and the raw generated text for each sample.
 
 Example output before fine-tuning:

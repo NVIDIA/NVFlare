@@ -1,5 +1,8 @@
 # NCT-CRC-HE-100K (downloaded / extracted by download_data.py)
 NCT-*
 
+# CRC-VAL-HE-7K (downloaded / extracted by download_data.py)
+CRC-VAL-*
+
 # prepared data
 data/
