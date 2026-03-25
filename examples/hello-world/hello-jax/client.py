@@ -88,6 +88,9 @@ def eval_step(params, images, labels):
 
 def train_epoch(state, images, labels, batch_size: int, rng):
     num_examples = len(images)
+    if num_examples == 0:
+        raise ValueError("No training data available for this client.")
+
     permutation = np.asarray(jax.random.permutation(rng, num_examples))
     total_loss = 0.0
     total_accuracy = 0.0
@@ -103,15 +106,19 @@ def train_epoch(state, images, labels, batch_size: int, rng):
         total_accuracy += float(accuracy)
         steps += 1
 
-    return state, total_loss / max(steps, 1), total_accuracy / max(steps, 1), steps
+    return state, total_loss / steps, total_accuracy / steps, steps
 
 
 def evaluate(params, images, labels, batch_size: int):
+    num_examples = len(images)
+    if num_examples == 0:
+        raise ValueError("No evaluation data available for this client.")
+
     total_loss = 0.0
     total_accuracy = 0.0
     steps = 0
 
-    for start in range(0, len(images), batch_size):
+    for start in range(0, num_examples, batch_size):
         end = start + batch_size
         batch_images = jnp.asarray(images[start:end])
         batch_labels = jnp.asarray(labels[start:end])
@@ -120,7 +127,7 @@ def evaluate(params, images, labels, batch_size: int):
         total_accuracy += float(accuracy)
         steps += 1
 
-    return total_loss / max(steps, 1), total_accuracy / max(steps, 1)
+    return total_loss / steps, total_accuracy / steps
 
 
 def main():
