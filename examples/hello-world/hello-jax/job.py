@@ -16,7 +16,6 @@
 import argparse
 import os
 
-from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe import FedAvgRecipe, SimEnv
@@ -78,7 +77,7 @@ def main():
         name="hello-jax",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        model_persistor=NPModelPersistor(source_ckpt_file_full_name=args.initial_ckpt),
+        initial_ckpt=args.initial_ckpt,
         train_script=args.train_script,
         train_args=train_args,
         launch_external_process=args.launch_external_process,
