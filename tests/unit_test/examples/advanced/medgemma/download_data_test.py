@@ -18,10 +18,16 @@ import tempfile
 import unittest
 
 EXAMPLE_DIR = pathlib.Path(__file__).resolve().parents[5] / "examples" / "advanced" / "medgemma"
-if str(EXAMPLE_DIR) not in sys.path:
-    sys.path.insert(0, str(EXAMPLE_DIR))
+_EXAMPLE_DIR_STR = str(EXAMPLE_DIR)
+_ADDED_EXAMPLE_DIR = False
+if _EXAMPLE_DIR_STR not in sys.path:
+    sys.path.insert(0, _EXAMPLE_DIR_STR)
+    _ADDED_EXAMPLE_DIR = True
 
 from download_data import resolve_extraction_path  # noqa: E402
+
+if _ADDED_EXAMPLE_DIR:
+    sys.path.remove(_EXAMPLE_DIR_STR)
 
 
 class MedGemmaDownloadDataTest(unittest.TestCase):
