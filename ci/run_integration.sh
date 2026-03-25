@@ -43,6 +43,8 @@ init_pipenv() {
         TORCHVISION_SPEC=${CONTAINER_TORCHVISION_VERSION:+torchvision==$CONTAINER_TORCHVISION_VERSION}
         TORCHVISION_SPEC=${TORCHVISION_SPEC:-torchvision}
         pipenv run pip install "torch==$CONTAINER_TORCH_VERSION" "$TORCHVISION_SPEC" --no-deps
+    else
+        echo "WARNING: torch not found in system Python; skipping torch re-pin. GPU tests may fail if pipenv installed an incompatible torch version."
     fi
     export PYTHONPATH=$PWD
 }
