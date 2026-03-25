@@ -34,6 +34,13 @@ init_pipenv() {
     export PIPENV_INSTALL_TIMEOUT=9999
     export PIPENV_TIMEOUT=9999
     pipenv install -e .[dev]
+    # Re-pin torch/torchvision to the container's pre-installed version to avoid
+    # accidentally upgrading to a release requiring a newer CUDA driver.
+    CONTAINER_TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)" 2>/dev/null || echo "")
+    if [ -n "$CONTAINER_TORCH_VERSION" ]; then
+        echo "Re-pinning torch to container version: $CONTAINER_TORCH_VERSION"
+        pipenv run pip install "torch==$CONTAINER_TORCH_VERSION" "torchvision" --no-deps
+    fi
     export PYTHONPATH=$PWD
 }
 
