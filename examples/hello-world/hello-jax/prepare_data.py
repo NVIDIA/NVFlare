@@ -20,6 +20,7 @@ import argparse
 import gzip
 import os
 import struct
+import tempfile
 import urllib.request
 
 import numpy as np
@@ -44,7 +45,15 @@ def _download_if_missing(data_dir: str, filename: str) -> str:
     os.makedirs(data_dir, exist_ok=True)
     file_path = os.path.join(data_dir, filename)
     if not os.path.exists(file_path):
-        urllib.request.urlretrieve(f"{MNIST_BASE_URL}/{filename}", file_path)
+        fd, temp_path = tempfile.mkstemp(dir=data_dir, prefix=f".{filename}.", suffix=".part")
+        os.close(fd)
+        try:
+            urllib.request.urlretrieve(f"{MNIST_BASE_URL}/{filename}", temp_path)
+            os.replace(temp_path, file_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
     return file_path
 
 
