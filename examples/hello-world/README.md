@@ -173,6 +173,8 @@ Train an MNIST classifier using JAX, Flax, and Optax with FedAvg.
 ```bash
 cd hello-jax
 pip install -r requirements.txt
+python prepare_model.py
+python prepare_data.py
 python job.py
 ```
 
