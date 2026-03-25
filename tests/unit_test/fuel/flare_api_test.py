@@ -22,15 +22,16 @@ from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 
 
-def test_submit_job_rejects_job_folder_names_with_spaces(tmp_path):
-    job_dir = tmp_path / "fox training poc"
+@pytest.mark.parametrize("job_name", ["fox training poc", ".hidden-job", "-flaggy-job"])
+def test_submit_job_rejects_invalid_job_folder_names(tmp_path, job_name):
+    job_dir = tmp_path / job_name
     job_dir.mkdir()
 
     session = Session.__new__(Session)
     session.upload_dir = str(tmp_path)
     session._do_command = MagicMock()
 
-    with pytest.raises(InvalidJobDefinition, match="job folder name 'fox training poc'.*no spaces"):
+    with pytest.raises(InvalidJobDefinition, match=rf"job folder name '{job_name}'.*no spaces"):
         session.submit_job(str(job_dir))
 
     session._do_command.assert_not_called()
