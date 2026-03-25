@@ -11,20 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-Recipe entrypoint for the hello-jax MNIST example.
-"""
+"""Recipe entrypoint for the hello-jax MNIST example."""
 
 import argparse
 import os
-import subprocess
-import sys
-import tempfile
 
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe import FedAvgRecipe, SimEnv
+
+DEFAULT_INITIAL_CKPT = "/tmp/nvflare/data/hello-jax/initial_model.npy"
+DEFAULT_DATA_DIR = "/tmp/nvflare/data/hello-jax/mnist"
+REQUIRED_DATA_FILES = ("train_images.npy", "train_labels.npy", "test_images.npy", "test_labels.npy")
 
 
 def define_parser():
@@ -35,7 +34,8 @@ def define_parser():
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--learning_rate", type=float, default=0.05)
     parser.add_argument("--momentum", type=float, default=0.9)
-    parser.add_argument("--data_dir", type=str, default="/tmp/nvflare/data/hello-jax/mnist")
+    parser.add_argument("--data_dir", type=str, default=DEFAULT_DATA_DIR)
+    parser.add_argument("--initial_ckpt", type=str, default=DEFAULT_INITIAL_CKPT)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument(
         "--launch_external_process",
@@ -45,24 +45,26 @@ def define_parser():
     return parser.parse_args()
 
 
-def prepare_initial_model_ckpt() -> str:
-    init_dir = tempfile.mkdtemp(prefix="hello-jax-init-")
-    ckpt_path = os.path.join(init_dir, "initial_model.npy")
-    init_script = os.path.join(os.path.dirname(__file__), "prepare_model.py")
-    subprocess.run([sys.executable, init_script, "--output", ckpt_path], check=True)
-    return ckpt_path
+def _validate_inputs(initial_ckpt: str, data_dir: str) -> None:
+    if not os.path.isfile(initial_ckpt):
+        raise FileNotFoundError(
+            f"Initial checkpoint not found: {initial_ckpt}. "
+            f"Run `python prepare_model.py --output {initial_ckpt}` first."
+        )
 
-
-def prepare_dataset(data_dir: str) -> None:
-    data_script = os.path.join(os.path.dirname(__file__), "prepare_data.py")
-    subprocess.run([sys.executable, data_script, "--data_dir", data_dir], check=True)
+    missing_files = [name for name in REQUIRED_DATA_FILES if not os.path.isfile(os.path.join(data_dir, name))]
+    if missing_files:
+        missing_str = ", ".join(missing_files)
+        raise FileNotFoundError(
+            f"Prepared MNIST files missing in {data_dir}: {missing_str}. "
+            f"Run `python prepare_data.py --data_dir {data_dir}` first."
+        )
 
 
 def main():
     args = define_parser()
 
-    initial_ckpt = prepare_initial_model_ckpt()
-    prepare_dataset(args.data_dir)
+    _validate_inputs(args.initial_ckpt, args.data_dir)
     train_args = (
         f"--epochs {args.epochs} "
         f"--batch_size {args.batch_size} "
@@ -76,7 +78,7 @@ def main():
         name="hello-jax",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        model_persistor=NPModelPersistor(source_ckpt_file_full_name=initial_ckpt),
+        model_persistor=NPModelPersistor(source_ckpt_file_full_name=args.initial_ckpt),
         train_script=args.train_script,
         train_args=train_args,
         launch_external_process=args.launch_external_process,

@@ -12,24 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Prepare an initial flattened JAX model checkpoint for hello-jax.
-"""
+"""Prepare an initial flattened JAX model checkpoint for hello-jax."""
 
 import argparse
+import os
 
 import numpy as np
+
 from model import create_initial_params, flatten_params
+
+DEFAULT_OUTPUT = "/tmp/nvflare/data/hello-jax/initial_model.npy"
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", required=True, type=str)
+    parser.add_argument("--output", default=DEFAULT_OUTPUT, type=str)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     initial_params = flatten_params(create_initial_params())
     np.save(args.output, initial_params)
 

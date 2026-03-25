@@ -31,11 +31,12 @@ MNIST_FILES = {
     "test_labels": "t10k-labels-idx1-ubyte.gz",
 }
 MNIST_BASE_URL = "https://storage.googleapis.com/cvdf-datasets/mnist"
+DEFAULT_DATA_DIR = "/tmp/nvflare/data/hello-jax/mnist"
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", required=True, type=str)
+    parser.add_argument("--data_dir", default=DEFAULT_DATA_DIR, type=str)
     return parser.parse_args()
 
 
