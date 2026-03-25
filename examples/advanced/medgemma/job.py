@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 
 from data_utils import DEFAULT_MODEL_NAME_OR_PATH
 
@@ -121,6 +122,36 @@ def _configure_timeouts(
     )
 
 
+def _build_train_args(args, site_data_path: str, image_root: str, report_to: str) -> str:
+    train_args = [
+        "--data_path",
+        site_data_path,
+        "--image_root",
+        image_root,
+        "--model_name_or_path",
+        args.model_name_or_path,
+    ]
+    if args.max_steps is not None:
+        train_args.extend(["--max_steps", str(args.max_steps)])
+    else:
+        train_args.extend(["--num_train_epochs", str(args.num_train_epochs)])
+    train_args.extend(
+        [
+            "--learning_rate",
+            str(args.learning_rate),
+            "--per_device_train_batch_size",
+            str(args.per_device_train_batch_size),
+            "--per_device_eval_batch_size",
+            str(args.per_device_eval_batch_size),
+            "--gradient_accumulation_steps",
+            str(args.gradient_accumulation_steps),
+            "--report_to",
+            report_to,
+        ]
+    )
+    return shlex.join(train_args)
+
+
 def main():
     args = define_parser()
     n_clients = args.n_clients
@@ -132,22 +163,7 @@ def main():
     report_to = "wandb" if args.wandb else "none"
     for site_name in client_names:
         site_data_path = os.path.join(data_dir, site_name)
-        step_or_epoch = (
-            f"--max_steps {args.max_steps} "
-            if args.max_steps is not None
-            else f"--num_train_epochs {args.num_train_epochs} "
-        )
-        train_args = (
-            f"--data_path {site_data_path} "
-            f"--image_root {image_root} "
-            f"--model_name_or_path {args.model_name_or_path} "
-            f"{step_or_epoch}"
-            f"--learning_rate {args.learning_rate} "
-            f"--per_device_train_batch_size {args.per_device_train_batch_size} "
-            f"--per_device_eval_batch_size {args.per_device_eval_batch_size} "
-            f"--gradient_accumulation_steps {args.gradient_accumulation_steps} "
-            f"--report_to {report_to}"
-        )
+        train_args = _build_train_args(args, site_data_path=site_data_path, image_root=image_root, report_to=report_to)
         per_site_config[site_name] = {"train_args": train_args}
 
     model = {
