@@ -219,6 +219,10 @@ def main():
     collate_fn = _build_collate_fn(processor)
 
     train_dataset = _load_site_split(train_json, image_root)
+    if len(train_dataset) == 0:
+        raise ValueError(
+            f"No training samples found in {train_json}. Re-run prepare_data.py with a non-empty site split."
+        )
     eval_dataset = _load_site_split(validation_json, image_root) if os.path.isfile(validation_json) else None
 
     print(f"site={client_name}, train_samples={len(train_dataset)}, validation_samples={len(eval_dataset or [])}")
