@@ -163,7 +163,7 @@ This qualitative shift suggests that fine-tuning is capturing the downstream tas
 
 ## 5. Evaluate accuracy before and after fine-tuning
 
-The MedGemma notebook evaluates on the separate [CRC-VAL-HE-7K](https://zenodo.org/records/1214456) dataset rather than on the fine-tuning split. This example now includes `run_evaluation.py` to mirror that setup and compute accuracy for the base model and the fine-tuned global model on the same evaluation subset.
+The MedGemma [fine-tuning notebook](https://github.com/google-health/medgemma/blob/main/notebooks/fine_tune_with_hugging_face.ipynb) evaluates on the separate [CRC-VAL-HE-7K](https://zenodo.org/records/1214456) dataset rather than on the fine-tuning split. This example includes `run_evaluation.py` to mirror that setup and compute accuracy for the base model and the fine-tuned global model on the same evaluation subset.
 
 First, download the evaluation dataset if you have not already:
 
@@ -182,8 +182,18 @@ python run_evaluation.py \
 By default, `run_evaluation.py`:
 
 - uses `google/medgemma-4b-it` as the before-fine-tuning baseline,
-- evaluates on a shuffled subset of 1000 samples, matching the notebook's default,
+- evaluates on a shuffled subset of **1000 samples**, matching the notebook's default,
 - computes accuracy for both models and reports the delta.
+
+> Note, this can take a while to execute but should produce the following result:
+
+**Evaluation Result**
+```
+Accuracy summary
+Base model:       accuracy=0.4130 (413/1000), unparsed=0
+Fine-tuned model: accuracy=0.9540 (954/1000), unparsed=0
+Delta:            accuracy=+0.5410
+```
 
 Useful flags:
 
