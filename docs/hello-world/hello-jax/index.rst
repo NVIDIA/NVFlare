@@ -1,6 +1,14 @@
 Hello JAX
 =========
 
+.. warning::
+
+   This example tracks ``main``, which is the NVFlare development branch for the next release.
+   On ``main``, example ``requirements.txt`` files may pin the first upcoming NVFlare version
+   that supports a feature, even before that package is published on PyPI.
+   If the pinned ``nvflare`` version is not available yet, install NVFlare from this repo
+   instead of from PyPI.
+
 This example demonstrates how to use NVIDIA FLARE with JAX, Flax, and Optax to train an MNIST classifier using federated averaging (FedAvg). It follows the same hello-world recipe structure as ``hello-pt``, but uses a JAX client training loop and a flattened parameter vector for transport.
 
 Install NVFLARE and Dependencies
