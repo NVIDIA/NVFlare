@@ -15,6 +15,7 @@
 
 import argparse
 import os
+import shlex
 
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.constants import FrameworkType
@@ -60,18 +61,30 @@ def _validate_inputs(initial_ckpt: str, data_dir: str) -> None:
         )
 
 
+def _build_train_args(args) -> str:
+    return shlex.join(
+        [
+            "--epochs",
+            str(args.epochs),
+            "--batch_size",
+            str(args.batch_size),
+            "--learning_rate",
+            str(args.learning_rate),
+            "--momentum",
+            str(args.momentum),
+            "--num_partitions",
+            str(args.n_clients),
+            "--data_dir",
+            args.data_dir,
+        ]
+    )
+
+
 def main():
     args = define_parser()
 
     _validate_inputs(args.initial_ckpt, args.data_dir)
-    train_args = (
-        f"--epochs {args.epochs} "
-        f"--batch_size {args.batch_size} "
-        f"--learning_rate {args.learning_rate} "
-        f"--momentum {args.momentum} "
-        f"--num_partitions {args.n_clients} "
-        f"--data_dir {args.data_dir}"
-    )
+    train_args = _build_train_args(args)
 
     recipe = FedAvgRecipe(
         name="hello-jax",

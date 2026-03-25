@@ -61,7 +61,10 @@ def split_for_client(images, labels, client_name: str, num_partitions: int):
     image_splits = np.array_split(images, partitions)
     label_splits = np.array_split(labels, partitions)
     if client_idx >= len(image_splits):
-        return images, labels
+        raise ValueError(
+            f"Client index {client_idx + 1} from site name '{client_name}' exceeds available partitions "
+            f"{len(image_splits)}."
+        )
     return image_splits[client_idx], label_splits[client_idx]
 
 
@@ -150,14 +153,14 @@ def main():
         flat_params = input_model.params[NPConstants.NUMPY_KEY]
         params = unflatten_params(flat_params)
 
-        eval_loss, accuracy = evaluate(params, test_images, test_labels, args.batch_size)
+        received_eval_loss, received_accuracy = evaluate(params, test_images, test_labels, args.batch_size)
         print(
             f"site={client_name}, round={current_round}, "
-            f"received_model_eval_loss={eval_loss:.4f}, accuracy={accuracy:.4f}"
+            f"received_model_eval_loss={received_eval_loss:.4f}, accuracy={received_accuracy:.4f}"
         )
 
         if flare.is_evaluate():
-            flare.send(flare.FLModel(metrics={"accuracy": accuracy, "eval_loss": eval_loss}))
+            flare.send(flare.FLModel(metrics={"accuracy": received_accuracy, "eval_loss": received_eval_loss}))
             continue
 
         state = create_train_state(params, learning_rate=args.learning_rate, momentum=args.momentum)
@@ -177,11 +180,17 @@ def main():
                 f"train_loss={train_loss:.4f}, train_accuracy={train_accuracy:.4f}"
             )
 
+        updated_eval_loss, updated_accuracy = evaluate(state.params, test_images, test_labels, args.batch_size)
+        print(
+            f"site={client_name}, round={current_round}, "
+            f"trained_model_eval_loss={updated_eval_loss:.4f}, accuracy={updated_accuracy:.4f}"
+        )
+
         updated_params = flatten_params(state.params)
         output_model = flare.FLModel(
             params={NPConstants.NUMPY_KEY: updated_params},
             params_type=flare.ParamsType.FULL,
-            metrics={"accuracy": accuracy, "eval_loss": eval_loss},
+            metrics={"accuracy": updated_accuracy, "eval_loss": updated_eval_loss},
             meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: args.epochs * steps_per_epoch},
         )
         flare.send(output_model)
