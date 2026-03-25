@@ -21,7 +21,6 @@ import argparse
 import os
 import sys
 
-import evaluate
 from data_utils import DEFAULT_EVAL_DATASET_DIR, DEFAULT_MODEL_NAME_OR_PATH, collect_image_records, sample_records
 from inference_utils import load_model_and_processor, predict_label
 from PIL import Image
@@ -34,6 +33,13 @@ def _abs_path(path: str) -> str:
 def _load_eval_records(dataset_dir: str, max_samples: int | None, seed: int):
     records = collect_image_records(dataset_dir)
     return sample_records(records, max_samples=max_samples, seed=seed)
+
+
+def _compute_accuracy(predictions: list[int], references: list[int]) -> dict:
+    total = len(references)
+    correct = sum(int(pred == ref) for pred, ref in zip(predictions, references))
+    accuracy = correct / total if total else 0.0
+    return {"accuracy": accuracy, "correct": correct, "total": total}
 
 
 def _evaluate_model(
@@ -73,11 +79,7 @@ def _evaluate_model(
             print(f"Prediction:   {predicted_label}")
             print(f"Raw output:   {response_text[:240]}{'...' if len(response_text) > 240 else ''}")
 
-    accuracy_metric = evaluate.load("accuracy")
-    metrics = accuracy_metric.compute(predictions=predictions, references=references)
-    correct = sum(int(pred == ref) for pred, ref in zip(predictions, references))
-    metrics["correct"] = correct
-    metrics["total"] = len(references)
+    metrics = _compute_accuracy(predictions=predictions, references=references)
     metrics["unparsed"] = unparsed
     return metrics
 

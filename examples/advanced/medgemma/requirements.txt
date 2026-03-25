@@ -4,7 +4,6 @@ torchvision==0.21.0
 accelerate>=1.7.0
 bitsandbytes
 datasets>=2.18.0
-evaluate
 peft
 Pillow>=10.0.0
 tensorboard
