@@ -69,8 +69,7 @@ bash data_conversion_MSD.sh
 
 [**NCI_ISBI**](https://wiki.cancerimagingarchive.net/display/Public/NCI-ISBI+2013+Challenge+-+Automated+Segmentation+of+Prostate+Structures): [data link](https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=21267207)
 
-Download the first 3 .tcia files and download the actual DICOM image data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/NCI_ISBI/`. Then download the second 3 .zip files containing the NRRD ground truth segmentations and store them to `./Raw/NCI_ISBI/`. The downloaded folder structure will look like
-![](./figs/NCI_ISBI.png)
+Download the first 3 .tcia files and download the actual DICOM image data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/NCI_ISBI/`. Then download the second 3 .zip files containing the NRRD ground truth segmentations and store them to `./Raw/NCI_ISBI/`. The downloaded folder structure should contain the three challenge archives together with three `manifest-*` directories created by NBIA Data Retriever.
 The three `manifest-*` folders correspond to the TCIA download path to the three image datasets.  
 We extract the mask files and reorganize the image folders as  
 
@@ -120,7 +119,7 @@ Make two folders for image and mask
 mkdir ./Raw/PROSTATEx/Image
 mkdir ./Raw/PROSTATEx/Mask
 ```
-Download the two .tcia files for DICOM image/mask data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/PROSTATEx/Image` and `./Raw/PROSTATEx/Mask`. The downloaded folder structure will look like ![](./figs/PROSTATEx.png)
+Download the two .tcia files for DICOM image/mask data with [NBIA Data Retriever](https://wiki.cancerimagingarchive.net/display/NBIA/Downloading+TCIA+Images), store them to `./Raw/PROSTATEx/Image` and `./Raw/PROSTATEx/Mask`. The downloaded folders should contain the DICOM export directories produced by NBIA Data Retriever for the image and mask downloads.
 
 ```
 bash data_conversion_PROSTATEx.sh
@@ -198,4 +197,3 @@ Save json to ./datalist/client_NCI_ISBI_Dx.json
 Mode: file
 In total 39 cases, 20 for training, 10 for validation, and 9 for testing
 ```
-

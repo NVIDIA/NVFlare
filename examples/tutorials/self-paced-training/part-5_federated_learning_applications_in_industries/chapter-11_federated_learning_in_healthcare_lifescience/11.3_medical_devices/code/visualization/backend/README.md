@@ -26,7 +26,7 @@ The REST API service can be evaluated using the `curl` utility. Follow the instr
 
 1. Run the Holoscan application with analytics capabilities to generate the data required for the Holoscan Federated Analytics application.
 
-2. Run the NVFLARE application for Holoscan Federated Analytics to generate the global statistics. Follow steps mentioned [here](../../applications/holoscan_nvflare_app/README.md).
+2. Run the NVFLARE application for Holoscan Federated Analytics to generate the global statistics. Follow the steps in [the notebook walkthrough](../../../holoscan_federated_analytics.ipynb).
 
 3. Start the backend container using the steps outlined above. This can be performed on any of the IGX systems where Holoscan applications are operational or on any other Linux-based system.
 
@@ -42,7 +42,7 @@ The REST API service can be evaluated using the `curl` utility. Follow the instr
         TOKEN=`python3 ./create_test_token.py`
     ```
 
-5. Modify the `DATA_ROOT` in [.env](../backend/app/.env) file to point the the root directory used for Holoscan applications analytics data. By default, it is `/media/m2/output`.
+5. Modify the `DATA_ROOT` in `app/.env` to point to the root directory used for Holoscan applications analytics data. By default, it is `/media/m2/output`.
 
 6. Getting the list of registered applications (API: `/get_apps/`)
 

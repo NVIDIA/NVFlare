@@ -251,17 +251,18 @@ The job recipe defines the FL workflow:
 
 ### ML-to-FL Conversion
 Learn how to convert existing ML/DL code to federated learning:
-- [PyTorch Conversion](./ml-to-fl/pt/)
-- [TensorFlow Conversion](./ml-to-fl/tf/)
-- [NumPy Conversion](./ml-to-fl/np/)
+- [PyTorch Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.2_convert_deep_learning_to_federated_learning/convert_dl_to_fl.ipynb)
+- [PyTorch Lightning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.3_convert_torch_lightning_to_federated_learning/convert_torch_lightning_to_fl.ipynb)
+- [Machine Learning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.4_convert_machine_learning_to_federated_learning/convert_ml_to_fl.ipynb)
 
-[Learn more →](./ml-to-fl/)
+[Learn more →](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/)
 
 ### Workflows
 Examples demonstrating different FL workflows:
 - [Scatter and Gather](./hello-numpy/) - Basic FedAvg pattern
 - [Cross-Site Validation](./hello-numpy-cross-val/) - Model evaluation across sites
 - [Cyclic Weight Transfer](./hello-cyclic/) - Sequential client training
+- [Client Controlled Workflows Guide](../../docs/programming_guide/controllers/client_controlled_workflows.rst) - Peer-to-peer workflow patterns
 
 ## Running with Different Environments
 
