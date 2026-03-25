@@ -4,6 +4,7 @@
 - Prefer `rg` and `rg --files` for fast codebase search.
 - Keep edits scoped to the task; do not modify unrelated files in a dirty worktree.
 - Start with targeted tests for changed files, then run broader checks as needed.
+- Treat `main` as the development branch for the next NVFlare release; example requirements on `main` may intentionally target the first upcoming NVFlare version that supports a feature. See `skills.md`.
 
 ## Fast Commands
 
