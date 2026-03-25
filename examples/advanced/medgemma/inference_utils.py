@@ -35,29 +35,43 @@ def load_nvflare_global_pt(pt_path: str) -> dict:
     return state_dict
 
 
+def get_inference_device_map(device: str):
+    if not device.startswith("cuda"):
+        return None
+    if device == "cuda":
+        return {"": 0}
+    if device.startswith("cuda:"):
+        try:
+            return {"": int(device.split(":", 1)[1])}
+        except ValueError as e:
+            raise ValueError(f"Invalid CUDA device string: {device!r}") from e
+    raise ValueError(f"Unsupported device string: {device!r}. Use values like 'cuda', 'cuda:1', or 'cpu'.")
+
+
 def load_model_and_processor(
     model_path: str,
     base_model: str = DEFAULT_MODEL_NAME_OR_PATH,
     device: str = "cuda",
 ):
     quantized = device.startswith("cuda")
+    device_map = get_inference_device_map(device)
     processor = AutoProcessor.from_pretrained(base_model, trust_remote_code=True, use_fast=False)
     processor.tokenizer.padding_side = "left"
 
     if os.path.isfile(model_path) and model_path.endswith(".pt"):
         print(f"Loading NVFlare global adapter weights from: {model_path}")
-        model = create_peft_medgemma_model(base_model, quantized=quantized, device_map={"": 0} if quantized else None)
+        model = create_peft_medgemma_model(base_model, quantized=quantized, device_map=device_map)
         apply_adapter_state(model, load_nvflare_global_pt(model_path))
     elif os.path.isdir(model_path) and os.path.isfile(os.path.join(model_path, "adapter_config.json")):
         print(f"Loading base model + adapter directory from: {model_path}")
-        base = load_medgemma_base_model(base_model, quantized=quantized, device_map={"": 0} if quantized else None)
+        base = load_medgemma_base_model(base_model, quantized=quantized, device_map=device_map)
         model = PeftModel.from_pretrained(base, model_path, is_trainable=False)
     else:
         print(f"Loading model directly from: {model_path}")
         model = load_medgemma_base_model(
             model_name_or_path=model_path,
             quantized=quantized,
-            device_map={"": 0} if quantized else None,
+            device_map=device_map,
         )
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True, use_fast=False)
         processor.tokenizer.padding_side = "left"
