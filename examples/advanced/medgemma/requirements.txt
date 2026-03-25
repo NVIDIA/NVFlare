@@ -4,7 +4,7 @@ torchvision==0.21.0
 accelerate>=1.7.0
 bitsandbytes
 datasets>=2.18.0
-peft
+peft>=0.18.0
 Pillow>=10.0.0
 tensorboard
 transformers>=4.57.1
