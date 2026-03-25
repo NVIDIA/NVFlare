@@ -145,12 +145,10 @@ def set_project():
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/project", methods=["GET"])
-@jwt_required()
 def get_project():
     return jsonify(Store.get_project())
 
 
 @app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/organizations", methods=["GET"])
-@jwt_required()
 def get_orgs():
     return jsonify(Store.get_orgs())

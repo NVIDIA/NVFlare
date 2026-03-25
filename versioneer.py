@@ -389,6 +389,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False,
             dispcmd = str([command] + args)
             # remember shell=False, so use git.cmd on windows, not just git
             process = subprocess.Popen([command] + args, cwd=cwd, env=env,
+                                       shell=False,
                                        stdout=subprocess.PIPE,
                                        stderr=(subprocess.PIPE if hide_stderr
                                                else None))
@@ -494,6 +495,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False,
             dispcmd = str([command] + args)
             # remember shell=False, so use git.cmd on windows, not just git
             process = subprocess.Popen([command] + args, cwd=cwd, env=env,
+                                       shell=False,
                                        stdout=subprocess.PIPE,
                                        stderr=(subprocess.PIPE if hide_stderr
                                                else None))
