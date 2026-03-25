@@ -110,5 +110,32 @@ python job.py --n_clients 2 --num_rounds 3 --epochs 1 --batch_size 128
 
 ## Output Summary
 
-- The final aggregated model is saved in the simulation workspace
-- Each client prints its local train/eval metrics during every federated round
+#### Initialization
+* **Workflow**: BaseModelController initialized and FedAvg started.
+* **Initial Model**: Loaded from the generated flattened checkpoint through the persistor.
+* **Simulation Output**: Results written under `/tmp/nvflare/simulation/hello-jax`.
+
+#### Round 0
+* **Clients Sampled**: `site-1`, `site-2`.
+* **Evaluation**: Received-model accuracy was `0.0527` on `site-1` and `0.0398` on `site-2`.
+* **Training**: After one local epoch, training loss was `0.3616` / `0.3778` and training accuracy was `0.8887` / `0.8857`.
+* **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
+
+#### Round 1
+* **Clients Sampled**: `site-1`, `site-2`.
+* **Evaluation**: Received-model accuracy improved to `0.9545` on `site-1` and `0.9799` on `site-2`.
+* **Training**: After one local epoch, training loss was `0.0990` / `0.0999` and training accuracy was `0.9702` / `0.9686`.
+* **Model Selection**: The aggregated validation metric reached `0.9671875`, becoming the new best model.
+* **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
+
+#### Round 2
+* **Clients Sampled**: `site-1`, `site-2`.
+* **Evaluation**: Received-model accuracy improved again to `0.9762` on `site-1` and `0.9900` on `site-2`.
+* **Training**: After one local epoch, training loss was `0.0671` / `0.0683` and training accuracy was `0.9795` / `0.9790`.
+* **Model Selection**: The aggregated validation metric reached `0.98310546875`, becoming the new best model.
+* **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
+
+#### Completion
+* **FedAvg Process**: Successfully finished after 3 rounds.
+* **Final Model**: Saved to `/tmp/nvflare/simulation/hello-jax/server/simulate_job/models/server.npy`.
+* **Run Result**: `job.py` prints the simulation result directory at `/tmp/nvflare/simulation/hello-jax`.

@@ -109,4 +109,8 @@ You can adjust the main hyperparameters from the command line as needed:
 Output Summary
 --------------
 
-- **Workflow**: The simulator sends the flattened global parameter vector to each site, each site trains locally in JAX, and FedAvg aggregates the returned updates.
+- **Initialization**: ``BaseModelController`` starts the FedAvg workflow, loads the initial flattened checkpoint, and writes simulation output under ``/tmp/nvflare/simulation/hello-jax``.
+- **Round 0**: ``site-1`` and ``site-2`` are sampled, evaluate the received model at ``0.0527`` and ``0.0398`` accuracy, then train for one epoch to ``0.8887`` / ``0.8857`` training accuracy with ``0.3616`` / ``0.3778`` loss.
+- **Round 1**: Both sites are sampled again, received-model accuracy improves to ``0.9545`` and ``0.9799``, local training reaches ``0.9702`` / ``0.9686`` accuracy with ``0.0990`` / ``0.0999`` loss, and the aggregated validation metric becomes a new best at ``0.9671875``.
+- **Round 2**: Received-model accuracy improves again to ``0.9762`` and ``0.9900``, local training finishes at ``0.9795`` / ``0.9790`` accuracy with ``0.0671`` / ``0.0683`` loss, and the aggregated validation metric becomes a new best at ``0.98310546875``.
+- **Completion**: FedAvg finishes after 3 rounds, persists the final NumPy checkpoint to ``/tmp/nvflare/simulation/hello-jax/server/simulate_job/models/server.npy``, and reports the simulation result directory at ``/tmp/nvflare/simulation/hello-jax``.
