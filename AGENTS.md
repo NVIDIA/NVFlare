@@ -4,6 +4,7 @@
 - Prefer `rg` and `rg --files` for fast codebase search.
 - Keep edits scoped to the task; do not modify unrelated files in a dirty worktree.
 - Start with targeted tests for changed files, then run broader checks as needed.
+- Read `CLAUDE.md` for broader project overview, architecture notes, and additional repo commands instead of duplicating that guidance here.
 
 ## Main Branch Versioning
 
