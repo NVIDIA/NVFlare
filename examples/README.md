@@ -117,6 +117,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [NVFlare + MONAI integration](../integration/monai/README.md)                                                                          | MONAI        | To use NVIDIA FLARE with MONAI Bundles, see the [migration guide](../integration/monai/MIGRATION.md) for the recommended Client API + Recipe pattern.          |
+| [Federated MedGemma Fine-Tuning](./advanced/medgemma/README.md)                                                                        | HuggingFace  | Federated QLoRA fine-tuning of MedGemma on histopathology images using the NCT-CRC-HE-100K dataset.                                                           |
 
 ## 6. Federated Statistics
 [Federated Statistics Overview](./advanced/federated-statistics/README.md) discusses the overall federated statistics features.
