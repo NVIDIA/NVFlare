@@ -16,4 +16,10 @@ from .nvf_test_driver import NVFTestDriver, NVFTestError
 from .poc_site_launcher import POCSiteLauncher
 from .provision_site_launcher import ProvisionSiteLauncher
 from .site_launcher import ServerProperties, SiteProperties
-from .utils import cleanup_path, generate_test_config_yaml_for_example, read_yaml, run_command_in_subprocess
+from .utils import (
+	cleanup_path,
+	cleanup_stale_integration_processes,
+	generate_test_config_yaml_for_example,
+	read_yaml,
+	run_command_in_subprocess,
+)

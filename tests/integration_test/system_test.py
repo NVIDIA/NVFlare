@@ -26,6 +26,7 @@ from tests.integration_test.src import (
     NVFTestError,
     POCSiteLauncher,
     ProvisionSiteLauncher,
+    cleanup_stale_integration_processes,
     cleanup_path,
     read_yaml,
     run_command_in_subprocess,
@@ -89,6 +90,11 @@ def setup_and_teardown_system(request):
     _print_newlines()
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)
     print(f"Setting up system using {yaml_path}")
+
+    # Prevent stale processes from prior interrupted runs from conflicting with
+    # this run (e.g. ports 8002/8003 already bound).
+    cleanup_stale_integration_processes()
+
     test_config = get_test_config(yaml_path)
 
     cleanup = test_config["cleanup"]
@@ -186,7 +192,9 @@ class TestSystem:
             for command in setup:
                 print(f"Running setup command: {command}")
                 process = run_command_in_subprocess(command)
-                process.wait()
+                rc = process.wait()
+                if rc != 0:
+                    raise NVFTestError(f"Setup command failed with rc={rc}: {command}")
 
             test_driver.run_event_sequence(event_sequence)
 
@@ -222,7 +230,9 @@ class TestSystem:
             for command in teardown:
                 print(f"Running teardown command: {command}")
                 process = run_command_in_subprocess(command)
-                process.wait()
+                rc = process.wait()
+                if rc != 0:
+                    raise NVFTestError(f"Teardown command failed with rc={rc}: {command}")
             test_driver.reset_test_info(reset_job_info=reset_job_info)
             _print_newlines()
 

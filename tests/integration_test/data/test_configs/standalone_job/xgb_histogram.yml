@@ -29,7 +29,7 @@ tests:
     ../../examples/advanced/xgboost/temp_requirements.txt
   - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/xgboost/temp_requirements.txt
   - pip install -r ../../examples/advanced/xgboost/temp_requirements.txt
-  - bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
+  - env NVFLARE_XGB_ALLOW_SYNTHETIC_DATA=true bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
   - rm -f ../../examples/advanced/xgboost/temp_requirements.txt
 
 - test_name: Test job higgs_2_histogram_v2_uniform_split_uniform_lr for xgboost histogram-based example.
@@ -56,5 +56,5 @@ tests:
     ../../examples/advanced/xgboost/temp_requirements.txt
   - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/xgboost/temp_requirements.txt
   - pip install -r ../../examples/advanced/xgboost/temp_requirements.txt
-  - bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
+  - env NVFLARE_XGB_ALLOW_SYNTHETIC_DATA=true bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
   - rm -f ../../examples/advanced/xgboost/temp_requirements.txt

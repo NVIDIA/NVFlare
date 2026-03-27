@@ -8,6 +8,36 @@ This release also delivers major system hardening across the F3 streaming layer,
 memory management improvements for large-model training, and startup stability fixes for
 large-scale hierarchical FL deployments.
 
+Integration Stability and Compatibility Tracking
+=================================================
+
+The following integration-related changes are tracked here for changelog completeness:
+
+- **SimEnv deployment compatibility**: Fixed ``SimEnv.deploy()`` so recipe jobs no longer pass
+  conflicting client inputs (``clients`` plus ``n_clients``) when explicit client targets are
+  already provided.
+
+- **FedAvg recipe backward compatibility**: Restored compatibility for script-driven flows that
+  construct ``FedAvgRecipe`` without an immediate model source at initialization time.
+
+- **XGBoost vertical recipe initialization**: Updated vertical recipe setup to allow omitted
+  ``per_site_config`` at construction, defaulting safely to an empty dict.
+
+- **Integration harness startup hygiene**: Added pre-run stale-process cleanup in the integration
+  system-test fixture to reduce rerun contamination from previously orphaned integration
+  processes.
+
+- **Integration utility exports**: Added the stale-process cleanup helper to the integration
+  utility package exports so fixture imports remain explicit and stable.
+
+- **XGBoost integration setup command compatibility**: Updated standalone integration test setup
+  commands to use explicit ``env`` invocation for synthetic-data fallback flags, matching the
+  integration harness subprocess execution model and preventing command parsing failures.
+
+- **XGBoost backend validation reliability**: Enabled synthetic-data fallback consistently for
+  histogram and tree standalone integration jobs so backend validation can run deterministically
+  when the external HIGGS dataset is unavailable in CI/dev environments.
+
 Job Recipe API - Generally Available
 =====================================
 
