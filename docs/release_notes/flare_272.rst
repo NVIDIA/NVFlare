@@ -38,6 +38,36 @@ The following integration-related changes are tracked here for changelog complet
   histogram and tree standalone integration jobs so backend validation can run deterministically
   when the external HIGGS dataset is unavailable in CI/dev environments.
 
+Sovereign Quantum-Proof Observability Profile
+==============================================
+
+New in 2.7.2: NVFlare introduces an operational profile for quantum-safe federated learning
+observability, inspired by Sovereign-Mohawk-Proto. This profile provides production-grade
+monitoring, readiness automation, and quantum-proof metrics emission for compliance and
+auditing in high-security FL deployments.
+
+Key Components
+~~~~~~~~~~~~~~
+
+- **QuantumProofMetricsCollector**: A lightweight FLComponent that emits proof-lifecycle and PQC
+  posture metrics from server and client runtimes. Metrics include proof verification request
+  counts, success rates, latencies, aggregation events, and PQC control posture flags.
+  Integration ready with any StatsD-compatible monitoring stack (Prometheus, Grafana, etc.).
+
+- **nvflare_quantum_readiness_gate.py**: Automated PASS/FAIL readiness validation script that
+  checks Prometheus health, Grafana availability, metric presence, and quantum-path query
+  results. Useful in CI/CD pipelines or pre-deployment gates to validate observability stack
+  readiness.
+
+- **Grafana Dashboard (Sovereign Quantum Ops)**: Pre-provisioned dashboard displaying quantum
+  path readiness, PQC control status, proof verification success rate, and timing latencies.
+  Auto-provisioned via Grafana provisioning API when using the example Docker Compose stack.
+
+- **Comprehensive Metric Contract**: Standardized metrics enable auditable "path to quantum
+  proofs" for operational dashboards, compliance reporting, and security posture validation.
+
+See ``examples/advanced/monitoring/sovereign/README.md`` for integration and deployment details.
+
 Job Recipe API - Generally Available
 =====================================
 
