@@ -84,7 +84,7 @@ def check_metric_names(prom_url: str, required_metrics: List[str]) -> List[str]:
 def check_quantum_path(prom_url: str) -> List[str]:
     checks = {
         "quantum_path_ready": "max(quantum_path_ready)",
-        "pqc_controls_enabled": "min(quantum_pqc_controls_migration_enabled, quantum_pqc_controls_legacy_lock_enabled)",
+        "pqc_controls_enabled": "min(quantum_pqc_controls_migration_enabled * quantum_pqc_controls_legacy_lock_enabled)",
         "proof_verify_requests": "sum(rate(quantum_proof_verify_count[5m]))",
     }
 

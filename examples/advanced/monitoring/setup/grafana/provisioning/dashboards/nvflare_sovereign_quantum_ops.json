@@ -130,7 +130,7 @@
       },
       "targets": [
         {
-          "expr": "min(quantum_pqc_controls_migration_enabled, quantum_pqc_controls_legacy_lock_enabled) or vector(0)",
+          "expr": "min(quantum_pqc_controls_migration_enabled * quantum_pqc_controls_legacy_lock_enabled) or vector(0)",
           "legendFormat": "PQC Controls Enabled",
           "refId": "A"
         }
