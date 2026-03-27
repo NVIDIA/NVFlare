@@ -71,6 +71,7 @@ class QuantumProofMetricsCollector(FLComponent):
 
         if event == EventType.ABORT_TASK:
             self._publish_counter("quantum_proof_verify_failure", fl_ctx)
+            self._proof_verify_start_time = None
             return
 
         if event == AppEventType.BEFORE_AGGREGATION:

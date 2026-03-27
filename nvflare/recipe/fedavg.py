@@ -257,6 +257,12 @@ class FedAvgRecipe(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
 
+        if self.model is None and self.initial_ckpt is None and self.model_persistor is None:
+            raise ValueError(
+                "Must provide either model, initial_ckpt, or model_persistor. "
+                "Cannot create a job without a model source."
+            )
+
         # Create BaseFedJob - all frameworks use it for consistency
         job = BaseFedJob(
             name=self.name,
@@ -274,9 +280,11 @@ class FedAvgRecipe(Recipe):
         # Note: empty string "" means no persistor, so we need model_params
         has_persistor = persistor_id != ""
         model_params = None if has_persistor else self._get_model_params()
-
-        # Keep backward compatibility for script-driven training flows where the client
-        # script initializes model state without an explicit recipe model source.
+        if not has_persistor and model_params is None:
+            raise ValueError(
+                "Unable to configure a model source for FedAvgRecipe: no persistor and no model parameters. "
+                "Use a framework-specific recipe for checkpoint-only initialization, or provide model/model_persistor."
+            )
 
         # Prepare aggregator for controller - must be ModelAggregator for FLModel-based aggregation
         model_aggregator = self._get_model_aggregator()

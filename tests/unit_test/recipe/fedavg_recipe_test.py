@@ -529,6 +529,17 @@ class TestFedAvgRecipeValidation:
                 **base_recipe_params,
             )
 
+    def test_no_model_source_raises_error(self, mock_file_system, base_recipe_params):
+        """Recipe must fail fast when no model source is configured."""
+        with pytest.raises(ValueError, match="Must provide either model"):
+            FedAvgRecipe(
+                name="test_missing_model_source",
+                model=None,
+                model_persistor=None,
+                initial_ckpt=None,
+                **base_recipe_params,
+            )
+
 
 class TestFedAvgRecipeInitialCkpt:
     """Test initial_ckpt parameter for FedAvgRecipe."""

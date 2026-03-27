@@ -205,7 +205,12 @@ class XGBVerticalRecipe(Recipe):
         self.metrics_writer_id = v.metrics_writer_id
         self.in_process = v.in_process
         self.model_file_name = v.model_file_name
-        self.per_site_config = per_site_config or {}
+        if not per_site_config:
+            raise ValueError(
+                "per_site_config is required for XGBVerticalRecipe. "
+                "Each site must specify a 'data_loader' in the config dictionary."
+            )
+        self.per_site_config = per_site_config
 
         # Configure the job
         self.job = self.configure()

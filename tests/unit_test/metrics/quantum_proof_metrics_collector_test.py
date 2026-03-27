@@ -96,3 +96,26 @@ def test_aggregation_flow_publishes_metrics(monkeypatch):
     assert "quantum_proof_aggregation" in names
     assert "quantum_proof_aggregation_success" in names
     assert any(c["metric_name"] == "quantum_proof_aggregation" and "time_taken" in c["metrics"] for c in calls)
+
+
+def test_abort_task_clears_proof_timer(monkeypatch):
+    calls = []
+
+    def _capture(comp, streaming_to_server, metrics, metric_name, tags, data_bus, fl_ctx):
+        calls.append({"metric_name": metric_name, "metrics": metrics})
+
+    monkeypatch.setattr("nvflare.metrics.quantum_proof_metrics_collector.collect_metrics", _capture)
+
+    collector = QuantumProofMetricsCollector(tags={"site": "site-1"})
+    ctx = _Ctx("job-xyz")
+
+    collector.handle_event(EventType.BEFORE_TASK_EXECUTION, ctx)
+    collector.handle_event(EventType.ABORT_TASK, ctx)
+    collector.handle_event(EventType.AFTER_TASK_EXECUTION, ctx)
+
+    verify_elapsed = [
+        c
+        for c in calls
+        if c["metric_name"] == "quantum_proof_verify" and "time_taken" in c["metrics"]
+    ]
+    assert len(verify_elapsed) == 0
