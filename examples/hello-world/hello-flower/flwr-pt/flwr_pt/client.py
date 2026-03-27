@@ -17,9 +17,19 @@ from flwr.common import Context
 
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
-# Load model and data (simple CNN, CIFAR-10)
-net = Net().to(DEVICE)
-trainloader, testloader = load_data()
+# Module-level cache for model and data to avoid reloading every round
+net = None
+trainloader = None
+testloader = None
+
+
+def _ensure_data_loaded():
+    """Load model and data once, reusing cached values on subsequent calls."""
+    global net, trainloader, testloader
+    if net is None:
+        net = Net().to(DEVICE)
+    if trainloader is None or testloader is None:
+        trainloader, testloader = load_data()
 
 
 # Define FlowerClient and client_fn
@@ -50,6 +60,7 @@ class FlowerClient(NumPyClient):
 
 def client_fn(context: Context):
     """Create and return an instance of Flower `Client`."""
+    _ensure_data_loaded()
     learning_rate = context.run_config.get("learning-rate", 0.001)
     momentum = context.run_config.get("momentum", 0.9)
     return FlowerClient(learning_rate, momentum).to_client()
