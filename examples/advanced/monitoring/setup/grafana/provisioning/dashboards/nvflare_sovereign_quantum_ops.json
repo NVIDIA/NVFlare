@@ -314,12 +314,12 @@
       },
       "targets": [
         {
-          "expr": "avg_over_time(quantum_proof_verify_time_taken[5m]) by (site)",
+          "expr": "avg by (site) (avg_over_time(quantum_proof_verify_time_taken[5m]))",
           "legendFormat": "{{site}} verify latency",
           "refId": "A"
         },
         {
-          "expr": "avg_over_time(quantum_proof_aggregation_time_taken[5m]) by (site)",
+          "expr": "avg by (site) (avg_over_time(quantum_proof_aggregation_time_taken[5m]))",
           "legendFormat": "{{site}} aggregation latency",
           "refId": "B"
         }
