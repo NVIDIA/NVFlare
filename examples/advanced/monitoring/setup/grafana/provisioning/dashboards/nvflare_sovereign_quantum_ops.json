@@ -220,7 +220,7 @@
       },
       "targets": [
         {
-          "expr": "avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0)",
+          "expr": "max(avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0))",
           "legendFormat": "Avg Verify Latency",
           "refId": "A"
         }
