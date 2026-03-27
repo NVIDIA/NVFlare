@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import threading
+
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 from flwr.common.record import MetricRecord, RecordDict
@@ -24,19 +26,23 @@ import nvflare.client as flare
 # initializes NVFlare interface
 from nvflare.client.tracking import SummaryWriter
 
-# Module-level cache for model and data to avoid reloading every round
+# Module-level cache for model and data to avoid reloading every round.
+# Flower's supernode runs as a long-lived subprocess (not re-imported per round),
+# so module-level state persists across FL rounds.
 net = None
 trainloader = None
 testloader = None
+_init_lock = threading.Lock()
 
 
 def _ensure_data_loaded():
     """Load model and data once, reusing cached values on subsequent calls."""
     global net, trainloader, testloader
-    if net is None:
-        net = Net().to(DEVICE)
-    if trainloader is None or testloader is None:
-        trainloader, testloader = load_data()
+    with _init_lock:
+        if net is None:
+            net = Net().to(DEVICE)
+        if trainloader is None or testloader is None:
+            trainloader, testloader = load_data()
 
 
 # Define FlowerClient and client_fn
