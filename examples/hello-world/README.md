@@ -178,6 +178,22 @@ pip install -r requirements.txt
 python job.py
 ```
 
+#### [Hello NumPy Robust Aggregation](./hello-numpy-robust/)
+Demonstrate robust aggregation with an optional median aggregator under poisoned-client simulation.
+
+**What you'll learn:**
+- Plugging a custom `ModelAggregator` into Recipe API
+- Comparing baseline FedAvg and median aggregation behavior
+- Building small, reproducible robustness experiments in simulation
+
+**Run it:**
+```bash
+cd hello-numpy-robust
+pip install -r requirements.txt
+python job.py --aggregator default --poison_client_name site-1 --poison_scale 1000
+python job.py --aggregator median --poison_client_name site-1 --poison_scale 1000
+```
+
 ### Framework Integration
 
 #### [Hello Flower](./hello-flower/)
