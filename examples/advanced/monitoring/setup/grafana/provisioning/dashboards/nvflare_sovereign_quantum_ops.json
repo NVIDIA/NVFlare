@@ -381,7 +381,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(quantum_proof_verify_failure_count[5m])) / clamp_min(sum(rate(quantum_proof_verify_count[5m])), 1)",
+          "expr": "max((sum(rate(quantum_proof_verify_failure_count[5m])) / clamp_min(sum(rate(quantum_proof_verify_count[5m])), 1)) or vector(0))",
           "legendFormat": "Failure Ratio",
           "refId": "A"
         }

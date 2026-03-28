@@ -85,6 +85,27 @@ The dashboard also includes two congestion-focused indicators:
 - `Failure Ratio (5m)`
 - `Aggregation Pressure Ratio`
 
+If no failure samples exist in a window, `Failure Ratio (5m)` now falls back to `0` instead of showing no data.
+
+## 4) Auto-Tune Thresholds
+
+Use the auto-tuner to derive practical `--max-failure-ratio` and `--max-latency-ratio`
+from recent Prometheus history:
+
+```bash
+python3 nvflare_quantum_autotune.py \
+  --prom-url http://localhost:9090 \
+  --prom-user nvflare \
+  --prom-password nvflareprom \
+  --lookback-minutes 60 \
+  --step-seconds 30 \
+  --min-throughput-rps 1.0 \
+  --headroom-factor 1.2 \
+  --output autotune-report.json
+```
+
+Then apply the recommended values in readiness gate runs.
+
 Exit code behavior:
 
 - `0`: PASS
