@@ -170,7 +170,8 @@ def main() -> int:
     if args.prom_user:
         base_gate_cmd.extend(["--prom-user", args.prom_user])
     if args.prom_password:
-        base_gate_cmd.extend(["--prom-password", args.prom_password])
+        # Avoid embedding plaintext credentials in JSON reports or CI logs.
+        base_gate_cmd.extend(["--prom-password", "${NVFLARE_PROM_PASSWORD}"])
 
     profile_apply_cmd = " ".join(base_gate_cmd + ["--profile", profile])
     custom_apply_cmd = " ".join(

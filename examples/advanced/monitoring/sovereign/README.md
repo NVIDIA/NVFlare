@@ -41,6 +41,8 @@ If your clients stream metrics to the server, set `streaming_to_server=true` and
 From `examples/advanced/monitoring/setup`:
 
 ```bash
+export PROMETHEUS_HTPASSWD_FILE="$PWD/nginx/prometheus.htpasswd.local"
+htpasswd -bc "$PROMETHEUS_HTPASSWD_FILE" nvflare "<strong-password>"
 docker compose up -d
 ```
 
@@ -54,9 +56,7 @@ Security defaults in this setup:
 
 - All published ports are bound to `127.0.0.1` only.
 - Grafana admin password is read from `GRAFANA_ADMIN_PASSWORD` (defaults to `admin`).
-- Prometheus is exposed through an NGINX basic-auth proxy.
-  - Username: `nvflare`
-  - Password: `nvflareprom`
+- Prometheus is exposed through an NGINX basic-auth proxy backed by your local `PROMETHEUS_HTPASSWD_FILE`.
 
 The dashboard `NVFlare Sovereign Quantum Ops` is auto-provisioned.
 
@@ -65,10 +65,11 @@ The dashboard `NVFlare Sovereign Quantum Ops` is auto-provisioned.
 From `examples/advanced/monitoring/sovereign`:
 
 ```bash
+export NVFLARE_PROM_PASSWORD="<your-prometheus-password>"
 python3 nvflare_quantum_readiness_gate.py \
   --prom-url http://localhost:9090 \
   --prom-user nvflare \
-  --prom-password nvflareprom \
+  --prom-password "${NVFLARE_PROM_PASSWORD}" \
   --grafana-url http://localhost:3000 \
   --profile staging \
   --max-failure-ratio 0.10 \
@@ -105,10 +106,11 @@ Use the auto-tuner to derive practical `--max-failure-ratio` and `--max-latency-
 from recent Prometheus history:
 
 ```bash
+export NVFLARE_PROM_PASSWORD="<your-prometheus-password>"
 python3 nvflare_quantum_autotune.py \
   --prom-url http://localhost:9090 \
   --prom-user nvflare \
-  --prom-password nvflareprom \
+  --prom-password "${NVFLARE_PROM_PASSWORD}" \
   --lookback-minutes 60 \
   --step-seconds 30 \
   --min-throughput-rps 1.0 \
@@ -121,10 +123,11 @@ Then apply the recommended values in readiness gate runs.
 For CI pipelines, print shell exports directly:
 
 ```bash
+export NVFLARE_PROM_PASSWORD="<your-prometheus-password>"
 python3 nvflare_quantum_autotune.py \
   --prom-url http://localhost:9090 \
   --prom-user nvflare \
-  --prom-password nvflareprom \
+  --prom-password "${NVFLARE_PROM_PASSWORD}" \
   --print-shell-export
 ```
 

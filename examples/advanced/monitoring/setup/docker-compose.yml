@@ -36,7 +36,7 @@ services:
       - "127.0.0.1:9090:80"
     volumes:
       - ./nginx/prometheus.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/prometheus.htpasswd:/etc/nginx/.htpasswd:ro
+      - ${PROMETHEUS_HTPASSWD_FILE:?missing_PROMETHEUS_HTPASSWD_FILE}:/etc/nginx/.htpasswd:ro
 
   grafana:
     image: grafana/grafana
