@@ -23,6 +23,13 @@ import urllib.request
 from typing import List
 
 
+CONGESTION_PROFILES = {
+    "dev": {"max_failure_ratio": 0.20, "max_latency_ratio": 10.0},
+    "staging": {"max_failure_ratio": 0.10, "max_latency_ratio": 6.0},
+    "prod": {"max_failure_ratio": 0.05, "max_latency_ratio": 3.0},
+}
+
+
 def build_basic_auth_header(username: str = "", password: str = "") -> str:
     if not username:
         return ""
@@ -57,8 +64,11 @@ def wait_json(url: str, expect_key: str, retries: int, delay_seconds: float, aut
     raise RuntimeError(last_error or f"failed waiting for {url}")
 
 
-def query_vector(prom_url: str, expr: str, auth_header: str = "") -> List[dict]:
-    query = urllib.parse.urlencode({"query": expr})
+def query_vector(prom_url: str, expr: str, auth_header: str = "", query_time: float | None = None) -> List[dict]:
+    params = {"query": expr}
+    if query_time is not None:
+        params["time"] = str(query_time)
+    query = urllib.parse.urlencode(params)
     if auth_header:
         payload = fetch_json(f"{prom_url}/api/v1/query?{query}", auth_header=auth_header)
     else:
@@ -68,11 +78,18 @@ def query_vector(prom_url: str, expr: str, auth_header: str = "") -> List[dict]:
     return payload.get("data", {}).get("result", [])
 
 
-def query_scalar(prom_url: str, expr: str, auth_header: str = "") -> float:
-    result = query_vector(prom_url, expr, auth_header=auth_header)
+def query_scalar(prom_url: str, expr: str, auth_header: str = "", query_time: float | None = None) -> float:
+    result = query_vector(prom_url, expr, auth_header=auth_header, query_time=query_time)
     if not result:
         return 0.0
     return float(result[0]["value"][1])
+
+
+def resolve_thresholds(profile: str, max_failure_ratio: float, max_latency_ratio: float) -> tuple[float, float]:
+    if profile in CONGESTION_PROFILES:
+        p = CONGESTION_PROFILES[profile]
+        return p["max_failure_ratio"], p["max_latency_ratio"]
+    return max_failure_ratio, max_latency_ratio
 
 
 def check_targets(prom_url: str, required_instances: List[str], auth_header: str = "") -> List[str]:
@@ -137,38 +154,78 @@ def check_congestion_risk(
     prom_url: str,
     max_failure_ratio: float,
     max_latency_ratio: float,
+    consecutive_breaches: int = 1,
+    sample_step_minutes: int = 5,
     auth_header: str = "",
 ) -> List[str]:
     failures = []
 
-    verify_rate = query_scalar(prom_url, "sum(rate(quantum_proof_verify_count[5m]))", auth_header=auth_header)
-    failure_rate = query_scalar(prom_url, "sum(rate(quantum_proof_verify_failure_count[5m]))", auth_header=auth_header)
-    verify_latency = query_scalar(
-        prom_url,
-        "max(avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0))",
-        auth_header=auth_header,
-    )
-    agg_latency = query_scalar(
-        prom_url,
-        "max(avg_over_time(quantum_proof_aggregation_time_taken[5m]) or vector(0))",
-        auth_header=auth_header,
-    )
+    consecutive_breaches = max(1, consecutive_breaches)
+    sample_step_minutes = max(1, sample_step_minutes)
 
-    if verify_rate <= 0:
-        return failures
+    failure_breaches = 0
+    latency_breaches = 0
+    latest_failure_ratio = 0.0
+    latest_latency_ratio = 0.0
 
-    failure_ratio = failure_rate / max(verify_rate, 1e-9)
-    if failure_ratio > max_failure_ratio:
-        failures.append(
-            f"failure ratio too high: {failure_ratio:.4f} exceeds threshold {max_failure_ratio:.4f}"
+    for i in range(consecutive_breaches):
+        sample_time = time.time() - (i * sample_step_minutes * 60)
+
+        verify_rate = query_scalar(
+            prom_url,
+            "sum(rate(quantum_proof_verify_count[5m]))",
+            auth_header=auth_header,
+            query_time=sample_time,
+        )
+        failure_rate = query_scalar(
+            prom_url,
+            "sum(rate(quantum_proof_verify_failure_count[5m]))",
+            auth_header=auth_header,
+            query_time=sample_time,
+        )
+        verify_latency = query_scalar(
+            prom_url,
+            "max(avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0))",
+            auth_header=auth_header,
+            query_time=sample_time,
+        )
+        agg_latency = query_scalar(
+            prom_url,
+            "max(avg_over_time(quantum_proof_aggregation_time_taken[5m]) or vector(0))",
+            auth_header=auth_header,
+            query_time=sample_time,
         )
 
-    if verify_latency > 0:
-        latency_ratio = agg_latency / verify_latency
+        if verify_rate <= 0:
+            continue
+
+        failure_ratio = failure_rate / max(verify_rate, 1e-9)
+        latency_ratio = 0.0
+        if verify_latency > 0:
+            latency_ratio = agg_latency / verify_latency
+
+        if i == 0:
+            latest_failure_ratio = failure_ratio
+            latest_latency_ratio = latency_ratio
+
+        if failure_ratio > max_failure_ratio:
+            failure_breaches += 1
         if latency_ratio > max_latency_ratio:
-            failures.append(
-                f"aggregation/verify latency ratio too high: {latency_ratio:.4f} exceeds threshold {max_latency_ratio:.4f}"
-            )
+            latency_breaches += 1
+
+    if failure_breaches >= consecutive_breaches:
+        failures.append(
+            "failure ratio too high for "
+            f"{consecutive_breaches} consecutive samples: latest={latest_failure_ratio:.4f}, "
+            f"threshold={max_failure_ratio:.4f}"
+        )
+
+    if latency_breaches >= consecutive_breaches:
+        failures.append(
+            "aggregation/verify latency ratio too high for "
+            f"{consecutive_breaches} consecutive samples: latest={latest_latency_ratio:.4f}, "
+            f"threshold={max_latency_ratio:.4f}"
+        )
 
     return failures
 
@@ -183,6 +240,12 @@ def main() -> int:
     parser.add_argument("--prom-password", default="", help="Prometheus basic-auth password (optional)")
     parser.add_argument("--grafana-user", default="", help="Grafana basic-auth username (optional)")
     parser.add_argument("--grafana-password", default="", help="Grafana basic-auth password (optional)")
+    parser.add_argument(
+        "--profile",
+        choices=["custom", "dev", "staging", "prod"],
+        default="custom",
+        help="Congestion profile preset. If set, profile thresholds override explicit max-ratio args.",
+    )
     parser.add_argument(
         "--required-target",
         action="append",
@@ -218,8 +281,26 @@ def main() -> int:
         default=4.0,
         help="Maximum allowed aggregation/verify latency ratio over 5m before congestion check fails.",
     )
+    parser.add_argument(
+        "--consecutive-breaches",
+        type=int,
+        default=1,
+        help="Require this many consecutive breached samples before congestion check fails.",
+    )
+    parser.add_argument(
+        "--congestion-sample-step-minutes",
+        type=int,
+        default=5,
+        help="Minutes between historical samples used for consecutive breach detection.",
+    )
     parser.add_argument("--output", default="-", help="Output report path, or '-' for stdout")
     args = parser.parse_args()
+
+    effective_failure_ratio, effective_latency_ratio = resolve_thresholds(
+        args.profile,
+        args.max_failure_ratio,
+        args.max_latency_ratio,
+    )
 
     prom_url = args.prom_url
     grafana_url = args.grafana_url
@@ -232,8 +313,11 @@ def main() -> int:
         "details": {
             "required_targets": args.required_targets,
             "required_metrics": args.required_metrics,
-            "max_failure_ratio": args.max_failure_ratio,
-            "max_latency_ratio": args.max_latency_ratio,
+            "profile": args.profile,
+            "max_failure_ratio": effective_failure_ratio,
+            "max_latency_ratio": effective_latency_ratio,
+            "consecutive_breaches": args.consecutive_breaches,
+            "congestion_sample_step_minutes": args.congestion_sample_step_minutes,
         },
     }
 
@@ -320,15 +404,19 @@ def main() -> int:
         if prom_auth:
             congestion_failures = check_congestion_risk(
                 prom_url,
-                args.max_failure_ratio,
-                args.max_latency_ratio,
+                effective_failure_ratio,
+                effective_latency_ratio,
+                consecutive_breaches=args.consecutive_breaches,
+                sample_step_minutes=args.congestion_sample_step_minutes,
                 auth_header=prom_auth,
             )
         else:
             congestion_failures = check_congestion_risk(
                 prom_url,
-                args.max_failure_ratio,
-                args.max_latency_ratio,
+                effective_failure_ratio,
+                effective_latency_ratio,
+                consecutive_breaches=args.consecutive_breaches,
+                sample_step_minutes=args.congestion_sample_step_minutes,
             )
         report["checks"]["congestion_within_threshold"] = len(congestion_failures) == 0
         failures.extend(congestion_failures)

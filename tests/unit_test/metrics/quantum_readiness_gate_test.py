@@ -103,7 +103,7 @@ def test_build_basic_auth_header():
 def test_check_congestion_risk_reports_threshold_breach(monkeypatch):
     gate = _load_gate_module()
 
-    def _query_scalar(prom_url, expr, auth_header=""):
+    def _query_scalar(prom_url, expr, auth_header="", query_time=None):
         if "verify_count" in expr:
             return 10.0
         if "failure_count" in expr:
@@ -119,3 +119,50 @@ def test_check_congestion_risk_reports_threshold_breach(monkeypatch):
     assert len(failures) == 2
     assert any("failure ratio too high" in f for f in failures)
     assert any("latency ratio too high" in f for f in failures)
+
+
+def test_resolve_thresholds_profile_prod():
+    gate = _load_gate_module()
+    f, l = gate.resolve_thresholds("prod", 0.2, 10.0)
+    assert f == 0.05
+    assert l == 3.0
+
+
+def test_check_congestion_risk_requires_consecutive(monkeypatch):
+    gate = _load_gate_module()
+
+    _current_time = 1_700_000_000.0
+    monkeypatch.setattr(gate.time, "time", lambda: _current_time)
+
+    def _query_scalar(prom_url, expr, auth_header="", query_time=None):
+        # Latest sample breaches, previous sample does not.
+        if query_time is not None and query_time < _current_time:
+            if "verify_count" in expr:
+                return 10.0
+            if "failure_count" in expr:
+                return 0.2
+            if "verify_time_taken" in expr:
+                return 0.2
+            if "aggregation_time_taken" in expr:
+                return 0.3
+            return 0.0
+
+        if "verify_count" in expr:
+            return 10.0
+        if "failure_count" in expr:
+            return 2.0
+        if "verify_time_taken" in expr:
+            return 0.1
+        if "aggregation_time_taken" in expr:
+            return 0.8
+        return 0.0
+
+    monkeypatch.setattr(gate, "query_scalar", _query_scalar)
+    failures = gate.check_congestion_risk(
+        "http://localhost:9090",
+        max_failure_ratio=0.1,
+        max_latency_ratio=4.0,
+        consecutive_breaches=2,
+        sample_step_minutes=5,
+    )
+    assert failures == []

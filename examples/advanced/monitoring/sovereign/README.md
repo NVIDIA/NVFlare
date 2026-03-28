@@ -70,8 +70,11 @@ python3 nvflare_quantum_readiness_gate.py \
   --prom-user nvflare \
   --prom-password nvflareprom \
   --grafana-url http://localhost:3000 \
+  --profile staging \
   --max-failure-ratio 0.10 \
   --max-latency-ratio 4.0 \
+  --consecutive-breaches 2 \
+  --congestion-sample-step-minutes 5 \
   --output readiness-report.json
 ```
 
@@ -79,6 +82,15 @@ Congestion guardrails in readiness gate:
 
 - `--max-failure-ratio`: maximum allowed `failure/verify` ratio over 5m.
 - `--max-latency-ratio`: maximum allowed `aggregation_latency/verify_latency` ratio over 5m.
+- `--consecutive-breaches`: requires repeated breach samples before failing.
+- `--congestion-sample-step-minutes`: spacing for historical samples used in consecutive checks.
+
+Profiles:
+
+- `--profile dev`: relaxed defaults (`0.20`, `10.0`)
+- `--profile staging`: medium defaults (`0.10`, `6.0`)
+- `--profile prod`: strict defaults (`0.05`, `3.0`)
+- `--profile custom`: uses explicit `--max-*` arguments
 
 The dashboard also includes two congestion-focused indicators:
 
