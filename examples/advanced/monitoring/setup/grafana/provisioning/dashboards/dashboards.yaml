@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: NVFlare Sovereign Dashboards
+    orgId: 1
+    folder: NVFlare Sovereign
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

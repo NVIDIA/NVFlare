@@ -115,6 +115,23 @@ class TestXGBVerticalRecipe:
             assert run.get_result() is not None
             assert os.path.exists(run.get_result())
 
+    @staticmethod
+    def _default_per_site_config():
+        return {
+            "site-1": {"data_loader": MockVerticalDataLoader(has_labels=True, n_samples=20, n_features=2)},
+            "site-2": {"data_loader": MockVerticalDataLoader(has_labels=False, n_samples=20, n_features=2)},
+        }
+
+    def test_per_site_config_required(self):
+        with pytest.raises(ValueError, match="per_site_config is required for XGBVerticalRecipe"):
+            XGBVerticalRecipe(
+                name="test_missing_per_site_config",
+                min_clients=2,
+                num_rounds=1,
+                label_owner="site-1",
+                per_site_config=None,
+            )
+
     def test_label_owner_validation(self):
         """Test that label_owner validation works correctly."""
         # Valid format
@@ -123,6 +140,7 @@ class TestXGBVerticalRecipe:
             min_clients=2,
             num_rounds=1,
             label_owner="site-1",  # Valid
+            per_site_config=self._default_per_site_config(),
         )
         assert recipe.label_owner == "site-1"
 
@@ -133,6 +151,7 @@ class TestXGBVerticalRecipe:
                 min_clients=2,
                 num_rounds=1,
                 label_owner="client1",  # Invalid format
+                per_site_config=self._default_per_site_config(),
             )
 
     def test_custom_xgb_params(self):
@@ -152,6 +171,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             xgb_params=custom_params,
+            per_site_config=self._default_per_site_config(),
         )
 
         # Verify params are stored
@@ -191,6 +211,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=True,  # Default
+            per_site_config=self._default_per_site_config(),
         )
         assert recipe.in_process is True
 
@@ -200,6 +221,7 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=False,
+            per_site_config=self._default_per_site_config(),
         )
         assert recipe2.in_process is False
 
@@ -212,5 +234,6 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             model_file_name=custom_name,
+            per_site_config=self._default_per_site_config(),
         )
         assert recipe.model_file_name == custom_name

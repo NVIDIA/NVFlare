@@ -40,6 +40,36 @@ POSTFIX = "_copy"
 REQUIREMENTS_TO_EXCLUDE = ["nvflare", "jupyter", "notebook"]
 
 
+def cleanup_stale_integration_processes():
+    """Best-effort cleanup for stale integration test processes.
+
+    Re-running integration suites in the same environment can leave background
+    server/client or pytest processes alive when a prior run is interrupted.
+    Those stale processes can keep ports (for example 8002/8003) occupied and
+    trigger TLS/session mismatches in subsequent runs.
+    """
+
+    cleanup_patterns = [
+        # NVFlare runtime processes spawned by integration tests
+        "nvflare.private.fed.app.server.server_train",
+        "nvflare.private.fed.app.client.client_train",
+        # Provisioned workspace used by integration tests
+        "tests/integration_test/ci_workspace",
+        "example_project/prod_00",
+    ]
+
+    for pattern in cleanup_patterns:
+        # Best effort only: keep setup resilient even if no processes match.
+        run_command_in_subprocess(f"pkill -TERM -f {shlex.quote(pattern)}")
+
+    # Give processes a brief grace period to shutdown cleanly.
+    time.sleep(0.5)
+
+    for pattern in cleanup_patterns:
+        # Force kill only if anything is still around after SIGTERM.
+        run_command_in_subprocess(f"pkill -KILL -f {shlex.quote(pattern)}")
+
+
 def read_yaml(yaml_file_path):
     if not os.path.exists(yaml_file_path):
         raise RuntimeError(f"Yaml file doesnt' exist at {yaml_file_path}")

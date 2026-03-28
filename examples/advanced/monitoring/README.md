@@ -373,6 +373,10 @@ in server side (such "server") ```<startup>/<site-name>/local/resources.json```
 The configuration for this setup should be the same as setup 1, the only differences are the statsd-exporters' hosts and ports are not the same. 
 The configuration for this setup should be the same as setup 1, with the only differences being the StatsD Exporter's hosts and ports.
 
+## Sovereign Quantum Profile
+
+For a production-grade profile inspired by Sovereign-Mohawk-Proto (readiness gate checks, quantum-proof operational metrics, and a provisioned Grafana dashboard), see [sovereign/README.md](sovereign/README.md).
+
 ### Summary
 
 By following the steps outlined above, you can set up NVFLARE to publish metrics to StatsD Exporter, Prometheus, and Grafana, using one of the three setup types that best fits your needs.

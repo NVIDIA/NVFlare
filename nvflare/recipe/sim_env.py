@@ -104,10 +104,16 @@ class SimEnv(ExecEnv):
                 f"For SimEnv, all scripts must be present on the local machine."
             )
 
+        clients = self.clients
+        if clients is None:
+            # Always pass explicit client names to avoid conflict with jobs that already
+            # specify targets via job.to(..., "site-x") APIs.
+            clients = [f"site-{i}" for i in range(1, self.num_clients + 1)]
+
         job.simulator_run(
             workspace=os.path.join(self.workspace_root, job.name),
-            n_clients=self.num_clients if self.clients is None else None,
-            clients=self.clients,
+            n_clients=None,
+            clients=clients,
             threads=self.num_threads,
             gpu=self.gpu_config,
             log_config=self.log_config,
