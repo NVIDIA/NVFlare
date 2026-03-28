@@ -70,8 +70,20 @@ python3 nvflare_quantum_readiness_gate.py \
   --prom-user nvflare \
   --prom-password nvflareprom \
   --grafana-url http://localhost:3000 \
+  --max-failure-ratio 0.10 \
+  --max-latency-ratio 4.0 \
   --output readiness-report.json
 ```
+
+Congestion guardrails in readiness gate:
+
+- `--max-failure-ratio`: maximum allowed `failure/verify` ratio over 5m.
+- `--max-latency-ratio`: maximum allowed `aggregation_latency/verify_latency` ratio over 5m.
+
+The dashboard also includes two congestion-focused indicators:
+
+- `Failure Ratio (5m)`
+- `Aggregation Pressure Ratio`
 
 Exit code behavior:
 

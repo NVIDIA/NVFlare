@@ -76,6 +76,7 @@ def test_main_returns_pass_and_writes_report(monkeypatch, tmp_path):
     monkeypatch.setattr(gate, "check_targets", lambda prom_url, required_instances: [])
     monkeypatch.setattr(gate, "check_metric_names", lambda prom_url, required_metrics: [])
     monkeypatch.setattr(gate, "check_quantum_path", lambda prom_url: [])
+    monkeypatch.setattr(gate, "check_congestion_risk", lambda *args, **kwargs: [])
 
     out_file = tmp_path / "report.json"
     monkeypatch.setattr(
@@ -97,3 +98,24 @@ def test_build_basic_auth_header():
     gate = _load_gate_module()
     auth_header = gate.build_basic_auth_header("user", "pass")
     assert auth_header == "Basic dXNlcjpwYXNz"
+
+
+def test_check_congestion_risk_reports_threshold_breach(monkeypatch):
+    gate = _load_gate_module()
+
+    def _query_scalar(prom_url, expr, auth_header=""):
+        if "verify_count" in expr:
+            return 10.0
+        if "failure_count" in expr:
+            return 2.0
+        if "verify_time_taken" in expr:
+            return 0.1
+        if "aggregation_time_taken" in expr:
+            return 0.8
+        return 0.0
+
+    monkeypatch.setattr(gate, "query_scalar", _query_scalar)
+    failures = gate.check_congestion_risk("http://localhost:9090", max_failure_ratio=0.1, max_latency_ratio=4.0)
+    assert len(failures) == 2
+    assert any("failure ratio too high" in f for f in failures)
+    assert any("latency ratio too high" in f for f in failures)

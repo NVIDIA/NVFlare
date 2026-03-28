@@ -68,6 +68,13 @@ def query_vector(prom_url: str, expr: str, auth_header: str = "") -> List[dict]:
     return payload.get("data", {}).get("result", [])
 
 
+def query_scalar(prom_url: str, expr: str, auth_header: str = "") -> float:
+    result = query_vector(prom_url, expr, auth_header=auth_header)
+    if not result:
+        return 0.0
+    return float(result[0]["value"][1])
+
+
 def check_targets(prom_url: str, required_instances: List[str], auth_header: str = "") -> List[str]:
     if auth_header:
         payload = fetch_json(f"{prom_url}/api/v1/targets", auth_header=auth_header)
@@ -126,6 +133,46 @@ def check_quantum_path(prom_url: str, auth_header: str = "") -> List[str]:
     return failures
 
 
+def check_congestion_risk(
+    prom_url: str,
+    max_failure_ratio: float,
+    max_latency_ratio: float,
+    auth_header: str = "",
+) -> List[str]:
+    failures = []
+
+    verify_rate = query_scalar(prom_url, "sum(rate(quantum_proof_verify_count[5m]))", auth_header=auth_header)
+    failure_rate = query_scalar(prom_url, "sum(rate(quantum_proof_verify_failure_count[5m]))", auth_header=auth_header)
+    verify_latency = query_scalar(
+        prom_url,
+        "max(avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0))",
+        auth_header=auth_header,
+    )
+    agg_latency = query_scalar(
+        prom_url,
+        "max(avg_over_time(quantum_proof_aggregation_time_taken[5m]) or vector(0))",
+        auth_header=auth_header,
+    )
+
+    if verify_rate <= 0:
+        return failures
+
+    failure_ratio = failure_rate / max(verify_rate, 1e-9)
+    if failure_ratio > max_failure_ratio:
+        failures.append(
+            f"failure ratio too high: {failure_ratio:.4f} exceeds threshold {max_failure_ratio:.4f}"
+        )
+
+    if verify_latency > 0:
+        latency_ratio = agg_latency / verify_latency
+        if latency_ratio > max_latency_ratio:
+            failures.append(
+                f"aggregation/verify latency ratio too high: {latency_ratio:.4f} exceeds threshold {max_latency_ratio:.4f}"
+            )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Readiness gate for NVFlare Sovereign quantum-proof observability profile."
@@ -159,6 +206,18 @@ def main() -> int:
     )
     parser.add_argument("--retries", type=int, default=30, help="Retries per health check")
     parser.add_argument("--delay", type=float, default=2.0, help="Delay in seconds between retries")
+    parser.add_argument(
+        "--max-failure-ratio",
+        type=float,
+        default=0.10,
+        help="Maximum allowed failure ratio over 5m before congestion check fails.",
+    )
+    parser.add_argument(
+        "--max-latency-ratio",
+        type=float,
+        default=4.0,
+        help="Maximum allowed aggregation/verify latency ratio over 5m before congestion check fails.",
+    )
     parser.add_argument("--output", default="-", help="Output report path, or '-' for stdout")
     args = parser.parse_args()
 
@@ -173,6 +232,8 @@ def main() -> int:
         "details": {
             "required_targets": args.required_targets,
             "required_metrics": args.required_metrics,
+            "max_failure_ratio": args.max_failure_ratio,
+            "max_latency_ratio": args.max_latency_ratio,
         },
     }
 
@@ -254,6 +315,26 @@ def main() -> int:
     except Exception as e:
         report["checks"]["quantum_path_queries"] = False
         failures.append(f"quantum path checks failed: {e}")
+
+    try:
+        if prom_auth:
+            congestion_failures = check_congestion_risk(
+                prom_url,
+                args.max_failure_ratio,
+                args.max_latency_ratio,
+                auth_header=prom_auth,
+            )
+        else:
+            congestion_failures = check_congestion_risk(
+                prom_url,
+                args.max_failure_ratio,
+                args.max_latency_ratio,
+            )
+        report["checks"]["congestion_within_threshold"] = len(congestion_failures) == 0
+        failures.extend(congestion_failures)
+    except Exception as e:
+        report["checks"]["congestion_within_threshold"] = False
+        failures.append(f"congestion checks failed: {e}")
 
     report["status"] = "PASS" if len(failures) == 0 else "FAIL"
     report["failures"] = failures
