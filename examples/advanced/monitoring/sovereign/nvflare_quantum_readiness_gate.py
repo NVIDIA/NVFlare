@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import argparse
+import base64
 import json
 import time
 import urllib.error
@@ -22,17 +23,29 @@ import urllib.request
 from typing import List
 
 
-def fetch_json(url: str, timeout: float = 5.0) -> dict:
+def build_basic_auth_header(username: str = "", password: str = "") -> str:
+    if not username:
+        return ""
+    token = base64.b64encode(f"{username}:{password or ''}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
+def fetch_json(url: str, timeout: float = 5.0, auth_header: str = "") -> dict:
     req = urllib.request.Request(url, method="GET")
+    if auth_header:
+        req.add_header("Authorization", auth_header)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def wait_json(url: str, expect_key: str, retries: int, delay_seconds: float) -> dict:
+def wait_json(url: str, expect_key: str, retries: int, delay_seconds: float, auth_header: str = "") -> dict:
     last_error = None
     for _ in range(retries):
         try:
-            payload = fetch_json(url)
+            if auth_header:
+                payload = fetch_json(url, auth_header=auth_header)
+            else:
+                payload = fetch_json(url)
             if not expect_key:
                 return payload
             if expect_key in payload:
@@ -44,16 +57,22 @@ def wait_json(url: str, expect_key: str, retries: int, delay_seconds: float) -> 
     raise RuntimeError(last_error or f"failed waiting for {url}")
 
 
-def query_vector(prom_url: str, expr: str) -> List[dict]:
+def query_vector(prom_url: str, expr: str, auth_header: str = "") -> List[dict]:
     query = urllib.parse.urlencode({"query": expr})
-    payload = fetch_json(f"{prom_url}/api/v1/query?{query}")
+    if auth_header:
+        payload = fetch_json(f"{prom_url}/api/v1/query?{query}", auth_header=auth_header)
+    else:
+        payload = fetch_json(f"{prom_url}/api/v1/query?{query}")
     if payload.get("status") != "success":
         return []
     return payload.get("data", {}).get("result", [])
 
 
-def check_targets(prom_url: str, required_instances: List[str]) -> List[str]:
-    payload = fetch_json(f"{prom_url}/api/v1/targets")
+def check_targets(prom_url: str, required_instances: List[str], auth_header: str = "") -> List[str]:
+    if auth_header:
+        payload = fetch_json(f"{prom_url}/api/v1/targets", auth_header=auth_header)
+    else:
+        payload = fetch_json(f"{prom_url}/api/v1/targets")
     active_targets = payload.get("data", {}).get("activeTargets", [])
 
     healthy = set()
@@ -70,8 +89,11 @@ def check_targets(prom_url: str, required_instances: List[str]) -> List[str]:
     return failures
 
 
-def check_metric_names(prom_url: str, required_metrics: List[str]) -> List[str]:
-    payload = fetch_json(f"{prom_url}/api/v1/label/__name__/values")
+def check_metric_names(prom_url: str, required_metrics: List[str], auth_header: str = "") -> List[str]:
+    if auth_header:
+        payload = fetch_json(f"{prom_url}/api/v1/label/__name__/values", auth_header=auth_header)
+    else:
+        payload = fetch_json(f"{prom_url}/api/v1/label/__name__/values")
     metric_names = set(payload.get("data", []))
 
     failures = []
@@ -81,7 +103,7 @@ def check_metric_names(prom_url: str, required_metrics: List[str]) -> List[str]:
     return failures
 
 
-def check_quantum_path(prom_url: str) -> List[str]:
+def check_quantum_path(prom_url: str, auth_header: str = "") -> List[str]:
     checks = {
         "quantum_path_ready": "max(quantum_path_ready)",
         "pqc_controls_enabled": "min(quantum_pqc_controls_migration_enabled * quantum_pqc_controls_legacy_lock_enabled)",
@@ -91,7 +113,10 @@ def check_quantum_path(prom_url: str) -> List[str]:
     failures = []
     for check_name, expr in checks.items():
         try:
-            result = query_vector(prom_url, expr)
+            if auth_header:
+                result = query_vector(prom_url, expr, auth_header=auth_header)
+            else:
+                result = query_vector(prom_url, expr)
         except Exception as e:
             failures.append(f"query failed for {check_name}: {e}")
             continue
@@ -107,6 +132,10 @@ def main() -> int:
     )
     parser.add_argument("--prom-url", default="http://localhost:9090", help="Prometheus base URL")
     parser.add_argument("--grafana-url", default="http://localhost:3000", help="Grafana base URL")
+    parser.add_argument("--prom-user", default="", help="Prometheus basic-auth username (optional)")
+    parser.add_argument("--prom-password", default="", help="Prometheus basic-auth password (optional)")
+    parser.add_argument("--grafana-user", default="", help="Grafana basic-auth username (optional)")
+    parser.add_argument("--grafana-password", default="", help="Grafana basic-auth password (optional)")
     parser.add_argument(
         "--required-target",
         action="append",
@@ -133,6 +162,11 @@ def main() -> int:
     parser.add_argument("--output", default="-", help="Output report path, or '-' for stdout")
     args = parser.parse_args()
 
+    prom_url = args.prom_url
+    grafana_url = args.grafana_url
+    prom_auth = build_basic_auth_header(args.prom_user, args.prom_password)
+    grafana_auth = build_basic_auth_header(args.grafana_user, args.grafana_password)
+
     report = {
         "profile": "nvflare-sovereign-quantum",
         "checks": {},
@@ -145,24 +179,42 @@ def main() -> int:
     failures = []
 
     try:
-        _ = wait_json(
-            f"{args.prom_url}/api/v1/status/buildinfo",
-            expect_key="status",
-            retries=args.retries,
-            delay_seconds=args.delay,
-        )
+        if prom_auth:
+            _ = wait_json(
+                f"{prom_url}/api/v1/status/buildinfo",
+                expect_key="status",
+                retries=args.retries,
+                delay_seconds=args.delay,
+                auth_header=prom_auth,
+            )
+        else:
+            _ = wait_json(
+                f"{prom_url}/api/v1/status/buildinfo",
+                expect_key="status",
+                retries=args.retries,
+                delay_seconds=args.delay,
+            )
         report["checks"]["prometheus_health"] = True
     except Exception as e:
         report["checks"]["prometheus_health"] = False
         failures.append(f"prometheus health check failed: {e}")
 
     try:
-        grafana_health = wait_json(
-            f"{args.grafana_url}/api/health",
-            expect_key="database",
-            retries=args.retries,
-            delay_seconds=args.delay,
-        )
+        if grafana_auth:
+            grafana_health = wait_json(
+                f"{grafana_url}/api/health",
+                expect_key="database",
+                retries=args.retries,
+                delay_seconds=args.delay,
+                auth_header=grafana_auth,
+            )
+        else:
+            grafana_health = wait_json(
+                f"{grafana_url}/api/health",
+                expect_key="database",
+                retries=args.retries,
+                delay_seconds=args.delay,
+            )
         report["checks"]["grafana_health"] = grafana_health.get("database") == "ok"
         if not report["checks"]["grafana_health"]:
             failures.append(f"grafana database not ok: {grafana_health}")
@@ -171,7 +223,10 @@ def main() -> int:
         failures.append(f"grafana health check failed: {e}")
 
     try:
-        target_failures = check_targets(args.prom_url, args.required_targets)
+        if prom_auth:
+            target_failures = check_targets(prom_url, args.required_targets, auth_header=prom_auth)
+        else:
+            target_failures = check_targets(prom_url, args.required_targets)
         report["checks"]["targets_up"] = len(target_failures) == 0
         failures.extend(target_failures)
     except Exception as e:
@@ -179,7 +234,10 @@ def main() -> int:
         failures.append(f"target checks failed: {e}")
 
     try:
-        metric_failures = check_metric_names(args.prom_url, args.required_metrics)
+        if prom_auth:
+            metric_failures = check_metric_names(prom_url, args.required_metrics, auth_header=prom_auth)
+        else:
+            metric_failures = check_metric_names(prom_url, args.required_metrics)
         report["checks"]["required_metrics_present"] = len(metric_failures) == 0
         failures.extend(metric_failures)
     except Exception as e:
@@ -187,7 +245,10 @@ def main() -> int:
         failures.append(f"metric checks failed: {e}")
 
     try:
-        quantum_failures = check_quantum_path(args.prom_url)
+        if prom_auth:
+            quantum_failures = check_quantum_path(prom_url, auth_header=prom_auth)
+        else:
+            quantum_failures = check_quantum_path(prom_url)
         report["checks"]["quantum_path_queries"] = len(quantum_failures) == 0
         failures.extend(quantum_failures)
     except Exception as e:

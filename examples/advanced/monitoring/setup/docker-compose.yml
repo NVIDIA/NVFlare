@@ -6,9 +6,9 @@ services:
     image: prom/statsd-exporter:latest
     container_name: statsd-exporter
     ports:
-      - "9102:9102" # Prometheus metrics endpoint
-      - "9125:9125"
-      - "9125:9125/udp"
+      - "127.0.0.1:9102:9102" # Prometheus metrics endpoint
+      - "127.0.0.1:9125:9125"
+      - "127.0.0.1:9125:9125/udp"
     networks:
       - monitoring
 
@@ -20,25 +20,38 @@ services:
       - statsd-exporter
     networks:
       - monitoring
-    ports:
-      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  prometheus-proxy:
+    image: nginx:alpine
+    container_name: prometheus-proxy
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    ports:
+      - "127.0.0.1:9090:80"
+    volumes:
+      - ./nginx/prometheus.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/prometheus.htpasswd:/etc/nginx/.htpasswd:ro
 
   grafana:
     image: grafana/grafana
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
     networks:
       - monitoring
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     restart: always
     depends_on:
-      - prometheus
+      - prometheus-proxy
 
 networks:
   monitoring:

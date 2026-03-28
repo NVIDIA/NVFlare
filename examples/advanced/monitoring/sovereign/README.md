@@ -47,8 +47,16 @@ docker compose up -d
 Endpoints:
 
 - Grafana: `http://localhost:3000`
-- Prometheus: `http://localhost:9090`
+- Prometheus (basic-auth protected proxy): `http://localhost:9090`
 - StatsD exporter metrics: `http://localhost:9102/metrics`
+
+Security defaults in this setup:
+
+- All published ports are bound to `127.0.0.1` only.
+- Grafana admin password is read from `GRAFANA_ADMIN_PASSWORD` (defaults to `admin`).
+- Prometheus is exposed through an NGINX basic-auth proxy.
+  - Username: `nvflare`
+  - Password: `nvflareprom`
 
 The dashboard `NVFlare Sovereign Quantum Ops` is auto-provisioned.
 
@@ -59,6 +67,8 @@ From `examples/advanced/monitoring/sovereign`:
 ```bash
 python3 nvflare_quantum_readiness_gate.py \
   --prom-url http://localhost:9090 \
+  --prom-user nvflare \
+  --prom-password nvflareprom \
   --grafana-url http://localhost:3000 \
   --output readiness-report.json
 ```

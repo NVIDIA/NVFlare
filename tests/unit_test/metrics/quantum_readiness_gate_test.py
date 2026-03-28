@@ -91,3 +91,9 @@ def test_main_returns_pass_and_writes_report(monkeypatch, tmp_path):
     assert rc == 0
     assert out_file.exists()
     assert '"status": "PASS"' in out_file.read_text(encoding="utf-8")
+
+
+def test_build_basic_auth_header():
+    gate = _load_gate_module()
+    auth_header = gate.build_basic_auth_header("user", "pass")
+    assert auth_header == "Basic dXNlcjpwYXNz"
