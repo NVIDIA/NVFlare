@@ -121,6 +121,11 @@ def main() -> int:
         default=1.2,
         help="Multiply p95 by this factor for threshold recommendation",
     )
+    parser.add_argument(
+        "--print-shell-export",
+        action="store_true",
+        help="Print shell export lines for CI (stdout). If set, JSON still writes to --output when --output is a file.",
+    )
     parser.add_argument("--output", default="-", help="Output file path or '-' for stdout")
     args = parser.parse_args()
 
@@ -196,6 +201,11 @@ def main() -> int:
             "recommended_profile": profile,
             "max_failure_ratio": round(rec_fail, 6),
             "max_latency_ratio": round(rec_lat, 6),
+            "shell_exports": {
+                "NVFLARE_RECOMMENDED_PROFILE": profile,
+                "NVFLARE_MAX_FAILURE_RATIO": f"{rec_fail:.6f}",
+                "NVFLARE_MAX_LATENCY_RATIO": f"{rec_lat:.6f}",
+            },
             "apply_commands": {
                 "profile_mode": profile_apply_cmd,
                 "custom_mode": custom_apply_cmd,
@@ -204,11 +214,16 @@ def main() -> int:
     }
 
     output = json.dumps(report, indent=2, sort_keys=True)
-    if args.output == "-":
-        print(output)
-    else:
+    if args.output != "-":
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(output)
+    elif not args.print_shell_export:
+        print(output)
+
+    if args.print_shell_export:
+        print(f"export NVFLARE_RECOMMENDED_PROFILE={profile}")
+        print(f"export NVFLARE_MAX_FAILURE_RATIO={rec_fail:.6f}")
+        print(f"export NVFLARE_MAX_LATENCY_RATIO={rec_lat:.6f}")
 
     return 0
 

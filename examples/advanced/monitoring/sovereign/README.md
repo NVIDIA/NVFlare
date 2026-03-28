@@ -118,6 +118,24 @@ python3 nvflare_quantum_autotune.py \
 
 Then apply the recommended values in readiness gate runs.
 
+For CI pipelines, print shell exports directly:
+
+```bash
+python3 nvflare_quantum_autotune.py \
+  --prom-url http://localhost:9090 \
+  --prom-user nvflare \
+  --prom-password nvflareprom \
+  --print-shell-export
+```
+
+Example output:
+
+```bash
+export NVFLARE_RECOMMENDED_PROFILE=staging
+export NVFLARE_MAX_FAILURE_RATIO=0.107514
+export NVFLARE_MAX_LATENCY_RATIO=9.492931
+```
+
 Auto-tuner output now includes:
 
 - `recommended_profile` (`prod`/`staging`/`dev`/`custom`)
