@@ -118,6 +118,12 @@ python3 nvflare_quantum_autotune.py \
 
 Then apply the recommended values in readiness gate runs.
 
+Auto-tuner output now includes:
+
+- `recommended_profile` (`prod`/`staging`/`dev`/`custom`)
+- `apply_commands.profile_mode`: one-command readiness gate invocation using preset profile
+- `apply_commands.custom_mode`: one-command readiness gate invocation using exact tuned thresholds
+
 Exit code behavior:
 
 - `0`: PASS

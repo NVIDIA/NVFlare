@@ -23,6 +23,13 @@ import urllib.request
 from typing import List
 
 
+CONGESTION_PROFILES = {
+    "dev": {"max_failure_ratio": 0.20, "max_latency_ratio": 10.0},
+    "staging": {"max_failure_ratio": 0.10, "max_latency_ratio": 6.0},
+    "prod": {"max_failure_ratio": 0.05, "max_latency_ratio": 3.0},
+}
+
+
 def build_basic_auth_header(username: str = "", password: str = "") -> str:
     if not username:
         return ""
@@ -86,6 +93,15 @@ def summarize(values: List[float]) -> dict:
     }
 
 
+def recommend_profile(max_failure_ratio: float, max_latency_ratio: float) -> str:
+    # Pick the strictest preset that still covers the recommended thresholds.
+    for profile in ["prod", "staging", "dev"]:
+        p = CONGESTION_PROFILES[profile]
+        if p["max_failure_ratio"] >= max_failure_ratio and p["max_latency_ratio"] >= max_latency_ratio:
+            return profile
+    return "custom"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Auto-tune congestion thresholds from Prometheus history.")
     parser.add_argument("--prom-url", default="http://localhost:9090", help="Prometheus base URL")
@@ -138,6 +154,31 @@ def main() -> int:
 
     rec_fail = max(0.01, fail_summary["p95"] * args.headroom_factor)
     rec_lat = max(1.5, lat_summary["p95"] * args.headroom_factor)
+    profile = recommend_profile(rec_fail, rec_lat)
+
+    base_gate_cmd = [
+        "python3",
+        "nvflare_quantum_readiness_gate.py",
+        "--prom-url",
+        args.prom_url,
+    ]
+    if args.prom_user:
+        base_gate_cmd.extend(["--prom-user", args.prom_user])
+    if args.prom_password:
+        base_gate_cmd.extend(["--prom-password", args.prom_password])
+
+    profile_apply_cmd = " ".join(base_gate_cmd + ["--profile", profile])
+    custom_apply_cmd = " ".join(
+        base_gate_cmd
+        + [
+            "--profile",
+            "custom",
+            "--max-failure-ratio",
+            f"{rec_fail:.4f}",
+            "--max-latency-ratio",
+            f"{rec_lat:.4f}",
+        ]
+    )
 
     report = {
         "window": {
@@ -152,12 +193,13 @@ def main() -> int:
         "failure_ratio": fail_summary,
         "latency_ratio": lat_summary,
         "recommendation": {
+            "recommended_profile": profile,
             "max_failure_ratio": round(rec_fail, 6),
             "max_latency_ratio": round(rec_lat, 6),
-            "command": (
-                "python3 nvflare_quantum_readiness_gate.py "
-                f"--max-failure-ratio {rec_fail:.4f} --max-latency-ratio {rec_lat:.4f}"
-            ),
+            "apply_commands": {
+                "profile_mode": profile_apply_cmd,
+                "custom_mode": custom_apply_cmd,
+            },
         },
     }
 
