@@ -22,7 +22,6 @@ import urllib.parse
 import urllib.request
 from typing import List
 
-
 CONGESTION_PROFILES = {
     "dev": {"max_failure_ratio": 0.20, "max_latency_ratio": 10.0},
     "staging": {"max_failure_ratio": 0.10, "max_latency_ratio": 6.0},
@@ -138,8 +137,12 @@ def main() -> int:
     latency_ratio_expr = "max((max(avg_over_time(quantum_proof_aggregation_time_taken[5m]) or vector(0)) / clamp_min(max(avg_over_time(quantum_proof_verify_time_taken[5m]) or vector(0)), 0.001)) or vector(0))"
 
     verify_rates = query_range(args.prom_url, verify_rate_expr, start, end, args.step_seconds, auth_header=auth_header)
-    failure_ratios = query_range(args.prom_url, failure_ratio_expr, start, end, args.step_seconds, auth_header=auth_header)
-    latency_ratios = query_range(args.prom_url, latency_ratio_expr, start, end, args.step_seconds, auth_header=auth_header)
+    failure_ratios = query_range(
+        args.prom_url, failure_ratio_expr, start, end, args.step_seconds, auth_header=auth_header
+    )
+    latency_ratios = query_range(
+        args.prom_url, latency_ratio_expr, start, end, args.step_seconds, auth_header=auth_header
+    )
 
     # Align lengths conservatively by shortest list.
     n = min(len(verify_rates), len(failure_ratios), len(latency_ratios))

@@ -113,9 +113,5 @@ def test_abort_task_clears_proof_timer(monkeypatch):
     collector.handle_event(EventType.ABORT_TASK, ctx)
     collector.handle_event(EventType.AFTER_TASK_EXECUTION, ctx)
 
-    verify_elapsed = [
-        c
-        for c in calls
-        if c["metric_name"] == "quantum_proof_verify" and "time_taken" in c["metrics"]
-    ]
+    verify_elapsed = [c for c in calls if c["metric_name"] == "quantum_proof_verify" and "time_taken" in c["metrics"]]
     assert len(verify_elapsed) == 0

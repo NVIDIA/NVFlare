@@ -20,8 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import List
-
+from typing import List, Optional
 
 CONGESTION_PROFILES = {
     "dev": {"max_failure_ratio": 0.20, "max_latency_ratio": 10.0},
@@ -64,7 +63,7 @@ def wait_json(url: str, expect_key: str, retries: int, delay_seconds: float, aut
     raise RuntimeError(last_error or f"failed waiting for {url}")
 
 
-def query_vector(prom_url: str, expr: str, auth_header: str = "", query_time: float | None = None) -> List[dict]:
+def query_vector(prom_url: str, expr: str, auth_header: str = "", query_time: Optional[float] = None) -> List[dict]:
     params = {"query": expr}
     if query_time is not None:
         params["time"] = str(query_time)
@@ -78,7 +77,7 @@ def query_vector(prom_url: str, expr: str, auth_header: str = "", query_time: fl
     return payload.get("data", {}).get("result", [])
 
 
-def query_scalar(prom_url: str, expr: str, auth_header: str = "", query_time: float | None = None) -> float:
+def query_scalar(prom_url: str, expr: str, auth_header: str = "", query_time: Optional[float] = None) -> float:
     result = query_vector(prom_url, expr, auth_header=auth_header, query_time=query_time)
     if not result:
         return 0.0
