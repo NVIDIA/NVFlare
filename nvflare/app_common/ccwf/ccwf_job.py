@@ -85,7 +85,6 @@ class SwarmClientConfig:
         request_to_submit_result_max_wait=None,
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
-        enable_tensor_disk_offload: bool = False,
         memory_gc_rounds: int = 1,
         cuda_empty_cache: bool = False,
     ):
@@ -118,7 +117,6 @@ class SwarmClientConfig:
         self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
         self.request_to_submit_result_interval = request_to_submit_result_interval
         self.max_concurrent_submissions = max_concurrent_submissions
-        self.enable_tensor_disk_offload = enable_tensor_disk_offload
         self.memory_gc_rounds = memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
 
@@ -282,7 +280,6 @@ class CCWFJob(FedJob):
             request_to_submit_result_max_wait=client_config.request_to_submit_result_max_wait,
             request_to_submit_result_interval=client_config.request_to_submit_result_interval,
             max_concurrent_submissions=client_config.max_concurrent_submissions,
-            enable_tensor_disk_offload=client_config.enable_tensor_disk_offload,
             memory_gc_rounds=client_config.memory_gc_rounds,
             cuda_empty_cache=client_config.cuda_empty_cache,
         )

@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -241,6 +242,12 @@ class Session(SessionSpec):
             else:
                 raise InvalidJobDefinition(f"job_definition_path '{job_definition_path}' is not a valid folder")
 
+        job_folder_name = os.path.basename(os.path.normpath(job_definition_path))
+        if name_check(job_folder_name, "job_name")[0]:
+            raise InvalidJobDefinition(
+                f"job folder name '{job_folder_name}' contains unsupported characters. "
+                "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
+            )
         result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
