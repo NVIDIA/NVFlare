@@ -1,7 +1,8 @@
 ---
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH || "main";
+const base_url = import.meta.env.BASE_URL;
 
 const series_dli = {
   id: "DLI", // id must not have spaces
@@ -188,7 +189,7 @@ const series_100 = {
           title: "Hello FedAvg (Recipe)",
           tags: ["beg.", "pytorch"],
           description: "FedAvg using the Recipe API: job.py, client.py, and model.py. Run with the simulator (python job.py).",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
         },
         {
           title: "Job API Examples",
@@ -311,7 +312,7 @@ const series_200 = {
           title: "Hello FedAvg (Recipe)",
           tags: ["beg.", "algorithm", "pytorch", "dl"],
           description: "FedAvg workflow with the Recipe API: job.py, client.py, model.py. Run with python job.py.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-pt/README.md`
         },
         {
           title: "Hello Numpy Cross-Site Validation",
@@ -329,7 +330,7 @@ const series_200 = {
           title: "Simulated Federated Learning with CIFAR-10",
           tags: ["int.", "algorithm", "simulator", "pytorch", "dl"],
           description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-sim/README.md`
         },
         {
           title: "TensorFlow Algorithms and Examples",
@@ -366,7 +367,7 @@ const series_200 = {
           title: "Federated Learning for Prostate Segmentation from Multi-source Data",
           tags: ["adv.", "algorithm", "healthcare", "monai", "dl"],
           description: "Example of training a multi-institutional prostate segmentation model using FedAvg, FedProx, and Ditto.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/prostate/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/prostate`
         },
         {
           title: "NVFlare + MONAI integration",
@@ -378,7 +379,7 @@ const series_200 = {
           title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
           tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
           description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/brats18`
         },
         {
           title: "Federated GNN: Protein Classification",
@@ -423,20 +424,20 @@ const series_200 = {
           title: "Federated Learning with Differential Privacy for BraTS18 segmentation",
           tags: ["adv.", "algorithm", "healthcare", "dp", "monai", "dl"],
           description: "Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/brats18/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/brats18`
         },
         {
           title: "Real-world Federated Learning with CIFAR-10",
           tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
           description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-real-world/README.md`
         },
         {
           title: "Secure Federated XGBoost with Homomorphic Encryption",
           tags: ["adv.", "algorithm", "xgboost", "he"],
           description:
             "Federated secure training with XGBoost using homomorphic encryption.",
-          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+          link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb_secure`,
         },
       ]
     }
@@ -455,7 +456,7 @@ const series_list = [
 <ClickTracker div_id="series_div" eventLabel="Series"/>
 <div id="series_div" class="bg-white py-20 sm:py-24">
   <div class="mx-auto max-w-[1500px] px-6 lg:px-8">
-    <div class="mx-auto lg:mx-0 text-center">
+    <div id="tutorials" class="mx-auto lg:mx-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
         Tutorials
       </h2>
@@ -563,7 +564,7 @@ const series_list = [
         To dive deeper into what NVIDIA FLARE has to offer, explore our full catalog of various tutorials and examples showcasing everything from the core features to advanced applications.
       </p> -->
       <a
-        href="catalog"
+        href=`${base_url}/catalog`
         class="rounded-md bg-nvidia px-3.5 py-2.5 text-mg font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nvidia"
         >Tutorial Catalog -></a
       >

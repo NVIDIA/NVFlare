@@ -436,7 +436,7 @@ class ConnManager(ConnMonitor):
 
     @staticmethod
     def get_dict_payload(prefix, frame):
-        mv = memoryview(frame)
+        mv = frame if isinstance(frame, memoryview) else memoryview(frame)
         return msgpack.unpackb(mv[(PREFIX_LEN + prefix.header_len) :])
 
     def handle_new_connection(self, connection: Connection):
