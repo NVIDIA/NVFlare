@@ -19,12 +19,10 @@ from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 from flwr.common.record import MetricRecord, RecordDict
 
-from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
-
 import nvflare.client as flare
-
-# initializes NVFlare interface
 from nvflare.client.tracking import SummaryWriter
+
+from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
 # Module-level cache for model and data to avoid reloading every round.
 # Flower's supernode runs as a long-lived subprocess (not re-imported per round),
