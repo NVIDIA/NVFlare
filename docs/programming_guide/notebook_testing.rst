@@ -56,6 +56,9 @@ These options are specific to notebook testing (``-n``):
    * - ``--kernel=NAME``
      - python3
      - Jupyter kernel name (defaults to ``python3`` if available)
+   * - ``-v`` / ``--verbose``
+     - off
+     - Pass ``-v`` to pytest for verbose output
 
 Examples
 --------
