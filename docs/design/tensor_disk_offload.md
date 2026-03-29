@@ -2,16 +2,12 @@
 
 ## Objective
 
-Reduce server peak memory for large PyTorch model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
-
-## Problem
-
-Without disk streaming, each incoming client model is deserialized directly into memory during FOBS recompose. For large models and multiple concurrent submissions, peak server RSS grows with the number of in-flight updates.
+Reduce server peak memory for large PyTorch FedAvg model updates by streaming tensor payloads to disk and resolving tensors lazily end-to-end.
 
 ## Scope
 
 - Applies to streamed **PyTorch tensor** payloads handled by `TensorDecomposer`.
-- Controlled by `enable_tensor_disk_offload` in server-side workflow/controller config.
+- Controlled by `enable_tensor_disk_offload` in the server-side FedAvg workflow/controller config.
 - Default is `False` (legacy in-memory behavior).
 - If model updates are converted to NumPy before transport, tensor disk offload is not engaged.
 
@@ -22,11 +18,6 @@ FedAvg:
 - `nvflare/recipe/fedavg.py` -> `FedAvgRecipe(..., enable_tensor_disk_offload=True)`
 - `nvflare/app_opt/pt/recipes/fedavg.py` -> PT recipe forwards the same flag
 - `nvflare/app_common/workflows/fedavg.py` -> `FedAvg(..., enable_tensor_disk_offload=True)`
-
-Swarm/CCWF:
-
-- `nvflare/app_common/ccwf/ccwf_job.py` -> `SwarmClientConfig(..., enable_tensor_disk_offload=True)`
-- `nvflare/app_common/ccwf/swarm_client_ctl.py` applies the flag to the active Cell FOBS context at run start
 
 If no active Cell is available, the offload context is not enabled and the runtime falls back to in-memory download.
 
@@ -56,8 +47,6 @@ Lazy refs in payload tree
 
 ## Runtime Behavior
 
-### FedAvg
-
 In `nvflare/app_common/workflows/fedavg.py`:
 
 - custom aggregators receive `result.params` as-is
@@ -67,7 +56,7 @@ In `nvflare/app_common/workflows/fedavg.py`:
 
 The built-in weighted path remains lazy-friendly and memory-efficient.
 
-### Custom Aggregator Contract (Important)
+## Custom Aggregator Contract
 
 When a custom aggregator is used, payload params may contain lazy refs (duck-typed object with `materialize()`).
 
@@ -75,13 +64,6 @@ Custom aggregators are responsible for:
 
 1. materializing refs when tensor math is required
 2. releasing lazy-ref object references after use so temp resources can be reclaimed
-
-### Swarm/CCWF
-
-In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
-
-- shareables are passed to the aggregator as-is
-- with `enable_tensor_disk_offload=True`, aggregator inputs include lazy refs
 
 ## Temp File Lifecycle
 
@@ -104,13 +86,11 @@ In `nvflare/app_common/ccwf/swarm_client_ctl.py` gather path:
 - `nvflare/app_opt/pt/tensor_downloader.py`
 - `nvflare/fuel/utils/fobs/decomposers/via_downloader.py`
 - `nvflare/app_common/workflows/fedavg.py`
-- `nvflare/app_common/ccwf/swarm_client_ctl.py`
 - `nvflare/recipe/fedavg.py`
 
 ## Test Coverage
 
 - `tests/unit_test/app_common/workflow/fedavg_test.py`
-- `tests/unit_test/app_common/ccwf/test_swarm_lazy_payload.py`
 - `tests/unit_test/app_opt/pt/test_lazy_tensor_dict.py`
 - `tests/unit_test/app_opt/pt/test_disk_tensor_consumer.py`
 - `tests/unit_test/app_common/aggregators/weighted_aggregation_helper_test.py`
