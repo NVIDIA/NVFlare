@@ -23,8 +23,9 @@ DIR_TO_CHECK=("nvflare" "examples" "tests")
 
 # Dependency caching settings
 DEPS_MARKER="${WORK_DIR}/.deps_marker"
-DEPS_MAX_AGE_DAYS=7
-DEPS_MAX_RUNS=50
+DEPS_MAX_AGE_DAYS="${NVFLARE_DEPS_MAX_AGE_DAYS:-3}"
+DEPS_MAX_RUNS="${NVFLARE_DEPS_MAX_RUNS:-20}"
+DEPS_CACHE_ENABLED="${NVFLARE_DEPS_CACHE_ENABLED:-true}"
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -104,6 +105,9 @@ function should_install_deps {
 function maybe_install_deps {
     if [[ "$fresh_deps" == "true" ]]; then
         echo "Forcing fresh dependency install..."
+        install_deps
+    elif [[ "$DEPS_CACHE_ENABLED" != "true" ]]; then
+        echo "Dependency cache disabled - installing dependencies..."
         install_deps
     elif should_install_deps; then
         install_deps
@@ -359,6 +363,11 @@ function help() {
     echo "    ./runtest.sh -n                                              # test default (flare_simulator.ipynb)"
     echo "    ./runtest.sh -n -v examples/tutorials/flare_api.ipynb        # test single notebook with verbose"
     echo "    ./runtest.sh -n --timeout=1800 --kernel=python3 examples/tutorials/"
+    echo ""
+    echo "Environment overrides:"
+    echo "    NVFLARE_DEPS_MAX_AGE_DAYS     : dependency cache age limit (default: 3)"
+    echo "    NVFLARE_DEPS_MAX_RUNS         : dependency cache run limit (default: 20)"
+    echo "    NVFLARE_DEPS_CACHE_ENABLED    : true|false (default: true)"
     exit 1
 }
 
