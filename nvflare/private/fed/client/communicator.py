@@ -403,17 +403,28 @@ class Communicator:
             self.logger.debug(f"received task from parent {parent_fqcn}: {task_name=}")
 
             # Check if server requires a minimum get_task_timeout (e.g., for tensor streaming)
-            min_timeout = task_data.get_header(ServerCommandKey.MIN_GET_TASK_TIMEOUT)
-            if min_timeout is not None:
-                with self._state_lock:
-                    if min_timeout > self.timeout:
-                        old_timeout = self.timeout
-                        self.timeout = min_timeout
-                        # Only log when actually adjusting timeout
-                        self.logger.info(
-                            f"Server requires get_task_timeout >= {min_timeout}s (likely for tensor streaming). "
-                            f"Automatically adjusting from {old_timeout}s to {min_timeout}s."
-                        )
+            min_timeout_raw = task_data.get_header(ServerCommandKey.MIN_GET_TASK_TIMEOUT)
+            if min_timeout_raw is not None:
+                # Defensively coerce to float since headers may be serialized/deserialized as strings
+                try:
+                    min_timeout = float(min_timeout_raw)
+                except (TypeError, ValueError):
+                    self.logger.warning(
+                        f"Invalid MIN_GET_TASK_TIMEOUT header value: {min_timeout_raw!r} "
+                        f"(expected numeric). Ignoring."
+                    )
+                    min_timeout = None
+
+                if min_timeout is not None:
+                    with self._state_lock:
+                        if min_timeout > self.timeout:
+                            old_timeout = self.timeout
+                            self.timeout = min_timeout
+                            # Only log when actually adjusting timeout
+                            self.logger.info(
+                                f"Server requires get_task_timeout >= {min_timeout}s (likely for tensor streaming). "
+                                f"Automatically adjusting from {old_timeout}s to {min_timeout}s."
+                            )
 
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
