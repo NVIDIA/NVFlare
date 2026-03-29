@@ -26,8 +26,8 @@ from tests.integration_test.src import (
     NVFTestError,
     POCSiteLauncher,
     ProvisionSiteLauncher,
-    cleanup_stale_integration_processes,
     cleanup_path,
+    cleanup_stale_integration_processes,
     read_yaml,
     run_command_in_subprocess,
 )

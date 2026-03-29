@@ -1,273 +1,181 @@
-# Federated Logistic Regression with Second-Order Newton-Raphson optimization
+# Federated Logistic Regression with Newton-Raphson Optimization
 
-This example shows how to implement a federated binary
-classification via logistic regression with second-order Newton-Raphson optimization.
+This example demonstrates federated binary classification using logistic regression and second-order Newton-Raphson optimization. The complete example code is in `examples/hello-world/hello-lr`.
 
-## Install NVFLARE and Dependencies
+## NVIDIA FLARE Installation
 
-for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
-```
+For complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
+
+```bash
 pip install nvflare
-
-```
-Get the example code from github:
-
-```
-  git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-then navigate to the hello-lr directory:
-
-```
-  git switch <release branch>
-  cd examples/hello-world/hello-lr
-```
-
-Install the dependency
-
-```
-  pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Code Structure
 
-``` bash
-hello-lr
-    |
-    |-- client.py              # client local training script
-    |-- job.py                 # job recipe that defines client and server configurations
-    |-- download_data.py       # download dataset
-    |-- prepare_data.py        # prepare data to convert to numpy
-    |-- train_centralized.py   # centralized training baseline for comparison
-    |-- requirements.txt       # dependencies
-    |-- figs/                  # visualization figures
+First get the example code from GitHub:
+
+```bash
+git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
+Then navigate to this example directory:
+
+```bash
+git switch <release branch>
+cd examples/hello-world/hello-lr
+```
+
+```bash
+hello-lr
+|
+|-- client.py              # client local training script
+|-- job.py                 # job recipe that defines client and server configurations
+|-- download_data.py       # download dataset
+|-- prepare_data.py        # convert dataset to numpy files for training
+|-- train_centralized.py   # centralized baseline for comparison
+|-- requirements.txt       # dependencies
+|-- figs/                  # visualization figures
+```
+
+> Note: This example does not have a separate `model.py`. The model logic for Newton-Raphson logistic regression is implemented in `client.py` and coordinated by `job.py`.
 
 ## Data
 
-The [UCI Heart Disease dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
-used in this example. 
+This example uses the [UCI Heart Disease dataset](https://archive.ics.uci.edu/dataset/45/heart+disease).
 
+In a real FL experiment, each client would have its own local dataset. Here, the data is prepared into site-specific splits for four simulated client sites:
 
-**Publication Request:**
+| Site         | Sample Split                          |
+|--------------|---------------------------------------|
+| Cleveland    | train: 199 samples, test: 104 samples |
+| Hungary      | train: 172 samples, test: 89 samples  |
+| Switzerland  | train: 30 samples, test: 16 samples   |
+| Long Beach V | train: 85 samples, test: 45 samples   |
 
-This file describes the contents of the heart-disease directory.
- 
-The authors of the databases have requested:
+Each sample has 13 features.
 
-      ...that any publications resulting from the use of the data include the 
-      names of the principal investigator responsible for the data collection
-      at each institution.  They would be:
+### Publication Request from Dataset Authors
 
-       1. Hungarian Institute of Cardiology. Budapest: Andras Janosi, M.D.
-       2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
-       3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
-       4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
-	  Robert Detrano, M.D., Ph.D.
- 
+The dataset authors requested that publications include the names of principal investigators responsible for data collection:
 
-dataset contains samples from 4 sites, split into training and
-testing sets as described below:
-
-|site         | sample split                          |
-|-------------|---------------------------------------|
-|Cleveland    | train: 199 samples, test: 104 samples |
-|Hungary      | train: 172 samples, test: 89 samples  |
-|Switzerland  | train: 30 samples, test: 16 samples   |
-|Long Beach V | train: 85 samples, test: 45 samples   |
-
-The number of features in each sample is 13.
-
-
-### Features 
-
-| Variable Name | Role    | Type        | Demographic | Description                                           | Units  | Missing Values |
-|---------------|---------|-------------|-------------|-------------------------------------------------------|--------|----------------|
-| age           | Feature | Integer     | Age         | years                                                 |        | no             |
-| sex           | Feature | Categorical | Sex         |                                                       |        | no             |
-| cp            | Feature | Categorical |             |                                                       |        | no             |
-| trestbps      | Feature | Integer     |             | resting blood pressure (on admission to the hospital) | mm Hg  | no             |
-| chol          | Feature | Integer     |             | serum cholestoral                                     | mg/dl  | no             |
-| fbs           | Feature | Categorical |             | fasting blood sugar > 120 mg/dl                       |        | no             |
-| restecg       | Feature | Categorical |             |                                                       |        | no             |
-| thalach       | Feature | Integer     |             | maximum heart rate achieved                           |        | no             |
-| exang         | Feature | Categorical |             | exercise induced angina                               |        | no             |
-| oldpeak       | Feature | Integer     |             | ST depression induced by exercise relative to rest    |        | no             |
-| slope         | Feature | Categorical |             |                                                       |        | no             |
-| ca            | Feature | Integer     |             | number of major vessels (0-3) colored by flourosopy   |        | yes            |
-| thal          | Feature | Categorical |             |                                                       |        | yes            |
-| num           | Target  | Integer     |             | diagnosis of heart disease                            |        | no             |
+1. Hungarian Institute of Cardiology, Budapest: Andras Janosi, M.D.
+2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
+3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
+4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation: Robert Detrano, M.D., Ph.D.
 
 ## Model
 
-The [Newton-Raphson optimization](https://en.wikipedia.org/wiki/Newton%27s_method) problem
-can be described as follows.
+This example solves logistic regression using Newton-Raphson updates.
 
-In a binary classification task with logistic regression, the
-probability of a data sample $x$ classified as positive is formulated
-as:
-$$p(x) = \sigma(\beta \cdot x + \beta_{0})$$
-where $\sigma(.)$ denotes the sigmoid function. We can incorporate
-$\beta_{0}$ and $\beta$ into a single parameter vector $\theta =
-( \beta_{0},  \beta)$. Let $d$ be the number
-of features for each data sample $x$ and let $N$ be the number of data
-samples. We then have the matrix version of the above probability
-equation:
-$$p(X) = \sigma( X \theta )$$
-Here $X$ is the matrix of all samples, with shape $N \times (d+1)$,
-having it's first column filled with value 1 to account for the
-intercept $\theta_{0}$.
+For sample $x$, the probability of positive class is:
 
-The goal is to compute parameter vector $\theta$ that maximizes the
-below likelihood function:
-$$L_{\theta} = \prod_{i=1}^{N} p(x_i)^{y_i} (1 - p(x_i)^{1-y_i})$$
+$$
+p(x) = \sigma(\beta \cdot x + \beta_0)
+$$
 
-The Newton-Raphson method optimizes the likelihood function via
-quadratic approximation. Omitting the maths, the theoretical update
-formula for parameter vector $\theta$ is:
-$$\theta^{n+1} = \theta^{n} - H_{\theta^{n}}^{-1} \nabla L_{\theta^{n}}$$
-where
-$$\nabla L_{\theta^{n}} = X^{T}(y - p(X))$$
-is the gradient of the likelihood function, with $y$ being the vector
-of ground truth for sample data matrix $X$,  and
-$$H_{\theta^{n}} = -X^{T} D X$$
-is the Hessian of the likelihood function, with $D$ a diagonal matrix
-where diagonal value at $(i,i)$ is $D(i,i) = p(x_i) (1 - p(x_i))$.
+Using parameter vector $\theta = (\beta_0, \beta)$, the matrix form is:
 
-In federated Newton-Raphson optimization, each client will compute its
-own gradient $\nabla L_{\theta^{n}}$ and Hessian $H_{\theta^{n}}$
-based on local training samples. A server will aggregate the gradients
-and Hessians computed from all clients, and perform the update of
-parameter $\theta$ based on the theoretical update formula described
-above.
+$$
+p(X) = \sigma(X\theta)
+$$
 
-## Client Side
+The update at round $n$ is:
 
-On the client side, the local training logic is implemented
-[client.py](./client.py). The implementation is based on the [`Client
-API`](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api). This
-allows user to add minimum `nvflare`-specific codes to turn a typical
-centralized training script to a federated client side local training
-script.
-- During local training, each client receives a copy of the global
-  model, sent by the server, using `flare.receive()` API. The received
-  global model is an instance of `FLModel`.
-- A local validation is first performed, where validation metrics
-  (accuracy and precision) are computed and streamed to the server.
-  The streamed metrics can be loaded and visualized using TensorBoard.
-- Then each client computes it's gradient and Hessian based on local
-  training data, using their respective theoretical formula described
-  above. This is implemented in the
-  [`train_newton_raphson()`](./client.py) method. Each client then 
-  sends the computed results (always in `FLModel` format) to server for aggregation, 
-  using `flare.send()` API.
+$$
+    heta^{n+1} = \theta^n - H_{\theta^n}^{-1} \nabla L_{\theta^n}
+$$
 
-Each client site corresponds to a site listed in the data table above.
+where:
 
-The training logic remains similar to the centralized logic: load data, perform training
-(Newton-Raphson updates), and valid trained model. The only added
-differences in the federated code are related to interaction with the
-FL system, such as receiving and send `FLModel`.
+$$
+\nabla L_{\theta^n} = X^T(y - p(X)), \quad H_{\theta^n} = -X^TDX
+$$
 
+In federated training, each client computes local gradient/Hessian terms from its own data, and the server aggregates them to produce the global update.
+
+## Client Code
+
+The client logic is implemented in [client.py](./client.py) using the NVFlare [Client API](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api).
+
+At each training round, each client:
+
+1. Receives the global model (`flare.receive()`).
+2. Evaluates the received model locally and streams metrics.
+3. Computes local gradient and Hessian terms in `train_newton_raphson()`.
+4. Sends results back in `FLModel` format (`flare.send()`).
+
+The training flow remains close to centralized logic, with only minimal FL-specific integration for model exchange.
 
 ## Server Side
-We leverage a builtin FLARE logistic regression with Newton Raphson method. 
-the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
-## Job
+Server-side aggregation uses NVFlare's built-in logistic regression FedAvg workflow:
+
+- `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
+
+This handles orchestration and global update computation from aggregated client contributions.
+
+## Job Recipe
+
+The job recipe in `job.py` wires the client script and server workflow together:
+
 ```python
 recipe = FedAvgLrRecipe(
     min_clients=n_clients,
     num_rounds=num_rounds,
     damping_factor=0.8,
-    num_features=13,  # Model is created internally based on num_features
+    num_features=13,
     # For pre-trained weights: initial_ckpt="/server/path/to/lr_model.npy",
     train_script="client.py",
     train_args=f"--data_root {data_root}",
 )
 env = SimEnv(num_clients=n_clients, num_threads=n_clients)
 run = recipe.execute(env)
-  # run.get_result()
 ```
 
-## Download and prepare data
+## Run Job
 
-Execute the following scripts:
-```bash
-python download_data.py 
-python prepare_data.py 
-```
-This will download the heart disease dataset under
-`/tmp/flare/dataset/heart_disease_data/`
-
-## Centralized Logistic Regression (Baseline)
-
-Before running federated learning, you can run a centralized baseline for comparison:
+Prepare data first:
 
 ```bash
-python train_centralized.py --solver custom
+python download_data.py
+python prepare_data.py
 ```
 
-Two implementations of logistic regression are provided in the
-centralized training script, which can be specified by the `--solver`
-argument:
-- `custom`: Manually implemented using the theoretical Newton-Raphson update formulas
-- `sklearn`: Using `sklearn.LogisticRegression` with `newton-cholesky` solver
+This creates prepared data under `/tmp/flare/dataset/heart_disease_data/`.
 
-Both implementations converge in approximately 4 iterations and produce similar results.
-
-Example output:
-```
-using solver: custom
-loading training data.
-training data X loaded. shape: (486, 13)
-training data y loaded. shape: (486, 1)
-
-site - 1
-validation set n_samples:  104
-accuracy: 0.75
-precision: 0.7115384615384616
-
-site - 2
-validation set n_samples:  89
-accuracy: 0.7528089887640449
-precision: 0.6122448979591837
-
-site - 3
-validation set n_samples:  16
-accuracy: 0.75
-precision: 1.0
-
-site - 4
-validation set n_samples:  45
-accuracy: 0.6
-precision: 0.9047619047619048
-```
-
-## Federated Logistic Regression
-
-Execute the following command to launch federated logistic
-regression. This will run in NVFlare's simulation mode:
+Run federated training:
 
 ```bash
 python job.py
 ```
 
-You can customize the number of clients and rounds:
+Optional: customize the number of clients and rounds:
+
 ```bash
 python job.py --n_clients 4 --num_rounds 5
 ```
 
-### Viewing Results with TensorBoard
+## Result
 
-Accuracy and precision for each site can be viewed in TensorBoard:
+Run a centralized baseline for comparison:
+
+```bash
+python train_centralized.py --solver custom
+```
+
+Supported solvers in `train_centralized.py`:
+
+- `custom`: manual Newton-Raphson implementation
+- `sklearn`: `sklearn.LogisticRegression` with `newton-cholesky`
+
+View federated metrics in TensorBoard:
+
 ```bash
 tensorboard --logdir=<workspace_dir>/server/simulate_job/tb_events
 ```
 
-As can be seen from the figure below, per-site evaluation metrics in
-federated logistic regression are on-par with the centralized baseline.
+Per-site accuracy and precision in federated training should be comparable to centralized baseline results.
 
 <img src="./figs/tb-metrics.png" alt="TensorBoard metrics visualization" width="800"/>
 
