@@ -82,9 +82,6 @@ These options can be used with any test command:
    * - Option
      - Default
      - Description
-   * - ``-v`` / ``--verbose``
-     - off
-     - Enable verbose output
    * - ``-d`` / ``--dry-run``
      - off
      - Print commands without executing
@@ -99,13 +96,13 @@ The ``runtest.sh`` script automatically caches dependency installation to speed 
 
 - **First run**: Dependencies are installed and a cache marker is created
 - **Subsequent runs**: Dependencies are skipped (uses cache)
-- **Auto-refresh**: Cache expires after **7 days** or **50 runs**, whichever comes first
+- **Auto-refresh**: Cache expires after **3 days** or **20 runs**, whichever comes first
 
 The cache status is displayed at the start of each run:
 
 .. code:: text
 
-   Dependencies cached (5/50 runs, 2/7 days) - skipping install
+   Dependencies cached (5/20 runs, 2/3 days) - skipping install
 
 To force a fresh dependency install:
 
@@ -134,8 +131,8 @@ Unit Tests
    # Run with coverage report
    ./runtest.sh -u -c
 
-   # Run with verbose output
-   ./runtest.sh -u -v
+   # Run with coverage and test report
+   ./runtest.sh -u -c -r
 
 Code Quality
 ------------

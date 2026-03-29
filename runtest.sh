@@ -151,10 +151,14 @@ function print_style_fail_msg() {
     echo "Please run auto style fixes: ${green}./runtest.sh -f${noColor}"
 }
 function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-        print_style_fail_msg
+    local status="$1"
+    local fail_msg="${2:-}"
+    if [ "${status}" -ne 0 ]; then
+        if [[ -n "$fail_msg" ]]; then
+            echo "${red}${fail_msg}${noColor}"
+        else
+            print_style_fail_msg
+        fi
         exit "${status}"
     else
         echo "${green}passed!${noColor}"
@@ -290,15 +294,20 @@ function notebook_test() {
     echo "${separator}${blue}notebook-test${noColor}"
 
     # Auto-detect kernel at runtime if not specified (allows jupyter to be installed after script load)
-    local kernel="${nb_kernel:-$(get_current_kernel)}"
-
-    if [[ -n "$kernel" ]]; then
+    local kernel
+    if [[ -n "$nb_kernel" ]]; then
+        kernel="$nb_kernel"
         if ! validate_kernel "$kernel"; then
             exit 1
         fi
         echo "Using kernel: $kernel"
     else
-        echo "No kernel specified, using notebook's default kernel"
+        kernel="$(get_current_kernel)"
+        if [[ -n "$kernel" ]]; then
+            echo "Using kernel: $kernel"
+        else
+            echo "No kernel specified, using notebook's default kernel"
+        fi
     fi
 
     echo "Timeout: ${nb_timeout}s, Clean mode: ${nb_clean}"
@@ -316,7 +325,7 @@ function notebook_test() {
 
     echo "Executing: ${cmd[*]}"
     "${cmd[@]}"
-    report_status "$?"
+    report_status "$?" "Notebook test failed! Check the output above for details."
 }
 
 ################################################################################
@@ -433,6 +442,10 @@ do
 
         --timeout=*)
             nb_timeout="${key#*=}"
+            if ! [[ "$nb_timeout" =~ ^[1-9][0-9]*$ ]]; then
+                echo "${red}Error: --timeout must be a positive integer (seconds), got: '$nb_timeout'${noColor}"
+                exit 1
+            fi
         ;;
 
         --kernel=*)
@@ -441,6 +454,10 @@ do
 
         --nb-clean=*)
             nb_clean="${key#*=}"
+            if ! [[ "$nb_clean" =~ ^(always|on-success|never)$ ]]; then
+                echo "${red}Error: --nb-clean must be one of: always, on-success, never. Got: '$nb_clean'${noColor}"
+                exit 1
+            fi
         ;;
 
         --clean)
