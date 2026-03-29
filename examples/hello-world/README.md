@@ -250,12 +250,7 @@ The job recipe defines the FL workflow:
 ## Additional Examples
 
 ### ML-to-FL Conversion
-Learn how to convert existing ML/DL code to federated learning:
-- [PyTorch Conversion](./ml-to-fl/pt/)
-- [TensorFlow Conversion](./ml-to-fl/tf/)
-- [NumPy Conversion](./ml-to-fl/np/)
-
-[Learn more →](./ml-to-fl/)
+Learn how to convert existing ML/DL code to federated learning in the [ml-to-fl](./ml-to-fl/) directory.
 
 ### Workflows
 Examples demonstrating different FL workflows:
