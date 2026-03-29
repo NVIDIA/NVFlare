@@ -32,11 +32,25 @@ if [[ "${target}" == -* ]] ;then
 fi
 
 function install_deps {
+    local extras
     if [[ $(uname) == "Darwin" ]]; then
-      python3 -m pip install -e .[dev_mac]
+      extras=".[dev_mac]"
     else
-      python3 -m pip install -e .[dev]
-    fi;
+      extras=".[dev]"
+    fi
+
+    if command -v uv >/dev/null 2>&1; then
+      echo "Installing dependencies with uv..."
+      if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+        uv pip install -e "${extras}"
+      else
+        uv pip install --system -e "${extras}"
+      fi
+    else
+      echo "Installing dependencies with pip..."
+      python3 -m pip install -e "${extras}"
+    fi
+
     echo "dependencies installed"
     # Reset the marker after successful install (atomic write)
     local tmp_marker="${DEPS_MARKER}.tmp.$$"
