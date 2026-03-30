@@ -148,12 +148,14 @@ python job.py --initial_ckpt /path/to/initial_model.npy --data_dir /path/to/mnis
 * **Clients Sampled**: `site-1`, `site-2`.
 * **Evaluation**: Received-model accuracy was `0.0527` on `site-1` and `0.0398` on `site-2`.
 * **Training**: After one local epoch, training loss was `0.3616` / `0.3778` and training accuracy was `0.8887` / `0.8857`.
+* **Post-Training Evaluation**: Each client also logs `trained_model_eval_loss` and `accuracy` for the locally updated model before sending it back to the server.
 * **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
 
 #### Round 1
 * **Clients Sampled**: `site-1`, `site-2`.
 * **Evaluation**: Received-model accuracy improved to `0.9545` on `site-1` and `0.9799` on `site-2`.
 * **Training**: After one local epoch, training loss was `0.0990` / `0.0999` and training accuracy was `0.9702` / `0.9686`.
+* **Post-Training Evaluation**: The client log includes a second evaluation pass on the trained local model before the update is sent to the server.
 * **Model Selection**: The aggregated validation metric reached `0.9671875`, becoming the new best model.
 * **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
 
@@ -161,6 +163,7 @@ python job.py --initial_ckpt /path/to/initial_model.npy --data_dir /path/to/mnis
 * **Clients Sampled**: `site-1`, `site-2`.
 * **Evaluation**: Received-model accuracy improved again to `0.9762` on `site-1` and `0.9900` on `site-2`.
 * **Training**: After one local epoch, training loss was `0.0671` / `0.0683` and training accuracy was `0.9795` / `0.9790`.
+* **Post-Training Evaluation**: The client log again reports `trained_model_eval_loss` and `accuracy` after local training completes.
 * **Model Selection**: The aggregated validation metric reached `0.98310546875`, becoming the new best model.
 * **Aggregation**: Both client updates were aggregated and the server persisted `server.npy`.
 
