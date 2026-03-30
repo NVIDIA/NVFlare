@@ -412,11 +412,11 @@ Approximate auto-close window (when ``sfm_close_stalled_connection=true``):
 
 .. code-block:: text
 
-   close_lower_bound ~= sfm_send_stall_timeout
+   close_lower_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * (sfm_send_stall_consecutive_checks - 1))
    close_upper_bound ~= sfm_send_stall_timeout + (HEARTBEAT_TICK * sfm_send_stall_consecutive_checks)
 
 With ``sfm_send_stall_timeout=75`` and ``sfm_send_stall_consecutive_checks=3``, close typically occurs
-around ``75``-``90`` seconds of continuous stall (not 225 seconds).
+around ``85``-``90`` seconds of continuous stall (not 225 seconds).
 
 **Outer-timeout guideline**:
 
