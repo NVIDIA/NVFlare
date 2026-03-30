@@ -60,14 +60,32 @@ def cleanup_stale_integration_processes():
 
     for pattern in cleanup_patterns:
         # Best effort only: keep setup resilient even if no processes match.
-        run_command_in_subprocess(f"pkill -TERM -f {shlex.quote(pattern)}")
+        proc = subprocess.Popen(
+            ["pkill", "-TERM", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            # Best-effort: ignore non-zero exit codes (e.g. when no processes match).
+            proc.wait()
+        except Exception:
+            pass
 
     # Give processes a brief grace period to shutdown cleanly.
     time.sleep(0.5)
 
     for pattern in cleanup_patterns:
         # Force kill only if anything is still around after SIGTERM.
-        run_command_in_subprocess(f"pkill -KILL -f {shlex.quote(pattern)}")
+        proc = subprocess.Popen(
+            ["pkill", "-KILL", "-f", pattern],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            # Best-effort: ignore non-zero exit codes (e.g. when no processes match).
+            proc.wait()
+        except Exception:
+            pass
 
 
 def read_yaml(yaml_file_path):
