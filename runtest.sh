@@ -21,12 +21,6 @@ WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
 DIR_TO_CHECK=("nvflare" "examples" "tests")
 
-# Dependency caching settings
-DEPS_MARKER="${WORK_DIR}/.deps_marker"
-DEPS_MAX_AGE_DAYS="${NVFLARE_DEPS_MAX_AGE_DAYS:-3}"
-DEPS_MAX_RUNS="${NVFLARE_DEPS_MAX_RUNS:-20}"
-DEPS_CACHE_ENABLED="${NVFLARE_DEPS_CACHE_ENABLED:-true}"
-
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
     target=""
@@ -53,65 +47,6 @@ function install_deps {
     fi
 
     echo "dependencies installed"
-    # Reset the marker after successful install (atomic write)
-    local tmp_marker="${DEPS_MARKER}.tmp.$$"
-    printf "%s\n%s\n" "$(date +%s)" "0" > "$tmp_marker"
-    mv "$tmp_marker" "$DEPS_MARKER"
-}
-
-function should_install_deps {
-    # Returns 0 (true) if deps should be installed, 1 (false) otherwise
-    # Marker file format: line 1 = install timestamp, line 2 = run count
-    
-    # If marker doesn't exist, install
-    if [[ ! -f "$DEPS_MARKER" ]]; then
-        echo "Dependencies not yet installed (no marker found)"
-        return 0
-    fi
-    
-    # Read marker file (line 1 = timestamp, line 2 = run count)
-    local install_timestamp run_count
-    install_timestamp=$(sed -n '1p' "$DEPS_MARKER" 2>/dev/null)
-    run_count=$(sed -n '2p' "$DEPS_MARKER" 2>/dev/null)
-    
-    # Validate numeric values, default to 0 if empty or malformed
-    [[ ! "$install_timestamp" =~ ^[0-9]+$ ]] && install_timestamp=0
-    [[ ! "$run_count" =~ ^[0-9]+$ ]] && run_count=0
-    
-    # Check age (days since last install)
-    local now marker_age_days
-    now=$(date +%s)
-    marker_age_days=$(( (now - install_timestamp) / 86400 ))
-    
-    if [[ $marker_age_days -ge $DEPS_MAX_AGE_DAYS ]]; then
-        echo "Dependencies cache expired (${marker_age_days} days old, max ${DEPS_MAX_AGE_DAYS})"
-        return 0
-    fi
-    
-    # Check run count
-    if [[ $run_count -ge $DEPS_MAX_RUNS ]]; then
-        echo "Dependencies cache expired (${run_count} runs, max ${DEPS_MAX_RUNS})"
-        return 0
-    fi
-    
-    # Deps are cached and valid - increment run count (atomic write)
-    echo "Dependencies cached (${run_count}/${DEPS_MAX_RUNS} runs, ${marker_age_days}/${DEPS_MAX_AGE_DAYS} days) - skipping install"
-    local tmp_marker="${DEPS_MARKER}.tmp.$$"
-    printf "%s\n%s\n" "$install_timestamp" "$((run_count + 1))" > "$tmp_marker"
-    mv "$tmp_marker" "$DEPS_MARKER"
-    return 1
-}
-
-function maybe_install_deps {
-    if [[ "$fresh_deps" == "true" ]]; then
-        echo "Forcing fresh dependency install..."
-        install_deps
-    elif [[ "$DEPS_CACHE_ENABLED" != "true" ]]; then
-        echo "Dependency cache disabled - installing dependencies..."
-        install_deps
-    elif should_install_deps; then
-        install_deps
-    fi
 }
 
 function clean {
@@ -119,7 +54,7 @@ function clean {
     python3 -m coverage erase
 
     echo "uninstalling nvflare development files..."
-    python3 setup.py develop --user --uninstall
+    python3 -m pip uninstall -y nvflare 2>/dev/null || true
 
     echo "removing temporary files in ${WORK_DIR}"
 
@@ -135,10 +70,6 @@ function clean {
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name ".coverage" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type f -name ".coverage.*" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name "__pycache__" -exec rm -r "{}" \;
-    
-    # Remove dependency cache marker
-    rm -f "$DEPS_MARKER"
-    echo "dependency cache cleared"
 }
 
 function print_error_msg() {
@@ -359,8 +290,7 @@ function help() {
     echo "         --numprocesses=<N|auto>  : used with -u command, set pytest xdist workers (default is 8)"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
-    echo "         --fresh-deps             : force fresh dependency install (bypasses cache)"
-    echo "         --clean                  : clean py and other artifacts generated, clears dependency cache"
+    echo "         --clean                  : clean py and other artifacts generated"
 #   echo "    -i | --integration-tests      : integration tests"
     echo ""
     echo "Notebook test options (used with -n):"
@@ -372,11 +302,6 @@ function help() {
     echo "    ./runtest.sh -n                                              # test default (flare_simulator.ipynb)"
     echo "    ./runtest.sh -n -v examples/tutorials/flare_api.ipynb        # test single notebook with verbose"
     echo "    ./runtest.sh -n --timeout=1800 --kernel=python3 examples/tutorials/"
-    echo ""
-    echo "Environment overrides:"
-    echo "    NVFLARE_DEPS_MAX_AGE_DAYS     : dependency cache age limit (default: 3)"
-    echo "    NVFLARE_DEPS_MAX_RUNS         : dependency cache run limit (default: 20)"
-    echo "    NVFLARE_DEPS_CACHE_ENABLED    : true|false (default: true)"
     exit 1
 }
 
@@ -385,7 +310,6 @@ unit_test_report=false
 dry_run_flag=false
 pytest_numprocesses=8
 verbose_flag=false
-fresh_deps=false
 
 # notebook test defaults
 nb_timeout=1200
@@ -476,10 +400,6 @@ do
             verbose_flag=true
         ;;
 
-        --fresh-deps)
-            fresh_deps=true
-        ;;
-
         -*)
             help
         ;;
@@ -528,7 +448,7 @@ echo "                 "
 if [[ $dry_run_flag = "true" ]]; then
     dry_run "$cmd"
 else
-    maybe_install_deps
+    install_deps
     eval "$cmd"
 fi
 echo "Done"
