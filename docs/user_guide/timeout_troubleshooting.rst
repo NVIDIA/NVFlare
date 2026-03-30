@@ -466,8 +466,7 @@ at job launch. Raise it to give each client time to initialize:
 
    {
      "runner_sync_timeout": 120,
-     "max_runner_sync_timeout": 7200,
-     "max_runner_sync_tries": 120
+     "max_runner_sync_timeout": 7200
    }
 
 These two changes address the most common startup race conditions in large hierarchical
