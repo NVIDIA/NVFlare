@@ -484,7 +484,8 @@ Bug Fixes
 - Fixed TensorBoard analytics receiver import error.
 - Improved error handling in FOBS serialization (raise exception on errors).
 - Improved error messages in Client API.
-- Fixed a path traversal vulnerability in ``FileRetriever`` by enforcing source-directory boundary checks on requested files.
+- **Security fix (CWE-502, CVSS 8.8)**: Fixed a Remote Code Execution vulnerability in FOBS deserialization. The ``Packer.unpack()`` method failed to validate the attacker-controlled ``type_name`` before passing it to ``load_class()``, allowing authenticated participants to execute arbitrary Python code on the aggregation server. Fixed by introducing a ``BUILTIN_TYPES`` allowlist and validating ``type_name`` before class loading. A public API ``add_type_name_whitelist()`` is provided for runtime extension with custom types.
+- **Security fix (CWE-22)**: Fixed a path traversal vulnerability in ``FileRetriever`` by enforcing source-directory boundary checks on requested files, preventing ``../`` traversal attacks from escaping the allowed directory.
 - Updated PEFT/TRL integration for latest API compatibility.
 - Updated HuggingFace LLM integration.
 - Security dependency updates for web components.
