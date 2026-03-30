@@ -206,6 +206,21 @@ function get_current_kernel() {
     echo ""
 }
 
+function validate_kernel() {
+    local kernel_name="$1"
+    if ! command -v jupyter >/dev/null 2>&1; then
+        echo "${red}Error: jupyter not found. Install with: pip install jupyter${noColor}"
+        return 1
+    fi
+    if ! jupyter kernelspec list 2>/dev/null | awk '{print $1}' | grep -qx "$kernel_name"; then
+        echo "${red}Error: kernel '$kernel_name' not found${noColor}"
+        echo "Available kernels:"
+        jupyter kernelspec list 2>/dev/null | tail -n +2
+        return 1
+    fi
+    return 0
+}
+
 function notebook_test() {
     echo "${separator}${blue}notebook-test${noColor}"
 
@@ -213,6 +228,9 @@ function notebook_test() {
     local kernel
     if [[ -n "$nb_kernel" ]]; then
         kernel="$nb_kernel"
+        if ! validate_kernel "$kernel"; then
+            exit 1
+        fi
         echo "Using kernel: $kernel"
     else
         kernel="$(get_current_kernel)"
