@@ -91,8 +91,10 @@ python job.py
 Important notes:
 
 - The example always uses LoRA-only FL exchange. The MedGemma base model stays frozen on every client, and FedAvg aggregates only the adapter weights.
+- In governed clinical FL settings, this adapter-only pattern keeps the full MedGemma checkpoint local to each institution and limits network exchange to compact LoRA updates instead of full model weights. That can be useful when sites do not allow full locally adapted checkpoints to leave the organization, although deployers still need to confirm that adapter exchange meets their own privacy and compliance requirements.
 - `job.py` defaults to 3 clients and one GPU per client. If needed, override the GPU mapping with `--gpu "[0],[1],[2]"`.
 - The client uses the same prompt format, 4-bit quantization, LoRA config, and multimodal collator pattern as the official notebook.
+- FedAvg over LoRA adapters is not rank-neutral under heterogeneous or non-IID client data. In practice, the aggregated adapter can behave as if it has lower effective rank than the configured `lora_r`, especially when sites drift in different directions. If validation loss or accuracy starts diverging sharply across rounds or across sites, treat that as a warning sign that simple adapter averaging may be struggling. A future production variant may prefer rank-adaptive or other heterogeneity-aware aggregation strategies.
 
 Useful flags:
 
