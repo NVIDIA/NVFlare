@@ -68,7 +68,7 @@ Available Commands
    * - ``-r`` / ``--test-report``
      - Generate JUnit XML test report (use with ``-u``)
    * - ``--clean``
-     - Clean build artifacts and caches
+     - Clean build artifacts
 
 Common Options
 ==============
@@ -82,37 +82,12 @@ These options can be used with any test command:
    * - Option
      - Default
      - Description
+   * - ``-j <N|auto>`` / ``--numprocesses=<N|auto>``
+     - auto
+     - Number of parallel pytest workers. Use a fixed number (e.g. ``8``) in CI for reproducibility.
    * - ``-d`` / ``--dry-run``
      - off
      - Print commands without executing
-   * - ``--fresh-deps``
-     - off
-     - Force fresh dependency installation (bypass cache)
-
-Dependency Caching
-==================
-
-The ``runtest.sh`` script automatically caches dependency installation to speed up repeated runs:
-
-- **First run**: Dependencies are installed and a cache marker is created
-- **Subsequent runs**: Dependencies are skipped (uses cache)
-- **Auto-refresh**: Cache expires after **3 days** or **20 runs**, whichever comes first
-
-The cache status is displayed at the start of each run:
-
-.. code:: text
-
-   Dependencies cached (5/20 runs, 2/3 days) - skipping install
-
-To force a fresh dependency install:
-
-.. code:: bash
-
-   # Force reinstall dependencies
-   ./runtest.sh -u --fresh-deps
-
-   # Or clear all caches (including dependency cache)
-   ./runtest.sh --clean
 
 Examples
 ========
@@ -133,6 +108,9 @@ Unit Tests
 
    # Run with coverage and test report
    ./runtest.sh -u -c -r
+
+   # Limit parallelism (e.g. for CI)
+   ./runtest.sh -u -j 8
 
 Code Quality
 ------------
@@ -164,17 +142,6 @@ See :ref:`notebook_testing` for detailed notebook testing options.
 Troubleshooting
 ===============
 
-Slow Repeated Runs
-------------------
-
-If runs are slower than expected, check if dependency caching is working:
-
-.. code:: text
-
-   Dependencies cached (X/50 runs, Y/7 days) - skipping install
-
-If you see "Dependencies not yet installed", the cache may have expired. This is normal behavior.
-
 Force Clean State
 -----------------
 
@@ -184,5 +151,3 @@ To start fresh:
 
    ./runtest.sh --clean
    ./runtest.sh -u  # Will reinstall dependencies
-
-

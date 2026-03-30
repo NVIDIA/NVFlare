@@ -156,6 +156,7 @@ wrksp/*
 # ide
 .idea/
 .ipynb_checkpoints/
+*.ipynb.backup
 
 # nvflare artifacts
 log.txt

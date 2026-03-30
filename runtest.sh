@@ -206,21 +206,6 @@ function get_current_kernel() {
     echo ""
 }
 
-function validate_kernel() {
-    local kernel_name="$1"
-    if ! command -v jupyter >/dev/null 2>&1; then
-        echo "${red}Error: jupyter not found. Install with: pip install jupyter${noColor}"
-        return 1
-    fi
-    if ! jupyter kernelspec list 2>/dev/null | awk '{print $1}' | grep -qx "$kernel_name"; then
-        echo "${red}Error: kernel '$kernel_name' not found${noColor}"
-        echo "Available kernels:"
-        jupyter kernelspec list 2>/dev/null | tail -n +2
-        return 1
-    fi
-    return 0
-}
-
 function notebook_test() {
     echo "${separator}${blue}notebook-test${noColor}"
 
@@ -228,9 +213,6 @@ function notebook_test() {
     local kernel
     if [[ -n "$nb_kernel" ]]; then
         kernel="$nb_kernel"
-        if ! validate_kernel "$kernel"; then
-            exit 1
-        fi
         echo "Using kernel: $kernel"
     else
         kernel="$(get_current_kernel)"
@@ -287,8 +269,8 @@ function help() {
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
-    echo "    -j <N>                        : number of parallel pytest workers (default is 8, alias for --numprocesses)"
-    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default is 8)"
+    echo "    -j <N|auto>                   : number of parallel pytest workers (default: auto, alias for --numprocesses)"
+    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: auto)"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated"
@@ -309,7 +291,7 @@ function help() {
 coverage_report=false
 unit_test_report=false
 dry_run_flag=false
-pytest_numprocesses=8
+pytest_numprocesses="auto"
 verbose_flag=false
 
 # notebook test defaults

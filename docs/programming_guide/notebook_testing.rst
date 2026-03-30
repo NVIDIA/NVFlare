@@ -135,7 +135,7 @@ The testing framework (implemented in ``conftest.py``) automatically:
 
 This ensures:
 
-- Original notebooks in git remain unchanged
+- The test does not modify the committed notebook (original is restored from backup)
 - Notebooks can contain Colab-specific or interactive cells that won't break CI
 - Consistent kernel usage across different development environments
 
