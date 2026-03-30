@@ -105,12 +105,12 @@ def main():
     # to instantiate the model on the server.
     train_mode = args.train_mode.lower()
     if train_mode == "sft":
-        initial_model = {"path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
+        model = {"class_path": "hf_sft_model.CausalLMModel", "args": {"model_name_or_path": args.model_name_or_path}}
         job_name = "llm_hf_sft"
         output_path = "sft"
     elif train_mode == "peft":
-        initial_model = {
-            "path": "hf_peft_model.CausalLMPEFTModel",
+        model = {
+            "class_path": "hf_peft_model.CausalLMPEFTModel",
             "args": {"model_name_or_path": args.model_name_or_path},
         }
         job_name = "llm_hf_peft"
@@ -170,7 +170,7 @@ def main():
     # Create FedAvgRecipe
     recipe = FedAvgRecipe(
         name=job_name,
-        initial_model=initial_model,
+        model=model,
         min_clients=num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
@@ -181,30 +181,24 @@ def main():
     )
 
     # Add client params to reduce timeout failures for longer LLM runs
-    for site_name in client_names:
-        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
-        recipe.job.to(client_params, site_name)
+    recipe.add_client_config({"get_task_timeout": 300, "submit_task_result_timeout": 300})
 
     # Add client_wrapper.sh for multi-node training
     if args.multi_node:
-        for site_name in client_names:
-            recipe.job.to("client_wrapper.sh", site_name)
+        recipe.add_client_file("client_wrapper.sh")
 
     # Add quantization filters if specified
     if args.quantize_mode:
-        from nvflare import FilterType
-
         quantizer = ModelQuantizer(quantization_type=args.quantize_mode.lower())
         dequantizer = ModelDequantizer()
 
-        # Add to server
-        recipe.job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
-        recipe.job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+        # Add to server: quantizer on output, dequantizer on input
+        recipe.add_server_output_filter(quantizer, tasks=["train"])
+        recipe.add_server_input_filter(dequantizer, tasks=["train"])
 
-        # Add to all clients
-        for site_name in client_names:
-            recipe.job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
-            recipe.job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
+        # Add to all clients: quantizer on output, dequantizer on input
+        recipe.add_client_output_filter(quantizer, tasks=["train"])
+        recipe.add_client_input_filter(dequantizer, tasks=["train"])
 
     # Add experiment tracking if requested
     if args.use_tracking:

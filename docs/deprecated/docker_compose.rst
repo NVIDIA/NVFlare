@@ -1,4 +1,9 @@
+:orphan:
+
 .. _docker_compose:
+
+.. deprecated:: 2.7
+   Docker Compose deployment is deprecated. See :ref:`containerized_deployment` for current container deployment options.
 
 ######################################################
 Launching NVIDIA FLARE with docker compose

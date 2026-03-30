@@ -14,7 +14,7 @@ The workflow uses the [CrossSiteModelEval](https://nvflare.readthedocs.io/en/mai
 
 ## Installation
 
-Follow the [Installation](../../getting_started/README.md) instructions.
+Follow the [Installation](../../README.md) instructions.
 
 ## Two Modes of Operation
 
@@ -128,7 +128,7 @@ from nvflare.recipe import SimEnv
 # 1. Create a standard FedAvg recipe
 recipe = NumpyFedAvgRecipe(
     name="hello-numpy-train-cse",
-    initial_model=[0.0] * 10,
+    model=[0.0] * 10,  # Can also use initial_ckpt="/server/path/to/model.npy"
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
@@ -205,7 +205,7 @@ recipe = FedAvgRecipe(
     min_clients=2,
     num_rounds=3,
     train_script="client.py",
-    initial_model=YourModel(),
+    model=YourModel(),
 )
 
 add_cross_site_evaluation(recipe)

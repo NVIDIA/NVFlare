@@ -23,7 +23,7 @@ Two key features were added to improve NVFlare's messaging efficiency for LLMs:
    - Reduces transmission size while maintaining original precision for computations
 
 Implementation
-==============
+--------------
 
 Message quantization is implemented using a filter mechanism that handles the quantization and dequantization of model updates. The process involves:
 
@@ -37,7 +37,7 @@ We utilize bitsandbytes for 8- and 4-bit quantization functionality. The quantiz
 For a practical implementation example, see the :github_nvflare_link:`LLM example <examples/advanced/llm_hf>` which demonstrates message quantization in a real-world scenario.
 
 Key Features
-============
+------------
 
 * Quantization and dequantization implemented with filter mechanism
 * No code changes required from user side - same training script works with/without quantization
@@ -47,7 +47,7 @@ Key Features
 * 8- and 4-bit quantization using bitsandbytes
 
 Precision Options and Performance
-=================================
+---------------------------------
 
 The following precision options are available, with their respective size reductions:
 
@@ -77,7 +77,7 @@ The following precision options are available, with their respective size reduct
    +-------------+-------------+----------------+-------------+
 
 Performance Impact
-==================
+------------------
 
 Message quantization does not sacrifice model convergence quality. As shown in the experiments with LLM Supervised Fine-Tuning (SFT), the training loss curves align well across different precision levels.
 
@@ -85,7 +85,7 @@ Message quantization does not sacrifice model convergence quality. As shown in t
     :height: 300px
 
 Summary
-=======
+-------
 
 Message quantization provides:
 
@@ -93,4 +93,10 @@ Message quantization provides:
 * No impact on model convergence
 * Support for various precision levels
 * Seamless integration with existing training scripts
-* Compatibility with both numpy and PyTorch 
+* Compatibility with both numpy and PyTorch
+
+Examples
+--------
+
+* `Federated LLM with Quantization (HuggingFace) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_ -- End-to-end SFT/PEFT example with ``--quantize_mode`` option for fp16, 8-bit, and 4-bit communication
+* `Self-Paced Training: LLM Quantization (Chapter 8.4) <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.4_llm_quantization>`_ -- Step-by-step tutorial notebook on message quantization

@@ -80,7 +80,7 @@ def main():
         name=job_name,
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=ModerateCNN(),
+        model=ModerateCNN(),
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,

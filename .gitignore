@@ -170,6 +170,20 @@ __pycache__
 .pyc
 
 docs/apidocs/
+!docs/apidocs/modules.rst
+
+# dependency marker
+.deps_marker
+
+# local test temp dir
+.tmp/
 
 # Claude Code personal config
 CLAUDE.local.md
+
+# local Codex artifacts
+.codex/
+
+# memory profiler output
+tests/memory_profile/**/*.dat
+/HEAD

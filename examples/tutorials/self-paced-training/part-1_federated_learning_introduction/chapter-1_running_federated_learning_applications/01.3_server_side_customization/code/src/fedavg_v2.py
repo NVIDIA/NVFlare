@@ -32,7 +32,7 @@ class FedAvgV2(BaseFedAvg):
         patience: Optional[int] = None,
         task_to_optimize: Optional[str] = "train",
         save_filename: Optional[str] = "FL_global_model.pt",
-        initial_model: Optional[FLModel] = None,
+        model: Optional[FLModel] = None,
         **kwargs,
     ) -> None:
         """Controller for FedAvg Workflow with Early Stopping and Model Selection.
@@ -48,7 +48,7 @@ class FedAvgV2(BaseFedAvg):
             task_to_optimize (str, optional): Specifies whether to optimize the target
                 metric on the training or validation task. Defaults is train.
             save_filename (str, optional): filename for saving model
-            initial_model (nn.Module, optional): initial PyTorch model
+            model (nn.Module, optional): initial PyTorch model
         """
         super().__init__(*args, **kwargs)
         self.patience = patience
@@ -60,17 +60,17 @@ class FedAvgV2(BaseFedAvg):
         else:
             self.stop_condition = None
         self.save_filename = save_filename
-        self.initial_model: FLModel = initial_model
+        self.model: FLModel = model
         self.best_target_metric_value: Any = None
 
     def run(self) -> None:
         self.info("Start FedAvg.")
 
-        if self.initial_model:
-            # Use FOBS for serializing/deserializing PyTorch tensors (self.initial_model)
+        if self.model:
+            # Use FOBS for serializing/deserializing PyTorch tensors (self.model)
             fobs.register(TensorDecomposer)
             # PyTorch weights
-            initial_weights = self.initial_model.state_dict()
+            initial_weights = self.model.state_dict()
         else:
             initial_weights = {}
 

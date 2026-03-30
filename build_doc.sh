@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # output formatting
 separator=""
@@ -17,13 +18,23 @@ then
 fi
 
 function print_usage() {
-    echo "build_doc.sh [--clean] [--html]"
+    echo "build_doc.sh [--clean] [--html] [--skip-api]"
     echo ""
     echo "Build documentation"
     echo ""
+    echo "Options:"
+    echo "  --html        Build HTML docs (full build including API reference)."
+    echo "  --skip-api    Skip API reference generation (faster dev builds)."
+    echo "                Sets SKIP_API_DOCS=1 environment variable."
+    echo "  --clean       Clean up build artifacts."
+    echo ""
     echo "Examples:"
-    echo "./build_doc.sh --html        # build HTML docs."
-    echo "./build_doc.sh --clean       # clean up python build related files."
+    echo "./build_doc.sh --html              # full production build with API reference."
+    echo "./build_doc.sh --html --skip-api   # fast dev build, skip API reference."
+    echo "./build_doc.sh --clean             # clean up python build related files."
+    echo ""
+    echo "You can also set the env var directly:"
+    echo "SKIP_API_DOCS=1 ./build_doc.sh --html"
 }
 
 function print_error_msg() {
@@ -50,17 +61,24 @@ function clean_docs() {
 
 function build_html_docs() {
     pip install -e .[dev]
-    sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
+    if [[ "${SKIP_API_DOCS:-0}" == "1" ]]; then
+        echo "${blue}Skipping API reference generation (SKIP_API_DOCS=1)${noColor}"
+    else
+        echo "${blue}Generating API reference...${noColor}"
+        sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
+    fi
     sphinx-build -b html docs docs/_build
 }
 
-if [ -z "$1" ]
-then
+if [[ $# -eq 0 ]]; then
     print_error_msg "Too few arguments to $0"
     print_usage
+    exit 1
 fi
 
 # parse arguments
+doClean=false
+doHTML=false
 while [[ $# -gt 0 ]]
 do
     key="$1"
@@ -70,6 +88,9 @@ do
         ;;
         --html)
             doHTML=true
+        ;;
+        --skip-api)
+            export SKIP_API_DOCS=1
         ;;
         *)
             print_error_msg "Incorrect commandline provided, invalid key: $key"

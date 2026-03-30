@@ -24,7 +24,7 @@ below), we recommend always including the ``__init__.py`` so that the project fo
 package, regardless of Python versions.
 
 Pyproject.toml
-==============
+--------------
 The ``pyproject.toml`` file exists in the job's ``custom`` folder. It is an important file that contains server and
 client app definition and configuration information. Such information is used by the Flower system to find the
 server app and the client app, and to pass app-specific configuration to the apps.
@@ -43,7 +43,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     description = ""
     license = "Apache-2.0"
     dependencies = [
-        "flwr[simulation]>=1.11.0,<2.0",
+        "flwr>=1.16,<1.26",
         "nvflare~=2.5.0rc",
         "torch==2.2.1",
         "torchvision==0.17.1",
@@ -72,7 +72,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
 .. note:: Note that the information defined in pyproject.toml must match the code in the project folder!
 
 Project Name
-------------
+~~~~~~~~~~~~
 The project name should match the name of the project folder, though not a requirement. In this example, it is ``flwr_pt``. 
 Server App Specification
 
@@ -93,7 +93,7 @@ where:
 
 
 Client App Specification
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 This value is specified following this format:
 
 .. code-block::
@@ -111,7 +111,7 @@ where:
 
 
 App Configuration
------------------
+~~~~~~~~~~~~~~~~~
 The pyproject.toml file can contain app config information, in the ``[tool.flwr.app.config]`` section. In this example,
 it defines the number of rounds:
 
@@ -133,8 +133,11 @@ The content of this section is specific to the server app code. The ``server.py`
 
         return ServerAppComponents(strategy=strategy, config=config)
 
+Note that you can also pass `run_config` arguments directly through the job definition via 
+`FlowerRecipe(..., run_config={"num-server-rounds": 5})` to override the default values listed in `pyproject.toml`.
+
 Supernode Count
----------------
+~~~~~~~~~~~~~~~
 If you run the Flower job with its simulation (not as a FLARE job), you need to specify how many clients (supernodes) to use
 for the simulation in the ``[tool.flwr.federations.local-simulation]`` section, like this:
 

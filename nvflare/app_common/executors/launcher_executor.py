@@ -76,10 +76,10 @@ class LauncherExecutor(TaskExchanger):
             train_task_name (str): Task name of train mode.
             evaluate_task_name (str): Task name of evaluate mode.
             submit_model_task_name (str): Task name of submit_model mode.
-            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
-            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
+            from_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
+                Parameter conversion for launcher-based external execution now happens in the subprocess agent.
+            to_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
+                Parameter conversion for launcher-based external execution now happens in the subprocess agent.
         """
         TaskExchanger.__init__(
             self,
@@ -121,6 +121,23 @@ class LauncherExecutor(TaskExchanger):
         self._current_task = None
         self._lock = Lock()
 
+        # Subclasses can set this to a positive float to defer stop_task() to a
+        # background thread, polling for the subprocess to exit naturally first.
+        # This is required when the subprocess holds a DownloadService transaction
+        # that the server must pull (reverse PASS_THROUGH / large-model upload).
+        # Default 0 preserves the original synchronous behaviour.
+        self._stop_task_wait_timeout: float = 0.0
+
+        # Coordinates deferred stop_task() with the next round's launch_task().
+        # Starts "set" (no deferred stop in progress). Cleared when a deferred stop
+        # thread starts; set again (in a finally block) when that thread completes.
+        # _initialize_external_execution() waits on this before calling launch_task()
+        # so that the launcher's internal _process reference is cleared before a new
+        # subprocess is started (prevents "run status becomes success" in round N+1).
+        self._deferred_stop_event = threading.Event()
+        self._deferred_stop_event.set()
+        self._deferred_stop_task_name: str = ""  # task name captured when deferred stop starts
+
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
         self._init_converter(fl_ctx)
@@ -143,7 +160,7 @@ class LauncherExecutor(TaskExchanger):
             if self._abort_signal is not None:
                 self._abort_signal.trigger(f"{EventType.END_RUN} event received - telling external to stop")
             self.finalize(fl_ctx)
-            self.log_info(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
+            self.log_debug(fl_ctx, f"{EventType.END_RUN} event received - telling external to stop")
             super().handle_event(event_type, fl_ctx)
         else:
             super().handle_event(event_type, fl_ctx)
@@ -151,27 +168,25 @@ class LauncherExecutor(TaskExchanger):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"execute for task ({task_name})")
 
-        if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self._executing.set()
+        try:
+            if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if self._from_nvflare_converter is not None:
-            shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
+            result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
-        result = super().execute(task_name, shareable, fl_ctx, abort_signal)
+            if result.get_return_code() != ReturnCode.OK:
+                abort_signal.trigger("execution exception in TaskExchanger")
+                self._execute_launcher_method_in_thread_executor(
+                    method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if result.get_return_code() != ReturnCode.OK:
-            abort_signal.trigger("execution exception in TaskExchanger")
-            self._execute_launcher_method_in_thread_executor(
-                method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
-            )
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 
-        if self._to_nvflare_converter is not None:
-            result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
-
-        self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
-
-        return result
+            return result
+        finally:
+            self._executing.clear()
 
     def check_input_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
         supported_tasks = [self._train_task_name, self._evaluate_task_name, self._submit_model_task_name]
@@ -214,24 +229,64 @@ class LauncherExecutor(TaskExchanger):
             raise RuntimeError("Launcher initialize failed.")
 
     def _init_converter(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
-        if from_nvflare_converter is not None:
-            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
-            self._from_nvflare_converter = from_nvflare_converter
-
-        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
-        if to_nvflare_converter is not None:
-            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
-            self._to_nvflare_converter = to_nvflare_converter
+        if self._from_nvflare_converter_id or self._to_nvflare_converter_id:
+            self.log_warning(
+                fl_ctx,
+                "from_nvflare_converter_id/to_nvflare_converter_id are ignored in LauncherExecutor. "
+                "For launcher-based execution, configure converters in the subprocess client API path instead.",
+            )
 
     def _initialize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> bool:
-        self.reset_peer_is_up_or_dead()
         with self._lock:
             self._abort_signal = abort_signal
             self._current_task = task_name
+
+        # Wait for any deferred stop_task() from the previous round to finish before
+        # calling launch_task(). Without this, launch_once=False launchers see
+        # self._process != None (old exited process not yet cleared) and skip
+        # creating a new subprocess, causing immediate COMPLETE_SUCCESS / "run status
+        # becomes success" errors. The deferred thread runs at most _stop_task_wait_timeout
+        # seconds, so the extra wait here is bounded. In practice it is ~0-1 s because
+        # the subprocess exits naturally (after download_done) well before the server
+        # completes global aggregation and dispatches the next round's task.
+        if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
+            self.log_info(fl_ctx, f"waiting for deferred stop of '{self._deferred_stop_task_name}' to finish")
+            wait_limit = self._stop_task_wait_timeout + 60.0
+            deadline = time.time() + wait_limit
+            timed_out = True
+            last_log = time.time()
+            while time.time() < deadline:
+                if abort_signal.triggered:
+                    return False  # abort fired; no point launching the next round
+                if self._deferred_stop_event.wait(timeout=1.0):
+                    timed_out = False
+                    break
+                if time.time() - last_log >= 10.0:
+                    self.log_info(fl_ctx, f"still waiting for deferred stop of '{self._deferred_stop_task_name}'...")
+                    last_log = time.time()
+            if timed_out:
+                # Deferred stop did not finish in time. Force stop now so the
+                # launcher clears self._process before we try to start a new subprocess.
+                # Use _deferred_stop_task_name (the previous round's task), not the
+                # current task_name (the new round being initialized).
+                prev_task_name = self._deferred_stop_task_name
+                self.log_warning(
+                    fl_ctx,
+                    f"Timed out waiting for deferred stop_task to finish after {wait_limit}s; "
+                    f"forcing stop_task({prev_task_name}) now.",
+                )
+                self._execute_launcher_method_in_thread_executor(
+                    method_name="stop_task", task_name=prev_task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
+                )
+
+        # Reset after deferred-stop wait completes (old subprocess is dead, queue
+        # drained) but before launch_task (new subprocess hasn't started yet).
+        # This prevents heartbeats from the OLD subprocess (received during the
+        # deferred-stop wait) from causing _wait_external_setup to return True
+        # before the NEW subprocess connects.
+        self.reset_peer_is_up_or_dead()
 
         launch_task_success = self._execute_launcher_method_in_thread_executor(
             method_name="launch_task",
@@ -245,7 +300,6 @@ class LauncherExecutor(TaskExchanger):
             return False
 
         self.log_info(fl_ctx, f"Launcher successfully launched task ({task_name}).")
-        # wait for external execution to set up their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
             error = f"Failed external setup for task ({task_name})."
@@ -318,6 +372,69 @@ class LauncherExecutor(TaskExchanger):
         )
         if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
             self.log_debug(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
+
+        if (
+            self._stop_task_wait_timeout > 0
+            and not self._job_end
+            and self.launcher.needs_deferred_stop()
+            and self._deferred_stop_event.is_set()
+        ):
+            # The subprocess may be blocking in download_done.wait() (Fix 16 / DOWNLOAD_COMPLETE_CB)
+            # so the server can pull large tensors directly from its DownloadService.
+            # Calling stop_task() here would send SIGTERM and tear down the subprocess cell
+            # before the server connects, causing "no path" errors on every retry.
+            #
+            # Instead, defer stop_task() to a background thread that polls until the subprocess
+            # exits naturally (download done → subprocess unblocks and exits), then cleans up.
+            # execute() returns immediately so ClientRunner can send SubmitUpdate to the server
+            # while the subprocess cell is still alive.
+            #
+            # _deferred_stop_event is cleared here and set in a finally block inside the thread,
+            # so _initialize_external_execution() for the next round can safely wait for this
+            # cleanup to finish before calling launch_task().
+            wait_timeout = self._stop_task_wait_timeout
+            self._deferred_stop_task_name = task_name  # capture before clearing event
+            self._deferred_stop_event.clear()
+
+            def _deferred_stop_task():
+                try:
+                    deadline = time.time() + wait_timeout
+                    last_log = time.time()
+                    while time.time() < deadline:
+                        if self._job_end or abort_signal.triggered:
+                            break
+                        try:
+                            status = self.launcher.check_run_status(task_name, fl_ctx)
+                        except Exception as e:
+                            self.log_warning(
+                                fl_ctx,
+                                f"check_run_status({task_name}) failed in deferred stop: {secure_format_exception(e)}",
+                            )
+                            break
+                        if status != LauncherRunStatus.RUNNING:
+                            self.log_info(fl_ctx, f"deferred stop: subprocess exited with status={status}")
+                            break
+                        if time.time() - last_log >= 10.0:
+                            self.log_info(fl_ctx, "deferred stop: subprocess still RUNNING...")
+                            last_log = time.time()
+                        time.sleep(1.0)
+                    self.log_info(fl_ctx, f"Calling stop task ({task_name}) [deferred].")
+                    try:
+                        self.launcher.stop_task(task_name, fl_ctx, abort_signal)
+                    except Exception as e:
+                        self.log_warning(fl_ctx, f"Deferred stop_task ({task_name}) failed: {e}")
+                    self.log_info(fl_ctx, f"External execution for task ({task_name}) is finished [deferred].")
+                finally:
+                    self._deferred_stop_event.set()
+
+            threading.Thread(target=_deferred_stop_task, daemon=True, name=f"deferred-stop-{task_name}").start()
+            return True
+
+        if self._stop_task_wait_timeout > 0 and not self._deferred_stop_event.is_set():
+            self.log_warning(
+                fl_ctx,
+                f"Previous deferred stop still in progress; using synchronous stop_task({task_name}).",
+            )
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
         stop_task_success = self._execute_launcher_method_in_thread_executor(
@@ -410,6 +527,12 @@ class LauncherExecutor(TaskExchanger):
                             fl_ctx,
                             f"launcher completed with status {run_status} at time {self._launcher_finish_time}",
                         )
+
+                    # Deferred stop in progress: the subprocess exit is expected
+                    # and managed by the deferred thread.  Skip the result-wait
+                    # below to avoid a false abort between rounds.
+                    if not self._deferred_stop_event.is_set():
+                        continue
 
                     if run_status == LauncherRunStatus.COMPLETE_FAILED:
                         msg = f"Launcher failed at time {self._launcher_finish_time} "

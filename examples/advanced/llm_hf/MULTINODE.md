@@ -118,7 +118,7 @@ SLURM Job (2 nodes allocated)
 - Uses `FedAvgRecipe` with `per_site_config` for multi-node setup
 - When `--multi_node` flag is set:
   - Sets command in per_site_config: `"command": "bash custom/client_wrapper.sh"`
-  - Adds wrapper script to job: `recipe.job.to("client_wrapper.sh", site_name)`
+  - Adds wrapper script to job: `recipe.add_client_file("client_wrapper.sh")`
 - Script arguments passed via `"train_args"` in per_site_config
 - No need to handle environment variables in Python
 
@@ -131,7 +131,7 @@ SLURM Job (2 nodes allocated)
 - Uses `CUDA_VISIBLE_DEVICES` to set GPUs. Assumes that they are set as comma-separated list, e.g. "0,1,2,3,4,5,6,7".
 
 **Why this works:**
-- The wrapper script is included in the FL job package via `recipe.job.to("client_wrapper.sh", site_name)`
+- The wrapper script is included in the FL job package via `recipe.add_client_file("client_wrapper.sh")`
 - It's placed in the `custom/` subdirectory of the job workspace
 - Command is set to `bash custom/client_wrapper.sh` in the per_site_config
 - It runs in the same environment as the SLURM job (has access to `srun` and SLURM variables)
@@ -164,7 +164,7 @@ SLURM Job (2 nodes allocated)
    - Uses `FedAvgRecipe` to configure the federated learning job
    - For multi-node mode (`--multi_node` flag):
      - Sets command via `per_site_config`: `"command": "bash custom/client_wrapper.sh"`
-     - Adds wrapper script: `recipe.job.to("client_wrapper.sh", site_name)`
+     - Adds wrapper script: `recipe.add_client_file("client_wrapper.sh")`
    - Includes `client.py` training script automatically via recipe
    - Exports job configuration to specified directory
 

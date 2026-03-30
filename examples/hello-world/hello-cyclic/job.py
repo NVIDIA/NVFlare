@@ -24,7 +24,11 @@ if __name__ == "__main__":
 
     recipe = CyclicRecipe(
         num_rounds=num_rounds,
-        initial_model=Net(),
+        min_clients=n_clients,
+        # Model can be specified as class instance or dict config:
+        model=Net(),
+        # Alternative: model={"class_path": "model.Net", "args": {}},
+        # For pre-trained weights: initial_ckpt="/server/path/to/model.h5",
         train_script=train_script,
     )
 

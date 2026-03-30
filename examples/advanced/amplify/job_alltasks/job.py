@@ -114,7 +114,7 @@ def main():
         name=job_name,
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
-        initial_model=model,
+        model=model,
         train_script="client.py",
         train_args=f"--data_root {args.data_root} --tasks {' '.join(TASKS)} --n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --batch_size {args.batch_size} --trunk_lr {args.trunk_lr} --regressor_lr {args.regressor_lr}"
         + (f" --max_samples {args.max_samples}" if args.max_samples else ""),

@@ -13,13 +13,24 @@
 # limitations under the License.
 
 import datetime
+import importlib.util
 import os
 import shutil
-from distutils.dir_util import copy_tree
 
 from setuptools import find_packages, setup
 
-import versioneer
+def load_local_versioneer():
+    root = os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd()
+    versioneer_path = os.path.join(root, "versioneer.py")
+    spec = importlib.util.spec_from_file_location("nvflare_local_versioneer", versioneer_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load versioneer from {versioneer_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+versioneer = load_local_versioneer()
 
 # read the contents of your README file
 
@@ -49,7 +60,7 @@ def package_files(
     starting,
 ):
     paths = []
-    for (path, directories, filenames) in os.walk(os.path.join(root, starting)):
+    for path, directories, filenames in os.walk(os.path.join(root, starting)):
         rel_dir = os.path.relpath(path, root)
         for filename in filenames:
             paths.append(os.path.join(rel_dir, filename))
@@ -58,9 +69,7 @@ def package_files(
 
 def copy_package(src_dir, dst_dir):
     if os.path.isdir(src_dir):
-        if not os.path.isdir(dst_dir):
-            os.makedirs(dst_dir, exist_ok=True)
-        copy_tree(src_dir, dst_dir)
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
 
     for root, dirs, files in os.walk(dst_dir):
         for f in files:
@@ -100,4 +109,3 @@ setup(
 )
 
 remove_dir(target_path=tmp_job_template_folder)
-

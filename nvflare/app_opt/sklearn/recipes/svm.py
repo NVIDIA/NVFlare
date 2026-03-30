@@ -14,10 +14,10 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.aggregators.collect_and_assemble_model_aggregator import CollectAndAssembleModelAggregator
-from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor, validate_model_path
 from nvflare.app_opt.sklearn.svm_assembler import SVMAssembler
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
@@ -30,6 +30,14 @@ class _SVMValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     kernel: Literal["linear", "poly", "rbf", "sigmoid"]
+    model_path: Optional[str] = None
+
+    @field_validator("model_path")
+    @classmethod
+    def validate_model_path_absolute(cls, v):
+        if v is not None:
+            validate_model_path(v)
+        return v
 
 
 class SVMFedAvgRecipe(FedAvgRecipe):
@@ -58,6 +66,9 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         min_clients: Minimum number of clients required to start a training round.
         kernel: Kernel type for SVM. Options: 'linear', 'poly', 'rbf', 'sigmoid'.
             Defaults to 'rbf'.
+        model_path: Absolute path to a saved model file (.joblib).
+            If provided, the file must exist at runtime. Used to load previously
+            saved support vectors.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
@@ -119,6 +130,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         name: str = "svm_fedavg",
         min_clients: int,
         kernel: Literal["linear", "poly", "rbf", "sigmoid"] = "rbf",
+        model_path: Optional[str] = None,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
@@ -126,11 +138,15 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
     ):
-        v = _SVMValidator(kernel=kernel)
+        v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
+        self.model_path = v.model_path
 
         # Create SVM-specific persistor
-        persistor = JoblibModelParamPersistor(initial_params={"kernel": self.kernel})
+        persistor = JoblibModelParamPersistor(
+            initial_params={"kernel": self.kernel},
+            model_path=model_path,
+        )
 
         # Create SVMAssembler (will be added to job after super().__init__)
         self._svm_assembler = SVMAssembler(kernel=self.kernel)

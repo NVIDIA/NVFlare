@@ -24,7 +24,7 @@ if __name__ == "__main__":
         name="fedavg_tensorboard",
         min_clients=2,
         num_rounds=5,
-        initial_model=SimpleNetwork(),
+        model=SimpleNetwork(),
         train_script="client.py",
     )
 

@@ -28,6 +28,105 @@ This makes ``JobRecipe`` particularly useful as a **first touchpoint** for new u
 * Recipes encapsulate the necessary job structure and execution logic, ensuring correctness while reducing the chance of misconfiguration.
 * If necessary, users can later progress to customizing the full Job API once they are comfortable with the basics.
 
+Model Input Options
+-------------------
+
+Recipes accept model input in two formats, each with different trade-offs:
+
+**Option 1: Class Instance (Recommended for simplicity)**
+
+.. code-block:: python
+
+   from nvflare.app_opt.pt.recipes import FedAvgRecipe
+   from model import SimpleNetwork
+
+   recipe = FedAvgRecipe(
+       name="hello-pt",
+       model=SimpleNetwork(),  # Instantiated model
+       train_script="client.py",
+       ...
+   )
+
+**Option 2: Dictionary Configuration (Recommended for large models)**
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(
+       name="hello-pt",
+       model={
+           "class_path": "model.SimpleNetwork",
+           "args": {"num_classes": 10, "hidden_dim": 256}
+       },
+       train_script="client.py",
+       ...
+   )
+
+.. important::
+
+   **Understanding Model Serialization**
+
+   When you pass a class instance (e.g., ``SimpleNetwork()``), NVFlare does **not** ship the Python object directly.
+   Instead, the model is converted to a configuration file before job submission. The actual model is re-instantiated
+   on the server/clients from this configuration.
+
+   This means:
+
+   * **Large models**: Instantiating a large model (e.g., LLM with billions of parameters) just to create a recipe
+     is inefficient. Use the dictionary format to avoid unnecessary instantiation time and memory usage.
+   * **Non-serializable state**: If your model carries state that cannot be reconstructed from JSON configuration
+     (e.g., loaded data, open file handles), that state will be lost.
+   * **TensorFlow/Keras class instances**: Use a user-defined subclass (for example, subclassing
+     ``tf.keras.Model`` or ``tf.keras.Sequential``) so the model can be reconstructed from class path and args.
+     Passing raw inline Keras model objects may fail during job export.
+   * **Trade-off**: Class instance is more Pythonic and catches errors early; dictionary format is more performant
+     for large models.
+
+Pre-trained Checkpoint Path
+---------------------------
+
+Use ``initial_ckpt`` to specify a path to pre-trained model weights:
+
+.. code-block:: python
+
+   recipe = FedAvgRecipe(
+       name="hello-pt",
+       model=SimpleNetwork(),
+       initial_ckpt="/data/models/pretrained_model.pt",  # Absolute path
+       train_script="client.py",
+       ...
+   )
+
+.. important::
+
+   **Checkpoint Path Requirements**
+
+   * **Absolute path required**: The path must be an absolute path (e.g., ``/data/models/model.pt``), not relative.
+   * **May not exist locally**: The checkpoint file does **not** need to exist on the machine where you create
+     the recipe. It only needs to exist on the **server** when the model is actually loaded during job execution.
+   * **PyTorch requires model architecture**: For PyTorch, you must provide ``model`` (class instance or
+     dict config) along with ``initial_ckpt``, because PyTorch checkpoints contain only weights, not architecture.
+   * **TensorFlow/Keras can use checkpoint alone**: Keras ``.h5`` or SavedModel formats contain both architecture
+     and weights, so ``initial_ckpt`` can be used without ``model``. If ``model`` is provided, use a subclassed
+     Keras class instance (or dict config).
+
+**Example: Resume training from pre-trained weights**
+
+.. code-block:: python
+
+   # PyTorch: requires both model and checkpoint
+   recipe = FedAvgRecipe(
+       model=SimpleNetwork(),
+       initial_ckpt="/server/path/to/pretrained.pt",
+       ...
+   )
+
+   # TensorFlow: checkpoint alone works (Keras saves full model)
+   recipe = FedAvgRecipe(
+       initial_ckpt="/server/path/to/pretrained.h5",
+       framework=FrameworkType.TENSORFLOW,
+       ...
+   )
+
 Basic Example
 -------------
 
@@ -49,7 +148,7 @@ We use our existing training network under ``../hello-world/hello-pt/model.py`` 
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )
@@ -133,10 +232,10 @@ Let's first set the path to the POC environment:
 
 .. code-block:: python
 
-   from nvflare.recipe.poc_env import POCEnv
+   from nvflare.recipe.poc_env import PocEnv
 
    # Create a POC environment
-   env = POCEnv(
+   env = PocEnv(
        num_clients=2
    )
    # Execute the recipe
@@ -192,7 +291,7 @@ Now let's go ahead with environment creation and recipe execution.
        name="hello-pt",
        min_clients=2,
        num_rounds=3,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
        train_args="--batch_size 32",
    )
@@ -242,4 +341,3 @@ The goal of Job Recipes is to create a simple entry point into NVFlare that is m
 Examples
 --------
 To see more examples of Job Recipe in action, check out the quick start series :ref:`quickstart`, where several job recipes are demonstrated.
-

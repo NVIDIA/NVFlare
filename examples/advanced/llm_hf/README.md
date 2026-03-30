@@ -100,9 +100,11 @@ Key features:
 **Recipe-Based Approach:**
 ```python
 # Create recipe with FedAvgRecipe
+# Model can be class instance or dict config
+# For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
 recipe = FedAvgRecipe(
     name=job_name,
-    initial_model=initial_model,  # CausalLMModel or CausalLMPEFTModel
+    model=model,  # CausalLMModel or CausalLMPEFTModel
     min_clients=num_clients,
     num_rounds=args.num_rounds,
     train_script="client.py",
@@ -273,7 +275,7 @@ We can see the three curves align well.
 ![sft](./figs/callback_multigpu.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
+Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using the [Client API](../../../docs/programming_guide/execution_api_type/client_api.rst).
 
 The major code modifications are for replacing the fixed model reloading processing with 
 receiving and returning the global model, as shown below:

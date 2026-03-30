@@ -72,6 +72,18 @@ def register_vcs_handler(vcs, method):  # decorator
 def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=None):
     """Call the given command(s)."""
     assert isinstance(commands, list)
+    # A zero-byte file named HEAD in the working tree confuses git commands that
+    # reference the HEAD revision (git treats it as both a revision and a path).
+    # Remove it silently — git's own .git/HEAD is never empty, so an empty HEAD
+    # in the working tree is always spurious.
+    if cwd:
+        stale_head = os.path.join(cwd, "HEAD")
+        try:
+            if os.path.isfile(stale_head) and os.path.getsize(stale_head) == 0:
+                os.chmod(stale_head, 0o644)
+                os.remove(stale_head)
+        except OSError:
+            pass
     process = None
     for command in commands:
         try:
@@ -81,6 +93,7 @@ def run_command(commands, args, cwd=None, verbose=False, hide_stderr=False, env=
                 [command] + args,
                 cwd=cwd,
                 env=env,
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=(subprocess.PIPE if hide_stderr else None),
             )

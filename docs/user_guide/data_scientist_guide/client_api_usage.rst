@@ -81,7 +81,9 @@ After modifying your training script with the Client API, you need to create a `
         name="my-fl-job",
         min_clients=2,
         num_rounds=3,
-        initial_model=[[1, 2, 3], [4, 5, 6]],
+        # Model can be class instance, array, or dict config
+        # For pre-trained weights: initial_ckpt="/server/path/to/model.npy"
+        model=[[1, 2, 3], [4, 5, 6]],
         train_script="client.py",  # Points to your Client API script
     )
 

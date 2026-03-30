@@ -15,6 +15,7 @@
 import json
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
@@ -136,3 +137,124 @@ class TestFedAppAddResource:
         """Test that adding a non-string resource raises an error."""
         with pytest.raises(ValueError, match="resource must be a str"):
             self.app._add_resource(123)  # type: ignore[arg-type]  # intentionally testing invalid input
+
+
+class TestBaseFedJobFileToMethods:
+    """Tests for add_file_to_* methods in BaseFedJob."""
+
+    def test_add_file_to_server(self):
+        """Test adding a file to server app custom directory."""
+        job = FedJob(name="test_job")
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+        try:
+            job.add_file_to_server(temp_file)
+            # Verify server app was created and file was added
+            assert "server" in job._deploy_map
+            server_app = job._deploy_map["server"]
+            # file_sources is list of tuples (path, dest_dir, rename)
+            assert any(temp_file == src[0] for src in server_app.app_config.file_sources)
+        finally:
+            os.unlink(temp_file)
+
+    def test_add_file_to_server_with_dest_dir(self):
+        """Test adding a file to server app with custom destination directory."""
+        job = FedJob(name="test_job")
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+        try:
+            job.add_file_to_server(temp_file, dest_dir="models")
+            server_app = job._deploy_map["server"]
+            # File should be added with destination directory
+            assert any(temp_file == src[0] and src[1] == "models" for src in server_app.app_config.file_sources)
+        finally:
+            os.unlink(temp_file)
+
+    def test_add_file_to_clients(self):
+        """Test adding a file to all client apps custom directory."""
+        job = FedJob(name="test_job")
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as f:
+            temp_file = f.name
+        try:
+            job.add_file_to_clients(temp_file)
+            # Verify all-sites client app was created and file was added
+            assert "@ALL" in job._deploy_map
+            client_app = job._deploy_map["@ALL"]
+            assert any(temp_file == src[0] for src in client_app.app_config.file_sources)
+        finally:
+            os.unlink(temp_file)
+
+    def test_add_file_to_specific_site(self):
+        """Test adding a file to a specific site."""
+        job = FedJob(name="test_job")
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            temp_file = f.name
+        try:
+            job.add_file_to(temp_file, target="site-1")
+            # Verify site-1 client app was created and file was added
+            assert "site-1" in job._deploy_map
+            site_app = job._deploy_map["site-1"]
+            assert any(temp_file == src[0] for src in site_app.app_config.file_sources)
+        finally:
+            os.unlink(temp_file)
+
+    def test_add_multiple_files_to_server(self):
+        """Test adding multiple files to server app."""
+        job = FedJob(name="test_job")
+        temp_files = []
+        try:
+            for i in range(3):
+                f = tempfile.NamedTemporaryFile(suffix=f"_{i}.pt", delete=False)
+                temp_files.append(f.name)
+                f.close()
+
+            for temp_file in temp_files:
+                job.add_file_to_server(temp_file)
+
+            server_app = job._deploy_map["server"]
+            for temp_file in temp_files:
+                assert any(temp_file == src[0] for src in server_app.app_config.file_sources)
+        finally:
+            for temp_file in temp_files:
+                os.unlink(temp_file)
+
+    def test_add_file_to_invalid_target(self):
+        """Test that invalid target raises error."""
+        job = FedJob(name="test_job")
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            temp_file = f.name
+        try:
+            with pytest.raises(ValueError, match="target.*invalid character"):
+                job.add_file_to(temp_file, target="site@invalid")
+        finally:
+            os.unlink(temp_file)
+
+
+class TestSimulatorRunClientValidation:
+    """Tests for FedJob.simulator_run() clients vs n_clients validation."""
+
+    def _make_job(self):
+        """Return a FedJob with _deployed=True so _set_all_apps() is a no-op."""
+        job = FedJob(name="test_job")
+        job._deployed = True
+        return job
+
+    def test_clients_and_n_clients_raises(self, tmp_path):
+        """Providing both clients and n_clients should raise ValueError."""
+        job = self._make_job()
+        with patch.object(job.job, "simulator_run"):
+            with pytest.raises(ValueError, match="already specified clients"):
+                job.simulator_run(str(tmp_path), clients=["site-1", "site-2"], n_clients=2)
+
+    def test_mismatched_n_clients_raises(self, tmp_path):
+        """n_clients with any named clients should raise ValueError."""
+        job = self._make_job()
+        with patch.object(job.job, "simulator_run"):
+            with pytest.raises(ValueError, match="already specified clients"):
+                job.simulator_run(str(tmp_path), clients=["site-1", "site-2"], n_clients=3)
+
+    def test_clients_only_no_n_clients_passes(self, tmp_path):
+        """Providing only clients (no n_clients) should pass."""
+        job = self._make_job()
+        with patch.object(job.job, "simulator_run"):
+            job.simulator_run(str(tmp_path), clients=["site-1", "site-2"])

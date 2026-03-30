@@ -74,7 +74,7 @@ def main():
         name="spleen_bundle_fedavg",
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
-        initial_model=FLUNet(
+        model=FLUNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=2,

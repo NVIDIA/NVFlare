@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import Any, Dict, Optional
 
 from joblib import dump, load
 
@@ -23,17 +24,54 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey,
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
+# Key in initial_params that means "load model from this path"
+MODEL_PATH_KEY = "model_path"
+
+
+def validate_model_path(path: Optional[str]) -> None:
+    """Require model_path to be absolute if provided.
+
+    All sklearn recipes use this so construction fails fast instead of at runtime
+    when the persistor's load_model() runs. Call from recipe __init__ or validators.
+    """
+    if path is not None and not os.path.isabs(path):
+        raise ValueError(
+            f"model_path must be an absolute path, got: {path!r}. "
+            "Use absolute paths like '/workspace/model.joblib' for server-side model files."
+        )
+
 
 class JoblibModelParamPersistor(ModelPersistor):
-    def __init__(self, initial_params, save_name="model_param.joblib"):
-        """
-        Persist global model parameters from a dict to a joblib file
+    def __init__(
+        self,
+        initial_params: Optional[Dict[str, Any]] = None,
+        save_name: str = "model_param.joblib",
+        model_path: Optional[str] = None,
+    ):
+        """Persist global model parameters from a dict to a joblib file.
+
         Note that this contains the necessary information to build
-        a certain model but may not be directly loadable
+        a certain model but may not be directly loadable.
+
+        Unlike PTFileModelPersistor, this persistor does NOT instantiate model classes.
+        It only stores and transmits parameter values (e.g., hyperparameters, weights).
+        The sklearn model class is instantiated on the client side using these params.
+
+        Args:
+            initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
+                Hyperparameters/config only; do not put model_path here—use the model_path
+                argument instead. Used as fallback when model_path is None and no saved
+                model exists in save_path.
+            save_name: Filename for saving model params. Defaults to "model_param.joblib".
+            model_path: Optional absolute path to a saved model file (.joblib, .pkl).
+                If provided, the model is loaded from this path at runtime (file must exist).
+                Defaults to None. For backward compatibility, initial_params may still
+                contain key "model_path" and will be used if model_path is None.
         """
         super().__init__()
-        self.initial_params = initial_params
+        self.initial_params = initial_params or {}
         self.save_name = save_name
+        self.model_path = model_path
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
@@ -53,12 +91,38 @@ class JoblibModelParamPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
-        if os.path.exists(self.save_path):
+        model = None
+        initial_params = self.initial_params if isinstance(self.initial_params, dict) else {}
+
+        # Priority 1: Load from explicit model_path argument, or from initial_params (backward compat)
+        path = self.model_path or initial_params.get(MODEL_PATH_KEY)
+        if path:
+            if not os.path.isabs(str(path)):
+                raise ValueError(f"model_path must be a non-empty absolute path, got: {path!r}")
+            if not os.path.exists(path):
+                raise ValueError(f"Model file not found: {path}. Check that the file exists at runtime.")
+            self.logger.info(f"Loading model from {path}")
+            model = load(path)
+
+        # Priority 2: Load from previously saved model
+        if model is None and os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             model = load(self.save_path)
-        else:
-            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
-            model = self.initial_params
+
+        # Priority 3: Use initial_params as config (exclude model_path so clients don't see it)
+        if model is None:
+            if initial_params:
+                config = {k: v for k, v in initial_params.items() if k != MODEL_PATH_KEY}
+                if config:
+                    self.logger.info(f"Initialization, sending global settings: {config}")
+                    model = config
+            if model is None:
+                raise ValueError(
+                    "No model parameters available. Provide initial_params (hyperparameters) "
+                    "and/or model_path (absolute path to saved .joblib/.pkl), "
+                    "or ensure a previously saved model exists."
+                )
+
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
         return model_learnable

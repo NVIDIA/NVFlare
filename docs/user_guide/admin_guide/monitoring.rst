@@ -18,7 +18,7 @@ The monitoring system focuses on system-level metrics rather than training metri
 This differs from machine learning experiment tracking by focusing on system-level metrics rather than training metrics.
 
 Key Components
-==============
+--------------
 
 The monitoring system leverages the following components:
 
@@ -34,7 +34,7 @@ These components work together to provide a complete monitoring solution:
 4. Grafana provides visualization and dashboards
 
 Configuration
-=============
+-------------
 
 For detailed configuration instructions and setup steps, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`.
 
@@ -46,7 +46,7 @@ The configuration involves:
 * Setting up FLARE monitoring components
 
 Visualization
-=============
+-------------
 
 Grafana dashboards provide visual representations of the collected metrics, including:
 
@@ -58,7 +58,7 @@ Grafana dashboards provide visual representations of the collected metrics, incl
 For detailed information about available dashboards and metrics, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`.
 
 Summary
-=======
+-------
 
 The monitoring system provides:
 

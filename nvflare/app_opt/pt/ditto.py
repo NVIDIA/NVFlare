@@ -74,14 +74,14 @@ class PTDittoHelper(object):
         # load local model from last round's record if model exist,
         # otherwise initialize from global model weights for the first round.
         if os.path.exists(self.model_file_path):
-            model_data = torch.load(self.model_file_path)
+            model_data = torch.load(self.model_file_path, weights_only=True)
             self.model.load_state_dict(model_data["model"])
             self.epoch_of_start_time = model_data["epoch"]
         else:
             self.model.load_state_dict(global_weights)
             self.epoch_of_start_time = 0
         if os.path.exists(self.best_model_file_path):
-            model_data = torch.load(self.best_model_file_path)
+            model_data = torch.load(self.best_model_file_path, weights_only=True)
             self.best_metric = model_data["best_metric"]
 
     def save_model(self, is_best=False):

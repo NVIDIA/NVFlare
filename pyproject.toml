@@ -12,7 +12,7 @@ skip_glob = [ "*.pyi", "**/*_pb2*" ]
 
 [tool.black]
 line-length = 120
-target-version = ["py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312", "py313", "py314"]
 include = '\.pyi?$'
 exclude = '''
 (
@@ -35,3 +35,7 @@ exclude = '''
 )
 '''
 
+[tool.pytest.ini_options]
+markers = [
+    "timeout: mark tests with an execution time limit",
+]

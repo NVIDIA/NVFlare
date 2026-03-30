@@ -51,7 +51,7 @@ RESULT_EOS = 2
 class RxTask:
     """Receiving task for ByteStream"""
 
-    rx_task_map = {}
+    rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
     def __init__(self, sid: int, origin: str, cell: CoreCell):
@@ -92,20 +92,24 @@ class RxTask:
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
+        task_to_stop = None
 
         with cls.map_lock:
-            task = cls.rx_task_map.get(sid, None)
+            task = cls.rx_task_map.get((origin, sid), None)
             if not task:
                 if error:
                     log.warning(f"Received error for non-existing stream: SID {sid} from {origin}")
                     return None
 
                 task = RxTask(sid, origin, cell)
-                cls.rx_task_map[sid] = task
+                cls.rx_task_map[(origin, sid)] = task
             else:
                 if error:
-                    task.stop(StreamError(f"{task} Received error from {origin}: {error}"), notify=False)
-                    return None
+                    task_to_stop = task
+
+        if task_to_stop:
+            task_to_stop.stop(StreamError(f"{task_to_stop} Received error from {origin}: {error}"), notify=False)
+            return None
 
         return task
 
@@ -195,7 +199,7 @@ class RxTask:
     def stop(self, error: StreamError = None, notify=True):
 
         with RxTask.map_lock:
-            RxTask.rx_task_map.pop(self.sid, None)
+            RxTask.rx_task_map.pop((self.origin, self.sid), None)
 
         if not error:
             return
@@ -211,7 +215,8 @@ class RxTask:
         else:
             log.error(msg)
 
-        self.stream_future.set_exception(error)
+        if self.stream_future:
+            self.stream_future.set_exception(error)
 
         if notify:
             message = Message()
@@ -272,7 +277,8 @@ class RxTask:
                 self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
                 self.offset_ack = self.offset
 
-            self.stream_future.set_progress(self.offset)
+            if self.stream_future:
+                self.stream_future.set_progress(self.offset)
 
             return RESULT_DATA, result
 
@@ -303,7 +309,7 @@ class RxStream(Stream):
         return self.task.read(size)
 
     def close(self):
-        if not self.task.stream_future.done():
+        if self.task.stream_future and not self.task.stream_future.done():
             self.task.stream_future.set_result(self.task.offset)
         self.closed = True
 

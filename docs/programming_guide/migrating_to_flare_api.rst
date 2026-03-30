@@ -1,4 +1,9 @@
+:orphan:
+
 .. _migrating_to_flare_api:
+
+.. deprecated:: 2.7
+   This migration guide is no longer actively maintained. Use the :ref:`Client API <client_api>` for new projects.
 
 Migrating to FLARE API from FLAdminAPI
 ======================================

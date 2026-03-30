@@ -61,7 +61,7 @@ Here's a complete example:
        name="hello-pt",
        min_clients=2,
        num_rounds=2,
-       initial_model=SimpleNetwork(),
+       model=SimpleNetwork(),
        train_script="client.py",
    )
    
@@ -76,6 +76,24 @@ Here's a complete example:
 - **Framework-specific**: Optimized recipes for PyTorch, TensorFlow, NumPy, and more
 - **No configuration files**: Everything defined in Python
 - **Easy experimentation**: Change parameters and re-run instantly
+
+### Model Input Options
+
+The `model` parameter accepts two formats:
+
+1. **Class instance**: `model=SimpleNetwork()` - Convenient, catches errors early
+2. **Dict config**: `model={"class_path": "model.SimpleNetwork", "args": {}}` - Better for large models
+
+To resume training from pre-trained weights:
+```python
+recipe = FedAvgRecipe(
+    model=SimpleNetwork(),
+    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
+    ...
+)
+```
+
+> **Note:** Class instances are converted to config files before job submission. The checkpoint file must exist on the server when the job runs.
 
 ## Examples by Framework
 
@@ -221,7 +239,7 @@ The job recipe defines the FL workflow:
        name="my-job",
        min_clients=2,
        num_rounds=3,
-       initial_model=MyModel(),
+       model=MyModel(),
        train_script="client.py",
    )
    
@@ -233,18 +251,18 @@ The job recipe defines the FL workflow:
 
 ### ML-to-FL Conversion
 Learn how to convert existing ML/DL code to federated learning:
-- [PyTorch Conversion](./ml-to-fl/pt/)
-- [TensorFlow Conversion](./ml-to-fl/tf/)
-- [NumPy Conversion](./ml-to-fl/np/)
+- [PyTorch Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.2_convert_deep_learning_to_federated_learning/convert_dl_to_fl.ipynb)
+- [PyTorch Lightning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.3_convert_torch_lightning_to_federated_learning/convert_torch_lightning_to_fl.ipynb)
+- [Machine Learning Conversion](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.4_convert_machine_learning_to_federated_learning/convert_ml_to_fl.ipynb)
 
-[Learn more →](./ml-to-fl/)
+[Learn more →](../tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/)
 
 ### Workflows
 Examples demonstrating different FL workflows:
 - [Scatter and Gather](./hello-numpy/) - Basic FedAvg pattern
 - [Cross-Site Validation](./hello-numpy-cross-val/) - Model evaluation across sites
 - [Cyclic Weight Transfer](./hello-cyclic/) - Sequential client training
-- [Client Controlled Workflows](../advanced/hello-ccwf/) - Swarm learning patterns
+- [Client Controlled Workflows Guide](../../docs/programming_guide/controllers/client_controlled_workflows.rst) - Peer-to-peer workflow patterns
 
 ## Running with Different Environments
 

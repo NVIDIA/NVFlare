@@ -15,8 +15,6 @@
 import os
 from typing import Tuple
 
-import matplotlib.pyplot as plt
-import shap
 import xgboost as xgb
 from xgboost import callback
 
@@ -226,14 +224,22 @@ class XGBClientRunner(AppRunner, FLComponent):
 
             if self._data_split_mode == 0:
                 # Save explainability outputs based on val_data
-                explainer = shap.TreeExplainer(bst)
-                explanation = explainer(val_data)
+                try:
+                    import matplotlib.pyplot as plt
+                    import shap
 
-                # save the beeswarm plot to png file
-                shap.plots.beeswarm(explanation, show=False)
-                img = plt.gcf()
-                img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
-                img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
+                    explainer = shap.TreeExplainer(bst)
+                    explanation = explainer(val_data)
+
+                    # save the beeswarm plot to png file
+                    shap.plots.beeswarm(explanation, show=False)
+                    img = plt.gcf()
+                    img.subplots_adjust(left=0.3, right=0.9, bottom=0.3, top=0.9)
+                    img.savefig(os.path.join(self._model_dir, "shap_beeswarm.png"), bbox_inches="tight")
+                except ImportError:
+                    xgb.collective.communicator_print(
+                        "Warning: shap and/or matplotlib not installed. Skipping explainability plots.\n"
+                    )
 
         self._stopped = True
 

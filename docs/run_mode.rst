@@ -1,3 +1,5 @@
+:orphan:
+
 .. _run_mode:
 
 Modes to Run NVFLARE

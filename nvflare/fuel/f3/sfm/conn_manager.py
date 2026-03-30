@@ -152,10 +152,10 @@ class ConnManager(ConnMonitor):
                 connector.stopped.set()
                 connector.driver.shutdown()
 
+        self.stopped = True
+
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
-
-        self.stopped = True
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -257,7 +257,10 @@ class ConnManager(ConnMonitor):
 
         log.info(f"Connector {connector} is starting")
 
-        self.conn_mgr_executor.submit(self.start_connector_task, connector)
+        try:
+            self.conn_mgr_executor.submit(self.start_connector_task, connector)
+        except RuntimeError:
+            log.debug("Connector start skipped — executor already shut down")
 
     @staticmethod
     def start_connector_task(connector: ConnectorInfo):
@@ -332,6 +335,9 @@ class ConnManager(ConnMonitor):
 
     def process_frame_task(self, sfm_conn: SfmConnection, frame: BytesAlike):
 
+        if self.stopped:
+            return
+
         try:
             prefix = Prefix.from_bytes(frame)
             log.debug(f"Received frame: {prefix} on {sfm_conn.conn}")
@@ -367,6 +373,12 @@ class ConnManager(ConnMonitor):
 
             else:
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
+        except RuntimeError as ex:
+            if self.stopped:
+                log.debug(f"Frame processing interrupted by shutdown: {secure_format_exception(ex)}")
+            else:
+                log.error(f"Error processing frame: {secure_format_exception(ex)}")
+                log.debug(secure_format_traceback())
         except Exception as ex:
             log.error(f"Error processing frame: {secure_format_exception(ex)}")
             log.debug(secure_format_traceback())
@@ -376,7 +388,10 @@ class ConnManager(ConnMonitor):
             log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
             return
 
-        self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
+        try:
+            self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
+        except RuntimeError:
+            log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
 
     def update_endpoint(self, sfm_conn: SfmConnection, data: dict):
 
@@ -421,7 +436,7 @@ class ConnManager(ConnMonitor):
 
     @staticmethod
     def get_dict_payload(prefix, frame):
-        mv = memoryview(frame)
+        mv = frame if isinstance(frame, memoryview) else memoryview(frame)
         return msgpack.unpackb(mv[(PREFIX_LEN + prefix.header_len) :])
 
     def handle_new_connection(self, connection: Connection):
@@ -460,8 +475,14 @@ class ConnManager(ConnMonitor):
     def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send message to itself"""
 
+        if self.stopped:
+            return
+
         # Call receiver in a different thread to avoid deadlock
-        self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, headers, payload)
+        try:
+            self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, headers, payload)
+        except RuntimeError as e:
+            log.debug(f"Loopback submit skipped: {e}")
 
     def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
 

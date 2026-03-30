@@ -36,7 +36,10 @@ class BaseFedJob(UnifiedBaseFedJob):
     User must add controllers and executors.
 
     Args:
-        initial_model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
+        initial_model (tf.keras.Model): Initial TensorFlow model. Defaults to None.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.h5, .keras, or SavedModel dir).
+            The file may not exist locally as it could be on the server.
+            Note: TensorFlow can load full models from .h5/SavedModel without model.
         name (name, optional): name of the job. Defaults to "fed_job".
         min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
         mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
@@ -60,6 +63,7 @@ class BaseFedJob(UnifiedBaseFedJob):
     def __init__(
         self,
         initial_model: tf.keras.Model = None,
+        initial_ckpt: Optional[str] = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
@@ -83,16 +87,20 @@ class BaseFedJob(UnifiedBaseFedJob):
         )
 
         # TensorFlow-specific model setup
-        if initial_model is not None:
-            if not isinstance(initial_model, tf.keras.Model):
-                raise TypeError(
-                    f"initial_model must be an instance of tf.keras.Model, but got {type(initial_model).__name__}"
-                )
-            self._setup_tensorflow_model(initial_model, model_persistor)
+        # TFModel wrapper can handle: tf.keras.Model instances, dict configs, or None
+        if initial_model is not None or initial_ckpt is not None:
+            self._setup_tensorflow_model(initial_model, initial_ckpt, model_persistor)
 
-    def _setup_tensorflow_model(self, model: tf.keras.Model, persistor: Optional[ModelPersistor] = None):
+    def _setup_tensorflow_model(
+        self,
+        initial_model: Optional[tf.keras.Model],
+        initial_ckpt: Optional[str],
+        persistor: Optional[ModelPersistor] = None,
+    ):
         """Setup TensorFlow model with persistor."""
         from nvflare.app_opt.tf.job_config.model import TFModel
+        from nvflare.recipe.utils import prepare_initial_ckpt
 
-        tf_model = TFModel(model=model, persistor=persistor)
+        ckpt_path = prepare_initial_ckpt(initial_ckpt, self)
+        tf_model = TFModel(model=initial_model, initial_ckpt=ckpt_path, persistor=persistor)
         self.comp_ids["persistor_id"] = self.to_server(tf_model)

@@ -84,7 +84,7 @@ Pay attention to the following:
 
 Additional optional configuration parameters:
 
-    - stats_pool_config: configure statistics pool saving for post-job analysis (see :ref:`diagnostic_commands` for details)
+    - stats_pool_config: configure statistics pool saving for post-job analysis
 
 The system also keeps additional information about the job such as:
 

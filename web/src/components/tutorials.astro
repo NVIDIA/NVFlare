@@ -2,7 +2,7 @@
 import GoogleColab from '../images/google_colab.svg.png'
 import ClickTracker from './clickTracker.astro';
 
-const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH;
+const gh_branch = import.meta.env.VITE_PUBLIC_GH_BRANCH || "main";
 const base_url = import.meta.env.BASE_URL;
 
 const tutorials = [
@@ -138,12 +138,6 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/multi-gpu`
   },
   {
-    title: "Hello FedAvg",
-    tags: ["beg.", "algorithm", "pytorch", "model-controller"],
-    description: "Example using the FedAvg workflow to implement Federated Averaging with early stopping, model selection, and saving and loading to show flexibility of Model Controller API.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
-  },
-  {
     title: "Hello Numpy Cross-Site Validation",
     tags: ["beg.", "algorithm", "numpy", "model-controller"],
     description: "Example using the CrossSiteEval workflow for cross site evaluation. Demonstrate option to use previous results without training workflow.",
@@ -177,20 +171,13 @@ const tutorials = [
     title: "Simulated Federated Learning with CIFAR-10",
     tags: ["int.", "algorithm", "simulator", "pytorch", "learner", "model-controller", "dl"],
     description: "Running FedAvg, FedProx, FedOpt, and SCAFFOLD algorithms using the FL simulator.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-sim/README.md`
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-sim/README.md`
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
     tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he", "highlight"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
-  },
-  {
-    title: "Logistic Regression with Newton-Raphton",
-    tags: ["int.", "algorithm", "client-api", "model-controller", "ml"],
-    description:
-      "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/lr-newton-raphson`,
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/pt/cifar10-real-world/README.md`
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
@@ -227,26 +214,20 @@ const tutorials = [
   {
     title: "Histogram-based FL for XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Histogram-based algorithm for XGBoost.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/histogram-based/README.md`
+    description: "Horizontal federated XGBoost with histogram-based algorithm. Part of consolidated XGBoost examples.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md#histogram-based-collaboration`
   },
   {
     title: "Tree-based Federated Learning for XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Tree-based algorithms including bagging and cyclic approaches for XGBoost.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/tree-based/README.md`
-  },
-  {
-    title: "Federated Learning for Random Forest based on XGBoost",
-    tags: ["adv.", "algorithm", "xgboost", "ml"],
-    description: "Example of using NVIDIA FLARE with scikit-learn and Random Forest.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/random_forest/README.md`
+    description: "Tree-based (bagging and cyclic) federated XGBoost. Part of consolidated XGBoost examples.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md#tree-based-collaboration`
   },
   {
     title: "Federated Vertical XGBoost",
     tags: ["adv.", "algorithm", "xgboost", "ml"],
     description: "Vertical federated XGBoost using Private Set Intersection on HIGGS data. Part of consolidated XGBoost examples.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md`
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost/fedxgb/README.md#vertical-federated-xgboost`
   },
   {
     title: "NVFlare + MONAI integration",
@@ -270,7 +251,7 @@ const tutorials = [
     title: "MONAI & NVIDIA FLARE Integration with Experiment Tracking",
     tags: ["adv.", "algorithm", "experiment-tracking", "monai"],
     description: "Example using NVIDIA FLARE and MONAI integration with experiment tracking streaming from clients to server.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/monai/examples/spleen_ct_segmentation_local/README.md#51-experiment-tracking-with-mlflow`
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/monai/spleen_ct_segmentation/README.md`
   },
   {
     title: "KeyCloak Site Authentication Integration",
@@ -285,7 +266,7 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.1_fed_bert/federated_nlp_with_bert.ipynb`
   },
   {
-    title: "Parameter Efficient Fine Turning",
+    title: "Parameter Efficient Fine Tuning",
     tags: ["adv.", "algorithm", "nemo", "llm", "highlight"],
     description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/peft`
@@ -377,7 +358,7 @@ const tutorials = [
   {
     title: "FedSM",
     tags: ["adv.", "algorithm", "research", "pytorch"],
-    description: "Personalized Federated Learning with FedSM Alogithrm. Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation.",
+    description: "Personalized Federated Learning with FedSM Algorithm. Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-sm`
   },
   {
@@ -414,11 +395,115 @@ const tutorials = [
       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/monitoring/README.md`,
     },
     {
-      title: "distributed optimization",
+      title: "Distributed Optimization",
       tags: ["adv.", "p2p"],
       description:
         "P2P Distributed Optimization algorithms with NVFlare. In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few examples showing how to directly use the nvflare.app_opt.p2p API to run distributed optimization algorithms, on the other hand we provide a walkthrough of the actual implementation of the APIs in nvflare.app_opt.p2p to show how to exploit lower-level NVFlare APIs for advanced use-cases.",
       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/distributed_optimization/README.md`,
+    },
+    {
+      title: "Job Recipe",
+      tags: ["beg.", "tools"],
+      description: "Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/job_recipe.ipynb`,
+      colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/job_recipe.ipynb`,
+    },
+    {
+      title: "Logging Tutorial",
+      tags: ["beg.", "tools"],
+      description: "Shows how to configure and use the logging system for different modules in NVIDIA FLARE.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/tutorials/logging.ipynb`,
+      colab_link: `https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/logging.ipynb`,
+    },
+    {
+      title: "Hello PyTorch Lightning",
+      tags: ["beg.", "algorithm", "lightning", "client-api", "dl"],
+      description: "Train an image classifier using PyTorch Lightning with federated averaging (FedAvg) and minimal code changes.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-lightning`,
+    },
+    {
+      title: "Hello PyTorch Lightning - Model Evaluation",
+      tags: ["int.", "algorithm", "lightning", "client-api", "dl"],
+      description: "Evaluate a pre-trained PyTorch Lightning model across multiple clients in a federated setting using the FedEvalRecipe.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-lightning-eval`,
+    },
+    {
+      title: "Hello Differential Privacy",
+      tags: ["beg.", "algorithm", "pytorch", "client-api", "dl", "dp"],
+      description: "Train a fraud detection model with differential privacy guarantees using PyTorch and Opacus, implementing DP-SGD with privacy budget tracking across federated rounds.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-dp`,
+    },
+    {
+      title: "Hello Flower",
+      tags: ["beg.", "algorithm", "pytorch", "client-api", "dl"],
+      description: "Run Flower ClientApp and ServerApp on NVIDIA FLARE infrastructure with TensorBoard metric streaming.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-flower`,
+    },
+    {
+      title: "Federated Logistic Regression with Newton-Raphson",
+      tags: ["int.", "algorithm", "sklearn", "ml"],
+      description: "Federated binary classification via logistic regression with second-order Newton-Raphson optimization.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-lr`,
+    },
+    {
+      title: "Split Learning with CIFAR-10",
+      tags: ["int.", "algorithm", "pytorch", "dl"],
+      description: "Run split learning (SL) using the CIFAR-10 dataset and the FL simulator.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/vertical_federated_learning/cifar10-splitnn`,
+    },
+    {
+      title: "Private Set Intersection (PSI)",
+      tags: ["adv.", "algorithm", "security"],
+      description: "Demonstrates the built-in operator for Private Set Intersection (PSI) for privacy-preserving record linkage across federated sites.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/psi`,
+    },
+    {
+      title: "Tensor Streaming for LLMs",
+      tags: ["adv.", "streaming", "llm", "huggingface"],
+      description: "Use NVFlare's Tensor Streaming capabilities for efficient federated fine-tuning of large language models, demonstrated with GPT-2 on the IMDB dataset.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/tensor-stream`,
+    },
+    {
+      title: "Federated AMPLIFY Protein Model Fine-tuning",
+      tags: ["adv.", "algorithm", "healthcare", "huggingface", "dl"],
+      description: "Fine-tune the AMPLIFY protein language model for multiple downstream protein property prediction tasks using antibody sequence data.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/amplify`,
+    },
+    {
+      title: "Confidential Computing Provision",
+      tags: ["adv.", "deployment"],
+      description: "Set up CC (Confidential Computing) Provision in NVFlare, configure site settings, enable the CC builder, and use Docker images for CC workloads.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cc_provision`,
+    },
+    {
+      title: "Cross-Edge Federated Learning",
+      tags: ["adv.", "deployment"],
+      description: "Cross-edge federated learning using simulated or real devices with NVFlare's hierarchical edge system.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/edge`,
+    },
+    {
+      title: "Privacy-preserving Federated Brain Tumour Segmentation",
+      tags: ["adv.", "algorithm", "research", "healthcare", "pytorch"],
+      description: "Reference implementation of privacy-preserving federated learning for brain tumour segmentation using differential privacy.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/brats18`,
+    },
+    {
+      title: "FedHCA2: Hetero-Client Federated Multi-Task Learning",
+      tags: ["adv.", "algorithm", "research", "healthcare", "pytorch"],
+      description: "NVFLARE implementation of FedHCA2 for federated multi-task learning across heterogeneous clients.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fedhca2`,
+    },
+    {
+      title: "FedOBD: Opportunistic Block Dropout",
+      tags: ["adv.", "algorithm", "research", "pytorch"],
+      description: "Efficient federated training of large-scale neural networks via opportunistic block dropout and integer quantization to reduce message sizes.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fedobd`,
+    },
+    {
+      title: "Federated Prostate Segmentation",
+      tags: ["adv.", "algorithm", "research", "healthcare", "pytorch"],
+      description: "Federated learning for prostate segmentation in T2-weighted MRIs from multiple institutions, covering both 2D and 3D approaches.",
+      link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/prostate`,
     },
 
 ]

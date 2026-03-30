@@ -18,7 +18,6 @@ import sys
 
 from bionemo.core.data.load import load
 
-from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv
 
@@ -26,8 +25,11 @@ from nvflare.recipe import SimEnv
 # the default 300s timeout on systems with slow I/O or resource contention
 BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT = 900.0  # 15 minutes
 
+# isort: off
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
 from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
+
+# isort: on
 
 
 def main(args):
@@ -54,10 +56,17 @@ def main(args):
     script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path /tmp/placeholder --valid-data-path /tmp/placeholder --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type classification --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 2 --experiment-name sabdab_esm2_{args.model} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 1e-4 --lr-multiplier 5 --scale-lr-layer classification_head --result-dir bionemo --micro-batch-size 64 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --classes {classes} --dataset-name sabdab --exp-name {args.exp_name}"
     print(f"Running {args.train_script} with base args (data paths will be resolved per-client)")
 
+    # Use dict config of the model so we only instantiate the model on the server.
+    model = {
+        "class_path": "model.ESM2ModuleForServer",
+        "args": {"checkpoint_path": str(checkpoint_path)},
+    }
+
     # Create FedAvgRecipe
     job_name = f"{args.exp_name}_sabdab_esm2_{args.model}"
     recipe = FedAvgRecipe(
         name=job_name,
+        model=model,
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script=f"../{args.train_script}",
@@ -72,10 +81,6 @@ def main(args):
     # Add custom components using recipe's filter API
     recipe.add_client_input_filter(BioNeMoParamsFilter(precision), tasks=["train", "validate"])
     recipe.add_client_output_filter(BioNeMoStateDictFilter(), tasks=["train", "validate"])
-
-    # Add decomposer register to server and clients
-    recipe.job.to_server(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
-    recipe.job.to_clients(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
 
     # Add BioNeMo-specific timeout configuration to client config to override its default timeout
     recipe.add_client_config({"EXTERNAL_PRE_INIT_TIMEOUT": BIONEMO_EXTERNAL_PRE_INIT_TIMEOUT})

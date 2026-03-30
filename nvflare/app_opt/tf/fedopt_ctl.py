@@ -56,7 +56,7 @@ class FedOpt(FedAvg):
         self.lr_scheduler_args = lr_scheduler_args
 
         # Set "decay_steps" arg to num_rounds
-        if lr_scheduler_args["args"]["decay_steps"] is None:
+        if lr_scheduler_args is not None and lr_scheduler_args.get("args", {}).get("decay_steps") is None:
             lr_scheduler_args["args"]["decay_steps"] = self.num_rounds
 
         self.keras_model = None

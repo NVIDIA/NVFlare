@@ -119,7 +119,9 @@ recipe = FedAvgRecipeWithHE(
     name="cifar10_fedavg_he_partial",
     min_clients=8,
     num_rounds=50,
-    initial_model=model,
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    model=model,
     train_script="client.py",
     encrypt_layers=encrypt_layers  # Add this parameter
 )
@@ -140,7 +142,9 @@ recipe = FedAvgRecipeWithHE(
     name="cifar10_fedavg_he",
     min_clients=8,
     num_rounds=50,
-    initial_model=ModerateCNN(),
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    model=ModerateCNN(),
     train_script="client.py",
     aggregator_data_kind=DataKind.WEIGHT_DIFF,
     encrypt_layers=None  # None = encrypt all layers (default)

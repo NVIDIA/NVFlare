@@ -190,13 +190,29 @@ recipe = FedAvgRecipe(
     name="hello-dp",
     min_clients=n_clients,
     num_rounds=num_rounds,
-    initial_model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),
+    model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),
     train_script="client.py",
     train_args=f"--batch_size {batch_size} --target_epsilon {target_epsilon} --n_clients {n_clients}",
 )
 
 env = SimEnv(num_clients=n_clients)
 recipe.execute(env=env)
+```
+
+### Model Input Options
+
+The `model` parameter accepts two formats:
+
+1. **Class instance** (shown above): `model=TabularMLP(...)` - Convenient
+2. **Dict config**: `model={"class_path": "model.TabularMLP", "args": {...}}` - Better for large models
+
+To resume from pre-trained weights:
+```python
+recipe = FedAvgRecipe(
+    model=TabularMLP(...),
+    initial_ckpt="/server/path/to/pretrained.pt",  # Absolute path
+    ...
+)
 ```
 
 **Important**: Privacy budget (ε) accumulates across ALL federated rounds. The `target_epsilon` parameter specifies the total privacy budget for the entire training process, not per round.

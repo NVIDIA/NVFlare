@@ -223,7 +223,9 @@ recipe = FedAvgRecipe(
     name="amplify_alltasks_fedavg",
     min_clients=num_clients,
     num_rounds=300,
-    initial_model=model,
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+    model=model,
     train_script="client.py",
     train_args="--data_root ./FLAb/data_fl --tasks <all tasks> ..."
 )

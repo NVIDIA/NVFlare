@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import gc
 import random
 import threading
 import time
@@ -21,7 +20,7 @@ from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable import Learnable
@@ -105,9 +104,6 @@ class Gatherer(FLComponent):
                     client_status = self.trainer_statuses.get(client_name)
                     if client_status:
                         client_status.busy = False
-
-                # force garbage collection after each gather
-                gc.collect()
 
     def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
         with self.perm_lock:
@@ -290,6 +286,8 @@ class SwarmClientController(ClientSideController):
         request_to_submit_result_msg_timeout=5.0,
         request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
+        memory_gc_rounds: int = 1,
+        cuda_empty_cache: bool = False,
     ):
         """
         Constructor of a ClientSideController object.
@@ -318,6 +316,12 @@ class SwarmClientController(ClientSideController):
                 Since submission req is a tiny message, this timeout value should be small.
             request_to_submit_result_interval: interval between requests to submit result.
             max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
+            memory_gc_rounds: run gc.collect() + malloc_trim on the aggregator every N FL rounds.
+                Defaults to 1 (every round) to match legacy behavior where gc.collect() was called
+                unconditionally after each trainer submission. Set to 0 to disable.
+            cuda_empty_cache: also call torch.cuda.empty_cache() during aggregator-side cleanup.
+                In swarm learning the aggregator runs on the same client as the trainer, so GPU
+                memory may be relevant. Defaults to False.
 
         Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
         will be submitted to the aggregation client sequentially. This lowers the resource pressure on
@@ -377,6 +381,9 @@ class SwarmClientController(ClientSideController):
         self.is_trainer = False
         self.is_aggr = False
         self.last_aggr_round_done = -1
+        self.memory_gc_rounds = memory_gc_rounds
+        self.cuda_empty_cache = cuda_empty_cache
+        self._aggr_round_count = 0
 
     def process_config(self, fl_ctx: FLContext):
         all_clients = self.get_config_prop(Constant.CLIENTS)
@@ -455,11 +462,12 @@ class SwarmClientController(ClientSideController):
 
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         clients = self.get_config_prop(Constant.CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS, [])
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS, [])
         train_clients = self.get_config_prop(Constant.TRAIN_CLIENTS, [])
 
         self.log_info(
-            fl_ctx, f"Starting Swarm Workflow on clients {clients}, aggrs {aggr_clients}, trainers {train_clients}"
+            fl_ctx,
+            f"Starting Swarm Workflow on clients {clients}, aggregator candidates {aggregator_candidates}, trainers {train_clients}",
         )
 
         if not self._scatter(
@@ -472,21 +480,61 @@ class SwarmClientController(ClientSideController):
 
     def _scatter(self, task_data: Shareable, for_round: int, fl_ctx: FLContext) -> bool:
         clients = self.get_config_prop(Constant.TRAIN_CLIENTS)
-        aggr_clients = self.get_config_prop(Constant.AGGR_CLIENTS)
+        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS)
 
         # determine aggr client
-        aggr = random.choice(aggr_clients)
+        aggr = random.choice(aggregator_candidates)
 
         task_data.set_header(AppConstants.CURRENT_ROUND, for_round)
         task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, for_round)
         task_data.set_header(Constant.AGGREGATOR, aggr)
 
+        # Stamp MSG_ROOT_TTL on the task data so the sender's ArrayDownloadable
+        # download transaction stays alive for learn_task_timeout seconds — long
+        # enough for the receiving subprocess to pull the global model.  Without
+        # this, via_downloader._create_downloader() falls back to
+        # _MIN_DOWNLOAD_TIMEOUT (300 s inactivity floor), which is sufficient
+        # for most GC pauses.  task_controller.broadcast_and_wait() preserves a
+        # pre-set MSG_ROOT_TTL instead of overwriting it with the short ACK timeout.
+        if self.learn_task_timeout:
+            task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, float(self.learn_task_timeout))
+
         targets = copy.copy(clients)
         if aggr not in targets:
             targets.append(aggr)
 
-        self.log_info(fl_ctx, f"broadcasting learn task of round {for_round} to {targets}; aggr client is {aggr}")
-        return self.send_learn_task(targets=targets, request=task_data, fl_ctx=fl_ctx)
+        # Handle self locally to avoid synchronous self-message deadlock.
+        # When sending to self via broadcast_and_wait, the message is processed synchronously
+        # on the same thread (via _send_direct_message in core_cell.py). If TensorStreamer
+        # is enabled, this causes deadlock because wait_for_tensors() blocks the thread
+        # waiting for streaming data that can't arrive on the blocked thread.
+        # Instead, queue the task locally via set_learn_task (non-blocking, processed by _do_learn thread).
+        should_queue_locally = self.me in targets
+        remote_targets = [t for t in targets if t != self.me]
+
+        # Queue locally FIRST with a deep copy. Deep copy is needed because:
+        # 1. set_learn_task stores a reference, _do_learn processes it later on another thread
+        # 2. send_learn_task may modify task_data in-place (e.g., TensorStreamer replacing tensors with REF IDs)
+        # 3. Without deep copy, there's a race condition between modification and processing
+        if should_queue_locally:
+            self.log_info(fl_ctx, f"queuing learn task locally for round {for_round}")
+            local_task_data = copy.deepcopy(task_data)
+            if self._has_lazy_refs(local_task_data):
+                local_task_data = self._resolve_lazy_refs(local_task_data, fl_ctx)
+            if not self.set_learn_task(task_data=local_task_data, fl_ctx=fl_ctx):
+                self.log_error(fl_ctx, f"failed to queue learn task locally for round {for_round}")
+                return False
+
+        # Then send to remote targets
+        if remote_targets:
+            self.log_info(
+                fl_ctx,
+                f"broadcasting learn task of round {for_round} to {remote_targets}; aggregation happens on {aggr}",
+            )
+            if not self.send_learn_task(targets=remote_targets, request=task_data, fl_ctx=fl_ctx):
+                return False
+
+        return True
 
     def _monitor_gather(self):
         while True:
@@ -516,6 +564,15 @@ class SwarmClientController(ClientSideController):
             self.update_status(action="aggregate", error=ReturnCode.EXECUTION_EXCEPTION)
             return
 
+        if self._has_lazy_refs(aggr_result):
+            self.system_panic(
+                "LazyDownloadRef objects reached _end_gather() — "
+                "_resolve_lazy_refs() was not called on the local-aggr path. "
+                "This is a code bug.",
+                fl_ctx,
+            )
+            return
+
         # aggr_result could be just weight diffs, not full weights!
         # need to call shareable_to_learnable to get full weights.
         self.log_debug(fl_ctx, f"aggr result: {aggr_result}")
@@ -529,22 +586,30 @@ class SwarmClientController(ClientSideController):
 
             # determine the best global result
             self._distribute_final_results(aggr_result, fl_ctx)
-            return
 
-        # continue next round
-        next_round_data = self.shareable_generator.learnable_to_shareable(global_weights, fl_ctx)
-        assert isinstance(next_round_data, Shareable)
+        else:
+            # continue next round
+            next_round_data = self.shareable_generator.learnable_to_shareable(global_weights, fl_ctx)
+            assert isinstance(next_round_data, Shareable)
 
-        best_round = aggr_result.get_header(Constant.ROUND)
-        best_metric = aggr_result.get_header(Constant.METRIC)
-        best_client = aggr_result.get_header(Constant.CLIENT)
+            best_round = aggr_result.get_header(Constant.ROUND)
+            best_metric = aggr_result.get_header(Constant.METRIC)
+            best_client = aggr_result.get_header(Constant.CLIENT)
 
-        if best_client:
-            next_round_data.set_header(Constant.ROUND, best_round)
-            next_round_data.set_header(Constant.CLIENT, best_client)
-            next_round_data.set_header(Constant.METRIC, best_metric)
+            if best_client:
+                next_round_data.set_header(Constant.ROUND, best_round)
+                next_round_data.set_header(Constant.CLIENT, best_client)
+                next_round_data.set_header(Constant.METRIC, best_metric)
 
-        self._scatter(next_round_data, gatherer.for_round + 1, gatherer.fl_ctx)
+            self._scatter(next_round_data, gatherer.for_round + 1, gatherer.fl_ctx)
+
+        if self.memory_gc_rounds > 0:
+            self._aggr_round_count += 1
+            if self._aggr_round_count % self.memory_gc_rounds == 0:
+                from nvflare.fuel.utils.memory_utils import cleanup_memory
+
+                cleanup_memory(cuda_empty_cache=self.cuda_empty_cache)
+                self.log_info(fl_ctx, f"Swarm aggregator memory cleanup at round {self._aggr_round_count}")
 
     def _ask_to_share_best_result(self, client: str, metric, fl_ctx: FLContext):
         # other client has best model - ask it to distribute its result
@@ -631,6 +696,59 @@ class SwarmClientController(ClientSideController):
         self.log_debug(fl_ctx, f"got permission from gatherer: {rc}")
         return make_reply(rc)
 
+    @staticmethod
+    def _has_lazy_refs(obj) -> bool:
+        """Return True if obj (recursively) contains any LazyDownloadRef."""
+        from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
+
+        if isinstance(obj, LazyDownloadRef):
+            return True
+        if isinstance(obj, dict):
+            return any(SwarmClientController._has_lazy_refs(v) for v in obj.values())
+        if isinstance(obj, (list, tuple)):
+            return any(SwarmClientController._has_lazy_refs(v) for v in obj)
+        return False
+
+    def _resolve_lazy_refs(self, result: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Resolve any LazyDownloadRef objects in result by downloading from subprocess.
+
+        When the subprocess sends its result via CellPipe with pass_through_on_send=True,
+        Adapter.call() decodes the message with PASS_THROUGH=True and creates
+        LazyDownloadRef objects (one per large tensor) instead of downloading the tensors.
+        These placeholders carry the subprocess's fqcn and ref_id so that a downstream
+        hop can download from the subprocess DownloadService on demand.
+
+        For the remote aggregator path this download is triggered automatically by the
+        FOBS encode/decode inside broadcast_and_wait() (Fix 14).  For the local
+        aggregation path (aggr == self.me) there is no encode/decode, so we must
+        trigger the download explicitly here before the result reaches the gatherer.
+
+        Uses an FOBS round-trip:
+          encode: LazyDownloadRefDecomposer.decompose() re-emits the original subprocess
+                  datum (fqcn + ref_id) as a TEXT datum — no CELL needed in the encode ctx.
+          decode: process_datum() with PASS_THROUGH=False calls _download_from_remote_cell()
+                  which downloads real numpy arrays from the subprocess DownloadService.
+                  cell.get_fobs_context() supplies the CELL so the download can route to
+                  the subprocess via the cell network.
+        """
+        import nvflare.fuel.utils.fobs as fobs
+
+        engine = fl_ctx.get_engine()
+        if not engine:
+            return result
+        # Not all engine implementations expose get_cell() (e.g. test stubs).
+        # If the method is absent or returns None, skip the download — there is
+        # no cell network available to route the download through.
+        get_cell = getattr(engine, "get_cell", None)
+        if not get_cell:
+            return result
+        cell = get_cell()
+        if not cell:
+            return result
+        encoded = fobs.dumps(result)
+        decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
+        return fobs.loads(encoded, fobs_ctx=decode_ctx)
+
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
             peer_ctx = fl_ctx.get_peer_context()
@@ -638,6 +756,15 @@ class SwarmClientController(ClientSideController):
             client_name = peer_ctx.get_identity_name()
             current_round = request.get_header(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
+
+            # Remote trainer results arrive on CellChannel.AUX_COMMUNICATION, which is
+            # never in decode_pass_through_channels, so Adapter.call() uses PASS_THROUGH=False
+            # and tensors are downloaded inline — request already contains real tensors here.
+            # This check is a defensive guard: if a future caller path omits the pre-resolve
+            # step (as the local path does above), lazy refs are still resolved before the
+            # gatherer rather than crashing downstream.
+            if self._has_lazy_refs(request):
+                request = self._resolve_lazy_refs(request, fl_ctx)
 
             # to be compatible with some widgets that rely on peer_ctx to get result
             peer_ctx.set_prop(FLContextKey.SHAREABLE, request, private=True, sticky=True)
@@ -701,7 +828,15 @@ class SwarmClientController(ClientSideController):
         if not base_model:
             base_model = Learnable()
             fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, base_model, private=True, sticky=True)
-        global_weights = self.shareable_generator.shareable_to_learnable(task_data, fl_ctx)
+        # If task_data contains LazyDownloadRef (receiver-side decode_pass_through
+        # was active), resolve before shareable_to_learnable so GLOBAL_MODEL gets
+        # real tensors — required by the WEIGHT_DIFF branch of _end_gather().
+        # task_data itself keeps its refs intact for execute_learn_task() below so
+        # the subprocess can download directly from the source DownloadService.
+        task_data_for_model = (
+            self._resolve_lazy_refs(task_data, fl_ctx) if self._has_lazy_refs(task_data) else task_data
+        )
+        global_weights = self.shareable_generator.shareable_to_learnable(task_data_for_model, fl_ctx)
 
         self.log_debug(fl_ctx, f"current global model: {global_weights}")
 
@@ -817,23 +952,37 @@ class SwarmClientController(ClientSideController):
                 time.sleep(self.request_to_submit_result_interval)
 
             # send the result to the aggr
-            self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
+            if aggr == self.me:
+                # Avoid synchronous self-message path through CoreCell._send_direct_message.
+                self.log_info(fl_ctx, "submitting training result locally (aggregation client is self)")
+                # The subprocess result arrives at CJ as LazyDownloadRef (subprocess-side
+                # CellPipe has pass_through_on_send=True).  Resolve before local aggregation.
+                # The remote path goes through AUX_COMMUNICATION (not the pipe channel), so
+                # Adapter.call() downloads tensors inline and _process_learn_result() receives
+                # real tensors; its own _has_lazy_refs guard is purely defensive.
+                result = self._resolve_lazy_refs(result, fl_ctx)
+                engine = fl_ctx.get_engine()
+                local_fl_ctx = fl_ctx.clone()
+                local_fl_ctx.set_peer_context(engine.new_context())
+                reply = self._process_learn_result(result, local_fl_ctx, abort_signal)
+            else:
+                self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
 
-            task = Task(
-                name=self.report_learn_result_task_name,
-                data=result,
-                timeout=int(self.learn_task_ack_timeout),
-                secure=self.is_task_secure(fl_ctx),
-            )
+                task = Task(
+                    name=self.report_learn_result_task_name,
+                    data=result,
+                    timeout=int(self.learn_task_ack_timeout),
+                    secure=self.is_task_secure(fl_ctx),
+                )
 
-            resp = self.broadcast_and_wait(
-                task=task,
-                targets=[aggr],
-                min_responses=1,
-                fl_ctx=fl_ctx,
-            )
+                resp = self.broadcast_and_wait(
+                    task=task,
+                    targets=[aggr],
+                    min_responses=1,
+                    fl_ctx=fl_ctx,
+                )
 
-            reply = resp.get(aggr)
+                reply = resp.get(aggr)
             if not reply:
                 self.log_error(fl_ctx, f"failed to receive reply from aggregation client: {aggr}")
                 self.update_status(action="receive_learn_result_reply", error=ReturnCode.EXECUTION_EXCEPTION)

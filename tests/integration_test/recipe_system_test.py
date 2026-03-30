@@ -26,8 +26,11 @@ TODO: Decide if these should be added to an existing test category or run in a s
 
 import os
 
-from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
+import numpy as np
+
+from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
+from nvflare.recipe.utils import add_cross_site_evaluation
 
 
 class TestRecipeSystemIntegration:
@@ -43,7 +46,10 @@ class TestRecipeSystemIntegration:
         """Test complete workflow with simulation environment."""
         env = SimEnv(num_clients=2, workspace_root="/tmp/test_integration")
         recipe = NumpyFedAvgRecipe(
-            name="test_integration", initial_model=[1.0, 2.0, 3.0], min_clients=2, train_script=self.client_script_path
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
         )
         run = recipe.execute(env)
         assert run.get_job_id() == "test_integration"
@@ -54,8 +60,112 @@ class TestRecipeSystemIntegration:
         """Test complete workflow with POC environment."""
         env = PocEnv(num_clients=2)
         recipe = NumpyFedAvgRecipe(
-            name="test_integration", initial_model=[1.0, 2.0, 3.0], min_clients=2, train_script=self.client_script_path
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
         )
         run = recipe.execute(env)
         run.get_result()
         assert run.get_status() == "FINISHED:COMPLETED"
+
+    def test_hello_numpy_cross_val_training_and_cse(self, tmp_path):
+        """End-to-end: training + CSE with hello-numpy-cross-val client (model required; fail-fast on missing params).
+
+        Uses tmp_path for workspace so it works on Windows, sandboxed CI, and custom temp dirs.
+        Requires simulator to bind ports (run with permissions that allow network/socket bind).
+        """
+        examples_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-numpy-cross-val"
+        )
+        client_script = os.path.abspath(os.path.join(examples_dir, "client.py"))
+        workspace_root = str(tmp_path / "hello_numpy_cse")
+        env = SimEnv(num_clients=2, workspace_root=workspace_root)
+        recipe = NumpyFedAvgRecipe(
+            name="hello-numpy-train-cse",
+            min_clients=2,
+            num_rounds=2,
+            model=np.array([0.0] * 10),
+            train_script=client_script,
+            train_args="",
+        )
+        add_cross_site_evaluation(recipe)
+        run = recipe.execute(env)
+        assert run.get_job_id() == "hello-numpy-train-cse"
+        result_path = run.get_result()
+        expected_result = os.path.join(env.workspace_root, run.get_job_id())
+        assert result_path == expected_result
+        assert os.path.isdir(result_path)
+
+    def test_hello_numpy_cross_val_cse_only_dummy_validator(self, tmp_path):
+        """End-to-end: CSE-only with no eval_script (NPValidator + submit_model).
+
+        Uses NumpyCrossSiteEvalRecipe without eval_script so clients use the built-in
+        NPValidator, which handles submit_model by returning make_reply(ReturnCode.OK)
+        and validation by returning dummy metrics. Verifies:
+        - Executor is registered for submit_model (no "no executor available" error).
+        - NPValidator submit_model path completes without ValueError (empty FLModel).
+        - Server model is located, validation tasks run, ValidationJsonGenerator writes results.
+        """
+        model_file = tmp_path / "pretrained.npy"
+        np.save(str(model_file), np.array([1.0, 2.0, 3.0]))
+        workspace_root = str(tmp_path / "cse_only_dummy")
+        env = SimEnv(num_clients=2, workspace_root=workspace_root)
+        recipe = NumpyCrossSiteEvalRecipe(
+            name="cse-only-dummy",
+            min_clients=2,
+            initial_ckpt=str(model_file),
+            # No eval_script -> NPValidator on clients (submit_model returns OK)
+        )
+        run = recipe.execute(env)
+        assert run.get_job_id() == "cse-only-dummy"
+        result_path = run.get_result()
+        expected_result = os.path.join(env.workspace_root, run.get_job_id())
+        assert result_path == expected_result
+        assert os.path.isdir(result_path)
+        # CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
+        cse_results_file = os.path.join(
+            result_path, "server", "simulate_job", "cross_site_val", "cross_val_results.json"
+        )
+        assert os.path.isfile(cse_results_file), (
+            f"CSE results file not found at {cse_results_file}; "
+            "submit_model and/or validation path may not have completed."
+        )
+
+    def test_dict_model_config_simulation(self):
+        """Test that dict model config works in simulation (end-to-end validation)."""
+        import sys
+
+        # Skip if PyTorch not available
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            import pytest
+
+            pytest.skip("PyTorch not available")
+
+        # Add hello-pt example to path for model import
+        examples_dir = os.path.join(os.path.dirname(__file__), "..", "..", "examples", "hello-world", "hello-pt")
+        sys.path.insert(0, examples_dir)
+
+        from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+        # Use dict config instead of class instance
+        model_config = {
+            "class_path": "model.SimpleNetwork",
+            "args": {},
+        }
+
+        env = SimEnv(num_clients=2, workspace_root="/tmp/test_dict_config")
+        recipe = FedAvgRecipe(
+            name="test_dict_config",
+            min_clients=2,
+            num_rounds=1,
+            model=model_config,
+            train_script=os.path.join(examples_dir, "client.py"),
+        )
+        run = recipe.execute(env)
+
+        # Verify job was created (simulation returns immediately)
+        assert run.get_job_id() == "test_dict_config"
+        assert run.get_result() == "/tmp/test_dict_config/test_dict_config"

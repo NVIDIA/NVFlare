@@ -29,7 +29,7 @@ class FedAvgV1(BaseFedAvg):
         stop_cond: Optional[str] = None,
         patience: Optional[int] = None,
         task_to_optimize: Optional[str] = "train",
-        initial_model: Optional[FLModel] = None,
+        model: Optional[FLModel] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -43,13 +43,13 @@ class FedAvgV1(BaseFedAvg):
         else:
             self.stop_condition = None
 
-        self.initial_model: FLModel = initial_model
+        self.model: FLModel = model
         self.best_target_metric_value: Any = None
         fobs.register(TensorDecomposer)
 
     def run(self) -> None:
-        if self.initial_model:
-            initial_weights = self.initial_model.state_dict()
+        if self.model:
+            initial_weights = self.model.state_dict()
         else:
             initial_weights = {}
 

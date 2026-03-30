@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import json
-from typing import Dict
+from typing import Dict, Optional
 
 from nvflare.edge.models.model import DeviceModel
 from nvflare.edge.tools.edge_fed_buff_recipe import (
@@ -31,6 +32,30 @@ _DEVICE_CONFIG_FILE_NAME = "device_config.json"
 
 
 class ETFedBuffRecipe(EdgeFedBuffRecipe):
+    """Edge Training FedBuff Recipe for embedded/edge device training.
+
+    This recipe extends EdgeFedBuffRecipe for edge devices with DeviceModel wrapper.
+
+    Args:
+        job_name: Name of the federated learning job.
+        device_model: DeviceModel wrapping the PyTorch model for edge devices.
+        input_shape: Input shape for the model.
+        output_shape: Output shape for the model.
+        model_manager_config: Configuration for the model manager.
+        device_manager_config: Configuration for the device manager.
+        initial_ckpt: Absolute path to a pre-trained checkpoint file (.pt, .pth).
+            The file may not exist locally (server-side path).
+        evaluator_config: Configuration for the global evaluator (optional).
+        simulation_config: Configuration for simulated devices settings (optional).
+        device_training_params: Training parameters for device (optional).
+        custom_source_root: Path to custom source code (optional).
+        device_wait_timeout: Timeout in seconds for waiting for sufficient devices
+            to join before stopping the job. None means wait indefinitely.
+            WARNING: when device_reuse=False with a finite device pool, leaving this
+            as None can cause the job to hang indefinitely once the pool is exhausted.
+            In that case, set an explicit timeout (e.g., 300.0 seconds).
+            Default: None
+    """
 
     def __init__(
         self,
@@ -40,11 +65,20 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         output_shape,
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
+        initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         device_training_params: Dict = None,
         custom_source_root: str = None,
+        device_wait_timeout: Optional[float] = None,
     ):
+        if importlib.util.find_spec("executorch.extension.training") is None:
+            raise ImportError(
+                "ETFedBuffRecipe requires executorch. "
+                "See installation instructions: "
+                "https://pytorch.org/executorch/stable/getting-started-setup.html"
+            )
+
         self.device_model = device_model
         self.input_shape = input_shape
         self.output_shape = output_shape
@@ -57,9 +91,11 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
             model=pt_model,
             model_manager_config=model_manager_config,
             device_manager_config=device_manager_config,
+            initial_ckpt=initial_ckpt,
             evaluator_config=evaluator_config,
             simulation_config=simulation_config,
             custom_source_root=custom_source_root,
+            device_wait_timeout=device_wait_timeout,
         )
 
     def create_job(self):

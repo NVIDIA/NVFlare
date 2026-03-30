@@ -60,6 +60,11 @@ META_WITH_VALID_DEPLOY_MAP = [
     pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"], "app2": []}}, id="idle_app"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1", "site-2"]}}, id="one_app"),
     pytest.param({"deploy_map": {"app1": ["server", "site-1"], "app2": ["site-2"]}}, id="two_app"),
+    pytest.param({"deploy_map": {"app1": {"targets": ["@ALL"]}}}, id="all_targets_dict"),
+    pytest.param(
+        {"deploy_map": {"app1": {"targets": ["server", "site-1", "site-2"]}}},
+        id="explicit_sites_targets_dict",
+    ),
 ]
 
 
@@ -71,6 +76,8 @@ META_WITH_INVALID_DEPLOY_MAP = [
     pytest.param({"deploy_map": {}}, id="empty_deploy_map"),
     pytest.param({"deploy_map": {"app1": []}}, id="no_deployment"),
     pytest.param({"deploy_map": {"app1": [], "app2": []}}, id="no_deployment_two_apps"),
+    pytest.param({"deploy_map": {"app1": {"targets": []}}}, id="no_deployment_targets_dict"),
+    pytest.param({"deploy_map": {"app1": {"foo": ["@ALL"]}}}, id="invalid_targets_key"),
 ]
 
 

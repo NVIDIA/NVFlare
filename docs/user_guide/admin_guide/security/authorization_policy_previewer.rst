@@ -1,3 +1,8 @@
+:orphan:
+
+.. deprecated:: 2.7
+   This tool is deprecated.
+
 .. _authorization_policy_previewer:
 
 ******************************
@@ -29,7 +34,7 @@ The authorization_policy_file must be a JSON file that follows authorization fil
 If the file is not a valid JSON file or does not follow authorization file format, this command will exit with exception.
 
 Execute Authorization Policy Previewer Commands
-================================================
+------------------------------------------------
 If the Authorization Policy Previewer is successfully started, the prompt ``>`` will be displayed and for command input.
 
 To get the complete list of commands, enter "?" on the prompt.
@@ -38,14 +43,14 @@ Most commands are self-explanatory, except for the "eval_right". With this comma
 specified user (name:org:role) to make sure the result is correct.
 
 Role Rights
-===========
+-----------
 Most permissions in the policy file may be defined with Command Categories. However, once the policy file is loaded, categories are
 already resolved to individual commands, following the fallback mechanism.
 
 Use the ``show_role_rights command`` to verify that all commands have the right permissions for all roles.
 
 Evaluate a Right
-================
+----------------
 The syntax of the ``eval_right`` command is:
 
 .. code-block:: shell
@@ -64,5 +69,5 @@ where:
 Please refer to :ref:`Federated Authorization <federated_authorization>` for details on the right definition and evaluation.
 
 Stop Authorization Policy Previewer
-======================================
+--------------------------------------
 To exit from the Authorization Policy Previewer, enter the "bye" command at the prompt.

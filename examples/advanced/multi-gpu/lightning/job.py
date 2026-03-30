@@ -37,7 +37,7 @@ def main():
     args = define_parser()
 
     train_script = "client.py"
-    initial_model = LitNet()
+    model = LitNet()
 
     # Build train_args based on mode
     train_args = ""
@@ -51,7 +51,7 @@ def main():
 
     recipe = FedAvgRecipe(
         name="lightning_ddp",
-        initial_model=initial_model,
+        model=model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=train_script,

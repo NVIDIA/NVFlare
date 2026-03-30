@@ -44,10 +44,10 @@ with the appropriate path to the directory containing the "pt" directory with cu
 Adding MLflow Logging to Configurations
 ------------------------------------------------
 
-Inside the config folder there are two files, ``config_fed_client.conf`` and ``config_fed_server.conf``.
+Inside the example, job configuration and tracking setup are defined in the job script and client script:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_client.conf
-   :caption: config_fed_client.conf
+- :github_nvflare_link:`job.py <examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow/job.py>`
+- :github_nvflare_link:`client.py <examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow/client.py>`
 
 Take a look at the components section of the client config at line 24.
 The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
@@ -59,9 +59,6 @@ within NVFlare with the information to track.
 
 Finally, :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will then be streamed from the clients to the server.
-
-.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_server.conf
-   :caption: config_fed_server.conf
 
 Under the component section in the server config, we have the
 :class:`MLflowReceiver<nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver>`. This component receives
@@ -75,15 +72,15 @@ Notice how the accepted event type ``"fed.analytix_log_stats"`` matches the outp
 Adding MLflow Logging to Your Code
 -------------------------------------------
 
-In this exercise, all of the MLflow code additions will be made in ``learner_with_mlflow.py``.
+In this exercise, all of the MLflow code additions are in the training script:
+
+- :github_nvflare_link:`client.py <examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow/client.py>`
 
 First we must initialize our MLflow writer we defined in the client config:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_mlflow.py
-   :language: python
-   :lines: 102-105
-   :lineno-start: 102
-   :linenos:
+See initialization and logging usage directly in:
+
+- :github_nvflare_link:`client.py <examples/advanced/experiment-tracking/mlflow/hello-pt-mlflow/client.py>`
 
 The ``LearnerExecutor`` passes in the component dictionary into the ``parts`` parameter of ``initialize()``.
 We can then access the ``MLflowWriter`` component we defined in ``config_fed_client.json``
@@ -94,14 +91,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our writer is set to ``MLflowWriter``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_mlflow.py
-   :language: python
-   :lines: 148-182
-   :lineno-start: 148
-   :linenos:
-
-We use ``self.writer.log_metrics()`` on line 178 to send training loss metrics,
-while on line 182 we send the validation accuracy at the end of each epoch.
+The script logs training and validation metrics through the MLflow tracking integration during local training.
 
 You can see the currently supported methods for MLflowWriter in
 :class:`MLflowWriter<nvflare.app_opt.tracking.mlflow.mlflow_writer.MLflowWriter>`.

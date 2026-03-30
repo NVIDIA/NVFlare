@@ -76,7 +76,7 @@ def run_psi_job(args):
     )
 
     # Run PSI job
-    env = SimEnv()
+    env = SimEnv(num_clients=args.site_num)
     run = recipe.execute(env)
 
     print("\n" + "=" * 80)
@@ -129,12 +129,15 @@ def run_training_job(args):
         per_site_config=per_site_config,
     )
 
-    # Run training
-    env = SimEnv()
-    env.run(recipe, work_dir="/tmp/nvflare/workspace/works/xgboost_vertical")
+    # Run training with explicit client list (required when using per_site_config)
+    clients = list(per_site_config.keys())
+    env = SimEnv(clients=clients)
+    run = recipe.execute(env)
 
     print("\n" + "=" * 80)
     print("Training Complete!")
+    print(f"Job Status: {run.get_status()}")
+    print(f"Result can be found in: {run.get_result()}")
     print("=" * 80 + "\n")
 
 

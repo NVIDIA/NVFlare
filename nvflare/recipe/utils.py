@@ -15,7 +15,7 @@
 import copy
 import importlib
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.fuel.utils.import_utils import optional_import
@@ -57,6 +57,27 @@ MODEL_LOCATOR_REGISTRY = {
         "persistor_param": "tf_persistor_id",
     },
 }
+
+
+def _has_cross_site_eval_workflow(job: FedJob) -> bool:
+    """Check if CrossSiteModelEval workflow is already configured on server."""
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+    deploy_map = getattr(job, "_deploy_map", {})
+    server_app = deploy_map.get("server")
+    if not server_app or not hasattr(server_app, "app_config"):
+        return False
+
+    workflows = getattr(server_app.app_config, "workflows", [])
+    for w in workflows:
+        # Server stores workflow definitions as wrapper objects (e.g. WorkFlow)
+        # with the actual controller on `controller`.
+        if isinstance(w, CrossSiteModelEval):
+            return True
+        controller = getattr(w, "controller", None)
+        if controller is not None and isinstance(controller, CrossSiteModelEval):
+            return True
+    return False
 
 
 def add_experiment_tracking(
@@ -172,7 +193,7 @@ def add_cross_site_evaluation(
         from nvflare.recipe.utils import add_cross_site_evaluation
 
         recipe = NumpyFedAvgRecipe(
-            name="my-job", initial_model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
+            name="my-job", model=[1.0, 2.0, 3.0], min_clients=2, num_rounds=3, train_script="client.py"
         )
 
         # That's it! Framework auto-detected, validator auto-added
@@ -186,7 +207,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyModel(), train_script="client.py"
+            model=MyModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -200,7 +221,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         # Note: client.py must handle flare.is_evaluate() for validation
@@ -215,7 +236,7 @@ def add_cross_site_evaluation(
 
         recipe = FedAvgRecipe(
             name="my-job", min_clients=2, num_rounds=3,
-            initial_model=MyTFModel(), train_script="client.py"
+            model=MyTFModel(), train_script="client.py"
         )
 
         add_cross_site_evaluation(recipe)
@@ -250,8 +271,10 @@ def add_cross_site_evaluation(
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.job_config.script_runner import FrameworkType
 
-    # Idempotency check: prevent multiple calls on the same recipe
-    if hasattr(recipe, "_cse_added") and recipe._cse_added:
+    # Idempotency check: prevent multiple calls on the same recipe.
+    # Keep the explicit flag fast-path, but also verify server workflow state so
+    # protection remains effective even if dynamic attributes are lost.
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
         name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
             f"Cross-site evaluation has already been added to recipe '{name}'. "
@@ -307,7 +330,7 @@ def add_cross_site_evaluation(
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
                     f"but no persistor_id found in recipe.job.comp_ids. "
-                    f"Ensure your recipe includes an initial_model to create a persistor."
+                    f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
         else:
@@ -399,7 +422,7 @@ def _has_task_executor(job, task_name: str) -> bool:
     return False
 
 
-def _collect_non_local_scripts(job: FedJob) -> List[str]:
+def collect_non_local_scripts(job: FedJob) -> List[str]:
     """Collect scripts that don't exist locally.
 
     This utility function is used by ExecEnv subclasses to validate script resources
@@ -418,3 +441,141 @@ def _collect_non_local_scripts(job: FedJob) -> List[str]:
             if os.path.isabs(script) and not os.path.exists(script):
                 non_local_scripts.append(script)
     return non_local_scripts
+
+
+def ensure_config_type_dict(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Ensure a component config dict has config_type 'dict' and is normalized for the config layer.
+
+    Used by FedOpt-style recipes for optimizer_args and lr_scheduler_args: those dicts have 'path' or
+    'class_path' plus 'args', and would otherwise be treated as component configs and instantiated
+    during config scan (e.g. torch.optim.SGD without params). This function:
+    - Accepts either 'path' or 'class_path' (for consistency with recipe model_config); if only
+      'class_path' is set, copies it to 'path' so the component builder and runtime code work unchanged.
+    - Sets config_type to 'dict' when missing so the component builder does not instantiate at load time;
+      the optimizer/scheduler is instantiated at runtime when params/optimizer are available.
+
+    Args:
+        config: A component-style config dict (e.g. {'class_path': 'torch.optim.SGD', 'args': {'lr': 1.0}}
+                or {'path': '...', 'args': {...}}) or None.
+
+    Returns:
+        A copy of config with config_type 'dict' if missing and path set from class_path if needed; None if config is None.
+    """
+    if config is None:
+        return None
+    out = copy.copy(config)
+    if out.get("path") is None and out.get("class_path") is not None:
+        out["path"] = out["class_path"]
+    if out.get("config_type") is None:
+        out["config_type"] = "dict"
+    return out
+
+
+def validate_ckpt(ckpt: Optional[str]) -> None:
+    """Validate a checkpoint path if provided.
+
+    For absolute paths: no local existence check (file may be a server-side path).
+    For relative paths: verifies the file exists locally (it will be bundled into the job).
+
+    Args:
+        ckpt: Checkpoint file path to validate (e.g. initial_ckpt or eval_ckpt).
+
+    Raises:
+        ValueError: If relative path does not exist locally.
+    """
+    if ckpt is not None:
+        if not os.path.isabs(ckpt):
+            if not os.path.isfile(ckpt):
+                raise ValueError(
+                    f"Checkpoint relative path does not exist locally: {ckpt}. "
+                    "Relative paths are treated as local files that will be bundled into the job. "
+                    "Use an absolute path for server-side checkpoints."
+                )
+
+
+def prepare_initial_ckpt(initial_ckpt: Optional[str], job) -> Optional[str]:
+    """Prepare initial_ckpt for job deployment.
+
+    - Relative path: treated as a local file. The file is bundled into the server
+      app's custom directory and the basename is returned for runtime resolution.
+    - Absolute path: treated as a server-side (remote) path and returned as-is.
+      The file is expected to exist on the server at runtime.
+
+    Args:
+        initial_ckpt: Checkpoint file path (absolute or relative).
+        job: BaseFedJob instance to add the file to.
+
+    Returns:
+        The checkpoint path to pass to the persistor:
+        - None if initial_ckpt is None
+        - Basename for relative paths (file is bundled into app/custom/)
+        - Absolute path as-is for server-side checkpoints
+    """
+    if initial_ckpt is None:
+        return None
+    if os.path.isabs(initial_ckpt):
+        # Absolute path: server-side checkpoint, use as-is
+        return initial_ckpt
+    # Relative path: bundle local file into server app's custom/ directory
+    job.add_file_to_server(initial_ckpt)
+    return os.path.basename(initial_ckpt)
+
+
+def extract_persistor_id(result: Any) -> str:
+    if isinstance(result, dict):
+        persistor_id = result.get("persistor_id", "")
+        return persistor_id if isinstance(persistor_id, str) else ""
+    if isinstance(result, str):
+        return result
+    return ""
+
+
+def resolve_initial_ckpt(initial_ckpt: Optional[str], prepared_initial_ckpt: Optional[str], job) -> Optional[str]:
+    if prepared_initial_ckpt is not None:
+        return prepared_initial_ckpt
+    return prepare_initial_ckpt(initial_ckpt, job)
+
+
+def setup_custom_persistor(*, job, model_persistor=None) -> str:
+    if model_persistor is None:
+        return ""
+    return extract_persistor_id(job.to_server(model_persistor, id="persistor"))
+
+
+def validate_dict_model_config(model: Any) -> None:
+    """Validate recipe dict model config structure.
+
+    Recipes accept model config with ``class_path`` (fully qualified class name).
+    The job/config layer uses ``path``; recipes use ``class_path`` only.
+
+    Args:
+        model: Model input to validate.
+
+    Raises:
+        ValueError: If dict config is missing 'class_path' or value is not a string.
+    """
+    if isinstance(model, dict):
+        if "class_path" not in model:
+            raise ValueError(
+                "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {model}"
+            )
+        class_path = model["class_path"]
+        if not isinstance(class_path, str):
+            raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
+
+
+def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and convert recipe model dict (class_path) to job/config format (path).
+
+    Calls :func:`validate_dict_model_config` internally so callers do not need to
+    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
+
+    Args:
+        recipe_model: Dict with 'class_path' and optional 'args'.
+
+    Returns:
+        Dict with 'path' and 'args' for use by PTModel, persistors, etc.
+    """
+    validate_dict_model_config(recipe_model)
+    return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}

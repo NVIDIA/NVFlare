@@ -59,7 +59,7 @@ The following properties in the fl_ctx could be helpful too:
 ``FLContextKey.WORKSPACE_OBJECT`` - This object provides many convenience methods to determine the paths of files in the workspace
 
 Install Your Component Checker
-==============================
+------------------------------
 Once you define your component checker (you can name your class any way you want - does not have to be ComponentChecker), you need
 to install it to your FL site(s).
 

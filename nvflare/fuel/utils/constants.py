@@ -15,6 +15,19 @@
 from enum import Enum
 
 
+class FrameworkType(str, Enum):
+    """Machine learning framework type.
+
+    Used to identify the ML framework for model handling, persistor selection,
+    and checkpoint validation across both server and client components.
+    """
+
+    RAW = "raw"
+    NUMPY = "numpy"
+    PYTORCH = "pytorch"
+    TENSORFLOW = "tensorflow"
+
+
 class Mode(str, Enum):
     ACTIVE = "ACTIVE"
     PASSIVE = "PASSIVE"

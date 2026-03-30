@@ -1,17 +1,29 @@
 .. _helm_chart:
 
-###########################
-Helm Chart for NVIDIA FLARE
-###########################
+################################
+Running FLARE in Kubernetes
+################################
 
-Sometimes, users would like to deploy NVIDIA FLARE to an existing Kubernetes cluster.  Now
-the provisioning tool includes a new builder ``HelmChartBuilder`` that can generate a reference
-Helm Chart for users to deploy NVIDIA FLARE to a local microk8s Kubernetes instance.
+NVIDIA FLARE can be deployed to Kubernetes clusters for production-scale federated learning.
 
 .. note::
 
-    The generated Helm Chart is a starting point and serves as a reference.  Depending on the Kubernetes cluster,
-    users may need to modify and/or to perform additional operations to successfully deploy the chart.
+    **Coming in 2.8.0: Native Kubernetes Support**
+
+    FLARE 2.8.0 will introduce native Kubernetes support with tighter integration,
+    simplified deployment, and native orchestration of FL jobs on K8s.
+
+Current Kubernetes Deployment with Helm Chart
+=============================================
+
+Currently, FLARE can be deployed to Kubernetes using Helm Charts. The provisioning tool includes
+a ``HelmChartBuilder`` that generates a reference Helm Chart for deploying NVIDIA FLARE to
+Kubernetes instances (e.g., microk8s).
+
+.. note::
+
+    The generated Helm Chart is a starting point and serves as a reference. Depending on the Kubernetes cluster,
+    users may need to modify and/or perform additional operations to successfully deploy the chart.
     
 
 .. note::

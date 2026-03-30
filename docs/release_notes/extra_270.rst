@@ -1,3 +1,5 @@
+:orphan:
+
 .. _extra_270:
 
 Extra Features in v2.7.0
@@ -54,26 +56,6 @@ The file downloading process requires three steps:
 1. The data owner prepares the file(s) to be shared with recipients, and obtains one reference ID (RID) for each file.
 2. The data owner sends the RID(s) to all recipients. This is usually done with a broadcast message.
 3. Recipients download the files one by one with received RIDs.
-
-
-Pre-Install CLI Command
------------------------
-
-In cases where custom code or dynamic code is not allowed to be deployed, we need to pre-install the application to the
-host. Although you can manually deploy this code without using any tool or command, the following pre-install tool
-may provide a simpler method.
-
-The code pre-installer handles:
-- Installation of application code
-- Installation of shared libraries
-- Site-specific customizations
-- Python package dependencies
-
-The tool provides two main commands:
-- `prepare`: Package application code for installation
-- `install`: Install packaged code to target sites
-
-:ref:`pre_installer`
 
 
 New documentations

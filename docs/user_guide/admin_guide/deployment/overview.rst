@@ -78,7 +78,7 @@ Customize the provision configuration
 For advanced users, you can customize your provision with additional behavior through additional builders:
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
-    - **Docker-compose**: Provision to launch NVIDIA FLARE system via docker containers. You can customize the provisioning process and ask the provisioner to generate a docker-compose file. This can be found in :ref:`docker_compose`.
+    - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
     - **Docker**: Provision to launch NVIDIA FLARE system via docker containers. If you just want to use docker files, see :ref:`containerized_deployment`.
     - **Helm**: To change the provisioning tool to generate an NVIDIA FLARE Helm chart for Kubernetes deployment, see :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
@@ -294,11 +294,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
   This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
 
-- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`pre_installer` command of the FLARE CLI.
-
-.. code-block::
-
-    nvflare pre-install
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. The application and its dependencies can be pre-installed by building Docker images with the workload included.
 
 .. note::
     Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.

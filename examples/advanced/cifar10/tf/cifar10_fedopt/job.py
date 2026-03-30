@@ -54,33 +54,31 @@ def main():
         raise ValueError("Alpha must be greater than 0 for federated settings")
 
     # Create initial model
-    initial_model = ModerateTFNet(input_shape=(None, 32, 32, 3))
+    model = ModerateTFNet(input_shape=(None, 32, 32, 3))
 
     # Configure FedOpt optimizer arguments
     optimizer_args = {
-        "path": "tensorflow.keras.optimizers.SGD",
+        "class_path": "tensorflow.keras.optimizers.SGD",
         "args": {
             "learning_rate": args.server_lr,
             "momentum": args.server_momentum,
         },
-        "config_type": "dict",
     }
 
     # Configure FedOpt learning rate scheduler arguments
     lr_scheduler_args = {
-        "path": "tensorflow.keras.optimizers.schedules.CosineDecay",
+        "class_path": "tensorflow.keras.optimizers.schedules.CosineDecay",
         "args": {
             "initial_learning_rate": args.server_lr,
             "decay_steps": args.num_rounds,
             "alpha": args.server_lr_decay_alpha,
         },
-        "config_type": "dict",
     }
 
     # Create FedOpt recipe
     recipe = FedOptRecipe(
         name=job_name,
-        initial_model=initial_model,
+        model=model,
         min_clients=args.n_clients,
         num_rounds=args.num_rounds,
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),

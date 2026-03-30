@@ -21,7 +21,7 @@ the configuration file (fed_server_config.json or fed_client_config.json) and ex
 Once the component is loaded, you can find it by ``component_id``, which is specified by you in the configuration file. 
 
 Component configuration and lookup
-==================================
+----------------------------------
 To understand component configuration, we can look at the job configuration and see how the components are defined and
 used. Below is the server side configuration for :ref:`hello_pt_job_api`.
 
@@ -90,7 +90,7 @@ used. Below is the server side configuration for :ref:`hello_pt_job_api`.
 Note the two sections for components and workflows.
 
 Component Configuration
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 A FLARE job configuration defines a list of components. Here, we skip many other components so we can focus on just one component:
 
 .. code-block:: json
@@ -105,7 +105,7 @@ A FLARE job configuration defines a list of components. Here, we skip many other
 
 The component configuration consists of three parts:
     - component id: for example ``"id": "aggregator"``
-    - component path, the fully qualified class path, for example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",``
+    - component path: the fully qualified class path, specified as ``"path"`` or ``"class_path"`` (for consistency with recipe/model config). Example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"``
     - Component arguments, for example: ``"args": {"expected_data_kind": "WEIGHTS"}``
 
 If we look at this class definition, we will find that this configuration is actually mapped to the class constructor:
@@ -144,7 +144,7 @@ For example:
             "device": "cpu",
             "source_model": "model",
             "optimizer_args": {
-                "path": "torch.optim.SGD",
+                "class_path": "torch.optim.SGD",
                 "args": {
                     "lr": 1.0,
                     "momentum": 0.6
@@ -152,7 +152,7 @@ For example:
                 "config_type": "dict"
             },
             "lr_scheduler_args": {
-                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {
                     "T_max": "{num_rounds}",
                     "eta_min": 0.9
@@ -166,7 +166,7 @@ Notice the config:
 .. code-block:: json
 
     "optimizer_args": {
-        "path": "torch.optim.SGD",
+        "class_path": "torch.optim.SGD",
         "args": {
             "lr": 1.0,
             "momentum": 0.6
@@ -174,7 +174,7 @@ Notice the config:
         "config_type": "dict"
     },
 
-We need to pass a run-time argument to "torch.optim.SDG" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
+We need to pass a run-time argument to "torch.optim.SGD" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
 argument, not as two arguments to the constructor, we specify:
 
 .. code-block:: json
@@ -183,10 +183,10 @@ argument, not as two arguments to the constructor, we specify:
 
 By default ``config_type`` is "Component" if not specified.
 
-Name and Path
--------------
+Name, Path, and class_path
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 The class path can be quite long, so NVFLARE allows users to only specify the class name, and NVFLARE will search the specified Python path
-to find the corresponding class path. In the configuration, you can use "name" to do this.
+to find the corresponding class path. In the configuration, you can use ``"name"`` to do this. You may also use ``"class_path"`` instead of ``"path"`` for consistency with recipe and model configuration; when both are present, ``"path"`` takes precedence.
 
 The configuration::
 
@@ -195,6 +195,10 @@ The configuration::
 can be changed to::
 
     "name" : "InTimeAccumulateWeightedAggregator"
+
+or (equivalent to ``path``)::
+
+    "class_path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
 
 .. note::
 
@@ -220,7 +224,7 @@ When such a case happens, although the failure is class instantiation, FLARE may
 failure originated from configuration parsing. You will need to look at the traceback and find the root cause of the failure.
 
 Workflow Configuration
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 The second part of the Job configuration is the workflow configuration with the key ``workflows``.
 
 Workflows define a list of workflows. In the example above, three workflows are defined:
@@ -230,7 +234,7 @@ Workflows define a list of workflows. In the example above, three workflows are 
     - CrossSiteModelEval for validation with cross_site_validate
 
 Each workflow corresponds to a special type of FLComponent (known as a :ref:`Controller <controllers>`), which has the same component structure with an "id",
-"name" (or "path"), and arguments that match the class definitions.
+"name", "path", or "class_path", and arguments that match the class definitions.
 
 The controller arguments can be primitive types (int, str, etc.), or another component id.
 
@@ -242,7 +246,7 @@ Filters Configuration
 There are additional optional filters such as ``task_data_filters`` or ``task_result_filters``. These correspond to the :ref:`filters` mechanism.
 
 Component events
-================
+----------------
 After understanding that components are instantiated dynamically based on the component configuration, another important aspect of
 components is event handling.
 
@@ -306,7 +310,7 @@ Each FLComponent will receive certain system events and application events, depe
 Server or Client component. The FLComponent class can decide to handle or ignore the events.
 
 Component configuration and event handling
-==========================================
+------------------------------------------
 The second approach in component configuration: register components to handle events. 
 
 Unlike the previous approach of component configuration, where we define a component in the job configuration,

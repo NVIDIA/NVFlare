@@ -27,9 +27,17 @@ from nvflare.app_opt.he.model_shareable_generator import HEModelShareableGenerat
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.defs import FilterType
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from nvflare.recipe.spec import Recipe
+from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.recipe.spec import ExecEnv, Recipe
+
+HE_CONTEXT_PROVISIONING_DOC_LINK = "https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html"
+HE_SIM_ENV_NOT_SUPPORTED_ERROR = (
+    "FedAvgRecipeWithHE does not support SimEnv. "
+    "Use provisioned startup kits with nvflare.lighter.impl.he.HEBuilder and run with ProdEnv or PocEnv. "
+    f"See: {HE_CONTEXT_PROVISIONING_DOC_LINK}"
+)
 
 
 # Internal — not part of the public API
@@ -37,7 +45,8 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
-    initial_model: Any
+    model: Any
+    initial_ckpt: Optional[str] = None
     min_clients: int
     num_rounds: int
     train_script: str
@@ -49,6 +58,9 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
     encrypt_layers: Optional[Union[List[str], str]] = None
+    server_memory_gc_rounds: int = 1
+    client_memory_gc_rounds: int = 0
+    cuda_empty_cache: bool = False
 
 
 class FedAvgRecipeWithHE(Recipe):
@@ -68,10 +80,33 @@ class FedAvgRecipeWithHE(Recipe):
     - HE model serialization filter on the server side
     - Script runners for client-side training execution
 
+    Important:
+        TenSEAL context files must be generated before running this recipe:
+        - `server_context.tenseal` for the server startup folder
+        - `client_context.tenseal` for each client startup folder
+
+        Use NVFlare provisioning with `nvflare.lighter.impl.he.HEBuilder` so these
+        context files are generated automatically into startup kits.
+
+        Example project config:
+        `examples/advanced/cifar10/pt/cifar10-real-world/workspaces/secure_project.yml`
+
+        SimEnv is not supported for this HE recipe. Use ProdEnv or PocEnv with
+        provisioned startup kits.
+
+        For provisioning details, see:
+        https://nvflare.readthedocs.io/en/2.7/programming_guide/provisioning_system.html
+
     Args:
         name: Name of the federated learning job. Defaults to "fedavg".
-        initial_model: Initial model to start federated training with. If None,
-            clients will start with their own local models.
+        model: Initial model to start federated training with. Can be:
+            - nn.Module instance
+            - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
+            - None: no initial model
+        initial_ckpt: Path to a pre-trained checkpoint file. Can be:
+            - Relative path: file will be bundled into the job's custom/ directory.
+            - Absolute path: treated as a server-side path, used as-is at runtime.
+            Note: PyTorch requires model when using initial_ckpt (for architecture).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -88,12 +123,14 @@ class FedAvgRecipeWithHE(Recipe):
                         if list of variable/layer names, only specified variables are encrypted;
                         if string containing regular expression (e.g. "conv"), only matched variables are
                         being encrypted.
+        server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
+            Set to 0 to disable. Defaults to 1 (every round).
 
     Example:
         ```python
         recipe = FedAvgRecipeWithHE(
             name="my_fedavg_he_job",
-            initial_model=pretrained_model,
+            model=pretrained_model,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -120,7 +157,8 @@ class FedAvgRecipeWithHE(Recipe):
         self,
         *,
         name: str = "fedavg_he",
-        initial_model: Any = None,
+        model: Union[Any, dict[str, Any], None] = None,
+        initial_ckpt: Optional[str] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -132,11 +170,15 @@ class FedAvgRecipeWithHE(Recipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
         encrypt_layers: Optional[Union[List[str], str]] = None,
+        server_memory_gc_rounds: int = 1,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgRecipeWithHEValidator(
             name=name,
-            initial_model=initial_model,
+            model=model,
+            initial_ckpt=initial_ckpt,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -148,10 +190,22 @@ class FedAvgRecipeWithHE(Recipe):
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
             encrypt_layers=encrypt_layers,
+            server_memory_gc_rounds=server_memory_gc_rounds,
+            client_memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
         )
 
         self.name = v.name
-        self.initial_model = v.initial_model
+        self.model = v.model
+        self.initial_ckpt = v.initial_ckpt
+
+        # Validate inputs using shared utilities
+        from nvflare.recipe.utils import recipe_model_to_job_model, validate_ckpt
+
+        validate_ckpt(self.initial_ckpt)
+        if isinstance(self.model, dict):
+            self.model = recipe_model_to_job_model(self.model)
+
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.train_script = v.train_script
@@ -163,22 +217,32 @@ class FedAvgRecipeWithHE(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.encrypt_layers: Optional[Union[List[str], str]] = v.encrypt_layers
+        self.server_memory_gc_rounds = v.server_memory_gc_rounds
+        self.client_memory_gc_rounds = v.client_memory_gc_rounds
+        self.cuda_empty_cache = v.cuda_empty_cache
 
-        # Create a persistor with HE serialization filter if initial model is provided
-        model_persistor = None
-        if self.initial_model is not None:
-            model_persistor = PTFileModelPersistor(model=self.initial_model, filter_id="model_serialize_filter")
-
-        # Create BaseFedJob with initial model and persistor
+        # Create BaseFedJob without model first (model setup done manually below for HE)
         job = BaseFedJob(
-            initial_model=self.initial_model,
             name=self.name,
             min_clients=self.min_clients,
-            model_persistor=model_persistor,
         )
 
+        # Create a persistor with HE serialization filter if initial model or checkpoint is provided
+        if self.model is not None or self.initial_ckpt is not None:
+            from nvflare.app_opt.pt.job_config.model import PTModel
+            from nvflare.recipe.utils import prepare_initial_ckpt
+
+            ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
+            model_persistor = PTFileModelPersistor(
+                model=self.model,
+                source_ckpt_file_full_name=ckpt_path,
+                filter_id="model_serialize_filter",
+            )
+            pt_model = PTModel(model=self.model, persistor=model_persistor)
+            job.comp_ids.update(job.to_server(pt_model))
+
         # Add HE model serialization filter (must be added before persistor uses it)
-        if self.initial_model is not None:
+        if self.model is not None or self.initial_ckpt is not None:
             model_serialize_filter = HEModelSerializeFilter()
             job.to_server(model_serialize_filter, id="model_serialize_filter")
 
@@ -202,8 +266,13 @@ class FedAvgRecipeWithHE(Recipe):
             num_rounds=self.num_rounds,
             wait_time_after_min_received=0,
             aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            persistor_id=(
+                job.comp_ids.get("persistor_id", "")
+                if (self.model is not None or self.initial_ckpt is not None)
+                else ""
+            ),
             shareable_generator_id=shareable_generator_id,
+            memory_gc_rounds=self.server_memory_gc_rounds,
         )
         # Send the controller to the server
         job.to_server(controller)
@@ -217,6 +286,8 @@ class FedAvgRecipeWithHE(Recipe):
             framework=FrameworkType.PYTORCH,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
         )
         job.to_clients(executor)
 
@@ -243,3 +314,11 @@ class FedAvgRecipeWithHE(Recipe):
         )
 
         Recipe.__init__(self, job)
+
+    def process_env(self, env: ExecEnv):
+        from nvflare.recipe.sim_env import SimEnv
+
+        if isinstance(env, SimEnv):
+            raise ValueError(HE_SIM_ENV_NOT_SUPPORTED_ERROR)
+
+        super().process_env(env)

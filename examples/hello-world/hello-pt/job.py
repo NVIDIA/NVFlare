@@ -31,6 +31,17 @@ def define_parser():
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--train_script", type=str, default="client.py")
     parser.add_argument("--cross_site_eval", action="store_true")
+    parser.add_argument(
+        "--launch_external_process",
+        action="store_true",
+        help="Run train_script in a separate subprocess instead of in-process.",
+    )
+    parser.add_argument(
+        "--client_memory_gc_rounds",
+        type=int,
+        default=0,
+        help="Release model params and run GC every N rounds to keep client RSS flat. 0 = disabled.",
+    )
 
     return parser.parse_args()
 
@@ -46,9 +57,14 @@ def main():
         name="hello-pt",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_model=SimpleNetwork(),
+        # Model can be specified as class instance or dict config:
+        model=SimpleNetwork(),
+        # Alternative: model={"class_path": "model.SimpleNetwork", "args": {}},
+        # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt",
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size}",
+        launch_external_process=args.launch_external_process,
+        client_memory_gc_rounds=args.client_memory_gc_rounds,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

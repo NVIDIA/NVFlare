@@ -23,17 +23,17 @@ class FedAvgV0(BaseFedAvg):
     def __init__(
         self,
         *args,
-        initial_model=None,
+        model=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.initial_model = initial_model
+        self.model = model
         fobs.register(TensorDecomposer)
 
     def run(self) -> None:
 
-        if self.initial_model:
-            initial_weights = self.initial_model.state_dict()
+        if self.model:
+            initial_weights = self.model.state_dict()
         else:
             initial_weights = {}
 

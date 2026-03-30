@@ -13,9 +13,11 @@
 # limitations under the License.
 import json
 import os
+import shlex
 import sys
 import threading
 import time
+from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
@@ -67,8 +69,8 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"Flower executable '{executable_name}' not found at: {executable_path}\n"
             f"\n"
             f"This indicates Flower is not properly installed in your Python environment.\n"
-            f"Please install Flower with simulation support:\n"
-            f"  pip install 'flwr[simulation]>=1.16,<2.0'\n"
+            f"Please install a compatible Flower version:\n"
+            f"  pip install 'flwr>=1.16,<1.26'\n"
             f"\n"
             f"If using a virtual environment, ensure it's activated before installation.\n"
             f"Current Python: {sys.executable}"
@@ -83,6 +85,20 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"  chmod +x {executable_path}"
         )
         raise RuntimeError(error_msg)
+
+
+def _format_run_config_value(value) -> str:
+    """Format a Flower run_config value as a TOML-compatible scalar literal."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    if isinstance(value, str):
+        return json.dumps(value)
+
+    raise TypeError(f"invalid run_config value type {type(value)}: values must be bool, int, float, or str")
 
 
 class FlowerClientApplet(CLIApplet):
@@ -189,6 +205,7 @@ class FlowerServerApplet(Applet):
         superlink_ready_timeout: float,
         superlink_grace_period=1.0,
         superlink_min_query_interval=10.0,
+        run_config: Optional[dict] = None,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -197,10 +214,12 @@ class FlowerServerApplet(Applet):
             superlink_ready_timeout: how long to wait for the superlink process to become ready
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
             superlink_min_query_interval: minimal interval for querying superlink for status
+            run_config: optional dict for flwr run --run-config arguments
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
         self.database = database
+        self.run_config = run_config
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
@@ -333,10 +352,24 @@ class FlowerServerApplet(Applet):
         # Validate that flwr is installed and executable
         _validate_flower_executable(FLOWER_CLI, flwr_path)
 
-        return (
-            f"{flwr_path} {cmd_name} --format json --federation-config 'address=\"{self.exec_api_addr}\"' "
-            f"{cmd_args} {self.flower_app_dir}"
+        command_parts = [shlex.quote(flwr_path), cmd_name]
+        if self.run_config and cmd_name == "run":
+            for key, value in self.run_config.items():
+                serialized = f"{key}={_format_run_config_value(value)}"
+                command_parts.extend(["--run-config", shlex.quote(serialized)])
+
+        command_parts.extend(
+            [
+                "--format",
+                "json",
+                "--federation-config",
+                shlex.quote(f'address="{self.exec_api_addr}"'),
+            ]
         )
+        if cmd_args:
+            command_parts.append(shlex.quote(cmd_args))
+        command_parts.append(shlex.quote(self.flower_app_dir))
+        return " ".join(command_parts)
 
     def _run_flower_command(self, command: str):
         self.logger.debug(f"running flower command: {command}")

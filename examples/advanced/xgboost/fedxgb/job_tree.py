@@ -66,7 +66,7 @@ def define_parser():
         choices=["uniform", "scaled"],
         help="learning rate mode (uniform or scaled)",
     )
-    parser.add_argument("--num_local_parallel_tree", type=int, default=5, help="number of parallel trees per client")
+    parser.add_argument("--num_local_parallel_tree", type=int, default=1, help="number of parallel trees per client")
     parser.add_argument("--local_subsample", type=float, default=0.8, help="subsample ratio for local training")
 
     return parser.parse_args()
@@ -121,9 +121,14 @@ def main():
         per_site_config=per_site_config,
     )
 
-    # Run simulation
-    env = SimEnv()
-    env.run(recipe, work_dir=f"/tmp/nvflare/workspace/works/{job_name}")
+    # Run simulation with explicit client list (required when using per_site_config)
+    clients = list(per_site_config.keys())
+    env = SimEnv(clients=clients)
+    run = recipe.execute(env)
+    print()
+    print("Job Status:", run.get_status())
+    print("Result can be found in:", run.get_result())
+    print()
 
 
 if __name__ == "__main__":

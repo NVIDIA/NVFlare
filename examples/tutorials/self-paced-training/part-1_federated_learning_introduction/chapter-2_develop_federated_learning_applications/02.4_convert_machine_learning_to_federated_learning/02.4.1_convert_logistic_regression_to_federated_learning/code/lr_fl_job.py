@@ -22,6 +22,7 @@ if __name__ == "__main__":
 
     # Create FedAvgLrRecipe for Logistic Regression with Newton-Raphson
     recipe = FedAvgLrRecipe(
+        min_clients=n_clients,
         name="newton_raphson_fedavg",
         num_rounds=num_rounds,
         damping_factor=0.8,

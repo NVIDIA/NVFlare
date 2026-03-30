@@ -1,0 +1,7 @@
+nvflare>=2.5.0
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+
+# Optional: PyImpetus for advanced feature selection
+# pyimpetus>=0.0.6

@@ -200,7 +200,9 @@ Here's a complete example showing how Client API and Job Recipe work together:
             name="my-pytorch-job",
             min_clients=args.n_clients,
             num_rounds=args.num_rounds,
-            initial_model=Net(),
+            # Model can be class instance or dict config
+            # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
+            model=Net(),
             train_script="client.py",
             train_args=f"--batch_size {args.batch_size}",
         )

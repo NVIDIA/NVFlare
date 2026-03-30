@@ -6,26 +6,26 @@ Communication Security
 NVIDIA FLARE provides multiple options for securing communications between the FL Server and clients, allowing flexibility to meet different IT infrastructure requirements.
 
 Connection Security Options
-===========================
+---------------------------
 
 FLARE supports three types of connection security:
 
 mTLS (Mutual TLS)
------------------
+~~~~~~~~~~~~~~~~~
 This is the default and most secure option, using mutual TLS (2-way SSL). PKI credentials in the startup kits are used for client/server connections, ensuring both parties authenticate each other.
 
 TLS (One-way SSL)
------------------
+~~~~~~~~~~~~~~~~~
 In this mode, only server authentication is required. Client certificates are not needed for establishing the connection, but a Root Cert is required to validate the server. You can provide a custom root cert for validating the server.
 
 Clear
------
+~~~~~
 Messages are not encrypted. This is typically used when the server is deployed behind a secure proxy, and the communication between the proxy and the server is already protected.
 
 .. _byoconn:
 
 BYOConn (Bring Your Own Connectivity)
-=====================================
+-------------------------------------
 
 FLARE supports custom connectivity solutions that meet the following requirements:
 
@@ -34,7 +34,7 @@ FLARE supports custom connectivity solutions that meet the following requirement
 * Messages must be explicitly authenticated
 
 Message Authentication
-======================
+----------------------
 
 In FLARE 2.5 and above, all messages are explicitly authenticated:
 
@@ -46,7 +46,7 @@ In FLARE 2.5 and above, all messages are explicitly authenticated:
 This authentication applies to ALL messages through the Server, regardless of origin (FL clients, 3rd-party systems, or the server itself).
 
 Configuration
-=============
+-------------
 
 Connection security can be configured at both project and participant levels using the `connection_security` and `custom_ca_cert` properties.
 
@@ -83,12 +83,12 @@ The `custom_ca_cert` property is only used for server authentication when making
 If `connection_security` is not specified, the default will be mTLS.
 
 When to Use Custom CA Certificates
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Customers may implement their connectivity using some proxies that will sit between FL Clients and the FL Server. FL Clients only directly connect to the proxy server, which then connects to the FL Server. Typically FL Clients will use one-way SSL to connect to the proxy server. In this case, the `custom_ca_cert` is the CA cert used by the proxy server.
 
 Multi-Address Support of FL Server
-==================================
+----------------------------------
 
 Previously, the FL Server had a single address that must be used for all FL clients to access. Another limitation was that the server address must be specified as a domain name - IP addresses were not supported. Furthermore, the domain name also had to be specified as the name of the server in provisioning configuration.
 Since the name is set to the common name of the server's certificate, it could not exceed 63 characters. This made it impossible to use domain names longer than 63 characters.
@@ -132,7 +132,7 @@ The admin client will connect to 127.0.0.1.
 For this configuration to work, the IT Administrator of the FL Server must ensure that the specified addresses are actually accessible.
 
 Connection Security and secure_train Flag
-=========================================
+-----------------------------------------
 
 The `secure_train` flag and connection security are independent but related:
 
@@ -159,10 +159,34 @@ This flexibility is particularly useful in BYOConn (Bring Your Own Connectivity)
 * The customer must ensure proper connection security setup between sites and their respective proxies
 
 Important Notes
-===============
+~~~~~~~~~~~~~~~
 
 * All sites must protect their startup kits securely
 * Never share tokens and signatures with others
 * The IT infrastructure must allow necessary ports to be opened
 * Server addresses must be properly configured and accessible
 * Custom CA certificates must be properly managed and secured
+
+Secure Message Serialization (FOBS)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In distributed systems, message serialization is a critical security concern. The commonly used Python Pickle
+mechanism is considered insecure because it can execute arbitrary code during deserialization.
+
+NVFLARE employs a secure serialization framework called **FOBS (FLARE Object Serializer)** for all server-client
+data exchanges. FOBS is a drop-in replacement for Pickle built on **MessagePack** that ensures only explicitly
+supported and registered object types can be serialized, preventing code execution or tampering attacks.
+
+**Security Properties:**
+
+- Prevents arbitrary code execution during deserialization
+- Enforces type whitelisting through registered decomposers
+- Uses MessagePack for compact, cross-language binary encoding
+- Ensures data integrity and type safety across federated nodes
+
+For detailed usage, decomposer registration, and custom type support, see :ref:`FOBS Reference <serialization>`.
+
+.. toctree::
+   :hidden:
+
+   serialization

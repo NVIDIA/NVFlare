@@ -22,17 +22,23 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from nvflare.fuel.utils.network_utils import get_open_ports
+
 # Set NumExpr thread limits before importing numerical libraries to avoid thread conflicts
 os.environ.setdefault("NUMEXPR_MAX_THREADS", "64")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "8")
+
+# Use an available port for PyTorch distributed to avoid EADDRINUSE and PID collisions.
+if "MASTER_PORT" not in os.environ:
+    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
+if "MASTER_ADDR" not in os.environ:
+    os.environ.setdefault("MASTER_ADDR", "localhost")
 
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
 from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
 from bionemo.esm2.model.finetune.dataset import InMemoryProteinDataset, InMemorySingleValueDataset
 from bionemo.esm2.model.finetune.sequence_model import ESM2FineTuneSeqConfig
-
-# Resue parser and config constants from bionemo
 from bionemo.esm2.scripts.finetune_esm2 import get_parser
 from bionemo.llm.model.biobert.lightning import biobert_lightning_module
 from bionemo.llm.model.biobert.model import BioBertConfig
@@ -413,6 +419,8 @@ def train_model(
     )
 
     # perform local training starting with the received global model
+    # Set MASTER_PORT so the training subprocess (spawned by Lightning) inherits an available port.
+    os.environ["MASTER_PORT"] = str(get_open_ports(1)[0])
     llm.train(
         model=module,
         data=data_module,

@@ -13,6 +13,9 @@ This guide supports two distinct workflows:
 - [1. ExecuTorch-based FL](#executorch-based-fl)
 - [2. Pure PyTorch Simulated Cross-Edge Federated Learning](#pure-pytorch-simulated-cross-edge-federated-learning-an-end-to-end-cifar10-example)
 
+## Important Note
+> **SimEnv (simulator) is not supported for edge examples.** The edge system relies on a hierarchical topology (server → relays → leaf clients → devices), which is not compatible with SimEnv's flat server-client architecture. All edge examples need to be run with `ProdEnv` using a provisioned hierarchical system as described below.
+
 ## Setup the NVFlare System
 ### Install prerequisites
 Install NVFlare and the required packages for this example:
@@ -174,6 +177,20 @@ bash start_all.sh
 
 #### Step2: Generate Jobs and Submit Using the EdgeFedBuffRecipe API
 Next, let's generate job configs for cifar10 via EdgeFedBuffRecipe API.
+
+**Model Input Options:**
+The `EdgeFedBuffRecipe` accepts model input in two formats:
+- Class instance: `model=Cifar10ConvNet()` - convenient for development
+- Dict config: `model={"class_path": "models.Cifar10ConvNet", "args": {}}` - better for large models
+
+To resume from pre-trained weights, use `initial_ckpt` (absolute path on server):
+```python
+recipe = EdgeFedBuffRecipe(
+    model=Cifar10ConvNet(),
+    initial_ckpt="/server/path/to/pretrained.pt",
+    ...
+)
+```
 
 This will generate two job configurations and submit them to run on the FL system for basic synchronous and asynchronous training:
 - sync assumes ALL devices participate in each round

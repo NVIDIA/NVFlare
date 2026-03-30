@@ -66,7 +66,7 @@ class TFValidator(Executor):
                 name="my-job",
                 min_clients=2,
                 num_rounds=3,
-                initial_model=my_model,
+                model=my_model,
                 train_script="client.py"
             )
 

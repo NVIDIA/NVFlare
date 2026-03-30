@@ -87,6 +87,32 @@ The Tensor Downloader is built into all PyTorch workflows in FLARE 2.7.2+. When 
 
 The TensorDecomposer is automatically registered and handles tensor streaming transparently.
 
+Client Memory Note for Large Models
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+TensorDownloader reduces transfer-time memory pressure, and client-side parameter references are
+also released after ``flare.send()`` when ``clear_cache=True`` (default). In CPython, tensors are
+typically reclaimed as soon as their last reference is dropped.
+
+For multi-GB payloads, avoid keeping extra references longer than needed:
+
+.. code-block:: python
+
+    import nvflare.client as flare
+
+    flare.init()
+    while flare.is_running():
+        input_model = flare.receive()
+        output_model = train(input_model)
+        flare.send(output_model)  # clear_cache=True by default
+
+        # Optional: release script-local references promptly.
+        del input_model
+        del output_model
+
+``gc.collect()`` remains a supplemental safeguard for cyclic objects; it is not the primary
+mechanism for releasing tensor memory in this flow.
+
 Example: Using PyTorch FedAvg Recipe
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -96,11 +122,13 @@ Example: Using PyTorch FedAvg Recipe
     from nvflare.recipe import SimEnv
 
     # TensorDownloader is automatically used - no configuration needed
+    # Model can be class instance or dict config
+    # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
     recipe = FedAvgRecipe(
         name="my-fedavg-job",
         min_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),  # Even multi-GB models work efficiently
+        model=MyLargeModel(),  # Even multi-GB models work efficiently
         train_script="client.py",
     )
 
@@ -118,10 +146,11 @@ Example: Using PTFedAvg Controller Directly
     job = FedJob(name="pt-fedavg")
 
     # TensorDownloader is automatically enabled
+    # Model can be class instance or dict config
     controller = PTFedAvg(
         num_clients=2,
         num_rounds=10,
-        initial_model=MyLargeModel(),
+        model=MyLargeModel(),
     )
     job.to(controller, "server")
 
