@@ -285,8 +285,9 @@ Via Configuration Files
 
 Server-side safety flags guidance (see :ref:`server_startup_dead_job_safety_flags` for full details):
 
-- ``strict_start_job_reply_check`` (default ``false``): keep default for backward-compatible startup behavior;
-  set to ``true`` to enforce stricter START_JOB reply checks.
+- ``strict_start_job_reply_check`` (default ``false``): in non-strict mode, start-job timeouts are silently
+  excluded from the active set with no ``min_sites``/``required_sites`` enforcement; set to ``true`` to make
+  timeouts visible and have ``min_sites``/``required_sites`` constraints enforced at startup.
 - ``sync_client_jobs_require_previous_report`` (default ``true``): keep enabled to avoid false dead-job reports
   caused by transient startup or sync races.
 

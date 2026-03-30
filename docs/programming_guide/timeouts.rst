@@ -2576,10 +2576,13 @@ and client heartbeat synchronization:
 Recommended usage:
 
 - ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
-  Enable it (``true``) for large-scale or hierarchical deployments where startup timeouts
-  are expected and you want the server to proceed with the subset of clients that responded,
-  rather than failing the entire job. With ``false``, a timed-out reply is treated as a
-  silent success, which can mask startup problems.
+  In non-strict mode, timed-out clients are silently excluded from the active set and the
+  job continues — but ``min_sites`` / ``required_sites`` constraints are **not enforced**
+  for those timeouts, so startup problems can go undetected.
+  In strict mode, timeouts are detected and surfaced: ``required_sites`` and ``min_sites``
+  are then checked, and the job only continues (with a warning) if constraints are still
+  satisfied. Enable strict mode when you want timeouts to be visible and constraints to be
+  enforced at startup.
 - Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
   dead-job reports during startup races and transient heartbeat delays.
 - Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
