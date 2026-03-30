@@ -727,10 +727,6 @@ Decentralized federated learning without a central server.
    - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
      ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
 
-   ``SimpleSwarmLearningRecipe`` is a backward-compatible alias for ``SwarmLearningRecipe``.
-   It is also available from the original location:
-   ``from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe``
-
 
 Edge Recipes
 ============

@@ -568,7 +568,6 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
 Client Dropout Tolerance (min_clients)
 ---------------------------------------
 
-By default, a Swarm Learning workflow requires all configured clients to participate.
 Setting ``min_clients`` allows the workflow to proceed if at least that many clients
 configure successfully — missing participants are logged as a warning rather than
 causing a job abort.
@@ -583,7 +582,7 @@ causing a job abort.
         train_script="train.py",
     )
 
-The default ``min_clients=0`` means all configured clients are required (backward
+Setting ``min_clients=0`` means all configured clients are required (backward
 compatible behavior).  This is distinct from the job-scheduler ``min_clients`` parameter
 that controls the deployment phase.
 
