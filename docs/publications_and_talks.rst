@@ -107,7 +107,7 @@ Blogs & Videos: 2022
 Blogs & Videos: 2021
 ~~~~~~~~~~~~~~~~~~~~
 * **2021-11** `Creating Robust and Generalizable AI Models with NVIDIA FLARE <https://developer.nvidia.com/blog/creating-robust-and-generalizable-ai-models-with-nvidia-flare/>`__ (NVIDIA Technical Blog)
-* **2021-11** `Federated Learning for Healthcare AI: NVIDIA and Rhino Health Accelerate Research Collaborations <https://youtu.be/ytmwx1V0XK0?si=hP7Cvg15aXjkDNd6>`__ (`Rhino Health <https://www.rhinohealth.com/>`__ Video)
+* **2021-11** `Federated Learning for Healthcare AI: NVIDIA and Rhino Health Accelerate Research Collaborations <https://youtu.be/ytmwx1V0XK0?si=hP7Cvg15aXjkDNd6>`__ (`Rhino Health <https://www.rhinofcp.com/>`__ Video)
 * **2021-11** `Federated Learning With FLARE: NVIDIA Brings Collaborative AI to Healthcare and Beyond <https://blogs.nvidia.com/blog/federated-learning-ai-nvidia-flare/>`__ (NVIDIA Blog)
 * **2021-09** `Federated Learning for Medical AI and Triaging COVID-19 Patients <https://www.youtube.com/watch?v=cOXVrtkv6FE>`__ (NVIDIA Video)
 * **2021-09** `Federated Learning for Healthcare Using NVIDIA Clara <https://developer.download.nvidia.com/CLARA/Federated-Learning-Training-for-Healthcare-Using-NVIDIA-Clara.pdf>`__ (NVIDIA White Paper)
@@ -117,7 +117,7 @@ Blogs & Videos: 2021
 Blogs & Videos: 2019
 ~~~~~~~~~~~~~~~~~~~~
 * **2019-12** `Federated Learning powered by NVIDIA Clara <https://developer.nvidia.com/blog/federated-learning-clara/>`__ (NVIDIA Technical Blog)
-* **2019-10** `What is federated learning - in Chinese <https://blogs.nvidia.com.tw/2019/10/13/what-is-federated-learning/>`__ (NVIDIA Technical Blog)
+* **2019-10** `What is federated learning - in Chinese <https://blogs.nvidia.com.tw/blog/what-is-federated-learning/>`__ (NVIDIA Technical Blog)
 * **2019-10** `NVIDIA Research: First Privacy-Preserving Federated Learning System for Medical Imaging <https://www.youtube.com/watch?v=Jy7ozgwovgg>`__ (NVIDIA Video)
 
 Talks
@@ -127,8 +127,8 @@ Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 Talks: 2024
 ~~~~~~~~~~~
 * **2024-12** `Real-world Federated Learning with NVIDIA FLARE <https://ucsf.zoom.us/rec/share/ncALLA6B583mh7_Lrj4aPgA-qsonqVq5-Ufi5XZCMm6vH-uK5nVYXyVlsexE5KbC.LAYkmvF-sm-yYjTB?startTime=1733957588000>`__ [Passcode: !Ms8Tw.u8H] (`UCSF Biostatistics and Bioinformatics Seminar <https://epibiostat.ucsf.edu/events/real-world-federated-learning-nvidia-flare>`__)
-* **2024-04** `Federated Learning: Towards Real-world Studies <hhttps://youtu.be/3ELbZYwy3bI?t=2474>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/events/300302421>`__)
-* **2024-03** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://youtu.be/-P2ML9Kw0FA>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/events/299337374>`__)
+* **2024-04** `Federated Learning: Towards Real-world Studies <https://youtu.be/3ELbZYwy3bI?t=2474>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sfbay-ai/events/300302421/>`__)
+* **2024-03** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://youtu.be/-P2ML9Kw0FA>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sfbay-ai/events/299337374/>`__)
 
 Talks: 2023
 ~~~~~~~~~~~
@@ -140,14 +140,14 @@ Talks: 2022
 * **2022-11** `Federated Learning with Azure Machine Learning <https://www.youtube.com/watch?v=aTj4AqbCWEA>`__ (Microsoft Developer Video)
 * **2022-10** `Modern Tools for Collaborative Medical Image Analysis <https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing>`__ (`Keynote - DART @ MICCAI 2022 <https://sites.google.com/view/dart2022/home?authuser=0>`__) 
 * **2022-07** `NVIDIA FLARE Tutorial for Beginners <https://www.youtube.com/watch?v=8x7oY3xAgek&t=11s&ab_channel=NVIDIADeveloper>`__ (United Imaging Meetup)
-* **2022-07** `Techniques and Tools for Collaborative Development of AI Models across Institutes <https://www.bilibili.com/video/BV1y14y147nc/?spm_id_from=333.337.search-card.all.click>`__ (`VALSE Webinar <http://valser.org/article-572-1.html>`__)
+* **2022-07** `Techniques and Tools for Collaborative Development of AI Models across Institutes <https://www.bilibili.com/video/BV1y14y147nc/?spm_id_from=333.337.search-card.all.click>`__ (`VALSE Webinar <https://valser.org/article-572-1.html>`__)
 * **2022-04** `Advanced Techniques for Collaborative Development of AI Models for Medical Imaging <https://rensselaer.webex.com/recordingservice/sites/rensselaer/recording/dd67440ba9f2103abaf900505681a58c/playback>`__ (`IEEE EMBS Webinar Series <https://sites.google.com/view/ieee-biip-webinars/webinar-speakers>`__)
 * **2022-03** `NVIDIA FLARE: Federated Learning Application Runtime Environment for Developing Robust AI Models <https://youtu.be/lLeULNI1nT8>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/?_cookie-check=Efm7MGh7mO4YiV8A>`__)
 * **2022-01** `Techniques for Collaborative Development of AI Models in the Age of COVID-19 <https://www.youtube.com/watch?v=ymfXmyuTvlA>`__ (`MICCAI Industrial Talk Series <https://www.youtube.com/channel/UCLSO1_i9UtDGfsaKQyqhJTQ>`__)
 
 Talks: 2021
 ~~~~~~~~~~~
-* **2021-09** `Federated Learning <https://www.youtube.com/watch?v=YeYO4JGTBb0&amp>`__ (MONAI MICCAI Bootcamp 2021)
+* **2021-09** `Federated Learning <https://www.youtube.com/watch?v=YeYO4JGTBb0>`__ (MONAI MICCAI Bootcamp 2021)
 * **2021-03** `NVIDIA FLARE: An Open Federated Learning Platform <https://www.nvidia.com/en-us/on-demand/session/gtcspring22-se1991/>`__ (`GTC Spring 2022 <https://www.nvidia.com/gtc/>`__)
 * **2021-03** `Federated Learning for Healthcare – Collaborative AI without Sharing Patient Data  <https://www.youtube.com/watch?v=xr_eJp3ctzw>`__ (Data Science Seminar)
 
