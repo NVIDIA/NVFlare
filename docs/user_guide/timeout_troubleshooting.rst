@@ -459,8 +459,10 @@ the job. For a 144-client job, tolerating up to ~4% stragglers is safe:
 
 **2. Extend the runner sync timeout in** ``config_fed_client.json``
 
-The default 50-second timeout is too tight when many clients contend for Lustre I/O
-at job launch. Raise it to give each client time to initialize:
+With the default runner sync settings (a 2.0-second per-request timeout with overall
+sync bounded by ``max_runner_sync_timeout``), many clients contending for Lustre I/O
+at job launch can time out before finishing initialization. Increase these values to
+give each client more time to start up:
 
 .. code-block:: json
 
