@@ -56,7 +56,11 @@ def split_for_client(images, labels, client_name: str, num_partitions: int):
     if not match:
         return images, labels
 
-    client_idx = max(int(match.group(1)) - 1, 0)
+    client_number = int(match.group(1))
+    if client_number <= 0:
+        raise ValueError(f"Client name '{client_name}' must use 1-indexed site numbering.")
+
+    client_idx = client_number - 1
     partitions = max(num_partitions, 1)
     image_splits = np.array_split(images, partitions)
     label_splits = np.array_split(labels, partitions)

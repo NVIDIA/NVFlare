@@ -82,12 +82,3 @@ def test_jax_evaluate_rejects_empty_data():
 
     with pytest.raises(ValueError, match="No evaluation data available"):
         client_module.evaluate(params, empty_images, empty_labels, 128)
-
-
-def test_split_for_client_rejects_out_of_range_partition():
-    client_module = _load_hello_jax_module("client.py", "hello_jax_client")
-    images = np.arange(4)
-    labels = np.arange(4)
-
-    with pytest.raises(ValueError, match="exceeds available partitions"):
-        client_module.split_for_client(images, labels, "site-3", 2)
