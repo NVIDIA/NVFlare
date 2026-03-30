@@ -287,7 +287,8 @@ function help() {
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
-    echo "         --numprocesses=<N|auto>  : used with -u command, set pytest xdist workers (default is 8)"
+    echo "    -j <N>                        : number of parallel pytest workers (default is 8, alias for --numprocesses)"
+    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default is 8)"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated"
@@ -390,6 +391,11 @@ do
 
         -d|--dry-run)
             dry_run_flag=true
+        ;;
+
+        -j)
+            pytest_numprocesses="$2"
+            shift
         ;;
 
         --numprocesses=*)
