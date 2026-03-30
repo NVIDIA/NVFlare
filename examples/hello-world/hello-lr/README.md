@@ -83,7 +83,7 @@ $$
 The update at round $n$ is:
 
 $$
-    heta^{n+1} = \theta^n - H_{\theta^n}^{-1} \nabla L_{\theta^n}
+    \theta^{n+1} = \theta^n - H_{\theta^n}^{-1} \nabla L_{\theta^n}
 $$
 
 where:
