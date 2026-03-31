@@ -28,6 +28,10 @@ def _create_scalar_summary(tag: str, value: float) -> Summary:
     return Summary(value=[Summary.Value(tag=tag, simple_value=float(value))])
 
 
+def _sanitize_writer_component(value: str) -> str:
+    return value.replace("/", "_").replace("\\", "_")
+
+
 def _convert_image_to_hwc(value) -> np.ndarray:
     """Normalize HW/HWC/CHW image inputs to HWC uint8 for TensorBoard encoding.
 
@@ -53,7 +57,12 @@ def _convert_image_to_hwc(value) -> np.ndarray:
 
 
 def _create_image_summary(tag: str, value) -> Summary:
-    from PIL import Image
+    try:
+        from PIL import Image
+    except ImportError as e:
+        raise ImportError(
+            "Pillow is required for TensorBoard image analytics. Install it with `pip install Pillow`."
+        ) from e
 
     image = _convert_image_to_hwc(value)
     height, width, channels = image.shape
@@ -78,6 +87,10 @@ class TensorBoardEventWriter:
     not a high-level SummaryWriter that avoids importing PyTorch or TensorFlow.
     This adapter preserves the TensorBoard-like methods used by TBAnalyticsReceiver
     while keeping the dependency surface limited to tensorboard.
+
+    When ``global_step`` is omitted, the event step is left unset and TensorBoard
+    treats it as step ``0``. This matches PyTorch's SummaryWriter behavior, so
+    callers should provide explicit steps for time-series plots.
     """
 
     def __init__(self, log_dir: str):
@@ -96,7 +109,7 @@ class TensorBoardEventWriter:
 
     def add_scalars(self, main_tag: str, tag_scalar_dict: dict, global_step: Optional[int] = None):
         for tag, scalar_value in tag_scalar_dict.items():
-            writer_key = f"{main_tag.replace('/', '_')}_{tag}"
+            writer_key = f"{_sanitize_writer_component(main_tag)}_{_sanitize_writer_component(tag)}"
             writer = self.scalar_writers.get(writer_key)
             if writer is None:
                 writer = EventFileWriter(os.path.join(self.log_dir, writer_key))
