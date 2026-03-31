@@ -28,10 +28,6 @@ def _create_scalar_summary(tag: str, value: float) -> Summary:
     return Summary(value=[Summary.Value(tag=tag, simple_value=float(value))])
 
 
-def _sanitize_writer_component(value: str) -> str:
-    return value.replace("/", "_").replace("\\", "_")
-
-
 def _convert_image_to_hwc(value) -> np.ndarray:
     """Normalize HW/HWC/CHW image inputs to HWC uint8 for TensorBoard encoding.
 
@@ -109,7 +105,10 @@ class TensorBoardEventWriter:
 
     def add_scalars(self, main_tag: str, tag_scalar_dict: dict, global_step: Optional[int] = None):
         for tag, scalar_value in tag_scalar_dict.items():
-            writer_key = f"{_sanitize_writer_component(main_tag)}_{_sanitize_writer_component(tag)}"
+            # Match torch.utils.tensorboard.SummaryWriter.add_scalars: keep the
+            # sub-series tag as-is in the per-run path, so "/" continues to create
+            # nested run folders when callers intentionally use hierarchical names.
+            writer_key = f"{main_tag.replace('/', '_')}_{tag}"
             writer = self.scalar_writers.get(writer_key)
             if writer is None:
                 writer = EventFileWriter(os.path.join(self.log_dir, writer_key))

@@ -41,16 +41,16 @@ class TestTensorBoardEventWriter:
         accumulator = _read_accumulator(tmp_path)
         assert [(event.step, event.value) for event in accumulator.Scalars("metric")] == [(0, 1.0), (0, 2.0)]
 
-    def test_add_scalars_sanitizes_subseries_writer_paths(self, tmp_path):
+    def test_add_scalars_preserves_subseries_slashes_like_torch(self, tmp_path):
         writer = TensorBoardEventWriter(str(tmp_path))
 
         writer.add_scalars("metrics/main", {"train/acc": 1.0}, global_step=4)
         writer.flush()
         writer.close()
 
-        assert list(writer.scalar_writers.keys()) == ["metrics_main_train_acc"]
+        assert list(writer.scalar_writers.keys()) == ["metrics_main_train/acc"]
 
-        accumulator = _read_accumulator(tmp_path / "metrics_main_train_acc")
+        accumulator = _read_accumulator(tmp_path / "metrics_main_train" / "acc")
         assert [(event.step, event.value) for event in accumulator.Scalars("metrics/main")] == [(4, 1.0)]
 
     def test_add_image_without_pillow_raises_actionable_error(self, tmp_path):
