@@ -99,6 +99,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         required=True,
         type=_name_type,
         dest="name",
+        metavar="PROJECT_NAME",
         help="Participant name (used as cert Common Name). Max 64 chars.",
     )
     p.add_argument(
@@ -114,6 +115,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         "--output-dir",
         required=True,
         dest="output_dir",
+        metavar="OUTPUT_DIR",
         help="Output directory for the .key and .csr files.",
     )
     p.add_argument(
@@ -121,6 +123,7 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         required=False,
         default=None,
         dest="org",
+        metavar="ORG",
         help="Organization name for the certificate.",
     )
     p.add_argument(
@@ -158,6 +161,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         "--csr",
         required=True,
         dest="csr_path",
+        metavar="CSR_FILE",
         help="Path to the .csr file received from the site admin.",
     )
     p.add_argument(
@@ -165,6 +169,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         "--ca-dir",
         required=True,
         dest="ca_dir",
+        metavar="CA_DIR",
         help="Directory containing rootCA.pem, rootCA.key, and ca.json.",
     )
     p.add_argument(
@@ -172,6 +177,7 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         "--output-dir",
         required=True,
         dest="output_dir",
+        metavar="OUTPUT_DIR",
         help="Output directory for the signed certificate and rootCA.pem copy.",
     )
     p.add_argument(
