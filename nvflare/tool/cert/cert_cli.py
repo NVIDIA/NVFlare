@@ -17,10 +17,11 @@
 import argparse
 from typing import Optional
 
-# Module-level parser references — used by --schema in handlers
+# Module-level parser references — used by --schema in handlers and for help fallback
 _cert_init_parser: Optional[argparse.ArgumentParser] = None
 _cert_csr_parser: Optional[argparse.ArgumentParser] = None
 _cert_sign_parser: Optional[argparse.ArgumentParser] = None
+_cert_parser: Optional[argparse.ArgumentParser] = None
 
 
 def _name_type(value: str) -> str:
@@ -227,16 +228,17 @@ def _ensure_parsers_initialized() -> None:
 
 def def_cert_cli_parser(sub_cmd) -> dict:
     """Register 'nvflare cert' and its subcommands with the top-level sub_cmd parser."""
-    cert_parser = sub_cmd.add_parser(
+    global _cert_parser
+    _cert_parser = sub_cmd.add_parser(
         "cert",
         help="Certificate management for distributed provisioning.",
         description="Manage certificates for FLARE distributed (manual) provisioning.",
     )
-    cert_sub = cert_parser.add_subparsers(dest="cert_sub_command")
+    cert_sub = _cert_parser.add_subparsers(dest="cert_sub_command")
     _def_cert_init_parser(cert_sub)
     _def_cert_csr_parser(cert_sub)
     _def_cert_sign_parser(cert_sub)
-    return {"cert": cert_parser}
+    return {"cert": _cert_parser}
 
 
 def handle_cert_cmd(args):
@@ -250,9 +252,9 @@ def handle_cert_cmd(args):
     }
     handler = dispatch.get(getattr(args, "cert_sub_command", None))
     if not handler:
-        from nvflare.tool.cli_errors import get_error
-        from nvflare.tool.cli_output import output_error
+        if _cert_parser is not None:
+            _cert_parser.print_help()
+        import sys
 
-        message, hint = get_error("INVALID_ARGS", detail="No cert subcommand specified.")
-        output_error("INVALID_ARGS", message, hint, getattr(args, "output_fmt", None), exit_code=4)
+        sys.exit(0)
     handler(args)
