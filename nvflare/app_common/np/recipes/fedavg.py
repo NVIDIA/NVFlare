@@ -14,11 +14,8 @@
 
 from typing import Any, Dict, Optional, Union
 
-import numpy as np
-
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
@@ -178,29 +175,11 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         has_persistor = persistor_id != \"\" and model_params assignment remain correct.
         """
         if self._np_model is not None or self._np_initial_ckpt is not None:
-            from nvflare.recipe.utils import prepare_initial_ckpt
-
-            # Convert numpy array to list for JSON serialization
-            # NPModelPersistor expects a list, not a numpy array
-            model_list = None
-            if self._np_model is not None:
-                if isinstance(self._np_model, np.ndarray):
-                    model_list = self._np_model.tolist()
-                elif isinstance(self._np_model, list):
-                    model_list = self._np_model
-                else:
-                    raise TypeError(f"model must be a numpy array or list, got {type(self._np_model).__name__}")
-
-            ckpt_path = prepare_initial_ckpt(self._np_initial_ckpt, job)
-            persistor = NPModelPersistor(
-                model=model_list,
-                source_ckpt_file_full_name=ckpt_path,
+            return self._setup_numpy_model_and_persistor(
+                job,
+                model=self._np_model,
+                initial_ckpt=self._np_initial_ckpt,
             )
-            raw_id = job.to_server(persistor, id="persistor")
-            persistor_id = raw_id if isinstance(raw_id, str) and (raw_id or "").strip() else ""
-            if persistor_id and hasattr(job, "comp_ids"):
-                job.comp_ids["persistor_id"] = persistor_id
-            return persistor_id
         return ""
 
     def add_cse_validator_if_needed(self):

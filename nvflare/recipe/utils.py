@@ -257,10 +257,13 @@ def add_cross_site_evaluation(
 
     Note:
         - Currently supports PyTorch, NumPy, and TensorFlow frameworks.
-        - **NumPy recipes**: Validators (NPValidator) are automatically added to clients to handle
-          validation tasks. The function intelligently detects if validators are already configured
-          by checking for executors handling TASK_VALIDATION, avoiding duplicates for CSE-only recipes
-          (like `NumpyCrossSiteEvalRecipe`).
+        - **NumPy recipes using `NumpyFedAvgRecipe`**: Validators (NPValidator) are automatically
+          added to clients to handle validation tasks. The function intelligently detects if validators
+          are already configured by checking for executors handling TASK_VALIDATION, avoiding duplicates
+          for CSE-only recipes (like `NumpyCrossSiteEvalRecipe`).
+        - **Unified `FedAvgRecipe` with `framework=FrameworkType.NUMPY`**: Uses the same Client API
+          validation pattern as PyTorch and TensorFlow. Your client script should handle
+          `flare.is_evaluate()` and return metrics for validation tasks.
         - **PyTorch recipes**: No separate validator component is needed. The client training script
           handles validation tasks through the Client API's `flare.is_evaluate()` check. See the
           hello-pt example for implementation pattern.
@@ -296,6 +299,7 @@ def add_cross_site_evaluation(
     framework_to_locator = {
         FrameworkType.PYTORCH: "pytorch",
         FrameworkType.RAW: "numpy",  # NumPy uses RAW framework type
+        FrameworkType.NUMPY: "numpy",
         FrameworkType.TENSORFLOW: "tensorflow",
     }
 
