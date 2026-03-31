@@ -188,7 +188,9 @@ def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, por
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
     # 2. fed_client.json
-    fed_client = _make_fed_client_json(args.name, scheme, host, port, admin_port, server_name, args.project_name or server_name)
+    fed_client = _make_fed_client_json(
+        args.name, scheme, host, port, admin_port, server_name, args.project_name or server_name
+    )
     _write_file(os.path.join(startup_dir, "fed_client.json"), json.dumps(fed_client, indent=2))
 
     # 3. Shell scripts
@@ -224,7 +226,9 @@ def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, por
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
     # 2. fed_server.json
-    fed_server = _make_fed_server_json(args.name, scheme, host, port, admin_port, require_signed, args.project_name or args.name)
+    fed_server = _make_fed_server_json(
+        args.name, scheme, host, port, admin_port, require_signed, args.project_name or args.name
+    )
     _write_file(os.path.join(startup_dir, "fed_server.json"), json.dumps(fed_server, indent=2))
 
     # 3. local/ authorization template — provisioner puts this in local/ as .default, not startup/

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import shutil
 import threading
@@ -43,8 +42,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import require_signed_jobs
-from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 

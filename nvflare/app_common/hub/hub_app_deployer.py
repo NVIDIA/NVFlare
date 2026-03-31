@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shutil
+
 from nvflare.apis.app_deployer_spec import AppDeployerSpec, FLContext
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemComponents, SystemVarName
@@ -27,7 +28,6 @@ from nvflare.fuel.utils.dict_utils import update_components
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs
-
 
 _hub_deployer_logger = logging.getLogger(__name__)
 
