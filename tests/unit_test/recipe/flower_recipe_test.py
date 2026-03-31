@@ -22,11 +22,11 @@ from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 
 
-@pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.26.0"])
+@pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.25.9", "1.26.0rc0"])
 def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.16,<1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.26'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
@@ -35,13 +35,13 @@ def test_flower_recipe_rejects_incompatible_flwr_version(flwr_version):
 def test_flower_recipe_rejects_missing_flwr_package():
     with patch("nvflare.app_opt.flower.recipe.get_package_version", side_effect=PackageNotFoundError):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job") as mock_flower_job:
-            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.16,<1\.26'"):
+            with pytest.raises(RuntimeError, match=r"requires 'flwr>=1\.26'"):
                 FlowerRecipe(flower_content="mock_flower_content")
 
             mock_flower_job.assert_not_called()
 
 
-@pytest.mark.parametrize("flwr_version", ["1.16.0", "1.25.9", "1.26.0rc0"])
+@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     fake_job = object()
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
@@ -53,7 +53,7 @@ def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
     assert kwargs["extra_env"] == {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
 
-@pytest.mark.parametrize("flwr_version", ["1.16.0", "1.25.9", "1.26.0rc0"])
+@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_merges_extra_env(flwr_version):
     fake_job = object()
     user_env = {"MY_VAR": "123"}
@@ -68,7 +68,7 @@ def test_flower_recipe_merges_extra_env(flwr_version):
     assert kwargs["extra_env"][CLIENT_API_TYPE_KEY] == ClientAPIType.EX_PROCESS_API.value
 
 
-@pytest.mark.parametrize("flwr_version", ["1.16.0", "1.25.9", "1.26.0rc0"])
+@pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_rejects_extra_env_with_wrong_client_api_type(flwr_version):
     bad_value = "wrong_api_type"
     user_env = {CLIENT_API_TYPE_KEY: bad_value, "MY_VAR": "123"}

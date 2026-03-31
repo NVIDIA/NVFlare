@@ -33,6 +33,8 @@ from nvflare.security.logging import secure_format_exception
 FLOWER_SUPERLINK = "flower-superlink"
 FLOWER_SUPERNODE = "flower-supernode"
 FLOWER_CLI = "flwr"
+FLOWER_CONFIG_FILE = "config.toml"
+FLOWER_SUPERLINK_CONNECTION = "nvflare"
 
 
 def get_partition_id(fl_ctx: FLContext):
@@ -70,7 +72,7 @@ def _validate_flower_executable(executable_name: str, executable_path: str):
             f"\n"
             f"This indicates Flower is not properly installed in your Python environment.\n"
             f"Please install a compatible Flower version:\n"
-            f"  pip install 'flwr>=1.16,<1.26'\n"
+            f"  pip install 'flwr>=1.26'\n"
             f"\n"
             f"If using a virtual environment, ensure it's activated before installation.\n"
             f"Current Python: {sys.executable}"
@@ -229,6 +231,7 @@ class FlowerServerApplet(Applet):
         self.last_check_stopped = False
         self.flower_app_dir = None
         self.exec_api_addr = None
+        self.flwr_home_dir = None
         self.flower_run_finished = False
         self.flwr_stop_called = False  # have we called 'flwr stop'?
         self.flower_run_rc = None
@@ -279,6 +282,7 @@ class FlowerServerApplet(Applet):
         custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
         self.flower_app_dir = custom_dir
         self.exec_api_addr = exec_api_addr
+        self.flwr_home_dir = self._prepare_flwr_home(ws.get_run_dir(fl_ctx.get_job_id()))
 
         db_arg = ""
         if self.database:
@@ -293,27 +297,24 @@ class FlowerServerApplet(Applet):
 
         # Ensure PATH includes venv bin directory for Flower's internal subprocesses
         # (flower-superlink internally spawns flower-superexec which needs to be in PATH)
-        current_path = os.environ.get("PATH", "")
-        env = {}
-        if python_bin_dir not in current_path:
-            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+        env = self._build_flower_env(include_flwr_home=False)
 
         """ Example:
         flower-superlink --insecure --fleet-api-type grpc-adapter
         --serverappio-api-address 127.0.0.1:9091
         --fleet-api-address 127.0.0.1:9092
-        --exec-api-address 127.0.0.1:9093
+        --control-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
             f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr}  "
-            f"--exec-api-address {exec_api_addr}"
+            f"--control-api-address {exec_api_addr}"
         )
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
-            env=env if env else None,  # Pass env with PATH fix
+            env=env,
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",
             stop_method=StopMethod.TERMINATE,
@@ -336,13 +337,47 @@ class FlowerServerApplet(Applet):
 
         # submitting the server app using "flwr run" command
         flwr_run_cmd = self._flower_command("run")
-        run_info = self._run_flower_command(flwr_run_cmd)
+        run_info = self._run_flower_command(flwr_run_cmd, cwd=self.flower_app_dir)
         run_id = run_info.get("run-id")
         if not run_id:
             raise RuntimeError(f"invalid result from command '{flwr_run_cmd}': missing run-id")
 
         self.logger.info(f"submitted Flower App and got run id {run_id}")
         self.run_id = run_id
+
+    def _build_flower_env(self, include_flwr_home: bool) -> Optional[dict]:
+        python_bin_dir = os.path.dirname(sys.executable)
+        current_path = os.environ.get("PATH", "")
+        env = {}
+        if python_bin_dir not in current_path:
+            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
+
+        if include_flwr_home and self.flwr_home_dir:
+            env["FLWR_HOME"] = self.flwr_home_dir
+
+        return env if env else None
+
+    def _build_flower_config(self) -> str:
+        if not self.exec_api_addr:
+            raise RuntimeError("Flower control API address is not set")
+
+        return (
+            "[superlink]\n"
+            f'default = "{FLOWER_SUPERLINK_CONNECTION}"\n'
+            "\n"
+            f"[superlink.{FLOWER_SUPERLINK_CONNECTION}]\n"
+            f'address = "{self.exec_api_addr}"\n'
+            "insecure = true\n"
+        )
+
+    def _prepare_flwr_home(self, run_dir: str) -> str:
+        flwr_home_dir = os.path.join(run_dir, "flwr_home")
+        os.makedirs(flwr_home_dir, exist_ok=True)
+        config_path = os.path.join(flwr_home_dir, FLOWER_CONFIG_FILE)
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(self._build_flower_config())
+        self.logger.info(f"wrote Flower configuration to {config_path}")
+        return flwr_home_dir
 
     def _flower_command(self, cmd_name: str, cmd_args=""):
         # Get the full path to flwr from the current Python environment
@@ -352,36 +387,33 @@ class FlowerServerApplet(Applet):
         # Validate that flwr is installed and executable
         _validate_flower_executable(FLOWER_CLI, flwr_path)
 
-        command_parts = [shlex.quote(flwr_path), cmd_name]
+        normalized_cmd_name = "list" if cmd_name == "ls" else cmd_name
+        command_parts = [shlex.quote(flwr_path), normalized_cmd_name]
         if self.run_config and cmd_name == "run":
             for key, value in self.run_config.items():
                 serialized = f"{key}={_format_run_config_value(value)}"
                 command_parts.extend(["--run-config", shlex.quote(serialized)])
 
-        command_parts.extend(
-            [
-                "--format",
-                "json",
-                "--federation-config",
-                shlex.quote(f'address="{self.exec_api_addr}"'),
-            ]
-        )
-        if cmd_args:
+        command_parts.extend(["--format", "json"])
+
+        if normalized_cmd_name == "run":
+            command_parts.extend([shlex.quote("."), shlex.quote(FLOWER_SUPERLINK_CONNECTION)])
+        elif normalized_cmd_name == "stop":
+            if not cmd_args:
+                raise ValueError("stop command requires a run ID")
+            command_parts.extend([shlex.quote(cmd_args), shlex.quote(FLOWER_SUPERLINK_CONNECTION)])
+        elif normalized_cmd_name == "list":
+            if cmd_args:
+                command_parts.append(shlex.quote(cmd_args))
+            command_parts.append(shlex.quote(FLOWER_SUPERLINK_CONNECTION))
+        elif cmd_args:
             command_parts.append(shlex.quote(cmd_args))
-        command_parts.append(shlex.quote(self.flower_app_dir))
+
         return " ".join(command_parts)
 
-    def _run_flower_command(self, command: str):
+    def _run_flower_command(self, command: str, cwd: Optional[str] = None):
         self.logger.debug(f"running flower command: {command}")
-
-        # Ensure PATH includes venv bin directory
-        python_bin_dir = os.path.dirname(sys.executable)
-        current_path = os.environ.get("PATH", "")
-        env = {}
-        if python_bin_dir not in current_path:
-            env["PATH"] = f"{python_bin_dir}{os.pathsep}{current_path}"
-
-        cmd_desc = CommandDescriptor(cmd=command, env=env if env else None)
+        cmd_desc = CommandDescriptor(cmd=command, env=self._build_flower_env(include_flwr_home=True), cwd=cwd)
         reply = run_command(cmd_desc)
         if not isinstance(reply, str):
             raise RuntimeError(f"failed to run command '{command}': expect reply to be str but got {type(reply)}")
@@ -470,7 +502,7 @@ class FlowerServerApplet(Applet):
 
     def _query_for_run_status(self):
         # check whether the app is finished
-        flwr_ls_cmd = self._flower_command("ls")
+        flwr_ls_cmd = self._flower_command("list")
         try:
             run_info = self._run_flower_command(flwr_ls_cmd)
         except Exception as ex:

@@ -15,7 +15,7 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr>=1.16,<1.26",
+    "flwr>=1.26",
     "nvflare~=2.6.0rc",
     "torch",
     "torchvision",
@@ -36,11 +36,3 @@ clientapp = "flwr_pt.client:app"
 num-server-rounds = 3
 learning-rate = 0.001
 momentum = 0.9
-
-[tool.flwr.federations]
-default = "local-simulation"
-
-[tool.flwr.federations.local-simulation]
-options.num-supernodes = 2
-address = "127.0.0.1:9093"
-insecure = true
