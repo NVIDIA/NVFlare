@@ -1315,11 +1315,16 @@ def test_handle_event_resets_handler_when_not_executing(monkeypatch):
 
     executor = TaskExchanger(pipe_id="test_pipe")
     monkeypatch.setattr(TaskExchanger, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(TaskExchanger, "log_debug", lambda self, fl_ctx, msg: None)
     monkeypatch.setattr(
         TaskExchanger,
         "_create_pipe_handler",
         lambda self: setattr(self, "pipe_handler", _FakePipeHandler(identity="new")) or self.pipe_handler,
     )
+
+    fake_pipe = _make_fake_cell_pipe()
+    fake_pipe.clear = lambda: None
+    executor.pipe = fake_pipe
 
     old_handler = _FakePipeHandler(identity="old")
     executor.pipe_handler = old_handler
