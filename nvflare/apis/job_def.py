@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
 SERVER_SITE_NAME = "server"
+DEFAULT_JOB_STUDY = "default"
 
 
 class RunStatus(str, Enum):
@@ -76,6 +77,7 @@ class JobMetaKey(str, Enum):
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
+    STUDY = "study"
 
     def __repr__(self):
         return self.value
@@ -212,6 +214,15 @@ def is_valid_job_id(jid: str) -> bool:
     # If the jid string is a valid hex code, but an invalid uuid4,the UUID.__init__ will convert it to a
     # valid uuid4. This is bad for validation purposes.
     return val.hex == jid.replace("-", "")
+
+
+def get_job_meta_study(meta: dict) -> str:
+    if not isinstance(meta, dict):
+        return DEFAULT_JOB_STUDY
+    study = meta.get(JobMetaKey.STUDY.value)
+    if isinstance(study, str) and study:
+        return study
+    return DEFAULT_JOB_STUDY
 
 
 def get_custom_prop(meta: dict, prop_key: str, default=None):

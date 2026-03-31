@@ -13,6 +13,9 @@ Admin command prompt
 After running ``fl_admin.sh``, log in by following the prompt and entering the name of the participant that the admin
 package was provisioned for (or for poc mode, "admin" as the name and password).
 
+To scope the terminal to a study, launch it with ``fl_admin.sh --study cancer-research``. If ``--study`` is omitted,
+the admin terminal uses the ``default`` study for that terminal session.
+
 Typing "help" or "?" will display a list of the commands and a brief description for each. Typing "? " before a command
 like "? check_status" or "?ls" will provide additional details for the usage of a command. Provided below is a list of
 commands shown as examples of how they may be run with a description.

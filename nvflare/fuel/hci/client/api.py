@@ -827,8 +827,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         ctx.set_command_entry(ent)
         return ctx
 
-    def _do_client_command(self, command, args, ent: CommandEntry):
+    def _do_client_command(self, command, args, ent: CommandEntry, props=None):
         ctx = self._new_command_context(command, args, ent)
+        if props:
+            ctx.set_command_props(props)
         return_result = ent.handler(args, ctx)
         result = ctx.get_command_result()
         if return_result:
@@ -881,7 +883,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         ent = entries[0]
         if cmd_type == _CMD_TYPE_CLIENT:
-            return self._do_client_command(command=command, args=args, ent=ent)
+            return self._do_client_command(command=command, args=args, ent=ent, props=props)
 
         # server command
         if not self.server_sess_active:

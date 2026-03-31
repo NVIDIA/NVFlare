@@ -18,7 +18,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import DEFAULT_JOB_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
@@ -70,6 +70,7 @@ class Session(SessionSpec):
         startup_path: str,
         secure_mode: bool = True,
         debug: bool = False,
+        study: str = DEFAULT_JOB_STUDY,
     ):
         """Initializes a session with the NVFLARE system.
 
@@ -78,9 +79,12 @@ class Session(SessionSpec):
             startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
             secure_mode (bool): whether to log in with secure mode
             debug (bool): turn on debug or not
+            study (str): active study context for submitted jobs and session-scoped job listing; defaults to
+                "default"
         """
         assert isinstance(username, str), "username must be str"
         assert isinstance(startup_path, str), "startup_path must be str"
+        assert isinstance(study, str), "study must be str"
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
         workspace = Workspace(root_dir=startup_path)
@@ -106,6 +110,11 @@ class Session(SessionSpec):
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
+        self._study = study
+        if name_check(self._study, "study")[0]:
+            raise ValueError(
+                f"study name '{self._study}' contains unsupported characters. Use only lowercase letters, numbers, and hyphens."
+            )
 
     def close(self):
         """Close the session."""
@@ -248,7 +257,9 @@ class Session(SessionSpec):
                 f"job folder name '{job_folder_name}' contains unsupported characters. "
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
-        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
+        result = self._do_command(
+            AdminCommandNames.SUBMIT_JOB + " " + job_definition_path, props={JobMetaKey.STUDY.value: self._study}
+        )
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         if not job_id:
@@ -322,7 +333,7 @@ class Session(SessionSpec):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
             else:
                 command = command + " " + id_prefix
-        result = self._do_command(command)
+        result = self._do_command(command, props={JobMetaKey.STUDY.value: self._study})
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
@@ -942,13 +953,26 @@ def new_session(
     secure_mode: bool = True,
     debug: bool = False,
     timeout: float = 10.0,
+    study: str = DEFAULT_JOB_STUDY,
 ) -> Session:
-    session = Session(username=username, startup_path=startup_kit_location, debug=debug, secure_mode=secure_mode)
+    session = Session(
+        username=username,
+        startup_path=startup_kit_location,
+        debug=debug,
+        secure_mode=secure_mode,
+        study=study,
+    )
     session.try_connect(timeout)
     return session
 
 
-def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
+def new_secure_session(
+    username: str,
+    startup_kit_location: str,
+    debug: bool = False,
+    timeout: float = 10.0,
+    study: str = DEFAULT_JOB_STUDY,
+) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
     Args:
@@ -956,20 +980,27 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
         startup_kit_location (str): path to the provisioned startup folder, the root admin dir containing the startup folder
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
+        study (str): active study context for submitted jobs and session-scoped job listing; defaults to "default"
 
     Returns: a Session object
 
     """
-    return new_session(username, startup_kit_location, True, debug, timeout)
+    return new_session(username, startup_kit_location, True, debug, timeout, study=study)
 
 
-def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
+def new_insecure_session(
+    startup_kit_location: str,
+    debug: bool = False,
+    timeout: float = 10.0,
+    study: str = DEFAULT_JOB_STUDY,
+) -> Session:
     """Create a new insecure FLARE API session with the NVFLARE system.
 
     Args:
         startup_kit_location (str): path to the provisioned startup folder
         debug (bool): enable debug mode
         timeout (float): how long to try to establish the session, in seconds
+        study (str): active study context for submitted jobs and session-scoped job listing; defaults to "default"
 
     Returns: a Session object
 
@@ -977,5 +1008,10 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
 
     """
     return new_session(
-        username="", startup_kit_location=startup_kit_location, secure_mode=False, debug=debug, timeout=timeout
+        username="",
+        startup_kit_location=startup_kit_location,
+        secure_mode=False,
+        debug=debug,
+        timeout=timeout,
+        study=study,
     )

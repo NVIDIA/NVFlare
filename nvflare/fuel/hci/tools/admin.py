@@ -15,6 +15,8 @@
 import argparse
 import os
 
+from nvflare.apis.job_def import DEFAULT_JOB_STUDY
+from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
@@ -36,10 +38,16 @@ def main():
     parser.add_argument(
         "--fed_admin", "-s", type=str, help="json file with configurations for launching admin client", required=True
     )
+    parser.add_argument("--study", type=str, default=DEFAULT_JOB_STUDY, help="study context for this admin session")
     parser.add_argument("--cli_history_size", type=int, default=DEFAULT_CLI_HIST_SIZE)
     parser.add_argument("--with_debug", action="store_true")
 
     args = parser.parse_args()
+
+    invalid, reason = name_check(args.study, "study")
+    if invalid:
+        print(reason)
+        return
 
     try:
         os.chdir(args.workspace)
@@ -92,6 +100,7 @@ def main():
         handlers=conf.handlers,
         cli_history_dir=args.workspace,
         cli_history_size=cli_history_size,
+        study=args.study,
     )
 
     client.run()

@@ -23,6 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.job_def import DEFAULT_JOB_STUDY, JobMetaKey
+
 try:
     import readline
 except ImportError:
@@ -61,6 +64,13 @@ class _BuiltInCmdModule(CommandModule):
         )
 
 
+# Only commands whose behavior is defined by the active session study inherit it
+# from the admin terminal. submit_job writes the job's study, and list_jobs scopes
+# visibility by the session study. clone_job intentionally does not use the
+# session study because it preserves the source job's study.
+_SESSION_STUDY_COMMANDS = frozenset({AdminCommandNames.SUBMIT_JOB, AdminCommandNames.LIST_JOBS})
+
+
 class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
@@ -79,11 +89,13 @@ class AdminClient(cmd.Cmd, EventHandler):
         handlers=None,
         cli_history_dir: str = str(Path.home() / ".nvflare"),
         cli_history_size: int = 1000,
+        study: str = DEFAULT_JOB_STUDY,
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
         self.user_name = username
+        self._study = study
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
@@ -360,6 +372,8 @@ class AdminClient(cmd.Cmd, EventHandler):
 
         # execute the command!
         start = time.time()
+        if cmd_name in _SESSION_STUDY_COMMANDS:
+            props = {JobMetaKey.STUDY.value: self._study}
         resp = self.api.do_command(line, props=props)
         secs = time.time() - start
         usecs = int(secs * 1000000)

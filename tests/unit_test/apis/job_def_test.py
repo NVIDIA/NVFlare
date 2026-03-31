@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.job_def import is_valid_job_id
+from nvflare.apis.job_def import DEFAULT_JOB_STUDY, get_job_meta_study, is_valid_job_id
 
 
 class TestJobDef:
@@ -22,3 +22,6 @@ class TestJobDef:
         assert is_valid_job_id("c2564481536a45488dfacf183a3652a1")
         assert not is_valid_job_id("c2564481536a45488dfacf183a3652a1ddd")
         assert not is_valid_job_id("c2564481-536a-4548-fdff-df183a3652a1")
+
+    def test_get_job_meta_study_defaults_legacy_jobs(self):
+        assert get_job_meta_study({}) == DEFAULT_JOB_STUDY
