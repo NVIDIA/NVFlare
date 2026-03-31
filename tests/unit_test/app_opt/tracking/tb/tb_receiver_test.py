@@ -15,6 +15,7 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -85,6 +86,32 @@ class TestTBAnalyticsReceiver:
         assert event.step == 2
         assert event.tensor_proto.string_val[0] == b"hello world"
 
+    def test_save_image_writes_image_summary(self, tmp_path):
+        receiver = TBAnalyticsReceiver()
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+        receiver.initialize(fl_ctx)
+
+        image = np.zeros((2, 2, 3), dtype=np.uint8)
+        image[0, 0] = [255, 0, 0]
+
+        shareable = create_analytic_dxo(
+            tag="sample_image",
+            value=image,
+            data_type=AnalyticsDataType.IMAGE,
+            global_step=1,
+        ).to_shareable()
+
+        receiver.save(fl_ctx, shareable, "site-1")
+        receiver.finalize(fl_ctx)
+
+        accumulator = _read_accumulator(tmp_path / "run" / "tb_events" / "site-1")
+        assert accumulator.Tags()["images"] == ["sample_image"]
+        event = accumulator.Images("sample_image")[0]
+        assert event.step == 1
+        assert event.width == 2
+        assert event.height == 2
+        assert event.encoded_image_string
+
     def test_save_parameters_converts_scalars_and_text(self, tmp_path):
         receiver = TBAnalyticsReceiver()
         fl_ctx = _make_fl_ctx(tmp_path / "run")
@@ -102,6 +129,27 @@ class TestTBAnalyticsReceiver:
         accumulator = _read_accumulator(tmp_path / "run" / "tb_events" / "site-1")
         assert accumulator.Scalars("lr")[0].value == pytest.approx(0.1)
         assert accumulator.Tensors("model")[0].tensor_proto.string_val[0] == b"cnn"
+
+    def test_save_metric_alias_writes_scalar_summary(self, tmp_path):
+        receiver = TBAnalyticsReceiver()
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+        receiver.initialize(fl_ctx)
+
+        shareable = create_analytic_dxo(
+            tag="accuracy",
+            value=0.92,
+            data_type=AnalyticsDataType.METRIC,
+            global_step=3,
+        ).to_shareable()
+
+        receiver.save(fl_ctx, shareable, "site-1")
+        receiver.finalize(fl_ctx)
+
+        accumulator = _read_accumulator(tmp_path / "run" / "tb_events" / "site-1")
+        events = accumulator.Scalars("accuracy")
+        assert len(events) == 1
+        assert events[0].step == 3
+        assert events[0].value == pytest.approx(0.92)
 
     def test_save_scalars_uses_per_series_subdirectories(self, tmp_path):
         receiver = TBAnalyticsReceiver()
@@ -123,3 +171,32 @@ class TestTBAnalyticsReceiver:
 
         assert [(event.step, event.value) for event in train_accumulator.Scalars("metrics")] == [(7, 1.0)]
         assert [(event.step, event.value) for event in val_accumulator.Scalars("metrics")] == [(7, 2.0)]
+
+    def test_save_metrics_alias_uses_per_series_subdirectories(self, tmp_path):
+        receiver = TBAnalyticsReceiver()
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+        receiver.initialize(fl_ctx)
+
+        shareable = create_analytic_dxo(
+            tag="eval_metrics",
+            value={"precision": 0.8, "recall": 0.7},
+            data_type=AnalyticsDataType.METRICS,
+            global_step=5,
+        ).to_shareable()
+
+        receiver.save(fl_ctx, shareable, "site-1")
+        receiver.finalize(fl_ctx)
+
+        precision_accumulator = _read_accumulator(tmp_path / "run" / "tb_events" / "site-1" / "eval_metrics_precision")
+        recall_accumulator = _read_accumulator(tmp_path / "run" / "tb_events" / "site-1" / "eval_metrics_recall")
+
+        precision_events = precision_accumulator.Scalars("eval_metrics")
+        recall_events = recall_accumulator.Scalars("eval_metrics")
+
+        assert len(precision_events) == 1
+        assert precision_events[0].step == 5
+        assert precision_events[0].value == pytest.approx(0.8)
+
+        assert len(recall_events) == 1
+        assert recall_events[0].step == 5
+        assert recall_events[0].value == pytest.approx(0.7)
