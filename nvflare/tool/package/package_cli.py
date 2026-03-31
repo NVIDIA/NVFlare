@@ -46,7 +46,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "--endpoint",
         required=False,
         default=None,
-        help="Server endpoint URI (grpc://host:port or tcp://host:port). Required for -t client and -t server.",
+        help="Server endpoint URI (grpc://host:port or tcp://host:port). Required for all kit types.",
     )
     p.add_argument(
         "-n",

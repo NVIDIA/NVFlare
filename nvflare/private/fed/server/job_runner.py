@@ -42,6 +42,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
@@ -83,42 +84,7 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
 
 
 def _require_signed_jobs(workspace) -> bool:
-    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
-
-    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
-    change the policy without restarting the server.
-
-    Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
-    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
-    """
-    import json as _json
-    import stat as _stat
-
-    logger = logging.getLogger(__name__)
-
-    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
-    if os.path.exists(server_config_path):
-        st = os.stat(server_config_path)
-        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
-            logger.warning(
-                "fed_server.json is group/world-writable — require_signed_jobs policy "
-                "can be altered by other local users (TOCTOU risk)"
-            )
-        try:
-            with open(server_config_path) as f:
-                cfg = _json.load(f)
-            if "require_signed_jobs" in cfg:
-                value = bool(cfg["require_signed_jobs"])
-                logger.debug("require_signed_jobs=%s (explicit config)", value)
-                return value
-        except Exception:
-            pass  # fall through to rootCA.pem heuristic
-
-    # Infer from rootCA.pem presence
-    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-    value = os.path.exists(root_ca_path)
-    logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence)", value)
-    return value
+    return require_signed_jobs(workspace)
 
 
 class JobRunner(FLComponent):

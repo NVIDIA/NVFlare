@@ -16,8 +16,6 @@ import json
 import logging
 import os
 import shutil
-import stat
-
 from nvflare.apis.app_deployer_spec import AppDeployerSpec, FLContext
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemComponents, SystemVarName
@@ -27,42 +25,14 @@ from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
 from nvflare.lighter.utils import verify_folder_signature
+from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 
 
 _hub_deployer_logger = logging.getLogger(__name__)
 
 
 def _require_signed_jobs_for_hub(workspace) -> bool:
-    """Return True if the hub requires all forwarded jobs to carry __nvfl_sig.json.
-
-    Same logic as _require_signed_jobs in job_runner.py but standalone for hub context.
-    Reads fed_server.json at call time to support hot-reload.
-    Default: True when rootCA.pem is present; False otherwise (simulator).
-    """
-    import json as _json
-
-    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
-    if os.path.exists(server_config_path):
-        st = os.stat(server_config_path)
-        if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-            _hub_deployer_logger.warning(
-                "fed_server.json is group/world-writable — require_signed_jobs policy "
-                "can be altered by other local users (TOCTOU risk)"
-            )
-        try:
-            with open(server_config_path) as f:
-                cfg = _json.load(f)
-            if "require_signed_jobs" in cfg:
-                value = bool(cfg["require_signed_jobs"])
-                _hub_deployer_logger.debug("require_signed_jobs=%s (explicit config, hub)", value)
-                return value
-        except Exception:
-            pass  # fall through to rootCA.pem heuristic
-
-    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-    value = os.path.exists(root_ca_path)
-    _hub_deployer_logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence, hub)", value)
-    return value
+    return require_signed_jobs(workspace)
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):

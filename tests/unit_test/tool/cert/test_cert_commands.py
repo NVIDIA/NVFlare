@@ -222,7 +222,10 @@ class TestCertInit:
 
         _run_init(tmp_path)
         cert = load_crt(str(tmp_path / "rootCA.pem"))
-        delta = cert.not_valid_after - cert.not_valid_before
+        try:
+            delta = cert.not_valid_after_utc - cert.not_valid_before_utc
+        except AttributeError:
+            delta = cert.not_valid_after - cert.not_valid_before  # cryptography < 42.0
         # Should be ~3650 days
         assert delta.days >= 3640
 

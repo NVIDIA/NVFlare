@@ -408,22 +408,21 @@ def handle_package(args):
         msg, hint = get_error("CERT_EXPIRED", cert=args.cert, expiry=expiry.isoformat())
         output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
 
-    # Step 9: Validate --endpoint (required for client and server)
+    # Step 9: Validate --endpoint (required for all kit types — admin types need it to connect)
     scheme, host, port = None, None, None
-    if args.kit_type in ("client", "server") or args.endpoint:
-        if not args.endpoint:
-            output_error(
-                "INVALID_ARGS",
-                f"--endpoint is required for -t {args.kit_type}.",
-                "Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
-                fmt,
-                exit_code=4,
-            )
-        try:
-            scheme, host, port = _parse_endpoint(args.endpoint)
-        except ValueError:
-            msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
-            output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
+    if not args.endpoint:
+        output_error(
+            "INVALID_ARGS",
+            f"--endpoint is required for -t {args.kit_type}.",
+            "Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
+            fmt,
+            exit_code=4,
+        )
+    try:
+        scheme, host, port = _parse_endpoint(args.endpoint)
+    except ValueError:
+        msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
+        output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
 
     # Step 10: Resolve output directory
     output_dir = args.output_dir if args.output_dir else os.path.join(os.getcwd(), args.name)

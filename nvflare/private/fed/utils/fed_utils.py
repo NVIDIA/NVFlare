@@ -13,6 +13,7 @@
 # limitations under the License.
 import importlib
 import json
+import logging
 import os
 import pkgutil
 import subprocess
@@ -47,6 +48,43 @@ from nvflare.security.study_registry import StudyRegistry, StudyRegistryService
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
+
+
+def require_signed_jobs(workspace: Workspace) -> bool:
+    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
+
+    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
+    change the policy without restarting the server.
+
+    Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
+    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
+    """
+    import stat as _stat
+
+    logger = logging.getLogger(__name__)
+
+    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
+    if os.path.exists(server_config_path):
+        st = os.stat(server_config_path)
+        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+            logger.warning(
+                "fed_server.json is group/world-writable — require_signed_jobs policy "
+                "can be altered by other local users (TOCTOU risk)"
+            )
+        try:
+            with open(server_config_path) as f:
+                cfg = json.load(f)
+            if "require_signed_jobs" in cfg:
+                value = bool(cfg["require_signed_jobs"])
+                logger.debug("require_signed_jobs=%s (explicit config)", value)
+                return value
+        except Exception:
+            pass  # fall through to rootCA.pem heuristic
+
+    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+    value = os.path.exists(root_ca_path)
+    logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence)", value)
+    return value
 
 
 def _check_secure_content(site_type: str) -> List[str]:

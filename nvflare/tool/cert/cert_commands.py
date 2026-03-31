@@ -511,7 +511,11 @@ def handle_cert_sign(args):
     _increment_serial(ca_json_path)
 
     # 13. Compute valid_until for output
-    valid_until = signed_cert.not_valid_after.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        _valid_until_dt = signed_cert.not_valid_after_utc
+    except AttributeError:
+        _valid_until_dt = signed_cert.not_valid_after  # cryptography < 42.0
+    valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     subject_cn = _get_cn(csr.subject)
 
     # 14. Output result
@@ -535,7 +539,7 @@ def handle_cert_sign(args):
         print(f"  Root CA:      {rootca_out_path}  (also included for convenience)")
         print(f"  Subject:      {subject_cn} ({cert_type})")
         print(f"  Serial:       {audit_serial}")
-        print(f"  Valid until:  {signed_cert.not_valid_after.strftime('%Y-%m-%d')}")
+        print(f"  Valid until:  {_valid_until_dt.strftime('%Y-%m-%d')}")
         print()
         print(f"Next step: Send {output_filename} and rootCA.pem to the site admin.")
         print(
