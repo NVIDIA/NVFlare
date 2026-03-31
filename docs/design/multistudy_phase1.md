@@ -10,7 +10,7 @@
 
 ## Introduction
 
-Flare currently operates as a single-tenant system. All jobs share a flat store (`jobs/<uuid>/`), and every authorized admin can see and act on every job. There is no data segregation between different collaborations running on the same infrastructure.
+Flare currently operates as a single-tenant system. Every authorized admin can see and act on every job. There is no data segregation between different collaborations running on the same infrastructure.
 
 Phase 1 introduces a **study** concept as lightweight metadata plumbing. Every job carries a `study` name (defaulting to `"default"`). The study flows from user-facing APIs into job metadata and runtime launchers so that K8s deployments can mount study-specific workspace volumes immediately — without any access-control, provisioning, or job-store changes.
 
