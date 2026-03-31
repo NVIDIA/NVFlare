@@ -29,6 +29,13 @@ def _create_scalar_summary(tag: str, value: float) -> Summary:
 
 
 def _convert_image_to_hwc(value) -> np.ndarray:
+    """Normalize HW/HWC/CHW image inputs to HWC uint8 for TensorBoard encoding.
+
+    Float inputs are treated like TensorBoard image helpers typically do: values are
+    expected in [0, 1] and scaled up to [0, 255] before PNG encoding. Callers with
+    float images already expressed in [0, 255] should convert to uint8 first.
+    """
+
     image = np.asarray(value)
     if image.ndim == 2:
         image = image[:, :, np.newaxis]
@@ -38,6 +45,7 @@ def _convert_image_to_hwc(value) -> np.ndarray:
     if image.ndim != 3 or image.shape[2] not in (1, 3, 4):
         raise ValueError(f"Expect image to have shape HW, HWC, or CHW with 1/3/4 channels, but got {image.shape}")
 
+    # Match TensorBoard's common convention: non-uint8 arrays are treated as normalized images.
     scale_factor = 1 if image.dtype == np.uint8 else 255
     image = image.astype(np.float32)
     image = (image * scale_factor).clip(0, 255).astype(np.uint8)
