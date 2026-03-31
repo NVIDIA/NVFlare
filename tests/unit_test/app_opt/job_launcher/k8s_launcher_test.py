@@ -64,7 +64,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     VOLUME_MOUNT_LIST,
     JobState,
     K8sJobHandle,
-    POD_Phase,
+    PodPhase,
     _job_args_dict,
     uuid4_to_rfc1123,
 )
@@ -150,20 +150,20 @@ class TestUuid4ToRfc1123:
 # ---------------------------------------------------------------------------
 class TestPodStateMapping:
     def test_all_phases_mapped(self):
-        for phase in POD_Phase:
+        for phase in PodPhase:
             assert phase.value in POD_STATE_MAPPING
 
     def test_pending_maps_to_starting(self):
-        assert POD_STATE_MAPPING[POD_Phase.PENDING.value] == JobState.STARTING
+        assert POD_STATE_MAPPING[PodPhase.PENDING.value] == JobState.STARTING
 
     def test_running_maps_to_running(self):
-        assert POD_STATE_MAPPING[POD_Phase.RUNNING.value] == JobState.RUNNING
+        assert POD_STATE_MAPPING[PodPhase.RUNNING.value] == JobState.RUNNING
 
     def test_succeeded_maps_to_succeeded(self):
-        assert POD_STATE_MAPPING[POD_Phase.SUCCEEDED.value] == JobState.SUCCEEDED
+        assert POD_STATE_MAPPING[PodPhase.SUCCEEDED.value] == JobState.SUCCEEDED
 
     def test_failed_maps_to_terminated(self):
-        assert POD_STATE_MAPPING[POD_Phase.FAILED.value] == JobState.TERMINATED
+        assert POD_STATE_MAPPING[PodPhase.FAILED.value] == JobState.TERMINATED
 
 
 class TestJobReturnCodeMapping:
@@ -369,7 +369,7 @@ class TestK8sJobHandle:
     def test_poll_returns_unknown_when_running(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.RUNNING.value
+        resp.status.phase = PodPhase.RUNNING.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.UNKNOWN
@@ -377,7 +377,7 @@ class TestK8sJobHandle:
     def test_poll_returns_success_when_succeeded(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.SUCCESS
@@ -385,7 +385,7 @@ class TestK8sJobHandle:
     def test_poll_returns_aborted_when_failed(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.FAILED.value
+        resp.status.phase = PodPhase.FAILED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.poll() == JobReturnCode.ABORTED
@@ -437,13 +437,13 @@ class TestK8sJobHandle:
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = _FakeApiException(status=500, reason="Error")
         handle = _make_handle(api=api)
-        assert handle._query_phase() == POD_Phase.UNKNOWN.value
+        assert handle._query_phase() == PodPhase.UNKNOWN.value
 
     def test_query_phase_returns_unknown_on_generic_exception(self):
         api = _make_api_instance()
         api.read_namespaced_pod.side_effect = RuntimeError("connection lost")
         handle = _make_handle(api=api)
-        assert handle._query_phase() == POD_Phase.UNKNOWN.value
+        assert handle._query_phase() == PodPhase.UNKNOWN.value
 
     # -- _stuck_in_pending ----------------------------------------------------
     def test_stuck_in_pending_returns_true_at_max_count(self):
@@ -452,39 +452,39 @@ class TestK8sJobHandle:
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
         handle._stuck_count = handle._max_stuck_count - 1
-        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is True
+        assert handle._stuck_in_pending(PodPhase.PENDING.value) is True
 
     def test_stuck_in_pending_returns_false_one_before_max(self):
         # One iteration before the threshold must not fire.
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
         handle._stuck_count = handle._max_stuck_count - 2
-        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
+        assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
 
     def test_stuck_in_pending_returns_false_for_non_pending(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
         handle._stuck_count = 9999
-        assert handle._stuck_in_pending(POD_Phase.RUNNING.value) is False
+        assert handle._stuck_in_pending(PodPhase.RUNNING.value) is False
 
     def test_stuck_in_pending_resets_count_on_non_pending(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
         handle._stuck_count = 3
-        handle._stuck_in_pending(POD_Phase.RUNNING.value)
+        handle._stuck_in_pending(PodPhase.RUNNING.value)
         assert handle._stuck_count == 0
 
     def test_stuck_in_pending_increments_count(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=100)
         initial = handle._stuck_count
-        handle._stuck_in_pending(POD_Phase.PENDING.value)
+        handle._stuck_in_pending(PodPhase.PENDING.value)
         assert handle._stuck_count == initial + 1
 
     def test_stuck_in_pending_returns_false_when_under_max(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=100)
-        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
+        assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
 
     def test_stuck_in_pending_never_fires_when_pending_timeout_none(self):
         # pending_timeout=None with timeout=None → _max_stuck_count=None → stuck detection disabled
@@ -493,7 +493,7 @@ class TestK8sJobHandle:
         assert handle._max_stuck_count is None
         # Drive _stuck_count very high — must not raise and must return False
         handle._stuck_count = 10_000
-        assert handle._stuck_in_pending(POD_Phase.PENDING.value) is False
+        assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
 
     # -- wait -----------------------------------------------------------------
     def test_wait_returns_immediately_if_terminal_state_set(self):
@@ -506,7 +506,7 @@ class TestK8sJobHandle:
     def test_wait_persists_succeeded_terminal_state(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -515,7 +515,7 @@ class TestK8sJobHandle:
     def test_wait_persists_terminated_terminal_state(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.FAILED.value
+        resp.status.phase = PodPhase.FAILED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -524,7 +524,7 @@ class TestK8sJobHandle:
     def test_wait_poll_consistent_after_wait(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         handle.wait()
@@ -534,7 +534,7 @@ class TestK8sJobHandle:
     def test_enter_states_returns_true_when_state_matches(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.RUNNING.value
+        resp.status.phase = PodPhase.RUNNING.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is True
@@ -542,7 +542,7 @@ class TestK8sJobHandle:
     def test_enter_states_accepts_single_state(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states(JobState.SUCCEEDED) is True
@@ -550,7 +550,7 @@ class TestK8sJobHandle:
     def test_enter_states_returns_false_on_timeout(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.PENDING.value
+        resp.status.phase = PodPhase.PENDING.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=0)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -558,7 +558,7 @@ class TestK8sJobHandle:
     def test_enter_states_terminates_on_timeout(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.PENDING.value
+        resp.status.phase = PodPhase.PENDING.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=0)
         handle.enter_states([JobState.RUNNING])
@@ -568,7 +568,7 @@ class TestK8sJobHandle:
     def test_enter_states_returns_false_on_terminal_pod_phase(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.FAILED.value
+        resp.status.phase = PodPhase.FAILED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -577,7 +577,7 @@ class TestK8sJobHandle:
     def test_enter_states_returns_false_on_succeeded_when_waiting_for_running(self):
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -601,7 +601,7 @@ class TestK8sJobHandle:
         mock_time.sleep = Mock()
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.UNKNOWN.value
+        resp.status.phase = PodPhase.UNKNOWN.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=10)
         assert handle.enter_states([JobState.RUNNING]) is False
@@ -612,7 +612,7 @@ class TestK8sJobHandle:
         mock_time.sleep = Mock()
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.UNKNOWN.value
+        resp.status.phase = PodPhase.UNKNOWN.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=10)
         handle.enter_states([JobState.RUNNING])
@@ -627,7 +627,7 @@ class TestK8sJobHandle:
         mock_time.sleep = Mock()
         api = _make_api_instance()
         resp = Mock()
-        resp.status.phase = POD_Phase.SUCCEEDED.value
+        resp.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.return_value = resp
         handle = _make_handle(api=api, timeout=None)
         handle.enter_states([JobState.RUNNING])
@@ -641,9 +641,9 @@ class TestK8sJobHandle:
         mock_time.sleep = Mock()
         api = _make_api_instance()
         resp_unknown = Mock()
-        resp_unknown.status.phase = POD_Phase.UNKNOWN.value
+        resp_unknown.status.phase = PodPhase.UNKNOWN.value
         resp_succeeded = Mock()
-        resp_succeeded.status.phase = POD_Phase.SUCCEEDED.value
+        resp_succeeded.status.phase = PodPhase.SUCCEEDED.value
         api.read_namespaced_pod.side_effect = [resp_unknown, resp_succeeded]
         handle = _make_handle(api=api, timeout=10)
         result = handle.enter_states([JobState.RUNNING])
@@ -969,7 +969,7 @@ class TestK8sJobLauncherLaunchJob:
 
     def _prime_running(self, mock_api):
         resp = Mock()
-        resp.status.phase = POD_Phase.RUNNING.value
+        resp.status.phase = PodPhase.RUNNING.value
         mock_api.read_namespaced_pod.return_value = resp
 
     # -- return value ---------------------------------------------------------

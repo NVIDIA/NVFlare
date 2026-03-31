@@ -16,6 +16,17 @@ from nvflare.apis.resource_manager_spec import ResourceConsumerSpec
 
 
 class BEResourceConsumer(ResourceConsumerSpec):
+    """A best-effort resource consumer that accepts any resource allocation without action.
+
+    This implementation of ResourceConsumerSpec is a no-op consumer intended for use
+    in environments where resource consumption tracking is not required or is handled
+    externally. It silently accepts the provided resources and takes no further action.
+    """
 
     def consume(self, resources: dict):
+        """Consumes the given resources without performing any action.
+
+        Args:
+            resources: a dict of allocated resources to consume.
+        """
         pass

@@ -40,7 +40,7 @@ class JobState(Enum):
     UNKNOWN = "unknown"
 
 
-class POD_Phase(Enum):
+class PodPhase(Enum):
     PENDING = "Pending"
     RUNNING = "Running"
     SUCCEEDED = "Succeeded"
@@ -49,11 +49,11 @@ class POD_Phase(Enum):
 
 
 POD_STATE_MAPPING = {
-    POD_Phase.PENDING.value: JobState.STARTING,
-    POD_Phase.RUNNING.value: JobState.RUNNING,
-    POD_Phase.SUCCEEDED.value: JobState.SUCCEEDED,
-    POD_Phase.FAILED.value: JobState.TERMINATED,
-    POD_Phase.UNKNOWN.value: JobState.UNKNOWN,
+    PodPhase.PENDING.value: JobState.STARTING,
+    PodPhase.RUNNING.value: JobState.RUNNING,
+    PodPhase.SUCCEEDED.value: JobState.SUCCEEDED,
+    PodPhase.FAILED.value: JobState.TERMINATED,
+    PodPhase.UNKNOWN.value: JobState.UNKNOWN,
 }
 
 JOB_RETURN_CODE_MAPPING = {
@@ -205,7 +205,7 @@ class K8sJobHandle(JobHandleSpec):
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in job_states_to_enter:
                 return True
-            elif pod_phase in [POD_Phase.FAILED.value, POD_Phase.SUCCEEDED.value]:  # terminal state
+            elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
                 return False
             elif self.timeout is not None and time.time() - starting_time > self.timeout:
@@ -243,10 +243,10 @@ class K8sJobHandle(JobHandleSpec):
                 self.terminal_state = JobState.TERMINATED
             else:
                 self.logger.warning(f"failed to query pod phase {self.job_id}: {e}")
-            return POD_Phase.UNKNOWN.value
+            return PodPhase.UNKNOWN.value
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod phase {self.job_id}: {e}")
-            return POD_Phase.UNKNOWN.value
+            return PodPhase.UNKNOWN.value
         return resp.status.phase
 
     def _query_state(self):
@@ -254,7 +254,7 @@ class K8sJobHandle(JobHandleSpec):
         return POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
 
     def _stuck_in_pending(self, current_phase):
-        if current_phase == POD_Phase.PENDING.value:
+        if current_phase == PodPhase.PENDING.value:
             self._stuck_count += 1
             if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
                 return True
@@ -409,7 +409,7 @@ def _job_args_dict(job_args: dict, arg_names: list) -> dict:
 
 
 class ClientK8sJobLauncher(K8sJobLauncher):
-    def get_module_args(self, job_id, fl_ctx: FLContext):
+    def get_module_args(self, _job_id, fl_ctx: FLContext):
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
@@ -418,7 +418,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
 
 
 class ServerK8sJobLauncher(K8sJobLauncher):
-    def get_module_args(self, job_id, fl_ctx: FLContext):
+    def get_module_args(self, _job_id, fl_ctx: FLContext):
         job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
