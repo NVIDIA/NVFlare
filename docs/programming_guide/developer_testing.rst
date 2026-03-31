@@ -82,9 +82,9 @@ These options can be used with any test command:
    * - Option
      - Default
      - Description
-   * - ``-j <N|auto>`` / ``--numprocesses=<N|auto>``
-     - auto
-     - Number of parallel pytest workers. Use a fixed number (e.g. ``8``) in CI for reproducibility.
+   * - ``--numprocesses=<N|auto>``
+     - 8
+     - Number of parallel pytest workers (default: 8). Use ``auto`` to match available CPU cores.
    * - ``-d`` / ``--dry-run``
      - off
      - Print commands without executing
@@ -110,7 +110,7 @@ Unit Tests
    ./runtest.sh -u -c -r
 
    # Limit parallelism (e.g. for CI)
-   ./runtest.sh -u -j 8
+   ./runtest.sh -u --numprocesses=4
 
 Code Quality
 ------------

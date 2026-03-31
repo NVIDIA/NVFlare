@@ -287,8 +287,7 @@ function help() {
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
     echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
-    echo "    -j <N|auto>                   : number of parallel pytest workers (default: auto, alias for --numprocesses)"
-    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: auto)"
+    echo "         --numprocesses=<N|auto>  : number of parallel pytest workers (default: 8)"
     echo "    -v | --verbose                : verbose output (adds -v to pytest)"
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated"
@@ -309,7 +308,7 @@ function help() {
 coverage_report=false
 unit_test_report=false
 dry_run_flag=false
-pytest_numprocesses="auto"
+pytest_numprocesses=8
 verbose_flag=false
 
 # notebook test defaults
@@ -391,11 +390,6 @@ do
 
         -d|--dry-run)
             dry_run_flag=true
-        ;;
-
-        -j)
-            pytest_numprocesses="$2"
-            shift
         ;;
 
         --numprocesses=*)
