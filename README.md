@@ -1,5 +1,6 @@
 <img src="https://raw.githubusercontent.com/NVIDIA/NVFlare/main/docs/resources/nvidia_eye.wwPt122j.png" alt="NVIDIA Logo" width="200">
 
+
 # NVIDIA FLARE
 
 [Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) | [Webinars](https://nvidia.github.io/NVFlare/webinars) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/main)
