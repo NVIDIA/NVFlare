@@ -15,11 +15,21 @@
 """nvflare package subcommand: parser registration and dispatch."""
 
 import argparse
+from argparse import ArgumentTypeError
 from typing import Optional
 
 _package_parser: Optional[argparse.ArgumentParser] = None
 
 _ADMIN_ROLES = {"org_admin", "lead", "member"}
+
+
+def _parse_bool_arg(x: str) -> bool:
+    xl = x.lower()
+    if xl in ("true", "1", "yes"):
+        return True
+    if xl in ("false", "0", "no"):
+        return False
+    raise ArgumentTypeError(f"Invalid boolean value {x!r}. Use true/false, 1/0, or yes/no.")
 
 
 def def_package_cli_parser(sub_cmd) -> dict:
@@ -113,7 +123,7 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "--require-signed-jobs",
         required=False,
         default=None,
-        type=lambda x: x.lower() in ("true", "1", "yes"),
+        type=_parse_bool_arg,
         dest="require_signed_jobs",
         help="Server only. Reject unsigned job submissions. Default: true.",
     )

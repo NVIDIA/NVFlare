@@ -24,6 +24,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 
@@ -155,7 +156,7 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         # FROM_HUB_SITE=True signals that the hub verified the job, so we must actually do so here.
         app_path = workspace.get_app_dir(job_id)
         root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-        sig_file = os.path.join(app_path, "__nvfl_sig.json")
+        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
         if os.path.exists(sig_file):
             if not verify_folder_signature(app_path, root_ca_path):
                 return "hub: job signature verification failed before forwarding", None, None

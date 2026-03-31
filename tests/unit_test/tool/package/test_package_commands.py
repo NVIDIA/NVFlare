@@ -79,7 +79,8 @@ def _make_args(**kwargs):
         key=None,
         rootca=None,
         output_dir=None,
-        server_name=None,
+        server_name="fl-server",
+        project_name=None,
         admin_port=None,
         require_signed_jobs=None,
         force=True,
@@ -150,39 +151,39 @@ class TestDiscoverNameFromDir:
 
 class TestMakeFedClientJson:
     def test_structure(self):
-        cfg = _make_fed_client_json("hospital-1", "server.example.com", 8002, 8003, "fl-server")
+        cfg = _make_fed_client_json("hospital-1", "grpc", "server.example.com", 8002, 8003, "fl-server")
         assert cfg["format_version"] == 2
         assert cfg["servers"][0]["name"] == "fl-server"  # defaults to server_name when no project_name
-        assert cfg["servers"][0]["service"]["scheme"] == "http"  # always http, matches provisioner
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert cfg["client"]["connection_security"] == "mtls"
         assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server.example.com:8002:8003"
 
     def test_project_name_overrides_server_name(self):
-        cfg = _make_fed_client_json("h1", "srv", 8002, 8003, "srv", project_name="my_project")
+        cfg = _make_fed_client_json("h1", "grpc", "srv", 8002, 8003, "srv", project_name="my_project")
         assert cfg["servers"][0]["name"] == "my_project"
 
     def test_admin_port_default_offset(self):
-        cfg = _make_fed_client_json("h1", "srv", 8002, 8003, "srv")
+        cfg = _make_fed_client_json("h1", "grpc", "srv", 8002, 8003, "srv")
         assert "8002:8003" in cfg["overseer_agent"]["args"]["sp_end_point"]
 
 
 class TestMakeFedServerJson:
     def test_structure(self):
-        cfg = _make_fed_server_json("fl-server", "0.0.0.0", 8002, 8003, True)
+        cfg = _make_fed_server_json("fl-server", "grpc", "0.0.0.0", 8002, 8003, True)
         assert cfg["format_version"] == 2
         assert cfg["require_signed_jobs"] is True
-        assert cfg["servers"][0]["service"]["scheme"] == "http"  # always http, matches provisioner
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"
         assert cfg["servers"][0]["admin_port"] == 8003
         assert cfg["overseer_agent"]["args"]["sp_end_point"] == "fl-server:8002:8003"
 
     def test_project_name_sets_server_name(self):
-        cfg = _make_fed_server_json("fl-server", "fl-server", 8002, 8003, True, project_name="my_project")
+        cfg = _make_fed_server_json("fl-server", "grpc", "fl-server", 8002, 8003, True, project_name="my_project")
         assert cfg["servers"][0]["name"] == "my_project"
 
     def test_require_signed_jobs_false(self):
-        cfg = _make_fed_server_json("srv", "srv", 8002, 8003, False)
+        cfg = _make_fed_server_json("srv", "grpc", "srv", 8002, 8003, False)
         assert cfg["require_signed_jobs"] is False
 
 
@@ -300,7 +301,7 @@ class TestClientKitAssembly:
         with open(os.path.join(out_dir, "startup", "fed_client.json")) as f:
             cfg = json.load(f)
         assert cfg["servers"][0]["name"] == "fl-server"  # falls back to server_name when no --project-name
-        assert cfg["servers"][0]["service"]["scheme"] == "http"
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert "8002:8003" in cfg["overseer_agent"]["args"]["sp_end_point"]
 
@@ -411,7 +412,7 @@ class TestServerKitAssembly:
         with open(os.path.join(out_dir, "startup", "fed_server.json")) as f:
             cfg = json.load(f)
         assert cfg["require_signed_jobs"] is False
-        assert cfg["servers"][0]["service"]["scheme"] == "http"
+        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"  # host from endpoint
         assert cfg["servers"][0]["admin_port"] == 8003
 
@@ -754,3 +755,95 @@ class TestErrorConditions:
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
         assert exc_info.value.code == 4
+
+    def test_missing_name_explicit_mode(self, cert_env, tmp_path):
+        """Finding #1: explicit mode without -n must fail, not produce a broken kit."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        args = _make_args(
+            kit_type="client",
+            name=None,  # omitted
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            server_name="fl-server",
+            output_dir=str(tmp_path / "output"),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+        assert exc_info.value.code == 4
+
+    def test_missing_name_explicit_mode_no_output_dir(self, cert_env, tmp_path):
+        """Finding #1: explicit mode without -n and without --output-dir must fail cleanly."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        args = _make_args(
+            kit_type="client",
+            name=None,  # omitted
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            server_name="fl-server",
+            output_dir=None,  # also omitted
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+        assert exc_info.value.code == 4
+
+    @pytest.mark.parametrize("kit_type", ["client", "org_admin", "lead", "member"])
+    def test_missing_server_name_for_non_server_types(self, kit_type, cert_env, tmp_path):
+        """Finding #2: --server-name is required for client and admin-role types."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        cert_filename = "client.crt" if kit_type != "server" else "server.crt"
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "alice", str(work), cert_filename)
+        args = _make_args(
+            kit_type=kit_type,
+            name="alice",
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            server_name=None,  # omitted
+            output_dir=str(tmp_path / "output"),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+        assert exc_info.value.code == 4
+
+    def test_server_type_does_not_require_server_name(self, cert_env, tmp_path):
+        """Finding #2: server kit type must NOT require --server-name."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
+        args = _make_args(
+            kit_type="server",
+            name="fl-server",
+            endpoint="grpc://fl-server:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            server_name=None,  # not required for server type
+            output_dir=str(tmp_path / "output"),
+        )
+        handle_package(args)  # must not raise

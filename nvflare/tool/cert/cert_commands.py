@@ -470,7 +470,16 @@ def handle_cert_sign(args):
 
     # 7. Resolve output paths; check for existing cert
     output_dir = os.path.abspath(args.output_dir)
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+
+    if not os.access(output_dir, os.W_OK):
+        message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
+
     cert_out_path = os.path.join(output_dir, output_filename)
     rootca_out_path = os.path.join(output_dir, "rootCA.pem")
 

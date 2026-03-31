@@ -36,6 +36,7 @@ from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -170,7 +171,7 @@ class JobRunner(FLComponent):
                     if not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
                         root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        sig_file = os.path.join(app_path, "__nvfl_sig.json")
+                        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
                         if os.path.exists(sig_file):
                             if not verify_folder_signature(app_path, root_ca_path):
                                 err = "job signature verification failed"
