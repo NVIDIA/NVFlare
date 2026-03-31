@@ -15,8 +15,9 @@
 import datetime
 import json
 import os
-import random
+import secrets
 import shutil
+import string
 from base64 import b64decode, b64encode
 from pathlib import Path
 
@@ -102,7 +103,9 @@ def generate_cert(
 
 
 def serialize_pri_key(pri_key, passphrase=None):
-    if passphrase is None or not isinstance(passphrase, bytes):
+    if passphrase is not None and not isinstance(passphrase, bytes):
+        raise TypeError(f"passphrase must be bytes or None, got {type(passphrase)}")
+    if passphrase is None:
         return pri_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -157,8 +160,8 @@ def cert_to_dict(cert):
 
 
 def generate_password(passlen=16):
-    s = "abcdefghijklmnopqrstuvwxyz01234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    p = "".join(random.sample(s, passlen))
+    s = string.ascii_letters + string.digits
+    p = "".join(secrets.choice(s) for _ in range(passlen))
     return p
 
 

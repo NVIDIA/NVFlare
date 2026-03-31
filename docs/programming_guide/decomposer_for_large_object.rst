@@ -173,8 +173,43 @@ If you need to send an object type that can potentially be very large, you shoul
          """
          pass
 
-All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare’s core, it should register its DOT values in ``nvflare.fuel.utils.fobs.dots.py``; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
+All you need to do is to provide the four methods required by this base class. The methods are self-explanatory. The only thing is that the DOT values are in the range of 1 to 127 and must be globally unique. If your decomposer is part of Flare's core, it should register its DOT values in ``nvflare.fuel.utils.fobs.dots.py``; otherwise, make sure its DOT values do not conflict with values defined there. Currently, only 4 DOT values are defined:
 - NUMPY_BYTES = 1
 - NUMPY_FILE = 2
 - TENSOR_BYTES = 3
 - TENSOR_FILE = 4
+
+FOBS Security
+=============
+
+FOBS enforces two independent security checks during deserialization to prevent arbitrary class loading and remote code execution (RCE).
+
+Non-Builtin Decomposers Must Be Registered
+-------------------------------------------
+
+When the serialized data specifies a decomposer by name, FOBS checks whether it is a builtin decomposer (i.e., listed in ``BUILTIN_DECOMPOSERS``). Builtin decomposers — such as ``NumpyArrayDecomposer``, ``DXODecomposer``, ``EnumTypeDecomposer``, ``DataClassDecomposer``, and others shipped with FLARE — are always trusted without explicit registration. Any decomposer *not* in ``BUILTIN_DECOMPOSERS`` must be explicitly registered before deserialization, otherwise FOBS raises::
+
+   ValueError: Decomposer <name> must be registered
+
+Type Whitelist
+--------------
+
+Independently of the decomposer check, FOBS also enforces a type-name whitelist. The whitelist is consulted only when a type is *not* already in the internal decomposer registry (``_decomposers``). If the type is already registered (e.g., via ``fobs.register()``), the whitelist check is bypassed entirely.
+
+The whitelist is relevant for types handled by generic builtin decomposers (``EnumTypeDecomposer``, ``DataClassDecomposer``) that have not been pre-registered via ``register_data_classes()`` or ``register_enum_types()``. The whitelist is pre-populated with all builtin FLARE types (defined in ``BUILTIN_TYPES``). Application types are added automatically when registered via:
+
+- ``fobs.register_data_classes(*classes)``
+- ``fobs.register_enum_types(*classes)``
+
+For application types that need lazy loading through a generic builtin decomposer without calling the above registration functions, types can be added to the whitelist explicitly:
+
+.. code-block:: python
+
+   import nvflare.fuel.utils.fobs as fobs
+
+   fobs.add_type_name_whitelist("mypackage.mymodule.MyClass")
+
+If the type is not in the whitelist, FOBS raises::
+
+   ValueError: Type '<name>' is not allowed. Use fobs.register_data_classes(),
+   fobs.register_enum_types(), or fobs.add_type_name_whitelist() to allow this type.

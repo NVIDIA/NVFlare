@@ -150,7 +150,7 @@ gnn/
 
 ### Installation
 
-Follow the [Installation](../../getting_started/README.md) instructions to install NVIDIA FLARE.
+Follow the [Installation](../../README.md) instructions to install NVIDIA FLARE.
 
 Install additional requirements:
 
