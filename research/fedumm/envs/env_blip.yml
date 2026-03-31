@@ -1,0 +1,19 @@
+# Conda environment for BLIP VQA backend
+# Usage: conda env create -f envs/env_blip.yml
+name: nvflare_blip
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - nvflare>=2.5.0
+    - torch>=2.0.0
+    - transformers>=4.35.0
+    - peft>=0.6.0
+    - datasets>=2.14.0
+    - Pillow
+    - numpy
