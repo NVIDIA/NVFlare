@@ -170,6 +170,11 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             drop_last=True,
         )
         total_batches = len(dataloader)
+        if total_batches == 0:
+            raise ValueError(
+                "DataLoader produced no batches (dataset may be empty or all batches were dropped by drop_last=True). "
+                "Check your dataset and batch_size configuration."
+            )
 
         optimizer = get_sgd_optimizer(
             et_model.named_parameters(),
