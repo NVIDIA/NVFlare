@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import os
+import time
 from typing import List, Optional
 
-from torch.utils.tensorboard import SummaryWriter
+import numpy as np
+from tensorboard.compat.proto.event_pb2 import Event
+from tensorboard.compat.proto.summary_pb2 import Summary
+from tensorboard.plugins.text.summary_v2 import text_pb
+from tensorboard.summary.writer.event_file_writer import EventFileWriter
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
@@ -31,6 +37,89 @@ FUNCTION_MAPPING = {
     AnalyticsDataType.METRIC: "add_scalar",
     AnalyticsDataType.METRICS: "add_scalars",
 }
+
+
+def _create_scalar_summary(tag: str, value: float) -> Summary:
+    return Summary(value=[Summary.Value(tag=tag, simple_value=float(value))])
+
+
+def _convert_image_to_hwc(value) -> np.ndarray:
+    image = np.asarray(value)
+    if image.ndim == 2:
+        image = image[:, :, np.newaxis]
+    elif image.ndim == 3 and image.shape[0] in (1, 3, 4):
+        image = np.transpose(image, (1, 2, 0))
+
+    if image.ndim != 3 or image.shape[2] not in (1, 3, 4):
+        raise ValueError(f"Expect image to have shape HW, HWC, or CHW with 1/3/4 channels, but got {image.shape}")
+
+    scale_factor = 1 if image.dtype == np.uint8 else 255
+    image = image.astype(np.float32)
+    image = (image * scale_factor).clip(0, 255).astype(np.uint8)
+    return image
+
+
+def _create_image_summary(tag: str, value) -> Summary:
+    from PIL import Image
+
+    image = _convert_image_to_hwc(value)
+    height, width, channels = image.shape
+    encoded_image = image.squeeze(axis=2) if channels == 1 else image
+
+    output = io.BytesIO()
+    Image.fromarray(encoded_image).save(output, format="PNG")
+
+    summary_image = Summary.Image(
+        height=height,
+        width=width,
+        colorspace=channels,
+        encoded_image_string=output.getvalue(),
+    )
+    return Summary(value=[Summary.Value(tag=tag, image=summary_image)])
+
+
+class _EventTBWriter:
+    """Write TensorBoard event files without depending on a specific ML framework."""
+
+    def __init__(self, log_dir: str):
+        self.log_dir = log_dir
+        self.writer = EventFileWriter(log_dir)
+        self.scalar_writers = {}
+
+    def add_scalar(self, tag: str, scalar_value: float, global_step: Optional[int] = None):
+        self._add_summary(self.writer, _create_scalar_summary(tag, scalar_value), global_step)
+
+    def add_text(self, tag: str, text_string: str, global_step: Optional[int] = None):
+        self._add_summary(self.writer, text_pb(tag, text_string), global_step)
+
+    def add_image(self, tag: str, img_tensor, global_step: Optional[int] = None):
+        self._add_summary(self.writer, _create_image_summary(tag, img_tensor), global_step)
+
+    def add_scalars(self, main_tag: str, tag_scalar_dict: dict, global_step: Optional[int] = None):
+        for tag, scalar_value in tag_scalar_dict.items():
+            writer_key = f"{main_tag.replace('/', '_')}_{tag}"
+            writer = self.scalar_writers.get(writer_key)
+            if writer is None:
+                writer = EventFileWriter(os.path.join(self.log_dir, writer_key))
+                self.scalar_writers[writer_key] = writer
+            self._add_summary(writer, _create_scalar_summary(main_tag, scalar_value), global_step)
+
+    def flush(self):
+        self.writer.flush()
+        for writer in self.scalar_writers.values():
+            writer.flush()
+
+    def close(self):
+        self.writer.close()
+        for writer in self.scalar_writers.values():
+            writer.close()
+
+    @staticmethod
+    def _add_summary(writer: EventFileWriter, summary: Summary, global_step: Optional[int] = None):
+        event = Event(wall_time=time.time(), summary=summary)
+        if global_step is not None:
+            event.step = global_step
+        writer.add_event(event)
 
 
 def _create_new_data(key, value, sender):
@@ -113,7 +202,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         writer = self.writers_table.get(record_origin)
         if writer is None:
             peer_log_dir = os.path.join(self.root_log_dir, record_origin)
-            writer = SummaryWriter(log_dir=peer_log_dir)
+            writer = _EventTBWriter(log_dir=peer_log_dir)
             self.writers_table[record_origin] = writer
 
         # do different things depending on the type in dxo
@@ -131,7 +220,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
                 return
 
             func = getattr(writer, func_name)
-            if data_record.step:
+            if data_record.step is not None:
                 func(data_record.tag, data_record.value, data_record.step)
             else:
                 func(data_record.tag, data_record.value)
