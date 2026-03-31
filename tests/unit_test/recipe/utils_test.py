@@ -268,3 +268,28 @@ class TestCrossSiteEvalIdempotency:
                 add_cross_site_evaluation(recipe)
         finally:
             os.unlink(train_script)
+
+    def test_unified_numpy_recipe_supports_cross_site_evaluation(self):
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.recipe import FedAvgRecipe
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("# dummy train script\n")
+            train_script = f.name
+
+        try:
+            recipe = FedAvgRecipe(
+                name="test_unified_numpy_cse",
+                model=[1.0, 2.0],
+                min_clients=2,
+                num_rounds=2,
+                train_script=train_script,
+                framework=FrameworkType.NUMPY,
+            )
+
+            add_cross_site_evaluation(recipe)
+
+            assert getattr(recipe, "_cse_added", False) is True
+        finally:
+            os.unlink(train_script)

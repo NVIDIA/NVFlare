@@ -19,7 +19,7 @@ Welcome to the NVIDIA FLARE Hello World examples! These examples demonstrate how
 
 3. **Choose an example and install dependencies:**
    ```bash
-   cd hello-pt  # or hello-numpy, hello-lightning, hello-tf, hello-flower
+   cd hello-pt  # or hello-jax, hello-numpy, hello-lightning, hello-tf, hello-flower
    pip install -r requirements.txt
    ```
 
@@ -159,6 +159,23 @@ Train an MNIST classifier using TensorFlow and FedAvg.
 cd hello-tf
 pip install -r requirements.txt
 TF_FORCE_GPU_ALLOW_GROWTH=true python job.py
+```
+
+#### [Hello JAX](./hello-jax/)
+Train an MNIST classifier using JAX, Flax, and Optax with FedAvg.
+
+**What you'll learn:**
+- Configuring the base FedAvg Recipe for NumPy parameter exchange
+- Flattening and reconstructing JAX parameter trees for FL exchange
+- Running a Flax training loop with the NVFlare client API
+
+**Run it:**
+```bash
+cd hello-jax
+pip install -r requirements.txt
+python prepare_model.py
+python prepare_data.py
+python job.py
 ```
 
 ### Traditional ML
