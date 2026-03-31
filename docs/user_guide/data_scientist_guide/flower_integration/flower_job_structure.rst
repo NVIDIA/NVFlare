@@ -43,7 +43,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     description = ""
     license = "Apache-2.0"
     dependencies = [
-        "flwr>=1.16,<1.26",
+        "flwr>=1.26",
         "nvflare~=2.5.0rc",
         "torch==2.2.1",
         "torchvision==0.17.1",
@@ -62,14 +62,13 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
     [tool.flwr.app.config]
     num-server-rounds = 3
 
-    [tool.flwr.federations]
-    default = "local-simulation"
-
-    [tool.flwr.federations.local-simulation]
-    options.num-supernodes = 2
-
 
 .. note:: Note that the information defined in pyproject.toml must match the code in the project folder!
+
+.. note:: For NVFlare-managed Flower jobs, NVFlare creates a job-scoped
+   ``$FLWR_HOME/config.toml`` with the SuperLink connection details. You do not
+   need to define a ``[tool.flwr.federations]`` section in ``pyproject.toml`` for
+   FLARE execution.
 
 Project Name
 ~~~~~~~~~~~~
@@ -136,13 +135,9 @@ The content of this section is specific to the server app code. The ``server.py`
 Note that you can also pass `run_config` arguments directly through the job definition via 
 `FlowerRecipe(..., run_config={"num-server-rounds": 5})` to override the default values listed in `pyproject.toml`.
 
-Supernode Count
-~~~~~~~~~~~~~~~
-If you run the Flower job with its simulation (not as a FLARE job), you need to specify how many clients (supernodes) to use
-for the simulation in the ``[tool.flwr.federations.local-simulation]`` section, like this:
-
-.. code-block:: toml
-
-    options.num-supernodes = 2
-
-But this does not apply when submitting it as a FLARE job.
+Simulation Profiles
+~~~~~~~~~~~~~~~~~~~
+If you run the Flower job directly with Flower simulation instead of submitting it
+as a FLARE job, configure the simulation profile using Flower's current simulation
+configuration mechanism. This is separate from the NVFlare execution path, where
+NVFlare manages the SuperLink connection through ``$FLWR_HOME/config.toml``.
