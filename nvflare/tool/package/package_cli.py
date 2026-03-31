@@ -95,6 +95,13 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="Server identity name for mTLS validation. Required for client and admin-role types.",
     )
     p.add_argument(
+        "--project-name",
+        required=False,
+        default=None,
+        dest="project_name",
+        help="Project name used in fed_server.json and fed_admin.json for challenge-response auth. Defaults to server name.",
+    )
+    p.add_argument(
         "--admin-port",
         required=False,
         type=int,

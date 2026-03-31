@@ -90,15 +90,18 @@ def _copy_file(src: str, dst: str, mode_bits: int = None):
         os.chmod(dst, mode_bits)
 
 
-def _make_fed_client_json(name, scheme, host, port, admin_port, server_name):
+def _make_fed_client_json(name, host, port, admin_port, server_name, project_name=None):
+    # servers[0].name must be project_name to match the server's fed_server.json servers[0].name.
+    # scheme is always "http" — matches provisioner template; actual transport is determined at connection time.
+    proj = project_name if project_name else server_name
     sp_end_point = f"{host}:{port}:{admin_port}"
     return {
         "format_version": 2,
         "servers": [
             {
-                "name": server_name,
+                "name": proj,
                 "service": {
-                    "scheme": scheme,
+                    "scheme": "http",
                 },
                 "identity": server_name,
             }
@@ -120,17 +123,20 @@ def _make_fed_client_json(name, scheme, host, port, admin_port, server_name):
     }
 
 
-def _make_fed_server_json(name, scheme, port, admin_port, require_signed_jobs):
+def _make_fed_server_json(name, host, port, admin_port, require_signed_jobs, project_name=None):
+    # servers[0].name must match project_name in fed_admin.json for challenge-response auth.
+    # scheme is always "http" — matches provisioner template.
+    proj = project_name if project_name else name
     sp_end_point = f"{name}:{port}:{admin_port}"
     return {
         "format_version": 2,
         "require_signed_jobs": require_signed_jobs,
         "servers": [
             {
-                "name": name,
+                "name": proj,
                 "service": {
-                    "target": f"0.0.0.0:{port}",
-                    "scheme": scheme,
+                    "target": f"{host}:{port}",
+                    "scheme": "http",
                 },
                 "admin_server": name,
                 "admin_port": admin_port,
@@ -149,14 +155,17 @@ def _make_fed_server_json(name, scheme, port, admin_port, require_signed_jobs):
     }
 
 
-def _make_fed_admin_json(name, server_name, scheme, host, admin_port):
+def _make_fed_admin_json(name, server_name, host, admin_port, project_name=None):
+    # project_name must match servers[0].name in fed_server.json for challenge-response auth.
+    # Admin always connects over HTTP (not gRPC).
+    proj = project_name if project_name else server_name
     return {
         "format_version": 1,
         "admin": {
-            "project_name": name,
+            "project_name": proj,
             "username": name,
             "server_identity": server_name,
-            "scheme": scheme,
+            "scheme": "http",
             "host": host,
             "port": admin_port,
             "connection_security": "mtls",
@@ -181,7 +190,8 @@ def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, por
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
     # 2. fed_client.json
-    fed_client = _make_fed_client_json(args.name, scheme, host, port, admin_port, server_name)
+    project_name = getattr(args, "project_name", None) or server_name
+    fed_client = _make_fed_client_json(args.name, host, port, admin_port, server_name, project_name)
     _write_file(os.path.join(startup_dir, "fed_client.json"), json.dumps(fed_client, indent=2))
 
     # 3. Shell scripts
@@ -217,11 +227,12 @@ def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, por
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
     # 2. fed_server.json
-    fed_server = _make_fed_server_json(args.name, scheme, port, admin_port, require_signed)
+    project_name = getattr(args, "project_name", None) or args.name
+    fed_server = _make_fed_server_json(args.name, host, port, admin_port, require_signed, project_name)
     _write_file(os.path.join(startup_dir, "fed_server.json"), json.dumps(fed_server, indent=2))
 
-    # 3. authorization.json in startup/ (matches provisioner behavior)
-    _write_file(os.path.join(startup_dir, "authorization.json"), templates["default_authz"])
+    # 3. local/ authorization template — provisioner puts this in local/ as .default, not startup/
+    _write_file(os.path.join(local_dir, "authorization.json.default"), templates["default_authz"])
 
     # 4. Shell scripts
     start_content = sh_replace(templates["start_svr_sh"], {"ha_mode": "false"})
@@ -255,7 +266,8 @@ def _build_user_kit(args, startup_dir, local_dir, templates, scheme, host, port)
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
     # 2. fed_admin.json
-    fed_admin = _make_fed_admin_json(args.name, server_name, scheme, host, admin_port)
+    project_name = getattr(args, "project_name", None) or server_name
+    fed_admin = _make_fed_admin_json(args.name, server_name, host, admin_port, project_name)
     _write_file(os.path.join(startup_dir, "fed_admin.json"), json.dumps(fed_admin, indent=2))
 
     # 3. fl_admin.sh

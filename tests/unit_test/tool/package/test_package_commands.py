@@ -150,42 +150,56 @@ class TestDiscoverNameFromDir:
 
 class TestMakeFedClientJson:
     def test_structure(self):
-        cfg = _make_fed_client_json("hospital-1", "grpc", "server.example.com", 8002, 8003, "fl-server")
+        cfg = _make_fed_client_json("hospital-1", "server.example.com", 8002, 8003, "fl-server")
         assert cfg["format_version"] == 2
-        assert cfg["servers"][0]["name"] == "fl-server"
-        assert cfg["servers"][0]["service"]["scheme"] == "grpc"
+        assert cfg["servers"][0]["name"] == "fl-server"  # defaults to server_name when no project_name
+        assert cfg["servers"][0]["service"]["scheme"] == "http"  # always http, matches provisioner
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert cfg["client"]["connection_security"] == "mtls"
         assert cfg["overseer_agent"]["args"]["sp_end_point"] == "server.example.com:8002:8003"
 
+    def test_project_name_overrides_server_name(self):
+        cfg = _make_fed_client_json("h1", "srv", 8002, 8003, "srv", project_name="my_project")
+        assert cfg["servers"][0]["name"] == "my_project"
+
     def test_admin_port_default_offset(self):
-        cfg = _make_fed_client_json("h1", "grpc", "srv", 8002, 8003, "srv")
+        cfg = _make_fed_client_json("h1", "srv", 8002, 8003, "srv")
         assert "8002:8003" in cfg["overseer_agent"]["args"]["sp_end_point"]
 
 
 class TestMakeFedServerJson:
     def test_structure(self):
-        cfg = _make_fed_server_json("fl-server", "grpc", 8002, 8003, True)
+        cfg = _make_fed_server_json("fl-server", "0.0.0.0", 8002, 8003, True)
         assert cfg["format_version"] == 2
         assert cfg["require_signed_jobs"] is True
+        assert cfg["servers"][0]["service"]["scheme"] == "http"  # always http, matches provisioner
         assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"
         assert cfg["servers"][0]["admin_port"] == 8003
         assert cfg["overseer_agent"]["args"]["sp_end_point"] == "fl-server:8002:8003"
 
+    def test_project_name_sets_server_name(self):
+        cfg = _make_fed_server_json("fl-server", "fl-server", 8002, 8003, True, project_name="my_project")
+        assert cfg["servers"][0]["name"] == "my_project"
+
     def test_require_signed_jobs_false(self):
-        cfg = _make_fed_server_json("srv", "grpc", 8002, 8003, False)
+        cfg = _make_fed_server_json("srv", "srv", 8002, 8003, False)
         assert cfg["require_signed_jobs"] is False
 
 
 class TestMakeFedAdminJson:
     def test_structure(self):
-        cfg = _make_fed_admin_json("admin-alice", "fl-server", "grpc", "server.example.com", 8003)
+        cfg = _make_fed_admin_json("admin-alice", "fl-server", "server.example.com", 8003)
         adm = cfg["admin"]
         assert adm["username"] == "admin-alice"
         assert adm["server_identity"] == "fl-server"
+        assert adm["scheme"] == "http"  # always http
         assert adm["host"] == "server.example.com"
         assert adm["port"] == 8003
         assert adm["connection_security"] == "mtls"
+
+    def test_project_name_used_in_admin(self):
+        cfg = _make_fed_admin_json("admin", "fl-server", "srv", 8003, project_name="my_project")
+        assert cfg["admin"]["project_name"] == "my_project"
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +299,8 @@ class TestClientKitAssembly:
 
         with open(os.path.join(out_dir, "startup", "fed_client.json")) as f:
             cfg = json.load(f)
-        assert cfg["servers"][0]["name"] == "fl-server"
+        assert cfg["servers"][0]["name"] == "fl-server"  # falls back to server_name when no --project-name
+        assert cfg["servers"][0]["service"]["scheme"] == "http"
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert "8002:8003" in cfg["overseer_agent"]["args"]["sp_end_point"]
 
@@ -360,15 +375,17 @@ class TestServerKitAssembly:
         assert os.path.isfile(os.path.join(startup, "server.key"))
         assert os.path.isfile(os.path.join(startup, "rootCA.pem"))
         assert os.path.isfile(os.path.join(startup, "fed_server.json"))
-        assert os.path.isfile(os.path.join(startup, "authorization.json"))
         assert os.path.isfile(os.path.join(startup, "start.sh"))
         assert os.path.isfile(os.path.join(startup, "sub_start.sh"))
         assert os.path.isfile(os.path.join(startup, "stop_fl.sh"))
+        # authorization.json goes in local/ as .default (matches provisioner, not active in startup/)
+        assert not os.path.isfile(os.path.join(startup, "authorization.json"))
 
         local = os.path.join(out_dir, "local")
         assert os.path.isfile(os.path.join(local, "resources.json.default"))
         assert os.path.isfile(os.path.join(local, "log_config.json.default"))
         assert os.path.isfile(os.path.join(local, "privacy.json.sample"))
+        assert os.path.isfile(os.path.join(local, "authorization.json.default"))
 
     def test_fed_server_json_content(self, cert_env, tmp_path):
         work = tmp_path / "work"
@@ -394,7 +411,8 @@ class TestServerKitAssembly:
         with open(os.path.join(out_dir, "startup", "fed_server.json")) as f:
             cfg = json.load(f)
         assert cfg["require_signed_jobs"] is False
-        assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"
+        assert cfg["servers"][0]["service"]["scheme"] == "http"
+        assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"  # host from endpoint
         assert cfg["servers"][0]["admin_port"] == 8003
 
     def test_key_permissions(self, cert_env, tmp_path):
