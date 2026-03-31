@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -303,11 +303,12 @@ class FileTransferModule(CommandModule):
         if not os.path.isdir(full_path):
             return {"status": APIStatus.ERROR_RUNTIME, "details": f"'{full_path}' is not a valid folder."}
 
-        # sign folders and files
+        # sign folders and files (skip gracefully when key is absent — e.g. simulator)
         api = ctx.get_api()
         client_key_file_path = api.client_key
-        private_key = load_private_key_file(client_key_file_path)
-        sign_folders(full_path, private_key, api.client_cert)
+        if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
+            private_key = load_private_key_file(client_key_file_path)
+            sign_folders(full_path, private_key, api.client_cert)
 
         # zip the data
         out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))

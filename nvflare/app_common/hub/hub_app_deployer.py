@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import json
+import logging
 import os
 import shutil
+import stat
 
 from nvflare.apis.app_deployer_spec import AppDeployerSpec, FLContext
 from nvflare.apis.fl_component import FLComponent
@@ -24,6 +26,43 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
+from nvflare.lighter.utils import verify_folder_signature
+
+
+_hub_deployer_logger = logging.getLogger(__name__)
+
+
+def _require_signed_jobs_for_hub(workspace) -> bool:
+    """Return True if the hub requires all forwarded jobs to carry __nvfl_sig.json.
+
+    Same logic as _require_signed_jobs in job_runner.py but standalone for hub context.
+    Reads fed_server.json at call time to support hot-reload.
+    Default: True when rootCA.pem is present; False otherwise (simulator).
+    """
+    import json as _json
+
+    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
+    if os.path.exists(server_config_path):
+        st = os.stat(server_config_path)
+        if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            _hub_deployer_logger.warning(
+                "fed_server.json is group/world-writable — require_signed_jobs policy "
+                "can be altered by other local users (TOCTOU risk)"
+            )
+        try:
+            with open(server_config_path) as f:
+                cfg = _json.load(f)
+            if "require_signed_jobs" in cfg:
+                value = bool(cfg["require_signed_jobs"])
+                _hub_deployer_logger.debug("require_signed_jobs=%s (explicit config, hub)", value)
+                return value
+        except Exception:
+            pass  # fall through to rootCA.pem heuristic
+
+    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+    value = os.path.exists(root_ca_path)
+    _hub_deployer_logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence, hub)", value)
+    return value
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
@@ -141,6 +180,17 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         submitter_org = t1_meta.get(JobMetaKey.SUBMITTER_ORG.value, "")
         submitter_role = t1_meta.get(JobMetaKey.SUBMITTER_ROLE.value, "")
         scope = t1_meta.get(JobMetaKey.SCOPE.value, "")
+
+        # Verify the job app folder signature before setting FROM_HUB_SITE.
+        # FROM_HUB_SITE=True signals that the hub verified the job, so we must actually do so here.
+        app_path = workspace.get_app_dir(job_id)
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        sig_file = os.path.join(app_path, "__nvfl_sig.json")
+        if os.path.exists(sig_file):
+            if not verify_folder_signature(app_path, root_ca_path):
+                return "hub: job signature verification failed before forwarding", None, None
+        elif _require_signed_jobs_for_hub(workspace):
+            return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
 
         # Note: the app_name is already created like "app_"+site_name, which is also the directory that contains
         # app config files (config_fed_server.json and config_fed_client.json).

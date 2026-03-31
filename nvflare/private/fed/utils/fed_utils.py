@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -111,7 +111,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    if secure_train:
+    if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
             print("The following files are not secure content.")
@@ -168,7 +168,7 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
     startup_dir = workspace.get_startup_kit_dir()
     SecurityContentService.initialize(content_folder=startup_dir)
 
-    if secure_train:
+    if secure_train and SecurityContentService.security_content_manager.valid_config:
         insecure_list = _check_secure_content(site_type=site_type)
         if len(insecure_list):
             print("The following files are not secure content.")

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import shutil
 import threading
@@ -34,7 +35,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -80,6 +80,45 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
             client_sites_names.append(client.name)
 
     return client_sites_names
+
+
+def _require_signed_jobs(workspace) -> bool:
+    """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
+
+    Reads fed_server.json at call time (not cached) to allow hot-reload: an operator can
+    change the policy without restarting the server.
+
+    Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
+    Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
+    """
+    import json as _json
+    import stat as _stat
+
+    logger = logging.getLogger(__name__)
+
+    server_config_path = os.path.join(workspace.get_startup_kit_dir(), "fed_server.json")
+    if os.path.exists(server_config_path):
+        st = os.stat(server_config_path)
+        if st.st_mode & (_stat.S_IWGRP | _stat.S_IWOTH):
+            logger.warning(
+                "fed_server.json is group/world-writable — require_signed_jobs policy "
+                "can be altered by other local users (TOCTOU risk)"
+            )
+        try:
+            with open(server_config_path) as f:
+                cfg = _json.load(f)
+            if "require_signed_jobs" in cfg:
+                value = bool(cfg["require_signed_jobs"])
+                logger.debug("require_signed_jobs=%s (explicit config)", value)
+                return value
+        except Exception:
+            pass  # fall through to rootCA.pem heuristic
+
+    # Infer from rootCA.pem presence
+    root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+    value = os.path.exists(root_ca_path)
+    logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence)", value)
+    return value
 
 
 class JobRunner(FLComponent):
@@ -161,16 +200,20 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
-                    kv_list = parse_vars(engine.args.set)
-                    secure_train = kv_list.get("secure_train", True)
                     from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
-                    if secure_train and not from_hub_site:
+                    if not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
                         root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        if not verify_folder_signature(app_path, root_ca_path):
-                            err = "job signature verification failed"
+                        sig_file = os.path.join(app_path, "__nvfl_sig.json")
+                        if os.path.exists(sig_file):
+                            if not verify_folder_signature(app_path, root_ca_path):
+                                err = "job signature verification failed"
+                                deploy_detail.append(f"server: {err}")
+                                raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                        elif _require_signed_jobs(workspace):
+                            err = "unsigned job rejected — require_signed_jobs is enabled"
                             deploy_detail.append(f"server: {err}")
-                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
+                            raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False

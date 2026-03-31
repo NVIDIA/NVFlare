@@ -19,7 +19,6 @@ from typing import List
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
-from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
@@ -103,15 +102,17 @@ class DeployProcessor(RequestProcessor):
         if not job_meta:
             return error_reply("missing job meta")
 
-        kv_list = parse_vars(engine.args.set)
-        secure_train = kv_list.get("secure_train", True)
         from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
-        if secure_train and not from_hub_site:
+        if not from_hub_site:
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
             app_path = workspace.get_app_dir(job_id)
             root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-            if not verify_folder_signature(app_path, root_ca_path):
-                return error_reply(f"app {app_name} does not pass signature verification")
+            sig_file = os.path.join(app_path, "__nvfl_sig.json")
+            if os.path.exists(sig_file):
+                if not verify_folder_signature(app_path, root_ca_path):
+                    return error_reply(f"app {app_name} does not pass signature verification")
+            # No elif on the client: require_signed_jobs is a server-side policy.
+            # The server already rejected unsigned jobs before deploying to clients.
 
         err = engine.deploy_app(
             app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
