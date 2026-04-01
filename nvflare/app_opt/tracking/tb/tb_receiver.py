@@ -15,13 +15,12 @@
 import os
 from typing import List, Optional
 
-from torch.utils.tensorboard import SummaryWriter
-
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+from nvflare.app_opt.tracking.tb.tb_event_writer import TensorBoardEventWriter
 
 FUNCTION_MAPPING = {
     AnalyticsDataType.SCALAR: "add_scalar",
@@ -113,7 +112,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         writer = self.writers_table.get(record_origin)
         if writer is None:
             peer_log_dir = os.path.join(self.root_log_dir, record_origin)
-            writer = SummaryWriter(log_dir=peer_log_dir)
+            writer = TensorBoardEventWriter(log_dir=peer_log_dir)
             self.writers_table[record_origin] = writer
 
         # do different things depending on the type in dxo
@@ -131,7 +130,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
                 return
 
             func = getattr(writer, func_name)
-            if data_record.step:
+            if data_record.step is not None:
                 func(data_record.tag, data_record.value, data_record.step)
             else:
                 func(data_record.tag, data_record.value)
