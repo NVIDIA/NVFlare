@@ -19,8 +19,8 @@ import pytest
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule, _create_list_job_cmd_parser
 

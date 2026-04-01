@@ -18,8 +18,8 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.job_def import DEFAULT_JOB_STUDY
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.api import CommandInfo
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.cli import AdminClient
 from nvflare.fuel.hci.tools import admin
