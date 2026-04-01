@@ -29,16 +29,7 @@ from cryptography.x509.oid import NameOID
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt
-from nvflare.tool.cert.cert_commands import (
-    _build_signed_cert,
-    _generate_csr,
-    _increment_serial,
-    _read_serial,
-    handle_cert_csr,
-    handle_cert_init,
-    handle_cert_sign,
-)
-
+from nvflare.tool.cert.cert_commands import _read_serial, handle_cert_csr, handle_cert_init, handle_cert_sign
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +52,6 @@ def _init_args(**kwargs):
 def _csr_args(**kwargs):
     defaults = dict(
         name="hospital-1",
-        cert_type="client",
         output_dir=None,
         org=None,
         force=False,
@@ -92,8 +82,8 @@ def _run_init(tmp_path, **kwargs):
     return handle_cert_init(args)
 
 
-def _run_csr(tmp_path, name="hospital-1", cert_type="client", **kwargs):
-    args = _csr_args(name=name, cert_type=cert_type, output_dir=str(tmp_path), **kwargs)
+def _run_csr(tmp_path, name="hospital-1", **kwargs):
+    args = _csr_args(name=name, output_dir=str(tmp_path), **kwargs)
     return handle_cert_csr(args)
 
 
@@ -218,8 +208,6 @@ class TestCertInit:
         assert cn == "FederationX"
 
     def test_ca_cert_validity_approx_10_years(self, tmp_path):
-        import datetime
-
         _run_init(tmp_path)
         cert = load_crt(str(tmp_path / "rootCA.pem"))
         try:
@@ -236,55 +224,43 @@ class TestCertInit:
 
 
 class TestCertCsr:
-    def test_basic_client_csr(self, tmp_path):
-        rc = _run_csr(tmp_path, name="hospital-1", cert_type="client")
+    def test_basic_csr(self, tmp_path):
+        rc = _run_csr(tmp_path, name="hospital-1")
         assert rc == 0
         assert (tmp_path / "hospital-1.key").exists()
         assert (tmp_path / "hospital-1.csr").exists()
 
-    def test_basic_server_csr(self, tmp_path):
-        rc = _run_csr(tmp_path, name="fl-server", cert_type="server")
-        assert rc == 0
-        assert (tmp_path / "fl-server.key").exists()
-        assert (tmp_path / "fl-server.csr").exists()
-
-    def test_basic_lead_csr(self, tmp_path):
-        rc = _run_csr(tmp_path, name="alice", cert_type="lead")
-        assert rc == 0
-        assert (tmp_path / "alice.key").exists()
-        assert (tmp_path / "alice.csr").exists()
-
     @pytest.mark.skipif(platform.system() == "Windows", reason="chmod not meaningful on Windows")
     def test_key_permissions(self, tmp_path):
-        _run_csr(tmp_path, name="h1", cert_type="client")
+        _run_csr(tmp_path, name="h1")
         key_path = str(tmp_path / "h1.key")
         mode = stat.S_IMODE(os.stat(key_path).st_mode)
         assert mode == 0o600
 
     def test_no_cert_generated(self, tmp_path):
-        _run_csr(tmp_path, name="h1", cert_type="client")
+        _run_csr(tmp_path, name="h1")
         assert not (tmp_path / "h1.crt").exists()
 
     def test_csr_valid_x509(self, tmp_path):
-        _run_csr(tmp_path, name="h1", cert_type="client")
+        _run_csr(tmp_path, name="h1")
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         assert csr.is_signature_valid
 
     def test_csr_cn_matches_name(self, tmp_path):
-        _run_csr(tmp_path, name="hospital-1", cert_type="client")
+        _run_csr(tmp_path, name="hospital-1")
         csr = _load_csr_file(str(tmp_path / "hospital-1.csr"))
         cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "hospital-1"
 
-    def test_csr_type_in_subject(self, tmp_path):
-        _run_csr(tmp_path, name="h1", cert_type="lead")
+    def test_csr_no_role_in_subject(self, tmp_path):
+        """cert csr no longer embeds a role — cert sign's -t is authoritative."""
+        _run_csr(tmp_path, name="h1")
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
-        assert len(role_attrs) == 1
-        assert role_attrs[0].value == "lead"
+        assert len(role_attrs) == 0
 
     def test_org_in_subject(self, tmp_path):
-        args = _csr_args(name="h1", cert_type="client", output_dir=str(tmp_path), org="ACME")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), org="ACME")
         handle_cert_csr(args)
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
@@ -292,7 +268,7 @@ class TestCertCsr:
         assert org_attrs[0].value == "ACME"
 
     def test_no_org_in_subject(self, tmp_path):
-        _run_csr(tmp_path, name="h1", cert_type="client")
+        _run_csr(tmp_path, name="h1")
         csr = _load_csr_file(str(tmp_path / "h1.csr"))
         org_attrs = csr.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
         assert len(org_attrs) == 0
@@ -300,12 +276,12 @@ class TestCertCsr:
     def test_existing_key_no_force(self, tmp_path):
         (tmp_path / "h1.key").write_bytes(b"old-key")
         with pytest.raises(SystemExit) as exc_info:
-            _run_csr(tmp_path, name="h1", cert_type="client")
+            _run_csr(tmp_path, name="h1")
         assert exc_info.value.code == 1
 
     def test_existing_key_with_force(self, tmp_path):
         (tmp_path / "h1.key").write_bytes(b"old-key")
-        rc = _run_csr(tmp_path, name="h1", cert_type="client", force=True)
+        rc = _run_csr(tmp_path, name="h1", force=True)
         assert rc == 0
         # New key should be valid PEM
         key_bytes = (tmp_path / "h1.key").read_bytes()
@@ -317,7 +293,7 @@ class TestCertCsr:
     def test_force_backs_up_both_files(self, tmp_path):
         (tmp_path / "h1.key").write_bytes(b"old-key")
         (tmp_path / "h1.csr").write_bytes(b"old-csr")
-        _run_csr(tmp_path, name="h1", cert_type="client", force=True)
+        _run_csr(tmp_path, name="h1", force=True)
         bak_dirs = list((tmp_path / ".bak").iterdir())
         assert len(bak_dirs) >= 1
         bak_dir = bak_dirs[0]
@@ -326,7 +302,7 @@ class TestCertCsr:
 
     def test_output_json_implies_force(self, tmp_path, capsys):
         (tmp_path / "h1.key").write_bytes(b"old-key")
-        args = _csr_args(name="h1", cert_type="client", output_dir=str(tmp_path), output_fmt="json")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
         rc = handle_cert_csr(args)
         assert rc == 0
         out = capsys.readouterr().out
@@ -335,13 +311,13 @@ class TestCertCsr:
 
     def test_output_dir_created(self, tmp_path):
         new_dir = str(tmp_path / "newdir")
-        args = _csr_args(name="h1", cert_type="client", output_dir=new_dir)
+        args = _csr_args(name="h1", output_dir=new_dir)
         rc = handle_cert_csr(args)
         assert rc == 0
         assert os.path.exists(new_dir)
 
     def test_output_json_envelope(self, tmp_path, capsys):
-        args = _csr_args(name="h1", cert_type="client", output_dir=str(tmp_path), output_fmt="json")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
         handle_cert_csr(args)
         out = capsys.readouterr().out
         data = json.loads(out)
@@ -349,33 +325,23 @@ class TestCertCsr:
         assert data["status"] == "ok"
 
     def test_output_json_no_key_material(self, tmp_path, capsys):
-        args = _csr_args(name="h1", cert_type="client", output_dir=str(tmp_path), output_fmt="json")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="json")
         handle_cert_csr(args)
         out = capsys.readouterr().out
         assert "BEGIN RSA PRIVATE KEY" not in out
         assert "BEGIN PRIVATE KEY" not in out
 
     def test_schema_flag(self, tmp_path, capsys):
-        args = _csr_args(output_dir=str(tmp_path), schema=True)
-        with pytest.raises(SystemExit) as exc_info:
-            handle_cert_csr(args)
-        assert exc_info.value.code == 0
+        args = _csr_args(schema=True)
+        rc = handle_cert_csr(args)
+        assert rc == 0
         out = capsys.readouterr().out
         data = json.loads(out)
         assert data["schema_version"] == "1"
-        assert len(data["args"]) > 0
-
-    def test_schema_contains_type_choices(self, tmp_path, capsys):
-        args = _csr_args(output_dir=str(tmp_path), schema=True)
-        with pytest.raises(SystemExit):
-            handle_cert_csr(args)
-        out = capsys.readouterr().out
-        data = json.loads(out)
-        type_arg = next(a for a in data["args"] if "--type" in a["name"] or a["name"] == "-t")
-        assert set(type_arg["choices"]) == {"client", "server", "org_admin", "lead", "member"}
+        assert data["command"] == "nvflare cert csr"
 
     def test_output_quiet(self, tmp_path, capsys):
-        args = _csr_args(name="h1", cert_type="client", output_dir=str(tmp_path), output_fmt="quiet")
+        args = _csr_args(name="h1", output_dir=str(tmp_path), output_fmt="quiet")
         rc = handle_cert_csr(args)
         assert rc == 0
         assert (tmp_path / "h1.key").exists()
@@ -394,11 +360,11 @@ def _setup_ca(tmp_path):
     return ca_dir
 
 
-def _setup_csr(tmp_path, name="hospital-1", cert_type="client"):
+def _setup_csr(tmp_path, name="hospital-1"):
     """Run cert csr and return csr_path. Uses quiet output to avoid polluting capsys."""
     csr_dir = str(tmp_path / "csr")
     os.makedirs(csr_dir, exist_ok=True)
-    args = _csr_args(name=name, cert_type=cert_type, output_dir=csr_dir, output_fmt="quiet")
+    args = _csr_args(name=name, output_dir=csr_dir, output_fmt="quiet")
     handle_cert_csr(args)
     return os.path.join(csr_dir, f"{name}.csr")
 
@@ -452,10 +418,9 @@ class TestCertSign:
         assert bc.value.ca is False
 
     def test_sign_cert_type_authoritative(self, tmp_path):
-        """The -t arg controls UNSTRUCTURED_NAME in signed cert, not the CSR's value."""
+        """The -t arg controls UNSTRUCTURED_NAME in signed cert; CSR has no embedded role."""
         ca_dir = _setup_ca(tmp_path)
-        # CSR says "client" but we sign as "lead"
-        csr_path = _setup_csr(tmp_path, name="alice", cert_type="client")
+        csr_path = _setup_csr(tmp_path, name="alice")
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="lead")
         handle_cert_sign(args)
@@ -466,7 +431,7 @@ class TestCertSign:
 
     def test_sign_output_filename_from_type(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
-        csr_path = _setup_csr(tmp_path, name="srv", cert_type="server")
+        csr_path = _setup_csr(tmp_path, name="srv")
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="server")
         handle_cert_sign(args)
@@ -490,9 +455,7 @@ class TestCertSign:
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
         open(os.path.join(out_dir, "client.crt"), "w").close()
-        args = _sign_args(
-            csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True
-        )
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
         rc = handle_cert_sign(args)
         assert rc == 0
 
@@ -527,9 +490,7 @@ class TestCertSign:
         csr_path = _setup_csr(tmp_path)
         capsys.readouterr()  # discard setup output
         out_dir = str(tmp_path / "signed")
-        args = _sign_args(
-            csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json"
-        )
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json")
         rc = handle_cert_sign(args)
         assert rc == 0
         out = capsys.readouterr().out
@@ -546,17 +507,14 @@ class TestCertSign:
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
         open(os.path.join(out_dir, "client.crt"), "w").close()
-        args = _sign_args(
-            csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json"
-        )
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json")
         rc = handle_cert_sign(args)
         assert rc == 0
 
     def test_sign_schema_output(self, tmp_path, capsys):
-        args = _sign_args(schema=True, csr_path="x", ca_dir="y", output_dir="z")
-        with pytest.raises(SystemExit) as exc_info:
-            handle_cert_sign(args)
-        assert exc_info.value.code == 0
+        args = _sign_args(schema=True)
+        rc = handle_cert_sign(args)
+        assert rc == 0
         out = capsys.readouterr().out
         data = json.loads(out)
         assert data["schema_version"] == "1"
@@ -569,14 +527,14 @@ class TestCertSign:
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
         # rootCA.pem in output dir should match the one in ca_dir
-        orig = (open(os.path.join(ca_dir, "rootCA.pem"), "rb").read())
-        copy = (open(os.path.join(out_dir, "rootCA.pem"), "rb").read())
+        orig = open(os.path.join(ca_dir, "rootCA.pem"), "rb").read()
+        copy = open(os.path.join(out_dir, "rootCA.pem"), "rb").read()
         assert orig == copy
 
     def test_sign_multiple_certs_serial_increments(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
-        csr1 = _setup_csr(tmp_path / "csr1", name="client1", cert_type="client")
-        csr2 = _setup_csr(tmp_path / "csr2", name="client2", cert_type="client")
+        csr1 = _setup_csr(tmp_path / "csr1", name="client1")
+        csr2 = _setup_csr(tmp_path / "csr2", name="client2")
 
         out1 = str(tmp_path / "signed1")
         out2 = str(tmp_path / "signed2")
@@ -593,7 +551,7 @@ class TestCertSign:
 
     def test_sign_admin_role_cert(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
-        csr_path = _setup_csr(tmp_path, name="bob", cert_type="org_admin")
+        csr_path = _setup_csr(tmp_path, name="bob")
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="org_admin")
         rc = handle_cert_sign(args)

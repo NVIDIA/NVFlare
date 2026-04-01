@@ -100,13 +100,13 @@ own machine.
 
 .. code-block:: bash
 
-   nvflare cert csr -n <participant-name> -t <type> -o ./csr
+   nvflare cert csr -n <participant-name> -o ./csr
 
 Example for a client site named ``hospital-1``:
 
 .. code-block:: bash
 
-   nvflare cert csr -n hospital-1 -t client -o ./csr
+   nvflare cert csr -n hospital-1 -o ./csr
 
 This produces:
 
@@ -117,7 +117,7 @@ Example for the FL server named ``fl-server``:
 
 .. code-block:: bash
 
-   nvflare cert csr -n fl-server -t server -o ./csr
+   nvflare cert csr -n fl-server -o ./csr
 
 Step 3 — Site Admin: Send CSR to Project Admin
 ===============================================
@@ -258,7 +258,7 @@ This example sets up a federation with one server (``fl-server``) and one client
 .. code-block:: bash
 
    # 2. Generate key + CSR
-   nvflare cert csr -n fl-server -t server -o ./csr
+   nvflare cert csr -n fl-server -o ./csr
 
    # 3. Send ./csr/fl-server.csr to Project Admin
 
@@ -276,7 +276,7 @@ This example sets up a federation with one server (``fl-server``) and one client
 .. code-block:: bash
 
    # 2. Generate key + CSR
-   nvflare cert csr -n hospital-1 -t client -o ./csr
+   nvflare cert csr -n hospital-1 -o ./csr
 
    # 3. Send ./csr/hospital-1.csr to Project Admin
 
@@ -320,13 +320,16 @@ Generate a local private key and CSR (Site Admin).
 +==================+==================================================+==========+
 | ``-n`` / ``--name``   | Participant name (becomes cert CN)          | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Participant type: ``client``, ``server``,   | Yes      |
-|                  | ``org_admin``, ``lead``, ``member``              |          |
-+------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
 +------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
+
+.. note::
+
+   ``-t / --type`` is **not** required here. The certificate type is set
+   authoritatively by the Project Admin when signing (``cert sign -t <type>``),
+   not by the site generating the CSR.
 
 ``nvflare cert sign``
 =====================

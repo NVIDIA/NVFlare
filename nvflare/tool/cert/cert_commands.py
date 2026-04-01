@@ -19,7 +19,6 @@ import json
 import os
 import shutil
 import stat
-import sys
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -76,40 +75,47 @@ def handle_cert_init(args):
         print(json.dumps(schema, indent=2))
         return 0
 
-    # 2. --output json implies --force
-    json_mode = getattr(args, "output_fmt", None) == "json"
+    # 2. Validate required args
+    output_fmt = getattr(args, "output_fmt", None)
+    for flag, attr in (("-n/--name", "name"), ("-o/--output-dir", "output_dir")):
+        if not getattr(args, attr, None):
+            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
+            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
+
+    # 3. --output json implies --force
+    json_mode = output_fmt == "json"
     force = args.force or json_mode
 
-    # 3. Resolve and create output dir
+    # 4. Resolve and create output dir
     output_dir = os.path.abspath(args.output_dir)
     try:
         os.makedirs(output_dir, exist_ok=True)
     except OSError as e:
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, args.output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 4. Check write permission
+    # 5. Check write permission
     if not os.access(output_dir, os.W_OK):
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail="directory is not writable")
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, args.output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 5. Check for existing rootCA.key
+    # 6. Check for existing rootCA.key
     ca_key_path = os.path.join(output_dir, "rootCA.key")
     if os.path.exists(ca_key_path):
         if not force:
             message, hint = get_error("CA_ALREADY_EXISTS", path=output_dir)
-            output_error("CA_ALREADY_EXISTS", message, hint, args.output_fmt)
+            output_error("CA_ALREADY_EXISTS", message, hint, output_fmt)
         # --force or json mode: back up existing files
         _backup_existing_ca(output_dir)
 
-    # 6. Generate key pair
+    # 7. Generate key pair
     try:
         pri_key, pub_key = generate_keys()
     except Exception as e:
         message, hint = get_error("CERT_GENERATION_FAILED", detail=str(e))
-        output_error("CERT_GENERATION_FAILED", message, hint, args.output_fmt)
+        output_error("CERT_GENERATION_FAILED", message, hint, output_fmt)
 
-    # 7. Generate self-signed CA certificate
+    # 8. Generate self-signed CA certificate
     try:
         cert = CertBuilder._generate_cert(
             subject=args.name,
@@ -122,13 +128,13 @@ def handle_cert_init(args):
         )
     except Exception as e:
         message, hint = get_error("CERT_GENERATION_FAILED", detail=str(e))
-        output_error("CERT_GENERATION_FAILED", message, hint, args.output_fmt)
+        output_error("CERT_GENERATION_FAILED", message, hint, output_fmt)
 
-    # 8. Serialize
+    # 9. Serialize
     pem_cert = serialize_cert(cert)
     pem_key = serialize_pri_key(pri_key)
 
-    # 9. Write files
+    # 10. Write files
     rootca_path = os.path.join(output_dir, "rootCA.pem")
     ca_json_path = os.path.join(output_dir, "ca.json")
     try:
@@ -149,13 +155,13 @@ def handle_cert_init(args):
             json.dump(ca_meta, f, indent=2)
     except OSError as e:
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=output_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, args.output_fmt)
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 10. Compute valid_until for output
+    # 11. Compute valid_until for output
     valid_until_dt = datetime.datetime.utcnow() + datetime.timedelta(days=3650)
     valid_until_str = valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 11. Output result
+    # 12. Output result
     result = {
         "ca_cert": rootca_path,
         "ca_key": ca_key_path,
@@ -172,7 +178,7 @@ def handle_cert_init(args):
 # ---------------------------------------------------------------------------
 
 
-def _generate_csr(name: str, cert_type: str, org: str = None):
+def _generate_csr(name: str, org: str = None):
     """Generate RSA private key and CSR.
 
     Returns:
@@ -180,7 +186,7 @@ def _generate_csr(name: str, cert_type: str, org: str = None):
     """
     pri_key, _ = generate_keys()
 
-    subject = x509_name(cn_name=name, org_name=org, role=cert_type)
+    subject = x509_name(cn_name=name, org_name=org)
 
     csr = (
         x509.CertificateSigningRequestBuilder().subject_name(subject).sign(pri_key, hashes.SHA256(), default_backend())
@@ -231,73 +237,79 @@ def handle_cert_csr(args):
             _cert_cli._cert_csr_parser,
             command="nvflare cert csr",
             examples=[
-                "nvflare cert csr -n hospital-1 -t client -o ./csr",
-                "nvflare cert csr -n researcher-alice -t lead -o ./alice-csr --output json",
-                "nvflare cert csr -n fl-server -t server -o ./server-csr --org ACME --force",
+                "nvflare cert csr -n hospital-1 -o ./csr",
+                "nvflare cert csr -n researcher-alice -o ./alice-csr --output json",
+                "nvflare cert csr -n fl-server -o ./server-csr --org ACME --force",
             ],
         )
         print(json.dumps(schema, indent=2))
-        sys.exit(0)
+        return 0
 
-    # 2. Normalize and validate name
+    # 2. Validate required args
+    output_fmt = getattr(args, "output_fmt", None)
+    for flag, attr in (("-n/--name", "name"), ("-o/--output-dir", "output_dir")):
+        if not getattr(args, attr, None):
+            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
+            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
+
+    # 3. Normalize and validate name
     name = args.name.strip()
     if len(name) > 64:
         message, hint = get_error("INVALID_NAME", name=name, reason="Name must be 64 characters or fewer.")
-        output_error("INVALID_NAME", message, hint, getattr(args, "output_fmt", None), exit_code=4)
+        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
 
-    # 3. --output json implies --force
-    force = args.force or (getattr(args, "output_fmt", None) == "json")
+    # 4. --output json implies --force
+    force = args.force or (output_fmt == "json")
 
-    # 4. Resolve output dir; create if needed
+    # 5. Resolve output dir; create if needed
     out_dir = os.path.abspath(args.output_dir)
     try:
         os.makedirs(out_dir, exist_ok=True)
     except OSError as e:
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, getattr(args, "output_fmt", None))
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 5. Check write permission
+    # 6. Check write permission
     if not os.access(out_dir, os.W_OK):
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail="directory is not writable")
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, getattr(args, "output_fmt", None))
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 6. Resolve output file paths
+    # 7. Resolve output file paths
     key_path = os.path.join(out_dir, f"{name}.key")
     csr_path = os.path.join(out_dir, f"{name}.csr")
 
-    # 7. Check for existing key file
+    # 8. Check for existing key file
     if os.path.exists(key_path) and not force:
         message, hint = get_error("KEY_ALREADY_EXISTS", path=key_path)
-        output_error("KEY_ALREADY_EXISTS", message, hint, getattr(args, "output_fmt", None))
+        output_error("KEY_ALREADY_EXISTS", message, hint, output_fmt)
 
-    # 8. Back up existing files if --force and they exist
+    # 9. Back up existing files if --force and they exist
     if force and (os.path.exists(key_path) or os.path.exists(csr_path)):
         _backup_existing_csr(out_dir, name)
 
-    # 9. Generate key and CSR
+    # 10. Generate key and CSR
     try:
-        pem_key, pem_csr = _generate_csr(name, args.cert_type, getattr(args, "org", None))
+        pem_key, pem_csr = _generate_csr(name, getattr(args, "org", None))
     except Exception as e:
         message, hint = get_error("CSR_GENERATION_FAILED", detail=str(e))
-        output_error("CSR_GENERATION_FAILED", message, hint, getattr(args, "output_fmt", None))
+        output_error("CSR_GENERATION_FAILED", message, hint, output_fmt)
 
-    # 10. Write files
+    # 11. Write files
     try:
         _write_private_key(key_path, pem_key)
         _write_file(csr_path, pem_csr)
     except OSError as e:
         message, hint = get_error("OUTPUT_DIR_NOT_WRITABLE", path=out_dir, detail=str(e))
-        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, getattr(args, "output_fmt", None))
+        output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
-    # 11. Emit output
+    # 12. Emit output
     result = {
         "name": name,
-        "type": args.cert_type,
         "key": key_path,
         "csr": csr_path,
         "next_step": f"Send {name}.csr to your Project Admin for signing.",
     }
-    output(result, getattr(args, "output_fmt", None))
+    output(result, output_fmt)
     return 0
 
 
@@ -428,14 +440,25 @@ def handle_cert_sign(args):
             ],
         )
         print(json.dumps(schema, indent=2))
-        sys.exit(0)
+        return 0
 
-    # 2. --output json implies --force
+    # 2. Validate required args
     output_fmt = getattr(args, "output_fmt", None)
+    for flag, attr in (
+        ("-r/--csr", "csr_path"),
+        ("-c/--ca-dir", "ca_dir"),
+        ("-o/--output-dir", "output_dir"),
+        ("-t/--type", "cert_type"),
+    ):
+        if not getattr(args, attr, None):
+            message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
+            output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
+
+    # 3. --output json implies --force
     if output_fmt == "json":
         args.force = True
 
-    # 3. Validate CSR file exists
+    # 4. Validate CSR file exists
     csr_path = args.csr_path
     if not os.path.exists(csr_path):
         message, hint = get_error("CSR_NOT_FOUND", path=csr_path)

@@ -41,7 +41,8 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-n",
         "--name",
-        required=True,
+        required=False,
+        default=None,
         type=_name_type,
         dest="name",
         metavar="PROJECT_NAME",
@@ -50,7 +51,8 @@ def _def_cert_init_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-o",
         "--output-dir",
-        required=True,
+        required=False,
+        default=None,
         dest="output_dir",
         metavar="OUTPUT_DIR",
         help="Directory where CA files are written. Created if it does not exist.",
@@ -96,24 +98,18 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
     p.add_argument(
         "-n",
         "--name",
-        required=True,
+        required=False,
+        default=None,
         type=_name_type,
         dest="name",
         metavar="PROJECT_NAME",
         help="Participant name (used as cert Common Name). Max 64 chars.",
     )
     p.add_argument(
-        "-t",
-        "--type",
-        required=True,
-        dest="cert_type",
-        choices=["client", "server", "org_admin", "lead", "member"],
-        help="Certificate type: client, server, org_admin, lead, or member.",
-    )
-    p.add_argument(
         "-o",
         "--output-dir",
-        required=True,
+        required=False,
+        default=None,
         dest="output_dir",
         metavar="OUTPUT_DIR",
         help="Output directory for the .key and .csr files.",
@@ -159,7 +155,8 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-r",
         "--csr",
-        required=True,
+        required=False,
+        default=None,
         dest="csr_path",
         metavar="CSR_FILE",
         help="Path to the .csr file received from the site admin.",
@@ -167,7 +164,8 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-c",
         "--ca-dir",
-        required=True,
+        required=False,
+        default=None,
         dest="ca_dir",
         metavar="CA_DIR",
         help="Directory containing rootCA.pem, rootCA.key, and ca.json.",
@@ -175,7 +173,8 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-o",
         "--output-dir",
-        required=True,
+        required=False,
+        default=None,
         dest="output_dir",
         metavar="OUTPUT_DIR",
         help="Output directory for the signed certificate and rootCA.pem copy.",
@@ -183,7 +182,8 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
     p.add_argument(
         "-t",
         "--type",
-        required=True,
+        required=False,
+        default=None,
         dest="cert_type",
         choices=["client", "server", "org_admin", "lead", "member"],
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
