@@ -102,7 +102,8 @@ def def_package_cli_parser(sub_cmd) -> dict:
         required=False,
         default=None,
         dest="server_name",
-        help="Server identity name for mTLS validation. Required for client and admin-role types.",
+        help="Server identity name (CN) for mTLS validation. Defaults to the hostname in --endpoint. "
+        "Override when the cert CN differs from the hostname (e.g. connecting via IP address).",
     )
     p.add_argument(
         "--project-name",

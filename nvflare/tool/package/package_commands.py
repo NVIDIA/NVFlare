@@ -29,9 +29,10 @@ from nvflare.tool.cli_output import output, output_error
 _ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp)://([^:/]+):(\d+)$")
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package -t lead -e grpc://server:8002 --dir ./alice",
-    "nvflare package -t client -e grpc://server:8002 --dir ./hospital-1 --server-name fl-server",
-    "nvflare package -n hospital-1 -t client -e grpc://server:8002 --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem --server-name fl-server",
+    "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice",
+    "nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1",
+    "nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem",
+    "nvflare package -t client -e grpc://10.0.0.1:8002 --dir ./hospital-1 --server-name fl-server",
 ]
 
 _TEMPLATE_PATH = os.path.normpath(
@@ -180,7 +181,7 @@ def _make_fed_admin_json(name, server_name, host, admin_port, project_name=None)
 
 def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, port):
     admin_port = args.admin_port if args.admin_port is not None else port + 1
-    server_name = args.server_name if args.server_name else args.name
+    server_name = args.server_name
 
     # 1. Copy certs
     _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
@@ -258,7 +259,7 @@ def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, por
 
 def _build_user_kit(args, startup_dir, local_dir, templates, scheme, host, port):
     admin_port = args.admin_port if args.admin_port is not None else (port + 1 if port else 8003)
-    server_name = args.server_name if args.server_name else "server"
+    server_name = args.server_name
 
     # 1. Copy certs (admin uses client.crt/client.key naming convention)
     _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
@@ -395,16 +396,6 @@ def handle_package(args):
                 exit_code=4,
             )
 
-    # Step 5b: --server-name required for client and admin-role types
-    if args.kit_type in ("client", "org_admin", "lead", "member") and not args.server_name:
-        output_error(
-            "INVALID_ARGS",
-            f"--server-name is required for -t {args.kit_type}.",
-            "Provide the server identity name, e.g. --server-name fl-server",
-            fmt,
-            exit_code=4,
-        )
-
     # Step 6: Validate resolved cert/key/rootca exist
     if not os.path.isfile(args.cert):
         msg, hint = get_error("CERT_NOT_FOUND", path=args.cert)
@@ -454,6 +445,11 @@ def handle_package(args):
     except ValueError:
         msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
         output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
+
+    # Default server_name to endpoint hostname when not explicitly provided.
+    # Override with --server-name when the cert CN differs from the hostname
+    # (e.g. connecting via IP: grpc://10.0.0.1:8002 --server-name fl-server).
+    args.server_name = args.server_name or host
 
     # Step 10: Resolve output directory
     output_dir = args.output_dir if args.output_dir else os.path.join(os.getcwd(), args.name)

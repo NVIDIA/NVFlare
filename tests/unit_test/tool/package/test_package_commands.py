@@ -803,8 +803,8 @@ class TestErrorConditions:
         assert exc_info.value.code == 4
 
     @pytest.mark.parametrize("kit_type", ["client", "org_admin", "lead", "member"])
-    def test_missing_server_name_for_non_server_types(self, kit_type, cert_env, tmp_path):
-        """Finding #2: --server-name is required for client and admin-role types."""
+    def test_omitted_server_name_defaults_to_endpoint_hostname(self, kit_type, cert_env, tmp_path):
+        """--server-name omitted → defaults to endpoint hostname, command succeeds."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -816,16 +816,16 @@ class TestErrorConditions:
         args = _make_args(
             kit_type=kit_type,
             name="alice",
-            endpoint="grpc://server.example.com:8002",
+            endpoint="grpc://fl-server:8002",
             cert=cert_path,
             key=key_path,
             rootca=rootca,
-            server_name=None,  # omitted
+            server_name=None,  # omitted — should default to "fl-server"
             output_dir=str(tmp_path / "output"),
         )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 4
+        handle_package(args)  # must not raise
+        # server_name should have been resolved to the endpoint hostname
+        assert args.server_name == "fl-server"
 
     def test_server_type_does_not_require_server_name(self, cert_env, tmp_path):
         """Finding #2: server kit type must NOT require --server-name."""
