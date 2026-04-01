@@ -21,7 +21,13 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY, Job, JobMetaKey, get_job_meta_study, is_valid_job_id
+from nvflare.apis.job_def import (
+    DEFAULT_JOB_STUDY,
+    Job,
+    JobMetaKey,
+    get_job_meta_study,
+    is_valid_job_id,
+)
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
@@ -536,7 +542,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
 
     @staticmethod
-    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str = None) -> bool:
+    def _job_match(
+        job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str = None
+    ) -> bool:
         return (
             ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
             and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))

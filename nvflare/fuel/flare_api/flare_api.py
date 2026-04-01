@@ -209,6 +209,9 @@ class Session(SessionSpec):
         if not isinstance(job_id, str):
             raise JobNotFound(f"invalid job_id {job_id}")
 
+    def _get_active_study(self) -> str:
+        return getattr(self, "_study", DEFAULT_JOB_STUDY)
+
     def clone_job(self, job_id: str) -> str:
         """Create a new job by cloning a specified job.
 
@@ -258,7 +261,8 @@ class Session(SessionSpec):
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
         result = self._do_command(
-            AdminCommandNames.SUBMIT_JOB + " " + job_definition_path, props={JobMetaKey.STUDY.value: self._study}
+            AdminCommandNames.SUBMIT_JOB + " " + job_definition_path,
+            props={JobMetaKey.STUDY.value: self._get_active_study()},
         )
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
@@ -333,7 +337,7 @@ class Session(SessionSpec):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
             else:
                 command = command + " " + id_prefix
-        result = self._do_command(command, props={JobMetaKey.STUDY.value: self._study})
+        result = self._do_command(command, props={JobMetaKey.STUDY.value: self._get_active_study()})
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list

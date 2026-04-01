@@ -373,7 +373,8 @@ class AdminClient(cmd.Cmd, EventHandler):
         # execute the command!
         start = time.time()
         if cmd_name in _SESSION_STUDY_COMMANDS:
-            props = {JobMetaKey.STUDY.value: self._study}
+            props = dict(props) if isinstance(props, dict) else {}
+            props[JobMetaKey.STUDY.value] = self._study
         resp = self.api.do_command(line, props=props)
         secs = time.time() - start
         usecs = int(secs * 1000000)

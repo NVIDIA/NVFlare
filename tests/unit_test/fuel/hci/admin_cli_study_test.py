@@ -15,6 +15,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from nvflare.apis.job_def import DEFAULT_JOB_STUDY
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.api import CommandInfo
@@ -72,6 +74,18 @@ def test_list_jobs_sends_default_session_study_cmd_props():
     assert captured["props"] == {"study": DEFAULT_JOB_STUDY}
 
 
+def test_list_jobs_merges_existing_cmd_props():
+    client, captured = _make_admin_client_for_study("cancer-research")
+
+    with patch(
+        "nvflare.fuel.hci.client.cli.parse_command_line",
+        return_value=("list_jobs", ["list_jobs"], {"foo": "bar"}),
+    ):
+        client._do_default("list_jobs")
+
+    assert captured["props"] == {"foo": "bar", "study": "cancer-research"}
+
+
 def test_clone_job_does_not_send_session_study_cmd_props():
     client, captured = _make_admin_client_for_study("multiple-sclerosis")
 
@@ -108,3 +122,13 @@ def test_admin_main_passes_launch_study_to_admin_client():
         admin.main()
 
     assert captured == {"study": "cancer-research", "ran": True}
+
+
+def test_admin_main_exits_non_zero_for_invalid_study():
+    with (
+        patch("sys.argv", ["admin.py", "-m", "/tmp/admin", "-s", "fed_admin.json", "--study", "Bad Study"]),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        admin.main()
+
+    assert exc_info.value.code == 1

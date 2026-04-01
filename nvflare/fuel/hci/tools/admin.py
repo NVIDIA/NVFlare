@@ -14,6 +14,7 @@
 
 import argparse
 import os
+import sys
 
 from nvflare.apis.job_def import DEFAULT_JOB_STUDY
 from nvflare.apis.utils.format_check import name_check
@@ -47,7 +48,7 @@ def main():
     invalid, reason = name_check(args.study, "study")
     if invalid:
         print(reason)
-        return
+        sys.exit(1)
 
     try:
         os.chdir(args.workspace)
