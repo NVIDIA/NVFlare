@@ -367,6 +367,8 @@ class FlowerServerApplet(Applet):
             "\n"
             f"[superlink.{FLOWER_SUPERLINK_CONNECTION}]\n"
             f'address = "{self.exec_api_addr}"\n'
+            # Keep the generated connection config aligned with the in-process
+            # SuperLink startup flags until NVFlare adds TLS support here.
             "insecure = true\n"
         )
 
@@ -389,13 +391,6 @@ class FlowerServerApplet(Applet):
 
         normalized_cmd_name = "list" if cmd_name == "ls" else cmd_name
         command_parts = [shlex.quote(flwr_path), normalized_cmd_name]
-        if self.run_config and cmd_name == "run":
-            for key, value in self.run_config.items():
-                serialized = f"{key}={_format_run_config_value(value)}"
-                command_parts.extend(["--run-config", shlex.quote(serialized)])
-
-        command_parts.extend(["--format", "json"])
-
         if normalized_cmd_name == "run":
             command_parts.extend([shlex.quote("."), shlex.quote(FLOWER_SUPERLINK_CONNECTION)])
         elif normalized_cmd_name == "stop":
@@ -408,6 +403,13 @@ class FlowerServerApplet(Applet):
             command_parts.append(shlex.quote(FLOWER_SUPERLINK_CONNECTION))
         elif cmd_args:
             command_parts.append(shlex.quote(cmd_args))
+
+        if self.run_config and cmd_name == "run":
+            for key, value in self.run_config.items():
+                serialized = f"{key}={_format_run_config_value(value)}"
+                command_parts.extend(["--run-config", shlex.quote(serialized)])
+
+        command_parts.extend(["--format", "json"])
 
         return " ".join(command_parts)
 

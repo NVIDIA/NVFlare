@@ -50,6 +50,8 @@ def test_flower_run_command_formats_toml_scalars(_validate_executable):
     assert shlex.split(cmd) == [
         os.path.join(os.path.dirname(sys.executable), "flwr"),
         "run",
+        ".",
+        "nvflare",
         "--run-config",
         "learning-rate=0.01",
         "--run-config",
@@ -60,8 +62,6 @@ def test_flower_run_command_formats_toml_scalars(_validate_executable):
         'experiment-name="hello world"',
         "--format",
         "json",
-        ".",
-        "nvflare",
     ]
 
 
@@ -82,10 +82,10 @@ def test_flower_stop_command_does_not_include_run_config(_validate_executable):
     assert shlex.split(cmd) == [
         os.path.join(os.path.dirname(sys.executable), "flwr"),
         "stop",
-        "--format",
-        "json",
         "run-id-123",
         "nvflare",
+        "--format",
+        "json",
     ]
 
 
@@ -98,9 +98,9 @@ def test_flower_list_command_uses_superlink_name(_validate_executable):
     assert shlex.split(cmd) == [
         os.path.join(os.path.dirname(sys.executable), "flwr"),
         "list",
+        "nvflare",
         "--format",
         "json",
-        "nvflare",
     ]
 
 
