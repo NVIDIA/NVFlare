@@ -60,11 +60,11 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT,
     JOB_RETURN_CODE_MAPPING,
     POD_STATE_MAPPING,
-    PV_NAME,
     VOLUME_MOUNT_LIST,
     JobState,
     K8sJobHandle,
     PodPhase,
+    PvName,
     _job_args_dict,
     uuid4_to_rfc1123,
 )
@@ -78,9 +78,9 @@ def _make_job_config(**overrides):
         "command": "nvflare.private.fed.app.client.worker_process",
         "volume_mount_list": VOLUME_MOUNT_LIST,
         "volume_list": [
-            {"name": PV_NAME.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
-            {"name": PV_NAME.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
-            {"name": PV_NAME.ETC.value, "persistentVolumeClaim": {"claimName": "etc-pvc"}},
+            {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": "ws-pvc"}},
+            {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": "data-pvc"}},
+            {"name": PvName.ETC.value, "persistentVolumeClaim": {"claimName": "etc-pvc"}},
         ],
         "module_args": {"-m": "val_m", "-w": "val_w"},
         "set_list": ["key1=val1", "key2=val2"],
@@ -1106,9 +1106,9 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             claims = {v["name"]: v["persistentVolumeClaim"]["claimName"] for v in manifest["spec"]["volumes"]}
-            assert claims[PV_NAME.WORKSPACE.value] == "ws-pvc"
-            assert claims[PV_NAME.DATA.value] == "data-pvc"
-            assert claims[PV_NAME.ETC.value] == "etc-pvc"
+            assert claims[PvName.WORKSPACE.value] == "ws-pvc"
+            assert claims[PvName.DATA.value] == "data-pvc"
+            assert claims[PvName.ETC.value] == "etc-pvc"
         finally:
             _exit_patches(patches)
 

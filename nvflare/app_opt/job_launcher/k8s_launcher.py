@@ -78,16 +78,16 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
 }
 
 
-class PV_NAME(Enum):
+class PvName(Enum):
     WORKSPACE = "nvflws"
     DATA = "nvfldata"
     ETC = "nvfletc"
 
 
 VOLUME_MOUNT_LIST = [
-    {"name": PV_NAME.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
-    {"name": PV_NAME.DATA.value, "mountPath": "/var/tmp/nvflare/data"},
-    {"name": PV_NAME.ETC.value, "mountPath": "/var/tmp/nvflare/etc"},
+    {"name": PvName.WORKSPACE.value, "mountPath": "/var/tmp/nvflare/workspace"},
+    {"name": PvName.DATA.value, "mountPath": "/var/tmp/nvflare/data"},
+    {"name": PvName.ETC.value, "mountPath": "/var/tmp/nvflare/etc"},
 ]
 
 
@@ -339,9 +339,9 @@ class K8sJobLauncher(JobLauncherSpec):
             "command": job_cmd,
             "volume_mount_list": VOLUME_MOUNT_LIST,
             "volume_list": [
-                {"name": PV_NAME.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
-                {"name": PV_NAME.DATA.value, "persistentVolumeClaim": {"claimName": self.data_pvc}},
-                {"name": PV_NAME.ETC.value, "persistentVolumeClaim": {"claimName": self.etc_pvc}},
+                {"name": PvName.WORKSPACE.value, "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
+                {"name": PvName.DATA.value, "persistentVolumeClaim": {"claimName": self.data_pvc}},
+                {"name": PvName.ETC.value, "persistentVolumeClaim": {"claimName": self.etc_pvc}},
             ],
             "module_args": self.get_module_args(job_id, fl_ctx),
         }
