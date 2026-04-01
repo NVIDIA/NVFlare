@@ -32,7 +32,7 @@ See [multistudy_phase2.md](multistudy_phase2.md) for the full multi-tenancy desi
 4. Clone preserves the source job's study (not the session's study).
 5. `K8sJobLauncher` reads `study` from job metadata and selects the corresponding study workspace volume (TODO in code).
 6. `DockerJobLauncher` unchanged; TODO marker for future study-aware settings resolution.
-7. Admin console (`fl_admin.sh`) accepts `--study` at launch time; the study applies to `submit_job` and `list_jobs` commands.
+7. Admin console (`fl_admin.sh`) accepts `--study` at launch time; the study is established when the admin session logs in and then inherited by `submit_job` and `list_jobs`.
 8. No changes to authorization, job store paths, `project.yml` schema, scheduler, or provisioning.
 
 ---
@@ -67,7 +67,7 @@ jobs = sess.list_jobs()        # only jobs in cancer-research
 sess.submit_job("./my_job")   # tagged to cancer-research
 ```
 
-The study is session-scoped, not a per-command filter.
+The study is session-scoped, not a per-command filter. For HCI/admin sessions, the study is sent during login, stored in the authenticated server session, and preserved in the session token so later commands inherit the same active study.
 
 ### Admin Console
 
@@ -90,13 +90,17 @@ If `--study` is omitted, the admin terminal uses `default`.
 
 The study value is syntactically validated at the API layer (client-side) and again on the server before persistence. The regex pattern is `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` — lowercase alphanumeric with hyphens, 1–63 characters.
 
+### Session Transport
+
+For `flare_api.Session` and the admin terminal, `study` is not passed on each command. It is established at session creation/login time, stored on the server-side authenticated session, and carried in the signed session token so recreated sessions keep the same active study.
+
 ### Legacy Jobs
 
 Jobs created before Phase 1 have no `study` field. `get_job_meta_study()` returns `"default"` for these jobs, so they appear in the `default` study transparently.
 
 ### Default Study Constant
 
-`DEFAULT_JOB_STUDY = "default"` in `nvflare.apis.job_def` — single source of truth for the default value.
+`DEFAULT_STUDY = "default"` in `nvflare.apis.job_def` — single source of truth for the default value.
 
 ---
 

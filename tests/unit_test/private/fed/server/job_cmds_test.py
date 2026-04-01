@@ -91,25 +91,6 @@ class _MockTable:
         self.rows.append((row, meta))
 
 
-class TestStudyCmdProps:
-    @pytest.mark.parametrize(
-        "cmd_props, expected_study",
-        [
-            (None, None),
-            ("not-a-dict", None),
-            ({}, None),
-            ({"study": ""}, ""),
-            ({"study": "cancer-research"}, "cancer-research"),
-            ({"study": "default"}, "default"),
-        ],
-    )
-    def test_get_requested_study(self, cmd_props, expected_study):
-        conn = _MockConnection(cmd_props=cmd_props)
-
-        assert JobCommandModule._get_requested_study(conn) == expected_study
-        assert conn.errors == []
-
-
 class _FakeJobMetaValidator:
     def validate(self, folder_name, zip_file_name):
         assert folder_name == "job_folder"
@@ -188,7 +169,7 @@ def test_submit_job_exposes_study_in_submit_event(monkeypatch):
         app_ctx=engine,
         props={
             ConnProps.FILE_LOCATION: "job.zip",
-            ConnProps.CMD_PROPS: {"study": "cancer-research"},
+            ConnProps.ACTIVE_STUDY: "cancer-research",
             ConnProps.USER_NAME: "submitter",
             ConnProps.USER_ORG: "org",
             ConnProps.USER_ROLE: "role",
@@ -242,7 +223,7 @@ def test_clone_job_preserves_source_study(monkeypatch):
         props={
             JobCommandModule.JOB: source_job,
             JobCommandModule.JOB_ID: "source-job",
-            ConnProps.CMD_PROPS: {"study": "multiple-sclerosis"},
+            ConnProps.ACTIVE_STUDY: "multiple-sclerosis",
             ConnProps.USER_NAME: "submitter",
             ConnProps.USER_ORG: "org",
             ConnProps.USER_ROLE: "role",
@@ -267,7 +248,7 @@ def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):
             }
         ),
     ]
-    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), cmd_props={"study": "default"})
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
 
     JobCommandModule().list_jobs(conn, ["list_jobs"])
 
@@ -278,38 +259,28 @@ def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):
     assert conn.tables[0].rows[0][1][MetaKey.JOB_ID] == "legacy-job"
 
 
-def test_list_jobs_rejects_invalid_study(monkeypatch):
+def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    conn = _MockConnection(app_ctx=_FakeListEngine([]), cmd_props={"study": "Bad Study"})
+    jobs = [
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "legacy-job", JobMetaKey.JOB_NAME.value: "legacy"}),
+        _FakeListedJob(
+            {
+                JobMetaKey.JOB_ID.value: "study-job",
+                JobMetaKey.JOB_NAME.value: "study",
+                JobMetaKey.STUDY.value: "cancer-research",
+            }
+        ),
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs))
 
     JobCommandModule().list_jobs(conn, ["list_jobs"])
 
     assert conn.errors == []
-    assert len(conn.strings) == 1
-    assert conn.strings[0][0] == "No jobs found."
-
-
-def test_submit_job_rejects_invalid_study_when_persisting(monkeypatch):
-    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidator)
-    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-
-    engine = _FakeEngine()
-    conn = _MockConnection(
-        app_ctx=engine,
-        props={
-            ConnProps.FILE_LOCATION: "job.zip",
-            ConnProps.CMD_PROPS: {"study": "Bad Study"},
-            ConnProps.USER_NAME: "submitter",
-            ConnProps.USER_ORG: "org",
-            ConnProps.USER_ROLE: "role",
-        },
-    )
-
-    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
-
-    assert len(conn.errors) == 1
-    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_DEFINITION
-    assert conn.successes == []
+    assert conn.strings == []
+    assert len(conn.tables) == 1
+    assert len(conn.tables[0].rows) == 1
+    assert conn.tables[0].rows[0][1][JobMetaKey.STUDY.value] == "default"
+    assert len(conn.successes) == 1
 
 
 def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):

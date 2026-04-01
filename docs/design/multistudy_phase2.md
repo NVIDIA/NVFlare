@@ -157,7 +157,7 @@ Two layers, evaluated in order for every command:
 1. **Study filter** (new): Does the target resource (job, client) belong to the user's active study? If no → invisible.
 2. **RBAC policy** (existing, unchanged): Construct `Person` with the resolved per-study role, evaluate `authorization.json` as today.
 
-The session's active study (set at session start via `--study` or the `study` API parameter) determines which study filter applies.
+The session's active study (set at session start via `--study` or the `study` API parameter) determines which study filter applies. The study is carried by the authenticated server session and preserved in the session token, so subsequent commands do not need to resend it.
 
 ---
 
@@ -205,4 +205,3 @@ The Docker launcher reads `study` from job metadata and mounts the corresponding
 | D4 | Per-study quotas? | **Deferred.** Rely on K8s-level resource controls. |
 | D5 | How do launchers know which volume to mount? | Job metadata carries the study; the launcher resolves the volume from that. |
 | D6 | What does the participant `role` mean when `studies:` exists? | It is baked into the cert and serves as the effective role for the `default` study. Per-study mappings override it for non-default studies. |
-

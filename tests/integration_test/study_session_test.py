@@ -25,7 +25,7 @@ from contextlib import contextmanager, suppress
 
 import pytest
 
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
@@ -178,11 +178,11 @@ class TestStudySessionIntegration:
         job_id = response["details"]["job_id"]
 
         meta = _wait_for_job_meta(admin_api, job_id)
-        assert meta[JobMetaKey.STUDY.value] == DEFAULT_JOB_STUDY
+        assert meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
         jobs = admin_api.list_jobs()["details"]
         listed_job = _find_job(jobs, job_id)
-        assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_JOB_STUDY
+        assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
     def test_legacy_job_without_study_is_normalized_to_default(self, running_poc_system):
         admin_api = running_poc_system["old_admin_api"]
@@ -195,11 +195,11 @@ class TestStudySessionIntegration:
         _remove_study_from_persisted_job_meta(running_poc_system["workspace_root"], job_id)
 
         normalized_meta = _wait_for_job_meta(admin_api, job_id)
-        assert normalized_meta[JobMetaKey.STUDY.value] == DEFAULT_JOB_STUDY
+        assert normalized_meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
         jobs = admin_api.list_jobs()["details"]
         listed_job = _find_job(jobs, job_id)
-        assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_JOB_STUDY
+        assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
     def test_session_scopes_list_jobs_and_clone_preserves_source_study(self, running_poc_system):
         admin_root = running_poc_system["admin_root"]

@@ -14,6 +14,8 @@
 import traceback
 from typing import List
 
+from nvflare.apis.job_def import DEFAULT_STUDY
+from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
@@ -75,6 +77,7 @@ class LoginModule(CommandModule, CommandFilter):
         headers = conn.get_prop(ConnProps.CMD_HEADERS)
         cert_data = headers.get("cert")
         signature = headers.get("signature")
+        study = headers.get("study", DEFAULT_STUDY)
 
         self.logger.debug(f"got cert login headers: {headers=}")
         hci = conn.get_prop(ConnProps.HCI_SERVER)
@@ -99,6 +102,15 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
+        if not isinstance(study, str):
+            conn.append_string("REJECT")
+            return
+
+        invalid, _ = name_check(study, "study")
+        if invalid:
+            conn.append_string("REJECT")
+            return
+
         cert_dict = cert_to_dict(cert)
         self.logger.debug(f"got cert dict: {cert_dict}")
         identity = get_identity_info(cert_dict)
@@ -112,6 +124,7 @@ class LoginModule(CommandModule, CommandFilter):
             user_org=identity.get(IdentityKey.ORG, ""),
             user_role=identity.get(IdentityKey.ROLE, ""),
             origin_fqcn=origin,
+            active_study=study,
         )
         token = session.make_token(id_asserter)
         self.logger.info(f"Created user session for {user_name}")
@@ -165,6 +178,7 @@ class LoginModule(CommandModule, CommandFilter):
         conn.set_prop(ConnProps.USER_NAME, sess.user_name)
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
         conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
+        conn.set_prop(ConnProps.ACTIVE_STUDY, sess.active_study)
         conn.set_prop(ConnProps.TOKEN, token)
         return True
 

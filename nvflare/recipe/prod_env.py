@@ -18,7 +18,7 @@ from typing import Optional
 
 from pydantic import BaseModel, PositiveFloat, model_validator
 
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.utils.format_check import name_check
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
@@ -36,7 +36,7 @@ class _ProdEnvValidator(BaseModel):
     startup_kit_location: str
     login_timeout: PositiveFloat = 5.0
     username: str = DEFAULT_ADMIN_USER
-    study: str = DEFAULT_JOB_STUDY
+    study: str = DEFAULT_STUDY
 
     @model_validator(mode="after")
     def check_startup_kit_location_exists(self) -> "_ProdEnvValidator":
@@ -55,7 +55,7 @@ class ProdEnv(ExecEnv):
         startup_kit_location: str,
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
-        study: str = DEFAULT_JOB_STUDY,
+        study: str = DEFAULT_STUDY,
         extra: Optional[dict] = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.

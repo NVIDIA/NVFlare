@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.proto import MetaKey
@@ -30,7 +30,7 @@ def _make_session_for_study(study):
     return session
 
 
-def test_submit_job_sends_study_cmd_props():
+def test_submit_job_relies_on_session_study():
     session = _make_session_for_study("cancer-research")
     captured = {}
 
@@ -42,7 +42,7 @@ def test_submit_job_sends_study_cmd_props():
     with patch("os.path.isdir", return_value=True):
         session.submit_job("/tmp/job")
 
-    assert captured["props"] == {"study": "cancer-research"}
+    assert captured["props"] is None
 
 
 def test_clone_job_does_not_send_study_cmd_props():
@@ -59,8 +59,8 @@ def test_clone_job_does_not_send_study_cmd_props():
     assert captured["props"] is None
 
 
-def test_submit_job_sends_default_study_cmd_props():
-    session = _make_session_for_study(DEFAULT_JOB_STUDY)
+def test_submit_job_with_default_study_uses_session_context_only():
+    session = _make_session_for_study(DEFAULT_STUDY)
     captured = {}
 
     def _fake_do_command(command, enforce_meta=True, props=None):
@@ -71,11 +71,11 @@ def test_submit_job_sends_default_study_cmd_props():
     with patch("os.path.isdir", return_value=True):
         session.submit_job("/tmp/job")
 
-    assert captured["props"] == {"study": DEFAULT_JOB_STUDY}
+    assert captured["props"] is None
 
 
-def test_list_jobs_sends_default_study_cmd_props():
-    session = _make_session_for_study(DEFAULT_JOB_STUDY)
+def test_list_jobs_relies_on_session_study():
+    session = _make_session_for_study(DEFAULT_STUDY)
     captured = {}
 
     def _fake_do_command(command, enforce_meta=True, props=None):
@@ -85,7 +85,7 @@ def test_list_jobs_sends_default_study_cmd_props():
     session._do_command = _fake_do_command
     session.list_jobs()
 
-    assert captured["props"] == {"study": DEFAULT_JOB_STUDY}
+    assert captured["props"] is None
 
 
 def test_session_rejects_none_study():
@@ -102,6 +102,27 @@ def test_session_rejects_none_study():
         Session("admin@nvidia.com", "/tmp/kit", study=None)
 
 
+def test_session_passes_study_to_admin_api():
+    fake_conf = SimpleNamespace(
+        get_admin_config=lambda: {"upload_dir": "/tmp", "download_dir": "/tmp"},
+        handlers=[],
+    )
+    captured = {}
+
+    class _FakeAdminAPI:
+        def __init__(self, **kwargs):
+            captured["study"] = kwargs["study"]
+
+    with (
+        patch("os.path.isdir", return_value=True),
+        patch("nvflare.fuel.flare_api.flare_api.secure_load_admin_config", return_value=fake_conf),
+        patch("nvflare.fuel.flare_api.flare_api.AdminAPI", _FakeAdminAPI),
+    ):
+        Session("admin@nvidia.com", "/tmp/kit", study="cancer-research")
+
+    assert captured["study"] == "cancer-research"
+
+
 def test_new_secure_session_forwards_study():
     with patch("nvflare.fuel.flare_api.flare_api.new_session") as mock_new_session:
         new_secure_session("admin@nvidia.com", "/tmp/kit", study="cancer-research")
@@ -113,4 +134,4 @@ def test_new_secure_session_defaults_study():
     with patch("nvflare.fuel.flare_api.flare_api.new_session") as mock_new_session:
         new_secure_session("admin@nvidia.com", "/tmp/kit")
         _, kwargs = mock_new_session.call_args
-        assert kwargs["study"] == DEFAULT_JOB_STUDY
+        assert kwargs["study"] == DEFAULT_STUDY

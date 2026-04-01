@@ -17,9 +17,10 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY
+from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.client.api import CommandInfo
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.cli import AdminClient
 from nvflare.fuel.hci.tools import admin
@@ -58,23 +59,23 @@ def _make_admin_client_for_study(study):
     return client, captured
 
 
-def test_submit_job_sends_session_study_cmd_props():
+def test_submit_job_relies_on_session_study():
     client, captured = _make_admin_client_for_study("cancer-research")
 
     client._do_default("submit_job hello")
 
-    assert captured["props"] == {"study": "cancer-research"}
+    assert captured["props"] is None
 
 
-def test_list_jobs_sends_default_session_study_cmd_props():
-    client, captured = _make_admin_client_for_study(DEFAULT_JOB_STUDY)
+def test_list_jobs_relies_on_session_study():
+    client, captured = _make_admin_client_for_study(DEFAULT_STUDY)
 
     client._do_default("list_jobs")
 
-    assert captured["props"] == {"study": DEFAULT_JOB_STUDY}
+    assert captured["props"] is None
 
 
-def test_list_jobs_merges_existing_cmd_props():
+def test_list_jobs_preserves_existing_cmd_props():
     client, captured = _make_admin_client_for_study("cancer-research")
 
     with patch(
@@ -83,7 +84,7 @@ def test_list_jobs_merges_existing_cmd_props():
     ):
         client._do_default("list_jobs")
 
-    assert captured["props"] == {"foo": "bar", "study": "cancer-research"}
+    assert captured["props"] == {"foo": "bar"}
 
 
 def test_clone_job_does_not_send_session_study_cmd_props():
@@ -132,3 +133,29 @@ def test_admin_main_exits_non_zero_for_invalid_study():
         admin.main()
 
     assert exc_info.value.code == 1
+
+
+def test_admin_client_passes_study_to_admin_api(tmp_path):
+    captured = {}
+    admin_config = {
+        AdminConfigKey.CONNECTION_SECURITY: ConnectionSecurity.MTLS,
+        AdminConfigKey.CA_CERT: "ca.crt",
+        AdminConfigKey.CLIENT_CERT: "client.crt",
+        AdminConfigKey.CLIENT_KEY: "client.key",
+        AdminConfigKey.UID_SOURCE: UidSource.CERT,
+    }
+
+    class _FakeAdminAPI:
+        def __init__(self, **kwargs):
+            captured["study"] = kwargs["study"]
+
+    with patch("nvflare.fuel.hci.client.cli.AdminAPI", _FakeAdminAPI):
+        AdminClient(
+            admin_config=admin_config,
+            username="admin@nvidia.com",
+            handlers=[],
+            cli_history_dir=str(tmp_path),
+            study="cancer-research",
+        )
+
+    assert captured["study"] == "cancer-research"

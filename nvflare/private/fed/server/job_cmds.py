@@ -21,11 +21,10 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY, Job, JobMetaKey, get_job_meta_study, is_valid_job_id
+from nvflare.apis.job_def import DEFAULT_STUDY, Job, JobMetaKey, get_job_meta_study, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
-from nvflare.apis.utils.format_check import name_check
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -57,8 +56,6 @@ CLONED_META_KEYS = {
     JobMetaKey.STUDY.value,
 }
 
-STUDY_CMD_PROP_KEY = JobMetaKey.STUDY.value
-
 
 def _create_list_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
@@ -81,15 +78,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def __init__(self):
         super().__init__()
         self.logger = get_obj_logger(self)
-
-    @staticmethod
-    def _get_requested_study(conn: Connection):
-        """Return the study carried in command props by the client session, if any."""
-        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
-        if not isinstance(cmd_props, dict):
-            return None
-
-        return cmd_props.get(STUDY_CMD_PROP_KEY)
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -330,7 +318,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         try:
             parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
-            requested_study = self._get_requested_study(conn)
+            requested_study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
 
             engine = conn.app_ctx
             job_def_manager = engine.job_def_manager
@@ -536,9 +524,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
 
     @staticmethod
-    def _job_match(
-        job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str = None
-    ) -> bool:
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str, requested_study: str) -> bool:
         return (
             ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
             and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
@@ -610,25 +596,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                     )
 
-                requested_study = self._get_requested_study(conn)
-                if requested_study is None:
-                    # Older/raw admin command paths do not send a study prop, so
-                    # keep single-tenant behavior by defaulting to the default study.
-                    requested_study = DEFAULT_JOB_STUDY
-                else:
-                    if not isinstance(requested_study, str):
-                        error = f"study must be str but got {type(requested_study)}"
-                    else:
-                        invalid, reason = name_check(requested_study, "study")
-                        if not invalid:
-                            error = None
-                        else:
-                            error = reason
-
-                    if error:
-                        conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
-                        return
-                meta[JobMetaKey.STUDY.value] = requested_study
+                meta[JobMetaKey.STUDY.value] = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
 
                 fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
                 engine.fire_event(EventType.SUBMIT_JOB, fl_ctx)

@@ -18,7 +18,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import DEFAULT_JOB_STUDY, JobMetaKey
+from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
@@ -70,7 +70,7 @@ class Session(SessionSpec):
         startup_path: str,
         secure_mode: bool = True,
         debug: bool = False,
-        study: str = DEFAULT_JOB_STUDY,
+        study: str = DEFAULT_STUDY,
     ):
         """Initializes a session with the NVFLARE system.
 
@@ -107,6 +107,7 @@ class Session(SessionSpec):
             user_name=username,
             debug=debug,
             event_handlers=conf.handlers,
+            study=study,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
@@ -209,9 +210,6 @@ class Session(SessionSpec):
         if not isinstance(job_id, str):
             raise JobNotFound(f"invalid job_id {job_id}")
 
-    def _get_active_study(self) -> str:
-        return getattr(self, "_study", DEFAULT_JOB_STUDY)
-
     def clone_job(self, job_id: str) -> str:
         """Create a new job by cloning a specified job.
 
@@ -260,10 +258,7 @@ class Session(SessionSpec):
                 f"job folder name '{job_folder_name}' contains unsupported characters. "
                 "Use only letters, numbers, dots, underscores, and hyphens, with no spaces."
             )
-        result = self._do_command(
-            AdminCommandNames.SUBMIT_JOB + " " + job_definition_path,
-            props={JobMetaKey.STUDY.value: self._get_active_study()},
-        )
+        result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)
         if not job_id:
@@ -337,7 +332,7 @@ class Session(SessionSpec):
                 raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
             else:
                 command = command + " " + id_prefix
-        result = self._do_command(command, props={JobMetaKey.STUDY.value: self._get_active_study()})
+        result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
@@ -957,7 +952,7 @@ def new_session(
     secure_mode: bool = True,
     debug: bool = False,
     timeout: float = 10.0,
-    study: str = DEFAULT_JOB_STUDY,
+    study: str = DEFAULT_STUDY,
 ) -> Session:
     session = Session(
         username=username,
@@ -975,7 +970,7 @@ def new_secure_session(
     startup_kit_location: str,
     debug: bool = False,
     timeout: float = 10.0,
-    study: str = DEFAULT_JOB_STUDY,
+    study: str = DEFAULT_STUDY,
 ) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
@@ -996,7 +991,7 @@ def new_insecure_session(
     startup_kit_location: str,
     debug: bool = False,
     timeout: float = 10.0,
-    study: str = DEFAULT_JOB_STUDY,
+    study: str = DEFAULT_STUDY,
 ) -> Session:
     """Create a new insecure FLARE API session with the NVFLARE system.
 

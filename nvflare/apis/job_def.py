@@ -21,7 +21,7 @@ from nvflare.apis.fl_context import FLContext
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
 SERVER_SITE_NAME = "server"
-DEFAULT_JOB_STUDY = "default"
+DEFAULT_STUDY = "default"
 
 
 class RunStatus(str, Enum):
@@ -218,11 +218,11 @@ def is_valid_job_id(jid: str) -> bool:
 
 def get_job_meta_study(meta: dict) -> str:
     if not isinstance(meta, dict):
-        return DEFAULT_JOB_STUDY
+        return DEFAULT_STUDY
     study = meta.get(JobMetaKey.STUDY.value)
     if isinstance(study, str) and study:
         return study
-    return DEFAULT_JOB_STUDY
+    return DEFAULT_STUDY
 
 
 def get_custom_prop(meta: dict, prop_key: str, default=None):

@@ -14,6 +14,7 @@
 
 from types import SimpleNamespace
 
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_spec import CommandContext
 
@@ -40,3 +41,73 @@ def test_do_client_command_preserves_command_props():
 
     assert result == {"status": "ok"}
     assert captured["props"] == {"study": "study-a"}
+
+
+def test_user_login_sends_study_header(monkeypatch):
+    api = AdminAPI.__new__(AdminAPI)
+    api.client_key = "client.key"
+    api.client_cert = "client.crt"
+    api.user_name = "admin@nvidia.com"
+    api.study = "cancer-research"
+    api.login_result = None
+    captured = {}
+
+    class _FakeIdentityAsserter:
+        cert_data = "cert-data"
+
+        def __init__(self, private_key_file, cert_file):
+            assert private_key_file == "client.key"
+            assert cert_file == "client.crt"
+
+        @staticmethod
+        def sign_common_name(nonce=""):
+            return "signature"
+
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", _FakeIdentityAsserter)
+
+    def _fake_server_execute(command, reply_processor, headers=None):
+        captured["command"] = command
+        captured["headers"] = headers
+        api.login_result = "OK"
+
+    api.server_execute = _fake_server_execute
+    api._after_login = lambda: {"status": "ok"}
+
+    result = api._user_login()
+
+    assert result == {"status": "ok"}
+    assert captured["command"] == "_cert_login admin@nvidia.com"
+    assert captured["headers"]["study"] == "cancer-research"
+
+
+def test_user_login_defaults_study_header(monkeypatch):
+    api = AdminAPI.__new__(AdminAPI)
+    api.client_key = "client.key"
+    api.client_cert = "client.crt"
+    api.user_name = "admin@nvidia.com"
+    api.study = DEFAULT_STUDY
+    api.login_result = None
+    captured = {}
+
+    class _FakeIdentityAsserter:
+        cert_data = "cert-data"
+
+        def __init__(self, private_key_file, cert_file):
+            pass
+
+        @staticmethod
+        def sign_common_name(nonce=""):
+            return "signature"
+
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", _FakeIdentityAsserter)
+
+    def _fake_server_execute(command, reply_processor, headers=None):
+        captured["headers"] = headers
+        api.login_result = "OK"
+
+    api.server_execute = _fake_server_execute
+    api._after_login = lambda: {"status": "ok"}
+
+    api._user_login()
+
+    assert captured["headers"]["study"] == DEFAULT_STUDY
