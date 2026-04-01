@@ -133,7 +133,9 @@ def main() -> None:
         cur_round = getattr(input_model, "current_round", None) or 0
 
         if input_model and getattr(input_model, "params", None):
-            load_trainable_params(model, input_model.params, device)
+            # Strip "model." prefix added by BLIPLoRAModel wrapper on the server side.
+            params = {k.removeprefix("model."): v for k, v in input_model.params.items()}
+            load_trainable_params(model, params, device)
 
         # -- validate --
         if flare.is_evaluate():
@@ -174,7 +176,7 @@ def main() -> None:
 
         flare.send(
             flare.FLModel(
-                params=get_trainable_params(model),
+                params={"model." + k: v for k, v in get_trainable_params(model).items()},
                 metrics={
                     "train_loss": float(loss),
                     "local_acc": float(acc),
