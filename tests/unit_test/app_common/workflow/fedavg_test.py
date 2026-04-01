@@ -835,6 +835,39 @@ class TestFedAvgWorkflowEvents:
             controller._process_result(client_task, fl_ctx)
 
         assert fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 3
+        detail = fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+        assert detail["private"] is True
+        assert detail["sticky"] is True
+
+    def test_process_result_preserves_non_sticky_current_round_on_fl_ctx(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+
+        task_data = Shareable()
+        task_data.set_header(AppConstants.CURRENT_ROUND, 3)
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        result.set_header(AppConstants.CURRENT_ROUND, 3)
+
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=task_data,
+            props={AppConstants.META_DATA: {}},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+
+        with (
+            patch.object(controller, "event"),
+            patch.object(fl_ctx.logger, "warning") as mock_warning,
+        ):
+            controller._process_result(client_task, fl_ctx)
+
+        assert fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == 3
+        detail = fl_ctx.get_prop_detail(AppConstants.CURRENT_ROUND)
+        assert detail["private"] is True
+        assert detail["sticky"] is False
+        mock_warning.assert_not_called()
 
     def test_broadcast_model_does_not_fire_round_started(self):
         controller = FedAvg(num_clients=1)
