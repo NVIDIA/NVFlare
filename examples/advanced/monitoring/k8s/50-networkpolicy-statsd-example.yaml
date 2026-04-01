@@ -1,0 +1,22 @@
+# Optional example NetworkPolicy. Adjust the namespace labels to match your cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: statsd-exporter-from-nvflare
+  namespace: nvflare-monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: statsd-exporter
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              nvflare.io/metrics-client: "true"
+      ports:
+        - protocol: UDP
+          port: 9125
+        - protocol: TCP
+          port: 9125

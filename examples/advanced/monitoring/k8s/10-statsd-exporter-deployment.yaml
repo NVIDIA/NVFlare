@@ -1,0 +1,42 @@
+# statsd-exporter: receives DogStatsd or StatsD from NVFLARE on UDP or TCP 9125
+# and exposes Prometheus metrics on TCP 9102.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: statsd-exporter
+  namespace: nvflare-monitoring
+  labels:
+    app: statsd-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: statsd-exporter
+  template:
+    metadata:
+      labels:
+        app: statsd-exporter
+    spec:
+      containers:
+        - name: statsd-exporter
+          image: prom/statsd-exporter:v0.29.0
+          args:
+            - --statsd.listen-udp=:9125
+            - --statsd.listen-tcp=:9125
+            - --web.listen-address=:9102
+          ports:
+            - name: statsd-udp
+              containerPort: 9125
+              protocol: UDP
+            - name: statsd-tcp
+              containerPort: 9125
+              protocol: TCP
+            - name: metrics
+              containerPort: 9102
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 10

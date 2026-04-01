@@ -1,6 +1,6 @@
 # FLARE Monitoring
 FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs.
-Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics. 
+Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics.
 
 This guide will walk you through the steps to set up and use the monitoring system effectively.
 Please see [hello-pytorch](../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
@@ -27,7 +27,9 @@ Run the script:
 
 In this example, we simulate the real setup on the local host. To keep the example simple, we will only set up 1 and 2. You can easily follow the steps to work out step 3.
 
-In steps 1 and 2, we only need one monitoring system. Assuming you already have Docker and Docker Compose installed, you can use the provided [`docker-compose.yml`](../setup/docker-compose.yml) file to set up StatsD Exporter, Prometheus, and Grafana.
+In steps 1 and 2, we only need one monitoring system. Assuming you already have Docker and Docker Compose installed, use the provided [setup/docker-compose.yml](../setup/docker-compose.yml) file to start StatsD Exporter, Prometheus, and Grafana.
+
+The tracked Compose example now binds ports to `127.0.0.1`, reads the Grafana password from `setup/.env`, and pins image tags.
 
 ### Steps:
 
@@ -36,7 +38,13 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
     cd setup
     ```
 
-2. Start the services using Docker Compose:
+2. Create the Grafana environment file:
+    ```bash
+    cp .env.example .env
+    # edit .env and set GRAFANA_ADMIN_PASSWORD
+    ```
+
+3. Start the services using Docker Compose:
     ```bash
     docker compose up -d
     ```
@@ -49,16 +57,20 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
     Creating grafana         ... done
     ```
 
-3. To stop the services, run:
+4. To stop the services, run:
     ```bash
     docker compose down
     ```
 
-**Note:** The StatsD Exporter port is 9125 (not 8125).
+**Notes:**
+
+- The StatsD Exporter port is `9125` and not `8125`.
+- The default local URLs are `http://127.0.0.1:3000`, `http://127.0.0.1:9090`, and `http://127.0.0.1:9102/metrics`.
+- For a Kubernetes deployment of the same monitoring stack, see [../k8s/README.md](../k8s/README.md).
 
 
 ## Prepare FLARE Metrics Monitoring Configuration
- 
+
 ### Prepare Configuration for Setup 1: All Sites Share the Same Monitoring System
 
 ![setup-1](../figures/setup-1.png)
@@ -74,7 +86,7 @@ Instead of manually configuring the metrics monitoring, we can directly use the 
 This is done by adding additional components on top of the existing code:
 
 ```python
-    
+
     job_name = "hello-pt"
 
     # Model can be class instance or dict config
@@ -126,7 +138,7 @@ Now we are ready to start the FLARE FL system.
     This will prepare 1 server and 2 clients ("site-1", "site-2") and one admin console client (admin@nvidia.com). You can examine the output directory: ```/tmp/nvflare/poc/example_project/prod_00```.
 
     Then run the script to modify the generated poc startup kits.
-    
+
     ```bash
     ./prepare_local_config.sh
     ```
@@ -162,11 +174,11 @@ nvflare job submit -j /tmp/nvflare/jobs/job_config/hello-pt
 ## Monitoring View
 
 Once you setup the system, you can view from the following website
-for statsd-exporter, you can look at 
+for statsd-exporter, you can look at
 
 ### Statsd-exporter metrics view
 
-metrics page: "http://localhost:9102/metrics" 
+metrics page: "http://localhost:9102/metrics"
 
 for the metrics published to statsd-export, which can be scraped by prometheus.
 Here is a screenshot
@@ -182,7 +194,7 @@ metrics page: "http://localhost:9090/metrics"
 
 ### Grafana Dashboard views
 
-We can visualize them better via Grafana. 
+We can visualize them better via Grafana.
 
 Visualization: http://localhost:3000
 
@@ -256,9 +268,8 @@ The detailed configurations can be found [here](./setup-2/local_config). We need
 ```bash
 cd setup-2
 ```
- 
+
 ### Complete with rest of the steps
   * start the POC and ./prepare_local_config.sh
   * submit job
   * review the metrics and visualization
-
