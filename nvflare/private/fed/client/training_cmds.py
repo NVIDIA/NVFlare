@@ -19,6 +19,7 @@ from typing import List
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
@@ -107,7 +108,7 @@ class DeployProcessor(RequestProcessor):
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
             app_path = workspace.get_app_dir(job_id)
             root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-            sig_file = os.path.join(app_path, "__nvfl_sig.json")
+            sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
             if os.path.exists(sig_file):
                 if not verify_folder_signature(app_path, root_ca_path):
                     return error_reply(f"app {app_name} does not pass signature verification")

@@ -154,8 +154,8 @@ def _run_process(req, engine, app_dir):
 
 class TestSignedValid:
     def test_signed_valid_returns_ok(self, tmp_path):
-        """__nvfl_sig.json present + verify_folder_signature returns True → ok_reply."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        """.__nvfl_sig.json present + verify_folder_signature returns True → ok_reply."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "valid"}')
 
         req = _make_request()
@@ -170,7 +170,7 @@ class TestSignedValid:
 
     def test_signed_valid_calls_deploy_app(self, tmp_path):
         """Valid signature → engine.deploy_app is invoked."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "valid"}')
 
         req = _make_request()
@@ -189,8 +189,8 @@ class TestSignedValid:
 
 class TestSignedInvalid:
     def test_tampered_sig_returns_error(self, tmp_path):
-        """__nvfl_sig.json present + verify_folder_signature returns False → error_reply."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        """.__nvfl_sig.json present + verify_folder_signature returns False → error_reply."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "tampered"}')
 
         req = _make_request(app_name="my-app")
@@ -203,7 +203,7 @@ class TestSignedInvalid:
 
     def test_tampered_sig_does_not_call_deploy_app(self, tmp_path):
         """When sig is invalid, engine.deploy_app must NOT be called."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "bad"}')
 
         req = _make_request()
@@ -222,7 +222,7 @@ class TestSignedInvalid:
 
 class TestUnsignedJob:
     def test_unsigned_job_succeeds(self, tmp_path):
-        """No __nvfl_sig.json → client does not enforce require_signed_jobs → ok_reply."""
+        """No .__nvfl_sig.json → client does not enforce require_signed_jobs → ok_reply."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
@@ -231,7 +231,7 @@ class TestUnsignedJob:
         assert "deployed" in reply.body
 
     def test_unsigned_job_calls_deploy_app(self, tmp_path):
-        """No __nvfl_sig.json → engine.deploy_app is called (client proceeds normally)."""
+        """No .__nvfl_sig.json → engine.deploy_app is called (client proceeds normally)."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
@@ -240,7 +240,7 @@ class TestUnsignedJob:
         assert len(engine._deploy_calls) == 1
 
     def test_verify_folder_signature_not_called_for_unsigned(self, tmp_path):
-        """No __nvfl_sig.json → verify_folder_signature must not be called."""
+        """No .__nvfl_sig.json → verify_folder_signature must not be called."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
@@ -265,7 +265,7 @@ class TestFromHubSite:
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
         # Even if a sig file exists, it should not be checked
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "doesnotmatter"}')
 
         with patch(

@@ -116,8 +116,8 @@ def _run_deploy_with_workspace(runner, job, fl_ctx, workspace_mock):
 
 class TestSignedJobValid:
     def test_signed_valid_job_succeeds(self, tmp_path):
-        """__nvfl_sig.json present + verify_folder_signature returns True → deploy succeeds."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        """.__nvfl_sig.json present + verify_folder_signature returns True → deploy succeeds."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "abc"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -138,8 +138,8 @@ class TestSignedJobValid:
 
 class TestSignedJobNoRootCA:
     def test_signed_job_no_root_ca_fails(self, tmp_path):
-        """__nvfl_sig.json present but verify_folder_signature returns False (missing rootCA) → RuntimeError."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        """.__nvfl_sig.json present but verify_folder_signature returns False (missing rootCA) → RuntimeError."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "abc"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -158,7 +158,7 @@ class TestSignedJobNoRootCA:
 
 class TestUnsignedJobPolicyOn:
     def test_unsigned_job_policy_on_raises(self, tmp_path):
-        """No __nvfl_sig.json, rootCA.pem present → require_signed_jobs inferred True → UNSIGNED_JOB_REJECTED."""
+        """No .__nvfl_sig.json, rootCA.pem present → require_signed_jobs inferred True → UNSIGNED_JOB_REJECTED."""
         # Create rootCA.pem in startup dir so _require_signed_jobs returns True
         root_ca = tmp_path / "rootCA.pem"
         root_ca.write_text("FAKECERT")
@@ -199,7 +199,7 @@ class TestUnsignedJobPolicyOn:
 
 class TestUnsignedJobPolicyOff:
     def test_unsigned_job_policy_off_explicit_succeeds(self, tmp_path):
-        """No __nvfl_sig.json, fed_server.json has require_signed_jobs=false → deploy succeeds."""
+        """No .__nvfl_sig.json, fed_server.json has require_signed_jobs=false → deploy succeeds."""
         import json
 
         fed_server = tmp_path / "fed_server.json"
@@ -222,7 +222,7 @@ class TestUnsignedJobPolicyOff:
 
 class TestUnsignedJobSimulator:
     def test_unsigned_job_no_root_ca_no_config_succeeds(self, tmp_path):
-        """No __nvfl_sig.json, no rootCA.pem, no config → policy inferred False → deploy succeeds."""
+        """No .__nvfl_sig.json, no rootCA.pem, no config → policy inferred False → deploy succeeds."""
         # tmp_path has neither rootCA.pem nor fed_server.json
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -242,8 +242,8 @@ class TestUnsignedJobSimulator:
 
 class TestTamperedSignature:
     def test_tampered_signature_raises(self, tmp_path):
-        """__nvfl_sig.json present but content does not match files → verify_folder_signature False → RuntimeError."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        """.__nvfl_sig.json present but content does not match files → verify_folder_signature False → RuntimeError."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "tampered"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -256,7 +256,7 @@ class TestTamperedSignature:
 
     def test_tampered_error_message_correct(self, tmp_path):
         """Error message must say 'signature verification failed', not 'UNSIGNED_JOB_REJECTED'."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "tampered"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -278,7 +278,7 @@ class TestTamperedSignature:
 
 class TestFromHubSiteBypass:
     def test_from_hub_site_skips_verification_no_sig(self, tmp_path):
-        """from_hub_site=True, no __nvfl_sig.json → verification block skipped → deploy succeeds."""
+        """from_hub_site=True, no .__nvfl_sig.json → verification block skipped → deploy succeeds."""
         job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-site-1"}
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -291,7 +291,7 @@ class TestFromHubSiteBypass:
 
     def test_from_hub_site_skips_verification_even_with_tampered_sig(self, tmp_path):
         """from_hub_site=True with an invalid sig → hub is trusted, block is skipped → deploy succeeds."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "tampered"}')
         job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-site-1"}
 
@@ -317,7 +317,7 @@ class TestFromHubSiteBypass:
 class TestSecurityRegression:
     def test_bad_sig_not_silently_accepted(self, tmp_path):
         """Regression: ensure a bad signature never silently passes."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "bad"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
@@ -330,7 +330,7 @@ class TestSecurityRegression:
 
     def test_good_sig_not_rejected(self, tmp_path):
         """Regression: a valid signature must not be rejected."""
-        sig_file = tmp_path / "__nvfl_sig.json"
+        sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "valid"}')
 
         runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
