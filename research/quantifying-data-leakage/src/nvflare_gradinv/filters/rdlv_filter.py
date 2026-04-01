@@ -38,6 +38,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
 
+from ..utils.rdlv_io import save_rdlv_results
 from .gradinv import Inverter
 from .image_sim import SimMetric
 
@@ -79,7 +80,7 @@ class RelativeDataLeakageValueFilter(DXOFilter):
 
         Returns:
             Filtered DXO data. Empty DXO if any of the RDLV values is above `rdlv_threshold`.
-            The computed RDLV values and hyperparameters will be saved as NumPy-file (*.npy) in the app_root.
+            The computed RDLV values and hyperparameters will be saved as a NumPy archive (*.npz) in the app_root.
         """
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
@@ -227,7 +228,12 @@ class RelativeDataLeakageValueFilter(DXOFilter):
                     fl_ctx,
                     f"Computing sim metrics for {len(self.train_loader)}x{len(recons)} pairs of images",
                 )
-                (img_recon_sim_reduced, img_recon_sim, best_matches, closest_idx,) = self.compute_rdlv(
+                (
+                    img_recon_sim_reduced,
+                    img_recon_sim,
+                    best_matches,
+                    closest_idx,
+                ) = self.compute_rdlv(
                     train_loader=self.train_loader,
                     recons=recons,
                     sim_metric=self.sim_metric,
@@ -247,18 +253,16 @@ class RelativeDataLeakageValueFilter(DXOFilter):
 
             self.log_info(fl_ctx, f"RDLV: {rdlv}")
 
-            results = {
-                "img_recon_sim_reduced": img_recon_sim_reduced,
-                "img_recon_sim": img_recon_sim,
-                "closest_idx": closest_idx,
-                "site": fl_ctx.get_identity_name(),
-                "round": current_round,
-            }
-            if self.save_best_matches:
-                results["best_matches"] = best_matches
-
-            save_path = os.path.join(self.app_root, f"rdvl_round{current_round}.npy")
-            np.save(save_path, results)
+            save_path = os.path.join(self.app_root, f"rdvl_round{current_round}.npz")
+            save_rdlv_results(
+                save_path=save_path,
+                img_recon_sim_reduced=img_recon_sim_reduced,
+                img_recon_sim=img_recon_sim,
+                closest_idx=closest_idx,
+                site=fl_ctx.get_identity_name(),
+                round_number=current_round,
+                best_matches=best_matches if self.save_best_matches else None,
+            )
 
             # Remove data if above threshold
             if np.any(rdlv > self.rdlv_threshold):
