@@ -42,7 +42,6 @@ def save_rdlv_results(
     save_kwargs = {
         "img_recon_sim_reduced": _to_numpy_array(img_recon_sim_reduced),
         "img_recon_sim": _to_numpy_array(img_recon_sim),
-        "has_closest_idx": np.asarray(closest_idx is not None, dtype=np.bool_),
         "site": np.asarray(site),
         "round": np.asarray(round_number),
     }
@@ -51,10 +50,14 @@ def save_rdlv_results(
         save_kwargs["closest_idx"] = _to_numpy_array(closest_idx)
 
     if best_matches is not None:
-        save_kwargs["best_match_inputs"] = np.stack([_to_numpy_array(match[0]) for match in best_matches])
-        save_kwargs["best_match_recons"] = np.stack([_to_numpy_array(match[1]) for match in best_matches])
+        if best_matches:
+            save_kwargs["best_match_inputs"] = np.stack([_to_numpy_array(match[0]) for match in best_matches])
+            save_kwargs["best_match_recons"] = np.stack([_to_numpy_array(match[1]) for match in best_matches])
+        else:
+            save_kwargs["best_match_inputs"] = np.asarray([], dtype=np.float32)
+            save_kwargs["best_match_recons"] = np.asarray([], dtype=np.float32)
 
-    np.savez(save_path, **save_kwargs)
+    np.savez_compressed(save_path, **save_kwargs)
 
 
 def load_rdlv_results(result_path: str):
@@ -62,7 +65,7 @@ def load_rdlv_results(result_path: str):
         loaded = {
             "img_recon_sim_reduced": result["img_recon_sim_reduced"],
             "img_recon_sim": result["img_recon_sim"],
-            "closest_idx": result["closest_idx"] if result["has_closest_idx"].item() else None,
+            "closest_idx": result["closest_idx"] if "closest_idx" in result.files else None,
             "site": result["site"].item(),
             "round": result["round"].item(),
         }
