@@ -102,8 +102,8 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         default=None,
         type=_name_type,
         dest="name",
-        metavar="PROJECT_NAME",
-        help="Participant name (used as cert Common Name). Max 64 chars.",
+        metavar="NAME",
+        help="Participant name (e.g. hospital-1, fl-server). Used as the cert Common Name. Max 64 chars.",
     )
     p.add_argument(
         "-o",
