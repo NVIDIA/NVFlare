@@ -22,7 +22,7 @@ Run with the NVFlare simulator (single machine):
 import argparse
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv
 
 
 def _parse_args():
@@ -106,8 +106,6 @@ def main() -> None:
         launch_external_process=False,
         key_metric="val_accuracy",
     )
-
-    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(
         clients=client_names,
