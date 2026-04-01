@@ -77,6 +77,7 @@ NVIDIA FLARE
 
    user_guide/admin_guide/deployment/overview
    programming_guide/provisioning_system
+   Distributed Provisioning <user_guide/nvflare_cli/distributed_provisioning>
    user_guide/admin_guide/deployment/dashboard_ui
    user_guide/admin_guide/deployment/cloud_deployment
    user_guide/admin_guide/deployment/aws_eks

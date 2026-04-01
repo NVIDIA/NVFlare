@@ -1,0 +1,403 @@
+.. _distributed_provisioning:
+
+##########################
+Distributed Provisioning
+##########################
+
+Distributed (manual) provisioning is an alternative to centralized provisioning
+(``nvflare provision``) designed for deployments where a Project Admin cannot or
+should not generate private keys on behalf of each site.
+
+In the standard ``nvflare provision`` workflow the Project Admin runs a single
+command and distributes pre-packaged startup kits — including each site's private
+key — to participants. This requires participants to trust the Project Admin with
+their private key during transit and at rest.
+
+Distributed provisioning uses an **inverted-trust model**:
+
+- Each site generates its own RSA private key **locally**. The key never leaves the machine.
+- The site sends only a **Certificate Signing Request (CSR)** to the Project Admin.
+- The Project Admin signs the CSR and returns a certificate.
+- Each site assembles its own startup kit from its local key, the signed certificate, and the root CA.
+
+The resulting startup kits are structurally identical to those produced by
+``nvflare provision`` and are fully compatible with all NVFlare runtime components.
+
+.. note::
+
+   Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
+   is generated. The ``require_signed_jobs`` policy is always enabled on the server.
+
+*****
+Roles
+*****
+
++-------------------+----------------------------------------------------------+
+| Role              | Responsibility                                           |
++===================+==========================================================+
+| **Project Admin** | Runs ``cert init`` (once). Signs CSRs from each site.    |
+|                   | Distributes signed certificates and ``rootCA.pem``.      |
++-------------------+----------------------------------------------------------+
+| **Site Admin**    | Runs ``cert csr`` to generate a local key + CSR.         |
+|                   | Sends CSR to Project Admin out-of-band (email, file      |
+|                   | share, etc.). Receives cert + ``rootCA.pem``.            |
+|                   | Runs ``package`` to assemble the startup kit.            |
++-------------------+----------------------------------------------------------+
+
+The ``-t`` / ``--type`` argument controls what kind of participant is being provisioned:
+
++------------+----------------------------------------------+
+| Type       | Description                                  |
++============+==============================================+
+| ``server`` | FL server                                    |
++------------+----------------------------------------------+
+| ``client`` | FL client (data site)                        |
++------------+----------------------------------------------+
+| ``lead``   | Swarm learning lead aggregator               |
++------------+----------------------------------------------+
+| ``member`` | Swarm learning member                        |
++------------+----------------------------------------------+
+| ``org_admin`` | Organization admin                        |
++------------+----------------------------------------------+
+
+*****
+Steps
+*****
+
+Step 1 — Project Admin: Initialize the Root CA (once per federation)
+=====================================================================
+
+The Project Admin bootstraps the root certificate authority. This is a **one-time
+operation** per federation.
+
+.. code-block:: bash
+
+   nvflare cert init -n <project-name> -o ./ca
+
+Example:
+
+.. code-block:: bash
+
+   nvflare cert init -n my-fl-project -o ./ca
+
+This produces:
+
+- ``./ca/rootCA.pem`` — root CA certificate (distribute to all sites)
+- ``./ca/rootCA.key`` — root CA private key (keep secret, never distribute)
+- ``./ca/ca.json`` — audit metadata (serial counter)
+
+.. attention::
+
+   ``rootCA.key`` must be kept confidential. Anyone with access to it can sign
+   certificates for any participant identity. Store it on a secure, air-gapped
+   machine or in a hardware security module (HSM).
+
+Step 2 — Site Admin: Generate a Local Key and CSR
+==================================================
+
+Each participant (server, each client, each admin user) runs this step on their
+own machine.
+
+.. code-block:: bash
+
+   nvflare cert csr -n <participant-name> -t <type> -o ./csr
+
+Example for a client site named ``hospital-1``:
+
+.. code-block:: bash
+
+   nvflare cert csr -n hospital-1 -t client -o ./csr
+
+This produces:
+
+- ``./csr/hospital-1.key`` — private key (permissions: 0600, never leaves this machine)
+- ``./csr/hospital-1.csr`` — certificate signing request (send to Project Admin)
+
+Example for the FL server named ``fl-server``:
+
+.. code-block:: bash
+
+   nvflare cert csr -n fl-server -t server -o ./csr
+
+Step 3 — Site Admin: Send CSR to Project Admin
+===============================================
+
+Deliver ``<participant-name>.csr`` to the Project Admin through any out-of-band
+channel (email, secure file transfer, shared storage, etc.). The private key file
+stays on the site's machine and is never shared.
+
+Step 4 — Project Admin: Sign the CSR
+======================================
+
+For each received CSR, the Project Admin runs:
+
+.. code-block:: bash
+
+   nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
+
+The ``-t`` argument is **authoritative** — the certificate type is set by the
+Project Admin, not taken from the CSR. This prevents a participant from requesting
+a higher-privilege certificate type.
+
+Example — signing the ``hospital-1`` client CSR:
+
+.. code-block:: bash
+
+   nvflare cert sign -r hospital-1.csr -t client -c ./ca -o ./signed/hospital-1
+
+Example — signing the ``fl-server`` server CSR:
+
+.. code-block:: bash
+
+   nvflare cert sign -r fl-server.csr -t server -c ./ca -o ./signed/fl-server
+
+Each output directory contains:
+
+- ``client.crt`` (or ``server.crt``) — signed certificate
+- ``rootCA.pem`` — copy of the root CA certificate
+
+Step 5 — Project Admin: Distribute Signed Certificates
+=======================================================
+
+Send each site their signed certificate and ``rootCA.pem``:
+
+- ``hospital-1/client.crt`` + ``rootCA.pem`` → send to ``hospital-1``
+- ``fl-server/server.crt`` + ``rootCA.pem`` → send to the server site
+
+No private keys are exchanged at this step.
+
+Step 6 — Site Admin: Assemble the Startup Kit
+==============================================
+
+Each site runs ``nvflare package`` to assemble a startup kit from:
+
+- The local private key (generated in Step 2)
+- The signed certificate (received in Step 5)
+- ``rootCA.pem`` (received in Step 5)
+
+**Auto-discovery mode** (recommended when files are in one directory):
+
+Place the key, certificate, and ``rootCA.pem`` in the same directory and use ``--dir``:
+
+.. code-block:: bash
+
+   nvflare package -t client -e grpc://<server-hostname>:<port> --dir ./hospital-1-kit
+
+The ``--dir`` option discovers the ``.key`` file automatically and sets the
+participant name from its filename stem.
+
+**Explicit mode** (when files are in different locations):
+
+.. code-block:: bash
+
+   nvflare package \
+     -n hospital-1 \
+     -t client \
+     -e grpc://fl-server:8002 \
+     --cert ./signed/hospital-1/client.crt \
+     --key  ./csr/hospital-1.key \
+     --rootca ./signed/hospital-1/rootCA.pem \
+     -o ./hospital-1-startup-kit
+
+The ``-e`` / ``--endpoint`` argument sets the FL server address. The server
+identity used for mTLS validation is derived from the hostname in the endpoint.
+
+Server kit example:
+
+.. code-block:: bash
+
+   nvflare package \
+     -n fl-server \
+     -t server \
+     -e grpc://fl-server:8002 \
+     --cert ./signed/fl-server/server.crt \
+     --key  ./csr/fl-server.key \
+     --rootca ./signed/fl-server/rootCA.pem \
+     -o ./fl-server-startup-kit
+
+Step 7 — Start the Federation
+==============================
+
+Each site starts NVFlare using the assembled startup kit, exactly as with a
+centrally provisioned kit:
+
+.. code-block:: bash
+
+   cd <startup-kit-dir>
+   ./startup/start.sh
+
+Admin users connect via:
+
+.. code-block:: bash
+
+   cd <admin-startup-kit-dir>
+   ./startup/fl_admin.sh
+
+*************************************
+Complete Example: Two-Site Federation
+*************************************
+
+This example sets up a federation with one server (``fl-server``) and one client
+(``hospital-1``).
+
+**Project Admin machine:**
+
+.. code-block:: bash
+
+   # 1. Initialize root CA
+   nvflare cert init -n my-project -o ./ca
+
+   # 4a. Sign server CSR (after receiving fl-server.csr from the server site)
+   nvflare cert sign -r fl-server.csr -t server -c ./ca -o ./signed/fl-server
+
+   # 4b. Sign client CSR (after receiving hospital-1.csr from the client site)
+   nvflare cert sign -r hospital-1.csr -t client -c ./ca -o ./signed/hospital-1
+
+**Server site (fl-server):**
+
+.. code-block:: bash
+
+   # 2. Generate key + CSR
+   nvflare cert csr -n fl-server -t server -o ./csr
+
+   # 3. Send ./csr/fl-server.csr to Project Admin
+
+   # 6. Assemble startup kit (after receiving signed/fl-server/ from Project Admin)
+   nvflare package -n fl-server -t server -e grpc://fl-server:8002 \
+     --cert ./signed/fl-server/server.crt \
+     --key  ./csr/fl-server.key \
+     --rootca ./signed/fl-server/rootCA.pem
+
+   # 7. Start
+   cd fl-server && ./startup/start.sh
+
+**Client site (hospital-1):**
+
+.. code-block:: bash
+
+   # 2. Generate key + CSR
+   nvflare cert csr -n hospital-1 -t client -o ./csr
+
+   # 3. Send ./csr/hospital-1.csr to Project Admin
+
+   # 6. Assemble startup kit (after receiving signed/hospital-1/ from Project Admin)
+   nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 \
+     --cert ./signed/hospital-1/client.crt \
+     --key  ./csr/hospital-1.key \
+     --rootca ./signed/hospital-1/rootCA.pem
+
+   # 7. Start
+   cd hospital-1 && ./startup/start.sh
+
+*********************
+CLI Reference Summary
+*********************
+
+``nvflare cert init``
+=====================
+
+Initialize the root CA (Project Admin, once per federation).
+
++------------------+--------------------------------------------------+----------+
+| Argument         | Description                                      | Required |
++==================+==================================================+==========+
+| ``-n`` / ``--name``   | Project name (used as CA subject CN)        | Yes      |
++------------------+--------------------------------------------------+----------+
+| ``-o`` / ``--output-dir`` | Directory to write CA files             | Yes      |
++------------------+--------------------------------------------------+----------+
+| ``--org``        | Organization name for the CA certificate         | No       |
++------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing CA (backs up old files)       | No       |
++------------------+--------------------------------------------------+----------+
+
+``nvflare cert csr``
+====================
+
+Generate a local private key and CSR (Site Admin).
+
++------------------+--------------------------------------------------+----------+
+| Argument         | Description                                      | Required |
++==================+==================================================+==========+
+| ``-n`` / ``--name``   | Participant name (becomes cert CN)          | Yes      |
++------------------+--------------------------------------------------+----------+
+| ``-t`` / ``--type``   | Participant type: ``client``, ``server``,   | Yes      |
+|                  | ``org_admin``, ``lead``, ``member``              |          |
++------------------+--------------------------------------------------+----------+
+| ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
++------------------+--------------------------------------------------+----------+
+| ``--org``        | Organization name                                | No       |
++------------------+--------------------------------------------------+----------+
+
+``nvflare cert sign``
+=====================
+
+Sign a CSR with the root CA (Project Admin).
+
++------------------+--------------------------------------------------+----------+
+| Argument         | Description                                      | Required |
++==================+==================================================+==========+
+| ``-r`` / ``--csr``    | Path to the CSR file to sign                | Yes      |
++------------------+--------------------------------------------------+----------+
+| ``-t`` / ``--type``   | Certificate type to issue (authoritative,   | Yes      |
+|                  | overrides CSR role field)                        |          |
++------------------+--------------------------------------------------+----------+
+| ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key`` and     | Yes      |
+|                  | ``rootCA.pem``                                   |          |
++------------------+--------------------------------------------------+----------+
+| ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
++------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing certificate                   | No       |
++------------------+--------------------------------------------------+----------+
+
+``nvflare package``
+===================
+
+Assemble a startup kit (Site Admin).
+
++------------------+--------------------------------------------------+----------+
+| Argument         | Description                                      | Required |
++==================+==================================================+==========+
+| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | Yes      |
+|                  | ``org_admin``, ``lead``, ``member``              |          |
++------------------+--------------------------------------------------+----------+
+| ``-e`` / ``--endpoint`` | Server endpoint URI (``grpc://host:port``  | Yes      |
+|                  | or ``tcp://host:port``)                          |          |
++------------------+--------------------------------------------------+----------+
+| ``--dir``        | Directory containing key, cert, and rootCA.pem.  | One of   |
+|                  | Name is auto-detected from ``*.key`` filename.   | ``--dir``|
++------------------+--------------------------------------------------+----------+
+| ``-n`` / ``--name``   | Participant name. Required when using       | or       |
+|                  | ``--cert`` / ``--key`` / ``--rootca``            | ``-n``   |
++------------------+--------------------------------------------------+----------+
+| ``--cert``       | Path to signed certificate                       | No†      |
++------------------+--------------------------------------------------+----------+
+| ``--key``        | Path to private key                              | No†      |
++------------------+--------------------------------------------------+----------+
+| ``--rootca``     | Path to ``rootCA.pem``                           | No†      |
++------------------+--------------------------------------------------+----------+
+| ``-o`` / ``--output-dir`` | Output directory. Default: ``./<name>`` | No       |
++------------------+--------------------------------------------------+----------+
+| ``--project-name`` | Project name for challenge-response auth.      | No       |
+|                  | Defaults to the server hostname.                 |          |
++------------------+--------------------------------------------------+----------+
+| ``--admin-port`` | Server admin port. Default: service port + 1.    | No       |
++------------------+--------------------------------------------------+----------+
+| ``--force``      | Overwrite existing output directory              | No       |
++------------------+--------------------------------------------------+----------+
+
+† ``--cert``, ``--key``, ``--rootca`` are used together as an alternative to ``--dir``.
+
+All commands support ``--output json`` for machine-readable output and ``--schema``
+to print the JSON schema for the command's arguments.
+
+*****
+Notes
+*****
+
+- The ``--dir`` mode for ``nvflare package`` locates the ``.key`` file automatically.
+  Place the signed ``.crt`` and ``rootCA.pem`` in the same directory before running.
+- Startup kits produced by ``nvflare package`` are structurally identical to those
+  produced by ``nvflare provision`` and work with all NVFlare runtime components.
+- The server identity for mTLS validation is always the hostname from ``--endpoint``.
+  Ensure that the hostname in the endpoint matches the CN in the server certificate
+  (i.e. the ``-n`` name used when running ``nvflare cert csr`` for the server).
