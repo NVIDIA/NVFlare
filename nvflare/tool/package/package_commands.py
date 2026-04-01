@@ -324,34 +324,20 @@ def handle_package(args):
 
         schema = parser_to_schema(_package_parser, "nvflare package", examples=_PACKAGE_EXAMPLES)
         print(json.dumps(schema, indent=2))
-        import sys
-
-        sys.exit(0)
+        return 0
 
     fmt = getattr(args, "output_fmt", None)
 
-    # Step 2: --output json implies --force
+    # Step 2: Validate required args
+    if not getattr(args, "kit_type", None):
+        msg, hint = get_error("INVALID_ARGS", detail="-t/--type is required")
+        output_error("INVALID_ARGS", msg, hint, fmt, exit_code=2)
+
+    # Step 3: --output json implies --force
     if fmt == "json":
         args.force = True
 
-    # Step 3: Validate --type (argparse choices= handles this, but be safe)
-    valid_types = ["client", "server", "org_admin", "lead", "member"]
-    if args.kit_type not in valid_types:
-        msg, hint = get_error("INVALID_CERT_TYPE", cert_type=args.kit_type)
-        output_error("INVALID_CERT_TYPE", msg, hint, fmt, exit_code=4)
-
-    # Step 4: --require-signed-jobs only valid for server
-    if getattr(args, "require_signed_jobs", None) is not None:
-        if args.kit_type != "server":
-            output_error(
-                "INVALID_ARGS",
-                "--require-signed-jobs is only valid with -t server.",
-                "Omit --require-signed-jobs for client and admin types.",
-                fmt,
-                exit_code=4,
-            )
-
-    # Step 5: Resolve --dir vs explicit --cert/--key/--rootca
+    # Step 4: Resolve --dir vs explicit --cert/--key/--rootca
     has_dir = bool(getattr(args, "dir", None))
     has_explicit = any([getattr(args, "cert", None), getattr(args, "key", None), getattr(args, "rootca", None)])
 

@@ -36,7 +36,8 @@ def def_package_cli_parser(sub_cmd) -> dict:
     p.add_argument(
         "-t",
         "--type",
-        required=True,
+        required=False,
+        default=None,
         dest="kit_type",
         choices=["client", "server", "org_admin", "lead", "member"],
         help="Kit type: client, server, org_admin, lead, or member.",
