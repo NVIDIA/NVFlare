@@ -1,4 +1,3 @@
 nvflare~=2.7.2rc
 tensorflow[and-cuda]
 tensorboard
-torch

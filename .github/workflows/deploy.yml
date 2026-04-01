@@ -30,10 +30,10 @@ jobs:
         run: echo version_path=/version/${{ github.ref_name }}/ >> $GITHUB_ENV
 
       - name: Checkout your repository
-        uses: actions/checkout@v4
+        uses: NVIDIA/spark-rapids-common/checkout@main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -50,7 +50,7 @@ jobs:
         working-directory: ${{ env.site_path }}
 
       - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@v4.6.4
+        uses: JamesIves/github-pages-deploy-action@v4.8.0
         with:
           branch: gh-pages
           folder: ${{ env.site_path }}/dist
