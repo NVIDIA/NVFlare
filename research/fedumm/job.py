@@ -38,6 +38,7 @@ def _parse_args():
     p.add_argument("--lr", type=float, default=5e-5)
     p.add_argument("--lora_r", type=int, default=16)
     p.add_argument("--lora_alpha", type=int, default=32)
+    p.add_argument("--lora_dropout", type=float, default=0.1)
     p.add_argument("--max_train_samples", type=int, default=-1)
     p.add_argument("--max_eval_samples", type=int, default=-1)
     p.add_argument("--data_path", type=str, default="")
@@ -73,6 +74,7 @@ def main() -> None:
         f" --lr {args.lr}"
         f" --lora_r {args.lora_r}"
         f" --lora_alpha {args.lora_alpha}"
+        f" --lora_dropout {args.lora_dropout}"
         f" --max_train_samples {args.max_train_samples}"
         f" --max_eval_samples {args.max_eval_samples}"
         f" --dirichlet_alpha {args.dirichlet_alpha}"

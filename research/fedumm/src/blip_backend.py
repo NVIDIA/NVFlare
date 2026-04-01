@@ -125,7 +125,9 @@ class BLIPBackend:
             for p, gt in zip(preds, batch["gt_answers"]):
                 total_score += vqa_soft_score(p, gt)
                 total += 1
-        return total_score / max(total, 1)
+        if total == 0:
+            raise ValueError("Evaluation dataloader is empty — check eval dataset and --max_eval_samples.")
+        return total_score / total
 
     def hf_dataset_name(self):
         return "HuggingFaceM4/VQAv2"
