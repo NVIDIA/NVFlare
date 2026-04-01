@@ -553,8 +553,8 @@ def handle_cert_sign(args):
     # 14. Output result
     next_step = (
         f"Send {output_filename} and rootCA.pem to the site admin.\n"
-        f"They will use: nvflare package -n {subject_cn} -e grpc://server:8002 "
-        f"-t {cert_type} --cert {output_filename} --key <their-key> --rootca rootCA.pem"
+        f"They place those files in the same directory as their {subject_cn}.key, then run:\n"
+        f"  nvflare package -t {cert_type} -e grpc://<server>:<port> --dir <that-dir>"
     )
     result = {
         "signed_cert": cert_out_path,
@@ -574,11 +574,8 @@ def handle_cert_sign(args):
         print(f"  Valid until:  {_valid_until_dt.strftime('%Y-%m-%d')}")
         print()
         print(f"Next step: Send {output_filename} and rootCA.pem to the site admin.")
-        print(
-            f"They will use: nvflare package -n {subject_cn} -e grpc://server:8002 "
-            f"-t {cert_type} \\\n"
-            f"  --cert {output_filename} --key <their-key> --rootca rootCA.pem"
-        )
+        print(f"They place those files in the same directory as their {subject_cn}.key, then run:")
+        print(f"  nvflare package -t {cert_type} -e grpc://<server>:<port> --dir <that-dir>")
     else:
         output(result, output_fmt)
     return 0
