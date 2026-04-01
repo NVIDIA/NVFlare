@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
@@ -56,12 +56,12 @@ def add_launcher(launcher, fl_ctx: FLContext):
     fl_ctx.set_prop(FLContextKey.JOB_LAUNCHER, job_launcher, private=True, sticky=False)
 
 
-class JobHandleSpec:
+class JobHandleSpec(ABC):
     @abstractmethod
     def terminate(self):
         """To terminate the job run.
 
-        Returns: the job run return code.
+        Returns: None
 
         """
         raise NotImplementedError()
@@ -85,7 +85,7 @@ class JobHandleSpec:
         raise NotImplementedError()
 
 
-class JobLauncherSpec(FLComponent):
+class JobLauncherSpec(FLComponent, ABC):
     @abstractmethod
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         """To launch a job run.
@@ -94,7 +94,7 @@ class JobLauncherSpec(FLComponent):
             job_meta: job metadata
             fl_ctx: FLContext
 
-        Returns: boolean to indicates the job launch success or fail.
+        Returns: a JobHandle instance.
 
         """
         raise NotImplementedError()
