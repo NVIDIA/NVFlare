@@ -179,6 +179,19 @@ Most users do not need these directly, but they are available for advanced custo
    programming_guide/controllers/controllers
    programming_guide/execution_api_type
 
+Testing
+=======
+
+- :doc:`Developer Testing <programming_guide/developer_testing>`
+- :doc:`Notebook Testing <programming_guide/notebook_testing>`
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   programming_guide/developer_testing
+   programming_guide/notebook_testing
+
 Troubleshooting
 ===============
 
