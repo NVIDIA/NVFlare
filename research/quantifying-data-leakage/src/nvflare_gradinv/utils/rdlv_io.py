@@ -50,7 +50,7 @@ def save_rdlv_results(
     if closest_idx is not None:
         save_kwargs["closest_idx"] = _to_numpy_array(closest_idx)
 
-    if best_matches:
+    if best_matches is not None:
         save_kwargs["best_match_inputs"] = np.stack([_to_numpy_array(match[0]) for match in best_matches])
         save_kwargs["best_match_recons"] = np.stack([_to_numpy_array(match[1]) for match in best_matches])
 
