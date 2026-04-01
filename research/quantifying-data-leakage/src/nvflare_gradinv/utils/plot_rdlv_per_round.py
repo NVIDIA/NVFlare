@@ -20,6 +20,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+try:
+    from rdlv_io import load_rdlv_results
+except ImportError:
+    from nvflare_gradinv.utils.rdlv_io import load_rdlv_results
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -27,11 +32,11 @@ def main():
         "--workspace",
         type=str,
         default="./workspace",
-        help="Workdir containing rdvl_*.npy files.",
+        help="Workdir containing rdvl_*.npz files.",
     )
     args = parser.parse_args()
 
-    rdvl_files = glob.glob(os.path.join(args.workspace, "**", "rdvl_*.npy"), recursive=True)
+    rdvl_files = glob.glob(os.path.join(args.workspace, "**", "rdvl_*.npz"), recursive=True)
     assert len(rdvl_files) > 0, f"No RDVL files found in {args.workspace}"
 
     results = {
@@ -40,7 +45,7 @@ def main():
         "Round": [],
     }
     for rdvl_file in rdvl_files:
-        _result = np.load(rdvl_file, allow_pickle=True).item()
+        _result = load_rdlv_results(rdvl_file)
 
         img_recon_sim_reduced = _result["img_recon_sim_reduced"]
 
