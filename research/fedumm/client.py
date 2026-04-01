@@ -130,7 +130,7 @@ def main() -> None:
 
     while flare.is_running():
         input_model = flare.receive()
-        cur_round = getattr(input_model, "current_round", None)
+        cur_round = getattr(input_model, "current_round", None) or 0
 
         if input_model and getattr(input_model, "params", None):
             load_trainable_params(model, input_model.params, device)
@@ -184,6 +184,8 @@ def main() -> None:
                 meta={"NUM_STEPS_CURRENT_ROUND": steps, "n_train": len(train_ds), "n_eval": len(eval_ds)},
             )
         )
+
+    writer.close()
 
 
 if __name__ == "__main__":

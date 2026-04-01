@@ -56,6 +56,7 @@ class BLIPVQADataset(Dataset):
             return_tensors="pt",
         )
         labels = lab["input_ids"].squeeze(0).clone()
+        labels[lab["attention_mask"].squeeze(0) == 0] = -100
         return {
             "pixel_values": enc["pixel_values"].squeeze(0),
             "input_ids": enc["input_ids"].squeeze(0),

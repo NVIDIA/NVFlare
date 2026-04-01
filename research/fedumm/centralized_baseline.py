@@ -110,7 +110,9 @@ def main() -> None:
         writer.add_scalar("val/acc", acc, epoch + 1)
         print(f"Epoch {epoch + 1}/{args.num_epochs}  loss={loss:.4f}  acc={acc:.4f}")
 
-    model.save_pretrained(args.output_dir)
+    model.text_encoder.save_pretrained(os.path.join(args.output_dir, "text_encoder"))
+    model.text_decoder.save_pretrained(os.path.join(args.output_dir, "text_decoder"))
+    writer.close()
     print(f"Saved to {args.output_dir}")
 
 
