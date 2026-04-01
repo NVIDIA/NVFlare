@@ -90,11 +90,32 @@ integration_test() {
     remove_pipenv
 }
 
+integration_test_gpu() {
+    echo "Run GPU integration test with backend $1..."
+    # Run directly in the container (no virtualenv) so we control the exact
+    # torch/torchvision/pytorch_lightning versions compatible with the GPU driver.
+    pip install -e .[dev]
+    pip install torch torchvision pytorch_lightning --index-url https://download.pytorch.org/whl/cu126
+    export PYTHONPATH=$PWD
+    add_dns_entries
+    testFolder="tests/integration_test"
+    clean_up_snapshot_and_job
+    pushd ${testFolder}
+    ./run_integration_tests.sh -m "$1"
+    popd
+    clean_up_snapshot_and_job
+    remove_dns_entries
+}
+
 case $BUILD_TYPE in
 
     tensorflow)
         echo "Run TF tests..."
         integration_test_tf
+        ;;
+    client_api|client_api_qa|pytorch|cifar|auto)
+        echo "Run GPU tests..."
+        integration_test_gpu "$BUILD_TYPE"
         ;;
     *)
         integration_test "$BUILD_TYPE"
