@@ -21,6 +21,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
+try:
+    from rdlv_io import load_rdlv_results
+except ImportError:
+    from nvflare_gradinv.utils.rdlv_io import load_rdlv_results
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -28,16 +33,16 @@ def main():
         "--workspaces",
         type=str,
         default="./workspaces",
-        help="Workdir containing rdvl_*.npy files.",
+        help="Workdir containing rdvl_*.npz files.",
     )
     args = parser.parse_args()
 
-    rdvl_files = glob.glob(os.path.join(args.workspaces, "**", "rdvl_*.npy"), recursive=True)
-    assert len(rdvl_files) > 0, f"No RDVL files found in {args.workspace}"
+    rdvl_files = glob.glob(os.path.join(args.workspaces, "**", "rdvl_*.npz"), recursive=True)
+    assert len(rdvl_files) > 0, f"No RDVL files found in {args.workspaces}"
 
     results = {"RDVL": [], "Site": [], "Round": [], "sigma0": [], "test_accuracy": []}
     for rdvl_file in rdvl_files:
-        _result = np.load(rdvl_file, allow_pickle=True).item()
+        _result = load_rdlv_results(rdvl_file)
 
         img_recon_sim_reduced = _result["img_recon_sim_reduced"]
 
@@ -70,7 +75,7 @@ def main():
     # plot RDVL
     sns.lineplot(x="sigma0", y="RDVL", hue="Site", data=results)
     plt.grid(True)
-    plt.xlabel("Gaussian Privacy ($\sigma_0$)")
+    plt.xlabel(r"Gaussian Privacy ($\sigma_0$)")
     plt.plot([np.min(results["sigma0"]), np.max(results["sigma0"])], [0, 0], "k", linewidth=1.0)
 
     # plot accuracy
