@@ -32,7 +32,6 @@ _PACKAGE_EXAMPLES = [
     "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice",
     "nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1",
     "nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem",
-    "nvflare package -t client -e grpc://10.0.0.1:8002 --dir ./hospital-1 --server-name fl-server",
 ]
 
 _TEMPLATE_PATH = os.path.normpath(
@@ -181,17 +180,14 @@ def _make_fed_admin_json(name, server_name, host, admin_port, project_name=None)
 
 def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, port):
     admin_port = args.admin_port if args.admin_port is not None else port + 1
-    server_name = args.server_name
 
     # 1. Copy certs
     _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
     _copy_file(args.key, os.path.join(startup_dir, "client.key"), mode_bits=0o600)
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
-    # 2. fed_client.json
-    fed_client = _make_fed_client_json(
-        args.name, scheme, host, port, admin_port, server_name, args.project_name or server_name
-    )
+    # 2. fed_client.json — server identity is always the endpoint hostname
+    fed_client = _make_fed_client_json(args.name, scheme, host, port, admin_port, host, args.project_name or host)
     _write_file(os.path.join(startup_dir, "fed_client.json"), json.dumps(fed_client, indent=2))
 
     # 3. Shell scripts
@@ -219,7 +215,7 @@ def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, por
 
 def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, port):
     admin_port = args.admin_port if args.admin_port is not None else port + 1
-    require_signed = args.require_signed_jobs if args.require_signed_jobs is not None else True
+    require_signed = True  # signed jobs are always required
 
     # 1. Copy certs
     _copy_file(args.cert, os.path.join(startup_dir, "server.crt"))
@@ -259,15 +255,14 @@ def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, por
 
 def _build_user_kit(args, startup_dir, local_dir, templates, scheme, host, port):
     admin_port = args.admin_port if args.admin_port is not None else (port + 1 if port else 8003)
-    server_name = args.server_name
 
     # 1. Copy certs (admin uses client.crt/client.key naming convention)
     _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
     _copy_file(args.key, os.path.join(startup_dir, "client.key"), mode_bits=0o600)
     _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
 
-    # 2. fed_admin.json
-    fed_admin = _make_fed_admin_json(args.name, server_name, host, admin_port, args.project_name or server_name)
+    # 2. fed_admin.json — server identity is always the endpoint hostname
+    fed_admin = _make_fed_admin_json(args.name, host, host, admin_port, args.project_name or host)
     _write_file(os.path.join(startup_dir, "fed_admin.json"), json.dumps(fed_admin, indent=2))
 
     # 3. fl_admin.sh
@@ -445,11 +440,6 @@ def handle_package(args):
     except ValueError:
         msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
         output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
-
-    # Default server_name to endpoint hostname when not explicitly provided.
-    # Override with --server-name when the cert CN differs from the hostname
-    # (e.g. connecting via IP: grpc://10.0.0.1:8002 --server-name fl-server).
-    args.server_name = args.server_name or host
 
     # Step 10: Resolve output directory
     output_dir = args.output_dir if args.output_dir else os.path.join(os.getcwd(), args.name)

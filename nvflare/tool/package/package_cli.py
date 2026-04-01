@@ -15,21 +15,11 @@
 """nvflare package subcommand: parser registration and dispatch."""
 
 import argparse
-from argparse import ArgumentTypeError
 from typing import Optional
 
 _package_parser: Optional[argparse.ArgumentParser] = None
 
 _ADMIN_ROLES = {"org_admin", "lead", "member"}
-
-
-def _parse_bool_arg(x: str) -> bool:
-    xl = x.lower()
-    if xl in ("true", "1", "yes"):
-        return True
-    if xl in ("false", "0", "no"):
-        return False
-    raise ArgumentTypeError(f"Invalid boolean value {x!r}. Use true/false, 1/0, or yes/no.")
 
 
 def def_package_cli_parser(sub_cmd) -> dict:
@@ -98,14 +88,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="Output directory. Default: ./<name>",
     )
     p.add_argument(
-        "--server-name",
-        required=False,
-        default=None,
-        dest="server_name",
-        help="Server identity name (CN) for mTLS validation. Defaults to the hostname in --endpoint. "
-        "Override when the cert CN differs from the hostname (e.g. connecting via IP address).",
-    )
-    p.add_argument(
         "--project-name",
         required=False,
         default=None,
@@ -119,14 +101,6 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="admin_port",
         help="Server admin port. Default: service port + 1.",
-    )
-    p.add_argument(
-        "--require-signed-jobs",
-        required=False,
-        default=None,
-        type=_parse_bool_arg,
-        dest="require_signed_jobs",
-        help="Server only. Reject unsigned job submissions. Default: true.",
     )
     p.add_argument(
         "--force",

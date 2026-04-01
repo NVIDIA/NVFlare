@@ -79,10 +79,8 @@ def _make_args(**kwargs):
         key=None,
         rootca=None,
         output_dir=None,
-        server_name="fl-server",
         project_name=None,
         admin_port=None,
-        require_signed_jobs=None,
         force=True,
         output_fmt=None,
         schema=False,
@@ -294,13 +292,12 @@ class TestClientKitAssembly:
             key=key_path,
             rootca=rootca,
             output_dir=out_dir,
-            server_name="fl-server",
         )
         handle_package(args)
 
         with open(os.path.join(out_dir, "startup", "fed_client.json")) as f:
             cfg = json.load(f)
-        assert cfg["servers"][0]["name"] == "fl-server"  # falls back to server_name when no --project-name
+        assert cfg["servers"][0]["name"] == "server.example.com"  # derived from endpoint hostname
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert "8002:8003" in cfg["overseer_agent"]["args"]["sp_end_point"]
@@ -405,13 +402,12 @@ class TestServerKitAssembly:
             key=key_path,
             rootca=rootca,
             output_dir=out_dir,
-            require_signed_jobs=False,
         )
         handle_package(args)
 
         with open(os.path.join(out_dir, "startup", "fed_server.json")) as f:
             cfg = json.load(f)
-        assert cfg["require_signed_jobs"] is False
+        assert cfg["require_signed_jobs"] is True  # always required
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["servers"][0]["service"]["target"] == "0.0.0.0:8002"  # host from endpoint
         assert cfg["servers"][0]["admin_port"] == 8003
@@ -490,7 +486,6 @@ class TestAdminKitAssembly:
             key=key_path,
             rootca=rootca,
             output_dir=out_dir,
-            server_name="fl-server",
             admin_port=8003,
         )
         handle_package(args)
@@ -498,7 +493,7 @@ class TestAdminKitAssembly:
         with open(os.path.join(out_dir, "startup", "fed_admin.json")) as f:
             cfg = json.load(f)
         assert cfg["admin"]["username"] == "admin-alice"
-        assert cfg["admin"]["server_identity"] == "fl-server"
+        assert cfg["admin"]["server_identity"] == "server.example.com"  # derived from endpoint hostname
         assert cfg["admin"]["port"] == 8003
 
     def test_dir_mode(self, cert_env, tmp_path):
@@ -640,27 +635,6 @@ class TestErrorConditions:
             handle_package(args)
         assert exc_info.value.code == 4
 
-    def test_require_signed_jobs_on_non_server(self, cert_env, tmp_path):
-        work = tmp_path / "work"
-        work.mkdir()
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        rootca = cert_env["rootca_path"]
-
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
-        args = _make_args(
-            kit_type="client",
-            name="hospital-1",
-            endpoint="grpc://server.example.com:8002",
-            cert=cert_path,
-            key=key_path,
-            rootca=rootca,
-            require_signed_jobs=True,
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            handle_package(args)
-        assert exc_info.value.code == 4
-
     def test_output_dir_exists_no_force(self, cert_env, tmp_path):
         work = tmp_path / "work"
         work.mkdir()
@@ -772,7 +746,6 @@ class TestErrorConditions:
             cert=cert_path,
             key=key_path,
             rootca=rootca,
-            server_name="fl-server",
             output_dir=str(tmp_path / "output"),
         )
         with pytest.raises(SystemExit) as exc_info:
@@ -795,23 +768,22 @@ class TestErrorConditions:
             cert=cert_path,
             key=key_path,
             rootca=rootca,
-            server_name="fl-server",
             output_dir=None,  # also omitted
         )
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
         assert exc_info.value.code == 4
 
-    @pytest.mark.parametrize("kit_type", ["client", "org_admin", "lead", "member"])
-    def test_omitted_server_name_defaults_to_endpoint_hostname(self, kit_type, cert_env, tmp_path):
-        """--server-name omitted → defaults to endpoint hostname, command succeeds."""
+    @pytest.mark.parametrize("kit_type", ["client", "org_admin", "lead", "member", "server"])
+    def test_server_identity_derived_from_endpoint(self, kit_type, cert_env, tmp_path):
+        """Server identity is always the endpoint hostname — no --server-name argument needed."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        cert_filename = "client.crt" if kit_type != "server" else "server.crt"
+        cert_filename = "server.crt" if kit_type == "server" else "client.crt"
         key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "alice", str(work), cert_filename)
         args = _make_args(
             kit_type=kit_type,
@@ -820,30 +792,6 @@ class TestErrorConditions:
             cert=cert_path,
             key=key_path,
             rootca=rootca,
-            server_name=None,  # omitted — should default to "fl-server"
             output_dir=str(tmp_path / "output"),
         )
-        handle_package(args)  # must not raise
-        # server_name should have been resolved to the endpoint hostname
-        assert args.server_name == "fl-server"
-
-    def test_server_type_does_not_require_server_name(self, cert_env, tmp_path):
-        """Finding #2: server kit type must NOT require --server-name."""
-        work = tmp_path / "work"
-        work.mkdir()
-        ca_key = cert_env["ca_key"]
-        ca_cert = cert_env["ca_cert"]
-        rootca = cert_env["rootca_path"]
-
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
-        args = _make_args(
-            kit_type="server",
-            name="fl-server",
-            endpoint="grpc://fl-server:8002",
-            cert=cert_path,
-            key=key_path,
-            rootca=rootca,
-            server_name=None,  # not required for server type
-            output_dir=str(tmp_path / "output"),
-        )
-        handle_package(args)  # must not raise
+        handle_package(args)  # must not raise for any kit type
