@@ -38,7 +38,7 @@ from nvflare.tool.cert.cert_commands import _read_serial, handle_cert_csr, handl
 
 def _init_args(**kwargs):
     defaults = dict(
-        name="TestProject",
+        project="TestProject",
         output_dir=None,
         org=None,
         force=False,
@@ -113,7 +113,7 @@ class TestCertInit:
         assert mode == 0o600
 
     def test_ca_json_content(self, tmp_path):
-        _run_init(tmp_path, name="MyProject")
+        _run_init(tmp_path, project="MyProject")
         with open(str(tmp_path / "ca.json")) as f:
             meta = json.load(f)
         assert meta["project"] == "MyProject"
@@ -202,7 +202,7 @@ class TestCertInit:
         assert os.path.exists(os.path.join(new_dir, "rootCA.pem"))
 
     def test_ca_cert_subject_cn_matches_name(self, tmp_path):
-        _run_init(tmp_path, name="FederationX")
+        _run_init(tmp_path, project="FederationX")
         cert = load_crt(str(tmp_path / "rootCA.pem"))
         cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         assert cn == "FederationX"

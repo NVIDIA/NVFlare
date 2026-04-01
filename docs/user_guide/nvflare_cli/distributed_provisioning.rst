@@ -72,13 +72,13 @@ operation** per federation.
 
 .. code-block:: bash
 
-   nvflare cert init -n <project-name> -o ./ca
+   nvflare cert init --project <project-name> -o ./ca
 
 Example:
 
 .. code-block:: bash
 
-   nvflare cert init -n my-fl-project -o ./ca
+   nvflare cert init --project my-fl-project -o ./ca
 
 This produces:
 
@@ -245,7 +245,7 @@ This example sets up a federation with one server (``fl-server``) and one client
 .. code-block:: bash
 
    # 1. Initialize root CA
-   nvflare cert init -n my-project -o ./ca
+   nvflare cert init --project my-project -o ./ca
 
    # 4a. Sign server CSR (after receiving fl-server.csr from the server site)
    nvflare cert sign -r fl-server.csr -t server -c ./ca -o ./signed/fl-server
@@ -301,7 +301,7 @@ Initialize the root CA (Project Admin, once per federation).
 +------------------+--------------------------------------------------+----------+
 | Argument         | Description                                      | Required |
 +==================+==================================================+==========+
-| ``-n`` / ``--name``   | Project name (used as CA subject CN)        | Yes      |
+| ``--project``         | Project name (used as CA subject CN)        | Yes      |
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory to write CA files             | Yes      |
 +------------------+--------------------------------------------------+----------+

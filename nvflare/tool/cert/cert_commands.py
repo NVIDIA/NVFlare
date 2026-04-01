@@ -67,9 +67,9 @@ def handle_cert_init(args):
             _cert_cli._cert_init_parser,
             command="nvflare cert init",
             examples=[
-                "nvflare cert init -n MyProject -o ./ca",
-                "nvflare cert init -n MyProject -o ./ca --output json",
-                "nvflare cert init -n MyProject -o ./ca --org NVIDIA --force",
+                "nvflare cert init --project MyProject -o ./ca",
+                "nvflare cert init --project MyProject -o ./ca --output json",
+                "nvflare cert init --project MyProject -o ./ca --org NVIDIA --force",
             ],
         )
         print(json.dumps(schema, indent=2))
@@ -77,7 +77,7 @@ def handle_cert_init(args):
 
     # 2. Validate required args
     output_fmt = getattr(args, "output_fmt", None)
-    for flag, attr in (("-n/--name", "name"), ("-o/--output-dir", "output_dir")):
+    for flag, attr in (("--project", "project"), ("-o/--output-dir", "output_dir")):
         if not getattr(args, attr, None):
             message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
             output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
@@ -118,9 +118,9 @@ def handle_cert_init(args):
     # 8. Generate self-signed CA certificate
     try:
         cert = CertBuilder._generate_cert(
-            subject=args.name,
+            subject=args.project,
             subject_org=args.org,
-            issuer=args.name,  # self-signed: issuer == subject
+            issuer=args.project,  # self-signed: issuer == subject
             signing_pri_key=pri_key,
             subject_pub_key=pub_key,
             valid_days=3650,
@@ -147,7 +147,7 @@ def handle_cert_init(args):
 
         created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
-            "project": args.name,
+            "project": args.project,
             "created_at": created_at,
             "next_serial": 2,
         }
@@ -165,11 +165,11 @@ def handle_cert_init(args):
     result = {
         "ca_cert": rootca_path,
         "ca_key": ca_key_path,
-        "project": args.name,
-        "subject_cn": args.name,
+        "project": args.project,
+        "subject_cn": args.project,
         "valid_until": valid_until_str,
     }
-    output(result, args.output_fmt)
+    output(result, output_fmt)
     return 0
 
 
