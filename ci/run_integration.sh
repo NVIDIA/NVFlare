@@ -48,8 +48,6 @@ integration_test_tf() {
     # since running directly in container, point python to python3.12
     ln -sfn /usr/bin/python3.12 /usr/bin/python
     ln -sfn /usr/bin/python3.12 /usr/bin/python3
-    # somehow the base container has blinker which should be removed
-    apt remove -y python3-blinker python-blinker-doc || true
     # pipenv does not work with TensorFlow so using pip
     python3.12 -m pip install -e .[dev]
     python3.12 -m pip install tensorflow[and-cuda]
@@ -92,10 +90,9 @@ integration_test() {
 
 integration_test_gpu() {
     echo "Run GPU integration test with backend $1..."
-    # Run directly in the container (no virtualenv) so we control the exact
-    # torch/torchvision/pytorch_lightning versions compatible with the GPU driver.
-    pip install -e .[dev]
+    # the container is using cuda 12.6
     pip install torch torchvision pytorch_lightning --index-url https://download.pytorch.org/whl/cu126
+    pip install -e .[dev]
     export PYTHONPATH=$PWD
     add_dns_entries
     testFolder="tests/integration_test"
