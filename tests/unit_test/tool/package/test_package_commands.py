@@ -107,9 +107,13 @@ class TestParseEndpoint:
         assert host == "192.168.1.10"
         assert port == 9000
 
+    def test_http_valid(self):
+        scheme, host, port = _parse_endpoint("http://server:8002")
+        assert scheme == "http"
+
     def test_invalid_scheme_raises(self):
         with pytest.raises(ValueError):
-            _parse_endpoint("http://server:8002")
+            _parse_endpoint("https://server:8002")
 
     def test_missing_port_raises(self):
         with pytest.raises(ValueError):
@@ -221,7 +225,7 @@ class TestClientKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
 
         out_dir = str(tmp_path / "output")
         args = _make_args(
@@ -258,7 +262,7 @@ class TestClientKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -282,7 +286,7 @@ class TestClientKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -309,7 +313,7 @@ class TestClientKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca_src = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         shutil.copy2(rootca_src, str(work / "rootCA.pem"))
 
         out_dir = str(tmp_path / "output")
@@ -331,7 +335,7 @@ class TestClientKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca_src = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         shutil.copy2(rootca_src, str(work / "rootCA.pem"))
 
         out_dir = str(tmp_path / "output")
@@ -355,7 +359,7 @@ class TestServerKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "fl-server.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="server",
@@ -392,7 +396,7 @@ class TestServerKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "fl-server.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="server",
@@ -419,7 +423,7 @@ class TestServerKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "fl-server.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="server",
@@ -446,7 +450,7 @@ class TestAdminKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), f"{kit_type}.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), "admin-alice.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type=kit_type,
@@ -476,7 +480,7 @@ class TestAdminKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), "lead.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), "admin-alice.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="lead",
@@ -503,7 +507,7 @@ class TestAdminKitAssembly:
         ca_cert = cert_env["ca_cert"]
         rootca_src = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), "lead.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "admin-alice", str(work), "admin-alice.crt")
         shutil.copy2(rootca_src, str(work / "rootCA.pem"))
 
         out_dir = str(tmp_path / "output")
@@ -532,7 +536,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, _ = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, _ = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -554,7 +558,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        _, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        _, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -576,7 +580,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -598,12 +602,12 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
             name="hospital-1",
-            endpoint="http://server.example.com:8002",  # invalid scheme
+            endpoint="https://server.example.com:8002",  # invalid scheme
             cert=cert_path,
             key=key_path,
             rootca=rootca,
@@ -642,7 +646,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         out_dir = tmp_path / "output"
         out_dir.mkdir()  # already exists
 
@@ -675,7 +679,7 @@ class TestErrorConditions:
         # Sign cert with CA1 but provide rootCA of CA2
         work = tmp_path / "work"
         work.mkdir()
-        key_path, cert_path = _make_signed_cert(ca_key_1, ca_cert_1, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key_1, ca_cert_1, "hospital-1", str(work), "hospital-1.crt")
         out_dir = str(tmp_path / "output")
         args = _make_args(
             kit_type="client",
@@ -697,7 +701,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         args = _make_args(
             kit_type="client",
             name="hospital-1",
@@ -717,7 +721,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "server.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "fl-server.crt")
         args = _make_args(
             kit_type="server",
             name="fl-server",
@@ -738,7 +742,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         args = _make_args(
             kit_type="client",
             name=None,  # omitted
@@ -760,7 +764,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "client.crt")
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         args = _make_args(
             kit_type="client",
             name=None,  # omitted
@@ -783,8 +787,7 @@ class TestErrorConditions:
         ca_cert = cert_env["ca_cert"]
         rootca = cert_env["rootca_path"]
 
-        cert_filename = "server.crt" if kit_type == "server" else "client.crt"
-        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "alice", str(work), cert_filename)
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "alice", str(work), "alice.crt")
         args = _make_args(
             kit_type=kit_type,
             name="alice",

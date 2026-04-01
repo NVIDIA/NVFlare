@@ -88,7 +88,7 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
     ),
     "INVALID_ENDPOINT": (
         "Invalid endpoint URI: {endpoint}.",
-        "Use format: grpc://host:port or tcp://host:port.",
+        "Use format: grpc://host:port, tcp://host:port, or http://host:port.",
     ),
     "OUTPUT_DIR_EXISTS": (
         "Output directory already exists: {path}.",

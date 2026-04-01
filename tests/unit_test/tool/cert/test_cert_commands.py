@@ -380,11 +380,11 @@ class TestCertSign:
 
     def test_sign_output_files(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
-        csr_path = _setup_csr(tmp_path)
+        csr_path = _setup_csr(tmp_path)  # name="hospital-1"
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        assert os.path.exists(os.path.join(out_dir, "client.crt"))
+        assert os.path.exists(os.path.join(out_dir, "hospital-1.crt"))
         assert os.path.exists(os.path.join(out_dir, "rootCA.pem"))
 
     def test_sign_updates_ca_json(self, tmp_path):
@@ -404,7 +404,7 @@ class TestCertSign:
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        cert = load_crt(os.path.join(out_dir, "client.crt"))
+        cert = load_crt(os.path.join(out_dir, "hospital-1.crt"))
         assert cert is not None
 
     def test_sign_cert_not_ca(self, tmp_path):
@@ -413,37 +413,37 @@ class TestCertSign:
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        cert = load_crt(os.path.join(out_dir, "client.crt"))
+        cert = load_crt(os.path.join(out_dir, "hospital-1.crt"))
         bc = cert.extensions.get_extension_for_class(BasicConstraints)
         assert bc.value.ca is False
 
     def test_sign_cert_type_authoritative(self, tmp_path):
-        """The -t arg controls UNSTRUCTURED_NAME in signed cert; CSR has no embedded role."""
+        """The -t arg controls UNSTRUCTURED_NAME in signed cert; filename uses participant CN."""
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path, name="alice")
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="lead")
         handle_cert_sign(args)
-        cert = load_crt(os.path.join(out_dir, "lead.crt"))
+        cert = load_crt(os.path.join(out_dir, "alice.crt"))
         role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
         assert len(role_attrs) == 1
         assert role_attrs[0].value == "lead"
 
-    def test_sign_output_filename_from_type(self, tmp_path):
+    def test_sign_output_filename_from_participant(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path, name="srv")
         out_dir = str(tmp_path / "signed")
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="server")
         handle_cert_sign(args)
-        assert os.path.exists(os.path.join(out_dir, "server.crt"))
+        assert os.path.exists(os.path.join(out_dir, "srv.crt"))
 
     def test_sign_existing_cert_no_force(self, tmp_path):
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
-        # Pre-create the cert file
-        open(os.path.join(out_dir, "client.crt"), "w").close()
+        # Pre-create the cert file (named after participant)
+        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         with pytest.raises(SystemExit) as exc_info:
             handle_cert_sign(args)
@@ -454,7 +454,7 @@ class TestCertSign:
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
-        open(os.path.join(out_dir, "client.crt"), "w").close()
+        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", force=True)
         rc = handle_cert_sign(args)
         assert rc == 0
@@ -506,7 +506,7 @@ class TestCertSign:
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
         os.makedirs(out_dir, exist_ok=True)
-        open(os.path.join(out_dir, "client.crt"), "w").close()
+        open(os.path.join(out_dir, "hospital-1.crt"), "w").close()
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", output_fmt="json")
         rc = handle_cert_sign(args)
         assert rc == 0
@@ -556,10 +556,10 @@ class TestCertSign:
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="org_admin")
         rc = handle_cert_sign(args)
         assert rc == 0
-        assert os.path.exists(os.path.join(out_dir, "org_admin.crt"))
+        assert os.path.exists(os.path.join(out_dir, "bob.crt"))
         # Admin-role certs must have content_commitment (non-repudiation) set to True.
         # This is required so that job submissions signed with admin certs cannot be repudiated.
         # Regression guard: _build_signed_cert must use content_commitment=True for admin roles.
-        cert = load_crt(os.path.join(out_dir, "org_admin.crt"))
+        cert = load_crt(os.path.join(out_dir, "bob.crt"))
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
         assert key_usage.value.content_commitment is True

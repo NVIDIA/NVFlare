@@ -487,9 +487,10 @@ def handle_cert_sign(args):
         message, hint = get_error("INVALID_CSR", path=csr_path)
         output_error("INVALID_CSR", message, hint, output_fmt)
 
-    # 6. Cert type is authoritative from -t argument
+    # 6. Cert type is authoritative from -t argument; cert is named after the participant (CN)
     cert_type = args.cert_type
-    output_filename = f"{cert_type}.crt"
+    subject_cn = _get_cn(csr.subject)
+    output_filename = f"{subject_cn}.crt"
 
     # 7. Resolve output paths; check for existing cert
     output_dir = os.path.abspath(args.output_dir)
@@ -548,7 +549,6 @@ def handle_cert_sign(args):
     except AttributeError:
         _valid_until_dt = signed_cert.not_valid_after  # cryptography < 42.0
     valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    subject_cn = _get_cn(csr.subject)
 
     # 14. Output result
     next_step = (

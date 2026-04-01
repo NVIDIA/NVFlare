@@ -26,7 +26,7 @@ from nvflare.lighter.utils import load_crt, sh_replace, verify_cert
 from nvflare.tool.cli_errors import get_error
 from nvflare.tool.cli_output import output, output_error
 
-_ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp)://([^:/]+):(\d+)$")
+_ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp|http)://([^:/]+):(\d+)$")
 
 _PACKAGE_EXAMPLES = [
     "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice",
@@ -376,8 +376,8 @@ def handle_package(args):
         # Auto-detect name from *.key if -n not given
         if not args.name:
             args.name = _discover_name_from_dir(args.dir, fmt)
-        # Resolve paths by convention
-        args.cert = os.path.join(args.dir, f"{args.kit_type}.crt")
+        # Resolve paths by convention — all files are named after the participant
+        args.cert = os.path.join(args.dir, f"{args.name}.crt")
         args.key = os.path.join(args.dir, f"{args.name}.key")
         args.rootca = os.path.join(args.dir, "rootCA.pem")
     else:
