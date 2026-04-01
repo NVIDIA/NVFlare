@@ -367,8 +367,9 @@ class FlowerServerApplet(Applet):
             "\n"
             f"[superlink.{FLOWER_SUPERLINK_CONNECTION}]\n"
             f'address = "{self.exec_api_addr}"\n'
-            # Keep the generated connection config aligned with the in-process
-            # SuperLink startup flags until NVFlare adds TLS support here.
+            # The Flower control channel stays local to the NVFlare server host,
+            # so the generated connection intentionally matches the colocated
+            # SuperLink's non-TLS startup mode.
             "insecure = true\n"
         )
 
