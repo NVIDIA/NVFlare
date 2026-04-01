@@ -55,12 +55,14 @@ class BLIPVQADataset(Dataset):
             max_length=self.max_a,
             return_tensors="pt",
         )
-        labels = lab["input_ids"].squeeze(0).clone()
+        decoder_input_ids = lab["input_ids"].squeeze(0).clone()
+        labels = decoder_input_ids.clone()
         labels[lab["attention_mask"].squeeze(0) == 0] = -100
         return {
             "pixel_values": enc["pixel_values"].squeeze(0),
             "input_ids": enc["input_ids"].squeeze(0),
             "attention_mask": enc["attention_mask"].squeeze(0),
+            "decoder_input_ids": decoder_input_ids,
             "labels": labels,
             "decoder_attention_mask": lab["attention_mask"].squeeze(0),
             "gt_answers": [a["answer"] for a in ex["answers"]],
@@ -96,7 +98,14 @@ class BLIPBackend:
 
     def collate_fn(self, batch):
         out = {}
-        for k in ["pixel_values", "input_ids", "attention_mask", "labels", "decoder_attention_mask"]:
+        for k in [
+            "pixel_values",
+            "input_ids",
+            "attention_mask",
+            "decoder_input_ids",
+            "labels",
+            "decoder_attention_mask",
+        ]:
             out[k] = torch.stack([b[k] for b in batch])
         out["gt_answers"] = [b["gt_answers"] for b in batch]
         return out
@@ -106,6 +115,7 @@ class BLIPBackend:
             pixel_values=batch["pixel_values"].to(device, non_blocking=True),
             input_ids=batch["input_ids"].to(device, non_blocking=True),
             attention_mask=batch["attention_mask"].to(device, non_blocking=True),
+            decoder_input_ids=batch["decoder_input_ids"].to(device, non_blocking=True),
             labels=batch["labels"].to(device, non_blocking=True),
             decoder_attention_mask=batch["decoder_attention_mask"].to(device, non_blocking=True),
         ).loss
