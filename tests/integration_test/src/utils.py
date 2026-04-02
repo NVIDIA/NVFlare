@@ -468,9 +468,7 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
 
         if connect_error:
             admin_api.close()
-            raise RuntimeError(
-                f"admin_api.connect() failed for {admin_user_name}: {connect_error['value']}"
-            )
+            raise RuntimeError(f"admin_api.connect() failed for {admin_user_name}: {connect_error['value']}")
 
         print(f"Connected admin API for {admin_user_name}; starting login", flush=True)
 
