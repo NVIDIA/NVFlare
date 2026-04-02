@@ -44,12 +44,13 @@ class Person(object):
         self.role = _normalize_str(role, FieldNames.USER_ROLE)
 
     def __str__(self):
-        if (not self.name) and (not self.org) and (not self.role):
-            return "None"
         name = self.name if self.name else "None"
         org = self.org if self.org else "None"
         role = self.role if self.role else "None"
-        return f"{name}:{org}:{role}"
+        if (not name) and (not org) and (not role):
+            return "None"
+        else:
+            return f"{name}:{org}:{role}"
 
 
 class AuthzContext(object):
@@ -226,9 +227,9 @@ class Policy(object):
         return self.roles
 
     def _eval_for_role(self, role: str, site_org: str, ctx: AuthzContext):
-        conds = self.role_right_map.get(_role_right_key(role, ctx.right))
+        conds = self.role_right_map.get(_role_right_key(role, _ANY_RIGHT))
         if not conds:
-            conds = self.role_right_map.get(_role_right_key(role, _ANY_RIGHT))
+            conds = self.role_right_map.get(_role_right_key(role, ctx.right))
 
         if not conds:
             return False
