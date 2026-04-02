@@ -108,7 +108,7 @@ To run the notebook locally, follow [Starting Jupyter Lab](#starting-jupyter-lab
 
 ### Prerequisites
 
-This project requires Python >= 3.12 and uses
+This project requires Python 3.12 and uses
 [`uv`](https://docs.astral.sh/uv/) for dependency management.
 
 To quickly install `uv`, run:
@@ -122,7 +122,7 @@ For other ways to install `uv`, see the [official installation guide](https://do
 ### Setup
 
 ```bash
-uv venv --seed
+uv venv --python 3.12 --seed
 uv sync --frozen
 ```
 
