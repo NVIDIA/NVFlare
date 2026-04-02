@@ -352,6 +352,35 @@ class TestK8sJobHandle:
         container = handle.get_manifest()["spec"]["containers"][0]
         assert "resources" not in container
 
+    # -- PYTHONPATH env var ---------------------------------------------------
+
+    def test_manifest_pythonpath_set_when_app_custom_folder_present(self):
+        cfg = _make_job_config(env={"PYTHONPATH": "/custom/app"})
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        assert "env" in container
+        env_map = {e["name"]: e["value"] for e in container["env"]}
+        assert env_map["PYTHONPATH"] == "/custom/app"
+
+    def test_manifest_pythonpath_value_is_string(self):
+        cfg = _make_job_config(env={"PYTHONPATH": "/my/custom"})
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        env_map = {e["name"]: e["value"] for e in container["env"]}
+        assert isinstance(env_map["PYTHONPATH"], str)
+
+    def test_manifest_no_env_when_app_custom_folder_empty_string(self):
+        cfg = _make_job_config(env={"PYTHONPATH": ""})
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        assert "env" not in container
+
+    def test_manifest_no_env_when_no_env_key(self):
+        cfg = _make_job_config()
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
+        container = handle.get_manifest()["spec"]["containers"][0]
+        assert "env" not in container
+
     def test_get_manifest_returns_independent_copy(self):
         handle = K8sJobHandle("job-1", _make_api_instance(), _make_job_config())
         manifest = handle.get_manifest()
@@ -923,7 +952,7 @@ def _make_launch_job_meta(site_name="site-1", image="nvflare/nvflare:latest", gp
     return meta
 
 
-def _make_launch_fl_ctx(site_name="site-1", set_items=None):
+def _make_launch_fl_ctx(site_name="site-1", set_items=None, app_custom_folder=""):
     fl_ctx = FLContext()
     fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name, private=False, sticky=True)
     job_args = {
@@ -936,6 +965,9 @@ def _make_launch_fl_ctx(site_name="site-1", set_items=None):
         args_obj = Mock()
         args_obj.set = set_items
         fl_ctx.set_prop(FLContextKey.ARGS, args_obj, private=False, sticky=False)
+    workspace_obj = Mock()
+    workspace_obj.get_app_custom_dir.return_value = app_custom_folder
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace_obj, private=True, sticky=False)
     return fl_ctx
 
 
@@ -1133,6 +1165,47 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             assert "resources" not in manifest["spec"]["containers"][0]
+        finally:
+            _exit_patches(patches)
+
+    # -- workspace object guard -----------------------------------------------
+
+    def test_raises_when_workspace_object_missing(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        try:
+            fl_ctx = _make_launch_fl_ctx()
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, None, private=True, sticky=False)
+            with pytest.raises(RuntimeError, match="workspace"):
+                launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+        finally:
+            _exit_patches(patches)
+
+    # -- pod manifest: PYTHONPATH env var -------------------------------------
+
+    def test_pod_manifest_pythonpath_env_set_when_custom_folder_present(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            fl_ctx = _make_launch_fl_ctx(app_custom_folder="/custom/app")
+            launcher.launch_job(_make_launch_job_meta(), fl_ctx)
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            container = manifest["spec"]["containers"][0]
+            assert "env" in container
+            env_map = {e["name"]: e["value"] for e in container["env"]}
+            assert env_map["PYTHONPATH"] == "/custom/app"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_no_env_when_no_custom_folder(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        self._prime_running(mock_api)
+        try:
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx(app_custom_folder=""))
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert "env" not in manifest["spec"]["containers"][0]
         finally:
             _exit_patches(patches)
 

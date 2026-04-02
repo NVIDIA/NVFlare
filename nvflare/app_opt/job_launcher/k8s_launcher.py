@@ -187,6 +187,9 @@ class K8sJobHandle(JobHandleSpec):
         self.container_list[0]["volumeMounts"] = self.container_volume_mount_list
         if job_config.get("resources", {}).get("limits", {}).get("nvidia.com/gpu"):
             self.container_list[0]["resources"] = job_config.get("resources")
+        app_custom_folder = job_config.get("env", {}).get("PYTHONPATH")
+        if app_custom_folder:
+            self.container_list[0]["env"] = [{"name": "PYTHONPATH", "value": str(app_custom_folder)}]
 
     def get_manifest(self):
         return copy.deepcopy(self.pod_manifest)
@@ -320,6 +323,10 @@ class K8sJobLauncher(JobLauncherSpec):
         if not raw_job_id:
             raise RuntimeError(f"missing {JobConstants.JOB_ID} in job_meta")
         job_id = uuid4_to_rfc1123(raw_job_id)
+        workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace_obj is None:
+            raise RuntimeError(f"missing {FLContextKey.WORKSPACE_OBJECT} in FLContext")
+        app_custom_folder = workspace_obj.get_app_custom_dir(raw_job_id)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         job_image = extract_job_image(job_meta, site_name)
         site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
@@ -345,6 +352,8 @@ class K8sJobLauncher(JobLauncherSpec):
             ],
             "module_args": self.get_module_args(job_id, fl_ctx),
         }
+        if app_custom_folder:
+            job_config["env"] = {"PYTHONPATH": app_custom_folder}
         if args is not None and getattr(args, "set", None) is not None:
             job_config.update({"set_list": args.set})
         if job_resource:
