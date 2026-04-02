@@ -1,13 +1,5 @@
 # Multi-Study Support — Phase 1: Study Plumbing
 
-## Revision History
-
-| Version | Notes |
-|---------|-------|
-| 1 | Initial version |
-| 2 | Incorporate feedback and Mayo discussion |
-| 3 | Rename `project` → `study`; split Phase 1 / Phase 2 docs |
-
 ## Introduction
 
 Flare currently operates as a single-tenant system. Every authorized admin can see and act on every job. There is no data segregation between different collaborations running on the same infrastructure.

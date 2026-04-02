@@ -1,14 +1,5 @@
 # Multi-Study Support — Phase 2: Per-Study Access Control
 
-## Revision History
-
-| Version | Notes |
-|---------|-------|
-| 1 | Initial version |
-| 2 | Incorporate feedback and Mayo discussion |
-| 3 | Rename `project` → `study`; split Phase 1 / Phase 2 docs |
-| 4 | Simplify: reuse existing roles, no new role types, minimal changes |
-
 ## Prerequisites
 
 Phase 1 ([multistudy_phase1.md](multistudy_phase1.md)) must be complete: `study` metadata flows from user-facing APIs through to job metadata and launcher plumbing.
