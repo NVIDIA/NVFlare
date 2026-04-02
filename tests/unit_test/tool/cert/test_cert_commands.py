@@ -29,7 +29,7 @@ from cryptography.x509.oid import NameOID
 # Ensure parsers are initialized by importing cert_cli (registers module-level parser refs)
 import nvflare.tool.cert.cert_cli  # noqa: F401
 from nvflare.lighter.utils import load_crt
-from nvflare.tool.cert.cert_commands import _read_serial, handle_cert_csr, handle_cert_init, handle_cert_sign
+from nvflare.tool.cert.cert_commands import handle_cert_csr, handle_cert_init, handle_cert_sign
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,6 +68,7 @@ def _sign_args(**kwargs):
         ca_dir=None,
         output_dir=None,
         cert_type="client",
+        valid_days=1095,
         force=False,
         output_fmt=None,
         schema=False,
@@ -391,11 +392,15 @@ class TestCertSign:
         ca_dir = _setup_ca(tmp_path)
         csr_path = _setup_csr(tmp_path)
         out_dir = str(tmp_path / "signed")
-        # Read serial before
-        serial_before = _read_serial(os.path.join(ca_dir, "ca.json"))
+
+        def _peek_serial(ca_json_path):
+            with open(ca_json_path) as _f:
+                return json.load(_f).get("next_serial", 2)
+
+        serial_before = _peek_serial(os.path.join(ca_dir, "ca.json"))
         args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
         handle_cert_sign(args)
-        serial_after = _read_serial(os.path.join(ca_dir, "ca.json"))
+        serial_after = _peek_serial(os.path.join(ca_dir, "ca.json"))
         assert serial_after == serial_before + 1
 
     def test_sign_cert_is_valid_x509(self, tmp_path):
@@ -536,16 +541,20 @@ class TestCertSign:
         csr1 = _setup_csr(tmp_path / "csr1", name="client1")
         csr2 = _setup_csr(tmp_path / "csr2", name="client2")
 
+        def _peek_serial(ca_json_path):
+            with open(ca_json_path) as _f:
+                return json.load(_f).get("next_serial", 2)
+
         out1 = str(tmp_path / "signed1")
         out2 = str(tmp_path / "signed2")
 
         args1 = _sign_args(csr_path=csr1, ca_dir=ca_dir, output_dir=out1, cert_type="client")
         handle_cert_sign(args1)
-        serial_mid = _read_serial(os.path.join(ca_dir, "ca.json"))
+        serial_mid = _peek_serial(os.path.join(ca_dir, "ca.json"))
 
         args2 = _sign_args(csr_path=csr2, ca_dir=ca_dir, output_dir=out2, cert_type="client")
         handle_cert_sign(args2)
-        serial_end = _read_serial(os.path.join(ca_dir, "ca.json"))
+        serial_end = _peek_serial(os.path.join(ca_dir, "ca.json"))
 
         assert serial_end == serial_mid + 1
 
@@ -563,3 +572,66 @@ class TestCertSign:
         cert = load_crt(os.path.join(out_dir, "bob.crt"))
         key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage)
         assert key_usage.value.content_commitment is True
+
+    def test_valid_days_custom(self, tmp_path):
+        """--valid-days controls certificate not_valid_after."""
+        import datetime
+
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client", valid_days=90)
+        handle_cert_sign(args)
+
+        cert = load_crt(os.path.join(out_dir, "site-1.crt"))
+        try:
+            not_after = cert.not_valid_after_utc
+            now = datetime.datetime.now(datetime.timezone.utc)
+        except AttributeError:
+            not_after = cert.not_valid_after
+            now = datetime.datetime.utcnow()
+        days_remaining = (not_after - now).days
+        # Should be ~90 days; give ±2 days tolerance for test timing
+        assert 88 <= days_remaining <= 92
+
+    def test_valid_days_default_is_1095(self, tmp_path):
+        """Default cert validity is 3 years (1095 days)."""
+        import datetime
+
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path, name="site-1")
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="client")
+        handle_cert_sign(args)
+
+        cert = load_crt(os.path.join(out_dir, "site-1.crt"))
+        try:
+            not_after = cert.not_valid_after_utc
+            now = datetime.datetime.now(datetime.timezone.utc)
+        except AttributeError:
+            not_after = cert.not_valid_after
+            now = datetime.datetime.utcnow()
+        days_remaining = (not_after - now).days
+        assert 1093 <= days_remaining <= 1097
+
+    def test_serial_incremented_atomically(self, tmp_path):
+        """_claim_serial reads and increments in one step; serial advances exactly once per sign."""
+        ca_dir = _setup_ca(tmp_path)
+
+        def _peek(ca_json_path):
+            with open(ca_json_path) as _f:
+                return json.load(_f).get("next_serial", 2)
+
+        ca_json = os.path.join(ca_dir, "ca.json")
+        initial = _peek(ca_json)
+
+        csr1 = _setup_csr(tmp_path / "csr1", name="site-a")
+        csr2 = _setup_csr(tmp_path / "csr2", name="site-b")
+        csr3 = _setup_csr(tmp_path / "csr3", name="site-c")
+
+        for i, csr in enumerate([csr1, csr2, csr3]):
+            out = str(tmp_path / f"out{i}")
+            args = _sign_args(csr_path=csr, ca_dir=ca_dir, output_dir=out, cert_type="client")
+            handle_cert_sign(args)
+
+        assert _peek(ca_json) == initial + 3

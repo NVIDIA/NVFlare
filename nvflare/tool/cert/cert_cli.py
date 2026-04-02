@@ -188,6 +188,14 @@ def _def_cert_sign_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argu
         help="Cert type to issue. Authoritative — embedded in signed cert UNSTRUCTURED_NAME.",
     )
     p.add_argument(
+        "--valid-days",
+        required=False,
+        type=int,
+        default=1095,
+        dest="valid_days",
+        help="Certificate validity in days. Default: 1095 (3 years).",
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         default=False,

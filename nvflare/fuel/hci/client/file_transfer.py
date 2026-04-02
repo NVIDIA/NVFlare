@@ -307,8 +307,11 @@ class FileTransferModule(CommandModule):
         api = ctx.get_api()
         client_key_file_path = api.client_key
         if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
-            private_key = load_private_key_file(client_key_file_path)
-            sign_folders(full_path, private_key, api.client_cert)
+            try:
+                private_key = load_private_key_file(client_key_file_path)
+                sign_folders(full_path, private_key, api.client_cert)
+            except Exception as e:
+                return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to sign job folder: {e}"}
 
         # zip the data
         out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))

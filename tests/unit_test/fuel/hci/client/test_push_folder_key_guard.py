@@ -142,3 +142,33 @@ class TestPushFolderKeyGuard:
             module.push_folder(args, ctx)
             mock_load.assert_called_once_with(str(key_file))
             mock_sign.assert_called_once()
+
+    def test_sign_folders_exception_returns_error(self, tmp_path):
+        """sign_folders raising an exception returns ERROR_RUNTIME instead of crashing."""
+        from nvflare.fuel.hci.client.api_status import APIStatus
+        from nvflare.fuel.hci.client.file_transfer import FileTransferModule
+
+        key_file = tmp_path / "test.key"
+        key_file.write_text("fake key content")
+
+        upload_dir = str(tmp_path / "upload")
+        download_dir = str(tmp_path / "dl")
+        os.makedirs(upload_dir, exist_ok=True)
+        os.makedirs(download_dir, exist_ok=True)
+
+        folder_name = "test_job"
+        os.makedirs(os.path.join(upload_dir, folder_name), exist_ok=True)
+
+        module = FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)
+        args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt", folder_name)
+
+        with (
+            patch(
+                "nvflare.fuel.hci.client.file_transfer.load_private_key_file",
+                side_effect=ValueError("corrupted key"),
+            ),
+        ):
+            result = module.push_folder(args, ctx)
+
+        assert result["status"] == APIStatus.ERROR_RUNTIME
+        assert "corrupted key" in result["details"]

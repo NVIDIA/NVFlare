@@ -15,6 +15,7 @@
 """nvflare cert subcommand handlers: init, csr, sign."""
 
 import datetime
+import fcntl
 import json
 import os
 import shutil
@@ -326,20 +327,21 @@ def _get_cn(name: x509.Name) -> str:
     return ""
 
 
-def _read_serial(ca_json_path: str) -> int:
-    """Read the current next_serial value from ca.json."""
-    with open(ca_json_path) as f:
-        meta = json.load(f)
-    return meta.get("next_serial", 2)
+def _claim_serial(ca_json_path: str) -> int:
+    """Atomically claim the next serial number from ca.json and return it.
 
-
-def _increment_serial(ca_json_path: str) -> None:
-    """Increment next_serial in ca.json by 1. Called after successful signing only."""
-    with open(ca_json_path) as f:
+    Uses an exclusive file lock so concurrent ``nvflare cert sign`` invocations
+    cannot claim the same serial number.
+    """
+    with open(ca_json_path, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
         meta = json.load(f)
-    meta["next_serial"] = meta.get("next_serial", 2) + 1
-    with open(ca_json_path, "w") as f:
+        serial = meta.get("next_serial", 2)
+        meta["next_serial"] = serial + 1
+        f.seek(0)
+        f.truncate()
         json.dump(meta, f, indent=2)
+    return serial
 
 
 def _build_signed_cert(
@@ -519,17 +521,18 @@ def handle_cert_sign(args):
         message, hint = get_error("CA_NOT_FOUND", ca_dir=ca_dir)
         output_error("CA_NOT_FOUND", message, hint, output_fmt)
 
-    # 9. Read audit serial from ca.json
-    audit_serial = _read_serial(ca_json_path)
+    # 9. Atomically claim serial from ca.json (read + increment under exclusive lock)
+    audit_serial = _claim_serial(ca_json_path)
 
     # 10. Build and sign the certificate
+    valid_days = getattr(args, "valid_days", 1095) or 1095
     try:
         signed_cert = _build_signed_cert(
             csr=csr,
             ca_cert=ca_cert,
             ca_key=ca_key,
             cert_type=cert_type,
-            valid_days=1095,
+            valid_days=valid_days,
         )
     except Exception as e:
         message, hint = get_error("CERT_SIGNING_FAILED", reason=str(e))
@@ -540,10 +543,7 @@ def handle_cert_sign(args):
         f.write(serialize_cert(signed_cert))
     shutil.copy2(ca_cert_path, rootca_out_path)
 
-    # 12. Increment serial in ca.json now that signing succeeded
-    _increment_serial(ca_json_path)
-
-    # 13. Compute valid_until for output
+    # 12. Compute valid_until for output
     try:
         _valid_until_dt = signed_cert.not_valid_after_utc
     except AttributeError:

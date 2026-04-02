@@ -130,6 +130,22 @@ class TestParseEndpoint:
         with pytest.raises(ValueError):
             _parse_endpoint("grpc://:8002")
 
+    def test_port_zero_raises(self):
+        with pytest.raises(ValueError):
+            _parse_endpoint("grpc://server:0")
+
+    def test_port_above_max_raises(self):
+        with pytest.raises(ValueError):
+            _parse_endpoint("grpc://server:65536")
+
+    def test_port_max_valid(self):
+        _, _, port = _parse_endpoint("grpc://server:65535")
+        assert port == 65535
+
+    def test_port_min_valid(self):
+        _, _, port = _parse_endpoint("grpc://server:1")
+        assert port == 1
+
 
 # ---------------------------------------------------------------------------
 # Unit tests: _discover_name_from_dir

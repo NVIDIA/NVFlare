@@ -113,7 +113,10 @@ def _parse_endpoint(endpoint: str) -> tuple:
     m = _ENDPOINT_PATTERN.match(endpoint)
     if not m:
         raise ValueError(f"Invalid endpoint URI: {endpoint!r}")
-    return m.group(1), m.group(2), int(m.group(3))
+    port = int(m.group(3))
+    if not (1 <= port <= 65535):
+        raise ValueError(f"Invalid endpoint URI: {endpoint!r} — port must be 1–65535")
+    return m.group(1), m.group(2), port
 
 
 def _discover_name_from_dir(work_dir: str, fmt) -> str:
