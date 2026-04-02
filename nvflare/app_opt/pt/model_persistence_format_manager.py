@@ -24,6 +24,7 @@ from nvflare.app_common.abstract.model import (
     validate_model_learnable,
 )
 from nvflare.app_common.app_constant import ModelFormat
+from nvflare.app_opt.pt.utils import inspect_model_params
 
 
 class PTModelPersistenceFormatManager(object):
@@ -140,6 +141,17 @@ class PTModelPersistenceFormatManager(object):
         # update with value of the model learnable
         # note that the original weights that are not learned are still kept!
         learned_weights = ml.get(ModelLearnableKey.WEIGHTS, {})
+        report = inspect_model_params(self.var_dict, learned_weights)
+
+        if report.shape_mismatches:
+            raise ValueError(report.format_shape_mismatch_error())
+
+        if learned_weights and not report.matched_keys:
+            raise ValueError(report.format_zero_match_error())
+
+        if report.unexpected_keys:
+            raise ValueError(report.format_unexpected_keys_warning())
+
         for k, v in learned_weights.items():
             self.var_dict[k] = v
 
