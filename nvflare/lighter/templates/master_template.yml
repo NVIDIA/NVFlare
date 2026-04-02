@@ -318,7 +318,16 @@ default_authz: |
   {
     "format_version": "1.0",
     "permissions": {
-      "project_admin": "any",
+      "project_admin": {
+        "submit_job": "any",
+        "clone_job": "any",
+        "manage_job": "any",
+        "download_job": "any",
+        "view": "any",
+        "operate": "any",
+        "shell_commands": "none",
+        "byoc": "any"
+      },
       "org_admin": {
         "submit_job": "none",
         "clone_job": "none",
@@ -326,7 +335,7 @@ default_authz: |
         "download_job": "o:submitter",
         "view": "any",
         "operate": "o:site",
-        "shell_commands": "o:site",
+        "shell_commands": "none",
         "byoc": "none"
       },
       "lead": {
@@ -336,7 +345,7 @@ default_authz: |
         "download_job": "n:submitter",
         "view": "any",
         "operate": "o:site",
-        "shell_commands": "o:site",
+        "shell_commands": "none",
         "byoc": "any"
       },
       "member": {
@@ -349,7 +358,16 @@ cc_authz: |
   {
     "format_version": "1.0",
     "permissions": {
-      "project_admin": "any",
+      "project_admin": {
+        "submit_job": "any",
+        "clone_job": "any",
+        "manage_job": "any",
+        "download_job": "any",
+        "view": "any",
+        "operate": "any",
+        "shell_commands": "none",
+        "byoc": "any"
+      },
       "org_admin": {
         "submit_job": "none",
         "clone_job": "none",
