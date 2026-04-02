@@ -468,7 +468,9 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
 
         if connect_error:
             admin_api.close()
-            raise RuntimeError(f"admin_api.connect() failed for {admin_user_name}: {connect_error['value']}")
+            raise RuntimeError(
+                f"admin_api.connect() failed for {admin_user_name}: {connect_error['value']}"
+            )
 
         print(f"Connected admin API for {admin_user_name}; starting login", flush=True)
 
@@ -503,7 +505,9 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         print(f"Login call completed for {admin_user_name}: {login_response}", flush=True)
         if not isinstance(login_response, dict) or login_response.get("status") != APIStatus.SUCCESS:
             admin_api.close()
-            raise RuntimeError(f"admin_api.login() returned unsuccessful status for {admin_user_name}: {login_response}")
+            raise RuntimeError(
+                f"admin_api.login() returned unsuccessful status for {admin_user_name}: {login_response}"
+            )
         return admin_api
     finally:
         faulthandler.cancel_dump_traceback_later()
