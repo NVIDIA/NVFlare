@@ -458,6 +458,9 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
     login_thread.join(timeout=60.0)
 
     if login_thread.is_alive():
+        # The login thread is still blocked in admin_api.login(). Closing the
+        # API races with that background call, but the thread is daemonized and
+        # this test helper prefers failing loudly over hanging the whole test.
         admin_api.close()
         raise TimeoutError(
             f"admin_api.login() timed out after 60.0 seconds for {admin_user_name}; "
@@ -468,7 +471,11 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         admin_api.close()
         raise RuntimeError(f"admin_api.login() failed for {admin_user_name}: {login_error['value']}")
 
-    print(f"Login call completed for {admin_user_name}: {login_result.get('value')}")
+    login_response = login_result.get("value")
+    print(f"Login call completed for {admin_user_name}: {login_response}")
+    if not isinstance(login_response, dict) or login_response.get("status") != APIStatus.SUCCESS:
+        admin_api.close()
+        raise RuntimeError(f"admin_api.login() returned unsuccessful status for {admin_user_name}: {login_response}")
     return admin_api
 
 
