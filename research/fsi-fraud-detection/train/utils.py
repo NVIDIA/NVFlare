@@ -29,13 +29,9 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 from sklearn.metrics import balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
 
-from nvflare.apis.analytix import AnalyticsData, LogWriterName
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
 class FocalLoss(nn.Module):
@@ -68,28 +64,6 @@ class FocalLoss(nn.Module):
             alpha_t = self.alpha[targets]
             return (alpha_t * focal_weight * nll).mean()
         return (focal_weight * nll).mean()
-
-
-class CustomReceiver(AnalyticsReceiver):
-    def initialize(self, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "#####  Initializing CustomReceiver #####")
-
-    def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
-        self.log_info(fl_ctx, "#####  Saving CustomReceiver #####")
-
-        dxo = from_shareable(shareable)
-        data = AnalyticsData.from_dxo(dxo, receiver=LogWriterName.MLFLOW)
-        if not data:
-            self.log_info(fl_ctx, "#####  No data to save #####")
-            return
-
-        self.log_info(
-            fl_ctx,
-            f"#####  Data type: {data.data_type}, origin: {record_origin}, value: {data.value}, step: {data.step}, tag: {data.tag} #####",
-        )
-
-    def finalize(self, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "Finalizing CustomReceiver")
 
 
 def evaluate_on_test_datasets(model, test_datasets_dict, device):
@@ -151,7 +125,6 @@ def plot_attribution_summary(attribution_metrics, plot_prefix="", save_fig=False
     """
     try:
         attributions = attribution_metrics["attributions"]
-        sample_features = attribution_metrics["sample_features"]
         feature_names = attribution_metrics["feature_names"]
 
         attributions_for_plot = attributions
@@ -159,8 +132,6 @@ def plot_attribution_summary(attribution_metrics, plot_prefix="", save_fig=False
         if len(attributions_for_plot.shape) == 3:
             # If 3D array (samples, features, classes), take mean across classes
             attributions_for_plot = np.mean(attributions_for_plot, axis=2)
-
-        plt.figure(figsize=(5, 4))
 
         # Create violin plot similar to SHAP
         fig, ax = plt.subplots(figsize=(20, 16))

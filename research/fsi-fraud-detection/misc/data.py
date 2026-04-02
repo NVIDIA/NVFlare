@@ -19,7 +19,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 amount_features = ["DEBITOR_AMOUNT_SCALED"]
 age_synthetic_features = [
@@ -139,13 +139,6 @@ def get_distance_from_lat_long(dataset: pd.DataFrame, distance_field: str, field
     return dataset
 
 
-def scale_data(df: pd.DataFrame) -> pd.DataFrame:
-    scaler = RobustScaler()
-    print(scaler)
-    scaled_data = scaler.fit_transform(df)
-    return pd.DataFrame(scaled_data, columns=df.columns, index=df.index)
-
-
 def clean_dataframe(
     df: pd.DataFrame,
     dataset_name: str = "dataset",
@@ -255,10 +248,7 @@ def prepare_dataset(dataset: pd.DataFrame, scaler: StandardScaler | None = None)
     dataset = clean_dataframe(dataset, subset=all_model_parameters + [flag])
 
     # now all features should be numeric and unit-less. we can scale the data correctly now
-    if isinstance(scaler, bool) and scaler:
-        print("Using scale_data function")
-        dataset.loc[:, numerical_features] = scale_data(dataset.loc[:, numerical_features])
-    elif scaler:
+    if scaler:
         print(f"Using provided scaler...{scaler}")
         dataset.loc[:, numerical_features] = scaler.transform(dataset.loc[:, numerical_features])
 

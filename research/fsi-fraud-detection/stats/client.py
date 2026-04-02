@@ -19,7 +19,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 import sklearn
-from misc.data import all_model_parameters, clean_dataframe, prepare_dataset
+from misc.data import all_model_parameters, clean_dataframe, numerical_features, prepare_dataset
 from misc.data_io import load_csv_data_from_path, print_directory_tree, validate_data_features
 from misc.experiments import data_paths
 

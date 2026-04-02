@@ -256,9 +256,6 @@ def main():
     for epoch in range(args.epochs):
         # ── Training ──────────────────────────────────────────────────────────
         print(f"\n=== Training Epoch {epoch + 1}/{args.epochs} ===")
-        total_loss = 0.0
-        correct = 0
-        total = 0
 
         model.train()
         # Accumulate on GPU to avoid per-batch .item() CPU sync (sync only when logging)
@@ -288,10 +285,6 @@ def main():
                 print(
                     f"Epoch {epoch + 1}/{args.epochs} | Batch {batch_idx + 1}/{len(train_loader)} | Loss: {avg_loss:.6f} | Acc: {acc:.4f} | LR: {current_lr}"
                 )
-
-        total_loss = (running_loss / max(n_batches, 1)).item()
-        correct = running_correct.item()
-        total = running_total
 
         # Step the learning rate scheduler
         scheduler.step()
