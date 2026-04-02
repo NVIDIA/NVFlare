@@ -1,6 +1,7 @@
 api_version: 3
 name: auth_test
 description: NVFlare project to test authorization
+project_admin_shell_commands: any
 
 participants:
   - name: localhost0

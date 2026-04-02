@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import yaml
@@ -172,6 +173,25 @@ def update_job_store_path_in_workspace(path: str, server_name: str, job_store_pa
         json.dump(resource_json, f)
 
     return new_job_store_path
+
+
+def update_authorization_in_workspace(path: str, right: str, role: str, value: str):
+    updated = 0
+    for root, _, files in os.walk(path):
+        if "authorization.json.default" not in files:
+            continue
+        authz_path = os.path.join(root, "authorization.json.default")
+        with open(authz_path, "r") as f:
+            authz_config = json.load(f)
+        permissions = authz_config.setdefault("permissions", {})
+        role_perms = permissions.setdefault(role, {})
+        role_perms[right] = value
+        with open(authz_path, "w") as f:
+            json.dump(authz_config, f, indent=2)
+        updated += 1
+    if updated == 0:
+        raise RuntimeError(f"Did not find any authorization.json.default under {path}")
+    return updated
 
 
 def cleanup_job_and_snapshot(workspace: str, server_name: str):
@@ -420,8 +440,35 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         admin_config=admin_config,
         auto_login_max_tries=20,
     )
+    print(f"Connecting admin API for {admin_user_name} using workspace {admin_dir}")
     admin_api.connect(10.0)
-    admin_api.login()
+    print(f"Connected admin API for {admin_user_name}; starting login")
+
+    login_result = {}
+    login_error = {}
+
+    def _login():
+        try:
+            login_result["value"] = admin_api.login()
+        except Exception as e:
+            login_error["value"] = e
+
+    login_thread = threading.Thread(target=_login, daemon=True)
+    login_thread.start()
+    login_thread.join(timeout=60.0)
+
+    if login_thread.is_alive():
+        admin_api.close()
+        raise TimeoutError(
+            f"admin_api.login() timed out after 60.0 seconds for {admin_user_name}; "
+            "the admin session was created but post-login command initialization likely stalled"
+        )
+
+    if login_error:
+        admin_api.close()
+        raise RuntimeError(f"admin_api.login() failed for {admin_user_name}: {login_error['value']}")
+
+    print(f"Login call completed for {admin_user_name}: {login_result.get('value')}")
     return admin_api
 
 

@@ -26,6 +26,7 @@ from .utils import (
     read_yaml,
     run_command_in_subprocess,
     run_provision_command,
+    update_authorization_in_workspace,
     update_job_store_path_in_workspace,
     update_snapshot_path_in_workspace,
 )
@@ -76,6 +77,14 @@ class ProvisionSiteLauncher(SiteLauncher):
             yaml.dump(self.project_yaml, f, default_flow_style=False)
         run_provision_command(project_yaml=temp_yaml, workspace=WORKSPACE)
         os.remove(temp_yaml)
+        shell_commands_right = self.project_yaml.get("project_admin_shell_commands")
+        if shell_commands_right:
+            update_authorization_in_workspace(
+                self._get_workspace_dir(),
+                right="shell_commands",
+                role="project_admin",
+                value=shell_commands_right,
+            )
         new_job_store = None
         new_snapshot_store = None
         for k in self.server_properties:
