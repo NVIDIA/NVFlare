@@ -125,7 +125,7 @@ class FinancialStatistics(DFStatisticsCore):
 
                 # Concatenate all scaler dataframes
                 global_scaler = sklearn.preprocessing.StandardScaler()
-                global_scaler = global_scaler.fit(prepare_dataset(df_scaling).loc[:, all_model_parameters])
+                global_scaler = global_scaler.fit(prepare_dataset(df_scaling).loc[:, numerical_features])
             else:
                 self.log_info(fl_ctx, "[WARNING] No valid scaler data files found")
                 df_scaling = None

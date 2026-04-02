@@ -208,10 +208,15 @@ def main():
         # Prepare dataset
         print(f"Preparing data with features: {all_model_parameters}")
         df_train = prepare_dataset(df_train, scaler=global_scaler)
+        if df_train.empty:
+            raise ValueError(f"Train dataset is empty after preprocessing for client {client_name}")
 
         # Prepare all test datasets
         for test_name, df_test in test_dataframes.items():
-            test_dataframes[test_name] = prepare_dataset(df_test, scaler=global_scaler)
+            prepared_test_df = prepare_dataset(df_test, scaler=global_scaler)
+            if prepared_test_df.empty:
+                raise ValueError(f"Test dataset '{test_name}' is empty after preprocessing for client {client_name}")
+            test_dataframes[test_name] = prepared_test_df
 
         # Validate the loaded data
         validate_data_features(df_train, args.data_features)
