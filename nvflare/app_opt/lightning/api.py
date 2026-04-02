@@ -21,6 +21,7 @@ from torch import Tensor
 
 from nvflare.app_common.abstract.fl_model import FLModel, MetaKey
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.app_opt.pt.utils import inspect_model_params
 from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_model, is_train, receive, send
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils import fobs
@@ -42,6 +43,7 @@ def patch(
         load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
             used to load the received model. Defaults to `True`.
             See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+            NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
 
@@ -100,6 +102,7 @@ class FLCallback(Callback):
             load_state_dict_strict: exposes `strict` argument of `torch.nn.Module.load_state_dict()`
                 used to load the received model. Defaults to `True`.
                 See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
+                NVFlare still validates incoming keys and shapes before calling ``load_state_dict()``.
             update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
                 Defaults to `True` which is suitable for most PyTorch Lightning applications.
         """
@@ -199,8 +202,18 @@ class FLCallback(Callback):
         if model:
             if model.params:
                 try:
+                    report = inspect_model_params(pl_module.state_dict(), model.params)
+                    if report.shape_mismatches:
+                        raise RuntimeError(report.format_shape_mismatch_error())
+
+                    if not report.matched_keys:
+                        raise RuntimeError(report.format_zero_match_error())
+
+                    if report.unexpected_keys:
+                        self.logger.warning(report.format_unexpected_keys_warning())
+
                     result = pl_module.load_state_dict(model.params, strict=self._load_state_dict_strict)
-                    if result is not None:
+                    if result is not None and self._load_state_dict_strict:
                         missing_keys, unexpected_keys = result
                         if len(missing_keys) > 0:
                             self.logger.warning(
