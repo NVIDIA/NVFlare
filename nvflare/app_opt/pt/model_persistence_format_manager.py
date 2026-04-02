@@ -150,7 +150,7 @@ class PTModelPersistenceFormatManager(object):
             raise ValueError(report.format_zero_match_error())
 
         if report.unexpected_keys:
-            raise ValueError(report.format_unexpected_keys_warning())
+            raise ValueError(report.format_unexpected_keys_error())
 
         for k, v in learned_weights.items():
             self.var_dict[k] = v

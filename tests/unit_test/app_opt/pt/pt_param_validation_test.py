@@ -115,5 +115,5 @@ def test_persistence_manager_rejects_unexpected_keys():
         "model.fc.bias": torch.zeros_like(model.state_dict()["fc.bias"]),
     }
 
-    with pytest.raises(ValueError, match="Ignoring 1 unexpected model parameter"):
+    with pytest.raises(ValueError, match="Rejecting 1 unexpected model parameter"):
         manager.update(make_model_learnable(weights=weights, meta_props={}))

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Mapping, Optional
 
@@ -67,6 +69,13 @@ class ModelParamMatchReport:
 
     def format_unexpected_keys_warning(self) -> str:
         msg = f"Ignoring {len(self.unexpected_keys)} unexpected model parameter(s): {_format_key_sample(self.unexpected_keys)}."
+        msg += self.format_context()
+        if self.prefix_hint:
+            msg += f" {self.prefix_hint}"
+        return msg
+
+    def format_unexpected_keys_error(self) -> str:
+        msg = f"Rejecting {len(self.unexpected_keys)} unexpected model parameter(s): {_format_key_sample(self.unexpected_keys)}."
         msg += self.format_context()
         if self.prefix_hint:
             msg += f" {self.prefix_hint}"

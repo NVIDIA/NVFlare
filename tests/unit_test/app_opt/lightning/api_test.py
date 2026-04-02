@@ -81,3 +81,30 @@ def test_receive_and_update_model_warns_on_unexpected_keys_when_some_match(caplo
     assert "Ignoring 1 unexpected model parameter" in caplog.text
     assert torch.equal(module.state_dict()["fc.weight"], params["fc.weight"])
     assert torch.equal(module.state_dict()["fc.bias"], params["fc.bias"])
+
+
+def test_receive_and_update_model_rejects_unexpected_keys_in_strict_mode(caplog):
+    callback = _make_callback(load_state_dict_strict=True)
+    module = SimpleNet()
+    params = _clone_state_dict(module)
+    params["model.fc.weight"] = torch.ones_like(module.state_dict()["fc.weight"])
+    callback._receive_model = lambda trainer: FLModel(params=params)
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(RuntimeError, match="Rejecting 1 unexpected model parameter"):
+            callback._receive_and_update_model(SimpleNamespace(), module)
+
+    assert "Ignoring 1 unexpected model parameter" not in caplog.text
+
+
+def test_receive_and_update_model_logs_missing_keys_for_partial_loads(caplog):
+    callback = _make_callback(load_state_dict_strict=False)
+    module = SimpleNet()
+    params = {"fc.weight": torch.full_like(module.state_dict()["fc.weight"], 4.0)}
+    callback._receive_model = lambda trainer: FLModel(params=params)
+
+    with caplog.at_level(logging.WARNING):
+        callback._receive_and_update_model(SimpleNamespace(), module)
+
+    assert "There were missing keys when loading the global state_dict: ['fc.bias']" in caplog.text
+    assert torch.equal(module.state_dict()["fc.weight"], params["fc.weight"])

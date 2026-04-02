@@ -209,11 +209,16 @@ class FLCallback(Callback):
                     if not report.matched_keys:
                         raise RuntimeError(report.format_zero_match_error())
 
+                    params_to_load = model.params
                     if report.unexpected_keys:
-                        self.logger.warning(report.format_unexpected_keys_warning())
+                        if self._load_state_dict_strict:
+                            raise RuntimeError(report.format_unexpected_keys_error())
 
-                    result = pl_module.load_state_dict(model.params, strict=self._load_state_dict_strict)
-                    if result is not None and self._load_state_dict_strict:
+                        self.logger.warning(report.format_unexpected_keys_warning())
+                        params_to_load = {key: model.params[key] for key in report.matched_keys}
+
+                    result = pl_module.load_state_dict(params_to_load, strict=self._load_state_dict_strict)
+                    if result is not None:
                         missing_keys, unexpected_keys = result
                         if len(missing_keys) > 0:
                             self.logger.warning(
