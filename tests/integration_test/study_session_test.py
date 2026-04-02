@@ -135,14 +135,17 @@ def _get_admin_upload_dir(admin_root: str) -> str:
 
 
 @contextmanager
-def _admin_shell(admin_root: str, study: str):
+def _admin_shell(admin_root: str, study: str | None = None):
     startup_dir = os.path.join(admin_root, "startup")
     script_path = os.path.join(startup_dir, "fl_admin.sh")
     master_fd, slave_fd = pty.openpty()
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join([os.path.dirname(sys.executable), env.get("PATH", "")])
+    command = ["bash", script_path]
+    if study is not None:
+        command.extend(["--study", study])
     process = subprocess.Popen(
-        ["bash", script_path, "--study", study],
+        command,
         stdin=slave_fd,
         stdout=slave_fd,
         stderr=slave_fd,
@@ -230,6 +233,21 @@ class TestStudySessionIntegration:
         listed_job = _find_job(jobs, job_id)
         assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
+    def test_session_defaults_study_without_argument(self, running_poc_system):
+        admin_root = running_poc_system["admin_root"]
+
+        default_session = new_secure_session(ADMIN_NAME, admin_root)
+        other_study_session = new_secure_session(ADMIN_NAME, admin_root, study="study-a")
+        running_poc_system["sessions"].extend([default_session, other_study_session])
+
+        job_id = default_session.submit_job(JOB_DIR)
+
+        meta = default_session.get_job_meta(job_id)
+        assert meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
+
+        assert {job["job_id"] for job in default_session.list_jobs()} >= {job_id}
+        assert job_id not in {job["job_id"] for job in other_study_session.list_jobs()}
+
     def test_session_scopes_list_jobs_and_clone_preserves_source_study(self, running_poc_system):
         admin_root = running_poc_system["admin_root"]
 
@@ -259,6 +277,36 @@ class TestStudySessionIntegration:
         jobs_b_after_clone = session_b.list_jobs()
         assert {job["job_id"] for job in jobs_a_after_clone} == {job_a, cloned_job_id}
         assert {job["job_id"] for job in jobs_b_after_clone} == {job_b}
+
+    def test_fl_admin_shell_defaults_to_default_study_without_flag(self, running_poc_system):
+        admin_root = running_poc_system["admin_root"]
+        upload_dir = _get_admin_upload_dir(admin_root)
+        shell_job_dir = os.path.join(upload_dir, JOB_NAME)
+        shutil.copytree(JOB_DIR, shell_job_dir, dirs_exist_ok=True)
+
+        try:
+            with _admin_shell(admin_root) as (_process_default, master_fd_default):
+                _login_to_admin_shell(master_fd_default, ADMIN_NAME)
+
+                submit_output = _run_admin_shell_command(master_fd_default, f"submit_job {JOB_NAME}")
+                match = re.search(r"Submitted job:\s*([0-9a-fA-F-]+)", submit_output)
+                assert match, f"failed to parse job id from output:\n{submit_output}"
+                job_id = match.group(1)
+
+                detailed_output = _run_admin_shell_command(master_fd_default, "list_jobs -d")
+                assert job_id in detailed_output
+                assert f'"study": "{DEFAULT_STUDY}"' in detailed_output
+
+                meta = _wait_for_job_meta(running_poc_system["old_admin_api"], job_id)
+                assert meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
+
+            with _admin_shell(admin_root, "study-a") as (_process_other, master_fd_other):
+                _login_to_admin_shell(master_fd_other, ADMIN_NAME)
+                other_study_output = _run_admin_shell_command(master_fd_other, "list_jobs")
+                assert job_id not in other_study_output
+                assert "No jobs matching the specified criteria." in other_study_output
+        finally:
+            shutil.rmtree(shell_job_dir, ignore_errors=True)
 
     def test_fl_admin_shell_study_flag_scopes_terminal_session(self, running_poc_system):
         admin_root = running_poc_system["admin_root"]
