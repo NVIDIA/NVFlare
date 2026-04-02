@@ -74,7 +74,7 @@ class AuthzFilter(CommandFilter):
         submitter = Person(
             name=conn.get_prop(ConnProps.SUBMITTER_NAME, ""),
             org=conn.get_prop(ConnProps.SUBMITTER_ORG, ""),
-            role=conn.get_prop(ConnProps.SUBMITTER_ROLE, ""),
+            role=conn.get_prop(ConnProps.SUBMITTER_ORG, ""),
         )
 
         ctx = AuthzContext(user=user, submitter=submitter, right=cmd_entry.name)
