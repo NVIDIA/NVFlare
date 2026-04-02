@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import faulthandler
 import threading
 import time
 
@@ -440,43 +441,72 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         admin_config=admin_config,
         auto_login_max_tries=20,
     )
-    print(f"Connecting admin API for {admin_user_name} using workspace {admin_dir}")
-    admin_api.connect(10.0)
-    print(f"Connected admin API for {admin_user_name}; starting login")
+    print(f"Connecting admin API for {admin_user_name} using workspace {admin_dir}", flush=True)
+    faulthandler.dump_traceback_later(30.0, repeat=False)
+    try:
+        connect_error = {}
 
-    login_result = {}
-    login_error = {}
+        def _connect():
+            try:
+                admin_api.connect(10.0)
+            except Exception as e:
+                connect_error["value"] = e
 
-    def _login():
-        try:
-            login_result["value"] = admin_api.login()
-        except Exception as e:
-            login_error["value"] = e
+        connect_thread = threading.Thread(target=_connect, daemon=True)
+        connect_thread.start()
+        connect_thread.join(timeout=20.0)
 
-    login_thread = threading.Thread(target=_login, daemon=True)
-    login_thread.start()
-    login_thread.join(timeout=60.0)
+        if connect_thread.is_alive():
+            # The connect thread is still blocked in admin_api.connect(). Closing the
+            # API races with that background call, but the thread is daemonized and
+            # this test helper prefers failing loudly over hanging the whole test.
+            admin_api.close()
+            raise TimeoutError(
+                f"admin_api.connect() timed out after 20.0 seconds for {admin_user_name}; "
+                "the admin handshake likely stalled before login"
+            )
 
-    if login_thread.is_alive():
-        # The login thread is still blocked in admin_api.login(). Closing the
-        # API races with that background call, but the thread is daemonized and
-        # this test helper prefers failing loudly over hanging the whole test.
-        admin_api.close()
-        raise TimeoutError(
-            f"admin_api.login() timed out after 60.0 seconds for {admin_user_name}; "
-            "the admin session was created but post-login command initialization likely stalled"
-        )
+        if connect_error:
+            admin_api.close()
+            raise RuntimeError(f"admin_api.connect() failed for {admin_user_name}: {connect_error['value']}")
 
-    if login_error:
-        admin_api.close()
-        raise RuntimeError(f"admin_api.login() failed for {admin_user_name}: {login_error['value']}")
+        print(f"Connected admin API for {admin_user_name}; starting login", flush=True)
 
-    login_response = login_result.get("value")
-    print(f"Login call completed for {admin_user_name}: {login_response}")
-    if not isinstance(login_response, dict) or login_response.get("status") != APIStatus.SUCCESS:
-        admin_api.close()
-        raise RuntimeError(f"admin_api.login() returned unsuccessful status for {admin_user_name}: {login_response}")
-    return admin_api
+        login_result = {}
+        login_error = {}
+
+        def _login():
+            try:
+                login_result["value"] = admin_api.login()
+            except Exception as e:
+                login_error["value"] = e
+
+        login_thread = threading.Thread(target=_login, daemon=True)
+        login_thread.start()
+        login_thread.join(timeout=60.0)
+
+        if login_thread.is_alive():
+            # The login thread is still blocked in admin_api.login(). Closing the
+            # API races with that background call, but the thread is daemonized and
+            # this test helper prefers failing loudly over hanging the whole test.
+            admin_api.close()
+            raise TimeoutError(
+                f"admin_api.login() timed out after 60.0 seconds for {admin_user_name}; "
+                "the admin session was created but post-login command initialization likely stalled"
+            )
+
+        if login_error:
+            admin_api.close()
+            raise RuntimeError(f"admin_api.login() failed for {admin_user_name}: {login_error['value']}")
+
+        login_response = login_result.get("value")
+        print(f"Login call completed for {admin_user_name}: {login_response}", flush=True)
+        if not isinstance(login_response, dict) or login_response.get("status") != APIStatus.SUCCESS:
+            admin_api.close()
+            raise RuntimeError(f"admin_api.login() returned unsuccessful status for {admin_user_name}: {login_response}")
+        return admin_api
+    finally:
+        faulthandler.cancel_dump_traceback_later()
 
 
 def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
