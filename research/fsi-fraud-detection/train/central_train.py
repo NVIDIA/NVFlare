@@ -110,11 +110,6 @@ def main():
         print(f"Found {len(test_data_paths)} test files matching pattern: {test_data_path_pattern}")
         for path in test_data_paths:
             print(f"  - {path}")
-
-        # assert len(test_data_paths) == 25, "Expected 25 test files, got " + str(len(test_data_paths))
-        assert len(test_data_paths) == 20, "Expected 20 test files, got " + str(
-            len(test_data_paths)
-        )  # Datasets later than 3/2/2026
     else:
         # Single test file
         if not os.path.isfile(test_data_path_pattern):

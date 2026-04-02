@@ -41,13 +41,6 @@ from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 from nvflare.client.tracking import MLflowWriter
 
-# install dependencies
-# os.system("python -m pip install opacus")
-# os.system("python -m pip install captum")
-# result = os.system("python -m pip install numpy==1.26.4")
-# print(f"Pip Install Result: {result}")
-
-
 PATH = "pt_model.weights.pth"
 
 
@@ -154,9 +147,6 @@ def main():
         print(f"Found {len(test_data_paths)} test files matching pattern: {test_data_path_pattern}")
         for path in test_data_paths:
             print(f"  - {path}")
-
-        # assert len(test_data_paths) == 5, "Expected 5 test files, got " + str(len(test_data_paths))
-        assert len(test_data_paths) == 4, "Expected 4 test files, got " + str(len(test_data_paths))  # new data 3/3/2026
     else:
         # Single test file
         if not os.path.isfile(test_data_path_pattern):
@@ -566,8 +556,10 @@ def main():
             print("[WARNING] Skip SHAP with DP")
         if shap_metrics:
             print(f"SHAP computation completed. Used {shap_metrics['shap_samples_used']} samples.")
-        else:
+        elif run_shap:
             print("SHAP computation failed. Skipping SHAP metrics.")
+        else:
+            print("SHAP computation skipped for this round.")
         metrics["shap_metrics"] = shap_metrics
 
         # (6) construct trained FL model (A dict of {parameter name: parameter weights} from the PyTorch model)

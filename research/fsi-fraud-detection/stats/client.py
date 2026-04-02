@@ -75,8 +75,6 @@ class FinancialStatistics(DFStatisticsCore):
             )
             for path in test_data_paths:
                 self.log_info(fl_ctx, f"  - {path}")
-
-            assert len(test_data_paths) == 4, "Expected 4 test files, got " + str(len(test_data_paths))
         else:
             # Single test file
             if not os.path.isfile(test_data_path_pattern):
