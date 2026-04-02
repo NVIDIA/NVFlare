@@ -75,7 +75,6 @@ commands shown as examples of how they may be run with a description.
    whitespace before the filename. For example, you may run ``sys_info server >serverinfo.txt``. To only save the
    file output without printing it, use two greater-than symbols ">>" instead: ``sys_info server >>serverinfo.txt``.
 
-The FLARE API is the redesigned FLAdminAPI with a better user experience introduced in version 2.3.0.
-We recommend using the FLARE API as the FLAdminAPI is now deprecated and will soon sunset.
+The FLARE API is the supported Python interface for programmatically issuing admin commands to the FL server.
 
 For job management via Python, see the :ref:`FLARE API <flare_api>`.
