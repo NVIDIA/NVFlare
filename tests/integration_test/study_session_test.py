@@ -23,13 +23,16 @@ import sys
 import time
 from contextlib import contextmanager, suppress
 
+import numpy as np
 import pytest
 
 from nvflare.apis.job_def import DEFAULT_STUDY, JobMetaKey
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.config import secure_load_admin_config
+from nvflare.recipe import ProdEnv
 from tests.integration_test.src import NVFTestDriver, POCSiteLauncher
 from tests.integration_test.src.utils import _get_job_store_path_from_workspace, get_job_meta
 
@@ -55,6 +58,32 @@ def _find_job(jobs: list[dict], job_id: str) -> dict:
         if job.get("job_id") == job_id:
             return job
     raise AssertionError(f"job_id {job_id} not found in job list: {jobs}")
+
+
+def _wait_for_runtime_job_meta(workspace_root: str, site_name: str, job_id: str, timeout: float = 30.0) -> dict:
+    site_root = os.path.join(workspace_root, site_name)
+    workspace = Workspace(root_dir=site_root, site_name=site_name)
+    meta_path = workspace.get_job_meta_path(job_id)
+
+    end_time = time.time() + timeout
+    while time.time() < end_time:
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if meta.get(JobMetaKey.JOB_ID.value) == job_id:
+                return meta
+        time.sleep(0.5)
+    raise AssertionError(f"Timed out waiting for runtime job meta for {job_id} at site {site_name}")
+
+
+def _make_numpy_recipe(name: str) -> NumpyFedAvgRecipe:
+    return NumpyFedAvgRecipe(
+        name=name,
+        min_clients=POC_CLIENTS,
+        num_rounds=1,
+        model=np.array([0.0] * 10),
+        train_script=os.path.join(os.path.dirname(__file__), "client.py"),
+    )
 
 
 def _remove_study_from_persisted_job_meta(workspace_root: str, job_id: str):
@@ -260,3 +289,54 @@ class TestStudySessionIntegration:
                 assert "No jobs matching the specified criteria." in other_study_output
         finally:
             shutil.rmtree(shell_job_dir, ignore_errors=True)
+
+    def test_prod_env_defaults_study_and_propagates_runtime_meta(self, running_poc_system):
+        admin_root = running_poc_system["admin_root"]
+        admin_api = running_poc_system["old_admin_api"]
+        workspace_root = running_poc_system["workspace_root"]
+
+        env = ProdEnv(startup_kit_location=admin_root, username=ADMIN_NAME)
+        run = _make_numpy_recipe("prod-env-default-study").execute(env)
+        job_id = run.get_job_id()
+
+        meta = _wait_for_job_meta(admin_api, job_id)
+        assert meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
+
+        default_session = new_secure_session(ADMIN_NAME, admin_root)
+        running_poc_system["sessions"].append(default_session)
+        assert {job["job_id"] for job in default_session.list_jobs()} >= {job_id}
+
+        for site_name in ["server", "site-1", "site-2"]:
+            runtime_meta = _wait_for_runtime_job_meta(workspace_root, site_name, job_id)
+            assert runtime_meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
+
+        result = run.get_result(timeout=120)
+        assert result is not None
+        assert os.path.exists(result)
+
+    def test_prod_env_explicit_study_scopes_session_and_runtime_meta(self, running_poc_system):
+        admin_root = running_poc_system["admin_root"]
+        admin_api = running_poc_system["old_admin_api"]
+        workspace_root = running_poc_system["workspace_root"]
+
+        env = ProdEnv(startup_kit_location=admin_root, username=ADMIN_NAME, study="study-a")
+        run = _make_numpy_recipe("prod-env-study-a").execute(env)
+        job_id = run.get_job_id()
+
+        meta = _wait_for_job_meta(admin_api, job_id)
+        assert meta[JobMetaKey.STUDY.value] == "study-a"
+
+        session_a = new_secure_session(ADMIN_NAME, admin_root, study="study-a")
+        session_b = new_secure_session(ADMIN_NAME, admin_root, study="study-b")
+        running_poc_system["sessions"].extend([session_a, session_b])
+
+        assert {job["job_id"] for job in session_a.list_jobs()} >= {job_id}
+        assert job_id not in {job["job_id"] for job in session_b.list_jobs()}
+
+        for site_name in ["server", "site-1", "site-2"]:
+            runtime_meta = _wait_for_runtime_job_meta(workspace_root, site_name, job_id)
+            assert runtime_meta[JobMetaKey.STUDY.value] == "study-a"
+
+        result = run.get_result(timeout=120)
+        assert result is not None
+        assert os.path.exists(result)
