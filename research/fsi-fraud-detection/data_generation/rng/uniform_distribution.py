@@ -1,0 +1,46 @@
+"""Continuous uniform distribution sampler."""
+
+from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
+from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class UniformDistributionSamplingConfig(RNGSampleConfig):
+    """Parameters for a continuous uniform distribution U(low, high).
+
+    Attributes:
+        low:  Lower bound (inclusive).
+        high: Upper bound (exclusive).
+    """
+
+    low: float = field(default=0.0)
+    high: float = field(default=1.0)
+
+
+class UniformDistribution(RNGBase[UniformDistributionSamplingConfig]):
+    """Sample from a continuous uniform distribution."""
+
+    def __init__(self, seed: int = 42):
+        super().__init__("uniform", seed=seed)
+
+    def sample(
+        self,
+        *args,
+        sample_config: UniformDistributionSamplingConfig | None = None,
+        size: int = 1,
+    ) -> SampleValueType | VectorSampleValueType:
+        """Draw *size* samples from U(low, high).
+
+        Raises:
+            RuntimeError: If *sample_config* is not provided.
+        """
+        if sample_config is None:
+            raise RuntimeError(
+                "UniformDistributionSamplingConfig object with low and high values must be provided for uniform distribution sampling."
+            )
+        result = self.rng.uniform(
+            low=sample_config.low, high=sample_config.high, size=size
+        )
+        return float(result[0]) if size == 1 else result
