@@ -31,11 +31,9 @@ class SimpleNet(nn.Module):
 
 
 def _make_callback(load_state_dict_strict: bool = False) -> FLCallback:
-    with (
-        patch("nvflare.app_opt.lightning.api.init"),
-        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
-    ):
-        return FLCallback(rank=0, load_state_dict_strict=load_state_dict_strict)
+    with patch("nvflare.app_opt.lightning.api.init"):
+        with patch("nvflare.app_opt.lightning.api.get_config", return_value={}):
+            return FLCallback(rank=0, load_state_dict_strict=load_state_dict_strict)
 
 
 def _clone_state_dict(model: nn.Module) -> dict:
