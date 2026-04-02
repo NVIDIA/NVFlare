@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import faulthandler
 import json
 import os
 import shlex
@@ -19,7 +20,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import faulthandler
 import threading
 import time
 
