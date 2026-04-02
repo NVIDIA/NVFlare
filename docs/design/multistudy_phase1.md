@@ -16,6 +16,11 @@ Phase 1 introduces a **study** concept as lightweight metadata plumbing. Every j
 
 See [multistudy_phase2.md](multistudy_phase2.md) for the full multi-tenancy design (access control, study registry, job-store partitioning, etc.).
 
+> **Note:** Multi-study is an operational enhancement for shared-trust environments.
+> It does not provide the same isolation guarantees as separate deployments.
+> See [When to Use Multi-Study vs. Separate Deployments](multistudy_phase2.md#when-to-use-multi-study-vs-separate-deployments)
+> in [multistudy_phase2.md](multistudy_phase2.md).
+
 ### Design Principles
 
 1. **Backward compatible** — a `default` study preserves current single-tenant behavior; legacy jobs missing a `study` field are treated as `default` on read

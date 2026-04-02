@@ -186,6 +186,42 @@ The Docker launcher reads `study` from job metadata and mounts the corresponding
 
 ---
 
+## When to Use Multi-Study vs. Separate Deployments
+
+Multi-study is an operational convenience feature for shared-trust environments. If you need stronger isolation, use separate deployments on separate hardware or VMs.
+
+### Use multi-study when
+
+- One or more client sites participate in multiple studies and re-provisioning them for each study is operationally costly
+- All studies operate within the same operational trust boundary
+- You accept software-enforced isolation: study separation relies on correct authorization logic, session management, and launcher volume configuration
+
+### Use separate deployments when
+
+- You need stronger isolation than a shared multi-study deployment can provide
+- A problem in one study must not be able to affect another study
+- Studies have non-overlapping participants (no shared client sites), so separate deployments add little operational cost
+
+### Security Assumptions That Change
+
+With a single multi-study deployment, the following are shared across all studies:
+
+| Resource | Separate deployments | Multi-study |
+|----------|----------------------|-------------|
+| Server runtime | Separate per deployment | Shared |
+| Client runtime at each site | Separate per deployment | Shared |
+| PKI / cert root | Independent | Shared |
+| `project_admin` blast radius | One deployment | All studies in that deployment |
+| Isolation mechanism | Separate hardware/VM deployment boundary | Shared software authz and launcher configuration |
+
+A bug in authorization, session handling, or launcher volume configuration can affect multiple studies in the same deployment.
+
+### Summary
+
+Use multi-study to reduce operational overhead when client sites participate in multiple studies under a shared trust boundary. Use separate deployments when you need stronger isolation.
+
+---
+
 ## Migration / Backward Compatibility
 
 1. **No `studies:` section** → system behaves as today, single-tenant, cert roles only.
