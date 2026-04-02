@@ -91,7 +91,9 @@ integration_test() {
 }
 
 integration_test_pt() {
-    echo "Run GPU integration test with backend $1..."
+    echo "Run PT integration test with backend $1..."
+    ln -sfn /usr/bin/python3.12 /usr/bin/python
+    ln -sfn /usr/bin/python3.12 /usr/bin/python3
     # somehow the base container has blinker which should be removed
     apt remove -y python3-blinker python-blinker-doc || true
     pip install -e .[dev]
