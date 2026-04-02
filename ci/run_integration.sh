@@ -97,8 +97,8 @@ integration_test_pt() {
     # somehow the base container has blinker which should be removed
     apt remove -y python3-blinker python-blinker-doc || true
     pip install -e .[dev]
-    # the container is using cuda 12.6, re-pin torch/torchvision after .[dev] to avoid upgrading to an incompatible version
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+    # CI machine supports CUDA 12.4; pin to known compatible versions
+    pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
     export PYTHONPATH=$PWD
     add_dns_entries
     testFolder="tests/integration_test"
