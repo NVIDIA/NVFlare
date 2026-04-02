@@ -153,7 +153,7 @@ Example — signing the ``fl-server`` server CSR:
 
 Each output directory contains:
 
-- ``client.crt`` (or ``server.crt``) — signed certificate
+- ``<name>.crt`` (e.g. ``hospital-1.crt``, ``fl-server.crt``) — signed certificate
 - ``rootCA.pem`` — copy of the root CA certificate
 
 Step 5 — Project Admin: Distribute Signed Certificates
@@ -161,8 +161,8 @@ Step 5 — Project Admin: Distribute Signed Certificates
 
 Send each site their signed certificate and ``rootCA.pem``:
 
-- ``hospital-1/client.crt`` + ``rootCA.pem`` → send to ``hospital-1``
-- ``fl-server/server.crt`` + ``rootCA.pem`` → send to the server site
+- ``hospital-1/hospital-1.crt`` + ``rootCA.pem`` → send to ``hospital-1``
+- ``fl-server/fl-server.crt`` + ``rootCA.pem`` → send to the server site
 
 No private keys are exchanged at this step.
 
@@ -194,13 +194,13 @@ participant name from its filename stem.
      -n hospital-1 \
      -t client \
      -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/client.crt \
+     --cert ./signed/hospital-1/hospital-1.crt \
      --key  ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem \
-     -o ./hospital-1-startup-kit
+     --rootca ./signed/hospital-1/rootCA.pem
 
-The ``-e`` / ``--endpoint`` argument sets the FL server address. The server
-identity used for mTLS validation is derived from the hostname in the endpoint.
+The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
+supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
+used for mTLS validation is derived from the hostname in the endpoint.
 
 Server kit example:
 
@@ -210,10 +210,9 @@ Server kit example:
      -n fl-server \
      -t server \
      -e grpc://fl-server:8002 \
-     --cert ./signed/fl-server/server.crt \
+     --cert ./signed/fl-server/fl-server.crt \
      --key  ./csr/fl-server.key \
-     --rootca ./signed/fl-server/rootCA.pem \
-     -o ./fl-server-startup-kit
+     --rootca ./signed/fl-server/rootCA.pem
 
 Step 7 — Start the Federation
 ==============================
@@ -264,12 +263,13 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 6. Assemble startup kit (after receiving signed/fl-server/ from Project Admin)
    nvflare package -n fl-server -t server -e grpc://fl-server:8002 \
-     --cert ./signed/fl-server/server.crt \
+     --cert ./signed/fl-server/fl-server.crt \
      --key  ./csr/fl-server.key \
      --rootca ./signed/fl-server/rootCA.pem
+   # Output kit is written to workspace/project/prod_00/fl-server/
 
    # 7. Start
-   cd fl-server && ./startup/start.sh
+   cd workspace/project/prod_00/fl-server && ./startup/start.sh
 
 **Client site (hospital-1):**
 
@@ -282,12 +282,13 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 6. Assemble startup kit (after receiving signed/hospital-1/ from Project Admin)
    nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/client.crt \
+     --cert ./signed/hospital-1/hospital-1.crt \
      --key  ./csr/hospital-1.key \
      --rootca ./signed/hospital-1/rootCA.pem
+   # Output kit is written to workspace/project/prod_00/hospital-1/
 
    # 7. Start
-   cd hospital-1 && ./startup/start.sh
+   cd workspace/project/prod_00/hospital-1 && ./startup/start.sh
 
 *********************
 CLI Reference Summary
@@ -360,17 +361,25 @@ Assemble a startup kit (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | Argument         | Description                                      | Required |
 +==================+==================================================+==========+
-| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | Yes      |
-|                  | ``org_admin``, ``lead``, ``member``              |          |
+| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | Yes (No  |
+|                  | ``org_admin``, ``lead``, ``member``              | with -p) |
 +------------------+--------------------------------------------------+----------+
-| ``-e`` / ``--endpoint`` | Server endpoint URI (``grpc://host:port``  | Yes      |
-|                  | or ``tcp://host:port``)                          |          |
+| ``-e`` / ``--endpoint`` | Server endpoint URI (``grpc://host:port``, | Yes      |
+|                  | ``tcp://host:port``, or ``http://host:port``)    |          |
++------------------+--------------------------------------------------+----------+
+| ``-p`` / ``--project-file`` | Site-scoped project YAML listing all  | No       |
+|                  | participants. When given, builds all matching    |          |
+|                  | participants in a single ``prod_NN``. Mutually   |          |
+|                  | exclusive with ``-n`` and ``--cert``/``--key``/  |          |
+|                  | ``--rootca``. Requires ``--dir``.                |          |
 +------------------+--------------------------------------------------+----------+
 | ``--dir``        | Directory containing key, cert, and rootCA.pem.  | One of   |
-|                  | Name is auto-detected from ``*.key`` filename.   | ``--dir``|
+|                  | Name is auto-detected from ``*.key`` filename    | ``--dir``|
+|                  | (single mode) or cert files named by participant | or       |
+|                  | CN (yaml mode).                                  | ``-p``   |
 +------------------+--------------------------------------------------+----------+
-| ``-n`` / ``--name``   | Participant name. Required when using       | or       |
-|                  | ``--cert`` / ``--key`` / ``--rootca``            | ``-n``   |
+| ``-n`` / ``--name``   | Participant name. Required when using       | No†      |
+|                  | ``--cert`` / ``--key`` / ``--rootca``            |          |
 +------------------+--------------------------------------------------+----------+
 | ``--cert``       | Path to signed certificate                       | No†      |
 +------------------+--------------------------------------------------+----------+
@@ -378,17 +387,24 @@ Assemble a startup kit (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | ``--rootca``     | Path to ``rootCA.pem``                           | No†      |
 +------------------+--------------------------------------------------+----------+
-| ``-o`` / ``--output-dir`` | Output directory. Default: ``./<name>`` | No       |
+| ``-w`` / ``--workspace`` | Workspace root. Output goes to           | No       |
+|                  | ``<workspace>/<project>/prod_NN/<name>/``.       |          |
+|                  | Default: ``workspace``                           |          |
 +------------------+--------------------------------------------------+----------+
-| ``--project-name`` | Project name for challenge-response auth.      | No       |
-|                  | Defaults to the server hostname.                 |          |
+| ``--project-name`` | Project name used in output path and in        | No       |
+|                  | fed_server.json / fed_admin.json for             |          |
+|                  | challenge-response auth. Default: ``project``    |          |
 +------------------+--------------------------------------------------+----------+
-| ``--admin-port`` | Server admin port. Default: service port + 1.    | No       |
+| ``--admin-port`` | Server admin port. Default: same as service port | No       |
+|                  | (single-port TLS multiplexing).                  |          |
 +------------------+--------------------------------------------------+----------+
-| ``--force``      | Overwrite existing output directory              | No       |
+| ``--force``      | Allow re-packaging when this participant name    | No       |
+|                  | appears in the most recent ``prod_NN``           |          |
+|                  | directory (a new ``prod_NN`` is created).        |          |
 +------------------+--------------------------------------------------+----------+
 
-† ``--cert``, ``--key``, ``--rootca`` are used together as an alternative to ``--dir``.
+† ``-n``, ``--cert``, ``--key``, ``--rootca`` are used together as an alternative to ``--dir``
+in single-participant mode. Mutually exclusive with ``-p`` / ``--project-file``.
 
 All commands support ``--output json`` for machine-readable output and ``--schema``
 to print the JSON schema for the command's arguments.

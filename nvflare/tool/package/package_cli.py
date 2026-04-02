@@ -19,8 +19,6 @@ from typing import Optional
 
 _package_parser: Optional[argparse.ArgumentParser] = None
 
-_ADMIN_ROLES = {"org_admin", "lead", "member"}
-
 
 def def_package_cli_parser(sub_cmd) -> dict:
     """Register 'nvflare package' with the top-level sub_cmd parser."""
@@ -47,14 +45,18 @@ def def_package_cli_parser(sub_cmd) -> dict:
         "--endpoint",
         required=False,
         default=None,
-        help="Server endpoint URI (grpc://host:port or tcp://host:port). Required for all kit types.",
+        help="Server endpoint URI (grpc://host:port, tcp://host:port, or http://host:port). Required for all kit types.",
     )
     p.add_argument(
         "-n",
         "--name",
         required=False,
         default=None,
-        help="Participant name. Auto-detected from *.key filename when --dir is used.",
+        help=(
+            "Participant name. Auto-detected from *.key filename when --dir is used. "
+            "For admin kit types (org_admin, lead, member), must be an email address "
+            "(e.g. alice@myorg.com)."
+        ),
     )
     p.add_argument(
         "--dir",
@@ -81,19 +83,35 @@ def def_package_cli_parser(sub_cmd) -> dict:
         help="rootCA.pem from Project Admin.",
     )
     p.add_argument(
-        "-o",
-        "--output-dir",
+        "-w",
+        "--workspace",
         required=False,
-        default=None,
-        dest="output_dir",
-        help="Output directory. Default: ./<name>",
+        default="workspace",
+        dest="workspace",
+        help="Workspace root directory. Output goes to <workspace>/<project-name>/prod_NN/<name>/. Default: workspace",
     )
     p.add_argument(
         "--project-name",
         required=False,
         default=None,
         dest="project_name",
-        help="Project name used in fed_server.json and fed_admin.json for challenge-response auth. Defaults to server name.",
+        help=(
+            "Project name. Used in the output path (<workspace>/<project-name>/prod_NN/<name>/) "
+            "and in fed_server.json/fed_admin.json for challenge-response auth. Default: project"
+        ),
+    )
+    p.add_argument(
+        "-p",
+        "--project-file",
+        required=False,
+        default=None,
+        dest="project_file",
+        help=(
+            "Site-scoped project YAML defining participants and builders "
+            "(schema-compatible with 'nvflare provision' project.yaml). "
+            "When given, -t becomes an optional type filter. "
+            "Mutually exclusive with -n and --cert/--key/--rootca. Use -e, --dir, and -p together."
+        ),
     )
     p.add_argument(
         "--admin-port",
@@ -101,13 +119,13 @@ def def_package_cli_parser(sub_cmd) -> dict:
         type=int,
         default=None,
         dest="admin_port",
-        help="Server admin port. Default: service port + 1.",
+        help="Server admin port. Default: same as service port (single-port mode).",
     )
     p.add_argument(
         "--force",
         action="store_true",
         default=False,
-        help="Overwrite existing output directory without prompting.",
+        help="Allow re-packaging when this participant name already appears in the most recent prod_NN directory (a new prod_NN is created alongside).",
     )
     p.add_argument(
         "--output",

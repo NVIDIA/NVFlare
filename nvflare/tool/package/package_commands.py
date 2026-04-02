@@ -20,29 +20,92 @@ import os
 import re
 import shutil
 
-import yaml
-
-from nvflare.lighter.utils import load_crt, sh_replace, verify_cert
+from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
+from nvflare.lighter.entity import Project
+from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.workspace import WorkspaceBuilder
+from nvflare.lighter.prov_utils import prepare_builders
+from nvflare.lighter.provision import prepare_project
+from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.spec import Builder
+from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
 from nvflare.tool.cli_errors import get_error
 from nvflare.tool.cli_output import output, output_error
 
 _ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp|http)://([^:/]+):(\d+)$")
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
+_ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
+_KIT_TYPE_TO_ROLE = {
+    "org_admin": AdminRole.ORG_ADMIN,
+    "lead": AdminRole.LEAD,
+    "member": AdminRole.MEMBER,
+}
+_DUMMY_SERVER_NAME = "dummy-server"
+_DUMMY_ORG = "myorg"
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice",
-    "nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1",
-    "nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 --cert ./signed/client.crt --key ./csr/hospital-1.key --rootca ./signed/rootCA.pem",
+    "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice --project-name myproject",
+    "nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1 -w ./workspace --project-name myproject",
+    "nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 --cert ./signed/hospital-1/hospital-1.crt --key ./csr/hospital-1.key --rootca ./signed/hospital-1/rootCA.pem",
 ]
 
-_TEMPLATE_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "lighter", "templates", "master_template.yml")
-)
 
+class PrebuiltCertBuilder(Builder):
+    """Builder that installs pre-made cert/key/rootCA into each participant's kit directory.
 
-def _load_templates() -> dict:
-    """Load master_template.yml and return the parsed YAML dict."""
-    with open(_TEMPLATE_PATH, "r") as f:
-        return yaml.safe_load(f)
+    Replaces CertBuilder for the ``nvflare package`` workflow where certs are already signed
+    externally.  The caller supplies the cert/key/rootCA paths; this builder simply copies them
+    into the correct locations that StaticFileBuilder and the runtime expect.
+
+    Two modes:
+    - Single-participant: pass cert_path/key_path/rootca_path + optional target_name.
+    - Multi-participant: pass cert_map={name: (cert_path, key_path)} + rootca_path.
+      Only participants present in cert_map receive certs; others (e.g. dummy server) are skipped.
+    """
+
+    def __init__(
+        self,
+        cert_path: str = None,
+        key_path: str = None,
+        rootca_path: str = None,
+        target_name: str = None,
+        cert_map: dict = None,
+    ):
+        self.cert_path = cert_path
+        self.key_path = key_path
+        self.rootca_path = rootca_path
+        self.target_name = target_name
+        self.cert_map = cert_map  # {participant_name: (cert_path, key_path)}
+
+    def build(self, project: Project, ctx):
+        for p in project.get_all_participants():
+            if self.cert_map is not None:
+                if p.name not in self.cert_map:
+                    continue
+                cert_path, key_path = self.cert_map[p.name]
+            else:
+                # Skip placeholder participants (e.g. dummy server added for non-server kits).
+                if self.target_name is not None and p.name != self.target_name:
+                    continue
+                cert_path = self.cert_path
+                key_path = self.key_path
+            kit_dir = ctx.get_kit_dir(p)
+            os.makedirs(kit_dir, exist_ok=True)
+
+            if p.type == ParticipantType.SERVER:
+                cert_dst = os.path.join(kit_dir, "server.crt")
+                key_dst = os.path.join(kit_dir, "server.key")
+            else:
+                cert_dst = os.path.join(kit_dir, "client.crt")
+                key_dst = os.path.join(kit_dir, "client.key")
+
+            shutil.copy2(cert_path, cert_dst)
+            shutil.copy2(key_path, key_dst)
+            os.chmod(key_dst, 0o600)
+
+            rootca_dst = os.path.join(kit_dir, "rootCA.pem")
+            shutil.copy2(self.rootca_path, rootca_dst)
+            os.chmod(rootca_dst, 0o644)
 
 
 def _parse_endpoint(endpoint: str) -> tuple:
@@ -75,243 +138,261 @@ def _discover_name_from_dir(work_dir: str, fmt) -> str:
     return keys[0][:-4]  # strip ".key"
 
 
-def _write_file(path: str, content: str, mode_bits: int = None):
-    """Write text content to path. Optionally chmod to mode_bits."""
-    with open(path, "w") as f:
-        f.write(content)
-    if mode_bits is not None:
-        os.chmod(path, mode_bits)
+def _latest_prod_dir(workspace: str, project_name: str):
+    """Return the path to the highest-numbered existing prod_NN under workspace/project_name/.
+
+    Returns None if no prod_NN directories exist.
+    """
+    project_dir = os.path.join(workspace, project_name)
+    if not os.path.exists(project_dir):
+        return None
+    dirs = [
+        d
+        for d in os.listdir(project_dir)
+        if os.path.isdir(os.path.join(project_dir, d)) and re.match(r"^prod_\d{2}$", d)
+    ]
+    if not dirs:
+        return None
+    return os.path.join(project_dir, max(dirs))
 
 
-def _copy_file(src: str, dst: str, mode_bits: int = None):
-    """Copy src to dst. Optionally chmod dst to mode_bits."""
-    shutil.copy2(src, dst)
-    if mode_bits is not None:
-        os.chmod(dst, mode_bits)
+def _load_project_from_file(path: str, fmt) -> tuple:
+    """Load and validate a site-scoped project yaml. Returns (project, custom_builders).
+
+    Validates:
+    - File exists and is valid yaml
+    - api_version == 3
+    - No relay participants (hierarchical FL not supported)
+    """
+    if not os.path.isfile(path):
+        output_error(
+            "PROJECT_FILE_NOT_FOUND",
+            f"Project file not found: {path}.",
+            "Provide the path to a site-scoped project yaml file.",
+            fmt,
+            exit_code=1,
+        )
+    try:
+        project_dict = load_yaml(path)
+    except Exception as ex:
+        output_error(
+            "INVALID_PROJECT_FILE",
+            f"Failed to parse project file: {ex}",
+            "Ensure the file is valid YAML.",
+            fmt,
+            exit_code=1,
+        )
+
+    try:
+        project = prepare_project(project_dict)
+    except Exception as ex:
+        output_error(
+            "INVALID_PROJECT_FILE",
+            f"Invalid project file: {ex}",
+            "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
+            fmt,
+            exit_code=1,
+        )
+
+    if project.get_relays():
+        output_error(
+            "UNSUPPORTED_TOPOLOGY",
+            "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",
+            "Use 'nvflare provision' for relay topologies.",
+            fmt,
+            exit_code=4,
+        )
+
+    custom_builders = prepare_builders(project_dict)
+    return project, custom_builders
 
 
-def _make_fed_client_json(name, scheme, host, port, admin_port, server_name, project_name=None):
-    # servers[0].name must be project_name to match the server's fed_server.json servers[0].name.
-    proj = project_name or server_name
-    sp_end_point = f"{host}:{port}:{admin_port}"
-    return {
-        "format_version": 2,
-        "servers": [
-            {
-                "name": proj,
-                "service": {
-                    "scheme": scheme,
-                },
-                "identity": server_name,
-            }
-        ],
-        "client": {
-            "ssl_private_key": "client.key",
-            "ssl_cert": "client.crt",
-            "ssl_root_cert": "rootCA.pem",
-            "fqsn": name,
-            "is_leaf": True,
-            "connection_security": "mtls",
-        },
-        "overseer_agent": {
-            "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-            "args": {
-                "sp_end_point": sp_end_point,
-            },
-        },
+def _handle_package_yaml_mode(args, fmt, scheme, host, port):
+    """Build kits for all participants defined in a project yaml file.
+
+    Called by handle_package when --project-file is given.  The cert/key for each participant
+    is resolved from --dir/<name>.crt and --dir/<name>.key; rootCA is --dir/rootCA.pem.
+    """
+    project_from_yaml, custom_builders = _load_project_from_file(args.project_file, fmt)
+
+    # --dir is required in yaml mode (no single key auto-discovery)
+    if not getattr(args, "dir", None):
+        output_error(
+            "INVALID_ARGS",
+            "--dir is required when using --project-file.",
+            "Provide the directory containing cert files named by participant CN.",
+            fmt,
+            exit_code=4,
+        )
+
+    rootca_path = os.path.join(args.dir, "rootCA.pem")
+    if not os.path.isfile(rootca_path):
+        output_error(
+            "ROOTCA_NOT_FOUND",
+            f"Root CA file not found: {rootca_path}.",
+            f"Place the rootCA.pem from the Project Admin into {args.dir}.",
+            fmt,
+            exit_code=1,
+        )
+
+    workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
+    project_name = getattr(args, "project_name", None) or project_from_yaml.name or "project"
+    admin_port = args.admin_port if args.admin_port is not None else port
+
+    # Collect participants to build: clients, admins (server handled separately if -t server).
+    # Each entry is (kit_type_str, participant).
+    all_participants = []
+    server = project_from_yaml.get_server()
+    if server and getattr(args, "kit_type", None) == "server":
+        all_participants.append(("server", server))
+    for p in project_from_yaml.get_clients():
+        all_participants.append(("client", p))
+    for p in project_from_yaml.get_admins():
+        role = p.get_prop(PropKey.ROLE, AdminRole.LEAD)
+        # Map canonical role names to the kit_type strings used by the provisioner
+        kit_type = role if role in _ADMIN_ROLES else AdminRole.LEAD
+        all_participants.append((kit_type, p))
+
+    # Apply -t filter when given
+    kit_type_filter = getattr(args, "kit_type", None)
+    if kit_type_filter:
+        if kit_type_filter == "server":
+            all_participants = [(t, p) for t, p in all_participants if t == "server"]
+        elif kit_type_filter == "client":
+            all_participants = [(t, p) for t, p in all_participants if t == "client"]
+        else:
+            # admin role filter
+            all_participants = [(t, p) for t, p in all_participants if t == kit_type_filter]
+
+    if not all_participants:
+        output_error(
+            "NO_PARTICIPANTS",
+            "No participants to build after applying type filter.",
+            "Check the project file and -t filter.",
+            fmt,
+            exit_code=1,
+        )
+
+    server_props = {
+        PropKey.FED_LEARN_PORT: port,
+        PropKey.ADMIN_PORT: admin_port,
     }
 
+    # Validate all cert/key files up front before building anything.
+    cert_map = {}
+    ca_cert = load_crt(rootca_path)
+    for kit_type, participant in all_participants:
+        p_name = participant.name
+        cert_path = os.path.join(args.dir, f"{p_name}.crt")
+        key_path = os.path.join(args.dir, f"{p_name}.key")
 
-def _make_fed_server_json(name, scheme, host, port, admin_port, require_signed_jobs, project_name=None):
-    # servers[0].name must match project_name in fed_admin.json for challenge-response auth.
-    proj = project_name or name
-    sp_end_point = f"{name}:{port}:{admin_port}"
-    return {
-        "format_version": 2,
-        "require_signed_jobs": require_signed_jobs,
-        "servers": [
-            {
-                "name": proj,
-                "service": {
-                    "target": f"{host}:{port}",
-                    "scheme": scheme,
-                },
-                "admin_server": name,
-                "admin_port": admin_port,
-                "ssl_private_key": "server.key",
-                "ssl_cert": "server.crt",
-                "ssl_root_cert": "rootCA.pem",
-                "connection_security": "mtls",
-            }
-        ],
-        "overseer_agent": {
-            "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-            "args": {
-                "sp_end_point": sp_end_point,
-            },
-        },
-    }
+        if not os.path.isfile(cert_path):
+            output_error(
+                "CERT_NOT_FOUND",
+                f"Certificate not found: {cert_path}.",
+                f"Drop {p_name}.crt from the Project Admin into {args.dir}.",
+                fmt,
+                exit_code=1,
+            )
+        if not os.path.isfile(key_path):
+            output_error(
+                "KEY_NOT_FOUND",
+                f"Private key not found: {key_path}.",
+                f"Run 'nvflare cert csr -n {p_name}' to generate a key.",
+                fmt,
+                exit_code=1,
+            )
 
+        try:
+            cert = load_crt(cert_path)
+            verify_cert(cert, ca_cert.public_key())
+        except Exception:
+            msg, hint = get_error("CERT_CHAIN_INVALID", cert=cert_path, rootca=rootca_path)
+            output_error("CERT_CHAIN_INVALID", msg, hint, fmt, exit_code=1)
 
-def _make_fed_admin_json(name, server_name, host, admin_port, project_name=None):
-    # project_name must match servers[0].name in fed_server.json for challenge-response auth.
-    # Admin always connects over HTTP (not gRPC).
-    proj = project_name or server_name
-    return {
-        "format_version": 1,
-        "admin": {
-            "project_name": proj,
-            "username": name,
-            "server_identity": server_name,
-            "scheme": "http",
-            "host": host,
-            "port": admin_port,
-            "connection_security": "mtls",
-            "uid_source": "user_input",
-            "with_file_transfer": True,
-            "upload_dir": "transfer",
-            "download_dir": "transfer",
-            "client_key": "client.key",
-            "client_cert": "client.crt",
-            "ca_cert": "rootCA.pem",
-        },
-    }
+        try:
+            expiry = cert.not_valid_after_utc
+            now = datetime.datetime.now(datetime.timezone.utc)
+        except AttributeError:
+            expiry = cert.not_valid_after
+            now = datetime.datetime.utcnow()
+        if expiry < now:
+            msg, hint = get_error("CERT_EXPIRED", cert=cert_path, expiry=expiry.isoformat())
+            output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
 
+        cert_map[p_name] = (cert_path, key_path)
 
-def _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, port):
-    admin_port = args.admin_port if args.admin_port is not None else port + 1
+    # Pre-check: if any participant already exists in the latest prod dir, reject unless --force.
+    latest_prod = _latest_prod_dir(workspace, project_name)
+    if latest_prod:
+        for _, participant in all_participants:
+            existing_path = os.path.join(latest_prod, participant.name)
+            if os.path.exists(existing_path) and not args.force:
+                msg, hint = get_error("OUTPUT_DIR_EXISTS", path=existing_path)
+                output_error("OUTPUT_DIR_EXISTS", msg, hint, fmt, exit_code=1)
 
-    # 1. Copy certs
-    _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
-    _copy_file(args.key, os.path.join(startup_dir, "client.key"), mode_bits=0o600)
-    _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
-
-    # 2. fed_client.json — server identity is always the endpoint hostname
-    fed_client = _make_fed_client_json(args.name, scheme, host, port, admin_port, host, args.project_name or host)
-    _write_file(os.path.join(startup_dir, "fed_client.json"), json.dumps(fed_client, indent=2))
-
-    # 3. Shell scripts
-    _write_file(os.path.join(startup_dir, "start.sh"), templates["start_cln_sh"], mode_bits=0o755)
-    sub_content = sh_replace(
-        templates["sub_start_sh"],
-        {
-            "type": "client",
-            "app_name": "client_train",
-            "cln_uid": f"uid={args.name}",
-            "org_name": args.name,
-            "config_folder": "config",
-        },
-    )
-    _write_file(os.path.join(startup_dir, "sub_start.sh"), sub_content, mode_bits=0o755)
-    _write_file(os.path.join(startup_dir, "stop_fl.sh"), templates["stop_fl_sh"], mode_bits=0o755)
-
-    # 4. local/ files
-    client_res = sh_replace(templates["local_client_resources"], {"num_gpus": "0", "gpu_mem": "0"})
-    _write_file(os.path.join(local_dir, "resources.json.default"), client_res)
-    _write_file(os.path.join(local_dir, "log_config.json.default"), templates["log_config"])
-    _write_file(os.path.join(local_dir, "privacy.json.sample"), templates["sample_privacy"])
-    _write_file(os.path.join(local_dir, "authorization.json.default"), templates["default_authz"])
-
-
-def _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, port):
-    admin_port = args.admin_port if args.admin_port is not None else port + 1
-    require_signed = True  # signed jobs are always required
-
-    # 1. Copy certs
-    _copy_file(args.cert, os.path.join(startup_dir, "server.crt"))
-    _copy_file(args.key, os.path.join(startup_dir, "server.key"), mode_bits=0o600)
-    _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
-
-    # 2. fed_server.json
-    fed_server = _make_fed_server_json(
-        args.name, scheme, host, port, admin_port, require_signed, args.project_name or args.name
-    )
-    _write_file(os.path.join(startup_dir, "fed_server.json"), json.dumps(fed_server, indent=2))
-
-    # 3. local/ authorization template — provisioner puts this in local/ as .default, not startup/
-    _write_file(os.path.join(local_dir, "authorization.json.default"), templates["default_authz"])
-
-    # 4. Shell scripts
-    start_content = sh_replace(templates["start_svr_sh"], {"ha_mode": "false"})
-    _write_file(os.path.join(startup_dir, "start.sh"), start_content, mode_bits=0o755)
-    sub_content = sh_replace(
-        templates["sub_start_sh"],
-        {
-            "type": "server",
-            "app_name": "server_train",
-            "cln_uid": "",
-            "org_name": args.name,
-            "config_folder": "config",
-        },
-    )
-    _write_file(os.path.join(startup_dir, "sub_start.sh"), sub_content, mode_bits=0o755)
-    _write_file(os.path.join(startup_dir, "stop_fl.sh"), templates["stop_fl_sh"], mode_bits=0o755)
-
-    # 5. local/ files
-    _write_file(os.path.join(local_dir, "resources.json.default"), templates["local_server_resources"])
-    _write_file(os.path.join(local_dir, "log_config.json.default"), templates["log_config"])
-    _write_file(os.path.join(local_dir, "privacy.json.sample"), templates["sample_privacy"])
-
-
-def _build_user_kit(args, startup_dir, local_dir, templates, scheme, host, port):
-    admin_port = args.admin_port if args.admin_port is not None else (port + 1 if port else 8003)
-
-    # 1. Copy certs (admin uses client.crt/client.key naming convention)
-    _copy_file(args.cert, os.path.join(startup_dir, "client.crt"))
-    _copy_file(args.key, os.path.join(startup_dir, "client.key"), mode_bits=0o600)
-    _copy_file(args.rootca, os.path.join(startup_dir, "rootCA.pem"))
-
-    # 2. fed_admin.json — server identity is always the endpoint hostname
-    fed_admin = _make_fed_admin_json(args.name, host, host, admin_port, args.project_name or host)
-    _write_file(os.path.join(startup_dir, "fed_admin.json"), json.dumps(fed_admin, indent=2))
-
-    # 3. fl_admin.sh
-    _write_file(os.path.join(startup_dir, "fl_admin.sh"), templates["fl_admin_sh"], mode_bits=0o755)
-
-    # 4. local/ files
-    _write_file(os.path.join(local_dir, "resources.json.default"), templates["default_admin_resources"])
-
-
-def _build_kit(args, output_dir: str, scheme, host, port):
-    templates = _load_templates()
-    startup_dir = os.path.join(output_dir, "startup")
-    local_dir = os.path.join(output_dir, "local")
-    os.makedirs(startup_dir, exist_ok=True)
-    os.makedirs(local_dir, exist_ok=True)
-
-    if args.kit_type == "client":
-        _build_client_kit(args, startup_dir, local_dir, templates, scheme, host, port)
-    elif args.kit_type == "server":
-        _build_server_kit(args, startup_dir, local_dir, templates, scheme, host, port)
-    elif args.kit_type in ("org_admin", "lead", "member"):
-        _build_user_kit(args, startup_dir, local_dir, templates, scheme, host, port)
-
-
-def _build_result(args, output_dir: str, scheme, host, port):
-    """Build the result dict for output."""
-    if args.kit_type in ("org_admin", "lead", "member"):
-        cert_filename = "client.crt"
-        key_filename = "client.key"
-        next_step = f"cd {args.name} && ./startup/fl_admin.sh"
-    elif args.kit_type == "server":
-        cert_filename = "server.crt"
-        key_filename = "server.key"
-        next_step = f"cd {args.name} && ./startup/start.sh"
+    # Build all participants in a single provisioner call so they land in the same prod_NN.
+    has_server = any(kt == "server" for kt, _ in all_participants)
+    project = Project(name=project_name, description="")
+    if has_server:
+        server_participant = next(p for kt, p in all_participants if kt == "server")
+        project.set_server(server_participant.name, _DUMMY_ORG, server_props)
     else:
-        cert_filename = "client.crt"
-        key_filename = "client.key"
-        next_step = f"cd {args.name} && ./startup/start.sh"
+        project.set_server(host, _DUMMY_ORG, server_props)
 
-    return {
-        "output_dir": output_dir,
-        "name": args.name,
-        "type": args.kit_type,
-        "endpoint": args.endpoint or "(not set)",
-        "cert": os.path.join(output_dir, "startup", cert_filename),
-        "key": os.path.join(output_dir, "startup", key_filename) + "  (permissions: 0600)",
-        "rootca": os.path.join(output_dir, "startup", "rootCA.pem"),
-        "next_step": next_step,
-    }
+    for kit_type, participant in all_participants:
+        if kit_type == "server":
+            continue
+        if kit_type == "client":
+            project.add_client(participant.name, _DUMMY_ORG, {})
+        else:
+            project.add_admin(participant.name, _DUMMY_ORG, {PropKey.ROLE: _KIT_TYPE_TO_ROLE[kit_type]})
+
+    cert_builder = PrebuiltCertBuilder(rootca_path=rootca_path, cert_map=cert_map)
+    static_builder = StaticFileBuilder(scheme=scheme)
+    workspace_builder = WorkspaceBuilder()
+    all_builders = [workspace_builder, cert_builder, static_builder] + custom_builders
+
+    provisioner = Provisioner(root_dir=workspace, builders=all_builders)
+    ctx = provisioner.provision(project)
+
+    if ctx.get(CtxKey.BUILD_ERROR):
+        output_error("BUILD_FAILED", "Kit assembly failed.", "See error output above for details.", fmt, exit_code=1)
+
+    prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
+
+    # Remove placeholder server directory if we added a dummy server.
+    if not has_server:
+        shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
+
+    results = []
+    for kit_type, participant in all_participants:
+        p_name = participant.name
+        output_dir = os.path.join(prod_dir, p_name)
+        is_server = kit_type == "server"
+        is_admin = kit_type in _ADMIN_ROLES
+        cert_filename = "server.crt" if is_server else "client.crt"
+        key_filename = "server.key" if is_server else "client.key"
+        startup_script = "fl_admin.sh" if is_admin else "start.sh"
+        results.append(
+            {
+                "output_dir": output_dir,
+                "name": p_name,
+                "type": kit_type,
+                "endpoint": args.endpoint,
+                "cert": os.path.join(output_dir, "startup", cert_filename),
+                "key": os.path.join(output_dir, "startup", key_filename) + "  (permissions: 0600)",
+                "rootca": os.path.join(output_dir, "startup", "rootCA.pem"),
+                "transfer_dir": os.path.join(output_dir, "transfer"),
+                "next_step": f"cd {output_dir} && ./startup/{startup_script}",
+            }
+        )
+
+    if len(results) == 1:
+        output(results[0], fmt)
+    else:
+        output(results, fmt)
+    return 0
 
 
 def handle_package(args):
@@ -329,20 +410,41 @@ def handle_package(args):
     fmt = getattr(args, "output_fmt", None)
 
     # Step 2: Validate required args and endpoint up front (before any file I/O)
-    if not getattr(args, "kit_type", None):
+    has_project_file = bool(getattr(args, "project_file", None))
+
+    if not has_project_file and not getattr(args, "kit_type", None):
         msg, hint = get_error("INVALID_ARGS", detail="-t/--type is required")
         output_error("INVALID_ARGS", msg, hint, fmt, exit_code=2)
 
-    if not getattr(args, "endpoint", None):
+    if has_project_file and getattr(args, "name", None):
         output_error(
             "INVALID_ARGS",
-            f"--endpoint is required for -t {args.kit_type}.",
+            "--project-file and -n/--name are mutually exclusive.",
+            "Use --project-file to define participants via yaml, or -n to name a single participant.",
+            fmt,
+            exit_code=4,
+        )
+
+    if has_project_file and any(getattr(args, attr, None) for attr in ("cert", "key", "rootca")):
+        output_error(
+            "INVALID_ARGS",
+            "--project-file and --cert/--key/--rootca are mutually exclusive.",
+            "In yaml mode, cert files are discovered from --dir by participant name. Do not pass --cert/--key/--rootca.",
+            fmt,
+            exit_code=4,
+        )
+
+    if not getattr(args, "endpoint", None):
+        detail = f"for -t {args.kit_type}" if getattr(args, "kit_type", None) else "for this command"
+        output_error(
+            "INVALID_ARGS",
+            f"--endpoint is required {detail}.",
             "Provide the server endpoint URI, e.g. grpc://server.example.com:8002",
             fmt,
             exit_code=4,
         )
     try:
-        _parse_endpoint(args.endpoint)
+        scheme, host, port = _parse_endpoint(args.endpoint)
     except ValueError:
         msg, hint = get_error("INVALID_ENDPOINT", endpoint=args.endpoint)
         output_error("INVALID_ENDPOINT", msg, hint, fmt, exit_code=4)
@@ -351,9 +453,16 @@ def handle_package(args):
     if fmt == "json":
         args.force = True
 
+    # -----------------------------------------------------------------------
+    # YAML mode: --project-file given — build kits for all participants defined
+    # in the yaml file.  --dir is required (per-participant certs named by CN).
+    # -----------------------------------------------------------------------
+    if has_project_file:
+        return _handle_package_yaml_mode(args, fmt, scheme, host, port)
+
     # Step 4: Resolve --dir vs explicit --cert/--key/--rootca
     has_dir = bool(getattr(args, "dir", None))
-    has_explicit = any([getattr(args, "cert", None), getattr(args, "key", None), getattr(args, "rootca", None)])
+    has_explicit = any(getattr(args, attr, None) for attr in ("cert", "key", "rootca"))
 
     if has_dir and has_explicit:
         output_error(
@@ -381,7 +490,16 @@ def handle_package(args):
         args.key = os.path.join(args.dir, f"{args.name}.key")
         args.rootca = os.path.join(args.dir, "rootCA.pem")
     else:
-        # Explicit mode: -n/--name is required (no key file to auto-detect from)
+        # Explicit mode: all three paths and -n/--name are required.
+        missing = [f"--{f}" for f in ("cert", "key", "rootca") if not getattr(args, f, None)]
+        if missing:
+            output_error(
+                "INVALID_ARGS",
+                f"Missing required argument(s): {', '.join(missing)}.",
+                "When using explicit mode, --cert, --key, and --rootca must all be provided.",
+                fmt,
+                exit_code=4,
+            )
         if not args.name:
             output_error(
                 "INVALID_ARGS",
@@ -391,13 +509,48 @@ def handle_package(args):
                 exit_code=4,
             )
 
+    # Step 5: Pre-flight: validate admin name is email-format; guard sentinel name collision.
+    if args.kit_type in _ADMIN_ROLES and not _EMAIL_RE.match(args.name):
+        output_error(
+            "INVALID_ARGS",
+            f"Admin name must be an email address (got {args.name!r}).",
+            "Use an email-format name, e.g. alice@myorg.com",
+            fmt,
+            exit_code=4,
+        )
+
+    if args.name == _DUMMY_SERVER_NAME:
+        output_error(
+            "INVALID_ARGS",
+            f"Participant name {_DUMMY_SERVER_NAME!r} is reserved and cannot be used.",
+            "Choose a different name for this participant.",
+            fmt,
+            exit_code=4,
+        )
+
+    # For non-server kits the endpoint hostname is used as the server placeholder name.
+    # The participant name must not collide with it, otherwise the provisioner would have
+    # two participants with the same name.
+    if args.kit_type != "server" and args.name == host:
+        output_error(
+            "INVALID_ARGS",
+            f"Participant name {args.name!r} collides with the server endpoint hostname.",
+            "Use a different -n/--name that is distinct from the server hostname in --endpoint.",
+            fmt,
+            exit_code=4,
+        )
+
     # Step 6: Validate resolved cert/key/rootca exist
     if not os.path.isfile(args.cert):
-        hint = (
-            f"Place the signed {os.path.basename(args.cert)} from the Project Admin into {args.dir}."
-            if has_dir
-            else "Provide the signed certificate received from the Project Admin."
-        )
+        if has_dir:
+            hint = (
+                f"{os.path.basename(args.cert)} is the signed certificate from the Project Admin "
+                f"(different from {args.name}.csr, which is the signing request you generated). "
+                f"Ask your Project Admin to run 'nvflare cert sign' on your {args.name}.csr, "
+                f"then place the resulting {os.path.basename(args.cert)} and rootCA.pem into {args.dir}."
+            )
+        else:
+            hint = "Provide the signed certificate received from the Project Admin."
         output_error("CERT_NOT_FOUND", f"Certificate file not found: {args.cert}.", hint, fmt, exit_code=1)
 
     if not os.path.isfile(args.key):
@@ -437,21 +590,93 @@ def handle_package(args):
         msg, hint = get_error("CERT_EXPIRED", cert=args.cert, expiry=expiry.isoformat())
         output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
 
-    # Step 9: Parse endpoint (already validated in Step 2)
-    scheme, host, port = _parse_endpoint(args.endpoint)
+    admin_port = args.admin_port if args.admin_port is not None else port
 
-    # Step 10: Resolve output directory
-    output_dir = args.output_dir if args.output_dir else os.path.join(os.getcwd(), args.name)
-    output_dir = os.path.abspath(output_dir)
+    # Step 9: Resolve workspace and project name
+    workspace = os.path.abspath(getattr(args, "workspace", None) or "workspace")
+    project_name = getattr(args, "project_name", None) or "project"
 
-    # Step 11: Check output dir existence
-    if os.path.exists(output_dir) and not args.force:
-        msg, hint = get_error("OUTPUT_DIR_EXISTS", path=output_dir)
-        output_error("OUTPUT_DIR_EXISTS", msg, hint, fmt, exit_code=1)
+    # Step 10: Pre-check — if participant already exists in the latest prod dir and --force is not set, error out.
+    latest_prod = _latest_prod_dir(workspace, project_name)
+    if latest_prod:
+        existing_path = os.path.join(latest_prod, args.name)
+        if os.path.exists(existing_path) and not args.force:
+            msg, hint = get_error("OUTPUT_DIR_EXISTS", path=existing_path)
+            output_error("OUTPUT_DIR_EXISTS", msg, hint, fmt, exit_code=1)
 
-    # Step 12: Build the kit
-    _build_kit(args, output_dir, scheme, host, port)
+    # Step 11: Construct project and provision via the provisioner infrastructure.
+    is_server = args.kit_type == "server"
 
-    # Step 13: Output result
-    result = _build_result(args, output_dir, scheme, host, port)
+    server_props = {
+        PropKey.FED_LEARN_PORT: port,
+        PropKey.ADMIN_PORT: admin_port,
+    }
+
+    project = Project(name=project_name, description="")
+    if is_server:
+        # server.name = args.name (identity / cert CN) — used for target, admin_server, sp_end_point.
+        project.set_server(args.name, _DUMMY_ORG, server_props)
+    else:
+        # For non-server kits, use the endpoint hostname as the server name so that
+        # server_identity in fed_client.json / fed_admin.json points to the real server.
+        # The pre-flight checks above ensure args.name != host and args.name != _DUMMY_SERVER_NAME.
+        project.set_server(host, _DUMMY_ORG, server_props)
+
+    if not is_server:
+        if args.kit_type == "client":
+            project.add_client(args.name, _DUMMY_ORG, {})
+        else:
+            project.add_admin(args.name, _DUMMY_ORG, {PropKey.ROLE: _KIT_TYPE_TO_ROLE[args.kit_type]})
+
+    cert_builder = PrebuiltCertBuilder(
+        cert_path=args.cert,
+        key_path=args.key,
+        rootca_path=args.rootca,
+        target_name=args.name,
+    )
+    static_builder = StaticFileBuilder(scheme=scheme)
+    workspace_builder = WorkspaceBuilder()
+
+    provisioner = Provisioner(
+        root_dir=workspace,
+        builders=[workspace_builder, cert_builder, static_builder],
+    )
+    ctx = provisioner.provision(project)
+
+    if ctx.get(CtxKey.BUILD_ERROR):
+        output_error(
+            "BUILD_FAILED",
+            "Kit assembly failed during provisioning.",
+            "See error output above for details.",
+            fmt,
+            exit_code=1,
+        )
+
+    prod_dir = ctx[CtxKey.CURRENT_PROD_DIR]
+
+    # Step 12: For non-server kits, remove the server placeholder directory from prod output.
+    if not is_server:
+        shutil.rmtree(os.path.join(prod_dir, host), ignore_errors=True)
+
+    # Step 13: Determine result paths.
+    output_dir = os.path.join(prod_dir, args.name)
+
+    is_admin = args.kit_type in _ADMIN_ROLES
+    cert_filename = "server.crt" if is_server else "client.crt"
+    key_filename = "server.key" if is_server else "client.key"
+    startup_script = "fl_admin.sh" if is_admin else "start.sh"
+    next_step = f"cd {output_dir} && ./startup/{startup_script}"
+
+    result = {
+        "output_dir": output_dir,
+        "name": args.name,
+        "type": args.kit_type,
+        "endpoint": args.endpoint or "(not set)",
+        "cert": os.path.join(output_dir, "startup", cert_filename),
+        "key": os.path.join(output_dir, "startup", key_filename) + "  (permissions: 0600)",
+        "rootca": os.path.join(output_dir, "startup", "rootCA.pem"),
+        "transfer_dir": os.path.join(output_dir, "transfer"),
+        "next_step": next_step,
+    }
     output(result, fmt)
+    return 0

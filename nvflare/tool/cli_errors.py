@@ -118,6 +118,23 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
         "Certificate signing failed: {reason}",
         "Check that the CA key and certificate are valid and not corrupted.",
     ),
+    # --- Package yaml mode ---
+    "PROJECT_FILE_NOT_FOUND": (
+        "Project file not found: {path}.",
+        "Provide the path to a site-scoped project yaml file.",
+    ),
+    "INVALID_PROJECT_FILE": (
+        "Invalid project file: {detail}",
+        "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
+    ),
+    "UNSUPPORTED_TOPOLOGY": (
+        "Relay participants found in project file — hierarchical FL is not supported by 'nvflare package'.",
+        "Use 'nvflare provision' for relay topologies.",
+    ),
+    "NO_PARTICIPANTS": (
+        "No participants to build after applying type filter.",
+        "Check the project file and -t filter.",
+    ),
     # --- Job commands ---
     "JOB_NOT_FOUND": (
         "Job '{job_id}' does not exist on this server.",
