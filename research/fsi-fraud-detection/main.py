@@ -23,7 +23,6 @@ from pathlib import Path
 
 import pandas as pd
 import yaml
-
 from data_generation.anomaly_transformers import (
     Type1Config,
     Type2Config,
@@ -123,9 +122,7 @@ def load_site_config(site_name: str) -> dict:
     """Load and return the parsed YAML for a single site."""
     config_path = CONFIG_DIR / f"{site_name}.yml"
     if not config_path.exists():
-        raise FileNotFoundError(
-            f"Config file not found: {config_path}. Available sites: {discover_sites()}"
-        )
+        raise FileNotFoundError(f"Config file not found: {config_path}. Available sites: {discover_sites()}")
     with open(config_path) as f:
         return yaml.safe_load(f)
 
@@ -244,9 +241,7 @@ def generate_site_datasets(
             log.info("    Generated %d rows × %d columns", len(df), len(df.columns))
 
             # Shuffle rows
-            df = df.sample(frac=1, replace=False, random_state=dataset_seed).reset_index(
-                drop=True
-            )
+            df = df.sample(frac=1, replace=False, random_state=dataset_seed).reset_index(drop=True)
 
             # Add fraud columns and inject anomalies
             add_fraud_columns(df)
@@ -280,9 +275,7 @@ def generate_site_datasets(
             fname_part_fraud_type = "_".join(rule_stack) if rule_stack else "no_fraud"
             fname_part_label = f"{fname_label}_{i}" if fname_label else str(i)
             fname_part_overlap = (
-                f"pct_overlap_{round(fraud_overlap_frac * 100)}"
-                if fraud_overlap_frac > 0
-                else "no_overlap"
+                f"pct_overlap_{round(fraud_overlap_frac * 100)}" if fraud_overlap_frac > 0 else "no_overlap"
             )
             fname_part_apply_probability = f"app_frac_{apply_prob}"
 
@@ -347,7 +340,10 @@ def combine_scaling_datasets(
         df.insert(0, "SITE", site)
         log.info(
             "  [%s] %s → sampled %d / %d rows",
-            site, f.name, len(df), original_len,
+            site,
+            f.name,
+            len(df),
+            original_len,
         )
         dfs.append(df)
 
@@ -376,17 +372,17 @@ def main(argv: list[str] | None = None) -> None:
     for site_name in sites:
         log.info("Processing site: %s", site_name)
         site_config = load_site_config(site_name)
-        n_datasets = sum(
-            cfg.get("num_datasets", 1)
-            for cfg in site_config["dataset_generation_config"]
-        )
+        n_datasets = sum(cfg.get("num_datasets", 1) for cfg in site_config["dataset_generation_config"])
         log.info(
             "  %d dataset config entries → %d total files",
             len(site_config["dataset_generation_config"]),
             n_datasets,
         )
         generated_files = generate_site_datasets(
-            site_name, site_config, args.output_dir, args.seed,
+            site_name,
+            site_config,
+            args.output_dir,
+            args.seed,
         )
         log.info("Site %s complete — %d file(s) produced.", site_name, len(generated_files))
 

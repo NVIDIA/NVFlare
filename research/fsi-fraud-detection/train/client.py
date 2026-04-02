@@ -12,80 +12,65 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-# install dependencies
-#os.system("python -m pip install opacus")
-#os.system("python -m pip install captum")
-#result = os.system("python -m pip install numpy==1.26.4")
-#print(f"Pip Install Result: {result}")
-
 import argparse
 import copy
 import glob
+import os
 import time
-import numpy as np
 
-# (1) import nvflare client API
-import nvflare.client as flare
+import numpy as np
 import sklearn
 import torch
 import torch.optim as optim
+from misc.data import all_model_parameters, flag, numerical_features, prepare_dataset
+from misc.data_io import load_csv_data_from_path, print_directory_tree, validate_data_features
+from misc.experiments import data_paths
 from model import SimpleNetwork
-from nvflare.app_common.abstract.fl_model import ParamsType
-from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
-from nvflare.client.tracking import MLflowWriter
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
-from utils import (
-    MLflowCallback,
-    compute_shapley_values,
-    evaluate_on_test_datasets,
-)
 
 # Opacus for differential privacy
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
-
-from misc.data import all_data_features, all_model_parameters, flag, prepare_dataset, numerical_features
-from misc.data_io import load_csv_data_from_path, validate_data_features, print_directory_tree
-from misc.experiments import data_paths
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from train.utils import FocalLoss, str2bool
+from utils import MLflowCallback, compute_shapley_values, evaluate_on_test_datasets
+
+# (1) import nvflare client API
+import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
+from nvflare.client.tracking import MLflowWriter
+
+# install dependencies
+# os.system("python -m pip install opacus")
+# os.system("python -m pip install captum")
+# result = os.system("python -m pip install numpy==1.26.4")
+# print(f"Pip Install Result: {result}")
+
 
 PATH = "pt_model.weights.pth"
 
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="NVFlare Deep Learning Client for Financial Fraud Detection"
-    )
+    parser = argparse.ArgumentParser(description="NVFlare Deep Learning Client for Financial Fraud Detection")
     parser.add_argument(
         "--data_selection",
         type=str,
         required=True,
         help="Data selection",
     )
-    parser.add_argument(
-        "--epochs", type=int, default=1, help="Number of training epochs (default: 1)"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=64, help="Training batch size (default: 64)"
-    )
-    parser.add_argument(
-        "--lr", type=float, default=0.005, help="Learning rate (default: 0.0005)"
-    )
+    parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs (default: 1)")
+    parser.add_argument("--batch-size", type=int, default=64, help="Training batch size (default: 64)")
+    parser.add_argument("--lr", type=float, default=0.005, help="Learning rate (default: 0.0005)")
     parser.add_argument(
         "--data_features",
         type=list,
         default=all_model_parameters,
         help="List of data features (default: `all_model_parameters`)",
     )
-    parser.add_argument(
-        "--flag", type=str, default=flag, help="Flag for the data (default: `flag`)"
-    )
-    parser.add_argument(
-        "--fedproxloss_mu", type=float, default=0, help="FedProx loss mu (default: 0)"
-    )
+    parser.add_argument("--flag", type=str, default=flag, help="Flag for the data (default: `flag`)")
+    parser.add_argument("--fedproxloss_mu", type=float, default=0, help="FedProx loss mu (default: 0)")
     parser.add_argument(
         "--local_only", type=str2bool, default=False, help="Whether to only train locally (default: False)"
     )
@@ -96,15 +81,11 @@ def main():
     parser.add_argument(
         "--target_epsilon", type=float, default=10.0, help="Target privacy budget epsilon (default: 10.0)"
     )
-    parser.add_argument(
-        "--target_delta", type=float, default=1e-5, help="Target privacy budget delta (default: 1e-5)"
-    )
+    parser.add_argument("--target_delta", type=float, default=1e-5, help="Target privacy budget delta (default: 1e-5)")
     parser.add_argument(
         "--max_grad_norm", type=float, default=1.0, help="Max gradient norm for DP clipping (default: 1.0)"
     )
-    parser.add_argument(
-        "--focal_gamma", type=float, default=2.0, help="Focal loss gamma (default: 2.0)"
-    )
+    parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal loss gamma (default: 2.0)")
     parser.add_argument(
         "--shap_every",
         type=int,
@@ -154,24 +135,18 @@ def main():
 
     data_selection_paths = data_paths[args.data_selection][client_name]
     data_root = data_selection_paths["data_root"]
-    train_data_path = os.path.join(
-        data_root, data_selection_paths["train_data_path"]
-    )
-    test_data_path_pattern = os.path.join(
-        data_root, data_selection_paths["test_data_path"]
-    )
+    train_data_path = os.path.join(data_root, data_selection_paths["train_data_path"])
+    test_data_path_pattern = os.path.join(data_root, data_selection_paths["test_data_path"])
     if data_selection_paths["scaling_data_path"] is not None:
-        scaling_data_path = os.path.join(
-            data_root, data_selection_paths["scaling_data_path"]
-        )
+        scaling_data_path = os.path.join(data_root, data_selection_paths["scaling_data_path"])
     else:
         scaling_data_path = None
 
     if not os.path.isfile(train_data_path):
         raise FileNotFoundError(f"No valid train filepath at: {train_data_path}")
-    
+
     # Check if test_data_path contains wildcards
-    if '*' in test_data_path_pattern or '?' in test_data_path_pattern:
+    if "*" in test_data_path_pattern or "?" in test_data_path_pattern:
         # Use glob to find matching files
         test_data_paths = sorted(glob.glob(test_data_path_pattern))
         if not test_data_paths:
@@ -180,7 +155,7 @@ def main():
         for path in test_data_paths:
             print(f"  - {path}")
 
-        #assert len(test_data_paths) == 5, "Expected 5 test files, got " + str(len(test_data_paths))
+        # assert len(test_data_paths) == 5, "Expected 5 test files, got " + str(len(test_data_paths))
         assert len(test_data_paths) == 4, "Expected 4 test files, got " + str(len(test_data_paths))  # new data 3/3/2026
     else:
         # Single test file
@@ -188,7 +163,7 @@ def main():
             raise FileNotFoundError(f"No valid test filepath at: {test_data_path_pattern}")
         test_data_paths = [test_data_path_pattern]
         print(f"Test data path: {test_data_path_pattern}")
-    
+
     if scaling_data_path is not None and not os.path.isfile(scaling_data_path):
         raise FileNotFoundError(f"No valid scaling filepath at: {scaling_data_path}")
 
@@ -206,7 +181,7 @@ def main():
         test_dataframes = {}
         for test_path in test_data_paths:
             # Extract a meaningful name from the file path
-            test_name = os.path.basename(test_path).replace('.csv', '')
+            test_name = os.path.basename(test_path).replace(".csv", "")
             df_test_tmp = load_csv_data_from_path(
                 data_path=test_path,
                 data_features=None,  # all features are loaded
@@ -224,9 +199,7 @@ def main():
 
             # Concatenate all scaler dataframes
             global_scaler = sklearn.preprocessing.StandardScaler()
-            global_scaler = global_scaler.fit(
-                prepare_dataset(df_scaling).loc[:, numerical_features]
-            )
+            global_scaler = global_scaler.fit(prepare_dataset(df_scaling).loc[:, numerical_features])
         else:
             print("[WARNING] No valid scaler data files found")
             df_scaling = None
@@ -235,7 +208,7 @@ def main():
         # Prepare dataset
         print(f"Preparing data with features: {all_model_parameters}")
         df_train = prepare_dataset(df_train, scaler=global_scaler)
-        
+
         # Prepare all test datasets
         for test_name, df_test in test_dataframes.items():
             test_dataframes[test_name] = prepare_dataset(df_test, scaler=global_scaler)
@@ -249,16 +222,13 @@ def main():
 
     train_features = df_train[args.data_features].values
     train_labels = df_train[args.flag].values
-    
+
     # Extract features and labels for all test datasets
     test_datasets = {}
     for test_name, df_test in test_dataframes.items():
         test_features = df_test[args.data_features].values
         test_labels = df_test[flag].values
-        test_datasets[test_name] = {
-            'features': test_features,
-            'labels': test_labels
-        }
+        test_datasets[test_name] = {"features": test_features, "labels": test_labels}
 
     # Get the number of features for model input shape
     n_features = train_features.shape[1]
@@ -268,8 +238,8 @@ def main():
     print("train_features: ", train_features.shape)
     print("train_labels: ", train_labels.shape)
     for test_name, test_data in test_datasets.items():
-        print(f"test_features ({test_name}): ", test_data['features'].shape)
-        print(f"test_labels ({test_name}): ", test_data['labels'].shape)
+        print(f"test_features ({test_name}): ", test_data["features"].shape)
+        print(f"test_labels ({test_name}): ", test_data["labels"].shape)
 
     # Convert numpy arrays to PyTorch tensors
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -308,8 +278,8 @@ def main():
     # Convert all test datasets to tensors
     test_datasets_tensors = {}
     for test_name, test_data in test_datasets.items():
-        test_features_tensor = torch.FloatTensor(test_data['features']).to(device, non_blocking=True)
-        test_labels_tensor = torch.LongTensor(test_data['labels']).to(device, non_blocking=True)
+        test_features_tensor = torch.FloatTensor(test_data["features"]).to(device, non_blocking=True)
+        test_labels_tensor = torch.LongTensor(test_data["labels"]).to(device, non_blocking=True)
         test_datasets_tensors[test_name] = (test_features_tensor, test_labels_tensor)
 
     # Class weights for imbalanced fraud flag (reduce false negatives by upweighting fraud class)
@@ -317,7 +287,9 @@ def main():
     class_weights = 1.0 / (class_counts.astype(np.float64) + 1e-8)
     class_weights = class_weights / class_weights.sum() * n_classes
     class_weights_tensor = torch.FloatTensor(class_weights).to(device)
-    print(f"Class counts (fraud flag): {dict(enumerate(class_counts))}, loss weights: {class_weights.round(4).tolist()}")
+    print(
+        f"Class counts (fraud flag): {dict(enumerate(class_counts))}, loss weights: {class_weights.round(4).tolist()}"
+    )
 
     # Create model, optimizer, and loss function (Focal loss for imbalanced fraud)
     model = SimpleNetwork(input_size=n_features, num_classes=n_classes).to(device)
@@ -333,9 +305,7 @@ def main():
     print(f"Model created with {n_features} input features and {n_classes} classes")
     print(f"Total parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Loss: FocalLoss(gamma={args.focal_gamma}, alpha=class_weights)")
-    print(
-        f"Using cosine annealing LR scheduler: initial_lr={args.lr}, T_max={args.epochs}, eta_min={args.lr * 0.1}"
-    )
+    print(f"Using cosine annealing LR scheduler: initial_lr={args.lr}, T_max={args.epochs}, eta_min={args.lr * 0.1}")
 
     mlflow = MLflowWriter()
 
@@ -345,7 +315,6 @@ def main():
     # (optional) print system info
     system_info = flare.system_info()
     print(f"NVFlare system info: {system_info}")
-
 
     # (3) gets FLModel from NVFlare
     while flare.is_running():
@@ -361,21 +330,21 @@ def main():
                 model = ModuleValidator.fix(model)
                 print("Model fixed for Opacus compatibility")
                 model.to(device)
-                            
-            print(f"\n=== Initializing Differential Privacy (Global) ===")
+
+            print("\n=== Initializing Differential Privacy (Global) ===")
             print(f"Target epsilon: {args.target_epsilon}")
             print(f"Target delta: {args.target_delta}")
             print(f"Max gradient norm: {args.max_grad_norm}")
-            print(f"Note: Privacy budget will be tracked across ALL federated rounds")
+            print("Note: Privacy budget will be tracked across ALL federated rounds")
             print("=" * 60)
 
             # Initialize Opacus PrivacyEngine ONLY in first round if DP is enabled
             # This ensures privacy accounting accumulates across all federated rounds
-            print(f"\n=== Configuring Privacy Engine (Round 0) ===")
-            
+            print("\n=== Configuring Privacy Engine (Round 0) ===")
+
             # Calculate total epochs across ALL federated rounds
             total_epochs_all_rounds = args.epochs * input_model.total_rounds
-            
+
             privacy_engine = PrivacyEngine()
             model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
                 module=model,
@@ -407,7 +376,7 @@ def main():
         # (4) loads model from NVFlare
         if not args.local_only:
             # Opacus adds "_module." prefix to state dict. Add it here to match local state dict
-            if args.enable_dp and hasattr(model, '_module'):
+            if args.enable_dp and hasattr(model, "_module"):
                 global_params = {}
                 for k, v in input_model.params.items():
                     global_params[f"_module.{k}"] = v
@@ -426,7 +395,7 @@ def main():
         # (5) evaluate aggregated/received model on all test datasets
         print(f"\n=== Evaluating Global Model (Round {input_model.current_round}) ===")
         global_metrics_all = evaluate_on_test_datasets(model, test_datasets_tensors, device)
-        
+
         for test_name, metrics in global_metrics_all.items():
             print(f"\nGlobal Model Metrics on '{test_name}' ({metrics['num_samples']} samples):")
             print(
@@ -435,20 +404,20 @@ def main():
                 f"Recall: {metrics['recall']:.4f} | "
                 f"F1-score: {metrics['f1_score']:.4f}"
             )
-        
+
         # Use the first test dataset metrics for the main "accuracy" metric (for backward compatibility)
         first_test_name = list(global_metrics_all.keys())[0]
-        test_global_acc = global_metrics_all[first_test_name]['accuracy']
-        test_global_precision = global_metrics_all[first_test_name]['precision']
-        test_global_recall = global_metrics_all[first_test_name]['recall']
-        test_global_f1 = global_metrics_all[first_test_name]['f1_score']
-        test_global_cm = global_metrics_all[first_test_name]['confusion_matrix']
+        test_global_acc = global_metrics_all[first_test_name]["accuracy"]
+        test_global_precision = global_metrics_all[first_test_name]["precision"]
+        test_global_recall = global_metrics_all[first_test_name]["recall"]
+        test_global_f1 = global_metrics_all[first_test_name]["f1_score"]
+        test_global_cm = global_metrics_all[first_test_name]["confusion_matrix"]
 
         # Training loop: accumulate on GPU to avoid per-batch .item() CPU sync
         model.train()
         steps = args.epochs * len(train_loader)
         for epoch in range(args.epochs):
-            print(f"Round {input_model.current_round} | Epoch {epoch+1}/{args.epochs}")
+            print(f"Round {input_model.current_round} | Epoch {epoch + 1}/{args.epochs}")
 
             running_loss = torch.tensor(0.0, device=device)
             running_correct = torch.tensor(0, dtype=torch.long, device=device)
@@ -476,18 +445,16 @@ def main():
             train_acc = running_correct.item() / total_samples
             avg_loss = (running_loss / max(n_batches, 1)).item()
             current_lr = scheduler.get_last_lr()[0]
-            
+
             # Log standard metrics
-            mlflow_callback.log_metrics(
-                train_loss=avg_loss, 
-                train_accuracy=train_acc, 
-                current_lr=current_lr
-            )
-            
+            mlflow_callback.log_metrics(train_loss=avg_loss, train_accuracy=train_acc, current_lr=current_lr)
+
             # Log epsilon if DP is enabled
             if args.enable_dp and privacy_engine is not None:
                 epsilon = privacy_engine.get_epsilon(args.target_delta)
-                print(f"  Training metrics: Loss={avg_loss:.4f}, Accuracy={train_acc:.4f}, LR={current_lr:.6f}, ε={epsilon:.2f} (cumulative)")
+                print(
+                    f"  Training metrics: Loss={avg_loss:.4f}, Accuracy={train_acc:.4f}, LR={current_lr:.6f}, ε={epsilon:.2f} (cumulative)"
+                )
                 # Log privacy epsilon separately
                 mlflow.log_metric("privacy_epsilon", epsilon)
             else:
@@ -500,7 +467,7 @@ def main():
         # get current job_id
         job_id = flare.system_info().get("job_id")
         # Save the unwrapped model if using DP
-        if args.enable_dp and hasattr(model, '_module'):
+        if args.enable_dp and hasattr(model, "_module"):
             torch.save(model._module.state_dict(), os.path.join(job_id, PATH))
         else:
             torch.save(model.state_dict(), os.path.join(job_id, PATH))
@@ -508,7 +475,7 @@ def main():
         # Final local evaluation on all test datasets
         print(f"\n=== Evaluating Local Model (Round {input_model.current_round}) ===")
         local_metrics_all = evaluate_on_test_datasets(model, test_datasets_tensors, device)
-        
+
         for test_name, metrics in local_metrics_all.items():
             print(f"\nLocal Model Metrics on '{test_name}' ({metrics['num_samples']} samples):")
             print(
@@ -517,13 +484,13 @@ def main():
                 f"Recall: {metrics['recall']:.4f} | "
                 f"F1-score: {metrics['f1_score']:.4f}"
             )
-        
+
         # Use the first test dataset metrics for the main "accuracy" metric (for backward compatibility)
-        test_acc = local_metrics_all[first_test_name]['accuracy']
-        local_precision = local_metrics_all[first_test_name]['precision']
-        local_recall = local_metrics_all[first_test_name]['recall']
-        local_f1 = local_metrics_all[first_test_name]['f1_score']
-        local_cm = local_metrics_all[first_test_name]['confusion_matrix']
+        test_acc = local_metrics_all[first_test_name]["accuracy"]
+        local_precision = local_metrics_all[first_test_name]["precision"]
+        local_recall = local_metrics_all[first_test_name]["recall"]
+        local_f1 = local_metrics_all[first_test_name]["f1_score"]
+        local_cm = local_metrics_all[first_test_name]["confusion_matrix"]
         # Build comprehensive metrics dictionary
         metrics = {
             "accuracy": test_global_acc,  # by convention, 'accuracy' is the key for the global accuracy used by the server for model selection
@@ -537,7 +504,7 @@ def main():
             "local_f1_score": local_f1,
             "local_confusion_matrix": local_cm,
         }
-        
+
         # Add differential privacy metrics if enabled
         if args.enable_dp and privacy_engine is not None:
             final_epsilon = privacy_engine.get_epsilon(args.target_delta)
@@ -547,43 +514,40 @@ def main():
             metrics["privacy_noise_multiplier"] = optimizer.noise_multiplier
             metrics["privacy_current_round"] = input_model.current_round
             metrics["privacy_total_rounds"] = input_model.total_rounds
-            print(f"\n=== Privacy Budget (Round {input_model.current_round}/{input_model.total_rounds-1}) ===")
+            print(f"\n=== Privacy Budget (Round {input_model.current_round}/{input_model.total_rounds - 1}) ===")
             print(f"Cumulative ε = {final_epsilon:.2f} (target: {args.target_epsilon})")
             print(f"δ = {args.target_delta}")
             if input_model.current_round < input_model.total_rounds - 1:
-                print(f"⚠️  Privacy budget is accumulating! More rounds remaining.")
+                print("⚠️  Privacy budget is accumulating! More rounds remaining.")
             else:
-                print(f"✓ Final cumulative privacy budget after all rounds")
+                print("✓ Final cumulative privacy budget after all rounds")
             print("=" * 60)
-        
+
         # Add all test dataset metrics with prefixes
         for test_name, test_metrics in global_metrics_all.items():
-            metrics[f"global_{test_name}_accuracy"] = test_metrics['accuracy']
-            metrics[f"global_{test_name}_precision"] = test_metrics['precision']
-            metrics[f"global_{test_name}_recall"] = test_metrics['recall']
-            metrics[f"global_{test_name}_f1_score"] = test_metrics['f1_score']
-            metrics[f"global_{test_name}_confusion_matrix"] = test_metrics['confusion_matrix']
-        
+            metrics[f"global_{test_name}_accuracy"] = test_metrics["accuracy"]
+            metrics[f"global_{test_name}_precision"] = test_metrics["precision"]
+            metrics[f"global_{test_name}_recall"] = test_metrics["recall"]
+            metrics[f"global_{test_name}_f1_score"] = test_metrics["f1_score"]
+            metrics[f"global_{test_name}_confusion_matrix"] = test_metrics["confusion_matrix"]
+
         for test_name, test_metrics in local_metrics_all.items():
-            metrics[f"local_{test_name}_accuracy"] = test_metrics['accuracy']
-            metrics[f"local_{test_name}_precision"] = test_metrics['precision']
-            metrics[f"local_{test_name}_recall"] = test_metrics['recall']
-            metrics[f"local_{test_name}_f1_score"] = test_metrics['f1_score']
-            metrics[f"local_{test_name}_confusion_matrix"] = test_metrics['confusion_matrix']
+            metrics[f"local_{test_name}_accuracy"] = test_metrics["accuracy"]
+            metrics[f"local_{test_name}_precision"] = test_metrics["precision"]
+            metrics[f"local_{test_name}_recall"] = test_metrics["recall"]
+            metrics[f"local_{test_name}_f1_score"] = test_metrics["f1_score"]
+            metrics[f"local_{test_name}_confusion_matrix"] = test_metrics["confusion_matrix"]
 
         # Compute SHAP only when requested (expensive). -1 = last round only, 0 = never, N>0 = every N rounds
-        run_shap = (
-            not args.enable_dp
-            and (
-                (args.shap_every == -1 and input_model.current_round == input_model.total_rounds - 1)
-                or (args.shap_every > 0 and input_model.current_round % args.shap_every == 0)
-            )
+        run_shap = not args.enable_dp and (
+            (args.shap_every == -1 and input_model.current_round == input_model.total_rounds - 1)
+            or (args.shap_every > 0 and input_model.current_round % args.shap_every == 0)
         )
         shap_metrics = None
         if run_shap:
             print("Computing Shapley values...")
-            first_test_features = test_datasets[first_test_name]['features']
-            first_test_labels = test_datasets[first_test_name]['labels']
+            first_test_features = test_datasets[first_test_name]["features"]
+            first_test_labels = test_datasets[first_test_name]["labels"]
             plot_prefix = os.path.join(job_id, f"round{input_model.current_round}")
             shap_metrics = compute_shapley_values(
                 model,
@@ -596,9 +560,7 @@ def main():
         elif args.enable_dp:
             print("[WARNING] Skip SHAP with DP")
         if shap_metrics:
-            print(
-                f"SHAP computation completed. Used {shap_metrics['shap_samples_used']} samples."
-            )
+            print(f"SHAP computation completed. Used {shap_metrics['shap_samples_used']} samples.")
         else:
             print("SHAP computation failed. Skipping SHAP metrics.")
         metrics["shap_metrics"] = shap_metrics
@@ -619,9 +581,10 @@ def main():
             model_diff[name] = np.subtract(local_weights[name], global_weights[name], dtype=np.float32)
             diff_norm += np.linalg.norm(model_diff[name])
         if len(model_diff) == 0 or len(missing_params) > 0:
-            raise ValueError(f"No weight differences computed or missing parameters! Missing parameters: {missing_params}")
+            raise ValueError(
+                f"No weight differences computed or missing parameters! Missing parameters: {missing_params}"
+            )
         print(f"Computed weight differences on {len(model_diff)} layers. Diff norm: {diff_norm}")
-
 
         # If model is wrapped by Opacus, extract the original module
         if args.enable_dp:
@@ -652,34 +615,34 @@ def main():
                     print(f"Warning: {metric_name} is NaN")
 
             print(f"Logging global metrics for {test_name}")
-            test_name = test_name.replace('[', '').replace(']', '')
-            test_name = test_name.split('_', 1)[1] if '_' in test_name else test_name
+            test_name = test_name.replace("[", "").replace("]", "")
+            test_name = test_name.split("_", 1)[1] if "_" in test_name else test_name
 
-            mlflow.log_metric(f"global_{test_name}_accuracy", test_metrics['accuracy'], input_model.current_round)
+            mlflow.log_metric(f"global_{test_name}_accuracy", test_metrics["accuracy"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"global_{test_name}_precision", test_metrics['precision'], input_model.current_round)
+            mlflow.log_metric(f"global_{test_name}_precision", test_metrics["precision"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"global_{test_name}_recall", test_metrics['recall'], input_model.current_round)
+            mlflow.log_metric(f"global_{test_name}_recall", test_metrics["recall"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"global_{test_name}_f1_score", test_metrics['f1_score'], input_model.current_round)
+            mlflow.log_metric(f"global_{test_name}_f1_score", test_metrics["f1_score"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-        
+
         for test_name, test_metrics in local_metrics_all.items():
             print(f"Logging local metrics for {test_name}")
-            test_name = test_name.replace('[', '').replace(']', '')
-            test_name = test_name.split('_', 1)[1] if '_' in test_name else test_name
-            mlflow.log_metric(f"local_{test_name}_accuracy", test_metrics['accuracy'], input_model.current_round)
+            test_name = test_name.replace("[", "").replace("]", "")
+            test_name = test_name.split("_", 1)[1] if "_" in test_name else test_name
+            mlflow.log_metric(f"local_{test_name}_accuracy", test_metrics["accuracy"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"local_{test_name}_precision", test_metrics['precision'], input_model.current_round)
+            mlflow.log_metric(f"local_{test_name}_precision", test_metrics["precision"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"local_{test_name}_recall", test_metrics['recall'], input_model.current_round)
+            mlflow.log_metric(f"local_{test_name}_recall", test_metrics["recall"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-            mlflow.log_metric(f"local_{test_name}_f1_score", test_metrics['f1_score'], input_model.current_round)
+            mlflow.log_metric(f"local_{test_name}_f1_score", test_metrics["f1_score"], input_model.current_round)
             time.sleep(mlflow_sleep_time)
-        
+
         # (7) send model back to NVFlare
         flare.send(output_model)
-        
+
 
 if __name__ == "__main__":
     main()

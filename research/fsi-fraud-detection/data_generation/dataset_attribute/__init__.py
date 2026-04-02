@@ -8,10 +8,8 @@ for a batch of rows held in a ``pd.DataFrame``.
 """
 
 import pandas as pd
-from data_generation.synthetic_data_provider.synthetic_data_provider import (
-    SyntheticDataProvider,
-)
 from data_generation.attribute_data_provider import AttributeDataProviderProtocol
+from data_generation.synthetic_data_provider.synthetic_data_provider import SyntheticDataProvider
 
 
 class PaymentDatasetAttributeGroup[T: SyntheticDataProvider]:
@@ -29,9 +27,9 @@ class PaymentDatasetAttributeGroup[T: SyntheticDataProvider]:
         attribute_data_provider: AttributeDataProviderProtocol[T],
     ):
         assert len(names) > 0, "At least one attribute name must be provided"
-        assert all(name is not None and name.strip() != "" for name in names), (
-            "All attribute names must be non-empty strings"
-        )
+        assert all(
+            name is not None and name.strip() != "" for name in names
+        ), "All attribute names must be non-empty strings"
         self.names = tuple(name.upper() for name in names)
         self.attribute_data_provider = attribute_data_provider
 
@@ -71,9 +69,7 @@ class PaymentDatasetAttributeGroup[T: SyntheticDataProvider]:
         )
 
 
-class PaymentDatasetAttribute[T: SyntheticDataProvider](
-    PaymentDatasetAttributeGroup[T]
-):
+class PaymentDatasetAttribute[T: SyntheticDataProvider](PaymentDatasetAttributeGroup[T]):
     """A single-column attribute — convenience subclass of ``PaymentDatasetAttributeGroup``."""
 
     def __init__(

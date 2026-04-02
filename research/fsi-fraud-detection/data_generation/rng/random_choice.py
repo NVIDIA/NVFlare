@@ -1,9 +1,9 @@
 """Uniform random choice from a discrete set of options."""
 
+from dataclasses import dataclass, field
+
 from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
 from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
-
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -43,10 +43,6 @@ class RandomChoice(RNGBase[RandomChoiceSamplingConfig]):
         result = self.rng.choice(
             args,
             size=size,
-            p=(
-                sample_config.prob_distribution
-                if sample_config and sample_config.prob_distribution
-                else None
-            ),
+            p=(sample_config.prob_distribution if sample_config and sample_config.prob_distribution else None),
         )
         return result[0] if size == 1 else result

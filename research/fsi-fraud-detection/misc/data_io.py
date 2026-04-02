@@ -89,19 +89,14 @@ def load_csv_data_from_path(
                 current_columns = list(df.columns)
                 if current_columns != expected_columns:
                     raise ValueError(
-                        f"Column mismatch in {csv_file}. "
-                        f"Expected: {expected_columns}, Got: {current_columns}"
+                        f"Column mismatch in {csv_file}. " f"Expected: {expected_columns}, Got: {current_columns}"
                     )
 
                 # Check for missing features (only if data_features is specified)
                 if data_features is not None:
-                    missing_features = [
-                        col for col in data_features if col not in df.columns
-                    ]
+                    missing_features = [col for col in data_features if col not in df.columns]
                     if missing_features:
-                        raise ValueError(
-                            f"Missing features in {csv_file}: {missing_features}"
-                        )
+                        raise ValueError(f"Missing features in {csv_file}: {missing_features}")
 
             # Check for empty dataframes
             if len(df) == 0:
@@ -119,9 +114,7 @@ def load_csv_data_from_path(
 
     # Concatenate all dataframes
     combined_df = pd.concat(dataframes, ignore_index=True)
-    print(
-        f"Successfully concatenated {len(dataframes)} files into {len(combined_df)} total rows"
-    )
+    print(f"Successfully concatenated {len(dataframes)} files into {len(combined_df)} total rows")
 
     # Final validation
     if len(combined_df) == 0:
@@ -134,9 +127,7 @@ def load_csv_data_from_path(
     return combined_df
 
 
-def validate_data_features(
-    df: pd.DataFrame, data_features: Optional[List[str]]
-) -> None:
+def validate_data_features(df: pd.DataFrame, data_features: Optional[List[str]]) -> None:
     """
     Validate that all required features exist in the DataFrame.
 
@@ -148,9 +139,7 @@ def validate_data_features(
         ValueError: If any required features are missing
     """
     # this is more for type checking and to avoid silent issues if data_features is accidentally None
-    assert data_features is not None, (
-        "Data features list must be provided for validation"
-    )
+    assert data_features is not None, "Data features list must be provided for validation"
 
     missing_features = [col for col in data_features if col not in df.columns]
     if missing_features:
@@ -166,9 +155,7 @@ def validate_data_features(
         raise ValueError(f"Features with all NaN values: {empty_features}")
 
 
-def print_directory_tree(
-    path, prefix="", max_depth=3, current_depth=0, dirs_only=False, endswith=None
-):
+def print_directory_tree(path, prefix="", max_depth=3, current_depth=0, dirs_only=False, endswith=None):
     """
     Print directory tree structure.
 
@@ -192,11 +179,7 @@ def print_directory_tree(
         if dirs_only:
             items = [item for item in items if os.path.isdir(os.path.join(path, item))]
         elif endswith:
-            items = [
-                item
-                for item in items
-                if os.path.isdir(os.path.join(path, item)) or item.endswith(endswith)
-            ]
+            items = [item for item in items if os.path.isdir(os.path.join(path, item)) or item.endswith(endswith)]
         for i, item in enumerate(items):
             item_path = os.path.join(path, item)
             is_last = i == len(items) - 1

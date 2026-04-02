@@ -5,16 +5,15 @@ Each concrete class pairs a ``SyntheticDataProvider`` with a specific
 generators can call ``provider.rng.sample(...)`` directly.
 """
 
-from data_generation.synthetic_data_provider.synthetic_data_provider import (
-    SyntheticDataProvider,
-)
-from data_generation.rng.random_choice import RandomChoice
-from data_generation.rng.gamma_distribution import GammaDistribution
-from data_generation.rng.normal_distribution import NormalDistribution
-from data_generation.rng.lognormal_distribution import LogNormalDistribution
-from data_generation.rng.uniform_distribution import UniformDistribution
-from data_generation.rng.rng_base import RNGBase
 from typing import override
+
+from data_generation.rng.gamma_distribution import GammaDistribution
+from data_generation.rng.lognormal_distribution import LogNormalDistribution
+from data_generation.rng.normal_distribution import NormalDistribution
+from data_generation.rng.random_choice import RandomChoice
+from data_generation.rng.rng_base import RNGBase
+from data_generation.rng.uniform_distribution import UniformDistribution
+from data_generation.synthetic_data_provider.synthetic_data_provider import SyntheticDataProvider
 
 
 class RNGSyntheticDataProvider[T: RNGBase](SyntheticDataProvider[T]):
@@ -51,9 +50,7 @@ class RandomChoiceDataProvider(RNGSyntheticDataProvider[RandomChoice]):
         return self.rng
 
 
-class LogNormalDistributionDataProvider(
-    RNGSyntheticDataProvider[LogNormalDistribution]
-):
+class LogNormalDistributionDataProvider(RNGSyntheticDataProvider[LogNormalDistribution]):
     """Provider for log-normal distribution sampling."""
 
     def __init__(self, seed: int = 42):

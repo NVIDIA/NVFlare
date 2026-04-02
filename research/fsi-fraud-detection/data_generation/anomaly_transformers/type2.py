@@ -10,11 +10,7 @@ from typing import cast
 
 import numpy as np
 import pandas as pd
-
-from data_generation.rng.lognormal_distribution import (
-    LogNormalDistribution,
-    LogNormalDistributionSamplingConfig,
-)
+from data_generation.rng.lognormal_distribution import LogNormalDistribution, LogNormalDistributionSamplingConfig
 
 
 @dataclass

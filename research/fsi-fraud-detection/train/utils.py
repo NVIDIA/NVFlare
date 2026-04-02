@@ -12,37 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import fcntl
 import os
 import time
 import traceback
-import argparse
 from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Patch
-from matplotlib.ticker import MaxNLocator
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from captum.attr import GradientShap, IntegratedGradients
-from captum.attr import visualization as viz
+from matplotlib.patches import Patch
+from matplotlib.ticker import MaxNLocator
+from sklearn.metrics import balanced_accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+
+from nvflare.apis.analytix import AnalyticsData, LogWriterName
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_constant import FLMetaKey
-from sklearn.metrics import (
-    balanced_accuracy_score,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-)
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.analytix import AnalyticsData, LogWriterName
+from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
 class FocalLoss(nn.Module):
@@ -90,8 +83,10 @@ class CustomReceiver(AnalyticsReceiver):
             self.log_info(fl_ctx, "#####  No data to save #####")
             return
 
-        self.log_info(fl_ctx, f"#####  Data type: {data.data_type}, origin: {record_origin}, value: {data.value}, step: {data.step}, tag: {data.tag} #####")
-
+        self.log_info(
+            fl_ctx,
+            f"#####  Data type: {data.data_type}, origin: {record_origin}, value: {data.value}, step: {data.step}, tag: {data.tag} #####",
+        )
 
     def finalize(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, "Finalizing CustomReceiver")
@@ -100,47 +95,49 @@ class CustomReceiver(AnalyticsReceiver):
 def evaluate_on_test_datasets(model, test_datasets_dict, device):
     """
     Evaluate model on multiple test datasets.
-    
+
     Args:
         model: The model to evaluate
         test_datasets_dict: Dictionary of {dataset_name: (features_tensor, labels_tensor)}
         device: The device to use for evaluation
-    
+
     Returns:
         Dictionary of metrics for each test dataset
     """
     all_metrics = {}
-    
+
     model.to(device)
     model.eval()
     with torch.no_grad():
         for dataset_name, (test_features_tensor, test_labels_tensor) in test_datasets_dict.items():
             test_outputs = model(test_features_tensor)
             test_pred = torch.argmax(test_outputs, dim=1)
-            
+
             # Convert to numpy for sklearn metrics
             test_pred_np = test_pred.cpu().numpy()
             test_labels_np = test_labels_tensor.cpu().numpy()
-            
+
             # Calculate all metrics using sklearn (binary: positive class = fraud, label 1)
             n_classes = len(np.unique(test_labels_np))
             assert n_classes == 2, "Only binary classification is supported"
             # Balanced accuracy = mean of per-class recall, so not dominated by majority class
             test_acc = balanced_accuracy_score(test_labels_np, test_pred_np)
-            test_precision = precision_score(test_labels_np, test_pred_np, average="binary", pos_label=1, zero_division=0)
+            test_precision = precision_score(
+                test_labels_np, test_pred_np, average="binary", pos_label=1, zero_division=0
+            )
             test_recall = recall_score(test_labels_np, test_pred_np, average="binary", pos_label=1, zero_division=0)
             test_f1 = f1_score(test_labels_np, test_pred_np, average="binary", pos_label=1, zero_division=0)
             test_cm = confusion_matrix(test_labels_np, test_pred_np)
-            
+
             all_metrics[dataset_name] = {
                 "accuracy": test_acc,
                 "precision": test_precision,
                 "recall": test_recall,
                 "f1_score": test_f1,
                 "confusion_matrix": test_cm,
-                "num_samples": len(test_features_tensor)
+                "num_samples": len(test_features_tensor),
             }
-    
+
     return all_metrics
 
 
@@ -168,10 +165,7 @@ def plot_attribution_summary(attribution_metrics, plot_prefix="", save_fig=False
         # Create violin plot similar to SHAP
         fig, ax = plt.subplots(figsize=(20, 16))
         ax.violinplot(
-            [
-                attributions_for_plot[:, i]
-                for i in range(attributions_for_plot.shape[1])
-            ],
+            [attributions_for_plot[:, i] for i in range(attributions_for_plot.shape[1])],
             positions=range(attributions_for_plot.shape[1]),
             vert=False,
         )
@@ -211,9 +205,7 @@ def _feature_category_for_interpretability(name: str) -> str:
     return "Account Type"  # default for remaining features
 
 
-def plot_attribution_feature_importance(
-    attribution_metrics, plot_prefix="", save_fig=False, save_pdf=False
-):
+def plot_attribution_feature_importance(attribution_metrics, plot_prefix="", save_fig=False, save_pdf=False):
     """
     Plot attribution feature importance bar chart from pre-computed metrics using Captum.
 
@@ -287,9 +279,7 @@ def plot_attribution_feature_importance(
             if save_pdf:
                 fig.savefig(save_name.replace(".png", ".pdf"), bbox_inches="tight")
             plt.close(fig)
-            print(
-                f"Attribution feature importance plot saved successfully to {save_name}"
-            )
+            print(f"Attribution feature importance plot saved successfully to {save_name}")
     except Exception as e:
         traceback.print_exc()
         print(f"Error plotting attribution feature importance: {e}")
@@ -309,9 +299,7 @@ def plot_all_attribution_plots(attribution_metrics, plot_prefix="", save_fig=Fal
     plot_attribution_feature_importance(attribution_metrics, plot_prefix, save_fig, save_pdf)
 
 
-def compute_attributions(
-    model, test_features, test_labels, n_samples=100, plot_prefix="", feature_names=None
-):
+def compute_attributions(model, test_features, test_labels, n_samples=100, plot_prefix="", feature_names=None):
     """
     Compute feature attributions using Captum library for PyTorch models.
 
@@ -348,21 +336,15 @@ def compute_attributions(
 
         # Create a background dataset for GradientShap (using a subset of the data)
         background_size = min(50, len(sample_features))
-        background_indices = np.random.choice(
-            len(sample_features), background_size, replace=False
-        )
-        background_data = torch.FloatTensor(sample_features[background_indices]).to(
-            device
-        )
+        background_indices = np.random.choice(len(sample_features), background_size, replace=False)
+        background_data = torch.FloatTensor(sample_features[background_indices]).to(device)
 
         # Set model to evaluation mode
         model.eval()
 
         # Compute attributions using IntegratedGradients
         ig = IntegratedGradients(model)
-        attributions_ig = ig.attribute(
-            sample_features_tensor, target=sample_labels_tensor, n_steps=50
-        )
+        attributions_ig = ig.attribute(sample_features_tensor, target=sample_labels_tensor, n_steps=50)
 
         # Compute attributions using GradientShap for comparison
         gs = GradientShap(model)
@@ -441,15 +423,11 @@ def compute_attributions(
 
 
 # Alias for backward compatibility
-def compute_shapley_values(
-    model, test_features, test_labels, n_samples=100, plot_prefix="", feature_names=None
-):
+def compute_shapley_values(model, test_features, test_labels, n_samples=100, plot_prefix="", feature_names=None):
     """
     Backward compatibility alias for compute_attributions.
     """
-    return compute_attributions(
-        model, test_features, test_labels, n_samples, plot_prefix, feature_names
-    )
+    return compute_attributions(model, test_features, test_labels, n_samples, plot_prefix, feature_names)
 
 
 class MLflowCallback:
@@ -464,9 +442,7 @@ class MLflowCallback:
         self.mlflow_writer = mlflow_writer
         self.global_epoch = 0
 
-    def log_metrics(
-        self, train_loss, train_accuracy, val_accuracy=None, current_lr=None
-    ):
+    def log_metrics(self, train_loss, train_accuracy, val_accuracy=None, current_lr=None):
         """
         Log training metrics to MLflow.
 
@@ -478,21 +454,15 @@ class MLflowCallback:
         """
         # Log training metrics
         self.mlflow_writer.log_metric("train_loss", train_loss, self.global_epoch)
-        self.mlflow_writer.log_metric(
-            "train_accuracy", train_accuracy, self.global_epoch
-        )
+        self.mlflow_writer.log_metric("train_accuracy", train_accuracy, self.global_epoch)
 
         # Log validation metrics if available
         if val_accuracy is not None:
-            self.mlflow_writer.log_metric(
-                "val_accuracy", val_accuracy, self.global_epoch
-            )
+            self.mlflow_writer.log_metric("val_accuracy", val_accuracy, self.global_epoch)
 
         # Log current learning rate if available
         if current_lr is not None:
-            self.mlflow_writer.log_metric(
-                "learning_rate", current_lr, self.global_epoch
-            )
+            self.mlflow_writer.log_metric("learning_rate", current_lr, self.global_epoch)
 
         self.global_epoch += 1
 
@@ -636,10 +606,7 @@ class MetricsCollectionFilter(DXOFilter):
             if current_round is None:
                 current_round = dxo.meta.get("current_round")
             if current_round is None:
-                self.log_warning(
-                    fl_ctx,
-                    "Could not resolve round (fl_ctx, dxo.meta['current_round']"
-                )
+                self.log_warning(fl_ctx, "Could not resolve round (fl_ctx, dxo.meta['current_round']")
 
             peer_context = fl_ctx.get_peer_context()
             client_name = peer_context.get_identity_name()
@@ -662,9 +629,7 @@ class MetricsCollectionFilter(DXOFilter):
                     f"Failed to save SHAP metrics for round {current_round} and client {client_name} at {self._save_path}",
                 )
         except Exception as e:
-            self.log_error(
-                fl_ctx, f"Error processing DXO in MetricsCollectionFilter: {e}"
-            )
+            self.log_error(fl_ctx, f"Error processing DXO in MetricsCollectionFilter: {e}")
 
         # Return the DXO unchanged
         return dxo
@@ -690,9 +655,9 @@ def str2bool(v):
     """Convert string to boolean for argparse"""
     if isinstance(v, bool):
         return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    if v.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif v.lower() in ("no", "false", "f", "n", "0"):
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError("Boolean value expected.")

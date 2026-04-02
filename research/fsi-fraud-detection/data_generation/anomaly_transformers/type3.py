@@ -7,7 +7,6 @@ simulating a dormant account suddenly initiating a transaction.
 import numpy as np
 import pandas as pd
 
-
 # Choices for the random time offset components.
 _DAY_CHOICES = np.array([90, 120, 150, 180])
 _HOUR_CHOICES = np.array([0, 1, 2, 3, 4, 5])

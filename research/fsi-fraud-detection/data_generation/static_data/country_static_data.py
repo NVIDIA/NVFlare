@@ -25,14 +25,15 @@ Public API:
 
 import os
 import tempfile
+from dataclasses import dataclass
+from datetime import date
 from itertools import product
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from babel import numbers
-from pathlib import Path
-from dataclasses import dataclass
 from currency_converter import CurrencyConverter
-from datetime import date
 
 # Fixed snapshot date used for all exchange rate lookups; keeps generated data reproducible.
 _SNAPSHOT_DATE = date(2019, 1, 1)
@@ -74,40 +75,24 @@ def _generate_exchange_rates(country_currency_map: pd.DataFrame) -> pd.DataFrame
         "WARNING: Generating currency exchange rates from CurrencyConverter API. This may take a few seconds and requires an internet connection."
     )
     # fallback_on_missing_rate prevents errors for currencies with sparse historical data.
-    curr_conv = CurrencyConverter(
-        fallback_on_missing_rate=True
-    )  # initialise the converter once; reused for all pairs
-    currencies = country_currency_map[
-        "currency"
-    ].tolist()  # extract the ordered list of unique currency codes
-    n = len(
-        currencies
-    )  # number of distinct currencies; determines matrix dimensions (n*n)
+    curr_conv = CurrencyConverter(fallback_on_missing_rate=True)  # initialise the converter once; reused for all pairs
+    currencies = country_currency_map["currency"].tolist()  # extract the ordered list of unique currency codes
+    n = len(currencies)  # number of distinct currencies; determines matrix dimensions (n*n)
 
     # Pre-fill an n*n matrix with 1.0; diagonal entries (same currency) are already correct.
     rate_matrix = np.ones((n, n), dtype=float)  # shape (n, n), default 1.0 everywhere
-    for (i, ccy1), (j, ccy2) in product(
-        enumerate(currencies), repeat=2
-    ):  # iterate over all ordered pairs
+    for (i, ccy1), (j, ccy2) in product(enumerate(currencies), repeat=2):  # iterate over all ordered pairs
         if i != j:  # skip diagonal — same-currency rate is always 1.0
-            raw = curr_conv.convert(
-                1, ccy1, ccy2, date=_SNAPSHOT_DATE
-            )  # fetch rate: 1 ccy1 → ccy2
+            raw = curr_conv.convert(1, ccy1, ccy2, date=_SNAPSHOT_DATE)  # fetch rate: 1 ccy1 → ccy2
             # Guard against zero/None/negative rates that can occur on missing fallbacks.
-            rate_matrix[i, j] = (
-                1.0 if (not raw or raw <= 0.0) else raw
-            )  # sanitize invalid values to 1.0
+            rate_matrix[i, j] = 1.0 if (not raw or raw <= 0.0) else raw  # sanitize invalid values to 1.0
 
     # Flatten the matrix into long format
     ccy1_col = np.repeat(
         currencies, n
     )  # repeat each currency n times to form the CCY1 column: [USD,USD,...,EUR,EUR,...]
-    ccy2_col = np.tile(
-        currencies, n
-    )  # tile the full list n times to form the CCY2 column: [USD,EUR,...,USD,EUR,...]
-    rate_col = rate_matrix.flatten().round(
-        4
-    )  # flatten row-major (matches repeat/tile order) and round to 4 d.p.
+    ccy2_col = np.tile(currencies, n)  # tile the full list n times to form the CCY2 column: [USD,EUR,...,USD,EUR,...]
+    rate_col = rate_matrix.flatten().round(4)  # flatten row-major (matches repeat/tile order) and round to 4 d.p.
 
     return pd.DataFrame(
         {"CCY1": ccy1_col, "CCY2": ccy2_col, "RATE": rate_col}
@@ -120,13 +105,10 @@ def get_exchange_rate(static_data: CountryStaticData, curr1: str, curr2: str) ->
     Returns 1.0 if the pair is not found in the rates table (safe no-op default).
     """
     result = static_data.currency_exchange_rates[
-        (static_data.currency_exchange_rates["CCY1"] == curr1)
-        & (static_data.currency_exchange_rates["CCY2"] == curr2)
+        (static_data.currency_exchange_rates["CCY1"] == curr1) & (static_data.currency_exchange_rates["CCY2"] == curr2)
     ]
     if not len(result):
-        print(
-            f"WARNING: Exchange rate not found for pair ({curr1}, {curr2}); defaulting to 1.0"
-        )
+        print(f"WARNING: Exchange rate not found for pair ({curr1}, {curr2}); defaulting to 1.0")
         return 1.0
     return float(result["RATE"].values[0])
 
@@ -138,20 +120,14 @@ def countries() -> tuple[str, ...]:
 
 def currency(static_data: CountryStaticData, country: str) -> str:
     """Return the currency code for a given country."""
-    result = static_data.country_currency_map[
-        static_data.country_currency_map["country"] == country
-    ]
+    result = static_data.country_currency_map[static_data.country_currency_map["country"] == country]
     if not len(result):
-        print(
-            f"WARNING: Currency not found for country ({country}); defaulting to 'USD'"
-        )
+        print(f"WARNING: Currency not found for country ({country}); defaulting to 'USD'")
         return "USD"
     return str(result["currency"].values[0])
 
 
-def load_static_data(
-    static_data_dir: str | Path, force_rates_from_api: bool = False
-) -> CountryStaticData:
+def load_static_data(static_data_dir: str | Path, force_rates_from_api: bool = False) -> CountryStaticData:
     """Load (or generate) static reference data from disk.
 
     Args:
@@ -179,9 +155,7 @@ def load_static_data(
         exchange_rates = _generate_exchange_rates(country_currency_code)
         # Write atomically: write to a temp file in the same directory, then rename.
         # This prevents a corrupt cache file if the process is interrupted mid-write.
-        with tempfile.NamedTemporaryFile(
-            mode="w", dir=abs_path, suffix=".csv", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", dir=abs_path, suffix=".csv", delete=False) as tmp:
             exchange_rates.to_csv(tmp, index=False)
             tmp_path = Path(tmp.name)
         tmp_path.replace(currency_exchange_rates_file)

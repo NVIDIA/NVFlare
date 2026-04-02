@@ -25,11 +25,8 @@ from collections import deque
 from collections.abc import Mapping
 
 import pandas as pd
-
 from data_generation.dataset_attribute import PaymentDatasetAttributeGroup
-from data_generation.synthetic_data_provider.synthetic_data_provider import (
-    SyntheticDataProvider,
-)
+from data_generation.synthetic_data_provider.synthetic_data_provider import SyntheticDataProvider
 
 
 def topological_sort(
@@ -56,30 +53,22 @@ def topological_sort(
             column_producer[col_name] = attr
 
     # Build adjacency list and in-degree count
-    in_degree: dict[PaymentDatasetAttributeGroup, int] = dict.fromkeys(
-        dependency_graph, 0
-    )
-    dependents: dict[
-        PaymentDatasetAttributeGroup, list[PaymentDatasetAttributeGroup]
-    ] = {attr: [] for attr in dependency_graph}
+    in_degree: dict[PaymentDatasetAttributeGroup, int] = dict.fromkeys(dependency_graph, 0)
+    dependents: dict[PaymentDatasetAttributeGroup, list[PaymentDatasetAttributeGroup]] = {
+        attr: [] for attr in dependency_graph
+    }
 
     for attr, dep_columns in dependency_graph.items():
         seen_producers: set[PaymentDatasetAttributeGroup] = set()
         for col_name in dep_columns:
             producer = column_producer.get(col_name)
-            if (
-                producer is not None
-                and producer is not attr
-                and producer not in seen_producers
-            ):
+            if producer is not None and producer is not attr and producer not in seen_producers:
                 in_degree[attr] += 1
                 dependents[producer].append(attr)
                 seen_producers.add(producer)
 
     # Kahn's BFS
-    queue: deque[PaymentDatasetAttributeGroup] = deque(
-        attr for attr, deg in in_degree.items() if deg == 0
-    )
+    queue: deque[PaymentDatasetAttributeGroup] = deque(attr for attr, deg in in_degree.items() if deg == 0)
     ordered: list[PaymentDatasetAttributeGroup] = []
 
     while queue:
@@ -91,10 +80,7 @@ def topological_sort(
                 queue.append(dep)
 
     if len(ordered) != len(dependency_graph):
-        raise ValueError(
-            f"Dependency cycle detected: sorted {len(ordered)} of "
-            f"{len(dependency_graph)} attributes"
-        )
+        raise ValueError(f"Dependency cycle detected: sorted {len(ordered)} of " f"{len(dependency_graph)} attributes")
 
     return ordered
 

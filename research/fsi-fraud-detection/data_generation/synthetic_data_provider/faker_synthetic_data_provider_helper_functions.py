@@ -13,19 +13,17 @@ functions use the ``size`` parameter for true vectorised sampling.
 
 from datetime import datetime, timedelta
 
+import data_generation.static_data.field_static_data as field_static_data
 import numpy as np
 import pandas as pd
-
+from data_generation.rng.random_choice import RandomChoiceSamplingConfig
+from data_generation.rng.uniform_distribution import UniformDistributionSamplingConfig
+from data_generation.static_data import country_static_data
 from data_generation.synthetic_data_provider import (
     FakerSyntheticDataProvider,
     RandomChoiceDataProvider,
     UniformDistributionDataProvider,
 )
-from data_generation.rng.random_choice import RandomChoiceSamplingConfig
-from data_generation.rng.uniform_distribution import UniformDistributionSamplingConfig
-from data_generation.static_data import country_static_data
-import data_generation.static_data.field_static_data as field_static_data
-
 
 # ---------------------------------------------------------------------------
 # Multi-column generators (return pd.DataFrame)
@@ -47,9 +45,7 @@ def date_of_birth(
         years.append(dob.year)
         months.append(dob.month)
         days.append(dob.day)
-    return pd.DataFrame(
-        {"col_0": years, "col_1": months, "col_2": days}, index=df.index
-    )
+    return pd.DataFrame({"col_0": years, "col_1": months, "col_2": days}, index=df.index)
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +149,7 @@ def comment(
 ) -> pd.Series:
     """Generate random short text comments (max 60 chars) via Faker."""
     fake = provider.provide()
-    return pd.Series(
-        [fake.text(max_nb_chars=60) for _ in range(len(df))], index=df.index
-    )
+    return pd.Series([fake.text(max_nb_chars=60) for _ in range(len(df))], index=df.index)
 
 
 def building_number(
@@ -252,9 +246,7 @@ def country(
 ) -> pd.Series:
     """Randomly sample a country code from the supported set."""
     cfg: RandomChoiceSamplingConfig | None = kwargs.get("random_choice_config")
-    result = provider.rng.sample(
-        *country_static_data.countries(), sample_config=cfg, size=len(df)
-    )
+    result = provider.rng.sample(*country_static_data.countries(), sample_config=cfg, size=len(df))
     return pd.Series(result, index=df.index, dtype=str)
 
 
@@ -266,9 +258,7 @@ def account_type(
 ) -> pd.Series:
     """Randomly sample an account type (SAVINGS / CHECKING / BUSINESS)."""
     cfg: RandomChoiceSamplingConfig | None = kwargs.get("random_choice_config")
-    result = provider.rng.sample(
-        *field_static_data.ACCOUNT_TYPES, sample_config=cfg, size=len(df)
-    )
+    result = provider.rng.sample(*field_static_data.ACCOUNT_TYPES, sample_config=cfg, size=len(df))
     return pd.Series(result, index=df.index, dtype=str)
 
 
@@ -280,9 +270,7 @@ def payment_status(
 ) -> pd.Series:
     """Randomly sample a payment status."""
     cfg: RandomChoiceSamplingConfig | None = kwargs.get("random_choice_config")
-    result = provider.rng.sample(
-        *field_static_data.PAYMENT_STATUS, sample_config=cfg, size=len(df)
-    )
+    result = provider.rng.sample(*field_static_data.PAYMENT_STATUS, sample_config=cfg, size=len(df))
     return pd.Series(result, index=df.index, dtype=str)
 
 
@@ -304,12 +292,8 @@ def currency_from_country(
 
     Requires ``country_static_data`` in **kwargs.
     """
-    assert dependent_columns and len(dependent_columns) >= 1, (
-        "dependent_columns must contain the country column name"
-    )
-    assert "country_static_data" in kwargs, (
-        "country_static_data must be provided in kwargs"
-    )
+    assert dependent_columns and len(dependent_columns) >= 1, "dependent_columns must contain the country column name"
+    assert "country_static_data" in kwargs, "country_static_data must be provided in kwargs"
     _csd = kwargs["country_static_data"]
     country_col = dependent_columns[0]
     return df[country_col].map(lambda cty: country_static_data.currency(_csd, str(cty)))
@@ -326,9 +310,9 @@ def account_create_timestamp(
     Depends on:
         - ``dependent_columns[0..2]``: birth_year, birth_month, birth_day.
     """
-    assert dependent_columns and len(dependent_columns) >= 3, (
-        "dependent_columns must contain birth_year, birth_month, birth_day column names"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 3
+    ), "dependent_columns must contain birth_year, birth_month, birth_day column names"
     yr_col, mo_col, dy_col = dependent_columns[:3]
     fake = provider.provide()
     cutoff = datetime.today() - timedelta(weeks=12)
@@ -353,9 +337,9 @@ def account_last_activity_timestamp(
     Depends on:
         - ``dependent_columns[0]``: account_create_timestamp.
     """
-    assert dependent_columns and len(dependent_columns) >= 1, (
-        "dependent_columns must contain the account_create_timestamp column name"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 1
+    ), "dependent_columns must contain the account_create_timestamp column name"
     create_ts_col = dependent_columns[0]
     fake = provider.provide()
     now = datetime.now()
@@ -363,9 +347,7 @@ def account_last_activity_timestamp(
     results = []
     for ts in df[create_ts_col]:
         start = max(datetime.fromtimestamp(float(ts)), week_ago)
-        results.append(
-            fake.date_time_between(start_date=start, end_date=now).timestamp()
-        )
+        results.append(fake.date_time_between(start_date=start, end_date=now).timestamp())
     return pd.Series(results, index=df.index, dtype=float)
 
 
@@ -380,9 +362,9 @@ def account_activity_events_past_30d(
     Depends on:
         - ``dependent_columns[0]``: account_type.
     """
-    assert dependent_columns and len(dependent_columns) >= 1, (
-        "dependent_columns must contain the account_type column name"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 1
+    ), "dependent_columns must contain the account_type column name"
     acct_col = dependent_columns[0]
     n = len(df)
     result = np.zeros(n, dtype=int)
@@ -415,9 +397,9 @@ def payment_init_timestamp(
         - ``dependent_columns[0]``: debitor account_last_activity_timestamp.
         - ``dependent_columns[1]``: creditor account_last_activity_timestamp.
     """
-    assert dependent_columns and len(dependent_columns) >= 2, (
-        "dependent_columns must contain debitor and creditor account_last_activity_timestamp column names"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 2
+    ), "dependent_columns must contain debitor and creditor account_last_activity_timestamp column names"
     deb_col, cred_col = dependent_columns[:2]
     fake = provider.provide()
     now = datetime.now()
@@ -425,9 +407,7 @@ def payment_init_timestamp(
     for deb_ts, cred_ts in zip(df[deb_col], df[cred_col], strict=True):
         latest = max(float(deb_ts), float(cred_ts))
         start = datetime.fromtimestamp(latest) + timedelta(days=7)
-        results.append(
-            fake.date_time_between(start_date=start, end_date=now).timestamp()
-        )
+        results.append(fake.date_time_between(start_date=start, end_date=now).timestamp())
     return pd.Series(results, index=df.index, dtype=float)
 
 
@@ -442,18 +422,16 @@ def payment_last_update_timestamp(
     Depends on:
         - ``dependent_columns[0]``: payment_init_timestamp.
     """
-    assert dependent_columns and len(dependent_columns) >= 1, (
-        "dependent_columns must contain the payment_init_timestamp column name"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 1
+    ), "dependent_columns must contain the payment_init_timestamp column name"
     init_col = dependent_columns[0]
     fake = provider.provide()
     now = datetime.now()
     results = []
     for ts in df[init_col]:
         start = datetime.fromtimestamp(float(ts))
-        results.append(
-            fake.date_time_between(start_date=start, end_date=now).timestamp()
-        )
+        results.append(fake.date_time_between(start_date=start, end_date=now).timestamp())
     return pd.Series(results, index=df.index, dtype=float)
 
 
@@ -473,9 +451,7 @@ def geo_coordinates(
     Depends on:
         - ``dependent_columns[0]``: country column name.
     """
-    assert dependent_columns and len(dependent_columns) >= 1, (
-        "dependent_columns must contain the country column name"
-    )
+    assert dependent_columns and len(dependent_columns) >= 1, "dependent_columns must contain the country column name"
     country_col = dependent_columns[0]
     fake = provider.provide()
     lats, lons = [], []
@@ -502,17 +478,13 @@ def tower_geo_coordinates(
 
     Accepts ``uniform_dist_config_lat`` and ``uniform_dist_config_lon`` in **kwargs.
     """
-    assert dependent_columns and len(dependent_columns) >= 2, (
-        "dependent_columns must contain geo_latitude, geo_longitude column names"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 2
+    ), "dependent_columns must contain geo_latitude, geo_longitude column names"
     lat_col, lon_col = dependent_columns[:2]
     n = len(df)
-    cfg_lat: UniformDistributionSamplingConfig | None = kwargs.get(
-        "uniform_dist_config_lat"
-    )
-    cfg_lon: UniformDistributionSamplingConfig | None = kwargs.get(
-        "uniform_dist_config_lon"
-    )
+    cfg_lat: UniformDistributionSamplingConfig | None = kwargs.get("uniform_dist_config_lat")
+    cfg_lon: UniformDistributionSamplingConfig | None = kwargs.get("uniform_dist_config_lon")
     eps_lat = provider.rng.sample(sample_config=cfg_lat, size=n)
     eps_lon = provider.rng.sample(sample_config=cfg_lon, size=n)
     tower_lats = df[lat_col].to_numpy(dtype=float) + np.asarray(eps_lat, dtype=float)
@@ -539,12 +511,10 @@ def currency_exchange_rates(
         lookups against static data.  The type hint exists solely for
         auto-mapping dispatch in the provider routing logic.
     """
-    assert dependent_columns and len(dependent_columns) >= 2, (
-        "dependent_columns must contain both currency column names"
-    )
-    assert "country_static_data" in kwargs, (
-        "country_static_data must be provided in kwargs"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 2
+    ), "dependent_columns must contain both currency column names"
+    assert "country_static_data" in kwargs, "country_static_data must be provided in kwargs"
     _csd = kwargs["country_static_data"]
     ccy1_col, ccy2_col = dependent_columns[:2]
 
@@ -572,9 +542,9 @@ def payment_amounts(
     amounts are sampled from account-type-specific lognormal distributions.
     Otherwise falls back to uniform sampling via ``uniform_dist_config``.
     """
-    assert dependent_columns and len(dependent_columns) >= 2, (
-        "dependent_columns must contain account_type and exchange_rate column names"
-    )
+    assert (
+        dependent_columns and len(dependent_columns) >= 2
+    ), "dependent_columns must contain account_type and exchange_rate column names"
     acct_col, rate_col = dependent_columns[:2]
     n = len(df)
 
@@ -610,14 +580,10 @@ def payment_amounts(
 
         debitor_amounts = np.round(amounts, 2)
     else:
-        cfg: UniformDistributionSamplingConfig | None = kwargs.get(
-            "uniform_dist_config"
-        )
+        cfg: UniformDistributionSamplingConfig | None = kwargs.get("uniform_dist_config")
         raw = provider.rng.sample(sample_config=cfg, size=n)
         debitor_amounts = np.round(np.asarray(raw, dtype=float), 2)
 
     exchange_rates = df[rate_col].to_numpy(dtype=float)
     creditor_amounts = np.round(debitor_amounts * exchange_rates, 2)
-    return pd.DataFrame(
-        {"col_0": debitor_amounts, "col_1": creditor_amounts}, index=df.index
-    )
+    return pd.DataFrame({"col_0": debitor_amounts, "col_1": creditor_amounts}, index=df.index)

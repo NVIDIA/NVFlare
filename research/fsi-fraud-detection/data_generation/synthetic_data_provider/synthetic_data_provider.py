@@ -15,7 +15,8 @@ class SyntheticDataProvider[T](ABC):
     through `provide`, returning domain-specific synthetic data of type `T`.
     """
 
-    def __init__(self): ...
+    def __init__(self):
+        ...
 
     @abstractmethod
     def provide(self) -> T:

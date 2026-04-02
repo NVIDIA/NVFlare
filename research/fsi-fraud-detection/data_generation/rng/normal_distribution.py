@@ -1,9 +1,9 @@
 """Normal (Gaussian) distribution sampler."""
 
+from dataclasses import dataclass, field
+
 from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
 from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
-
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -40,7 +40,5 @@ class NormalDistribution(RNGBase[NormalDistributionSamplingConfig]):
             raise RuntimeError(
                 "NormalDistributionSamplingConfig object with mean and std_dev values must be provided for normal distribution sampling."
             )
-        result = self.rng.normal(
-            loc=sample_config.mean, scale=sample_config.std_dev, size=size
-        )
+        result = self.rng.normal(loc=sample_config.mean, scale=sample_config.std_dev, size=size)
         return float(result[0]) if size == 1 else result

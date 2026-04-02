@@ -12,18 +12,13 @@ Three functions compose the full graph:
     * ``get_payment_amount_attributes``  — exchange rates & amounts
 """
 
+import data_generation.synthetic_data_provider.faker_synthetic_data_provider_helper_functions as H
+from data_generation.dataset_attribute import PaymentDatasetAttribute, PaymentDatasetAttributeGroup
 from data_generation.synthetic_data_provider import (
     FakerSyntheticDataProvider,
     RandomChoiceDataProvider,
     UniformDistributionDataProvider,
 )
-
-from data_generation.dataset_attribute import (
-    PaymentDatasetAttribute,
-    PaymentDatasetAttributeGroup,
-)
-
-import data_generation.synthetic_data_provider.faker_synthetic_data_provider_helper_functions as H
 
 type AttributeType = (
     PaymentDatasetAttribute[FakerSyntheticDataProvider]
@@ -98,15 +93,15 @@ def get_per_participant_attributes(
         ] = [f"{p}_ADDR_COUNTRY"]
 
         # account create timestamp — depends on DOB
-        dep_graph[
-            PaymentDatasetAttribute(f"{p}_ACCOUNT_CREATE_TIMESTAMP", H.account_create_timestamp)
-        ] = [f"{p}_BIRTH_YEAR", f"{p}_BIRTH_MONTH", f"{p}_BIRTH_DAY"]
+        dep_graph[PaymentDatasetAttribute(f"{p}_ACCOUNT_CREATE_TIMESTAMP", H.account_create_timestamp)] = [
+            f"{p}_BIRTH_YEAR",
+            f"{p}_BIRTH_MONTH",
+            f"{p}_BIRTH_DAY",
+        ]
 
         # account last activity timestamp — depends on account create timestamp
         dep_graph[
-            PaymentDatasetAttribute(
-                f"{p}_ACCOUNT_LAST_ACTIVITY_TIMESTAMP", H.account_last_activity_timestamp
-            )
+            PaymentDatasetAttribute(f"{p}_ACCOUNT_LAST_ACTIVITY_TIMESTAMP", H.account_last_activity_timestamp)
         ] = [f"{p}_ACCOUNT_CREATE_TIMESTAMP"]
 
         # tower geo coordinates — depends on user geo coordinates
@@ -119,9 +114,7 @@ def get_per_participant_attributes(
 
         # account activity events past 30d — depends on account type
         dep_graph[
-            PaymentDatasetAttribute(
-                f"{p}_ACCOUNT_ACTIVITY_EVENTS_PAST_30D", H.account_activity_events_past_30d
-            )
+            PaymentDatasetAttribute(f"{p}_ACCOUNT_ACTIVITY_EVENTS_PAST_30D", H.account_activity_events_past_30d)
         ] = [f"{p}_ACCOUNT_TYPE"]
 
     return dep_graph
@@ -137,16 +130,14 @@ def get_payment_core_attributes(
 
     dep_graph[PaymentDatasetAttribute("PAYMENT_ID", H.payment_id)] = []
 
-    dep_graph[
-        PaymentDatasetAttribute("PAYMENT_INIT_TIMESTAMP", H.payment_init_timestamp)
-    ] = [
+    dep_graph[PaymentDatasetAttribute("PAYMENT_INIT_TIMESTAMP", H.payment_init_timestamp)] = [
         f"{p0}_ACCOUNT_LAST_ACTIVITY_TIMESTAMP",
         f"{p1}_ACCOUNT_LAST_ACTIVITY_TIMESTAMP",
     ]
 
-    dep_graph[
-        PaymentDatasetAttribute("PAYMENT_LAST_UPDATE_TIMESTAMP", H.payment_last_update_timestamp)
-    ] = ["PAYMENT_INIT_TIMESTAMP"]
+    dep_graph[PaymentDatasetAttribute("PAYMENT_LAST_UPDATE_TIMESTAMP", H.payment_last_update_timestamp)] = [
+        "PAYMENT_INIT_TIMESTAMP"
+    ]
 
     dep_graph[PaymentDatasetAttribute("PAYMENT_STATUS", H.payment_status)] = []
 

@@ -5,7 +5,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import RobustScaler, StandardScaler, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler
 
 amount_features = ["DEBITOR_AMOUNT_SCALED"]
 age_synthetic_features = [
@@ -55,11 +55,7 @@ ratio_features = [
 ]
 
 numerical_features = (
-    amount_features
-    + age_synthetic_features
-    + lat_long_synthetic_features
-    + activity_features
-    + ratio_features
+    amount_features + age_synthetic_features + lat_long_synthetic_features + activity_features + ratio_features
 )
 
 all_data_features = [
@@ -80,21 +76,15 @@ all_data_features = [
     "DEBITOR_ACCOUNT_TYPE",  # one-hot encoded → debitor_categorical_features
     "CREDITOR_ACCOUNT_TYPE",  # one-hot encoded → creditor_categorical_features
 ]
-all_model_parameters = (
-    numerical_features + debitor_categorical_features + creditor_categorical_features
-)
+all_model_parameters = numerical_features + debitor_categorical_features + creditor_categorical_features
 flag = "FRAUD_FLAG"
 
 # print("Data Features: ", all_data_features, "\nModel Features: ", all_model_parameters, "\nFlag: ", flag)
 
 
-def seconds_from_last_activity(
-    dataset: pd.DataFrame, new_field: str, fields: list
-) -> pd.DataFrame:
+def seconds_from_last_activity(dataset: pd.DataFrame, new_field: str, fields: list) -> pd.DataFrame:
     dataset.loc[:, new_field] = dataset.loc[:, fields].apply(
-        lambda _: (
-            datetime.fromtimestamp(_.iloc[0]) - datetime.fromtimestamp(_.iloc[1])
-        ).total_seconds(),
+        lambda _: (datetime.fromtimestamp(_.iloc[0]) - datetime.fromtimestamp(_.iloc[1])).total_seconds(),
         axis=1,
     )
     return dataset
@@ -105,24 +95,15 @@ def log_normalize_columns(dataset: pd.DataFrame, fields: list) -> pd.DataFrame:
     return dataset
 
 
-def convert_timestamp_field_to_age(
-    dataset: pd.DataFrame, timestamp_field: str, fields: list
-) -> pd.DataFrame:
+def convert_timestamp_field_to_age(dataset: pd.DataFrame, timestamp_field: str, fields: list) -> pd.DataFrame:
     dataset.loc[:, timestamp_field] = dataset.loc[:, fields].apply(
-        lambda _: (
-            (
-                datetime.fromtimestamp(_.iloc[0]) - datetime.fromtimestamp(_.iloc[1])
-            ).total_seconds()
-            / 60
-        ),
+        lambda _: ((datetime.fromtimestamp(_.iloc[0]) - datetime.fromtimestamp(_.iloc[1])).total_seconds() / 60),
         axis=1,
     )
     return dataset
 
 
-def get_distance_from_lat_long(
-    dataset: pd.DataFrame, distance_field: str, fields: list
-) -> pd.DataFrame:
+def get_distance_from_lat_long(dataset: pd.DataFrame, distance_field: str, fields: list) -> pd.DataFrame:
     def calculate_geodesic_distance(lat1, lon1, lat2, lon2) -> float:
         # https://stackoverflow.com/a/19412565
         earth_radius = 3958.8 * 1.6  # in km
@@ -132,18 +113,13 @@ def get_distance_from_lat_long(
         lon2 = math.radians(lon2)
         lat_dist = lat2 - lat1
         lon_dist = lon2 - lon1
-        a = (
-            math.sin(lat_dist / 2) ** 2
-            + math.cos(lat1) * math.cos(lat2) * math.sin(lon_dist / 2) ** 2
-        )
+        a = math.sin(lat_dist / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(lon_dist / 2) ** 2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         distance = earth_radius * c
         return float(distance)
 
     dataset.loc[:, distance_field] = dataset.loc[:, fields].apply(
-        lambda row: calculate_geodesic_distance(
-            row.iloc[0], row.iloc[1], row.iloc[2], row.iloc[3]
-        ),
+        lambda row: calculate_geodesic_distance(row.iloc[0], row.iloc[1], row.iloc[2], row.iloc[3]),
         axis=1,
     )
     return dataset
@@ -196,16 +172,12 @@ def clean_dataframe(
         print(f"{dataset_name} shape after cleaning: {df_cleaned.shape}")
         rows_removed = len(df) - len(df_cleaned)
         if rows_removed > 0:
-            print(
-                f"{dataset_name} - Removed {rows_removed} rows ({rows_removed / len(df) * 100:.2f}%)"
-            )
+            print(f"{dataset_name} - Removed {rows_removed} rows ({rows_removed / len(df) * 100:.2f}%)")
 
     return df_cleaned
 
 
-def prepare_dataset(
-    dataset: pd.DataFrame, scaler: StandardScaler | None = None
-) -> pd.DataFrame:
+def prepare_dataset(dataset: pd.DataFrame, scaler: StandardScaler | None = None) -> pd.DataFrame:
     dataset.loc[:, "DEBITOR_AMOUNT_SCALED"] = np.log1p(dataset.loc[:, "DEBITOR_AMOUNT"])
     dataset = convert_timestamp_field_to_age(
         dataset,
@@ -254,9 +226,7 @@ def prepare_dataset(
     # Values > 1.0 indicate the metric exceeds the typical ceiling for that account type.
     act_upper = dataset["DEBITOR_ACCOUNT_TYPE"].map(_ACTIVITY_NORMAL_UPPER)
     amt_upper = dataset["DEBITOR_ACCOUNT_TYPE"].map(_AMOUNT_NORMAL_UPPER)
-    dataset.loc[:, "DEBITOR_ACTIVITY_RATIO"] = (
-        dataset["DEBITOR_ACCOUNT_ACTIVITY_EVENTS_PAST_30D"] / act_upper
-    )
+    dataset.loc[:, "DEBITOR_ACTIVITY_RATIO"] = dataset["DEBITOR_ACCOUNT_ACTIVITY_EVENTS_PAST_30D"] / act_upper
     dataset.loc[:, "DEBITOR_AMOUNT_RATIO"] = dataset["DEBITOR_AMOUNT"] / amt_upper
 
     dataset = log_normalize_columns(
@@ -273,13 +243,9 @@ def prepare_dataset(
     # now all features should be numeric and unit-less. we can scale the data correctly now
     if isinstance(scaler, bool) and scaler:
         print("Using scale_data function")
-        dataset.loc[:, numerical_features] = scale_data(
-            dataset.loc[:, numerical_features]
-        )
+        dataset.loc[:, numerical_features] = scale_data(dataset.loc[:, numerical_features])
     elif scaler:
         print(f"Using provided scaler...{scaler}")
-        dataset.loc[:, numerical_features] = scaler.transform(
-            dataset.loc[:, numerical_features]
-        )
+        dataset.loc[:, numerical_features] = scaler.transform(dataset.loc[:, numerical_features])
 
     return dataset

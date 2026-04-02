@@ -5,11 +5,11 @@ Supports two parameterisations:
   2. *Log-space* \u03bc and \u03c3 of the underlying normal (``use_log_params=True``).
 """
 
+from dataclasses import dataclass, field
+
+import numpy as np
 from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
 from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
-
-from dataclasses import dataclass, field
-import numpy as np
 
 
 @dataclass

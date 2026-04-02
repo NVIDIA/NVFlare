@@ -5,20 +5,11 @@ class TestFieldStaticDataConstants:
     def test_payment_prefixes_are_uppercase_strings(self) -> None:
         assert isinstance(field_static_data.PAYMENT_CREDITOR_PREFIX, str)
         assert isinstance(field_static_data.PAYMENT_DEBTOR_PREFIX, str)
-        assert (
-            field_static_data.PAYMENT_CREDITOR_PREFIX
-            == field_static_data.PAYMENT_CREDITOR_PREFIX.upper()
-        )
-        assert (
-            field_static_data.PAYMENT_DEBTOR_PREFIX
-            == field_static_data.PAYMENT_DEBTOR_PREFIX.upper()
-        )
+        assert field_static_data.PAYMENT_CREDITOR_PREFIX == field_static_data.PAYMENT_CREDITOR_PREFIX.upper()
+        assert field_static_data.PAYMENT_DEBTOR_PREFIX == field_static_data.PAYMENT_DEBTOR_PREFIX.upper()
 
     def test_payment_prefixes_are_distinct(self) -> None:
-        assert (
-            field_static_data.PAYMENT_CREDITOR_PREFIX
-            != field_static_data.PAYMENT_DEBTOR_PREFIX
-        )
+        assert field_static_data.PAYMENT_CREDITOR_PREFIX != field_static_data.PAYMENT_DEBTOR_PREFIX
 
     def test_payment_status_is_non_empty_tuple(self) -> None:
         assert isinstance(field_static_data.PAYMENT_STATUS, tuple)

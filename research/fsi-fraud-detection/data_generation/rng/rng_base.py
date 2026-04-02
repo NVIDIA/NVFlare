@@ -6,9 +6,10 @@ Every concrete RNG subclass (normal, uniform, gamma, …) inherits from
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
 import numpy as np
 from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
-from dataclasses import dataclass
 
 
 @dataclass
@@ -32,9 +33,7 @@ class RNGBase[T: RNGSampleConfig](ABC):
         self.rng = np.random.default_rng(seed)
 
     @abstractmethod
-    def sample(
-        self, *args, sample_config: T | None = None, size: int = 1
-    ) -> SampleValueType | VectorSampleValueType:
+    def sample(self, *args, sample_config: T | None = None, size: int = 1) -> SampleValueType | VectorSampleValueType:
         """Draw one or more samples from the distribution.
 
         Args:

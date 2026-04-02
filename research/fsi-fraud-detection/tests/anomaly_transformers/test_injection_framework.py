@@ -3,15 +3,14 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from data_generation.anomaly_transformers import (
     ANOMALY_TYPES,
-    add_fraud_columns,
-    inject,
-    inject_all,
-    apply_fraud_with_probability,
     Type1Config,
     Type2Config,
+    add_fraud_columns,
+    apply_fraud_with_probability,
+    inject,
+    inject_all,
 )
 
 
@@ -33,12 +32,8 @@ def fraud_ready_df() -> pd.DataFrame:
             "CREDITOR_AMOUNT": rng.uniform(100, 5000, size=n).round(2),
             "DEBITOR_CCY_CREDITOR_CCY_RATE": rng.uniform(0.5, 2.0, size=n).round(4),
             "PAYMENT_INIT_TIMESTAMP": np.full(n, now_ts),
-            "DEBITOR_ACCOUNT_CREATE_TIMESTAMP": rng.uniform(
-                now_ts - 5 * 365 * 86400, now_ts - 86400, size=n
-            ),
-            "DEBITOR_ACCOUNT_LAST_ACTIVITY_TIMESTAMP": rng.uniform(
-                now_ts - 30 * 86400, now_ts - 86400, size=n
-            ),
+            "DEBITOR_ACCOUNT_CREATE_TIMESTAMP": rng.uniform(now_ts - 5 * 365 * 86400, now_ts - 86400, size=n),
+            "DEBITOR_ACCOUNT_LAST_ACTIVITY_TIMESTAMP": rng.uniform(now_ts - 30 * 86400, now_ts - 86400, size=n),
             "DEBITOR_ACCOUNT_ACTIVITY_EVENTS_PAST_30D": rng.integers(1, 500, size=n),
         }
     )
@@ -54,8 +49,10 @@ def type1_config() -> Type1Config:
 @pytest.fixture()
 def type2_config() -> Type2Config:
     return Type2Config(
-        personal_mean=75_000, personal_sigma=5_000,
-        business_mean=240_000, business_sigma=15_000,
+        personal_mean=75_000,
+        personal_sigma=5_000,
+        business_mean=240_000,
+        business_sigma=15_000,
     )
 
 
@@ -102,17 +99,23 @@ class TestAddFraudColumns:
 class TestInject:
     def test_sets_fraud_flag(self, fraud_ready_df, type1_config):
         inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.1, random_state=42,
-            fraud_overlap_frac=0.0, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.1,
+            random_state=42,
+            fraud_overlap_frac=0.0,
+            config=type1_config,
         )
         assert (fraud_ready_df["FRAUD_FLAG"] == 1).sum() > 0
 
     def test_respects_fraction(self, fraud_ready_df, type1_config):
         inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.1, random_state=42,
-            fraud_overlap_frac=0.0, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.1,
+            random_state=42,
+            fraud_overlap_frac=0.0,
+            config=type1_config,
         )
         fraud_count = (fraud_ready_df["FRAUD_FLAG"] == 1).sum()
         # ~10% of 200 = ~20 rows, allow reasonable tolerance
@@ -124,8 +127,10 @@ class TestInject:
 
     def test_returns_same_dataframe(self, fraud_ready_df, type1_config):
         result = inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.1, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.1,
+            config=type1_config,
         )
         assert result is fraud_ready_df
 
@@ -177,8 +182,10 @@ class TestInjectAll:
 class TestApplyFraudWithProbability:
     def test_prob_1_keeps_all_fraud(self, fraud_ready_df, type1_config):
         inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.2, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.2,
+            config=type1_config,
         )
         n_fraud_before = (fraud_ready_df["FRAUD_FLAG"] == 1).sum()
         apply_fraud_with_probability(fraud_ready_df, prob=1.0)
@@ -187,16 +194,20 @@ class TestApplyFraudWithProbability:
 
     def test_prob_0_removes_all_fraud(self, fraud_ready_df, type1_config):
         inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.2, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.2,
+            config=type1_config,
         )
         apply_fraud_with_probability(fraud_ready_df, prob=0.0)
         assert (fraud_ready_df["FRAUD_FLAG"] == 1).sum() == 0
 
     def test_prob_between_reduces_fraud(self, fraud_ready_df, type1_config):
         inject(
-            fraud_ready_df, "type1",
-            fraudulent_frac=0.5, config=type1_config,
+            fraud_ready_df,
+            "type1",
+            fraudulent_frac=0.5,
+            config=type1_config,
         )
         n_before = (fraud_ready_df["FRAUD_FLAG"] == 1).sum()
         apply_fraud_with_probability(fraud_ready_df, prob=0.5)

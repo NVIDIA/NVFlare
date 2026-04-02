@@ -1,9 +1,9 @@
 """Gamma distribution sampler."""
 
+from dataclasses import dataclass, field
+
 from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
 from data_generation.rng.typedefs import SampleValueType, VectorSampleValueType
-
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -40,7 +40,5 @@ class GammaDistribution(RNGBase[GammaDistributionSamplingConfig]):
             raise RuntimeError(
                 "GammaDistributionSamplingConfig object with shape and scale values must be provided for gamma distribution sampling."
             )
-        result = self.rng.gamma(
-            shape=sample_config.shape, scale=sample_config.scale, size=size
-        )
+        result = self.rng.gamma(shape=sample_config.shape, scale=sample_config.scale, size=size)
         return float(result[0]) if size == 1 else result

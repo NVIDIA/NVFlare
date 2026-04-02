@@ -12,22 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from typing import Dict, Optional
-import sklearn
-import traceback
 import glob
+import os
+import traceback
+from typing import Dict, Optional
+
 import pandas as pd
+import sklearn
+from misc.data import all_model_parameters, clean_dataframe, prepare_dataset
+from misc.data_io import load_csv_data_from_path, print_directory_tree, validate_data_features
+from misc.experiments import data_paths
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
-
-from misc.data import prepare_dataset, all_model_parameters, clean_dataframe
-from misc.data_io import (
-    load_csv_data_from_path,
-    validate_data_features,
-    print_directory_tree,
-)
-from misc.experiments import data_paths
 
 
 class FinancialStatistics(DFStatisticsCore):
@@ -46,13 +43,9 @@ class FinancialStatistics(DFStatisticsCore):
         self.log_info(fl_ctx, f"load data for client {client_name}")
 
         # Display directory tree of /workspace/dataset
-        self.log_info(
-            fl_ctx, f"\n=== Directory tree of {client_name} at /workspace/dataset ==="
-        )
+        self.log_info(fl_ctx, f"\n=== Directory tree of {client_name} at /workspace/dataset ===")
         self.log_info(fl_ctx, "/workspace/dataset")
-        print_directory_tree(
-            "/workspace/dataset", max_depth=3, endswith=".csv"
-        )  # TODO: user logger instead of print
+        print_directory_tree("/workspace/dataset", max_depth=3, endswith=".csv")  # TODO: user logger instead of print
         self.log_info(fl_ctx, "=" * 45 + "\n")
 
         # Load CSV data using the utility function
@@ -63,15 +56,9 @@ class FinancialStatistics(DFStatisticsCore):
 
         data_selection_paths = data_paths[self.data_selection][client_name]
         data_root = data_selection_paths["data_root"]
-        train_data_path = os.path.join(
-            data_root, data_selection_paths["train_data_path"]
-        )
-        test_data_path_pattern = os.path.join(
-            data_root, data_selection_paths["test_data_path"]
-        )
-        scaling_data_path = os.path.join(
-            data_root, data_selection_paths["scaling_data_path"]
-        )
+        train_data_path = os.path.join(data_root, data_selection_paths["train_data_path"])
+        test_data_path_pattern = os.path.join(data_root, data_selection_paths["test_data_path"])
+        scaling_data_path = os.path.join(data_root, data_selection_paths["scaling_data_path"])
 
         if not os.path.isfile(train_data_path):
             raise FileNotFoundError(f"No valid train filepath at: {train_data_path}")
@@ -81,9 +68,7 @@ class FinancialStatistics(DFStatisticsCore):
             # Use glob to find matching files
             test_data_paths = sorted(glob.glob(test_data_path_pattern))
             if not test_data_paths:
-                raise FileNotFoundError(
-                    f"No test files found matching pattern: {test_data_path_pattern}"
-                )
+                raise FileNotFoundError(f"No test files found matching pattern: {test_data_path_pattern}")
             self.log_info(
                 fl_ctx,
                 f"Found {len(test_data_paths)} test files matching pattern: {test_data_path_pattern}",
@@ -91,22 +76,16 @@ class FinancialStatistics(DFStatisticsCore):
             for path in test_data_paths:
                 self.log_info(fl_ctx, f"  - {path}")
 
-            assert len(test_data_paths) == 4, "Expected 4 test files, got " + str(
-                len(test_data_paths)
-            )
+            assert len(test_data_paths) == 4, "Expected 4 test files, got " + str(len(test_data_paths))
         else:
             # Single test file
             if not os.path.isfile(test_data_path_pattern):
-                raise FileNotFoundError(
-                    f"No valid test filepath at: {test_data_path_pattern}"
-                )
+                raise FileNotFoundError(f"No valid test filepath at: {test_data_path_pattern}")
             test_data_paths = [test_data_path_pattern]
             self.log_info(fl_ctx, f"Test data path: {test_data_path_pattern}")
 
         if not os.path.isfile(scaling_data_path):
-            self.log_info(
-                fl_ctx, f"[WARNING] No valid scaling filepath at: {scaling_data_path}"
-            )
+            self.log_info(fl_ctx, f"[WARNING] No valid scaling filepath at: {scaling_data_path}")
 
         self.log_info(fl_ctx, f"Train data path: {train_data_path}")
         self.log_info(fl_ctx, f"Scaling data path: {scaling_data_path}")
@@ -146,25 +125,19 @@ class FinancialStatistics(DFStatisticsCore):
 
                 # Concatenate all scaler dataframes
                 global_scaler = sklearn.preprocessing.StandardScaler()
-                global_scaler = global_scaler.fit(
-                    prepare_dataset(df_scaling).loc[:, all_model_parameters]
-                )
+                global_scaler = global_scaler.fit(prepare_dataset(df_scaling).loc[:, all_model_parameters])
             else:
                 self.log_info(fl_ctx, "[WARNING] No valid scaler data files found")
                 df_scaling = None
                 global_scaler = None
 
             # Prepare dataset
-            self.log_info(
-                fl_ctx, f"Preparing data with features: {all_model_parameters}"
-            )
+            self.log_info(fl_ctx, f"Preparing data with features: {all_model_parameters}")
             df_train = prepare_dataset(df_train, scaler=global_scaler)
 
             # Prepare all test datasets
             for test_name, df_test in test_dataframes.items():
-                test_dataframes[test_name] = prepare_dataset(
-                    df_test, scaler=global_scaler
-                )
+                test_dataframes[test_name] = prepare_dataset(df_test, scaler=global_scaler)
 
             # Validate the loaded data
             validate_data_features(df_train, self.data_features)
@@ -181,9 +154,7 @@ class FinancialStatistics(DFStatisticsCore):
 
             # Ensure train data is not empty
             if len(df_train) == 0:
-                raise ValueError(
-                    f"Train dataset is empty after cleaning for client {client_name}"
-                )
+                raise ValueError(f"Train dataset is empty after cleaning for client {client_name}")
 
             # Clean test datasets
             for test_name, df_test in test_dataframes.items():
@@ -192,9 +163,7 @@ class FinancialStatistics(DFStatisticsCore):
 
                 # Ensure test data is not empty
                 if len(df_test) == 0:
-                    raise ValueError(
-                        f"Test dataset '{test_name}' is empty after cleaning for client {client_name}"
-                    )
+                    raise ValueError(f"Test dataset '{test_name}' is empty after cleaning for client {client_name}")
 
             if global_scaler is not None:
                 self.log_info(fl_ctx, f"Global scaler: {global_scaler}")
@@ -206,9 +175,7 @@ class FinancialStatistics(DFStatisticsCore):
             dataframes["train"] = df_train
             for test_name, df_test in test_dataframes.items():
                 test_name = test_name.replace("[", "").replace("]", "")
-                test_name = (
-                    test_name.split("_", 1)[1] if "_" in test_name else test_name
-                )
+                test_name = test_name.split("_", 1)[1] if "_" in test_name else test_name
                 dataframes[test_name] = df_test
                 break  # only return one test dataframe for now
 

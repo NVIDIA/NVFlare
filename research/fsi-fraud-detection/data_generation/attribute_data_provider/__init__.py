@@ -6,11 +6,10 @@ interface whether the function produces a single column (``pd.Series``) or
 multiple columns (``pd.DataFrame``).
 """
 
-import pandas as pd
-from data_generation.synthetic_data_provider.synthetic_data_provider import (
-    SyntheticDataProvider,
-)
 from typing import Protocol
+
+import pandas as pd
+from data_generation.synthetic_data_provider.synthetic_data_provider import SyntheticDataProvider
 
 
 class AttributeDataProviderProtocol[T: SyntheticDataProvider](Protocol):
@@ -30,4 +29,5 @@ class AttributeDataProviderProtocol[T: SyntheticDataProvider](Protocol):
         df: pd.DataFrame,
         dependent_columns: list[str] | None = None,
         **kwargs,
-    ) -> pd.Series | pd.DataFrame: ...
+    ) -> pd.Series | pd.DataFrame:
+        ...

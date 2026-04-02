@@ -1,19 +1,18 @@
-import pytest
-import pandas as pd
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pandas as pd
+import pytest
 from data_generation.static_data.country_static_data import (
     COUNTRIES,
     CountryStaticData,
-    _get_country_currency,
     _generate_exchange_rates,
-    get_exchange_rate,
+    _get_country_currency,
     countries,
     currency,
+    get_exchange_rate,
     load_static_data,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -23,9 +22,7 @@ from data_generation.static_data.country_static_data import (
 @pytest.fixture
 def country_currency_df() -> pd.DataFrame:
     """A small 3-country currency map for fast, deterministic tests."""
-    return pd.DataFrame(
-        {"country": ["US", "GB", "IN"], "currency": ["USD", "GBP", "INR"]}
-    )
+    return pd.DataFrame({"country": ["US", "GB", "IN"], "currency": ["USD", "GBP", "INR"]})
 
 
 @pytest.fixture
@@ -46,9 +43,7 @@ def fake_exchange_rates(country_currency_df: pd.DataFrame) -> pd.DataFrame:
 
 
 @pytest.fixture
-def static_data(
-    country_currency_df: pd.DataFrame, fake_exchange_rates: pd.DataFrame
-) -> CountryStaticData:
+def static_data(country_currency_df: pd.DataFrame, fake_exchange_rates: pd.DataFrame) -> CountryStaticData:
     return CountryStaticData(
         country_currency_map=country_currency_df,
         currency_exchange_rates=fake_exchange_rates,
@@ -125,12 +120,8 @@ class TestGetCountryCurrency:
 
 
 class TestGenerateExchangeRates:
-    def test_returns_dataframe_with_correct_columns(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_returns_dataframe_with_correct_columns(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 1.25
             MockCC.return_value = mock_conv
@@ -141,9 +132,7 @@ class TestGenerateExchangeRates:
 
     def test_row_count_is_n_squared(self, country_currency_df: pd.DataFrame) -> None:
         n = len(country_currency_df)
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 1.5
             MockCC.return_value = mock_conv
@@ -152,9 +141,7 @@ class TestGenerateExchangeRates:
             assert len(df) == n * n
 
     def test_diagonal_rates_are_one(self, country_currency_df: pd.DataFrame) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 2.0
             MockCC.return_value = mock_conv
@@ -163,12 +150,8 @@ class TestGenerateExchangeRates:
             diagonal = df[df["CCY1"] == df["CCY2"]]
             assert all(diagonal["RATE"].apply(lambda r: r == pytest.approx(1.0)))
 
-    def test_off_diagonal_uses_converter_value(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_off_diagonal_uses_converter_value(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 1.3456
             MockCC.return_value = mock_conv
@@ -177,12 +160,8 @@ class TestGenerateExchangeRates:
             off_diag = df[df["CCY1"] != df["CCY2"]]
             assert all(off_diag["RATE"].apply(lambda r: r == pytest.approx(1.3456)))
 
-    def test_negative_rate_sanitized_to_one(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_negative_rate_sanitized_to_one(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = -0.5
             MockCC.return_value = mock_conv
@@ -190,12 +169,8 @@ class TestGenerateExchangeRates:
             df = _generate_exchange_rates(country_currency_df)
             assert all(df["RATE"].apply(lambda r: r == pytest.approx(1.0)))
 
-    def test_zero_rate_sanitized_to_one(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_zero_rate_sanitized_to_one(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 0.0
             MockCC.return_value = mock_conv
@@ -203,12 +178,8 @@ class TestGenerateExchangeRates:
             df = _generate_exchange_rates(country_currency_df)
             assert all(df["RATE"].apply(lambda r: r == pytest.approx(1.0)))
 
-    def test_none_rate_sanitized_to_one(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_none_rate_sanitized_to_one(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = None
             MockCC.return_value = mock_conv
@@ -216,12 +187,8 @@ class TestGenerateExchangeRates:
             df = _generate_exchange_rates(country_currency_df)
             assert all(df["RATE"].apply(lambda r: r == pytest.approx(1.0)))
 
-    def test_rates_rounded_to_4_decimals(
-        self, country_currency_df: pd.DataFrame
-    ) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data.CurrencyConverter"
-        ) as MockCC:
+    def test_rates_rounded_to_4_decimals(self, country_currency_df: pd.DataFrame) -> None:
+        with patch("data_generation.static_data.country_static_data.CurrencyConverter") as MockCC:
             mock_conv = MagicMock()
             mock_conv.convert.return_value = 1.123456789
             MockCC.return_value = mock_conv
@@ -238,9 +205,7 @@ class TestGenerateExchangeRates:
 
 
 class TestGetExchangeRate:
-    def test_known_pair_returns_correct_rate(
-        self, static_data: CountryStaticData
-    ) -> None:
+    def test_known_pair_returns_correct_rate(self, static_data: CountryStaticData) -> None:
         rate = get_exchange_rate(static_data, "USD", "GBP")
         expected = static_data.currency_exchange_rates[
             (static_data.currency_exchange_rates["CCY1"] == "USD")
@@ -264,17 +229,13 @@ class TestGetExchangeRate:
 
 
 class TestCurrency:
-    def test_known_country_returns_currency(
-        self, static_data: CountryStaticData
-    ) -> None:
+    def test_known_country_returns_currency(self, static_data: CountryStaticData) -> None:
         assert currency(static_data, "US") == "USD"
 
     def test_gb_returns_gbp(self, static_data: CountryStaticData) -> None:
         assert currency(static_data, "GB") == "GBP"
 
-    def test_unknown_country_defaults_to_usd(
-        self, static_data: CountryStaticData
-    ) -> None:
+    def test_unknown_country_defaults_to_usd(self, static_data: CountryStaticData) -> None:
         assert currency(static_data, "ZZ") == "USD"
 
     def test_return_type_is_str(self, static_data: CountryStaticData) -> None:
@@ -289,36 +250,24 @@ class TestCurrency:
 class TestLoadStaticData:
     def test_creates_cache_dir_and_csv(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache" / "static"
-        with patch(
-            "data_generation.static_data.country_static_data._generate_exchange_rates"
-        ) as mock_gen:
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]}
-            )
+        with patch("data_generation.static_data.country_static_data._generate_exchange_rates") as mock_gen:
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]})
             result = load_static_data(cache_dir)
 
         assert isinstance(result, CountryStaticData)
         assert (cache_dir / "currency_exchange_rates.csv").is_file()
 
     def test_returns_country_currency_map(self, tmp_path: Path) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data._generate_exchange_rates"
-        ) as mock_gen:
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]}
-            )
+        with patch("data_generation.static_data.country_static_data._generate_exchange_rates") as mock_gen:
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]})
             result = load_static_data(tmp_path)
 
         assert list(result.country_currency_map.columns) == ["country", "currency"]
         assert len(result.country_currency_map) == len(COUNTRIES)
 
     def test_reads_from_cache_on_second_call(self, tmp_path: Path) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data._generate_exchange_rates"
-        ) as mock_gen:
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD", "GBP"], "CCY2": ["GBP", "USD"], "RATE": [1.3, 0.77]}
-            )
+        with patch("data_generation.static_data.country_static_data._generate_exchange_rates") as mock_gen:
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD", "GBP"], "CCY2": ["GBP", "USD"], "RATE": [1.3, 0.77]})
             load_static_data(tmp_path)
             mock_gen.reset_mock()
 
@@ -329,32 +278,20 @@ class TestLoadStaticData:
         assert len(result.currency_exchange_rates) == 2
 
     def test_force_rates_from_api_regenerates(self, tmp_path: Path) -> None:
-        with patch(
-            "data_generation.static_data.country_static_data._generate_exchange_rates"
-        ) as mock_gen:
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]}
-            )
+        with patch("data_generation.static_data.country_static_data._generate_exchange_rates") as mock_gen:
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.3]})
             load_static_data(tmp_path)
 
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [9.9]}
-            )
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [9.9]})
             result = load_static_data(tmp_path, force_rates_from_api=True)
 
         assert result.currency_exchange_rates["RATE"].values[0] == pytest.approx(9.9)
 
-    def test_expands_home_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_expands_home_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOME", str(tmp_path))
         cache_dir = "~/fsi_test_cache"
-        with patch(
-            "data_generation.static_data.country_static_data._generate_exchange_rates"
-        ) as mock_gen:
-            mock_gen.return_value = pd.DataFrame(
-                {"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.0]}
-            )
+        with patch("data_generation.static_data.country_static_data._generate_exchange_rates") as mock_gen:
+            mock_gen.return_value = pd.DataFrame({"CCY1": ["USD"], "CCY2": ["GBP"], "RATE": [1.0]})
             result = load_static_data(cache_dir)
 
         assert isinstance(result, CountryStaticData)

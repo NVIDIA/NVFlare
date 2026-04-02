@@ -1,28 +1,15 @@
-import pytest
 import numpy as np
-
-from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
-from data_generation.rng.random_choice import (
-    RandomChoice,
-    RandomChoiceSamplingConfig,
-)
-from data_generation.rng.uniform_distribution import (
-    UniformDistribution,
-    UniformDistributionSamplingConfig,
-)
-from data_generation.rng.normal_distribution import (
-    NormalDistribution,
-    NormalDistributionSamplingConfig,
-)
+import pytest
+from data_generation.rng.gamma_distribution import GammaDistribution, GammaDistributionSamplingConfig
 from data_generation.rng.lognormal_distribution import (
     LogNormalDistribution,
     LogNormalDistributionSamplingConfig,
     get_lognormal_params,
 )
-from data_generation.rng.gamma_distribution import (
-    GammaDistribution,
-    GammaDistributionSamplingConfig,
-)
+from data_generation.rng.normal_distribution import NormalDistribution, NormalDistributionSamplingConfig
+from data_generation.rng.random_choice import RandomChoice, RandomChoiceSamplingConfig
+from data_generation.rng.rng_base import RNGBase, RNGSampleConfig
+from data_generation.rng.uniform_distribution import UniformDistribution, UniformDistributionSamplingConfig
 
 SEED = 42
 
@@ -174,10 +161,7 @@ class TestNormalDistribution:
 
     def test_mean_converges_statistically(self, rng: NormalDistribution) -> None:
         cfg = NormalDistributionSamplingConfig(mean=50.0, std_dev=1.0)
-        samples: list[float] = [
-            float(rng.sample(sample_config=cfg))  # type: ignore[arg-type]
-            for _ in range(10_000)
-        ]
+        samples: list[float] = [float(rng.sample(sample_config=cfg)) for _ in range(10_000)]  # type: ignore[arg-type]
         assert np.mean(samples) == pytest.approx(50.0, abs=0.5)
 
     def test_raises_on_none_config(self, rng: NormalDistribution) -> None:
@@ -250,12 +234,8 @@ class TestLogNormalDistribution:
         r1 = LogNormalDistribution(seed=SEED)
         r2 = LogNormalDistribution(seed=SEED)
         mu, sigma = 4.0, 0.5
-        cfg_direct = LogNormalDistributionSamplingConfig(
-            mean=mu, std_dev=sigma, use_log_params=True
-        )
-        cfg_converted = LogNormalDistributionSamplingConfig(
-            mean=mu, std_dev=sigma, use_log_params=False
-        )
+        cfg_direct = LogNormalDistributionSamplingConfig(mean=mu, std_dev=sigma, use_log_params=True)
+        cfg_converted = LogNormalDistributionSamplingConfig(mean=mu, std_dev=sigma, use_log_params=False)
         val_direct = r1.sample(sample_config=cfg_direct)
         val_converted = r2.sample(sample_config=cfg_converted)
         # They should differ because conversion changes the effective mu/sigma
@@ -265,10 +245,7 @@ class TestLogNormalDistribution:
         rng = LogNormalDistribution(seed=SEED)
         target_mean = 200.0
         cfg = LogNormalDistributionSamplingConfig(mean=target_mean, std_dev=50.0)
-        samples: list[float] = [
-            float(rng.sample(sample_config=cfg))  # type: ignore[arg-type]
-            for _ in range(10_000)
-        ]
+        samples: list[float] = [float(rng.sample(sample_config=cfg)) for _ in range(10_000)]  # type: ignore[arg-type]
         assert np.mean(samples) == pytest.approx(target_mean, rel=0.05)
 
     def test_raises_on_none_config(self, rng: LogNormalDistribution) -> None:
@@ -314,10 +291,7 @@ class TestGammaDistribution:
         rng = GammaDistribution(seed=SEED)
         shape, scale = 5.0, 2.0
         cfg = GammaDistributionSamplingConfig(shape=shape, scale=scale)
-        samples: list[float] = [
-            float(rng.sample(sample_config=cfg))  # type: ignore[arg-type]
-            for _ in range(10_000)
-        ]
+        samples: list[float] = [float(rng.sample(sample_config=cfg)) for _ in range(10_000)]  # type: ignore[arg-type]
         assert np.mean(samples) == pytest.approx(shape * scale, rel=0.05)
 
     def test_raises_on_none_config(self, rng: GammaDistribution) -> None:

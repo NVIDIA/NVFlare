@@ -2,16 +2,9 @@
 
 import pandas as pd
 import pytest
-
-from data_generation.dataset import topological_sort, generate
-from data_generation.dataset_attribute import (
-    PaymentDatasetAttribute,
-    PaymentDatasetAttributeGroup,
-)
-from data_generation.synthetic_data_provider.synthetic_data_provider import (
-    SyntheticDataProvider,
-)
-
+from data_generation.dataset import generate, topological_sort
+from data_generation.dataset_attribute import PaymentDatasetAttribute, PaymentDatasetAttributeGroup
+from data_generation.synthetic_data_provider.synthetic_data_provider import SyntheticDataProvider
 
 # ---------------------------------------------------------------------------
 # Minimal provider and generator stubs

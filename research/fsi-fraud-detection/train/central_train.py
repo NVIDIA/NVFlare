@@ -15,69 +15,49 @@
 import argparse
 import glob
 import os
-import numpy as np
 
+import numpy as np
 import sklearn
 import torch
 import torch.optim as optim
-from train.model import SimpleNetwork
+from misc.data import all_model_parameters, flag, numerical_features, prepare_dataset
+from misc.data_io import load_csv_data_from_path, print_directory_tree, validate_data_features
+from misc.experiments import data_paths
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, TensorDataset
-from train.utils import (
-    FocalLoss,
-    compute_shapley_values,
-    evaluate_on_test_datasets,
-)
-
-from misc.data import all_model_parameters, flag, prepare_dataset, numerical_features
-from misc.data_io import load_csv_data_from_path, validate_data_features, print_directory_tree
-from misc.experiments import data_paths
-
+from train.model import SimpleNetwork
+from train.utils import FocalLoss, compute_shapley_values, evaluate_on_test_datasets
 
 PATH = "pt_model.weights.pth"
 
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="NVFlare Deep Learning Client for Financial Fraud Detection"
-    )
+    parser = argparse.ArgumentParser(description="NVFlare Deep Learning Client for Financial Fraud Detection")
     parser.add_argument(
         "--data_selection",
         type=str,
         required=True,
         help="Data selection",
     )
-    parser.add_argument(
-        "--epochs", type=int, default=1, help="Number of training epochs (default: 1)"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=32, help="Training batch size (default: 32)"
-    )
-    parser.add_argument(
-        "--lr", type=float, default=0.005, help="Learning rate (default: 0.0005)"
-    )
+    parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs (default: 1)")
+    parser.add_argument("--batch-size", type=int, default=32, help="Training batch size (default: 32)")
+    parser.add_argument("--lr", type=float, default=0.005, help="Learning rate (default: 0.0005)")
     parser.add_argument(
         "--data_features",
         type=list,
         default=all_model_parameters,
         help="List of data features (default: `all_model_parameters`)",
     )
-    parser.add_argument(
-        "--flag", type=str, default=flag, help="Flag for the data (default: `flag`)"
-    ) 
-    parser.add_argument(
-        "--results_dir", type=str, default="results", help="Results directory (default: `results`)"
-    )
+    parser.add_argument("--flag", type=str, default=flag, help="Flag for the data (default: `flag`)")
+    parser.add_argument("--results_dir", type=str, default="results", help="Results directory (default: `results`)")
     parser.add_argument(
         "--width_factor", type=float, default=1.0, help="Scale factor for hidden layer sizes (default: 1.0)"
     )
     parser.add_argument(
         "--dropout_p", type=float, default=0.0, help="Dropout probability after hidden layers (default: 0.0)"
     )
-    parser.add_argument(
-        "--focal_gamma", type=float, default=2.0, help="Focal loss gamma (default: 2.0)"
-    )
+    parser.add_argument("--focal_gamma", type=float, default=2.0, help="Focal loss gamma (default: 2.0)")
     parser.add_argument(
         "--shap_every",
         type=int,
@@ -111,12 +91,8 @@ def main():
 
     data_selection_paths = data_paths[args.data_selection][client_name]
     data_root = data_selection_paths["data_root"]
-    train_data_path = os.path.join(
-        data_root, data_selection_paths["train_data_path"]
-    )
-    test_data_path_pattern = os.path.join(
-        data_root, data_selection_paths["test_data_path"]
-    )
+    train_data_path = os.path.join(data_root, data_selection_paths["train_data_path"])
+    test_data_path_pattern = os.path.join(data_root, data_selection_paths["test_data_path"])
 
     # Find training files
     glob_result = sorted(glob.glob(train_data_path, recursive=True))
@@ -126,7 +102,7 @@ def main():
     print(f"Train data path: {train_data_path}")
 
     # Check if test_data_path contains wildcards
-    if '*' in test_data_path_pattern or '?' in test_data_path_pattern:
+    if "*" in test_data_path_pattern or "?" in test_data_path_pattern:
         # Use glob to find matching files
         test_data_paths = sorted(glob.glob(test_data_path_pattern))
         if not test_data_paths:
@@ -135,15 +111,17 @@ def main():
         for path in test_data_paths:
             print(f"  - {path}")
 
-        #assert len(test_data_paths) == 25, "Expected 25 test files, got " + str(len(test_data_paths))
-        assert len(test_data_paths) == 20, "Expected 20 test files, got " + str(len(test_data_paths)) #  datasets later than 3/2/2026
+        # assert len(test_data_paths) == 25, "Expected 25 test files, got " + str(len(test_data_paths))
+        assert len(test_data_paths) == 20, "Expected 20 test files, got " + str(
+            len(test_data_paths)
+        )  # Datasets later than 3/2/2026
     else:
         # Single test file
         if not os.path.isfile(test_data_path_pattern):
             raise FileNotFoundError(f"No valid test filepath at: {test_data_path_pattern}")
         test_data_paths = [test_data_path_pattern]
         print(f"Test data path: {test_data_path_pattern}")
-    
+
     print(f"Train data path: {train_data_path}")
 
     try:
@@ -157,7 +135,7 @@ def main():
         test_dataframes = {}
         for test_path in test_data_paths:
             # Extract a meaningful name from the file path
-            test_name = os.path.basename(test_path).replace('.csv', '')
+            test_name = os.path.basename(test_path).replace(".csv", "")
             df_test_tmp = load_csv_data_from_path(
                 data_path=test_path,
                 data_features=None,  # all features are loaded
@@ -167,14 +145,12 @@ def main():
 
         # Scale data
         global_scaler = sklearn.preprocessing.StandardScaler()
-        global_scaler = global_scaler.fit(
-            prepare_dataset(df_train).loc[:, numerical_features]
-        )
+        global_scaler = global_scaler.fit(prepare_dataset(df_train).loc[:, numerical_features])
 
         # Prepare dataset
         print(f"Preparing data with features: {all_model_parameters}")
         df_train = prepare_dataset(df_train, scaler=global_scaler)
-        
+
         # Prepare all test datasets
         for test_name, df_test in test_dataframes.items():
             test_dataframes[test_name] = prepare_dataset(df_test, scaler=global_scaler)
@@ -188,16 +164,13 @@ def main():
 
     train_features = df_train[args.data_features].values
     train_labels = df_train[args.flag].values
-    
+
     # Extract features and labels for all test datasets
     test_datasets = {}
     for test_name, df_test in test_dataframes.items():
         test_features = df_test[args.data_features].values
         test_labels = df_test[flag].values
-        test_datasets[test_name] = {
-            'features': test_features,
-            'labels': test_labels
-        }
+        test_datasets[test_name] = {"features": test_features, "labels": test_labels}
 
     # Get the number of features for model input shape
     n_features = train_features.shape[1]
@@ -207,8 +180,8 @@ def main():
     print("train_features: ", train_features.shape)
     print("train_labels: ", train_labels.shape)
     for test_name, test_data in test_datasets.items():
-        print(f"test_features ({test_name}): ", test_data['features'].shape)
-        print(f"test_labels ({test_name}): ", test_data['labels'].shape)
+        print(f"test_features ({test_name}): ", test_data["features"].shape)
+        print(f"test_labels ({test_name}): ", test_data["labels"].shape)
 
     # Convert numpy arrays to PyTorch tensors and keep on same device for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -216,12 +189,12 @@ def main():
 
     train_features_tensor = torch.FloatTensor(train_features).to(device, non_blocking=True)
     train_labels_tensor = torch.LongTensor(train_labels).to(device, non_blocking=True)
-    
+
     # Convert all test datasets to tensors
     test_datasets_tensors = {}
     for test_name, test_data in test_datasets.items():
-        test_features_tensor = torch.FloatTensor(test_data['features']).to(device)
-        test_labels_tensor = torch.LongTensor(test_data['labels']).to(device)
+        test_features_tensor = torch.FloatTensor(test_data["features"]).to(device)
+        test_labels_tensor = torch.LongTensor(test_data["labels"]).to(device)
         test_datasets_tensors[test_name] = (test_features_tensor, test_labels_tensor)
 
     # Class weights for imbalanced fraud flag (reduce false negatives by upweighting fraud class)
@@ -229,7 +202,9 @@ def main():
     class_weights = 1.0 / (class_counts.astype(np.float64) + 1e-8)
     class_weights = class_weights / class_weights.sum() * n_classes
     class_weights_tensor = torch.FloatTensor(class_weights).to(device)
-    print(f"Class counts (fraud flag): {dict(enumerate(class_counts))}, loss weights: {class_weights.round(4).tolist()}")
+    print(
+        f"Class counts (fraud flag): {dict(enumerate(class_counts))}, loss weights: {class_weights.round(4).tolist()}"
+    )
 
     # Create model, optimizer, and loss function
     model = SimpleNetwork(
@@ -247,9 +222,7 @@ def main():
     print(f"Model created with {n_features} input features and {n_classes} classes")
     print(f"Total parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Loss: FocalLoss(gamma={args.focal_gamma}, alpha=class_weights)")
-    print(
-        f"Using cosine annealing LR scheduler: initial_lr={args.lr}, T_max={args.epochs}, eta_min={args.lr * 0.1}"
-    )
+    print(f"Using cosine annealing LR scheduler: initial_lr={args.lr}, T_max={args.epochs}, eta_min={args.lr * 0.1}")
 
     # Create cosine annealing learning rate scheduler
     scheduler = CosineAnnealingLR(
@@ -277,7 +250,7 @@ def main():
 
     for epoch in range(args.epochs):
         # ── Training ──────────────────────────────────────────────────────────
-        print(f"\n=== Training Epoch {epoch+1}/{args.epochs} ===")
+        print(f"\n=== Training Epoch {epoch + 1}/{args.epochs} ===")
         total_loss = 0.0
         correct = 0
         total = 0
@@ -307,7 +280,9 @@ def main():
                 current_lr = scheduler.get_last_lr()[0]
                 avg_loss = (running_loss / n_batches).item()
                 acc = running_correct.item() / running_total
-                print(f"Epoch {epoch+1}/{args.epochs} | Batch {batch_idx+1}/{len(train_loader)} | Loss: {avg_loss:.6f} | Acc: {acc:.4f} | LR: {current_lr}")
+                print(
+                    f"Epoch {epoch + 1}/{args.epochs} | Batch {batch_idx + 1}/{len(train_loader)} | Loss: {avg_loss:.6f} | Acc: {acc:.4f} | LR: {current_lr}"
+                )
 
         total_loss = (running_loss / max(n_batches, 1)).item()
         correct = running_correct.item()
@@ -317,7 +292,7 @@ def main():
         scheduler.step()
 
         # ── Evaluation (after training) ────────────────────────────────────
-        print(f"\n=== Evaluating Global Model after Epoch {epoch+1}/{args.epochs} ===")
+        print(f"\n=== Evaluating Global Model after Epoch {epoch + 1}/{args.epochs} ===")
         global_metrics_all = evaluate_on_test_datasets(model, test_datasets_tensors, device)
 
         first_test_name = list(global_metrics_all.keys())[0]
@@ -330,15 +305,15 @@ def main():
                 f"Recall: {metrics['recall']:.4f} | "
                 f"F1-score: {metrics['f1_score']:.4f}"
             )
-        
+
         # Build comprehensive metrics dictionary
         metrics = {}
         for test_name, test_metrics in global_metrics_all.items():
-            metrics[f"global_{test_name}_accuracy"] = test_metrics['accuracy']
-            metrics[f"global_{test_name}_precision"] = test_metrics['precision']
-            metrics[f"global_{test_name}_recall"] = test_metrics['recall']
-            metrics[f"global_{test_name}_f1_score"] = test_metrics['f1_score']
-            metrics[f"global_{test_name}_confusion_matrix"] = test_metrics['confusion_matrix']
+            metrics[f"global_{test_name}_accuracy"] = test_metrics["accuracy"]
+            metrics[f"global_{test_name}_precision"] = test_metrics["precision"]
+            metrics[f"global_{test_name}_recall"] = test_metrics["recall"]
+            metrics[f"global_{test_name}_f1_score"] = test_metrics["f1_score"]
+            metrics[f"global_{test_name}_confusion_matrix"] = test_metrics["confusion_matrix"]
 
         # Compute SHAP/attributions only when requested (expensive: many forward/backward passes)
         run_shap = (args.shap_every == -1 and epoch == args.epochs - 1) or (
@@ -368,29 +343,27 @@ def main():
         all_metrics[f"round{epoch}"] = {"central": metrics}
 
         # Early-stopping: track best mean F1 across all test datasets
-        mean_f1 = float(np.mean([
-            global_metrics_all[tn]['f1_score'] for tn in global_metrics_all
-        ]))
+        mean_f1 = float(np.mean([global_metrics_all[tn]["f1_score"] for tn in global_metrics_all]))
         if mean_f1 > best_f1:
             best_f1 = mean_f1
             best_epoch = epoch
             torch.save(model.state_dict(), best_model_path)
-            print(f"  --> New best model at epoch {epoch+1}: mean F1={best_f1:.4f} (saved to {best_model_path})")
+            print(f"  --> New best model at epoch {epoch + 1}: mean F1={best_f1:.4f} (saved to {best_model_path})")
 
         # Persist metrics after every epoch so partial results are available
         np.save(os.path.join(args.results_dir, "metrics.npy"), all_metrics)
 
     # Load best model and run a final evaluation tagged as "best"
-    print(f"\n=== Best model was at epoch {best_epoch+1} with mean F1={best_f1:.4f} ===")
+    print(f"\n=== Best model was at epoch {best_epoch + 1} with mean F1={best_f1:.4f} ===")
     model.load_state_dict(torch.load(best_model_path, map_location=device))
     best_global_metrics = evaluate_on_test_datasets(model, test_datasets_tensors, device)
     best_metrics: dict = {}
     for test_name, test_metrics in best_global_metrics.items():
-        best_metrics[f"global_{test_name}_accuracy"]         = test_metrics['accuracy']
-        best_metrics[f"global_{test_name}_precision"]        = test_metrics['precision']
-        best_metrics[f"global_{test_name}_recall"]           = test_metrics['recall']
-        best_metrics[f"global_{test_name}_f1_score"]         = test_metrics['f1_score']
-        best_metrics[f"global_{test_name}_confusion_matrix"] = test_metrics['confusion_matrix']
+        best_metrics[f"global_{test_name}_accuracy"] = test_metrics["accuracy"]
+        best_metrics[f"global_{test_name}_precision"] = test_metrics["precision"]
+        best_metrics[f"global_{test_name}_recall"] = test_metrics["recall"]
+        best_metrics[f"global_{test_name}_f1_score"] = test_metrics["f1_score"]
+        best_metrics[f"global_{test_name}_confusion_matrix"] = test_metrics["confusion_matrix"]
     all_metrics["best"] = {
         "central": best_metrics,
         "epoch": best_epoch,
@@ -399,6 +372,7 @@ def main():
 
     # Save all metrics to file
     np.save(os.path.join(args.results_dir, "metrics.npy"), all_metrics)
+
 
 if __name__ == "__main__":
     main()

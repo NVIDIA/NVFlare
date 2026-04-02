@@ -7,7 +7,6 @@ for the account type to simulate automated transaction flooding.
 import numpy as np
 import pandas as pd
 
-
 # (low, high) ranges for anomalous event counts per account type.
 _RANGES: dict[str, tuple[int, int]] = {
     "BUSINESS": (1_000_000, 5_000_001),

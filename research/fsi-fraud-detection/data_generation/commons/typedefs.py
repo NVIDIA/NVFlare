@@ -9,7 +9,5 @@ from typing import Sequence
 type ColumnValueType = str | int | float | bool | None
 """Type of a single cell value in a generated dataset."""
 
-type MultiColumnValueType = (
-    list[ColumnValueType] | tuple[ColumnValueType, ...] | Sequence[ColumnValueType]
-)
+type MultiColumnValueType = (list[ColumnValueType] | tuple[ColumnValueType, ...] | Sequence[ColumnValueType])
 """A sequence of cell values, typically representing one multi-column output."""

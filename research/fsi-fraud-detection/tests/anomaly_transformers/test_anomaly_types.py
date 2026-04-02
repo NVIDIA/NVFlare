@@ -3,11 +3,9 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from data_generation.anomaly_transformers import type1, type2, type3, type4
 from data_generation.anomaly_transformers.type1 import Type1Config
 from data_generation.anomaly_transformers.type2 import Type2Config
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -32,12 +30,8 @@ def base_df() -> pd.DataFrame:
             "CREDITOR_AMOUNT": rng.uniform(100, 5000, size=n).round(2),
             "DEBITOR_CCY_CREDITOR_CCY_RATE": rng.uniform(0.5, 2.0, size=n).round(4),
             "PAYMENT_INIT_TIMESTAMP": np.full(n, now_ts),
-            "DEBITOR_ACCOUNT_CREATE_TIMESTAMP": rng.uniform(
-                now_ts - 5 * 365 * 86400, now_ts - 86400, size=n
-            ),
-            "DEBITOR_ACCOUNT_LAST_ACTIVITY_TIMESTAMP": rng.uniform(
-                now_ts - 30 * 86400, now_ts - 86400, size=n
-            ),
+            "DEBITOR_ACCOUNT_CREATE_TIMESTAMP": rng.uniform(now_ts - 5 * 365 * 86400, now_ts - 86400, size=n),
+            "DEBITOR_ACCOUNT_LAST_ACTIVITY_TIMESTAMP": rng.uniform(now_ts - 30 * 86400, now_ts - 86400, size=n),
             "DEBITOR_ACCOUNT_ACTIVITY_EVENTS_PAST_30D": rng.integers(1, 500, size=n),
         }
     )
@@ -51,8 +45,10 @@ def type1_config() -> Type1Config:
 @pytest.fixture()
 def type2_config() -> Type2Config:
     return Type2Config(
-        personal_mean=75_000, personal_sigma=5_000,
-        business_mean=240_000, business_sigma=15_000,
+        personal_mean=75_000,
+        personal_sigma=5_000,
+        business_mean=240_000,
+        business_sigma=15_000,
     )
 
 
@@ -70,8 +66,10 @@ class TestType1:
         original = base_df.copy()
         result = type1.apply(base_df.copy(), config=type1_config, seed=42)
         for col in [
-            "DEBITOR_TOWER_LATITUDE", "DEBITOR_TOWER_LONGITUDE",
-            "CREDITOR_TOWER_LATITUDE", "CREDITOR_TOWER_LONGITUDE",
+            "DEBITOR_TOWER_LATITUDE",
+            "DEBITOR_TOWER_LONGITUDE",
+            "CREDITOR_TOWER_LATITUDE",
+            "CREDITOR_TOWER_LONGITUDE",
         ]:
             assert not np.allclose(original[col], result[col]), f"{col} unchanged"
 
@@ -83,18 +81,12 @@ class TestType1:
     def test_different_seeds_diverge(self, base_df, type1_config):
         r1 = type1.apply(base_df.copy(), config=type1_config, seed=1)
         r2 = type1.apply(base_df.copy(), config=type1_config, seed=2)
-        assert not np.allclose(
-            r1["DEBITOR_TOWER_LATITUDE"], r2["DEBITOR_TOWER_LATITUDE"]
-        )
+        assert not np.allclose(r1["DEBITOR_TOWER_LATITUDE"], r2["DEBITOR_TOWER_LATITUDE"])
 
     def test_from_site_fields(self):
         fields = {
-            "anomalous_tower_NorE_perturbation": {
-                "distributions": [{"low": -3.0, "high": -2.0}]
-            },
-            "anomalous_tower_SorW_perturbation": {
-                "distributions": [{"low": -5.0, "high": -4.0}]
-            },
+            "anomalous_tower_NorE_perturbation": {"distributions": [{"low": -3.0, "high": -2.0}]},
+            "anomalous_tower_SorW_perturbation": {"distributions": [{"low": -5.0, "high": -4.0}]},
         }
         cfg = Type1Config.from_site_fields(fields)
         assert cfg.nor_e_low == -3.0
@@ -131,13 +123,10 @@ class TestType2:
     def test_creditor_amount_uses_exchange_rate(self, base_df, type2_config):
         result = type2.apply(base_df.copy(), config=type2_config, seed=42)
         expected = np.round(
-            result["DEBITOR_AMOUNT"].to_numpy()
-            * result["DEBITOR_CCY_CREDITOR_CCY_RATE"].to_numpy(),
+            result["DEBITOR_AMOUNT"].to_numpy() * result["DEBITOR_CCY_CREDITOR_CCY_RATE"].to_numpy(),
             2,
         )
-        np.testing.assert_array_almost_equal(
-            result["CREDITOR_AMOUNT"].to_numpy(), expected, decimal=2
-        )
+        np.testing.assert_array_almost_equal(result["CREDITOR_AMOUNT"].to_numpy(), expected, decimal=2)
 
     def test_deterministic_with_same_seed(self, base_df, type2_config):
         r1 = type2.apply(base_df.copy(), config=type2_config, seed=42)
@@ -146,12 +135,8 @@ class TestType2:
 
     def test_from_site_fields(self):
         fields = {
-            "anomalous_personal_acc_amount": {
-                "distributions": [{"desired_mean": 60_000, "sigma": 4_000}]
-            },
-            "anomalous_business_acc_amount": {
-                "distributions": [{"desired_mean": 200_000, "sigma": 12_000}]
-            },
+            "anomalous_personal_acc_amount": {"distributions": [{"desired_mean": 60_000, "sigma": 4_000}]},
+            "anomalous_business_acc_amount": {"distributions": [{"desired_mean": 200_000, "sigma": 12_000}]},
         }
         cfg = Type2Config.from_site_fields(fields)
         assert cfg.personal_mean == 60_000
@@ -171,9 +156,7 @@ class TestType3:
     def test_pushes_activity_back_90_to_180_days(self, base_df):
         # Use accounts created far enough in the past so clamping doesn't interfere
         df = base_df.copy()
-        df["DEBITOR_ACCOUNT_CREATE_TIMESTAMP"] = (
-            df["PAYMENT_INIT_TIMESTAMP"] - 365 * 86400
-        )
+        df["DEBITOR_ACCOUNT_CREATE_TIMESTAMP"] = df["PAYMENT_INIT_TIMESTAMP"] - 365 * 86400
         result = type3.apply(df, seed=42)
         payment_ts = result["PAYMENT_INIT_TIMESTAMP"].to_numpy()
         activity_ts = result["DEBITOR_ACCOUNT_LAST_ACTIVITY_TIMESTAMP"].to_numpy()

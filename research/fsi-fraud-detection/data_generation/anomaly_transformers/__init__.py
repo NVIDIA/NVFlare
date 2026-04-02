@@ -14,7 +14,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
 from data_generation.anomaly_transformers import type1, type2, type3, type4
 from data_generation.anomaly_transformers.type1 import Type1Config
 from data_generation.anomaly_transformers.type2 import Type2Config
@@ -141,10 +140,7 @@ def inject_all(
     rng = np.random.default_rng(seed)
     single_rule = len(anomaly_types) == 1
     for i, atype in enumerate(anomaly_types):
-        frac = fraudulent_frac or float(
-            rng.uniform(0.001, 0.01) if single_rule
-            else rng.uniform(0.001, 0.005)
-        )
+        frac = fraudulent_frac or float(rng.uniform(0.001, 0.01) if single_rule else rng.uniform(0.001, 0.005))
         rs = int(rng.integers(20, 50))
         kwargs = configs.get(atype, {})
         df = inject(
