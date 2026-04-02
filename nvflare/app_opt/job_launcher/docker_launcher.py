@@ -13,19 +13,24 @@
 # limitations under the License.
 import logging
 import os
+import re
 import time
 from abc import abstractmethod
+
+import docker.errors
 
 import docker
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.job_launcher_utils import extract_job_image, generate_client_command, generate_server_command
+from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
 
 
-class DOCKER_STATE:
+# Docker container status strings
+class DockerStatus:
     CREATED = "created"
     RESTARTING = "restarting"
     RUNNING = "running"
@@ -34,165 +39,441 @@ class DOCKER_STATE:
     DEAD = "dead"
 
 
-JOB_RETURN_CODE_MAPPING = {
-    DOCKER_STATE.CREATED: JobReturnCode.UNKNOWN,
-    DOCKER_STATE.RESTARTING: JobReturnCode.UNKNOWN,
-    DOCKER_STATE.RUNNING: JobReturnCode.UNKNOWN,
-    DOCKER_STATE.PAUSED: JobReturnCode.UNKNOWN,
-    DOCKER_STATE.EXITED: JobReturnCode.SUCCESS,
-    DOCKER_STATE.DEAD: JobReturnCode.ABORTED,
-}
+TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
+
+
+def _sanitize_container_name(name: str) -> str:
+    """Sanitize a string to a valid Docker container name.
+
+    Docker container names allow alphanumeric, hyphens, underscores, and dots.
+    """
+    name = name.lower()
+    name = re.sub(r"[^a-z0-9\-_.]", "-", name)
+    name = name.strip("-")
+    return name or "nvflare-job"
+
+
+def _exit_code_to_return_code(exit_code: int) -> JobReturnCode:
+    if exit_code == 0:
+        return JobReturnCode.SUCCESS
+    elif exit_code == JobReturnCode.ABORTED:
+        return JobReturnCode.ABORTED
+    else:
+        return JobReturnCode.EXECUTION_ERROR
 
 
 class DockerJobHandle(JobHandleSpec):
-    def __init__(self, container, timeout=None):
-        super().__init__()
+    """Handle for a running Docker container job.
 
-        self.container = container
+    Modeled on K8sJobHandle: once the container reaches a terminal state,
+    terminal_state is set and all subsequent poll()/wait() calls return
+    immediately without querying Docker.
+    """
+
+    def __init__(self, container_id: str, container_name: str, docker_client, timeout=None, pending_timeout: int = 30):
+        super().__init__()
+        self.container_id = container_id
+        self.container_name = container_name
+        self.docker_client = docker_client
         self.timeout = timeout
+        self.terminal_state: JobReturnCode = None  # set once, never cleared
+        self._stuck_count = 0
+        self._max_stuck_count = timeout if timeout is not None else pending_timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def terminate(self):
-        if self.container:
-            self.container.stop()
-
-    def poll(self):
-        container = self._get_container()
-        if container:
-            if container.status in [DOCKER_STATE.EXITED, DOCKER_STATE.DEAD]:
-                container.remove(force=True)
-                self.logger.debug(f"docker completes state: {container.status}")
-            return JOB_RETURN_CODE_MAPPING.get(container.status, JobReturnCode.UNKNOWN)
-
-    def wait(self):
-        if self.container:
-            self.enter_states([DOCKER_STATE.EXITED, DOCKER_STATE.DEAD], self.timeout)
-
     def _get_container(self):
+        """Query Docker for the current container object.
+
+        Returns None if not found (sets terminal_state) or on API error.
+        """
         try:
-            docker_client = docker.from_env()
-            # Get the container object
-            container = docker_client.containers.get(self.container.id)
-            # Get the container state
-            # state = container.attrs['State']
-            return container
-        except:
+            return self.docker_client.containers.get(self.container_id)
+        except docker.errors.NotFound:
+            self.logger.info(f"container {self.container_name} not found; assuming terminated")
+            if self.terminal_state is None:
+                self.terminal_state = JobReturnCode.ABORTED
+            return None
+        except docker.errors.APIError as e:
+            self.logger.warning(f"error querying container {self.container_name}: {e}")
+            return None
+        except Exception as e:
+            self.logger.warning(f"unexpected error querying container {self.container_name}: {e}")
             return None
 
-    def enter_states(self, job_states_to_enter: list, timeout=None):
-        starting_time = time.time()
-        if not isinstance(job_states_to_enter, (list, tuple)):
-            job_states_to_enter = [job_states_to_enter]
+    def _resolve_terminal_return_code(self, container) -> JobReturnCode:
+        """Get the final JobReturnCode from a terminal container using exit code."""
+        if container.status == DockerStatus.DEAD:
+            return JobReturnCode.ABORTED
+        # EXITED: read actual exit code from container attrs
+        exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
+        return _exit_code_to_return_code(exit_code)
+
+    def _stuck_in_created(self, status: str) -> bool:
+        """Detect containers stuck in 'created' that never start."""
+        if status == DockerStatus.CREATED:
+            self._stuck_count += 1
+            if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
+                return True
+        else:
+            self._stuck_count = 0
+        return False
+
+    def _remove_container(self):
+        """Remove the container after it has reached a terminal state."""
+        try:
+            container = self.docker_client.containers.get(self.container_id)
+            container.remove(force=True)
+            self.logger.debug(f"removed container {self.container_name}")
+        except docker.errors.NotFound:
+            pass  # already gone
+        except docker.errors.APIError as e:
+            self.logger.warning(f"error removing container {self.container_name}: {e}")
+
+    def poll(self) -> JobReturnCode:
+        """Non-blocking status check. Returns UNKNOWN while still running."""
+        if self.terminal_state is not None:
+            return self.terminal_state
+        container = self._get_container()
+        if container is None:
+            return self.terminal_state if self.terminal_state is not None else JobReturnCode.UNKNOWN
+        if container.status in TERMINAL_STATUSES:
+            rc = self._resolve_terminal_return_code(container)
+            self.terminal_state = rc
+            self._remove_container()
+            return rc
+        return JobReturnCode.UNKNOWN
+
+    def wait(self):
+        """Block until the container reaches a terminal state."""
         while True:
+            if self.terminal_state is not None:
+                return
             container = self._get_container()
-            if container:
-                self.logger.debug(f"container state: {container.status}, job states to enter: {job_states_to_enter}")
-                if container.status in job_states_to_enter:
-                    return True
-                elif timeout is not None and time.time() - starting_time > timeout:
-                    return False
-                time.sleep(1)
-            else:
+            if container is None:
+                return
+            if container.status in TERMINAL_STATUSES:
+                self.terminal_state = self._resolve_terminal_return_code(container)
+                self._remove_container()
+                return
+            time.sleep(1)
+
+    def terminate(self):
+        """Stop and remove the container. Always sets terminal_state."""
+        try:
+            container = self.docker_client.containers.get(self.container_id)
+            container.stop(timeout=0)
+            container.remove(force=True)
+        except docker.errors.NotFound:
+            self.logger.info(f"container {self.container_name} not found during termination; assuming terminated")
+        except docker.errors.APIError as e:
+            self.logger.error(f"error terminating container {self.container_name}: {e}")
+        except Exception as e:
+            self.logger.error(f"unexpected error terminating container {self.container_name}: {e}")
+        finally:
+            # Always set terminal_state so poll()/wait() return immediately
+            if self.terminal_state is None:
+                self.terminal_state = JobReturnCode.ABORTED
+
+    def enter_states(self, states_to_enter: list) -> bool:
+        """Poll until the container enters one of the target states.
+
+        Returns True if the target state was reached, False otherwise
+        (timeout, stuck, or terminal state reached before target).
+        """
+        import time as _time
+
+        starting_time = _time.time()
+        if not isinstance(states_to_enter, (list, tuple)):
+            states_to_enter = [states_to_enter]
+
+        while True:
+            if self.terminal_state is not None:
                 return False
+
+            container = self._get_container()
+            if container is None:
+                return False
+
+            status = container.status
+
+            if self._stuck_in_created(status):
+                self.logger.warning(f"container {self.container_name} stuck in 'created'; terminating")
+                self.terminate()
+                return False
+
+            if status in states_to_enter:
+                return True
+
+            if status in TERMINAL_STATUSES:
+                self.terminal_state = self._resolve_terminal_return_code(container)
+                self._remove_container()
+                return False
+
+            if self.timeout is not None and _time.time() - starting_time > self.timeout:
+                self.logger.warning(f"container {self.container_name} timed out waiting for {states_to_enter}")
+                self.terminate()
+                return False
+
+            time.sleep(1)
+
+
+def _job_args_dict(job_args: dict, arg_names: list) -> dict:
+    """Extract a {flag: value} dict from JOB_PROCESS_ARGS for the given arg names."""
+    result = {}
+    for name in arg_names:
+        e = job_args.get(name)
+        if not e:
+            continue
+        flag, value = e
+        result[flag] = value
+    return result
 
 
 class DockerJobLauncher(JobLauncherSpec):
-    def __init__(self, mount_path: str = "/workspace", network: str = "nvflare-network", timeout=None):
-        super().__init__()
+    """Launches NVFlare job processes as Docker containers.
 
-        self.mount_path = mount_path
+    SP/CP runs as a container started by start_docker.sh (site admin).
+    SJ/CJ containers are started dynamically per job by this launcher.
+
+    Assumptions:
+    - Docker network already exists (created by start_docker.sh or site admin).
+    - Workspace is a host directory bind-mounted into all containers at mount_path.
+    - SP/CP container name is known and reachable via Docker DNS on the network.
+    - parent_url is the SP/CP container name + port (e.g. "nvflare-cp:8002").
+    """
+
+    def __init__(
+        self,
+        workspace: str = None,
+        parent_url: str = None,
+        network: str = "nvflare-network",
+        mount_path: str = "/var/nvflare/workspace",
+        python_path: str = "/usr/local/bin/python",
+        timeout=None,
+        pending_timeout: int = 30,
+        allowed_image_prefixes: list = None,
+        extra_container_kwargs: dict = None,
+    ):
+        """
+        Args:
+            workspace: host path to the NVFlare workspace directory (bind-mounted into job containers).
+                       If not provided, reads from NVFL_DOCKER_WORKSPACE environment variable.
+                       Must be the HOST path (not the container-internal path) because it is passed
+                       directly to the Docker daemon as a volume bind source.
+            parent_url: SP/CP container name + port for SJ/CJ to connect back to parent
+                        (e.g. "nvflare-cp:8002"). Overrides PARENT_URL in JOB_PROCESS_ARGS.
+            network: Docker network name. Must already exist.
+            mount_path: mount path inside the job container for the workspace bind mount.
+            python_path: Python executable path inside the job container.
+            timeout: max seconds to wait for container to reach RUNNING state.
+                     Also used as stuck-detection threshold.
+            pending_timeout: stuck-detection threshold (poll iterations) when timeout is None.
+            allowed_image_prefixes: if set, only images whose name starts with one of these prefixes
+                                    are permitted to run. Jobs requesting a disallowed image are hard-
+                                    blocked (the job will not launch). None means no restriction.
+                                    Example: ["myregistry.corp.com/", "nvflare/nvflare:"]
+            extra_container_kwargs: additional keyword arguments passed directly to docker containers.run()
+                                    for any docker run flags not explicitly supported above.
+                                    Keys use Docker SDK naming (underscores, not hyphens).
+                                    Example: {"shm_size": "8g", "ipc_mode": "host", "mem_limit": "16g"}
+                                    Note: "volumes", "network", "device_requests", "environment", and
+                                    "command" are controlled by the launcher and cannot be overridden here.
+        """
+        super().__init__()
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        if not workspace:
+            workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
+        if not parent_url:
+            raise ValueError(
+                "parent_url must be set to the SP/CP container name + port (e.g. 'nvflare-cp:8002') "
+                "so job containers can connect back to the parent"
+            )
+
+        self.workspace = workspace
+        self.parent_url = parent_url
         self.network = network
+        self.mount_path = mount_path
+        self.python_path = python_path
         self.timeout = timeout
+        self.pending_timeout = pending_timeout
+        self.allowed_image_prefixes = allowed_image_prefixes
+        self.extra_container_kwargs = extra_container_kwargs or {}
+
+        self._docker_client = None
+
+    def _get_docker_client(self):
+        if self._docker_client is None:
+            try:
+                self._docker_client = docker.from_env()
+                self._docker_client.ping()
+            except Exception as e:
+                raise RuntimeError(f"cannot connect to Docker daemon: {e}")
+            try:
+                self._docker_client.networks.get(self.network)
+            except docker.errors.NotFound:
+                raise RuntimeError(
+                    f"Docker network '{self.network}' does not exist. "
+                    f"Create it with: docker network create {self.network}"
+                )
+            except docker.errors.APIError as e:
+                raise RuntimeError(f"error checking Docker network '{self.network}': {e}")
+        return self._docker_client
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
-        self.logger.debug("DockerJobLauncher start to launch job")
-        job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         job_id = job_meta.get(JobConstants.JOB_ID)
-        app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
+        if not job_id:
+            raise RuntimeError("missing JOB_ID in job_meta")
 
-        python_path = f"{app_custom_folder}:$PYTHONPATH" if app_custom_folder != "" else "$PYTHONPATH"
-        job_name, cmd = self.get_command(job_meta, fl_ctx)
-        command = f' /bin/bash -c "export PYTHONPATH={python_path};{cmd}"'
-        self.logger.info(f"Launch image:{job_image}, run command: {command}")
+        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+        if not job_args:
+            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-        # TODO: Keep Docker launch behavior unchanged for now. The final Docker
-        # implementation should add study-aware workspace/network resolution in
-        # one place, similar to the planned K8s settings lookup.
-        docker_workspace = os.environ.get("NVFL_DOCKER_WORKSPACE")
-        self.logger.info(f"launch_job {job_id} in docker_workspace: {docker_workspace}")
-        docker_client = docker.from_env()
+        exe_module_entry = job_args.get(JobProcessArgs.EXE_MODULE)
+        if not exe_module_entry:
+            raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in JOB_PROCESS_ARGS")
+        _, exe_module = exe_module_entry
+
+        job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
+        site_name = fl_ctx.get_identity_name()
+        container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+
+        # TODO(multi-study): resolve workspace per study once Phase 2 lands.
+        # study = get_job_meta_study(job_meta)  # returns DEFAULT_STUDY ("default") for legacy jobs
+        # workspace = os.path.join(self.workspace_root, study)
+        # The volume mount should use the study-specific host path so job workspaces are
+        # physically isolated across studies (e.g. /host/workspaces/study-a/, /host/workspaces/study-b/).
+        # For now self.workspace is a single root shared across all studies.
+        workspace = self.workspace
+        if not workspace:
+            raise ValueError(
+                "workspace must be set to the host path of the NVFlare workspace directory, "
+                "or set the NVFL_DOCKER_WORKSPACE environment variable"
+            )
+
+        # Override PARENT_URL so the job container connects to SP/CP container name,
+        # not localhost (which is meaningless from inside a Docker container).
+        if JobProcessArgs.PARENT_URL in job_args:
+            flag, _ = job_args[JobProcessArgs.PARENT_URL]
+            job_args = dict(job_args)
+            job_args[JobProcessArgs.PARENT_URL] = (flag, self.parent_url)
+
+        module_args = self.get_module_args(job_args)
+        module_args_list = []
+        for flag, value in module_args.items():
+            if value is not None:
+                module_args_list.extend([flag, str(value)])
+
+        # Append --set options (same as K8s launcher)
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
+        set_list = args.set if args is not None and getattr(args, "set", None) is not None else None
+        if set_list:
+            module_args_list.extend(["--set"] + set_list)
+
+        command = [self.python_path, "-u", "-m", exe_module] + module_args_list
+
+        # PYTHONPATH: translate app_custom_folder host path to container-internal path
+        # so custom Python code in the job app is importable inside the container.
+        environment = {}
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace_obj is not None:
+            app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
+            if app_custom_folder:
+                container_custom_folder = app_custom_folder.replace(workspace, self.mount_path, 1)
+                environment["PYTHONPATH"] = container_custom_folder
+
+        # GPU: read num_of_gpus from job resource spec (same as K8s launcher)
+        site_resources = job_meta.get(JobMetaKey.RESOURCE_SPEC.value, {}).get(site_name, {})
+        num_of_gpus = site_resources.get("num_of_gpus", None)
+        device_requests = None
+        if num_of_gpus:
+            device_requests = [docker.types.DeviceRequest(count=int(num_of_gpus), capabilities=[["gpu"]])]
+
+        self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
+
+        docker_client = self._get_docker_client()
         try:
             container = docker_client.containers.run(
                 job_image,
                 command=command,
-                name=job_name,
+                name=container_name,
                 network=self.network,
                 detach=True,
-                # remove=True,
+                environment=environment if environment else None,
                 volumes={
-                    docker_workspace: {
+                    workspace: {
                         "bind": self.mount_path,
                         "mode": "rw",
-                    },
+                    }
                 },
-                # ports=ports,  # Map container ports to host ports (optional)
+                device_requests=device_requests,
+                # Never pass Docker socket to job containers
+                **self.extra_container_kwargs,
             )
-            self.logger.info(f"Launch the job in DockerJobLauncher using image: {job_image}")
-
-            handle = DockerJobHandle(container)
-            try:
-                if handle.enter_states([DOCKER_STATE.RUNNING], timeout=self.timeout):
-                    return handle
-                else:
-                    handle.terminate()
-                    return None
-            except:
-                handle.terminate()
-                return None
-
         except docker.errors.ImageNotFound:
-            self.logger.error(f"Failed to launcher job: {job_id} in DockerJobLauncher. Image '{job_image}' not found.")
-            return None
+            raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
         except docker.errors.APIError as e:
-            self.logger.error(f"Error starting container: {e}")
-            return None
+            raise RuntimeError(f"error creating container for job {job_id}: {e}")
+
+        job_handle = DockerJobHandle(
+            container_id=container.id,
+            container_name=container_name,
+            docker_client=docker_client,
+            timeout=self.timeout,
+            pending_timeout=self.pending_timeout,
+        )
+
+        try:
+            if not job_handle.enter_states([DockerStatus.RUNNING]):
+                self.logger.warning(f"container {container_name} did not reach RUNNING state for job {job_id}")
+        except BaseException:
+            job_handle.terminate()
+            raise
+
+        # Always return a handle — caller detects failure via poll()
+        return job_handle
+
+    def _is_image_allowed(self, image: str) -> bool:
+        """Return True if the image is permitted to run on this site.
+
+        If allowed_image_prefixes is None, all images are allowed.
+        Otherwise the image name must start with at least one of the configured prefixes.
+        """
+        if self.allowed_image_prefixes is None:
+            return True
+        return any(image.startswith(prefix) for prefix in self.allowed_image_prefixes)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
-            if job_image:
-                add_launcher(self, fl_ctx)
+            if not job_image:
+                return
+            if not self._is_image_allowed(job_image):
+                raise RuntimeError(
+                    f"image '{job_image}' is not permitted on this site. "
+                    f"Allowed prefixes: {self.allowed_image_prefixes}"
+                )
+            add_launcher(self, fl_ctx)
 
     @abstractmethod
-    def get_command(self, job_meta, fl_ctx) -> (str, str):
-        """To generate the command to launcher the job in sub-process
+    def get_module_args(self, job_args: dict) -> dict:
+        """Return a {flag: value} dict of args to pass to the job module.
 
         Args:
-            fl_ctx: FLContext
-            job_meta: job launcher data
+            job_args: JOB_PROCESS_ARGS dict from FLContext (with PARENT_URL already overridden).
 
         Returns:
-            (container name, launch command)
-
+            dict of {flag: value} pairs to append after '-u -m <module>' in the container command.
         """
         pass
 
 
 class ClientDockerJobLauncher(DockerJobLauncher):
-    def get_command(self, job_meta, fl_ctx) -> (str, str):
-        job_id = job_meta.get(JobConstants.JOB_ID)
-        client_name = fl_ctx.get_identity_name()
-        command = generate_client_command(fl_ctx)
-
-        return f"{client_name}-{job_id}", command
+    def get_module_args(self, job_args: dict) -> dict:
+        return _job_args_dict(job_args, get_client_job_args(include_exe_module=False, include_set_options=False))
 
 
 class ServerDockerJobLauncher(DockerJobLauncher):
-    def get_command(self, job_meta, fl_ctx) -> (str, str):
-        job_id = job_meta.get(JobConstants.JOB_ID)
-        command = generate_server_command(fl_ctx)
-
-        return f"server-{job_id}", command
+    def get_module_args(self, job_args: dict) -> dict:
+        return _job_args_dict(job_args, get_server_job_args(include_exe_module=False, include_set_options=False))

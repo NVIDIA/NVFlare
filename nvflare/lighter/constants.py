@@ -174,7 +174,7 @@ class ProvFileName:
     PRIVILEGE_YML = "privilege.yml"
     DOCKER_BUILD_SH = "docker_build.sh"
     DOCKER_SH = "docker.sh"
-    DOCKER_LAUNCHER_SH = "docker_launcher.sh"
+    DOCKER_LAUNCHER_SH = "start_docker.sh"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"

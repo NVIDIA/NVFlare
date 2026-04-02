@@ -104,6 +104,16 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         site_list = []
         for deployments in deploy_map.values():
+            if isinstance(deployments, list):
+                for item in deployments:
+                    if isinstance(item, dict):
+                        known_keys = {JobConstants.SITES, "targets", JobConstants.JOB_IMAGE}
+                        unknown_keys = set(item.keys()) - known_keys
+                        if unknown_keys:
+                            raise ValueError(
+                                f"Unknown keys {unknown_keys} in deploy_map entry for job {job_name}. "
+                                f"Valid keys are: {sorted(known_keys)}"
+                            )
             deployments = extract_participants(deployments)
             for site in deployments:
                 site_list.append(site)

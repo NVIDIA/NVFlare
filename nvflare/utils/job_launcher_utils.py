@@ -112,7 +112,7 @@ def extract_job_image(job_meta, site_name):
         for item in participants:
             if isinstance(item, dict):
                 sites = item.get(JobConstants.SITES)
-                if site_name in sites:
+                if "@ALL" in sites or site_name in sites:
                     return item.get(JobConstants.JOB_IMAGE)
     return None
 
