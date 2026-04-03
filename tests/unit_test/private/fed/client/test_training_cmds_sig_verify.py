@@ -21,14 +21,11 @@ import os
 import types
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.client.training_cmds import DeployProcessor
-
 
 # ---------------------------------------------------------------------------
 # Minimal concrete stub that satisfies ClientEngineInternalSpec isinstance check

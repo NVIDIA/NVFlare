@@ -18,8 +18,6 @@ Tests cover the _deploy_job server-side signature verification path that replace
 the old secure_train-based logic.
 """
 
-import os
-import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,7 +26,6 @@ from nvflare.apis.fl_constant import FLContextKey, SiteType
 from nvflare.apis.job_def import Job, JobMetaKey
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.fed.server.job_runner import JobRunner
-
 
 # ---------------------------------------------------------------------------
 # Helpers shared across tests
