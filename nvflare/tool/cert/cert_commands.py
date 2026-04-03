@@ -15,10 +15,10 @@
 """nvflare cert subcommand handlers: init, csr, sign."""
 
 import datetime
+import ipaddress
 import json
 import os
 import shutil
-import stat
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -141,9 +141,7 @@ def handle_cert_init(args):
         with open(rootca_path, "wb") as f:
             f.write(pem_cert)
 
-        with open(ca_key_path, "wb") as f:
-            f.write(pem_key)
-        os.chmod(ca_key_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+        _write_private_key(ca_key_path, pem_key)
 
         created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
@@ -202,15 +200,10 @@ def _generate_csr(name: str, org: str = None, role: str = None):
 
 
 def _write_private_key(path: str, pem_bytes: bytes) -> None:
-    """Write private key PEM to path and set permissions to 0600."""
-    with open(path, "wb") as f:
+    """Write private key PEM to path with 0600 permissions set atomically at creation."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
         f.write(pem_bytes)
-    try:
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-    except OSError:
-        import warnings
-
-        warnings.warn(f"Could not set permissions on {path}. Ensure it is not world-readable.")
 
 
 def _write_file(path: str, pem_bytes: bytes) -> None:
@@ -365,6 +358,7 @@ def _build_signed_cert(
     ca_key,
     cert_type: str,
     valid_days: int,
+    serial: int,
 ) -> x509.Certificate:
     """Build and sign a certificate from a CSR using the CA key.
 
@@ -418,7 +412,7 @@ def _build_signed_cert(
         .subject_name(safe_subject)
         .issuer_name(ca_cert.subject)
         .public_key(csr.public_key())
-        .serial_number(x509.random_serial_number())
+        .serial_number(serial)
         .not_valid_before(now)
         .not_valid_after(now + datetime.timedelta(days=valid_days))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
@@ -433,8 +427,13 @@ def _build_signed_cert(
         )
     )
     if cert_type == "server" and subject_cn:
+        try:
+            ip = ipaddress.ip_address(subject_cn)
+            san_entry = x509.IPAddress(ip)
+        except ValueError:
+            san_entry = x509.DNSName(subject_cn)
         builder = builder.add_extension(
-            x509.SubjectAlternativeName([x509.DNSName(subject_cn)]),
+            x509.SubjectAlternativeName([san_entry]),
             critical=False,
         )
     return builder.sign(ca_key, hashes.SHA256(), default_backend())
@@ -558,6 +557,7 @@ def handle_cert_sign(args):
             ca_key=ca_key,
             cert_type=cert_type,
             valid_days=valid_days,
+            serial=audit_serial,
         )
     except Exception as e:
         message, hint = get_error("CERT_SIGNING_FAILED", reason=str(e))
