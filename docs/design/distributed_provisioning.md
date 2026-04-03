@@ -289,16 +289,30 @@ The type embedded in the signed certificate is the single source of truth downst
 
 ### `nvflare package` — Site Admin
 
-```
-# Auto-discovery mode (files in one directory; type derived from cert)
-nvflare package -e grpc://<server>:<port> --dir <dir>
+Three modes are available. Choose the one that fits your setup.
 
-# Explicit mode
+**Project-file mode** (`-p`): for users familiar with `nvflare provision` project.yaml,
+those who need custom builders, or who prefer to describe all participants in one file.
+Works for any number of participants — a single site or many. Cert files named by
+participant CN are discovered from `--dir`; kit type is read from each signed cert.
+
+```
+nvflare package -e grpc://<server>:<port> -p site.yaml --dir <dir>
+```
+
+**Directory mode** (`--dir`): simplest for a single participant. Place key, cert, and
+`rootCA.pem` in one directory. Participant name is auto-detected from the `.key` filename;
+kit type is derived from the signed cert's embedded type. No `-t` needed.
+
+```
+nvflare package -e grpc://<server>:<port> --dir <dir>
+```
+
+**Explicit mode** (`--cert`/`--key`/`--rootca`): when files are in different locations.
+
+```
 nvflare package -n <name> -e grpc://<server>:<port> \
     --cert <name>.crt --key <name>.key --rootca rootCA.pem
-
-# Multi-participant YAML mode
-nvflare package -e grpc://<server>:<port> -p site.yaml --dir <dir>
 ```
 
 Output goes to `<workspace>/<project>/prod_NN/<name>/`.
