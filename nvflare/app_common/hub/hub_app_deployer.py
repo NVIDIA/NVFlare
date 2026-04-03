@@ -32,10 +32,6 @@ from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 _hub_deployer_logger = logging.getLogger(__name__)
 
 
-def _require_signed_jobs_for_hub(workspace) -> bool:
-    return require_signed_jobs(workspace)
-
-
 class HubAppDeployer(AppDeployerSpec, FLComponent):
 
     HUB_CLIENT_CONFIG_TEMPLATE_NAME = "hub_client.json"
@@ -160,7 +156,7 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         if os.path.exists(sig_file):
             if not verify_folder_signature(app_path, root_ca_path):
                 return "hub: job signature verification failed before forwarding", None, None
-        elif _require_signed_jobs_for_hub(workspace):
+        elif require_signed_jobs(workspace):
             return "hub: unsigned job rejected — require_signed_jobs is enabled", None, None
 
         # Note: the app_name is already created like "app_"+site_name, which is also the directory that contains

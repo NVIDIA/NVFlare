@@ -15,7 +15,6 @@
 """nvflare cert subcommand handlers: init, csr, sign."""
 
 import datetime
-import fcntl
 import json
 import os
 import shutil
@@ -331,10 +330,22 @@ def _claim_serial(ca_json_path: str) -> int:
     """Atomically claim the next serial number from ca.json and return it.
 
     Uses an exclusive file lock so concurrent ``nvflare cert sign`` invocations
-    cannot claim the same serial number.
+    cannot claim the same serial number. Falls back gracefully on platforms where
+    fcntl is unavailable (e.g. Windows).
     """
+    try:
+        import fcntl
+
+        def _lock(f):
+            fcntl.flock(f, fcntl.LOCK_EX)
+
+    except ImportError:
+
+        def _lock(f):
+            pass
+
     with open(ca_json_path, "r+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        _lock(f)
         meta = json.load(f)
         serial = meta.get("next_serial", 2)
         meta["next_serial"] = serial + 1
