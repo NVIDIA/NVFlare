@@ -477,7 +477,8 @@ Assemble a startup kit (Site Admin).
 +==========================+==========================================================================+==========+
 | -e / --endpoint          | Server endpoint URI (grpc/tcp/http).                                    | Yes      |
 +--------------------------+--------------------------------------------------------------------------+----------+
-| -t / --type              | Kit type; optional in single mode and optional filter in yaml mode.     | No       |
+| -t / --type              | Optional type filter for yaml mode only. In single mode the kit type    | No       |
+|                          | is always derived from the signed cert's embedded type.                 |          |
 +--------------------------+--------------------------------------------------------------------------+----------+
 | -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
 +--------------------------+--------------------------------------------------------------------------+----------+

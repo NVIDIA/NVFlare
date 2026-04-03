@@ -39,10 +39,9 @@ def def_package_cli_parser(sub_cmd) -> dict:
         dest="kit_type",
         choices=["client", "server", "org_admin", "lead", "member"],
         help=(
-            "Kit type: client, server, org_admin, lead, or member. "
-            "In single-participant mode (--dir or --cert/--key/--rootca), derived automatically "
-            "from the signed certificate's embedded type. Explicit -t overrides the cert. "
-            "In yaml mode (--project-file), acts as an optional participant-type filter."
+            "In yaml mode (--project-file), optional filter to build only participants of this type. "
+            "Not used in single-participant mode: the kit type is always derived from the signed "
+            "certificate's embedded type (set by 'nvflare cert sign')."
         ),
     )
     p.add_argument(
