@@ -150,7 +150,8 @@ class _ShellCommandHandler(_CmdHandler):
             elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
                 admin_controller.admin_api_response = response["details"]["message"]
             elif response["status"] == APIStatus.SUCCESS:
-                admin_controller.admin_api_response = " ".join(response["details"]["message"].splitlines())
+                lines = [line.strip() for line in response["details"]["message"].splitlines() if line.strip()]
+                admin_controller.admin_api_response = " ".join(sorted(lines))
 
 
 class _CheckJobHandler(_CmdHandler):

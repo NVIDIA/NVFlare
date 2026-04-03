@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shlex
 import shutil
@@ -32,6 +33,36 @@ from .utils import (
 
 WORKSPACE = "ci_workspace"
 PROD_FOLDER_NAME = "prod_00"
+
+
+def _restore_auth_test_shell_command_permissions(workspace_dir: str, project_yaml: dict):
+    if project_yaml.get("name") != "auth_test":
+        return
+
+    shell_command_permissions = {
+        "project_admin": "any",
+        "org_admin": "o:site",
+        "lead": "o:site",
+    }
+
+    for participant in project_yaml["participants"]:
+        if participant["type"] not in ["server", "client"]:
+            continue
+
+        authz_path = os.path.join(workspace_dir, participant["name"], "local", "authorization.json.default")
+        with open(authz_path, "r") as f:
+            authz = json.load(f)
+
+        permissions = authz.get("permissions", {})
+        for role, value in shell_command_permissions.items():
+            role_permissions = permissions.get(role)
+            if isinstance(role_permissions, str):
+                permissions[role] = {"*": role_permissions, "shell_commands": value}
+            elif isinstance(role_permissions, dict):
+                role_permissions["shell_commands"] = value
+
+        with open(authz_path, "w") as f:
+            json.dump(authz, f)
 
 
 def _start_site(site_properties: SiteProperties):
@@ -76,16 +107,16 @@ class ProvisionSiteLauncher(SiteLauncher):
             yaml.dump(self.project_yaml, f, default_flow_style=False)
         run_provision_command(project_yaml=temp_yaml, workspace=WORKSPACE)
         os.remove(temp_yaml)
+        workspace_dir = self._get_workspace_dir()
+        _restore_auth_test_shell_command_permissions(workspace_dir, self.project_yaml)
         new_job_store = None
         new_snapshot_store = None
         for k in self.server_properties:
             server_name = self.server_properties[k].name
-            new_job_store = update_job_store_path_in_workspace(self._get_workspace_dir(), server_name, new_job_store)
-            new_snapshot_store = update_snapshot_path_in_workspace(
-                self._get_workspace_dir(), server_name, new_snapshot_store
-            )
-            cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
-        return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
+            new_job_store = update_job_store_path_in_workspace(workspace_dir, server_name, new_job_store)
+            new_snapshot_store = update_snapshot_path_in_workspace(workspace_dir, server_name, new_snapshot_store)
+            cleanup_job_and_snapshot(workspace_dir, server_name)
+        return workspace_dir
 
     def start_overseer(self):
         _start_site(self.overseer_properties)
