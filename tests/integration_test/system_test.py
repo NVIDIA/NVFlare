@@ -101,7 +101,9 @@ def setup_and_teardown_system(request):
     cleanup = test_config["cleanup"]
     has_project_yaml = "project_yaml" in test_config
     poll_period = test_config.get("poll_period", 5)
-    additional_python_paths = [_resolve_test_config_path(suite_root, p) for p in test_config.get("additional_python_paths", [])]
+    additional_python_paths = [
+        _resolve_test_config_path(suite_root, p) for p in test_config.get("additional_python_paths", [])
+    ]
     for additional_python_path in additional_python_paths:
         sys.path.append(additional_python_path)
 

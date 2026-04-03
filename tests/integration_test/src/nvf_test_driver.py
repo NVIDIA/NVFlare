@@ -200,6 +200,8 @@ class NVFTestDriver:
 
     def get_job_result(self, job_id: str):
         download_location = self.super_admin_api.download_job_result(job_id)
+        if download_location is None:
+            raise NVFTestError(f"download_job_result returned no location for job {job_id}")
         workspace_root = download_location
         if os.path.basename(workspace_root) != "workspace":
             workspace_root = os.path.join(workspace_root, "workspace")
