@@ -41,10 +41,8 @@ and client and vice versa.  Filters can be applied when the data is sent or rece
 
 FLAdminAPI
 ==========
-:class:`FLAdminAPI<nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI>` is a wrapper for admin commands that can be issued
-by an admin client to the FL server. You can use a provisioned admin client's certs and keys to initialize an instance
-of FLAdminAPI to programmatically submit commands to the FL server. :ref:`flare_api` is a redesigned version of this introduced
-in version 2.3.0.
+FLAdminAPI was the legacy Python wrapper for issuing admin commands to the FL server. It has been removed from the
+current runtime and replaced by the :ref:`flare_api`.
 
 FLARE API
 =========

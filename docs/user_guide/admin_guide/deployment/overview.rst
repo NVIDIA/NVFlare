@@ -307,8 +307,8 @@ Running federated learning from the administration console
 ==========================================================
 With all connections between the FL server, FL clients, and administration consoles open and all of the parties
 started successfully as described in the preceding section, `Federated Learning Administration Console`_,
-admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
-issue commands to operate the system so it can be run with a script.
+admin commands can be used to operate a federated learning project. The :ref:`flare_api` provides the supported Python
+interface for issuing these commands from scripts and notebooks.
 
 For a complete list of admin commands, see :ref:`operating_nvflare`.
 
@@ -347,7 +347,6 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
-
 
 
 
