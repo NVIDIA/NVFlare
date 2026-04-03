@@ -374,7 +374,12 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
     cert_builder = PrebuiltCertBuilder(rootca_path=rootca_path, cert_map=cert_map)
     static_builder = StaticFileBuilder(scheme=scheme)
     workspace_builder = WorkspaceBuilder()
-    all_builders = [workspace_builder, cert_builder, static_builder] + custom_builders
+    # Strip WorkspaceBuilder and StaticFileBuilder from YAML custom_builders — we always
+    # provide our own instances with the correct scheme/settings. Duplicates cause double
+    # finalize() calls and BUILD_FAILED errors.
+    _MANAGED_BUILDER_TYPES = (WorkspaceBuilder, StaticFileBuilder)
+    filtered_custom = [b for b in custom_builders if not isinstance(b, _MANAGED_BUILDER_TYPES)]
+    all_builders = [workspace_builder, cert_builder, static_builder] + filtered_custom
 
     provisioner = Provisioner(root_dir=workspace, builders=all_builders)
     ctx = provisioner.provision(project)

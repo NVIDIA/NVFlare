@@ -2293,6 +2293,48 @@ class TestYamlMode:
         handle_package(_make_args(force=True, **base_args))
         assert os.path.isdir(os.path.join(ws, "myproject", "prod_01", "hospital-1"))
 
+    # ------------------------------------------------------------------
+    # 16. YAML that already includes WorkspaceBuilder must not double-run finalize
+    # ------------------------------------------------------------------
+    def test_yaml_with_workspace_builder_does_not_fail(self, cert_env, tmp_path):
+        """If project.yaml already lists WorkspaceBuilder, the dedup filter must prevent
+        BUILD_FAILED from finalize() running twice."""
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt")
+
+        # Write a yaml that includes WorkspaceBuilder in the builders list (common in
+        # project.yaml files that were used with nvflare provision).
+        project_yaml = tmp_path / "project.yaml"
+        project_yaml.write_text(
+            "api_version: 3\n"
+            "name: myproject\n"
+            'description: ""\n'
+            "participants:\n"
+            "  - name: hospital-1\n"
+            "    type: client\n"
+            "    org: myorg\n"
+            "builders:\n"
+            "  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder\n"
+            "  - path: nvflare.lighter.impl.static_file.StaticFileBuilder\n"
+        )
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+        # Must not raise SystemExit (BUILD_FAILED)
+        handle_package(args)
+        assert os.path.isdir(os.path.join(ws, "myproject", "prod_00", "hospital-1"))
+
 
 # ---------------------------------------------------------------------------
 # TestKitTypeFromCert: -t derived from cert UNSTRUCTURED_NAME

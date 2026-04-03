@@ -104,50 +104,51 @@ def _run_package(name, cert, key, rootca, workspace):
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture()
+def provisioned(tmp_path):
+    """Run the full 4-step workflow and return a dict of kit_dir paths by participant name."""
+    ca_dir = str(tmp_path / "ca")
+    csr_dir = str(tmp_path / "csr")
+    signed_dir = str(tmp_path / "signed")
+    ws = str(tmp_path / "ws")
+
+    # Step 1 — cert init
+    handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
+
+    # Step 2 — cert csr for each participant (propose type in CSR)
+    for name, cert_type in _PARTICIPANTS:
+        handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
+
+    # Step 3 — cert sign for each participant (type read from CSR; no -t needed)
+    for name, _ in _PARTICIPANTS:
+        sign_out = os.path.join(signed_dir, name)
+        handle_cert_sign(
+            _ns(
+                csr_path=os.path.join(csr_dir, f"{name}.csr"),
+                ca_dir=ca_dir,
+                output_dir=sign_out,
+                cert_type=None,  # read from CSR
+            )
+        )
+
+    # Step 4 — nvflare package for each participant (kit type derived from signed cert)
+    kit_dirs = {}
+    for name, _ in _PARTICIPANTS:
+        sign_out = os.path.join(signed_dir, name)
+        result = _run_package(
+            name=name,
+            cert=os.path.join(sign_out, f"{name}.crt"),
+            key=os.path.join(csr_dir, f"{name}.key"),
+            rootca=os.path.join(sign_out, "rootCA.pem"),
+            workspace=ws,
+        )
+        kit_dirs[name] = result["output_dir"]
+
+    return kit_dirs
+
+
 class TestDistributedProvisioningWorkflow:
     """Full distributed provisioning workflow: cert init → csr → sign → package."""
-
-    @pytest.fixture()
-    def provisioned(self, tmp_path):
-        """Run the full 4-step workflow and return a dict of kit_dir paths by participant name."""
-        ca_dir = str(tmp_path / "ca")
-        csr_dir = str(tmp_path / "csr")
-        signed_dir = str(tmp_path / "signed")
-        ws = str(tmp_path / "ws")
-
-        # Step 1 — cert init
-        handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
-
-        # Step 2 — cert csr for each participant (propose type in CSR)
-        for name, cert_type in _PARTICIPANTS:
-            handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
-
-        # Step 3 — cert sign for each participant (type read from CSR; no -t needed)
-        for name, _ in _PARTICIPANTS:
-            sign_out = os.path.join(signed_dir, name)
-            handle_cert_sign(
-                _ns(
-                    csr_path=os.path.join(csr_dir, f"{name}.csr"),
-                    ca_dir=ca_dir,
-                    output_dir=sign_out,
-                    cert_type=None,  # read from CSR
-                )
-            )
-
-        # Step 4 — nvflare package for each participant (kit type derived from signed cert)
-        kit_dirs = {}
-        for name, _ in _PARTICIPANTS:
-            sign_out = os.path.join(signed_dir, name)
-            result = _run_package(
-                name=name,
-                cert=os.path.join(sign_out, f"{name}.crt"),
-                key=os.path.join(csr_dir, f"{name}.key"),
-                rootca=os.path.join(sign_out, "rootCA.pem"),
-                workspace=ws,
-            )
-            kit_dirs[name] = result["output_dir"]
-
-        return kit_dirs
 
     # ------------------------------------------------------------------
     # Step-level smoke tests (fail fast if a command itself breaks)

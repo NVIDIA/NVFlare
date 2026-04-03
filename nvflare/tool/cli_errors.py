@@ -92,7 +92,7 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
     ),
     "OUTPUT_DIR_EXISTS": (
         "Output directory already exists: {path}.",
-        "Use --force to overwrite, or choose a different output directory.",
+        "Use --force to package into a new prod_NN stage directory.",
     ),
     "AMBIGUOUS_KEY": (
         "Multiple *.key files found in {path}: {files}",
