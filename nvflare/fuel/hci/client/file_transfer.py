@@ -23,6 +23,7 @@ from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 
@@ -72,6 +73,7 @@ class FileTransferModule(CommandModule):
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir
+        self.logger = get_obj_logger(self)
 
         self.cmd_handlers = {
             ftd.PUSH_FOLDER_FQN: self.push_folder,
@@ -312,6 +314,8 @@ class FileTransferModule(CommandModule):
                 sign_folders(full_path, private_key, api.client_cert)
             except Exception as e:
                 return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to sign job folder: {e}"}
+        else:
+            self.logger.warning("job folder '%s' submitted without signing — no client key available", folder_name)
 
         # zip the data
         out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))

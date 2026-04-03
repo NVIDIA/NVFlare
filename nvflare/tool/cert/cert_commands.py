@@ -143,7 +143,7 @@ def handle_cert_init(args):
 
         _write_private_key(ca_key_path, pem_key)
 
-        created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        created_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         ca_meta = {
             "project": args.project,
             "created_at": created_at,
@@ -156,7 +156,7 @@ def handle_cert_init(args):
         output_error("OUTPUT_DIR_NOT_WRITABLE", message, hint, output_fmt)
 
     # 11. Compute valid_until for output
-    valid_until_dt = datetime.datetime.utcnow() + datetime.timedelta(days=3650)
+    valid_until_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=3650)
     valid_until_str = valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # 12. Output result
@@ -346,14 +346,15 @@ def _claim_serial(ca_json_path: str) -> int:
         def _lock(f):
             pass
 
-    with open(ca_json_path, "r+") as f:
+    with open(ca_json_path, "r") as f:
         _lock(f)
         meta = json.load(f)
-        serial = meta.get("next_serial", 2)
-        meta["next_serial"] = serial + 1
-        f.seek(0)
-        f.truncate()
+    serial = meta.get("next_serial", 2)
+    meta["next_serial"] = serial + 1
+    tmp_path = ca_json_path + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(meta, f, indent=2)
+    os.replace(tmp_path, ca_json_path)
     return serial
 
 
@@ -370,7 +371,7 @@ def _build_signed_cert(
     The subject is rebuilt from safe CSR fields only; UNSTRUCTURED_NAME (role) is always
     set from cert_type (the Project Admin's authoritative -t argument), never from the CSR.
     """
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     subject_cn = _get_cn(csr.subject)
 
     _ADMIN_ROLES = {"org_admin", "lead", "member"}
@@ -479,12 +480,13 @@ def handle_cert_sign(args):
         args.force = True
 
     # 4. Validate CSR file exists
+
     csr_path = args.csr_path
     if not os.path.exists(csr_path):
         message, hint = get_error("CSR_NOT_FOUND", path=csr_path)
         output_error("CSR_NOT_FOUND", message, hint, output_fmt)
 
-    # 4. Validate CA dir
+    # 5. Validate CA dir
     ca_dir = args.ca_dir
     ca_key_path = os.path.join(ca_dir, "rootCA.key")
     ca_cert_path = os.path.join(ca_dir, "rootCA.pem")
@@ -494,7 +496,7 @@ def handle_cert_sign(args):
             message, hint = get_error("CA_NOT_FOUND", ca_dir=ca_dir)
             output_error("CA_NOT_FOUND", message, hint, output_fmt)
 
-    # 5. Load and validate CSR
+    # 6. Load and validate CSR
     with open(csr_path, "rb") as f:
         csr_data = f.read()
     try:
@@ -507,7 +509,7 @@ def handle_cert_sign(args):
         message, hint = get_error("INVALID_CSR", path=csr_path)
         output_error("INVALID_CSR", message, hint, output_fmt)
 
-    # 6. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
+    # 7. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
     _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
     cert_type = getattr(args, "cert_type", None)
     if not cert_type:
@@ -528,7 +530,7 @@ def handle_cert_sign(args):
         output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
     output_filename = f"{subject_cn}.crt"
 
-    # 7. Resolve output paths; check for existing cert
+    # 8. Resolve output paths; check for existing cert
     output_dir = os.path.abspath(args.output_dir)
     try:
         os.makedirs(output_dir, exist_ok=True)
@@ -547,7 +549,7 @@ def handle_cert_sign(args):
         message, hint = get_error("CERT_ALREADY_EXISTS", path=cert_out_path)
         output_error("CERT_ALREADY_EXISTS", message, hint, output_fmt)
 
-    # 8. Load CA material
+    # 9. Load CA material
     try:
         ca_cert = load_crt(ca_cert_path)
         ca_key = load_private_key_file(ca_key_path)
@@ -555,10 +557,10 @@ def handle_cert_sign(args):
         message, hint = get_error("CA_NOT_FOUND", ca_dir=ca_dir)
         output_error("CA_NOT_FOUND", message, hint, output_fmt)
 
-    # 9. Atomically claim serial from ca.json (read + increment under exclusive lock)
+    # 10. Atomically claim serial from ca.json (read + increment under exclusive lock)
     audit_serial = _claim_serial(ca_json_path)
 
-    # 10. Build and sign the certificate
+    # 11. Build and sign the certificate
     valid_days = getattr(args, "valid_days", 1095) or 1095
     try:
         signed_cert = _build_signed_cert(
@@ -573,12 +575,12 @@ def handle_cert_sign(args):
         message, hint = get_error("CERT_SIGNING_FAILED", reason=str(e))
         output_error("CERT_SIGNING_FAILED", message, hint, output_fmt)
 
-    # 11. Write signed cert and copy rootCA.pem
+    # 12. Write signed cert and copy rootCA.pem
     with open(cert_out_path, "wb") as f:
         f.write(serialize_cert(signed_cert))
     shutil.copy2(ca_cert_path, rootca_out_path)
 
-    # 12. Compute valid_until for output
+    # 13. Compute valid_until for output
     try:
         _valid_until_dt = signed_cert.not_valid_after_utc
     except AttributeError:
@@ -586,6 +588,7 @@ def handle_cert_sign(args):
     valid_until = _valid_until_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # 14. Output result
+
     next_step = (
         f"Send {output_filename} and rootCA.pem to the site admin.\n"
         f"They place those files in the same directory as their {subject_cn}.key, then run:\n"

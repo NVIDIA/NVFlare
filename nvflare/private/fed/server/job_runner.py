@@ -82,10 +82,6 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
     return client_sites_names
 
 
-def _require_signed_jobs(workspace) -> bool:
-    return require_signed_jobs(workspace)
-
-
 class JobRunner(FLComponent):
     def __init__(self, workspace_root: str) -> None:
         super().__init__()
@@ -175,7 +171,7 @@ class JobRunner(FLComponent):
                                 err = "job signature verification failed"
                                 deploy_detail.append(f"server: {err}")
                                 raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
-                        elif _require_signed_jobs(workspace):
+                        elif require_signed_jobs(workspace):
                             err = "unsigned job rejected — require_signed_jobs is enabled"
                             deploy_detail.append(f"server: {err}")
                             raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")

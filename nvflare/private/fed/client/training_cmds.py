@@ -114,6 +114,10 @@ class DeployProcessor(RequestProcessor):
                     return error_reply(f"app {app_name} does not pass signature verification")
             # No elif on the client: require_signed_jobs is a server-side policy.
             # The server already rejected unsigned jobs before deploying to clients.
+            # Accepted trust boundary: in a compromised-server scenario a malicious
+            # unsigned job could reach the client, but at that point the server itself
+            # is untrusted. Defense-in-depth here would require the client to independently
+            # know the policy, which is not part of the current threat model.
 
         err = engine.deploy_app(
             app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body

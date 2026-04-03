@@ -293,7 +293,7 @@ class TestClientKitAssembly:
         assert os.path.isdir(os.path.join(ws, "myproject", "prod_00", "site-1"))
         assert os.path.isdir(os.path.join(ws, "myproject", "prod_01", "site-2"))
 
-    def test_default_workspace_name(self, cert_env, tmp_path):
+    def test_default_workspace_name(self, cert_env, tmp_path, monkeypatch):
         """If workspace is None, defaults to 'workspace' in cwd."""
         work = tmp_path / "work"
         work.mkdir()
@@ -304,22 +304,18 @@ class TestClientKitAssembly:
         key_path, cert_path = _make_signed_cert(
             ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt", role="client"
         )
-        old_cwd = os.getcwd()
-        os.chdir(str(tmp_path))
-        try:
-            args = _make_args(
-                kit_type="client",
-                name="hospital-1",
-                endpoint="grpc://server.example.com:8002",
-                cert=cert_path,
-                key=key_path,
-                rootca=rootca,
-                workspace=None,  # not set → defaults to "workspace"
-            )
-            handle_package(args)
-            assert os.path.isdir(os.path.join("workspace", "testproject", "prod_00", "hospital-1"))
-        finally:
-            os.chdir(old_cwd)
+        monkeypatch.chdir(str(tmp_path))
+        args = _make_args(
+            kit_type="client",
+            name="hospital-1",
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=None,  # not set → defaults to "workspace"
+        )
+        handle_package(args)
+        assert os.path.isdir(os.path.join("workspace", "testproject", "prod_00", "hospital-1"))
 
     def test_key_permissions(self, cert_env, tmp_path):
         work = tmp_path / "work"
@@ -1341,17 +1337,6 @@ class TestCertExpired:
         )
 
         past = datetime.datetime(2000, 1, 1, tzinfo=datetime.timezone.utc)
-
-        real_cert_obj = None
-
-        def _mock_load_crt(path):
-            import nvflare.lighter.utils as lu
-
-            real = lu._load_crt_impl(path)  # use real loader, then wrap
-            return real
-
-        # Patch cert.not_valid_after_utc to return a past date on the participant cert
-        original_load_crt = None
 
         import nvflare.lighter.utils as lighter_utils
 

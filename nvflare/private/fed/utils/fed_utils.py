@@ -78,8 +78,10 @@ def require_signed_jobs(workspace: Workspace) -> bool:
                 value = bool(cfg["require_signed_jobs"])
                 logger.debug("require_signed_jobs=%s (explicit config)", value)
                 return value
-        except Exception:
-            pass  # fall through to rootCA.pem heuristic
+        except Exception as e:
+            logger.warning(
+                "failed to parse fed_server.json for require_signed_jobs: %s — falling back to rootCA.pem heuristic", e
+            )
 
     root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
     value = os.path.exists(root_ca_path)
