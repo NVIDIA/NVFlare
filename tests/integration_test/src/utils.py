@@ -64,8 +64,10 @@ def run_provision_command(project_yaml: str, workspace: str):
 
 def run_command_in_subprocess(command, stdin_data=None):
     new_env = os.environ.copy()
-    python_path = ":".join(sys.path)[1:]  # strip leading colon
+    python_path = os.pathsep.join(p for p in sys.path if p)
     new_env["PYTHONPATH"] = python_path
+    python_bin_dir = os.path.dirname(sys.executable)
+    new_env["PATH"] = os.pathsep.join([python_bin_dir, new_env.get("PATH", "")])
     tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
     process = subprocess.Popen(
         tokens,

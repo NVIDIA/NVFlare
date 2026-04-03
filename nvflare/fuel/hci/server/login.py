@@ -26,6 +26,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
+from nvflare.security.study_registry import StudyRegistryService
 
 from .reg import CommandFilter
 from .sess import Session, SessionManager
@@ -110,6 +111,18 @@ class LoginModule(CommandModule, CommandFilter):
         if invalid:
             conn.append_string("REJECT")
             return
+
+        registry = StudyRegistryService.get_registry()
+        if study != DEFAULT_STUDY:
+            if not registry:
+                conn.append_string("REJECT")
+                return
+            if not registry.has_study(study):
+                conn.append_string("REJECT")
+                return
+            if not registry.get_role(user_name, study):
+                conn.append_string("REJECT")
+                return
 
         cert_dict = cert_to_dict(cert)
         self.logger.debug(f"got cert dict: {cert_dict}")

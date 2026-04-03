@@ -190,6 +190,11 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, authz_section_key, ProvFileName.AUTHORIZATION_JSON_DEFAULT, exe=False)
 
+        studies = project.get_prop("studies")
+        if studies:
+            os.makedirs(dest_dir, exist_ok=True)
+            utils.write(os.path.join(dest_dir, "study_registry.json"), json.dumps(studies, indent=2), mode="t")
+
         # workspace folder file
         dest_dir = ctx.get_ws_dir(server)
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
