@@ -96,7 +96,9 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
     ),
     "AMBIGUOUS_KEY": (
         "Multiple *.key files found in {path}: {files}",
-        "Specify the participant name with -n, or use --key explicitly.",
+        "--dir mode packages one participant at a time. "
+        "Use -n to select one, use --key/--cert explicitly, "
+        "or use --project-file to package all participants in one command.",
     ),
     "UNSIGNED_JOB_REJECTED": (
         "Unsigned job rejected — require_signed_jobs is enabled.",
