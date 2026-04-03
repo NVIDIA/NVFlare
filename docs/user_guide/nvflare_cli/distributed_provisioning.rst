@@ -28,9 +28,9 @@ The resulting startup kits are structurally identical to those produced by
    Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
    is generated. The ``require_signed_jobs`` policy is always enabled on the server.
 
-************************************
+****************************************
 Centralized vs. Distributed at a Glance
-************************************
+****************************************
 
 +---------------------------------------+---------------------------------------+---------------------------------------+
 |                                       | **Centralized** (``nvflare provision``)| **Distributed** (Manual Workflow)     |
