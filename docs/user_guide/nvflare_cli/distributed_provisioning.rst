@@ -32,35 +32,43 @@ The resulting startup kits are structurally identical to those produced by
 Centralized vs. Distributed at a Glance
 ****************************************
 
-+---------------------------------------+---------------------------------------+---------------------------------------+
-|                                       | **Centralized** (``nvflare provision``)| **Distributed** (Manual Workflow)     |
-+=======================================+=======================================+=======================================+
-| **Private key custody**               | Project Admin generates and           | Each site generates locally;          |
-|                                       | distributes                           | key never leaves the machine          |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Data distributed to site**          | Full startup kit (keys, certs,        | Signed cert + ``rootCA.pem`` +        |
-|                                       | config, scripts)                      | server URI (~a few KB)                |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Data sent from site**               | Nothing                               | CSR (~1 KB, public key only)          |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Steps for Project Admin**           | One command provisions all sites      | Sign one CSR per participant          |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Steps for Site Admin**              | Unzip and run                         | Generate CSR → send → receive cert    |
-|                                       |                                       | → package → run                       |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Participant info required upfront** | All participants before any kit       | Each participant joins independently, |
-|                                       | is generated                          | on demand                             |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Adding a new site**                 | Dynamic provisioning (sign new cert   | Same workflow; no impact on existing  |
-|                                       | with existing root CA)                | sites                                 |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **CC deployments**                    | Supported                             | Not supported                         |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **HE deployments**                    | Supported                             | Not supported (future)                |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **Trust required in Project Admin**   | Must trust Project Admin with your    | Project Admin never sees private keys |
-|                                       | private key                           |                                       |
-+---------------------------------------+---------------------------------------+---------------------------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * -
+     - Centralized (``nvflare provision``)
+     - Distributed (Manual Workflow)
+   * - **Private key custody**
+     - Project Admin generates and distributes
+     - Each site generates locally; key never leaves the machine
+   * - **Data distributed to site**
+     - Full startup kit (keys, certs, config, scripts)
+     - Signed cert + ``rootCA.pem`` + server URI (~a few KB)
+   * - **Data sent from site**
+     - Nothing
+     - CSR (~1 KB, public key only)
+   * - **Steps for Project Admin**
+     - One command provisions all sites
+     - Sign one CSR per participant
+   * - **Steps for Site Admin**
+     - Unzip and run
+     - Generate CSR → send → receive cert → package → run
+   * - **Participant info required upfront**
+     - All participants before any kit is generated
+     - Each participant joins independently, on demand
+   * - **Adding a new site**
+     - Dynamic provisioning (sign new cert with existing root CA)
+     - Same workflow; no impact on existing sites
+   * - **CC deployments**
+     - Supported
+     - Not supported
+   * - **HE deployments**
+     - Supported
+     - Not supported (future)
+   * - **Trust required in Project Admin**
+     - Must trust Project Admin with your private key
+     - Project Admin never sees private keys
 
 *****
 Roles
