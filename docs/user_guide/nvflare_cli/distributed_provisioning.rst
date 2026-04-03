@@ -195,34 +195,20 @@ Each site runs ``nvflare package`` to assemble a startup kit from:
 - The signed certificate (received in Step 5)
 - ``rootCA.pem`` (received in Step 5)
 
-**Basic mode**:
+**Using** ``--dir`` **(recommended)**:
 
-.. code-block:: bash
-
-   nvflare package \
-     -n hospital-1 \
-     -t client \
-     -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/hospital-1.crt \
-     --key  ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem
-
-The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
-supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
-used for mTLS validation is derived from the hostname in the endpoint.
-
-**Auto-discovery mode** (when all files are in one directory):
-
-Place the key, certificate, and ``rootCA.pem`` in the same directory and use ``--dir``:
+Place the key, certificate, and ``rootCA.pem`` in the same directory. The participant
+name is auto-detected from the ``.key`` filename:
 
 .. code-block:: bash
 
    nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1-kit
 
-The ``--dir`` option discovers the ``.key`` file automatically and sets the
-participant name from its filename stem.
+The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
+supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
+used for mTLS validation is derived from the hostname in the endpoint.
 
-**Multi-participant mode** (``-p`` / ``--project-file``):
+**Multi-participant mode** (``--project-file``):
 
 When a site needs kits for multiple participants (e.g. a client process plus one or
 more admin users), use a site-scoped project YAML. All participants land in the same
@@ -250,6 +236,18 @@ A minimal ``site.yaml``:
        type: admin
        org: hospital
        role: lead
+
+**Explicit mode** (when files are in different locations):
+
+.. code-block:: bash
+
+   nvflare package \
+     -n hospital-1 \
+     -t client \
+     -e grpc://fl-server:8002 \
+     --cert ./signed/hospital-1/hospital-1.crt \
+     --key  ./csr/hospital-1.key \
+     --rootca ./signed/hospital-1/rootCA.pem
 
 Step 7 — Start the Federation
 ==============================
@@ -298,11 +296,8 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/fl-server.csr to Project Admin
 
-   # 6. Assemble startup kit (after receiving signed/fl-server/ from Project Admin)
-   nvflare package -n fl-server -t server -e grpc://fl-server:8002 \
-     --cert ./signed/fl-server/fl-server.crt \
-     --key  ./csr/fl-server.key \
-     --rootca ./signed/fl-server/rootCA.pem
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key), then:
+   nvflare package -t server -e grpc://fl-server:8002 --dir ./csr
    # Output kit is written to workspace/project/prod_00/fl-server/
 
    # 7. Start
@@ -317,11 +312,8 @@ This example sets up a federation with one server (``fl-server``) and one client
 
    # 3. Send ./csr/hospital-1.csr to Project Admin
 
-   # 6. Assemble startup kit (after receiving signed/hospital-1/ from Project Admin)
-   nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 \
-     --cert ./signed/hospital-1/hospital-1.crt \
-     --key  ./csr/hospital-1.key \
-     --rootca ./signed/hospital-1/rootCA.pem
+   # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key), then:
+   nvflare package -t client -e grpc://fl-server:8002 --dir ./csr
    # Output kit is written to workspace/project/prod_00/hospital-1/
 
    # 7. Start
