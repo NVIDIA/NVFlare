@@ -34,7 +34,7 @@ class StudyRegistry:
         return self._sites.get(study)
 
     def has_study(self, study: str) -> bool:
-        return study in self._roles or study in self._sites
+        return study in self._roles
 
 
 class StudyRegistryService:

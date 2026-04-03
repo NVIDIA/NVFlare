@@ -202,7 +202,23 @@ def test_validate_command_targets_errors_when_named_clients_are_outside_study(mo
 
     err = CommandUtil().validate_command_targets(conn, ["client", "site-b"])
 
-    assert err == "no enrolled clients for this study"
+    assert err == "site 'site-b' is not enrolled in study 'cancer-research'"
+
+
+def test_validate_command_targets_keeps_default_sessions_unfiltered_with_registry(monkeypatch):
+    _install_registry(monkeypatch, _FakeStudyRegistry(studies={"cancer-research": {"site-a"}}))
+
+    conn = _FakeConnection(
+        props={ConnProps.ACTIVE_STUDY: DEFAULT_STUDY},
+        app_ctx=_FakeEngine([_FakeClient("site-a", "token-a"), _FakeClient("site-b", "token-b")]),
+    )
+
+    err = CommandUtil().validate_command_targets(conn, ["client", "site-a", "site-b"])
+
+    assert err == ""
+    assert conn.get_prop(CommandUtil.TARGET_CLIENT_NAMES) == ["site-a", "site-b"]
+    assert conn.get_prop(CommandUtil.TARGET_CLIENT_TOKENS) == ["token-a", "token-b"]
+    assert conn.get_prop(CommandUtil.TARGET_CLIENTS) == {"token-a": "site-a", "token-b": "site-b"}
 
 
 def test_validate_command_targets_silently_narrows_all_targets_to_study(monkeypatch):

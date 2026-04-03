@@ -159,13 +159,20 @@ class CommandUtil(object):
             return ""
 
         study = conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY)
+        if study == DEFAULT_STUDY:
+            return ""
+
         enrolled_sites = registry.get_sites(study)
         if enrolled_sites is None:
             return ""
 
         filtered_clients = {token: name for token, name in all_clients.items() if name in enrolled_sites}
         if target_type == self.TARGET_TYPE_CLIENT and not filtered_clients:
-            return "no enrolled clients for this study"
+            unenrolled_clients = [name for name in client_names if name not in enrolled_sites]
+            if len(unenrolled_clients) == 1:
+                return f"site '{unenrolled_clients[0]}' is not enrolled in study '{study}'"
+            quoted_names = ", ".join(f"'{name}'" for name in unenrolled_clients)
+            return f"sites {quoted_names} are not enrolled in study '{study}'"
 
         conn.set_prop(self.TARGET_CLIENT_TOKENS, list(filtered_clients.keys()))
         conn.set_prop(self.TARGET_CLIENT_NAMES, list(filtered_clients.values()))
