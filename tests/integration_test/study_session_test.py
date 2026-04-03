@@ -15,7 +15,7 @@
 """End-to-end multi-study security coverage.
 
 Single-tenant deployment (`api_version: 4`, no `studies:`):
-- default login succeeds and default jobs can be submitted through FLAdminAPI
+- default login succeeds and default jobs can be submitted through the FLARE API session
 - non-default study login is rejected through Flare API
 - `fl_admin.sh` without `--study` creates default-scoped jobs
 - legacy jobs with no stored study normalize to `default`
@@ -338,14 +338,12 @@ class TestSingleTenantStudySessionIntegration:
     def test_fladminapi_submit_defaults_study_and_list_jobs_exposes_it(self, single_tenant_system):
         admin_api = single_tenant_system["old_admin_api"]
 
-        response = admin_api.submit_job(JOB_NAME)
-        assert response["status"] == "SUCCESS"
-        job_id = response["details"]["job_id"]
+        job_id = admin_api.submit_job(JOB_DIR)
 
         meta = _wait_for_job_meta(admin_api, job_id)
         assert meta[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
-        jobs = admin_api.list_jobs()["details"]
+        jobs = admin_api.list_jobs()
         listed_job = _find_job(jobs, job_id)
         assert listed_job[JobMetaKey.STUDY.value] == DEFAULT_STUDY
 
