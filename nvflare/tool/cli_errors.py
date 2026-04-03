@@ -117,8 +117,8 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
         "Check that the cryptography package is installed and up-to-date.",
     ),
     "CERT_TYPE_UNKNOWN": (
-        "Cannot determine certificate type for '{cert}'.",
-        "The cert type is read from the CSR by 'nvflare cert sign'. Use 'nvflare cert sign -t <type>' to override it.",
+        "Unknown certificate type in '{cert}': the type embedded by 'nvflare cert sign' is missing or unrecognized.",
+        "Re-sign the CSR with 'nvflare cert sign -t <type>' to embed the correct type (client, server, lead, org_admin, or member).",
     ),
     "CERT_SIGNING_FAILED": (
         "Certificate signing failed: {reason}",
