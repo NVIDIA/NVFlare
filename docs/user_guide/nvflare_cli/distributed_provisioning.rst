@@ -28,6 +28,33 @@ The resulting startup kits are structurally identical to those produced by
    Distributed provisioning uses mTLS as the sole trust anchor. No ``signature.json``
    is generated. The ``require_signed_jobs`` policy is always enabled on the server.
 
+************************************
+Centralized vs. Distributed at a Glance
+************************************
+
++---------------------------------------+---------------------------------------+---------------------------------------+
+|                                       | **Centralized** (``nvflare provision``)| **Distributed** (Manual Workflow)     |
++=======================================+=======================================+=======================================+
+| **Private key custody**               | Project Admin generates and           | Each site generates locally;          |
+|                                       | distributes                           | key never leaves the machine          |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Data sent from Project Admin**      | Full startup kit (keys, certs,        | Signed cert + ``rootCA.pem`` (~KB)    |
+|                                       | config, scripts)                      |                                       |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Data sent from site**               | Nothing                               | CSR (~1 KB, public key only)          |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Participant info required upfront** | All participants before any kit       | Each participant joins independently, |
+|                                       | is generated                          | on demand                             |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Adding a new site**                 | Dynamic provisioning (sign new cert   | Same workflow; no impact on existing  |
+|                                       | with existing root CA)                | sites                                 |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Trust required in Project Admin**   | Must trust Project Admin with your    | Project Admin never sees private keys |
+|                                       | private key                           |                                       |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **CC / HE deployments**               | Supported                             | Not supported                         |
++---------------------------------------+---------------------------------------+---------------------------------------+
+
 *****
 Roles
 *****
@@ -79,6 +106,27 @@ Sites may customize ``local/authorization.json.default`` to tighten or loosen th
 default policy. ``lead`` is the intended role for users who run FL experiments.
 ``project_admin`` is not a ``-t`` choice — the Project Admin self-provisions via
 ``nvflare cert init``.
+
+**Default authorization policy** enforced at runtime against
+``local/authorization.json.default`` on each site:
+
++------------------------------------------+------------------+------------------+------------------+
+| Permission                               | ``lead``         | ``org_admin``    | ``member``       |
++==========================================+==================+==================+==================+
+| ``submit_job``                           | Any site         | —                | —                |
++------------------------------------------+------------------+------------------+------------------+
+| ``clone_job``                            | Own jobs         | —                | —                |
++------------------------------------------+------------------+------------------+------------------+
+| ``manage_job`` (abort / delete)          | Own jobs         | Jobs from own org| —                |
++------------------------------------------+------------------+------------------+------------------+
+| ``download_job``                         | Own jobs         | Jobs from own org| —                |
++------------------------------------------+------------------+------------------+------------------+
+| ``view``                                 | Any              | Any              | Any              |
++------------------------------------------+------------------+------------------+------------------+
+| ``operate`` (start / stop site)          | Own site         | Own site         | —                |
++------------------------------------------+------------------+------------------+------------------+
+| ``byoc`` (custom code)                   | Any              | —                | —                |
++------------------------------------------+------------------+------------------+------------------+
 
 *****
 Steps
