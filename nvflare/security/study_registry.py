@@ -24,9 +24,7 @@ class StudyRegistry:
 
         format_version = studies_config.get("format_version")
         if format_version != self.FORMAT_VERSION:
-            raise ValueError(
-                f"missing or invalid study registry format_version: must be {self.FORMAT_VERSION}"
-            )
+            raise ValueError(f"missing or invalid study registry format_version: must be {self.FORMAT_VERSION}")
 
         studies = studies_config.get("studies")
         if not isinstance(studies, dict):
