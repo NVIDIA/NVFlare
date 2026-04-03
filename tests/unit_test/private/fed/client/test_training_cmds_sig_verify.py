@@ -244,9 +244,7 @@ class TestUnsignedJob:
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
-        with patch(
-            "nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True
-        ) as mock_vfs:
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True) as mock_vfs:
             _run_process(req, engine, str(tmp_path))
 
         mock_vfs.assert_not_called()
@@ -268,9 +266,7 @@ class TestFromHubSite:
         sig_file = tmp_path / ".__nvfl_sig.json"
         sig_file.write_text('{"sig": "doesnotmatter"}')
 
-        with patch(
-            "nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False
-        ) as mock_vfs:
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False) as mock_vfs:
             reply = _run_process(req, engine, str(tmp_path))
 
         mock_vfs.assert_not_called()

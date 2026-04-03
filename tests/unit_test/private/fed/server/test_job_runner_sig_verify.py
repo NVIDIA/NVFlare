@@ -185,7 +185,9 @@ class TestUnsignedJobPolicyOn:
 
         # Patch fl_ctx to track the detail list that _deploy_job writes to
         real_detail = []
-        fl_ctx.get_prop.side_effect = lambda key, *a, **kw: real_detail if key == FLContextKey.JOB_DEPLOY_DETAIL else None
+        fl_ctx.get_prop.side_effect = lambda key, *a, **kw: (
+            real_detail if key == FLContextKey.JOB_DEPLOY_DETAIL else None
+        )
         fl_ctx.set_prop.side_effect = lambda key, val, *a, **kw: real_detail.__class__  # no-op
 
         with pytest.raises(RuntimeError, match="UNSIGNED_JOB_REJECTED"):
@@ -300,9 +302,7 @@ class TestFromHubSiteBypass:
         )
 
         # Even if verify_folder_signature would return False, it should never be called
-        with patch(
-            "nvflare.private.fed.server.job_runner.verify_folder_signature", return_value=False
-        ) as mock_vfs:
+        with patch("nvflare.private.fed.server.job_runner.verify_folder_signature", return_value=False) as mock_vfs:
             job_id, failed = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
 
         mock_vfs.assert_not_called()

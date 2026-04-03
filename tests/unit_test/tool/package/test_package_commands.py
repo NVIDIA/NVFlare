@@ -2157,3 +2157,133 @@ class TestYamlMode:
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
         assert exc_info.value.code == 1
+
+    # ------------------------------------------------------------------
+    # 12. Empty participant list after filter → NO_PARTICIPANTS (exit 1)
+    # ------------------------------------------------------------------
+    def test_empty_participants_after_filter_exits(self, cert_env, tmp_path):
+        """yaml with only clients filtered by -t server → no participants → exit 1."""
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+
+        args = _make_args(
+            kit_type="server",  # filter that matches nothing
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_file=str(project_yaml),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+        assert exc_info.value.code == 1
+
+    # ------------------------------------------------------------------
+    # 13. Mixed types (client + admin user) all land in same prod_NN
+    # ------------------------------------------------------------------
+    def test_mixed_types_all_in_same_prod(self, cert_env, tmp_path):
+        """client + lead admin user kits must both appear in prod_00.
+
+        Note: server kits are only built when -t server is explicit; clients
+        and admin users are built together when no type filter is given.
+        """
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt")
+        _make_signed_cert(ca_key, ca_cert, "alice@hospital.com", str(cert_dir), "alice@hospital.com.crt")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(
+            project_yaml,
+            [
+                {"name": "hospital-1", "type": "client"},
+                {"name": "alice@hospital.com", "type": "admin", "role": "lead"},
+            ],
+        )
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+        handle_package(args)
+
+        prod_dir = os.path.join(ws, "myproject", "prod_00")
+        assert os.path.isdir(os.path.join(prod_dir, "hospital-1"))
+        assert os.path.isdir(os.path.join(prod_dir, "alice@hospital.com"))
+        assert not os.path.isdir(os.path.join(ws, "myproject", "prod_01"))
+
+    # ------------------------------------------------------------------
+    # 14. --project-name override is reflected in output path
+    # ------------------------------------------------------------------
+    def test_project_name_override_in_output_path(self, cert_env, tmp_path):
+        """--project-name sets the project directory in the workspace output path."""
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="custom-project",
+            project_file=str(project_yaml),
+        )
+        handle_package(args)
+
+        assert os.path.isdir(os.path.join(ws, "custom-project", "prod_00", "hospital-1"))
+        assert not os.path.isdir(os.path.join(ws, "myproject")), "yaml project name must not override --project-name"
+
+    # ------------------------------------------------------------------
+    # 15. --force creates new prod_NN when participant already exists
+    # ------------------------------------------------------------------
+    def test_force_creates_new_prod_dir(self, cert_env, tmp_path):
+        """Re-packaging with --force when prod_00 exists must create prod_01."""
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        shutil.copy2(cert_env["rootca_path"], str(cert_dir / "rootCA.pem"))
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(cert_dir), "hospital-1.crt")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+
+        ws = str(tmp_path / "ws")
+        base_args = dict(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=ws,
+            project_name="myproject",
+            project_file=str(project_yaml),
+        )
+
+        # First run → prod_00
+        handle_package(_make_args(**base_args))
+        assert os.path.isdir(os.path.join(ws, "myproject", "prod_00", "hospital-1"))
+
+        # Second run with force=True → prod_01
+        handle_package(_make_args(force=True, **base_args))
+        assert os.path.isdir(os.path.join(ws, "myproject", "prod_01", "hospital-1"))
