@@ -141,7 +141,9 @@ def setup_and_teardown_system(request):
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
         test_driver = NVFTestDriver(
-            site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
+            site_launcher=site_launcher,
+            download_root_dir=download_root_dir,
+            poll_period=poll_period,
         )
         test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, super_user_name=super_user_name

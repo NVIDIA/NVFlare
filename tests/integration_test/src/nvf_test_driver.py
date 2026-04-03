@@ -279,11 +279,17 @@ class NVFTestDriver:
 
     def _get_job_log(self, target: str, job_id: str):
         job_log_file = os.path.join(job_id, "log.txt")
-        logs = self.super_admin_api.cat_target(target, file=job_log_file)["details"]["message"].splitlines()
+        response = self.super_admin_api.cat_target(target, file=job_log_file)
+        if response["status"] != APIStatus.SUCCESS:
+            raise NVFTestError(f"Failed to read job log for target '{target}': {response['details']['message']}")
+        logs = response["details"]["message"].splitlines()
         return logs
 
     def _get_site_log(self, target: str):
-        logs = self.super_admin_api.cat_target(target, file="log.txt")["details"]["message"].splitlines()
+        response = self.super_admin_api.cat_target(target, file="log.txt")
+        if response["status"] != APIStatus.SUCCESS:
+            raise NVFTestError(f"Failed to read site log for target '{target}': {response['details']['message']}")
+        logs = response["details"]["message"].splitlines()
         return logs
 
     def _print_state(self, state: dict, length: int = 30):
@@ -317,7 +323,6 @@ class NVFTestDriver:
 
         self.test_done = False
         while not self.test_done:
-
             run_state = self._get_run_state(run_state)
 
             if event_idx < len(event_sequence):
