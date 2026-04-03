@@ -195,25 +195,10 @@ Each site runs ``nvflare package`` to assemble a startup kit from:
 - The signed certificate (received in Step 5)
 - ``rootCA.pem`` (received in Step 5)
 
-**Using** ``--dir`` **(recommended)**:
+**Using** ``--project-file``:
 
-Place the key, certificate, and ``rootCA.pem`` in the same directory. The participant
-name is auto-detected from the ``.key`` filename:
-
-.. code-block:: bash
-
-   nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1-kit
-
-The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
-supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
-used for mTLS validation is derived from the hostname in the endpoint.
-
-**Multi-participant mode** (``--project-file``):
-
-When a site needs kits for multiple participants (e.g. a client process plus one or
-more admin users), use a site-scoped project YAML. All participants land in the same
-``prod_NN`` directory in a single command.
-
+For users already familiar with ``nvflare provision`` project.yaml, those who need
+custom builders, or who prefer to describe all participants in a single file.
 Place all received certs and ``rootCA.pem`` in one directory (named by participant CN),
 then run:
 
@@ -236,6 +221,19 @@ A minimal ``site.yaml``:
        type: admin
        org: hospital
        role: lead
+
+**Using** ``--dir``:
+
+Place the key, certificate, and ``rootCA.pem`` in the same directory. The participant
+name is auto-detected from the ``.key`` filename:
+
+.. code-block:: bash
+
+   nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1-kit
+
+The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
+supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
+used for mTLS validation is derived from the hostname in the endpoint.
 
 **Explicit mode** (when files are in different locations):
 
