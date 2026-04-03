@@ -110,8 +110,9 @@ class PrebuiltCertBuilder(Builder):
                 key_dst = os.path.join(kit_dir, "client.key")
 
             shutil.copy2(cert_path, cert_dst)
-            shutil.copy2(key_path, key_dst)
-            os.chmod(key_dst, 0o600)
+            fd = os.open(key_dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as _kf, open(key_path, "rb") as _src:
+                _kf.write(_src.read())
 
             rootca_dst = os.path.join(kit_dir, "rootCA.pem")
             shutil.copy2(self.rootca_path, rootca_dst)
