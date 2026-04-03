@@ -254,6 +254,9 @@ def handle_cert_csr(args):
     if len(name) > 64:
         message, hint = get_error("INVALID_NAME", name=name, reason="Name must be 64 characters or fewer.")
         output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
+    if os.sep in name or (os.altsep and os.altsep in name) or name.startswith("."):
+        message, hint = get_error("INVALID_NAME", name=name, reason="Name must not contain path separators or start with '.'.")
+        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
 
     # 4. --output json implies --force
     force = args.force or (output_fmt == "json")
@@ -516,6 +519,9 @@ def handle_cert_sign(args):
         )
         output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
     subject_cn = _get_cn(csr.subject)
+    if os.sep in subject_cn or (os.altsep and os.altsep in subject_cn) or subject_cn.startswith("."):
+        message, hint = get_error("INVALID_NAME", name=subject_cn, reason="CSR subject CN must not contain path separators or start with '.'.")
+        output_error("INVALID_NAME", message, hint, output_fmt, exit_code=4)
     output_filename = f"{subject_cn}.crt"
 
     # 7. Resolve output paths; check for existing cert
