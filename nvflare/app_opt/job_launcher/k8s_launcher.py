@@ -339,6 +339,13 @@ class K8sJobLauncher(JobLauncherSpec):
         if not exe_module_entry:
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
+        # TODO: Make the K8s launcher study-aware with minimal code churn.
+        # The intended change is only to read the optional job_meta["study"]
+        # and use it to resolve study-specific Kubernetes settings before pod
+        # launch. That settings lookup may include workspace volume/path plus
+        # any other K8s deployment settings required for the selected study.
+        # Keep the existing launch flow unchanged; only the settings resolution
+        # should become study-aware.
         job_config = {
             "name": job_id,
             "image": job_image,
