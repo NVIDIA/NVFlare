@@ -24,11 +24,11 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import sphinx_rtd_theme
 import os
-import sys
-from sphinx.domains.python import PythonDomain
 import subprocess
+import sys
+
+from sphinx.domains.python import PythonDomain
 
 
 class PatchedPythonDomain(PythonDomain):
@@ -83,10 +83,12 @@ extensions = [
 ]
 
 if not _skip_api:
-    extensions.extend([
-        "sphinx.ext.autodoc",
-        "sphinx.ext.viewcode",
-    ])
+    extensions.extend(
+        [
+            "sphinx.ext.autodoc",
+            "sphinx.ext.viewcode",
+        ]
+    )
 
 autoclass_content = "both"
 add_module_names = False
