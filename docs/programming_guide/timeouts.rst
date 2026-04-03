@@ -2546,6 +2546,48 @@ application.conf Settings
    # Shutdown
    end_run_readiness_timeout = 10.0
 
+   # Server startup/dead-job safety flags
+   strict_start_job_reply_check = false
+   sync_client_jobs_require_previous_report = true
+
+
+.. _server_startup_dead_job_safety_flags:
+
+Server Startup and Dead-Job Safety Flags
+----------------------------------------
+
+These ``application.conf`` flags are server-side safety controls used during job startup
+and client heartbeat synchronization:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 36 12 52
+
+   * - Parameter
+     - Default
+     - Purpose
+   * - strict_start_job_reply_check
+     - false
+     - Enables strict START_JOB reply validation (detects missing/timeout replies and non-OK return codes).
+   * - sync_client_jobs_require_previous_report
+     - true
+     - Requires a prior positive heartbeat report before treating "missing job on client" as a dead-job signal.
+
+Recommended usage:
+
+- ``strict_start_job_reply_check`` defaults to ``false`` for backward compatibility.
+  In non-strict mode, timed-out clients are silently excluded from the active set and the
+  job continues — but ``min_sites`` / ``required_sites`` constraints are **not enforced**
+  for those timeouts, so startup problems can go undetected.
+  In strict mode, timeouts are detected and surfaced: ``required_sites`` and ``min_sites``
+  are then checked, and the job only continues (with a warning) if constraints are still
+  satisfied. Enable strict mode when you want timeouts to be visible and constraints to be
+  enforced at startup.
+- Keep ``sync_client_jobs_require_previous_report=true`` (default) to prevent false
+  dead-job reports during startup races and transient heartbeat delays.
+- Set ``sync_client_jobs_require_previous_report=false`` only to restore legacy behavior
+  where the first missing-job heartbeat immediately triggers dead-job detection.
+
 
 Admin Client Session (Python API)
 ---------------------------------
@@ -2603,9 +2645,9 @@ CCWF/Swarm Learning Configuration
 
 .. code-block:: python
 
-   from nvflare.app_common.ccwf.recipes.swarm import SimpleSwarmLearningRecipe
+   from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-   recipe = SimpleSwarmLearningRecipe(
+   recipe = SwarmLearningRecipe(
        min_clients=3,
        num_rounds=10,
        model=model,

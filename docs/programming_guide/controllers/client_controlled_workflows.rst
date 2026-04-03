@@ -519,6 +519,7 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
+        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
     )
 
     # Configure large model parameters if needed (server-side only)
@@ -557,6 +558,33 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
         server_config=server_config,
         client_config=client_config,
     )
+
+.. note::
+   When using ``BaseSwarmLearningRecipe`` with explicit ``SwarmClientConfig``, set
+   ``learn_task_ack_timeout`` and ``final_result_ack_timeout`` manually for large
+   models.  With ``SwarmLearningRecipe``, set ``round_timeout`` instead — it wires
+   both values for you.
+
+Client Dropout Tolerance (min_clients)
+---------------------------------------
+
+Setting ``min_clients`` allows the workflow to proceed if at least that many clients
+configure successfully — missing participants are logged as a warning rather than
+causing a job abort.
+
+.. code-block:: python
+
+    recipe = SwarmLearningRecipe(
+        name="swarm",
+        model=MyModel(),
+        min_clients=3,    # Workflow proceeds if >= 3 of the configured clients are ready;
+        num_rounds=10,    # remaining clients are logged as warnings
+        train_script="train.py",
+    )
+
+Setting ``min_clients=0`` means all configured clients are required (backward
+compatible behavior).  This is distinct from the job-scheduler ``min_clients`` parameter
+that controls the deployment phase.
 
 Using JSON Configuration (Advanced)
 -----------------------------------
@@ -1016,6 +1044,7 @@ Use ``SwarmLearningRecipe`` for swarm learning with optional cross-site evaluati
         train_script="train.py",
         do_cross_site_eval=True,
         cross_site_eval_timeout=300,
+        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
     )
 
     # Configure large model parameters if needed (server-side only)

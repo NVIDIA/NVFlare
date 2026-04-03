@@ -26,6 +26,7 @@ from typing import List, Optional
 import nvflare.fuel.f3.streaming.file_downloader as downloader
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
@@ -237,6 +238,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         debug: bool = False,
         auto_login_max_tries: int = 15,
         event_handlers=None,
+        study: str = DEFAULT_STUDY,
     ):
         """API to keep certs, keys and connection information and to execute admin commands through do_command.
 
@@ -291,6 +293,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
         self.authenticate_msg_timeout = admin_config.get(AdminConfigKey.AUTHENTICATE_MSG_TIMEOUT, 5.0)
         self.user_name = user_name
+        self.study = study
         self.event_handlers = event_handlers
 
         if not self.ca_cert:
@@ -662,6 +665,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             "user_name": self.user_name,
             "cert": id_asserter.cert_data,
             "signature": cn_signature,
+            "study": self.study,
         }
 
         self.login_result = None
@@ -827,8 +831,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         ctx.set_command_entry(ent)
         return ctx
 
-    def _do_client_command(self, command, args, ent: CommandEntry):
+    def _do_client_command(self, command, args, ent: CommandEntry, props=None):
         ctx = self._new_command_context(command, args, ent)
+        if props:
+            ctx.set_command_props(props)
         return_result = ent.handler(args, ctx)
         result = ctx.get_command_result()
         if return_result:
@@ -881,7 +887,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         ent = entries[0]
         if cmd_type == _CMD_TYPE_CLIENT:
-            return self._do_client_command(command=command, args=args, ent=ent)
+            return self._do_client_command(command=command, args=args, ent=ent, props=props)
 
         # server command
         if not self.server_sess_active:
