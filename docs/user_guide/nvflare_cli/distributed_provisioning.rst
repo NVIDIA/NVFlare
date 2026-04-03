@@ -37,7 +37,7 @@ Centralized vs. Distributed at a Glance
 +=============================+======================================+======================================+
 | Private key custody         | Admin generates/distributes keys     | Site generates key locally           |
 +-----------------------------+--------------------------------------+--------------------------------------+
-| Data distributed to site    | Full startup kit                     | Signed cert + ``rootCA.pem`` + URI   |
+| Data distributed to site    | Full startup kit                     | Signed cert + ``rootCA.pem``         |
 +-----------------------------+--------------------------------------+--------------------------------------+
 | Data sent from site         | Nothing                              | CSR (public key only)                |
 +-----------------------------+--------------------------------------+--------------------------------------+

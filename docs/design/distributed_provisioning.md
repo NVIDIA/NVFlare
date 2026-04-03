@@ -61,7 +61,7 @@ schema as `nvflare provision` project.yaml and supports custom builders.
 | | Centralized (`nvflare provision`) | Distributed (Manual Workflow) |
 |---|---|---|
 | **Private key custody** | Project Admin generates and distributes | Each site generates locally; never leaves the machine |
-| **Data distributed to site** | Full startup kit (keys, certs, config, scripts) | Signed cert + `rootCA.pem` + server URI (~a few KB) |
+| **Data distributed to site** | Full startup kit (keys, certs, config, scripts) | Signed cert + `rootCA.pem` (~a few KB) |
 | **Data sent from site** | Nothing | CSR (~1 KB, public key only) |
 | **Steps for Project Admin** | One command provisions all sites | Sign one CSR per participant |
 | **Steps for Site Admin** | Unzip and run | Generate CSR → send → receive cert → package → run |
