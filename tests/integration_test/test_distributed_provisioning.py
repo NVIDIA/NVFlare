@@ -296,6 +296,7 @@ class TestDistributedProvisioningWorkflow:
 
 _JOB_TIMEOUT = 300  # seconds to wait for FL job completion
 _STARTUP_WAIT = 5  # seconds to wait for server/clients to initialise
+_ADMIN_CONNECT_TIMEOUT = 60  # seconds to retry admin API connection before giving up
 
 
 def _kill_process_group(proc):
@@ -372,7 +373,9 @@ class TestDistributedProvisioningE2E:
             )
         time.sleep(_STARTUP_WAIT)
 
-        # Build admin API
+        # Build admin API — retry until the server is accepting connections.
+        # create_admin_api calls connect(10.0) which raises FLCommunicationError if the
+        # server is not yet ready; poll until success or _ADMIN_CONNECT_TIMEOUT is exceeded.
         upload_dir = str(tmp_path / "upload")
         download_dir = str(tmp_path / "download")
         os.makedirs(upload_dir, exist_ok=True)
@@ -380,12 +383,21 @@ class TestDistributedProvisioningE2E:
 
         from tests.integration_test.src.utils import create_admin_api
 
-        api = create_admin_api(
-            workspace_root_dir=os.path.dirname(provisioned["admin@myfl.com"]),
-            upload_root_dir=upload_dir,
-            download_root_dir=download_dir,
-            admin_user_name="admin@myfl.com",
-        )
+        api = None
+        deadline = time.time() + _ADMIN_CONNECT_TIMEOUT
+        while time.time() < deadline:
+            try:
+                api = create_admin_api(
+                    workspace_root_dir=os.path.dirname(provisioned["admin@myfl.com"]),
+                    upload_root_dir=upload_dir,
+                    download_root_dir=download_dir,
+                    admin_user_name="admin@myfl.com",
+                )
+                break
+            except Exception:
+                time.sleep(2)
+        if api is None:
+            pytest.fail(f"Admin API did not connect within {_ADMIN_CONNECT_TIMEOUT} s")
 
         yield api
 

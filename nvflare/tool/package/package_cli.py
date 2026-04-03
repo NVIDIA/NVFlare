@@ -112,9 +112,12 @@ def def_package_cli_parser(sub_cmd) -> dict:
         default=None,
         dest="project_file",
         help=(
-            "Site-scoped project YAML defining participants and builders "
+            "Site-scoped project YAML defining participants and optional custom builders "
             "(schema-compatible with 'nvflare provision' project.yaml). "
             "When given, -t becomes an optional type filter. "
+            "WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package "
+            "(scheme is derived from --endpoint); any YAML entries for these builders, "
+            "including custom args such as config_folder, are ignored. "
             "Mutually exclusive with -n and --cert/--key/--rootca. Use -e, --dir, and -p together."
         ),
     )

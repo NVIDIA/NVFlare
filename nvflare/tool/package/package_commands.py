@@ -374,10 +374,24 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
     cert_builder = PrebuiltCertBuilder(rootca_path=rootca_path, cert_map=cert_map)
     static_builder = StaticFileBuilder(scheme=scheme)
     workspace_builder = WorkspaceBuilder()
-    # Strip WorkspaceBuilder and StaticFileBuilder from YAML custom_builders — we always
-    # provide our own instances with the correct scheme/settings. Duplicates cause double
-    # finalize() calls and BUILD_FAILED errors.
+    # WorkspaceBuilder and StaticFileBuilder are always managed by nvflare package:
+    # StaticFileBuilder is constructed with the scheme derived from --endpoint, and
+    # WorkspaceBuilder is always default. Any YAML builder entries for these types are
+    # stripped to prevent double finalize() calls (BUILD_FAILED). Custom args such as
+    # config_folder or app_validator on YAML StaticFileBuilder entries are intentionally
+    # ignored — nvflare package enforces a fixed startup-kit layout.
     _MANAGED_BUILDER_TYPES = (WorkspaceBuilder, StaticFileBuilder)
+    for b in custom_builders:
+        if isinstance(b, _MANAGED_BUILDER_TYPES):
+            import warnings
+
+            warnings.warn(
+                f"{type(b).__name__} in project YAML builders is ignored by 'nvflare package'. "
+                "WorkspaceBuilder and StaticFileBuilder are always provided by nvflare package "
+                "with settings derived from --endpoint. Custom args (e.g. config_folder) have no effect.",
+                UserWarning,
+                stacklevel=2,
+            )
     filtered_custom = [b for b in custom_builders if not isinstance(b, _MANAGED_BUILDER_TYPES)]
     all_builders = [workspace_builder, cert_builder, static_builder] + filtered_custom
 

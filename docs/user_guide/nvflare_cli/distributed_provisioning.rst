@@ -297,6 +297,14 @@ Each site runs ``nvflare package`` to assemble a startup kit from:
 
 For users already familiar with ``nvflare provision`` project.yaml, those who need
 custom builders, or who prefer to describe all participants in a single file.
+
+.. note::
+
+   ``nvflare package`` always provides its own ``WorkspaceBuilder`` and
+   ``StaticFileBuilder`` (with the scheme derived from ``--endpoint``).
+   If your YAML ``builders:`` section lists either of these, those entries —
+   including any custom args such as ``config_folder`` — are silently ignored
+   and a warning is emitted. Custom third-party builders are passed through unchanged.
 Place all received certs and ``rootCA.pem`` in one directory (named by participant CN),
 then run:
 
