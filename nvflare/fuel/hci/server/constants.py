@@ -24,6 +24,7 @@ class ConnProps(object):
     USER_NAME = "_userName"
     USER_ORG = "_userOrg"
     USER_ROLE = "_userRole"
+    ACTIVE_STUDY = "_activeStudy"
     SUBMITTER_NAME = "_submitterName"
     SUBMITTER_ORG = "_submitterOrg"
     SUBMITTER_ROLE = "_submitterRole"
