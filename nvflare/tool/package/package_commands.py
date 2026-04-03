@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+from urllib.parse import urlparse
 
 from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
@@ -33,7 +34,7 @@ from nvflare.lighter.utils import load_crt, load_yaml, verify_cert
 from nvflare.tool.cli_errors import get_error
 from nvflare.tool.cli_output import output, output_error
 
-_ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp|http)://([^:/]+):(\d+)$")
+_VALID_SCHEMES = {"grpc", "tcp", "http"}
 _ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
 _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
 _KIT_TYPE_TO_ROLE = {
@@ -121,13 +122,12 @@ class PrebuiltCertBuilder(Builder):
 
 def _parse_endpoint(endpoint: str) -> tuple:
     """Return (scheme, host, port: int). Raises ValueError on invalid format."""
-    m = _ENDPOINT_PATTERN.match(endpoint)
-    if not m:
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in _VALID_SCHEMES or not parsed.hostname or not parsed.port:
         raise ValueError(f"Invalid endpoint URI: {endpoint!r}")
-    port = int(m.group(3))
-    if not (1 <= port <= 65535):
+    if not (1 <= parsed.port <= 65535):
         raise ValueError(f"Invalid endpoint URI: {endpoint!r} — port must be 1–65535")
-    return m.group(1), m.group(2), port
+    return parsed.scheme, parsed.hostname, parsed.port
 
 
 def _discover_name_from_dir(work_dir: str, fmt) -> str:
