@@ -23,7 +23,7 @@ The Manual Workflow eliminates both problems without requiring new infrastructur
 Each site generates its own private key locally. The only things exchanged are:
 
 - **Site → Project Admin**: a Certificate Signing Request (CSR) — public key only
-- **Project Admin → Site**: signed certificate + `rootCA.pem` + server URI
+- **Project Admin → Site**: signed certificate + `rootCA.pem`
 
 The resulting startup kits are structurally identical to those produced by
 `nvflare provision` and are fully compatible with all FLARE runtime components.
@@ -36,7 +36,7 @@ The resulting startup kits are structurally identical to those produced by
 | 2 | Site Admin | Send `hospital-1.csr` to Project Admin (email, file share, etc.) |
 | 3 | Project Admin | `nvflare cert init --project my-project -o ./ca` *(one-time per federation)* |
 | 4 | Project Admin | `nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1` |
-| 5 | Project Admin | Return `hospital-1.crt` + `rootCA.pem` + server URI to site |
+| 5 | Project Admin | Return `hospital-1.crt` + `rootCA.pem` to site |
 | 6 | Site Admin | `nvflare package -e grpc://server:8002 --dir ./csr` *(type derived from signed cert)* |
 | 7 | Site Admin | `cd hospital-1 && ./startup/start.sh` |
 
