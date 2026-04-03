@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 
+from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.constants import AdminRole, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.entity import Project
 from nvflare.lighter.impl.static_file import StaticFileBuilder
@@ -33,7 +34,6 @@ from nvflare.tool.cli_errors import get_error
 from nvflare.tool.cli_output import output, output_error
 
 _ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp|http)://([^:/]+):(\d+)$")
-_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
 _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
 _KIT_TYPE_TO_ROLE = {
@@ -607,19 +607,16 @@ def handle_package(args):
         msg, hint = get_error("CERT_EXPIRED", cert=args.cert, expiry=expiry.isoformat())
         output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
 
-    # Step 8b: Derive kit_type from cert's UNSTRUCTURED_NAME when -t was not given.
-    # The cert's embedded type (set by 'nvflare cert sign -t') is the authoritative source.
-    # -t/--type acts as an explicit override (e.g. for certs produced without UNSTRUCTURED_NAME).
-    kit_type = getattr(args, "kit_type", None)
-    if not kit_type:
-        kit_type = _read_cert_type_from_cert(cert)
+    # Step 8b: Derive kit_type from cert's UNSTRUCTURED_NAME.
+    # The signed cert's embedded type is the sole authoritative source.
+    kit_type = _read_cert_type_from_cert(cert)
     if not kit_type or kit_type not in _VALID_CERT_TYPES:
         msg, hint = get_error("CERT_TYPE_UNKNOWN", cert=args.cert)
         output_error("CERT_TYPE_UNKNOWN", msg, hint, fmt, exit_code=1)
     args.kit_type = kit_type
 
     # Step 8c: Type-dependent pre-flight checks (require kit_type to be resolved first).
-    if args.kit_type in _ADMIN_ROLES and not _EMAIL_RE.match(args.name):
+    if args.kit_type in _ADMIN_ROLES and name_check(args.name, "admin")[0]:
         output_error(
             "INVALID_ARGS",
             f"Admin name must be an email address (got {args.name!r}).",

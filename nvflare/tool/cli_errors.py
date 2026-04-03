@@ -118,7 +118,7 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
     ),
     "CERT_TYPE_UNKNOWN": (
         "Cannot determine certificate type for '{cert}'.",
-        "Sign the certificate with 'nvflare cert sign -t <type>', or pass -t/--type to 'nvflare package'.",
+        "Sign the certificate with 'nvflare cert sign -t <type>' to embed the type in the certificate.",
     ),
     "CERT_SIGNING_FAILED": (
         "Certificate signing failed: {reason}",
