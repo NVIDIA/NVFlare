@@ -281,14 +281,18 @@ class NVFTestDriver:
         job_log_file = os.path.join(job_id, "log.txt")
         response = self.super_admin_api.cat_target(target, file=job_log_file)
         if response["status"] != APIStatus.SUCCESS:
-            raise NVFTestError(f"Failed to read job log for target '{target}': {response['details']['message']}")
+            details = response.get("details") or {}
+            msg = details.get("message") if isinstance(details, dict) else str(details)
+            raise NVFTestError(f"Failed to read job log for target '{target}': {msg}")
         logs = response["details"]["message"].splitlines()
         return logs
 
     def _get_site_log(self, target: str):
         response = self.super_admin_api.cat_target(target, file="log.txt")
         if response["status"] != APIStatus.SUCCESS:
-            raise NVFTestError(f"Failed to read site log for target '{target}': {response['details']['message']}")
+            details = response.get("details") or {}
+            msg = details.get("message") if isinstance(details, dict) else str(details)
+            raise NVFTestError(f"Failed to read site log for target '{target}': {msg}")
         logs = response["details"]["message"].splitlines()
         return logs
 

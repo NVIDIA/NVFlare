@@ -50,12 +50,18 @@ def _restore_auth_test_shell_command_permissions(workspace_dir: str, project_yam
             continue
 
         authz_path = os.path.join(workspace_dir, participant["name"], "local", "authorization.json.default")
+        if not os.path.exists(authz_path):
+            raise FileNotFoundError(
+                f"Expected authorization file not found for participant '{participant['name']}': {authz_path}"
+            )
         with open(authz_path, "r") as f:
             authz = json.load(f)
 
         permissions = authz.get("permissions", {})
         for role, value in shell_command_permissions.items():
             role_permissions = permissions.get(role)
+            if role_permissions is None:
+                continue
             if isinstance(role_permissions, str):
                 permissions[role] = {"*": role_permissions, "shell_commands": value}
             elif isinstance(role_permissions, dict):
