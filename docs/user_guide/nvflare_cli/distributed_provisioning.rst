@@ -32,59 +32,39 @@ The resulting startup kits are structurally identical to those produced by
 Centralized vs. Distributed at a Glance
 ****************************************
 
-.. list-table::
-   :header-rows: 1
-   :widths: 30 35 35
-
-   * -
-     - Centralized (``nvflare provision``)
-     - Distributed (Manual Workflow)
-   * - **Private key custody**
-     - Project Admin generates and distributes
-     - Each site generates locally; key never leaves the machine
-   * - **Data distributed to site**
-     - Full startup kit (keys, certs, config, scripts)
-     - Signed cert + ``rootCA.pem`` + server URI (~a few KB)
-   * - **Data sent from site**
-     - Nothing
-     - CSR (~1 KB, public key only)
-   * - **Steps for Project Admin**
-     - One command provisions all sites
-     - Sign one CSR per participant
-   * - **Steps for Site Admin**
-     - Unzip and run
-     - Generate CSR → send → receive cert → package → run
-   * - **Participant info required upfront**
-     - All participants before any kit is generated
-     - Each participant joins independently, on demand
-   * - **Adding a new site**
-     - Dynamic provisioning (sign new cert with existing root CA)
-     - Same workflow; no impact on existing sites
-   * - **CC deployments**
-     - Supported
-     - Not supported
-   * - **HE deployments**
-     - Supported
-     - Not supported (future)
-   * - **Trust required in Project Admin**
-     - Must trust Project Admin with your private key
-     - Project Admin never sees private keys
++-----------------------------+--------------------------------------+--------------------------------------+
+| Aspect                      | Centralized (``nvflare provision``)  | Distributed (manual workflow)        |
++=============================+======================================+======================================+
+| Private key custody         | Admin generates/distributes keys     | Site generates key locally           |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Data distributed to site    | Full startup kit                     | Signed cert + ``rootCA.pem`` + URI   |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Data sent from site         | Nothing                              | CSR (public key only)                |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Project Admin workflow      | One command provisions all sites     | Sign one CSR per participant         |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Site Admin workflow         | Unpack and run                       | CSR -> sign -> package -> run        |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Participant onboarding      | Usually prepared up front            | Join independently, on demand        |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Adding a new site           | Dynamic provisioning with root CA    | Same flow; no impact on existing     |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Trust in Project Admin      | Must trust admin with private keys   | Admin never sees private keys        |
++-----------------------------+--------------------------------------+--------------------------------------+
+| Support scope               | Supports CC and HE                   | Targets non-CC and non-HE            |
++-----------------------------+--------------------------------------+--------------------------------------+
 
 *****
 Roles
 *****
 
-+-------------------+----------------------------------------------------------+
-| Role              | Responsibility                                           |
-+===================+==========================================================+
-| **Project Admin** | Runs ``cert init`` (once). Signs CSRs from each site.    |
-|                   | Distributes signed certificates and ``rootCA.pem``.      |
-+-------------------+----------------------------------------------------------+
-| **Site Admin**    | Runs ``cert csr`` to generate a local key + CSR.         |
-|                   | Sends CSR to Project Admin out-of-band (email, file      |
-|                   | share, etc.). Receives cert + ``rootCA.pem``.            |
-|                   | Runs ``package`` to assemble the startup kit.            |
-+-------------------+----------------------------------------------------------+
++------------------+------------------------------------------------------------------------------------------+
+| Role             | Responsibility                                                                           |
++==================+==========================================================================================+
+| Project Admin    | Runs cert init once, signs incoming CSRs, and returns signed certificates and rootCA.   |
++------------------+------------------------------------------------------------------------------------------+
+| Site Admin       | Runs cert csr locally, sends CSR out-of-band, receives cert and rootCA, then packages.  |
++------------------+------------------------------------------------------------------------------------------+
 
 The ``-t`` / ``--type`` argument identifies either a **site** (FL process identity) or a
 **user** (human connecting via the admin API):
@@ -305,6 +285,7 @@ custom builders, or who prefer to describe all participants in a single file.
    If your YAML ``builders:`` section lists either of these, those entries —
    including any custom args such as ``config_folder`` — are silently ignored
    and a warning is emitted. Custom third-party builders are passed through unchanged.
+
 Place all received certs and ``rootCA.pem`` in one directory (named by participant CN),
 then run:
 
@@ -491,56 +472,36 @@ Sign a CSR with the root CA (Project Admin).
 
 Assemble a startup kit (Site Admin).
 
-+------------------+--------------------------------------------------+----------+
-| Argument         | Description                                      | Required |
-+==================+==================================================+==========+
-| ``-e`` / ``--endpoint`` | Server endpoint URI (``grpc://host:port``, | Yes      |
-|                  | ``tcp://host:port``, or ``http://host:port``)    |          |
-+------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | No       |
-|                  | ``org_admin``, ``lead``, ``member``.             |          |
-|                  | In single mode, derived from the signed cert's   |          |
-|                  | embedded type. Explicit ``-t`` overrides.        |          |
-|                  | In yaml mode (``-p``), acts as a type filter.    |          |
-+------------------+--------------------------------------------------+----------+
-| ``-p`` / ``--project-file`` | Site-scoped project YAML listing all  | No       |
-|                  | participants. When given, builds all matching    |          |
-|                  | participants in a single ``prod_NN``. Mutually   |          |
-|                  | exclusive with ``-n`` and ``--cert``/``--key``/  |          |
-|                  | ``--rootca``. Requires ``--dir``.                |          |
-+------------------+--------------------------------------------------+----------+
-| ``--dir``        | Directory containing key, cert, and rootCA.pem.  | One of   |
-|                  | Name is auto-detected from ``*.key`` filename    | ``--dir``|
-|                  | (single mode) or cert files named by participant | or       |
-|                  | CN (yaml mode).                                  | ``-p``   |
-+------------------+--------------------------------------------------+----------+
-| ``-n`` / ``--name``   | Participant name. Required when using       | No†      |
-|                  | ``--cert`` / ``--key`` / ``--rootca``            |          |
-+------------------+--------------------------------------------------+----------+
-| ``--cert``       | Path to signed certificate                       | No†      |
-+------------------+--------------------------------------------------+----------+
-| ``--key``        | Path to private key                              | No†      |
-+------------------+--------------------------------------------------+----------+
-| ``--rootca``     | Path to ``rootCA.pem``                           | No†      |
-+------------------+--------------------------------------------------+----------+
-| ``-w`` / ``--workspace`` | Workspace root. Output goes to           | No       |
-|                  | ``<workspace>/<project>/prod_NN/<name>/``.       |          |
-|                  | Default: ``workspace``                           |          |
-+------------------+--------------------------------------------------+----------+
-| ``--project-name`` | Project name used in output path and in        | No       |
-|                  | fed_server.json / fed_admin.json for             |          |
-|                  | challenge-response auth. Default: ``project``    |          |
-+------------------+--------------------------------------------------+----------+
-| ``--admin-port`` | Server admin port. Default: same as service port | No       |
-|                  | (single-port TLS multiplexing).                  |          |
-+------------------+--------------------------------------------------+----------+
-| ``--force``      | Allow re-packaging when this participant name    | No       |
-|                  | appears in the most recent ``prod_NN``           |          |
-|                  | directory (a new ``prod_NN`` is created).        |          |
-+------------------+--------------------------------------------------+----------+
++--------------------------+--------------------------------------------------------------------------+----------+
+| Argument                 | Description                                                              | Required |
++==========================+==========================================================================+==========+
+| -e / --endpoint          | Server endpoint URI (grpc/tcp/http).                                    | Yes      |
++--------------------------+--------------------------------------------------------------------------+----------+
+| -t / --type              | Kit type; optional in single mode and optional filter in yaml mode.     | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
+| -p / --project-file      | Site-scoped project YAML for multi-participant mode; requires --dir.    | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --dir                    | Directory containing key/cert/rootCA files.                             | Mode     |
++--------------------------+--------------------------------------------------------------------------+----------+
+| -n / --name              | Participant name; required in explicit single mode.                     | No*      |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --cert                   | Path to signed certificate.                                              | No*      |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --key                    | Path to private key.                                                     | No*      |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --rootca                 | Path to rootCA.pem.                                                      | No*      |
++--------------------------+--------------------------------------------------------------------------+----------+
+| -w / --workspace         | Workspace root; output under <workspace>/<project>/prod_NN/<name>/.     | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --project-name           | Project name used in output path and in fed_server/fed_admin configs.   | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --admin-port             | Admin port; default is service port + 1.                                | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
+| --force                  | Allow re-packaging when participant exists in latest prod_NN.           | No       |
++--------------------------+--------------------------------------------------------------------------+----------+
 
-† ``-n``, ``--cert``, ``--key``, ``--rootca`` are used together as an alternative to ``--dir``
-in single-participant mode. Mutually exclusive with ``-p`` / ``--project-file``.
+* ``-n``, ``--cert``, ``--key``, and ``--rootca`` are used together in explicit
+  single-participant mode; mutually exclusive with ``-p`` / ``--project-file``.
 
 All commands support ``--output json`` for machine-readable output and ``--schema``
 to print the JSON schema for the command's arguments.
