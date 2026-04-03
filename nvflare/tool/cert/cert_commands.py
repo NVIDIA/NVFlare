@@ -346,15 +346,14 @@ def _claim_serial(ca_json_path: str) -> int:
         def _lock(f):
             pass
 
-    with open(ca_json_path, "r") as f:
+    with open(ca_json_path, "r+") as f:
         _lock(f)
         meta = json.load(f)
-    serial = meta.get("next_serial", 2)
-    meta["next_serial"] = serial + 1
-    tmp_path = ca_json_path + ".tmp"
-    with open(tmp_path, "w") as f:
+        serial = meta.get("next_serial", 2)
+        meta["next_serial"] = serial + 1
+        f.seek(0)
         json.dump(meta, f, indent=2)
-    os.replace(tmp_path, ca_json_path)
+        f.truncate()
     return serial
 
 
