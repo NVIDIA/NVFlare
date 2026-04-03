@@ -3,10 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # Tested with:
-#   flwr==1.20.0
-#   nvflare==2.6.1
-#   torch==2.7.1
-#   torchvision==0.22.1
+#   flwr==1.27.0
+#   nvflare==2.7.2
+#   torch==2.11.0
+#   torchvision==0.26.0
 #   tensorboard==2.20.0
 
 [project]
@@ -15,7 +15,7 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr>=1.16,<1.26",
+    "flwr>=1.26",
     "nvflare~=2.6.0rc",
     "torch",
     "torchvision",
@@ -36,11 +36,3 @@ clientapp = "flwr_pt_tb.client:app"
 num-server-rounds = 3
 learning-rate = 0.001
 momentum = 0.9
-
-[tool.flwr.federations]
-default = "local-simulation"
-
-[tool.flwr.federations.local-simulation]
-options.num-supernodes = 2
-address = "127.0.0.1:9093"
-insecure = true
