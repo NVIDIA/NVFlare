@@ -180,6 +180,8 @@ def _extract_table_rows(response: dict) -> list[list[str]]:
 
 def _extract_client_names_from_check_status(response: dict) -> set[str]:
     rows = _extract_table_rows(response)
+    assert rows, f"Expected non-empty check_status table rows: {response}"
+    assert rows[0] and rows[0][0] == "CLIENT", f"Unexpected check_status table header: {rows[0]}"
     return {row[0] for row in rows[1:]}
 
 

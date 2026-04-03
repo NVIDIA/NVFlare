@@ -47,3 +47,7 @@ class StudyRegistryService:
     @staticmethod
     def get_registry() -> Optional[StudyRegistry]:
         return StudyRegistryService._registry
+
+    @staticmethod
+    def reset():
+        StudyRegistryService._registry = None

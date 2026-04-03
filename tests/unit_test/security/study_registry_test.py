@@ -79,3 +79,12 @@ def test_study_registry_service_returns_initialized_registry():
     study_registry.StudyRegistryService.initialize(registry)
 
     assert study_registry.StudyRegistryService.get_registry() is registry
+
+
+def test_study_registry_service_reset_clears_registry():
+    study_registry = _registry_module()
+    study_registry.StudyRegistryService.initialize(study_registry.StudyRegistry({"study-a": {}}))
+
+    study_registry.StudyRegistryService.reset()
+
+    assert study_registry.StudyRegistryService.get_registry() is None

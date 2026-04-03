@@ -84,9 +84,11 @@ class TestProvision:
             prepare_project(project_dict=project_config)
 
     def test_prepare_project_accepts_null_study_definition_as_empty_mapping(self):
-        project = prepare_project(project_dict=self._base_project(studies={"study-a": None}))
+        project_config = self._base_project(studies={"study-a": None})
+        project = prepare_project(project_dict=project_config)
 
         assert project.name == "mytest"
+        assert project.get_prop("studies")["study-a"] == {}
 
     def test_prepare_project_rejects_non_mapping_study_definition(self):
         project_config = self._base_project(studies={"study-a": 123})

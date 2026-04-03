@@ -176,7 +176,7 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
 
         for study_name, study_def in studies.items():
             if study_def is None:
-                study_def = {}
+                studies[study_name] = study_def = {}
             elif not isinstance(study_def, dict):
                 raise ValueError(f"study '{study_name}' must be a mapping")
 
