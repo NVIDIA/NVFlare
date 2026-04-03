@@ -54,6 +54,7 @@ def _csr_args(**kwargs):
         name="hospital-1",
         output_dir=None,
         org=None,
+        cert_type=None,
         force=False,
         output_fmt=None,
         schema=False,
@@ -67,7 +68,7 @@ def _sign_args(**kwargs):
         csr_path=None,
         ca_dir=None,
         output_dir=None,
-        cert_type="client",
+        cert_type=None,
         valid_days=1095,
         force=False,
         output_fmt=None,
@@ -635,3 +636,90 @@ class TestCertSign:
             handle_cert_sign(args)
 
         assert _peek(ca_json) == initial + 3
+
+
+# ---------------------------------------------------------------------------
+# cert csr -t: proposed role embedded in CSR
+# ---------------------------------------------------------------------------
+
+
+class TestCertCsrWithRole:
+    def test_csr_role_embedded_when_type_given(self, tmp_path):
+        """cert csr -t lead embeds 'lead' in CSR UNSTRUCTURED_NAME."""
+        args = _csr_args(name="alice", output_dir=str(tmp_path), cert_type="lead")
+        handle_cert_csr(args)
+        csr = _load_csr_file(str(tmp_path / "alice.csr"))
+        role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+        assert len(role_attrs) == 1
+        assert role_attrs[0].value == "lead"
+
+    def test_csr_no_role_when_type_absent(self, tmp_path):
+        """cert csr without -t produces no UNSTRUCTURED_NAME in CSR."""
+        args = _csr_args(name="h1", output_dir=str(tmp_path))
+        handle_cert_csr(args)
+        csr = _load_csr_file(str(tmp_path / "h1.csr"))
+        role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+        assert len(role_attrs) == 0
+
+    def test_csr_role_all_valid_types(self, tmp_path):
+        """Each valid cert type can be embedded in a CSR."""
+        for cert_type in ("client", "server", "org_admin", "lead", "member"):
+            out = str(tmp_path / cert_type)
+            os.makedirs(out, exist_ok=True)
+            args = _csr_args(name="p1", output_dir=out, cert_type=cert_type)
+            handle_cert_csr(args)
+            csr = _load_csr_file(os.path.join(out, "p1.csr"))
+            role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+            assert role_attrs[0].value == cert_type
+
+
+# ---------------------------------------------------------------------------
+# cert sign: read type from CSR when -t is omitted
+# ---------------------------------------------------------------------------
+
+
+class TestCertSignReadsTypeFromCsr:
+    def test_sign_reads_type_from_csr_when_t_absent(self, tmp_path):
+        """cert sign without -t reads role from CSR UNSTRUCTURED_NAME."""
+        ca_dir = _setup_ca(tmp_path)
+        # Generate CSR with role embedded
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        args = _csr_args(name="alice", output_dir=csr_dir, cert_type="lead", output_fmt="quiet")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "alice.csr")
+
+        out_dir = str(tmp_path / "signed")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)
+        rc = handle_cert_sign(sign_args)
+        assert rc == 0
+        cert = load_crt(os.path.join(out_dir, "alice.crt"))
+        role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+        assert role_attrs[0].value == "lead"
+
+    def test_sign_t_overrides_csr_role(self, tmp_path):
+        """cert sign -t overrides the role proposed in the CSR."""
+        ca_dir = _setup_ca(tmp_path)
+        csr_dir = str(tmp_path / "csr")
+        os.makedirs(csr_dir, exist_ok=True)
+        # CSR proposes 'member', Project Admin overrides to 'lead'
+        args = _csr_args(name="bob", output_dir=csr_dir, cert_type="member", output_fmt="quiet")
+        handle_cert_csr(args)
+        csr_path = os.path.join(csr_dir, "bob.csr")
+
+        out_dir = str(tmp_path / "signed")
+        sign_args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir, cert_type="lead")
+        handle_cert_sign(sign_args)
+        cert = load_crt(os.path.join(out_dir, "bob.crt"))
+        role_attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+        assert role_attrs[0].value == "lead"
+
+    def test_sign_no_t_no_csr_role_fails(self, tmp_path):
+        """cert sign without -t and CSR has no role → error (INVALID_ARGS)."""
+        ca_dir = _setup_ca(tmp_path)
+        csr_path = _setup_csr(tmp_path)  # no role in CSR
+        out_dir = str(tmp_path / "signed")
+        args = _sign_args(csr_path=csr_path, ca_dir=ca_dir, output_dir=out_dir)  # cert_type=None
+        with pytest.raises(SystemExit) as exc_info:
+            handle_cert_sign(args)
+        assert exc_info.value.code == 2

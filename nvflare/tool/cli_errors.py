@@ -114,6 +114,10 @@ CLI_ERRORS: Dict[str, Tuple[str, str]] = {
         "CSR generation failed: {detail}",
         "Check that the cryptography package is installed and up-to-date.",
     ),
+    "CERT_TYPE_UNKNOWN": (
+        "Cannot determine certificate type for '{cert}'.",
+        "Sign the certificate with 'nvflare cert sign -t <type>', or pass -t/--type to 'nvflare package'.",
+    ),
     "CERT_SIGNING_FAILED": (
         "Certificate signing failed: {reason}",
         "Check that the CA key and certificate are valid and not corrupted.",

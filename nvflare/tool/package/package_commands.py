@@ -35,6 +35,7 @@ from nvflare.tool.cli_output import output, output_error
 _ENDPOINT_PATTERN = re.compile(r"^(grpc|tcp|http)://([^:/]+):(\d+)$")
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _ADMIN_ROLES = {AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER}
+_VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
 _KIT_TYPE_TO_ROLE = {
     "org_admin": AdminRole.ORG_ADMIN,
     "lead": AdminRole.LEAD,
@@ -42,6 +43,15 @@ _KIT_TYPE_TO_ROLE = {
 }
 _DUMMY_SERVER_NAME = "dummy-server"
 _DUMMY_ORG = "myorg"
+
+
+def _read_cert_type_from_cert(cert) -> str:
+    """Return the kit type embedded in cert's UNSTRUCTURED_NAME, or '' if absent."""
+    from cryptography.x509.oid import NameOID
+
+    attrs = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+    return attrs[0].value if attrs else ""
+
 
 _PACKAGE_EXAMPLES = [
     "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice --project-name myproject",
@@ -424,10 +434,6 @@ def handle_package(args):
     # Step 2: Validate required args and endpoint up front (before any file I/O)
     has_project_file = bool(getattr(args, "project_file", None))
 
-    if not has_project_file and not getattr(args, "kit_type", None):
-        msg, hint = get_error("INVALID_ARGS", detail="-t/--type is required")
-        output_error("INVALID_ARGS", msg, hint, fmt, exit_code=2)
-
     if has_project_file and getattr(args, "name", None):
         output_error(
             "INVALID_ARGS",
@@ -521,33 +527,12 @@ def handle_package(args):
                 exit_code=4,
             )
 
-    # Step 5: Pre-flight: validate admin name is email-format; guard sentinel name collision.
-    if args.kit_type in _ADMIN_ROLES and not _EMAIL_RE.match(args.name):
-        output_error(
-            "INVALID_ARGS",
-            f"Admin name must be an email address (got {args.name!r}).",
-            "Use an email-format name, e.g. alice@myorg.com",
-            fmt,
-            exit_code=4,
-        )
-
+    # Step 5: Guard sentinel name collision (host collision check happens after kit_type is known).
     if args.name == _DUMMY_SERVER_NAME:
         output_error(
             "INVALID_ARGS",
             f"Participant name {_DUMMY_SERVER_NAME!r} is reserved and cannot be used.",
             "Choose a different name for this participant.",
-            fmt,
-            exit_code=4,
-        )
-
-    # For non-server kits the endpoint hostname is used as the server placeholder name.
-    # The participant name must not collide with it, otherwise the provisioner would have
-    # two participants with the same name.
-    if args.kit_type != "server" and args.name == host:
-        output_error(
-            "INVALID_ARGS",
-            f"Participant name {args.name!r} collides with the server endpoint hostname.",
-            "Use a different -n/--name that is distinct from the server hostname in --endpoint.",
             fmt,
             exit_code=4,
         )
@@ -601,6 +586,38 @@ def handle_package(args):
     if expiry < now:
         msg, hint = get_error("CERT_EXPIRED", cert=args.cert, expiry=expiry.isoformat())
         output_error("CERT_EXPIRED", msg, hint, fmt, exit_code=1)
+
+    # Step 8b: Derive kit_type from cert's UNSTRUCTURED_NAME when -t was not given.
+    # The cert's embedded type (set by 'nvflare cert sign -t') is the authoritative source.
+    # -t/--type acts as an explicit override (e.g. for certs produced without UNSTRUCTURED_NAME).
+    kit_type = getattr(args, "kit_type", None)
+    if not kit_type:
+        kit_type = _read_cert_type_from_cert(cert)
+    if not kit_type or kit_type not in _VALID_CERT_TYPES:
+        msg, hint = get_error("CERT_TYPE_UNKNOWN", cert=args.cert)
+        output_error("CERT_TYPE_UNKNOWN", msg, hint, fmt, exit_code=1)
+    args.kit_type = kit_type
+
+    # Step 8c: Type-dependent pre-flight checks (require kit_type to be resolved first).
+    if args.kit_type in _ADMIN_ROLES and not _EMAIL_RE.match(args.name):
+        output_error(
+            "INVALID_ARGS",
+            f"Admin name must be an email address (got {args.name!r}).",
+            "Use an email-format name, e.g. alice@myorg.com",
+            fmt,
+            exit_code=4,
+        )
+
+    # For non-server kits the endpoint hostname is used as the server placeholder name.
+    # The participant name must not collide with it.
+    if args.kit_type != "server" and args.name == host:
+        output_error(
+            "INVALID_ARGS",
+            f"Participant name {args.name!r} collides with the server endpoint hostname.",
+            "Use a different -n/--name that is distinct from the server hostname in --endpoint.",
+            fmt,
+            exit_code=4,
+        )
 
     admin_port = args.admin_port if args.admin_port is not None else port
 

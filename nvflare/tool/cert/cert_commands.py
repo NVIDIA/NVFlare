@@ -178,15 +178,19 @@ def handle_cert_init(args):
 # ---------------------------------------------------------------------------
 
 
-def _generate_csr(name: str, org: str = None):
+def _generate_csr(name: str, org: str = None, role: str = None):
     """Generate RSA private key and CSR.
+
+    The optional ``role`` is embedded in the CSR's UNSTRUCTURED_NAME field as a
+    hint to the Project Admin.  The Project Admin's ``cert sign -t`` is always
+    authoritative and may override whatever is in the CSR.
 
     Returns:
         (pem_private_key: bytes, pem_csr: bytes)
     """
     pri_key, _ = generate_keys()
 
-    subject = x509_name(cn_name=name, org_name=org)
+    subject = x509_name(cn_name=name, org_name=org, role=role)
 
     csr = (
         x509.CertificateSigningRequestBuilder().subject_name(subject).sign(pri_key, hashes.SHA256(), default_backend())
@@ -289,7 +293,7 @@ def handle_cert_csr(args):
 
     # 10. Generate key and CSR
     try:
-        pem_key, pem_csr = _generate_csr(name, getattr(args, "org", None))
+        pem_key, pem_csr = _generate_csr(name, getattr(args, "org", None), getattr(args, "cert_type", None))
     except Exception as e:
         message, hint = get_error("CSR_GENERATION_FAILED", detail=str(e))
         output_error("CSR_GENERATION_FAILED", message, hint, output_fmt)
@@ -455,13 +459,12 @@ def handle_cert_sign(args):
         print(json.dumps(schema, indent=2))
         return 0
 
-    # 2. Validate required args
+    # 2. Validate required args (-t/--type is optional; read from CSR if omitted)
     output_fmt = getattr(args, "output_fmt", None)
     for flag, attr in (
         ("-r/--csr", "csr_path"),
         ("-c/--ca-dir", "ca_dir"),
         ("-o/--output-dir", "output_dir"),
-        ("-t/--type", "cert_type"),
     ):
         if not getattr(args, attr, None):
             message, hint = get_error("INVALID_ARGS", detail=f"{flag} is required")
@@ -500,8 +503,19 @@ def handle_cert_sign(args):
         message, hint = get_error("INVALID_CSR", path=csr_path)
         output_error("INVALID_CSR", message, hint, output_fmt)
 
-    # 6. Cert type is authoritative from -t argument; cert is named after the participant (CN)
-    cert_type = args.cert_type
+    # 6. Resolve cert type: -t is authoritative when given; otherwise read from CSR UNSTRUCTURED_NAME.
+    _VALID_CERT_TYPES = {"client", "server", "org_admin", "lead", "member"}
+    cert_type = getattr(args, "cert_type", None)
+    if not cert_type:
+        # Read proposed role from CSR subject UNSTRUCTURED_NAME (set by 'cert csr -t')
+        _csr_role_attrs = csr.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+        if _csr_role_attrs:
+            cert_type = _csr_role_attrs[0].value
+    if not cert_type or cert_type not in _VALID_CERT_TYPES:
+        message, hint = get_error(
+            "INVALID_ARGS", detail="-t/--type is required (or embed role in CSR with 'cert csr -t')"
+        )
+        output_error("INVALID_ARGS", message, hint, output_fmt, exit_code=2)
     subject_cn = _get_cn(csr.subject)
     output_filename = f"{subject_cn}.crt"
 
@@ -565,7 +579,7 @@ def handle_cert_sign(args):
     next_step = (
         f"Send {output_filename} and rootCA.pem to the site admin.\n"
         f"They place those files in the same directory as their {subject_cn}.key, then run:\n"
-        f"  nvflare package -t {cert_type} -e grpc://<server>:<port> --dir <that-dir>"
+        f"  nvflare package -e grpc://<server>:<port> --dir <that-dir>"
     )
     result = {
         "signed_cert": cert_out_path,
@@ -586,7 +600,7 @@ def handle_cert_sign(args):
         print()
         print(f"Next step: Send {output_filename} and rootCA.pem to the site admin.")
         print(f"They place those files in the same directory as their {subject_cn}.key, then run:")
-        print(f"  nvflare package -t {cert_type} -e grpc://<server>:<port> --dir <that-dir>")
+        print("  nvflare package -e grpc://<server>:<port> --dir <that-dir>")
     else:
         output(result, output_fmt)
     return 0

@@ -32,12 +32,12 @@ The resulting startup kits are structurally identical to those produced by
 
 | Step | Who | Action |
 |------|-----|--------|
-| 1 | Site Admin | `nvflare cert csr -n hospital-1 -o ./csr` |
+| 1 | Site Admin | `nvflare cert csr -n hospital-1 -t client -o ./csr` |
 | 2 | Site Admin | Send `hospital-1.csr` to Project Admin (email, file share, etc.) |
 | 3 | Project Admin | `nvflare cert init --project my-project -o ./ca` *(one-time per federation)* |
-| 4 | Project Admin | `nvflare cert sign -r hospital-1.csr -t client -c ./ca -o ./signed/hospital-1` |
+| 4 | Project Admin | `nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1` |
 | 5 | Project Admin | Return `hospital-1.crt` + `rootCA.pem` + server URI to site |
-| 6 | Site Admin | `nvflare package -n hospital-1 -t client -e grpc://server:8002 --cert hospital-1.crt --key hospital-1.key --rootca rootCA.pem` |
+| 6 | Site Admin | `nvflare package -e grpc://server:8002 --dir ./csr` *(type derived from signed cert)* |
 | 7 | Site Admin | `cd hospital-1 && ./startup/start.sh` |
 
 Step 3 is done once. Each new participant repeats steps 1–2 and 4–7 independently.
@@ -178,10 +178,24 @@ behaviors are modified.
 
 ## Roles and Authorization
 
+### Trust Chain for Certificate Type
+
+The certificate type flows through three steps, each with a defined role:
+
+1. **`cert csr -t <type>`** — the org admin proposes a type when generating the CSR.
+   This is a _hint_ embedded in the CSR's `UNSTRUCTURED_NAME` field.
+2. **`cert sign`** — the Project Admin reads the proposed type from the CSR and signs
+   the certificate with that type embedded. The Project Admin may override with `-t <type>`.
+   The signed cert's `UNSTRUCTURED_NAME` is the **authoritative type**.
+3. **`nvflare package`** — reads the kit type directly from the signed certificate.
+   No `-t` argument is needed; the cert is the single source of truth.
+
+This design eliminates the possibility of a mismatch between `cert sign -t` and
+`nvflare package -t`, which could silently produce a broken startup kit.
+
 ### Participant Types
 
-The `-t` argument to `nvflare cert sign` sets the certificate type and determines what
-the holder may do.
+The certificate type (set by `nvflare cert sign`) determines what the holder may do.
 
 **Site participants** — FL process identities; no role embedded in the certificate:
 
@@ -251,32 +265,37 @@ Produces: `rootCA.key` (keep secret), `rootCA.pem` (distribute to all sites), `c
 ### `nvflare cert csr` — Site Admin
 
 ```
-nvflare cert csr -n <participant-name> -o <dir>
+nvflare cert csr -n <participant-name> -t <type> -o <dir>
 ```
 
 Produces: `<name>.key` (stays on site, never shared), `<name>.csr` (send to Project Admin).
 
-Note: `-t` is not accepted here. The certificate type is set authoritatively by the
-Project Admin when signing — not by the site generating the CSR.
+The optional `-t` flag embeds the proposed type in the CSR as a hint. The org admin
+should set this on behalf of the participant. The Project Admin may override it when signing.
 
 ### `nvflare cert sign` — Project Admin
+
+```
+nvflare cert sign -r <name>.csr -c <ca-dir> -o <dir>
+```
+
+Reads the proposed type from the CSR. The Project Admin may override with `-t <type>`:
 
 ```
 nvflare cert sign -r <name>.csr -t <type> -c <ca-dir> -o <dir>
 ```
 
-The `-t` argument is authoritative — the type set here is what the signed certificate
-will carry, regardless of anything in the CSR.
+The type embedded in the signed certificate is the single source of truth downstream.
 
 ### `nvflare package` — Site Admin
 
 ```
-# Explicit mode
-nvflare package -n <name> -t <type> -e grpc://<server>:<port> \
-    --cert <name>.crt --key <name>.key --rootca rootCA.pem
+# Auto-discovery mode (files in one directory; type derived from cert)
+nvflare package -e grpc://<server>:<port> --dir <dir>
 
-# Auto-discovery mode (files in one directory)
-nvflare package -t <type> -e grpc://<server>:<port> --dir <dir>
+# Explicit mode
+nvflare package -n <name> -e grpc://<server>:<port> \
+    --cert <name>.crt --key <name>.key --rootca rootCA.pem
 
 # Multi-participant YAML mode
 nvflare package -e grpc://<server>:<port> -p site.yaml --dir <dir>

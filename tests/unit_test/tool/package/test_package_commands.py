@@ -49,10 +49,14 @@ def _make_ca(tmp_dir):
     return ca_key, ca_cert, rootca_path
 
 
-def _make_signed_cert(ca_key, ca_cert, name, tmp_dir, cert_filename):
-    """Generate a key + CA-signed cert, write them into tmp_dir."""
+def _make_signed_cert(ca_key, ca_cert, name, tmp_dir, cert_filename, role=None):
+    """Generate a key + CA-signed cert, write them into tmp_dir.
+
+    Pass ``role`` to embed it as UNSTRUCTURED_NAME in the cert subject (simulates
+    certs produced by ``nvflare cert sign -t <role>``).
+    """
     key, pub = generate_keys()
-    subj = Identity(name, "TestOrg")
+    subj = Identity(name, "TestOrg", role=role)
     issuer = Identity(
         ca_cert.subject.get_attributes_for_oid(
             __import__("cryptography.x509.oid", fromlist=["NameOID"]).NameOID.COMMON_NAME
@@ -1187,9 +1191,10 @@ class TestS5RootCaPermissions:
 
 
 class TestMissingType:
-    """Missing --type must exit with code 2."""
+    """When -t is omitted and cert has no UNSTRUCTURED_NAME, CERT_TYPE_UNKNOWN is raised (exit 1)."""
 
-    def test_missing_kit_type_exits_2(self, cert_env, tmp_path):
+    def test_missing_kit_type_cert_no_role_exits_1(self, cert_env, tmp_path):
+        """No -t, cert has no UNSTRUCTURED_NAME → CERT_TYPE_UNKNOWN (exit 1)."""
         work = tmp_path / "work"
         work.mkdir()
         ca_key = cert_env["ca_key"]
@@ -1198,7 +1203,7 @@ class TestMissingType:
 
         key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt")
         args = _make_args(
-            kit_type=None,  # not provided
+            kit_type=None,  # not provided, and cert has no UNSTRUCTURED_NAME
             name="hospital-1",
             endpoint="grpc://server.example.com:8002",
             cert=cert_path,
@@ -1208,7 +1213,7 @@ class TestMissingType:
         )
         with pytest.raises(SystemExit) as exc_info:
             handle_package(args)
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 1
 
 
 class TestNoExtraServerDirForNonServerKit:
@@ -2287,3 +2292,141 @@ class TestYamlMode:
         # Second run with force=True → prod_01
         handle_package(_make_args(force=True, **base_args))
         assert os.path.isdir(os.path.join(ws, "myproject", "prod_01", "hospital-1"))
+
+
+# ---------------------------------------------------------------------------
+# TestKitTypeFromCert: -t derived from cert UNSTRUCTURED_NAME
+# ---------------------------------------------------------------------------
+
+
+class TestKitTypeFromCert:
+    """Kit type is derived from the signed cert when -t is omitted."""
+
+    def test_client_kit_type_from_cert(self, cert_env, tmp_path):
+        """Cert with UNSTRUCTURED_NAME=client → client kit assembled without -t."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(
+            ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt", role="client"
+        )
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,  # not provided — derived from cert
+            name="hospital-1",
+            endpoint="grpc://server.example.com:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=ws,
+        )
+        handle_package(args)
+
+        out_dir = _kit_dir(ws, "testproject", "hospital-1")
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fed_client.json"))
+        assert os.path.isfile(os.path.join(out_dir, "startup", "start.sh"))
+
+    def test_server_kit_type_from_cert(self, cert_env, tmp_path):
+        """Cert with UNSTRUCTURED_NAME=server → server kit assembled without -t."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(ca_key, ca_cert, "fl-server", str(work), "fl-server.crt", role="server")
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            name="fl-server",
+            endpoint="grpc://fl-server:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=ws,
+        )
+        handle_package(args)
+
+        out_dir = _kit_dir(ws, "testproject", "fl-server")
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fed_server.json"))
+        assert os.path.isfile(os.path.join(out_dir, "startup", "start.sh"))
+
+    def test_admin_kit_type_from_cert(self, cert_env, tmp_path):
+        """Cert with UNSTRUCTURED_NAME=lead → admin kit assembled without -t."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        key_path, cert_path = _make_signed_cert(
+            ca_key, ca_cert, "alice@myorg.com", str(work), "alice@myorg.com.crt", role="lead"
+        )
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            name="alice@myorg.com",
+            endpoint="grpc://fl-server:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=ws,
+        )
+        handle_package(args)
+
+        out_dir = _kit_dir(ws, "testproject", "alice@myorg.com")
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fed_admin.json"))
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fl_admin.sh"))
+
+    def test_explicit_t_overrides_cert_role(self, cert_env, tmp_path):
+        """Explicit -t overrides what is in the cert's UNSTRUCTURED_NAME."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca = cert_env["rootca_path"]
+
+        # Cert says 'member' but we override with explicit kit_type='lead'
+        key_path, cert_path = _make_signed_cert(
+            ca_key, ca_cert, "alice@myorg.com", str(work), "alice@myorg.com.crt", role="member"
+        )
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type="lead",  # explicit override
+            name="alice@myorg.com",
+            endpoint="grpc://fl-server:8002",
+            cert=cert_path,
+            key=key_path,
+            rootca=rootca,
+            workspace=ws,
+        )
+        handle_package(args)
+
+        out_dir = _kit_dir(ws, "testproject", "alice@myorg.com")
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fed_admin.json"))
+
+    def test_dir_mode_kit_type_from_cert(self, cert_env, tmp_path):
+        """--dir mode: kit type derived from cert when -t not given."""
+        work = tmp_path / "work"
+        work.mkdir()
+        ca_key = cert_env["ca_key"]
+        ca_cert = cert_env["ca_cert"]
+        rootca_src = cert_env["rootca_path"]
+
+        _make_signed_cert(ca_key, ca_cert, "hospital-1", str(work), "hospital-1.crt", role="client")
+        shutil.copy2(rootca_src, str(work / "rootCA.pem"))
+
+        ws = str(tmp_path / "ws")
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(work),
+            workspace=ws,
+        )
+        handle_package(args)
+
+        out_dir = _kit_dir(ws, "testproject", "hospital-1")
+        assert os.path.isfile(os.path.join(out_dir, "startup", "fed_client.json"))

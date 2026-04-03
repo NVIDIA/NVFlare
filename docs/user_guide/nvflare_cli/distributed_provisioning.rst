@@ -116,17 +116,18 @@ Step 2 — Site Admin: Generate a Local Key and CSR
 ==================================================
 
 Each participant (server, each client, each admin user) runs this step on their
-own machine.
+own machine. The optional ``-t`` flag embeds the proposed certificate type in the
+CSR as a hint for the Project Admin.
 
 .. code-block:: bash
 
-   nvflare cert csr -n <participant-name> -o ./csr
+   nvflare cert csr -n <participant-name> -t <type> -o ./csr
 
 Example for a client site named ``hospital-1``:
 
 .. code-block:: bash
 
-   nvflare cert csr -n hospital-1 -o ./csr
+   nvflare cert csr -n hospital-1 -t client -o ./csr
 
 This produces:
 
@@ -137,7 +138,13 @@ Example for the FL server named ``fl-server``:
 
 .. code-block:: bash
 
-   nvflare cert csr -n fl-server -o ./csr
+   nvflare cert csr -n fl-server -t server -o ./csr
+
+.. note::
+
+   The ``-t`` flag in ``cert csr`` is a **proposal** only. The Project Admin sets
+   the final type authoritatively when signing. The org admin should generate CSRs
+   on behalf of participants to ensure the correct type is requested.
 
 Step 3 — Site Admin: Send CSR to Project Admin
 ===============================================
@@ -153,19 +160,25 @@ For each received CSR, the Project Admin runs:
 
 .. code-block:: bash
 
-   nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
+   nvflare cert sign -r <participant>.csr -c ./ca -o ./signed/<participant>
 
-The ``-t`` argument is **authoritative** — the certificate type is set by the
-Project Admin, not taken from the CSR. This prevents a participant from requesting
-a higher-privilege certificate type.
-
-Example — signing the ``hospital-1`` client CSR:
+The certificate type is read from the CSR's embedded proposal. The Project Admin
+may override it with ``-t <type>``:
 
 .. code-block:: bash
 
-   nvflare cert sign -r hospital-1.csr -t client -c ./ca -o ./signed/hospital-1
+   nvflare cert sign -r <participant>.csr -t <type> -c ./ca -o ./signed/<participant>
 
-Example — signing the ``fl-server`` server CSR:
+The ``-t`` argument **overrides** whatever type was proposed in the CSR, ensuring
+the Project Admin has final authority over certificate types.
+
+Example — signing the ``hospital-1`` client CSR (type embedded in CSR):
+
+.. code-block:: bash
+
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
+
+Example — signing the ``fl-server`` server CSR with explicit type override:
 
 .. code-block:: bash
 
@@ -225,11 +238,12 @@ A minimal ``site.yaml``:
 **Using** ``--dir``:
 
 Place the key, certificate, and ``rootCA.pem`` in the same directory. The participant
-name is auto-detected from the ``.key`` filename:
+name is auto-detected from the ``.key`` filename, and the kit type is derived
+automatically from the certificate's embedded type:
 
 .. code-block:: bash
 
-   nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1-kit
+   nvflare package -e grpc://fl-server:8002 --dir ./hospital-1-kit
 
 The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
 supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
@@ -241,7 +255,6 @@ used for mTLS validation is derived from the hostname in the endpoint.
 
    nvflare package \
      -n hospital-1 \
-     -t client \
      -e grpc://fl-server:8002 \
      --cert ./signed/hospital-1/hospital-1.crt \
      --key  ./csr/hospital-1.key \
@@ -279,24 +292,24 @@ This example sets up a federation with one server (``fl-server``) and one client
    # 1. Initialize root CA
    nvflare cert init --project my-project -o ./ca
 
-   # 4a. Sign server CSR (after receiving fl-server.csr from the server site)
-   nvflare cert sign -r fl-server.csr -t server -c ./ca -o ./signed/fl-server
+   # 4a. Sign server CSR (type embedded in CSR; override with -t if needed)
+   nvflare cert sign -r fl-server.csr -c ./ca -o ./signed/fl-server
 
-   # 4b. Sign client CSR (after receiving hospital-1.csr from the client site)
-   nvflare cert sign -r hospital-1.csr -t client -c ./ca -o ./signed/hospital-1
+   # 4b. Sign client CSR
+   nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed/hospital-1
 
 **Server site (fl-server):**
 
 .. code-block:: bash
 
-   # 2. Generate key + CSR
-   nvflare cert csr -n fl-server -o ./csr
+   # 2. Generate key + CSR (propose type 'server')
+   nvflare cert csr -n fl-server -t server -o ./csr
 
    # 3. Send ./csr/fl-server.csr to Project Admin
 
    # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside fl-server.key), then:
-   nvflare package -t server -e grpc://fl-server:8002 --dir ./csr
-   # Output kit is written to workspace/project/prod_00/fl-server/
+   nvflare package -e grpc://fl-server:8002 --dir ./csr
+   # Kit type is derived from the signed cert; output to workspace/project/prod_00/fl-server/
 
    # 7. Start
    cd workspace/project/prod_00/fl-server && ./startup/start.sh
@@ -305,14 +318,14 @@ This example sets up a federation with one server (``fl-server``) and one client
 
 .. code-block:: bash
 
-   # 2. Generate key + CSR
-   nvflare cert csr -n hospital-1 -o ./csr
+   # 2. Generate key + CSR (propose type 'client')
+   nvflare cert csr -n hospital-1 -t client -o ./csr
 
    # 3. Send ./csr/hospital-1.csr to Project Admin
 
    # 6. Copy signed cert + rootCA.pem into ./csr/ (alongside hospital-1.key), then:
-   nvflare package -t client -e grpc://fl-server:8002 --dir ./csr
-   # Output kit is written to workspace/project/prod_00/hospital-1/
+   nvflare package -e grpc://fl-server:8002 --dir ./csr
+   # Kit type is derived from the signed cert; output to workspace/project/prod_00/hospital-1/
 
    # 7. Start
    cd workspace/project/prod_00/hospital-1 && ./startup/start.sh
@@ -350,14 +363,13 @@ Generate a local private key and CSR (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for key and CSR files         | Yes      |
 +------------------+--------------------------------------------------+----------+
+| ``-t`` / ``--type``   | Proposed certificate type. Embedded in      | No       |
+|                  | the CSR as a hint for the Project Admin.         |          |
+|                  | The Project Admin may override with              |          |
+|                  | ``cert sign -t <type>``.                         |          |
++------------------+--------------------------------------------------+----------+
 | ``--org``        | Organization name                                | No       |
 +------------------+--------------------------------------------------+----------+
-
-.. note::
-
-   ``-t / --type`` is **not** required here. The certificate type is set
-   authoritatively by the Project Admin when signing (``cert sign -t <type>``),
-   not by the site generating the CSR.
 
 ``nvflare cert sign``
 =====================
@@ -369,13 +381,14 @@ Sign a CSR with the root CA (Project Admin).
 +==================+==================================================+==========+
 | ``-r`` / ``--csr``    | Path to the CSR file to sign                | Yes      |
 +------------------+--------------------------------------------------+----------+
-| ``-t`` / ``--type``   | Certificate type to issue (authoritative,   | Yes      |
-|                  | overrides CSR role field)                        |          |
-+------------------+--------------------------------------------------+----------+
 | ``-c`` / ``--ca-dir`` | Directory containing ``rootCA.key`` and     | Yes      |
 |                  | ``rootCA.pem``                                   |          |
 +------------------+--------------------------------------------------+----------+
 | ``-o`` / ``--output-dir`` | Directory for signed cert and rootCA.pem | Yes     |
++------------------+--------------------------------------------------+----------+
+| ``-t`` / ``--type``   | Certificate type to issue. Overrides the    | No       |
+|                  | type proposed in the CSR. Required when the      |          |
+|                  | CSR has no embedded type.                        |          |
 +------------------+--------------------------------------------------+----------+
 | ``--force``      | Overwrite existing certificate                   | No       |
 +------------------+--------------------------------------------------+----------+
@@ -388,11 +401,14 @@ Assemble a startup kit (Site Admin).
 +------------------+--------------------------------------------------+----------+
 | Argument         | Description                                      | Required |
 +==================+==================================================+==========+
-| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | Yes (No  |
-|                  | ``org_admin``, ``lead``, ``member``              | with -p) |
-+------------------+--------------------------------------------------+----------+
 | ``-e`` / ``--endpoint`` | Server endpoint URI (``grpc://host:port``, | Yes      |
 |                  | ``tcp://host:port``, or ``http://host:port``)    |          |
++------------------+--------------------------------------------------+----------+
+| ``-t`` / ``--type``   | Kit type: ``client``, ``server``,           | No       |
+|                  | ``org_admin``, ``lead``, ``member``.             |          |
+|                  | In single mode, derived from the signed cert's   |          |
+|                  | embedded type. Explicit ``-t`` overrides.        |          |
+|                  | In yaml mode (``-p``), acts as a type filter.    |          |
 +------------------+--------------------------------------------------+----------+
 | ``-p`` / ``--project-file`` | Site-scoped project YAML listing all  | No       |
 |                  | participants. When given, builds all matching    |          |

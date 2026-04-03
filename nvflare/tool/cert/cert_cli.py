@@ -122,6 +122,19 @@ def _def_cert_csr_parser(cert_sub: argparse._SubParsersAction) -> argparse.Argum
         help="Organization name for the certificate.",
     )
     p.add_argument(
+        "-t",
+        "--type",
+        required=False,
+        default=None,
+        dest="cert_type",
+        choices=["client", "server", "org_admin", "lead", "member"],
+        help=(
+            "Proposed certificate type. Embedded in the CSR as a hint for the Project Admin. "
+            "The Project Admin may override this when running 'nvflare cert sign'. "
+            "Typically set by the org admin on behalf of the participant."
+        ),
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         default=False,
