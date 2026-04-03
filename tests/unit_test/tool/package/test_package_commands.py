@@ -2133,3 +2133,27 @@ class TestYamlMode:
         # The dummy server directory (named after the endpoint host) must have been removed
         assert "fl-server" not in entries, "dummy server dir unexpectedly present in prod_00"
         assert len(entries) == 1, f"unexpected extra entries in prod_00: {entries}"
+
+    # ------------------------------------------------------------------
+    # 11. Malformed rootCA.pem in YAML mode → structured error, not traceback
+    # ------------------------------------------------------------------
+    def test_malformed_rootca_exits_with_structured_error(self, cert_env, tmp_path):
+        """A corrupt rootCA.pem must produce a structured CLI error (exit 1), not a raw traceback."""
+        cert_dir = tmp_path / "certs"
+        cert_dir.mkdir()
+        # Write an invalid (non-PEM) rootCA.pem
+        (cert_dir / "rootCA.pem").write_text("this is not a valid certificate\n")
+
+        project_yaml = tmp_path / "project.yaml"
+        _write_project_yaml(project_yaml, [{"name": "hospital-1", "type": "client"}])
+
+        args = _make_args(
+            kit_type=None,
+            endpoint="grpc://fl-server:8002",
+            dir=str(cert_dir),
+            workspace=str(tmp_path / "ws"),
+            project_file=str(project_yaml),
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            handle_package(args)
+        assert exc_info.value.code == 1

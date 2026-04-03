@@ -283,7 +283,16 @@ def _handle_package_yaml_mode(args, fmt, scheme, host, port):
 
     # Validate all cert/key files up front before building anything.
     cert_map = {}
-    ca_cert = load_crt(rootca_path)
+    try:
+        ca_cert = load_crt(rootca_path)
+    except Exception as e:
+        output_error(
+            "ROOTCA_INVALID",
+            f"Failed to load root CA certificate '{rootca_path}': {e}.",
+            "Ensure the file is a valid PEM-encoded certificate.",
+            fmt,
+            exit_code=1,
+        )
     for kit_type, participant in all_participants:
         p_name = participant.name
         cert_path = os.path.join(args.dir, f"{p_name}.crt")

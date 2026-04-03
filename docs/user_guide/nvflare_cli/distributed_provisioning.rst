@@ -44,21 +44,41 @@ Roles
 |                   | Runs ``package`` to assemble the startup kit.            |
 +-------------------+----------------------------------------------------------+
 
-The ``-t`` / ``--type`` argument controls what kind of participant is being provisioned:
+The ``-t`` / ``--type`` argument identifies either a **site** (FL process identity) or a
+**user** (human connecting via the admin API):
 
-+------------+----------------------------------------------+
-| Type       | Description                                  |
-+============+==============================================+
-| ``server`` | FL server                                    |
-+------------+----------------------------------------------+
-| ``client`` | FL client (data site)                        |
-+------------+----------------------------------------------+
-| ``lead``   | Swarm learning lead aggregator               |
-+------------+----------------------------------------------+
-| ``member`` | Swarm learning member                        |
-+------------+----------------------------------------------+
-| ``org_admin`` | Organization admin                        |
-+------------+----------------------------------------------+
+**Site types** — receive ``start.sh``; no role embedded in cert ``UNSTRUCTURED_NAME``:
+
++---------------+---------------------------------------------------------------+
+| Type          | Description                                                   |
++===============+===============================================================+
+| ``server``    | FL server process identity (mTLS server endpoint)             |
++---------------+---------------------------------------------------------------+
+| ``client``    | FL client (data site) process identity (mTLS client)          |
++---------------+---------------------------------------------------------------+
+
+**User roles** — receive ``fl_admin.sh``; role embedded in cert ``UNSTRUCTURED_NAME``
+and enforced by ``local/authorization.json.default`` at each site:
+
++---------------+---------------------------------------------------+-----------------------------+
+| Role          | Description                                       | Default ``submit_job``      |
++===============+===================================================+=============================+
+| ``lead``      | Lead researcher / primary job submitter.          | Allowed (any site)          |
+|               | Can submit, clone, manage own jobs; operate and   |                             |
+|               | deploy custom code (byoc) on own site.            |                             |
++---------------+---------------------------------------------------+-----------------------------+
+| ``org_admin`` | Organization administrator. Can manage and        | **Not allowed**             |
+|               | operate own site, view all jobs, but cannot       |                             |
+|               | submit or clone jobs.                             |                             |
++---------------+---------------------------------------------------+-----------------------------+
+| ``member``    | Read-only observer. Can view jobs and status;     | **Not allowed**             |
+|               | no submit, operate, or byoc permissions.          |                             |
++---------------+---------------------------------------------------+-----------------------------+
+
+Sites may customize ``local/authorization.json.default`` to tighten or loosen the
+default policy. ``lead`` is the intended role for users who run FL experiments.
+``project_admin`` is not a ``-t`` choice — the Project Admin self-provisions via
+``nvflare cert init``.
 
 *****
 Steps
