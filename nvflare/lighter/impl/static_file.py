@@ -193,7 +193,8 @@ class StaticFileBuilder(Builder):
         studies = project.get_prop("studies")
         if studies:
             os.makedirs(dest_dir, exist_ok=True)
-            utils.write(os.path.join(dest_dir, "study_registry.json"), json.dumps(studies, indent=2), mode="t")
+            registry = {"format_version": "1.0", "studies": studies}
+            utils.write(os.path.join(dest_dir, "study_registry.json"), json.dumps(registry, indent=2), mode="t")
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(server)

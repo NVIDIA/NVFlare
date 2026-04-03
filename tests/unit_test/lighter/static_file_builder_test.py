@@ -83,7 +83,10 @@ class TestStaticFileBuilder:
 
         registry_path = tmp_path / server.name / "local" / "study_registry.json"
         assert registry_path.exists()
-        assert json.loads(registry_path.read_text()) == project.get_prop("studies")
+        assert json.loads(registry_path.read_text()) == {
+            "format_version": "1.0",
+            "studies": project.get_prop("studies"),
+        }
 
     def test_build_server_does_not_emit_study_registry_without_studies(self, tmp_path):
         server = Participant(type="server", name="server1", org="org")

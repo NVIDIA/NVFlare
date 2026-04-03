@@ -161,6 +161,7 @@ Validation rules:
 Provisioning emits `study_registry.json` into the server `local/` directory. The server loads this file at startup as
 the authoritative runtime registry for:
 
+- registry format version
 - study names
 - enrolled sites per study
 - per-study admin role mappings

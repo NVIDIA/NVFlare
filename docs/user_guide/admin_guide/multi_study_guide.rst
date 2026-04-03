@@ -76,6 +76,13 @@ instead of using the certificate-based role. This resolved role is used for stud
 authorization decisions during that session. If the user is not listed in the study's ``admins``
 mapping, login is rejected.
 
+.. note::
+
+   If a study maps a user to ``project_admin``, that means the user has full authority for
+   study-scoped operations in that study. It does **not** make the user a deployment-wide project
+   admin for server-only or other global operations. Those continue to use the certificate-based
+   role from the admin participant definition in ``project.yml``.
+
 The ``default`` study always uses the certificate-based role. In a multi-study deployment, default
 sessions still only see default-study jobs.
 

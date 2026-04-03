@@ -19,29 +19,63 @@ def _registry_module():
     return importlib.import_module("nvflare.security.study_registry")
 
 
+def _make_registry_config(studies):
+    return {"format_version": "1.0", "studies": studies}
+
+
 def test_study_registry_returns_role_for_user_in_study():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
-        {
-            "cancer-research": {
-                "sites": ["site-a", "site-b"],
-                "admins": {"admin@nvidia.com": "lead"},
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "sites": ["site-a", "site-b"],
+                    "admins": {"admin@nvidia.com": "lead"},
+                }
             }
-        }
+        )
     )
 
     assert registry.get_role("admin@nvidia.com", "cancer-research") == "lead"
 
 
+def test_study_registry_rejects_missing_or_invalid_format_version():
+    study_registry = _registry_module()
+
+    try:
+        study_registry.StudyRegistry({"studies": {"cancer-research": {}}})
+        assert False, "expected ValueError for missing format_version"
+    except ValueError as e:
+        assert "format_version" in str(e)
+
+    try:
+        study_registry.StudyRegistry({"format_version": "2.0", "studies": {"cancer-research": {}}})
+        assert False, "expected ValueError for invalid format_version"
+    except ValueError as e:
+        assert "format_version" in str(e)
+
+
+def test_study_registry_rejects_missing_studies_mapping():
+    study_registry = _registry_module()
+
+    try:
+        study_registry.StudyRegistry({"format_version": "1.0"})
+        assert False, "expected ValueError for missing studies mapping"
+    except ValueError as e:
+        assert "studies" in str(e)
+
+
 def test_study_registry_returns_none_for_missing_user_or_study():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
-        {
-            "cancer-research": {
-                "sites": ["site-a"],
-                "admins": {"admin@nvidia.com": "lead"},
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "sites": ["site-a"],
+                    "admins": {"admin@nvidia.com": "lead"},
+                }
             }
-        }
+        )
     )
 
     assert registry.get_role("other@nvidia.com", "cancer-research") is None
@@ -53,12 +87,14 @@ def test_study_registry_returns_none_for_missing_user_or_study():
 def test_study_registry_returns_enrolled_sites_as_a_set():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
-        {
-            "cancer-research": {
-                "sites": ["site-a", "site-b"],
-                "admins": {"admin@nvidia.com": "lead"},
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "sites": ["site-a", "site-b"],
+                    "admins": {"admin@nvidia.com": "lead"},
+                }
             }
-        }
+        )
     )
 
     assert registry.get_sites("cancer-research") == {"site-a", "site-b"}
@@ -68,12 +104,14 @@ def test_study_registry_returns_enrolled_sites_as_a_set():
 def test_study_registry_service_returns_initialized_registry():
     study_registry = _registry_module()
     registry = study_registry.StudyRegistry(
-        {
-            "cancer-research": {
-                "sites": ["site-a"],
-                "admins": {"admin@nvidia.com": "lead"},
+        _make_registry_config(
+            {
+                "cancer-research": {
+                    "sites": ["site-a"],
+                    "admins": {"admin@nvidia.com": "lead"},
+                }
             }
-        }
+        )
     )
 
     study_registry.StudyRegistryService.initialize(registry)
@@ -83,7 +121,7 @@ def test_study_registry_service_returns_initialized_registry():
 
 def test_study_registry_service_reset_clears_registry():
     study_registry = _registry_module()
-    study_registry.StudyRegistryService.initialize(study_registry.StudyRegistry({"study-a": {}}))
+    study_registry.StudyRegistryService.initialize(study_registry.StudyRegistry(_make_registry_config({"study-a": {}})))
 
     study_registry.StudyRegistryService.reset()
 

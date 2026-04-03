@@ -158,6 +158,29 @@ def test_authorize_server_operation_requires_authz_for_client_targets_when_regis
     assert conn.get_prop(ConnProps.USER_ROLE) == "lead"
 
 
+def test_authorize_server_operation_keeps_cert_role_for_all_targets(monkeypatch):
+    _install_registry(
+        monkeypatch,
+        _FakeStudyRegistry(
+            roles={("admin@nvidia.com", "cancer-research"): "lead"}, studies={"cancer-research": {"site-a"}}
+        ),
+    )
+
+    conn = _FakeConnection(
+        props={
+            ConnProps.USER_NAME: "admin@nvidia.com",
+            ConnProps.USER_ROLE: "project_admin",
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+        },
+        app_ctx=_FakeEngine([_FakeClient("site-a", "token-a"), _FakeClient("site-b", "token-b")]),
+    )
+
+    result = CommandUtil().authorize_server_operation(conn, ["shutdown", "all"])
+
+    assert result == PreAuthzReturnCode.REQUIRE_AUTHZ
+    assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
+
+
 def test_authorize_server_operation_preserves_ok_for_client_targets_without_registry(monkeypatch):
     _install_registry(monkeypatch, None)
 

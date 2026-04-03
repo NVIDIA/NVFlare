@@ -115,15 +115,15 @@ class LoginModule(CommandModule, CommandFilter):
         registry = StudyRegistryService.get_registry()
         if study != DEFAULT_STUDY:
             if not registry:
-                self.logger.debug(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
+                self.logger.warning(f"rejecting login for user '{user_name}': no study registry for study '{study}'")
                 conn.append_string("REJECT")
                 return
             if not registry.has_study(study):
-                self.logger.debug(f"rejecting login for user '{user_name}': unknown study '{study}'")
+                self.logger.warning(f"rejecting login for user '{user_name}': unknown study '{study}'")
                 conn.append_string("REJECT")
                 return
             if not registry.get_role(user_name, study):
-                self.logger.debug(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
+                self.logger.warning(f"rejecting login for user '{user_name}': no mapping for study '{study}'")
                 conn.append_string("REJECT")
                 return
 

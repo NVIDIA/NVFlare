@@ -410,6 +410,7 @@ class TestMultiStudySessionIntegration:
         _assert_login_success(main_admin_root, MAIN_ADMIN, DEFAULT_STUDY)
         _assert_login_success(main_admin_root, MAIN_ADMIN, "study-a")
         _assert_login_success(lead_admin_root, LEAD_ADMIN, "study-b")
+        _assert_login_success(outsider_admin_root, OUTSIDER_ADMIN, DEFAULT_STUDY)
         _assert_login_rejected(main_admin_root, MAIN_ADMIN, "unknown-study")
         _assert_login_rejected(outsider_admin_root, OUTSIDER_ADMIN, "study-a")
 

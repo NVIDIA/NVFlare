@@ -16,13 +16,25 @@ from typing import Optional
 
 
 class StudyRegistry:
+    FORMAT_VERSION = "1.0"
+
     def __init__(self, studies_config: dict):
         if not isinstance(studies_config, dict):
             raise ValueError(f"studies_config must be dict but got {type(studies_config)}")
 
+        format_version = studies_config.get("format_version")
+        if format_version != self.FORMAT_VERSION:
+            raise ValueError(
+                f"missing or invalid study registry format_version: must be {self.FORMAT_VERSION}"
+            )
+
+        studies = studies_config.get("studies")
+        if not isinstance(studies, dict):
+            raise ValueError(f"study registry 'studies' must be dict but got {type(studies)}")
+
         self._roles = {}
         self._sites = {}
-        for study_name, study_def in studies_config.items():
+        for study_name, study_def in studies.items():
             study_def = study_def or {}
             self._roles[study_name] = dict(study_def.get("admins", {}))
             self._sites[study_name] = set(study_def.get("sites", []))

@@ -180,6 +180,9 @@ class CommandUtil(object):
         return ""
 
     def must_be_project_admin(self, conn: Connection, args: List[str]):
+        # This helper intentionally checks the certificate role. Do not call
+        # _apply_study_role_for_authz() here: project_admin-only operations must
+        # stay scoped to the cert/global role rather than any study-mapped role.
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
             conn.append_error(
@@ -196,7 +199,7 @@ class CommandUtil(object):
             return PreAuthzReturnCode.ERROR
 
         target_type = conn.get_prop(self.TARGET_TYPE)
-        if target_type == self.TARGET_TYPE_SERVER:
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             return PreAuthzReturnCode.REQUIRE_AUTHZ
 
         registry, _ = self._get_study_auth_context(conn)
@@ -206,9 +209,6 @@ class CommandUtil(object):
             if not self._apply_study_role_for_authz(conn):
                 return PreAuthzReturnCode.ERROR
             return PreAuthzReturnCode.REQUIRE_AUTHZ
-
-        if registry and not self._apply_study_role_for_authz(conn):
-            return PreAuthzReturnCode.ERROR
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def send_request_to_clients(self, conn, message):

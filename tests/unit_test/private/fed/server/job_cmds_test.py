@@ -520,3 +520,43 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
     assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
     assert engine.job_def_manager.created_meta is None
     assert conn.successes == []
+
+
+def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "study-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site2"], "app2": ["site3", "site2"]},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "cert_admin",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors
+    assert conn.errors[0][0] == "sites 'site2', 'site3' are not enrolled in study 'cancer-research'"
+    assert engine.job_def_manager.created_meta is None
+    assert conn.successes == []
