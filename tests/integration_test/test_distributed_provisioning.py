@@ -41,12 +41,12 @@ from nvflare.tool.package.package_commands import handle_package
 # Participants for the test federation
 # ---------------------------------------------------------------------------
 
-# (name, kit_type, cert_sign_type)
+# (name, cert_type) — cert_type is embedded in CSR and signed cert; package derives it from cert
 _PARTICIPANTS = [
-    ("localhost", "server", "server"),
-    ("site-1", "client", "client"),
-    ("site-2", "client", "client"),
-    ("admin@myfl.com", "lead", "lead"),
+    ("localhost", "server"),
+    ("site-1", "client"),
+    ("site-2", "client"),
+    ("admin@myfl.com", "lead"),
 ]
 
 _SERVER_NAME = "localhost"
@@ -71,15 +71,19 @@ def _ns(**kwargs):
     return types.SimpleNamespace(**defaults)
 
 
-def _run_package(name, kit_type, cert, key, rootca, workspace):
-    """Call handle_package and return the output result dict."""
+def _run_package(name, cert, key, rootca, workspace):
+    """Call handle_package and return the output result dict.
+
+    Kit type is derived automatically from the signed certificate's UNSTRUCTURED_NAME;
+    no -t/--type argument is needed in the new workflow.
+    """
     result = {}
 
     def _capture(r, fmt):
         result.update(r)
 
     args = _ns(
-        kit_type=kit_type,
+        kit_type=None,  # derived from signed cert
         name=name,
         endpoint=_ENDPOINT,
         dir=None,
@@ -114,29 +118,28 @@ class TestDistributedProvisioningWorkflow:
         # Step 1 — cert init
         handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
 
-        # Step 2 — cert csr for each participant
-        for name, _, _ in _PARTICIPANTS:
-            handle_cert_csr(_ns(name=name, output_dir=csr_dir))
+        # Step 2 — cert csr for each participant (propose type in CSR)
+        for name, cert_type in _PARTICIPANTS:
+            handle_cert_csr(_ns(name=name, output_dir=csr_dir, cert_type=cert_type))
 
-        # Step 3 — cert sign for each participant
-        for name, _, cert_type in _PARTICIPANTS:
+        # Step 3 — cert sign for each participant (type read from CSR; no -t needed)
+        for name, _ in _PARTICIPANTS:
             sign_out = os.path.join(signed_dir, name)
             handle_cert_sign(
                 _ns(
                     csr_path=os.path.join(csr_dir, f"{name}.csr"),
                     ca_dir=ca_dir,
                     output_dir=sign_out,
-                    cert_type=cert_type,
+                    cert_type=None,  # read from CSR
                 )
             )
 
-        # Step 4 — nvflare package for each participant
+        # Step 4 — nvflare package for each participant (kit type derived from signed cert)
         kit_dirs = {}
-        for name, kit_type, _ in _PARTICIPANTS:
+        for name, _ in _PARTICIPANTS:
             sign_out = os.path.join(signed_dir, name)
             result = _run_package(
                 name=name,
-                kit_type=kit_type,
                 cert=os.path.join(sign_out, f"{name}.crt"),
                 key=os.path.join(csr_dir, f"{name}.key"),
                 rootca=os.path.join(sign_out, "rootCA.pem"),
@@ -171,13 +174,14 @@ class TestDistributedProvisioningWorkflow:
         csr_dir = str(tmp_path / "csr")
         sign_out = str(tmp_path / "signed")
         handle_cert_init(_ns(project=_PROJECT, output_dir=ca_dir))
-        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir))
+        handle_cert_csr(_ns(name="site-1", output_dir=csr_dir, cert_type="client"))
+        # cert_type=None: type read from CSR UNSTRUCTURED_NAME
         handle_cert_sign(
             _ns(
                 csr_path=os.path.join(csr_dir, "site-1.csr"),
                 ca_dir=ca_dir,
                 output_dir=sign_out,
-                cert_type="client",
+                cert_type=None,
             )
         )
         assert os.path.isfile(os.path.join(sign_out, "site-1.crt"))
@@ -188,7 +192,7 @@ class TestDistributedProvisioningWorkflow:
     # ------------------------------------------------------------------
 
     def test_all_kit_dirs_created(self, provisioned):
-        for name, _, _ in _PARTICIPANTS:
+        for name, _ in _PARTICIPANTS:
             assert os.path.isdir(provisioned[name]), f"Kit dir missing for {name}"
 
     def test_server_kit_has_expected_files(self, provisioned):
@@ -211,7 +215,7 @@ class TestDistributedProvisioningWorkflow:
             assert os.path.isfile(os.path.join(startup, f)), f"Missing {f} in admin startup/"
 
     def test_all_kits_have_local_and_transfer_dirs(self, provisioned):
-        for name, _, _ in _PARTICIPANTS:
+        for name, _ in _PARTICIPANTS:
             assert os.path.isdir(os.path.join(provisioned[name], "local")), f"Missing local/ for {name}"
             assert os.path.isdir(os.path.join(provisioned[name], "transfer")), f"Missing transfer/ for {name}"
 
@@ -268,7 +272,7 @@ class TestDistributedProvisioningWorkflow:
     def test_all_participants_use_same_ca(self, provisioned):
         """rootCA.pem must be identical in all kits (same signing authority)."""
         ref = None
-        for name, _, _ in _PARTICIPANTS:
+        for name, _ in _PARTICIPANTS:
             rootca_path = os.path.join(provisioned[name], "startup", "rootCA.pem")
             content = open(rootca_path, "rb").read()
             if ref is None:
