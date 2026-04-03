@@ -54,9 +54,9 @@ def _read_cert_type_from_cert(cert) -> str:
 
 
 _PACKAGE_EXAMPLES = [
-    "nvflare package -t lead -e grpc://fl-server:8002 --dir ./alice --project-name myproject",
-    "nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1 -w ./workspace --project-name myproject",
-    "nvflare package -n hospital-1 -t client -e grpc://fl-server:8002 --cert ./signed/hospital-1/hospital-1.crt --key ./csr/hospital-1.key --rootca ./signed/hospital-1/rootCA.pem",
+    "nvflare package -e grpc://fl-server:8002 --dir ./alice --project-name myproject",
+    "nvflare package -e grpc://fl-server:8002 --dir ./hospital-1 -w ./workspace --project-name myproject",
+    "nvflare package -n hospital-1 -e grpc://fl-server:8002 --cert ./signed/hospital-1/hospital-1.crt --key ./csr/hospital-1.key --rootca ./signed/hospital-1/rootCA.pem",
 ]
 
 
