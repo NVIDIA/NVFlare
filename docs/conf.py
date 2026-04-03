@@ -83,10 +83,12 @@ extensions = [
 ]
 
 if not _skip_api:
-    extensions.extend([
-        "sphinx.ext.autodoc",
-        "sphinx.ext.viewcode",
-    ])
+    extensions.extend(
+        [
+            "sphinx.ext.autodoc",
+            "sphinx.ext.viewcode",
+        ]
+    )
 
 autoclass_content = "both"
 add_module_names = False

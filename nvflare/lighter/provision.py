@@ -21,7 +21,8 @@ import shutil
 import sys
 from typing import Optional
 
-from nvflare.lighter.constants import PropKey
+from nvflare.apis.utils.format_check import name_check
+from nvflare.lighter.constants import DEFINED_ROLES, PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
@@ -148,8 +149,8 @@ def provision(
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
     api_version = project_dict.get(PropKey.API_VERSION)
-    if api_version not in [3]:
-        raise ValueError(f"API version expected 3 but found {api_version}")
+    if api_version not in [3, 4]:
+        raise ValueError(f"API version expected 3 or 4 but found {api_version}")
     project_name = project_dict.get(PropKey.NAME)
     if len(project_name) > 63:
         print(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
@@ -164,6 +165,36 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
 
     if add_client_file_path:
         add_extra_clients(add_client_file_path, participant_defs)
+
+    studies = project_dict.get("studies")
+    if studies:
+        if api_version != 4:
+            raise ValueError("studies: requires api_version: 4")
+
+        client_names = {p[PropKey.NAME] for p in participant_defs if p.get(PropKey.TYPE) == "client"}
+        admin_names = {p[PropKey.NAME] for p in participant_defs if p.get(PropKey.TYPE) == "admin"}
+
+        for study_name, study_def in studies.items():
+            if study_def is None:
+                studies[study_name] = study_def = {}
+            elif not isinstance(study_def, dict):
+                raise ValueError(f"study '{study_name}' must be a mapping")
+
+            if study_name == "default":
+                raise ValueError("study name 'default' is reserved")
+            invalid, reason = name_check(study_name, "study")
+            if invalid:
+                raise ValueError(f"invalid study name '{study_name}': {reason}")
+
+            for site in study_def.get("sites", []):
+                if site not in client_names:
+                    raise ValueError(f"study '{study_name}' references unknown client '{site}'")
+
+            for admin_name, role in study_def.get("admins", {}).items():
+                if admin_name not in admin_names:
+                    raise ValueError(f"study '{study_name}' references unknown admin '{admin_name}'")
+                if role not in DEFINED_ROLES:
+                    raise ValueError(f"study '{study_name}' assigns unknown role '{role}' to '{admin_name}'")
 
     for p in participant_defs:
         project.add_participant(participant_from_dict(p))

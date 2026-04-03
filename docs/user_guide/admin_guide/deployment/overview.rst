@@ -63,6 +63,9 @@ which you can use to customize configurations to fit your own requirements.
 Edit the :ref:`Project yaml file <project_yml>` in the directory with the provisioning tool to meet your project requirements (make sure the
 server, client sites, admin, orgs, and everything else are right for your project).
 
+For multi-study deployments, set ``api_version: 4`` and add a ``studies:`` section to define per-study
+site enrollment and admin role mappings. See :ref:`multi_study_guide`.
+
 Then run the provision command with (here we assume your
 project.yml is in current working directory):
 

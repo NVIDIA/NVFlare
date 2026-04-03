@@ -71,7 +71,8 @@ Here is an example for meta.json:
         "mandatory_clients": [
             "client1",
             "client2"
-        ]
+        ],
+        "study": "default"
     }
 
 Pay attention to the following:
@@ -81,6 +82,7 @@ Pay attention to the following:
     - deploy_map: what apps go to which sites (see :ref:`deploy_map`)
     - min_clients: minimum clients required for this job
     - mandatory_clients: mandatory clients required for this job
+    - study: the study this job belongs to, set automatically from the session context at submit time (see :ref:`multi_study_guide`)
 
 Additional optional configuration parameters:
 
@@ -91,6 +93,7 @@ The system also keeps additional information about the job such as:
     - Submitter name
     - Time of submission
     - Current status of the job (submitted, approved, running, completed, etc.)
+    - Study the job belongs to
     - Location of the final result
 
 Resources
@@ -126,6 +129,12 @@ should be no other apps being deployed to the sites. This means the following ex
     "deploy_map": {
         "app1": ["@ALL"], "app2": ["site-1"]
     }
+
+.. note::
+
+   When a job is submitted within a named study, ``@ALL`` is narrowed to only the sites enrolled in that study.
+   Additionally, all sites in the ``deploy_map`` must be enrolled in the active study or the submission will be
+   rejected. See :ref:`multi_study_guide` for details.
 
 If an empty list of sites is specified for an app in the ``deploy_map``, then that app is to be deployed to no sites,
 and no validation is done other than checking that the folder exists. This is the case for "app2" in the following valid

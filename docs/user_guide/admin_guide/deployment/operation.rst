@@ -16,6 +16,10 @@ package was provisioned for (or for poc mode, "admin" as the name and password).
 To scope the terminal to a study, launch it with ``fl_admin.sh --study cancer-research``. If ``--study`` is omitted,
 the admin terminal uses the ``default`` study for that terminal session.
 
+Study-aware commands issued within a study session are scoped to that study: ``list_jobs`` shows only
+jobs from the active study, ``check_status client`` shows only enrolled sites, and ``submit_job`` tags
+jobs with the active study. See :ref:`multi_study_guide` for full details.
+
 Typing "help" or "?" will display a list of the commands and a brief description for each. Typing "? " before a command
 like "? check_status" or "?ls" will provide additional details for the usage of a command. Provided below is a list of
 commands shown as examples of how they may be run with a description.

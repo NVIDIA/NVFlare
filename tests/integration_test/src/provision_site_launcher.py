@@ -23,6 +23,7 @@ import yaml
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process
 from .utils import (
     cleanup_job_and_snapshot,
+    cleanup_path,
     read_yaml,
     run_command_in_subprocess,
     run_provision_command,
@@ -71,6 +72,7 @@ class ProvisionSiteLauncher(SiteLauncher):
         return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
 
     def prepare_workspace(self) -> str:
+        cleanup_path(os.path.join(WORKSPACE, self.project_yaml["name"]))
         _, temp_yaml = tempfile.mkstemp()
         with open(temp_yaml, "w") as f:
             yaml.dump(self.project_yaml, f, default_flow_style=False)

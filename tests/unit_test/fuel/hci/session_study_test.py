@@ -15,7 +15,7 @@
 import json
 
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.hci.base64_utils import str_to_b64str
+from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.server.sess import Session
 
 
@@ -47,6 +47,23 @@ def test_session_token_round_trip_preserves_study():
     assert restored.user_role == "lead"
 
 
+def test_session_token_uses_study_field_name():
+    session = Session(
+        sess_id="session-id",
+        user_name="admin@nvidia.com",
+        org="nvidia",
+        role="lead",
+        origin_fqcn="origin",
+        active_study="cancer-research",
+    )
+
+    token = session.make_token(_FakeIdAsserter())
+    payload = json.loads(b64str_to_str(token.split(":")[0]))
+
+    assert payload["study"] == "cancer-research"
+    assert "t" not in payload
+
+
 def test_decode_token_defaults_legacy_session_study():
     legacy_payload = json.dumps({"n": "admin@nvidia.com", "r": "lead", "o": "nvidia", "s": "session-id"})
     token = f"{str_to_b64str(legacy_payload)}:signature"
@@ -54,3 +71,14 @@ def test_decode_token_defaults_legacy_session_study():
     restored = Session.decode_token(token)
 
     assert restored.active_study == DEFAULT_STUDY
+
+
+def test_decode_token_accepts_legacy_t_study_field():
+    legacy_payload = json.dumps(
+        {"n": "admin@nvidia.com", "r": "lead", "o": "nvidia", "s": "session-id", "t": "legacy-study"}
+    )
+    token = f"{str_to_b64str(legacy_payload)}:signature"
+
+    restored = Session.decode_token(token)
+
+    assert restored.active_study == "legacy-study"

@@ -20,7 +20,9 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.proto import MetaKey
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import JobCommandModule, _create_list_job_cmd_parser
 
@@ -62,6 +64,9 @@ class _MockConnection:
 
     def get_prop(self, key, default=None):
         return self._props.get(key, default)
+
+    def set_prop(self, key, value):
+        self._props[key] = value
 
     def append_error(self, msg, meta=None):
         self.errors.append((msg, meta))
@@ -158,6 +163,39 @@ class _FakeListEngine:
         from nvflare.apis.fl_context import FLContext
 
         return FLContext()
+
+
+class _FakeStudyRegistry:
+    def __init__(self, roles=None, sites=None):
+        self.roles = roles or {}
+        self.sites = sites or {}
+
+    def has_study(self, study):
+        return study in self.roles or study in self.sites
+
+    def get_role(self, user_name, study):
+        return self.roles.get(study, {}).get(user_name)
+
+    def get_sites(self, study):
+        return self.sites.get(study)
+
+
+class _FakeStudyRegistryService:
+    registry = None
+
+    @staticmethod
+    def get_registry():
+        return _FakeStudyRegistryService.registry
+
+
+class _FakeJobMetaValidatorWithMeta:
+    def __init__(self, meta):
+        self.meta = meta
+
+    def validate(self, folder_name, zip_file_name):
+        assert folder_name == "job_folder"
+        assert zip_file_name == "job.zip"
+        return True, "", dict(self.meta)
 
 
 def test_submit_job_exposes_study_in_submit_event(monkeypatch):
@@ -293,3 +331,232 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.errors == []
     assert len(conn.dicts) == 1
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
+
+
+def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(
+            roles={"cancer-research": {"submitter": "study_lead"}}, sites={"cancer-research": {"site1"}}
+        ),
+        raising=False,
+    )
+
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    study_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: job_id,
+            JobMetaKey.JOB_NAME.value: "study",
+            JobMetaKey.STUDY.value: "cancer-research",
+            JobMetaKey.SUBMITTER_NAME.value: "submitter",
+            JobMetaKey.SUBMITTER_ORG.value: "org",
+            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+        }
+    )
+    conn = _MockConnection(
+        app_ctx=_FakeListEngine([study_job]),
+        props={ConnProps.ACTIVE_STUDY: "multiple-sclerosis"},
+    )
+
+    rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
+
+    assert rc == PreAuthzReturnCode.ERROR
+    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.get_prop(JobCommandModule.JOB) is None
+    assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
+
+
+def test_authorize_job_id_hides_non_default_jobs_from_default_session_without_registry(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(_FakeStudyRegistryService, "registry", None, raising=False)
+
+    job_id = "123e4567-e89b-42d3-a456-426614174002"
+    study_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: job_id,
+            JobMetaKey.JOB_NAME.value: "study",
+            JobMetaKey.STUDY.value: "legacy-study",
+            JobMetaKey.SUBMITTER_NAME.value: "submitter",
+            JobMetaKey.SUBMITTER_ORG.value: "org",
+            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+        }
+    )
+    conn = _MockConnection(
+        app_ctx=_FakeListEngine([study_job]),
+        props={ConnProps.ACTIVE_STUDY: "default"},
+    )
+
+    rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
+
+    assert rc == PreAuthzReturnCode.ERROR
+    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.get_prop(JobCommandModule.JOB) is None
+    assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
+
+
+def test_authorize_job_id_resolves_study_role_before_authz(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(cmd_utils_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(
+            roles={"cancer-research": {"admin@nvidia.com": "study_lead"}}, sites={"cancer-research": {"site1"}}
+        ),
+        raising=False,
+    )
+
+    job_id = "123e4567-e89b-42d3-a456-426614174001"
+    study_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: job_id,
+            JobMetaKey.JOB_NAME.value: "study",
+            JobMetaKey.STUDY.value: "cancer-research",
+            JobMetaKey.SUBMITTER_NAME.value: "submitter",
+            JobMetaKey.SUBMITTER_ORG.value: "org",
+            JobMetaKey.SUBMITTER_ROLE.value: "study_lead",
+        }
+    )
+    conn = _MockConnection(
+        app_ctx=_FakeListEngine([study_job]),
+        props={
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+            ConnProps.USER_NAME: "admin@nvidia.com",
+            ConnProps.USER_ROLE: "project_admin",
+        },
+    )
+
+    rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
+
+    assert rc == PreAuthzReturnCode.REQUIRE_AUTHZ
+    assert conn.get_prop(ConnProps.USER_ROLE) == "study_lead"
+
+
+def test_submit_job_persists_effective_study_submitter_role(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(cmd_utils_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(
+            roles={"cancer-research": {"submitter": "study_lead"}}, sites={"cancer-research": {"site1"}}
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "study-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site1"]},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "cert_admin",
+        },
+    )
+
+    rc = JobCommandModule().command_authz_required(conn, ["submit_job"])
+    assert rc == PreAuthzReturnCode.REQUIRE_AUTHZ
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert len(conn.successes) == 1
+    assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_ROLE.value] == "study_lead"
+
+
+def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(sites={"cancer-research": {"site1", "site2"}}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "study-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site1", "site3"]},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "cert_admin",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors
+    assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
+    assert engine.job_def_manager.created_meta is None
+    assert conn.successes == []
+
+
+def test_submit_job_reports_all_deploy_map_sites_outside_study(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(
+        _FakeStudyRegistryService,
+        "registry",
+        _FakeStudyRegistry(sites={"cancer-research": {"site1"}}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JobMetaKey.JOB_NAME.value: "study-job",
+                JobMetaKey.DEPLOY_MAP.value: {"app1": ["server", "site2"], "app2": ["site3", "site2"]},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.ACTIVE_STUDY: "cancer-research",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "cert_admin",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors
+    assert conn.errors[0][0] == "sites 'site2', 'site3' are not enrolled in study 'cancer-research'"
+    assert engine.job_def_manager.created_meta is None
+    assert conn.successes == []

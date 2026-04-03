@@ -65,6 +65,8 @@ def run_command_in_subprocess(command, stdin_data=None):
     new_env = os.environ.copy()
     python_path = os.pathsep.join(path for path in sys.path if path)
     new_env["PYTHONPATH"] = python_path
+    python_bin_dir = os.path.dirname(sys.executable)
+    new_env["PATH"] = os.pathsep.join([python_bin_dir, new_env.get("PATH", "")])
     tokens = [os.path.expandvars(os.path.expanduser(t)) for t in shlex.split(command)]
     process = subprocess.Popen(
         tokens,

@@ -162,6 +162,15 @@ secure connections between the FL server, FL clients, and Admin clients. These f
 and authorization policies between server and clients. Startup kits are distributed to the FL server, clients,
 and Admin clients depending on role.
 
+Study
+=====
+A study provides multi-tenant isolation within a single NVFlare deployment. Each study defines which
+sites participate and what role each admin user has. Jobs, job listings, and study-aware client-targeted
+admin operations are scoped to the active study session. The ``"default"`` study is the fallback session
+context and preserves the certificate-based role behavior.
+Studies are configured in the ``studies:`` section of ``project.yml`` and require ``api_version: 4``.
+See :ref:`multi_study_guide` for details.
+
 Task
 ====
 A :ref:`Task <tasks>` is a piece of work (Python code) that is assigned by the :ref:`Controller <controllers>` to
