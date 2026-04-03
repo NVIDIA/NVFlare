@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import logging
 import os
 import shutil
 
@@ -28,9 +27,6 @@ from nvflare.fuel.utils.dict_utils import update_components
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs
-
-_hub_deployer_logger = logging.getLogger(__name__)
-
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
 
