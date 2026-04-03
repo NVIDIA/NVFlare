@@ -132,6 +132,28 @@ default policy. ``lead`` is the intended role for users who run FL experiments.
 Steps
 *****
 
++------+-------------------+-------------------------------------------------------------------+
+| Step | Who               | Action                                                            |
++======+===================+===================================================================+
+| 1    | Site Admin        | ``nvflare cert csr -n hospital-1 -t client -o ./csr``             |
++------+-------------------+-------------------------------------------------------------------+
+| 2    | Site Admin        | Send ``hospital-1.csr`` to Project Admin (email, file share, etc.)|
++------+-------------------+-------------------------------------------------------------------+
+| 3    | Project Admin     | ``nvflare cert init --project my-project -o ./ca``                |
+|      |                   | *(one-time per federation)*                                       |
++------+-------------------+-------------------------------------------------------------------+
+| 4    | Project Admin     | ``nvflare cert sign -r hospital-1.csr -c ./ca -o ./signed``       |
++------+-------------------+-------------------------------------------------------------------+
+| 5    | Project Admin     | Return ``hospital-1.crt`` + ``rootCA.pem`` to site admin          |
++------+-------------------+-------------------------------------------------------------------+
+| 6    | Site Admin        | ``nvflare package -e grpc://fl-server:8002 --dir ./csr``          |
+|      |                   | *(kit type derived from signed cert)*                             |
++------+-------------------+-------------------------------------------------------------------+
+| 7    | Site Admin        | ``cd hospital-1 && ./startup/start.sh``                           |
++------+-------------------+-------------------------------------------------------------------+
+
+Step 3 is done once per federation. Each new participant repeats steps 1–2 and 4–7 independently.
+
 Step 1 — Project Admin: Initialize the Root CA (once per federation)
 =====================================================================
 
