@@ -195,18 +195,7 @@ Each site runs ``nvflare package`` to assemble a startup kit from:
 - The signed certificate (received in Step 5)
 - ``rootCA.pem`` (received in Step 5)
 
-**Auto-discovery mode** (recommended when files are in one directory):
-
-Place the key, certificate, and ``rootCA.pem`` in the same directory and use ``--dir``:
-
-.. code-block:: bash
-
-   nvflare package -t client -e grpc://<server-hostname>:<port> --dir ./hospital-1-kit
-
-The ``--dir`` option discovers the ``.key`` file automatically and sets the
-participant name from its filename stem.
-
-**Explicit mode** (when files are in different locations):
+**Basic mode**:
 
 .. code-block:: bash
 
@@ -222,17 +211,45 @@ The ``-e`` / ``--endpoint`` argument sets the FL server address using one of the
 supported schemes: ``grpc://``, ``tcp://``, or ``http://``. The server identity
 used for mTLS validation is derived from the hostname in the endpoint.
 
-Server kit example:
+**Auto-discovery mode** (when all files are in one directory):
+
+Place the key, certificate, and ``rootCA.pem`` in the same directory and use ``--dir``:
 
 .. code-block:: bash
 
-   nvflare package \
-     -n fl-server \
-     -t server \
-     -e grpc://fl-server:8002 \
-     --cert ./signed/fl-server/fl-server.crt \
-     --key  ./csr/fl-server.key \
-     --rootca ./signed/fl-server/rootCA.pem
+   nvflare package -t client -e grpc://fl-server:8002 --dir ./hospital-1-kit
+
+The ``--dir`` option discovers the ``.key`` file automatically and sets the
+participant name from its filename stem.
+
+**Multi-participant mode** (``-p`` / ``--project-file``):
+
+When a site needs kits for multiple participants (e.g. a client process plus one or
+more admin users), use a site-scoped project YAML. All participants land in the same
+``prod_NN`` directory in a single command.
+
+Place all received certs and ``rootCA.pem`` in one directory (named by participant CN),
+then run:
+
+.. code-block:: bash
+
+   nvflare package -e grpc://fl-server:8002 -p ./site.yaml --dir ./certs
+
+A minimal ``site.yaml``:
+
+.. code-block:: yaml
+
+   api_version: 3
+   name: my-project
+   description: ""
+   participants:
+     - name: hospital-1
+       type: client
+       org: hospital
+     - name: alice@hospital.com
+       type: admin
+       org: hospital
+       role: lead
 
 Step 7 — Start the Federation
 ==============================
