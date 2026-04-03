@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import warnings
 from collections import OrderedDict
 from logging import INFO
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,6 +25,13 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+try:
+    VISIBLE_DEPRECATION_WARNING = np.exceptions.VisibleDeprecationWarning
+except AttributeError:
+    VISIBLE_DEPRECATION_WARNING = Warning
+
+CIFAR10_NUMPY_PICKLE_WARNING = r".*align should be passed as Python or NumPy boolean.*align=0.*"
 
 
 class Net(nn.Module):
@@ -49,9 +58,21 @@ class Net(nn.Module):
 def load_data():
     """Load CIFAR-10 (training and test set)."""
     trf = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    trainset = CIFAR10("./data", train=True, download=True, transform=trf)
-    testset = CIFAR10("./data", train=False, download=True, transform=trf)
+    trainset = _load_cifar10_dataset(train=True, transform=trf)
+    testset = _load_cifar10_dataset(train=False, transform=trf)
     return DataLoader(trainset, batch_size=32, shuffle=True), DataLoader(testset)
+
+
+def _load_cifar10_dataset(train: bool, transform):
+    # NumPy 2.4 warns when unpickling CIFAR-10's legacy dtype metadata, but
+    # torchvision still reads the dataset correctly.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=CIFAR10_NUMPY_PICKLE_WARNING,
+            category=VISIBLE_DEPRECATION_WARNING,
+        )
+        return CIFAR10("./data", train=train, download=True, transform=transform)
 
 
 def train(net, trainloader, valloader, epochs, device, learning_rate, momentum):
