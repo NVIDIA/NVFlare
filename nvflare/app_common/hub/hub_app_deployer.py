@@ -28,6 +28,7 @@ from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs
 
+
 class HubAppDeployer(AppDeployerSpec, FLComponent):
 
     HUB_CLIENT_CONFIG_TEMPLATE_NAME = "hub_client.json"
