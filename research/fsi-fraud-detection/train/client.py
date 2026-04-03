@@ -25,15 +25,14 @@ import torch.optim as optim
 from misc.data import all_model_parameters, flag, numerical_features, prepare_dataset
 from misc.data_io import load_csv_data_from_path, print_directory_tree, validate_data_features
 from misc.experiments import data_paths
-from model import SimpleNetwork
 
 # Opacus for differential privacy
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
-from train.utils import FocalLoss, str2bool
-from utils import MLflowCallback, compute_shapley_values, evaluate_on_test_datasets
+from train.model import SimpleNetwork
+from train.utils import FocalLoss, MLflowCallback, compute_shapley_values, evaluate_on_test_datasets, str2bool
 
 # (1) import nvflare client API
 import nvflare.client as flare
