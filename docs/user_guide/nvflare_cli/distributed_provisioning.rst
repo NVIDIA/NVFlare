@@ -38,10 +38,15 @@ Centralized vs. Distributed at a Glance
 | **Private key custody**               | Project Admin generates and           | Each site generates locally;          |
 |                                       | distributes                           | key never leaves the machine          |
 +---------------------------------------+---------------------------------------+---------------------------------------+
-| **Data sent from Project Admin**      | Full startup kit (keys, certs,        | Signed cert + ``rootCA.pem`` (~KB)    |
-|                                       | config, scripts)                      |                                       |
+| **Data distributed to site**          | Full startup kit (keys, certs,        | Signed cert + ``rootCA.pem`` +        |
+|                                       | config, scripts)                      | server URI (~a few KB)                |
 +---------------------------------------+---------------------------------------+---------------------------------------+
 | **Data sent from site**               | Nothing                               | CSR (~1 KB, public key only)          |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Steps for Project Admin**           | One command provisions all sites      | Sign one CSR per participant          |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **Steps for Site Admin**              | Unzip and run                         | Generate CSR → send → receive cert    |
+|                                       |                                       | → package → run                       |
 +---------------------------------------+---------------------------------------+---------------------------------------+
 | **Participant info required upfront** | All participants before any kit       | Each participant joins independently, |
 |                                       | is generated                          | on demand                             |
@@ -49,10 +54,12 @@ Centralized vs. Distributed at a Glance
 | **Adding a new site**                 | Dynamic provisioning (sign new cert   | Same workflow; no impact on existing  |
 |                                       | with existing root CA)                | sites                                 |
 +---------------------------------------+---------------------------------------+---------------------------------------+
+| **CC deployments**                    | Supported                             | Not supported                         |
++---------------------------------------+---------------------------------------+---------------------------------------+
+| **HE deployments**                    | Supported                             | Not supported (future)                |
++---------------------------------------+---------------------------------------+---------------------------------------+
 | **Trust required in Project Admin**   | Must trust Project Admin with your    | Project Admin never sees private keys |
 |                                       | private key                           |                                       |
-+---------------------------------------+---------------------------------------+---------------------------------------+
-| **CC / HE deployments**               | Supported                             | Not supported                         |
 +---------------------------------------+---------------------------------------+---------------------------------------+
 
 *****
