@@ -17,7 +17,7 @@ import os
 import time
 
 from nvflare.apis.job_def import RunStatus
-from nvflare.fuel.flare_api.api_spec import SessionClosed, TargetType
+from nvflare.fuel.flare_api.api_spec import JobNotFound, JobNotRunning, SessionClosed, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import MetaStatusValue
@@ -271,9 +271,15 @@ class NVFTestDriver:
 
     def _get_run_state(self, run_state):
         if self.job_id and self.super_admin_api:
-            job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+            try:
+                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+            except JobNotFound:
+                return run_state
             job_run_status = job_meta.get("status")
-            stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+            try:
+                stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+            except (JobNotFound, JobNotRunning):
+                stats = None
             # update run_state
             changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
         return run_state
