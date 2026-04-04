@@ -23,10 +23,14 @@ torch = pytest.importorskip("torch")
 
 from torch.utils.data import TensorDataset  # noqa: E402
 
-from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelExchangeFormat, ModelNativeFormat  # noqa: E402
+from nvflare.edge.model_protocol import (  # noqa: E402
+    ModelBufferType,
+    ModelEncoding,
+    ModelExchangeFormat,
+    ModelNativeFormat,
+)
 from nvflare.edge.simulation.et_task_processor import ETTaskProcessor, calc_params_diff, clone_params  # noqa: E402
 from nvflare.edge.web.models.task_response import TaskResponse  # noqa: E402
-
 
 # --- Concrete subclass for testing (ETTaskProcessor is abstract) ---
 
