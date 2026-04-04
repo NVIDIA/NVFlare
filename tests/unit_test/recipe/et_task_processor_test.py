@@ -14,6 +14,7 @@
 
 """Tests for ETTaskProcessor epoch configuration and training loop."""
 
+import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,7 +23,9 @@ torch = pytest.importorskip("torch")
 
 from torch.utils.data import TensorDataset  # noqa: E402
 
+from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelExchangeFormat, ModelNativeFormat  # noqa: E402
 from nvflare.edge.simulation.et_task_processor import ETTaskProcessor, calc_params_diff, clone_params  # noqa: E402
+from nvflare.edge.web.models.task_response import TaskResponse  # noqa: E402
 
 
 # --- Concrete subclass for testing (ETTaskProcessor is abstract) ---
@@ -154,15 +157,37 @@ class TestRunTrainingEpochs:
             proc.run_training(et_model, total_epochs=bad_value)
 
     def test_process_task_passes_epoch_from_config(self, simple_dataset):
-        """process_task should read epoch from training_config and pass it to run_training."""
+        """process_task must read epoch from training_config and forward it to run_training."""
+        import nvflare.edge.simulation.et_task_processor as mod
+
         proc = _make_processor(simple_dataset, training_config={"batch_size": 2, "epoch": 2})
-        et_model = self._make_mock_et_model()
 
-        with patch.object(proc, "run_training", wraps=proc.run_training) as spy:
-            total_epochs = proc.training_config.get("epoch", 1)
-            spy(et_model, total_epochs=total_epochs)
+        # Build a valid TaskResponse with the DXO structure process_task expects
+        mock_et_model = self._make_mock_et_model()
+        fake_model_bytes = b"fake-executorch-model"
+        task = TaskResponse(
+            status="ok",
+            task_name="train",
+            task_data={
+                "kind": "APP_DEFINED",
+                "data": base64.b64encode(fake_model_bytes).decode(),
+                "meta": {
+                    ModelExchangeFormat.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
+                    ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
+                    ModelExchangeFormat.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64,
+                },
+            },
+        )
 
-            spy.assert_called_once_with(et_model, total_epochs=2)
+        # Mock the executorch loader and spy on run_training
+        original_loader = mod._load_for_executorch_for_training_from_buffer
+        mod._load_for_executorch_for_training_from_buffer = MagicMock(return_value=mock_et_model)
+        try:
+            with patch.object(proc, "run_training", wraps=proc.run_training) as spy:
+                proc.process_task(task)
+                spy.assert_called_once_with(mock_et_model, total_epochs=2)
+        finally:
+            mod._load_for_executorch_for_training_from_buffer = original_loader
 
 
 # --- Helper function tests ---
