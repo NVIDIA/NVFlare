@@ -91,6 +91,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 - weight_decay (float): Weight decay factor (default: 0.0)
                 - dampening (float): Dampening for momentum (default: 0.0)
                 - nesterov (bool): Enables Nesterov momentum (default: False)
+                - epoch (int): Number of training epochs (default: 1)
         """
         DeviceTaskProcessor.__init__(self)
         self.data_path = data_path
@@ -106,6 +107,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             "weight_decay": 0.0,
             "dampening": 0.0,
             "nesterov": False,
+            "epoch": 1,
         }
         # Update with user-provided config
         if training_config:
@@ -250,7 +252,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             raise RuntimeError("Failed to load model") from e
 
         try:
-            diff_dict = self.run_training(et_model)
+            total_epochs = self.training_config.get("epoch", 1)
+            diff_dict = self.run_training(et_model, total_epochs=total_epochs)
             log.info("Training completed successfully")
             dxo_dict = {
                 "meta": payload.meta,
