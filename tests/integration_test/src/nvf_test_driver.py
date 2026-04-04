@@ -17,8 +17,10 @@ import os
 import time
 
 from nvflare.apis.job_def import RunStatus
+from nvflare.fuel.flare_api.api_spec import JobNotFound, JobNotRunning, SessionClosed, TargetType
+from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
+from nvflare.fuel.hci.proto import MetaStatusValue
 from tests.integration_test.src.action_handlers import (
     _AbortJobHandler,
     _AdminCommandsHandler,
@@ -35,6 +37,7 @@ from tests.integration_test.src.action_handlers import (
 )
 from tests.integration_test.src.site_launcher import SiteLauncher
 from tests.integration_test.src.utils import (
+    build_client_status_map,
     check_client_status_ready,
     create_admin_api,
     ensure_admin_api_logged_in,
@@ -107,43 +110,11 @@ def _check_event_trigger(
 
 
 def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
-    # extract run_state from stats
-    # for stats structure please refer to "nvflare/private/fed/server/info_coll_cmd.py"
-    # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
-    #        'details': {
-    #           'message': {
-    #               'server': {
-    #                   'ScatterAndGather': {
-    #                       'tasks': {'train': []},
-    #                       'phase': 'train',
-    #                       'current_round': 0,
-    #                       'num_rounds': 2},
-    #                   'CrossSiteModelEval':
-    #                       {'tasks': {}},
-    #                   'ServerRunner': {
-    #                       'job_id': XXX,
-    #                       'status': 'started',
-    #                       'workflow': 'scatter_and_gather'
-    #                    }
-    #                }
-    #            }
-    #       },
-    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
     prev_run_state = run_state.copy()
 
-    # parse stats
-    if (
-        stats
-        and "status" in stats
-        and stats["status"] == APIStatus.SUCCESS
-        and "details" in stats
-        and "message" in stats["details"]
-        and isinstance(stats["details"]["message"], dict)
-        and "server" in stats["details"]["message"]
-    ):
-        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"]["server"])
+    if stats and isinstance(stats, dict) and isinstance(stats.get("server"), dict):
+        run_state["workflows"] = _parse_workflow_states(stats_message=stats["server"])
 
-    # parse job status
     run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
 
     return run_state != prev_run_state, run_state
@@ -167,6 +138,7 @@ class NVFTestDriver:
         self.super_admin_user_name = None
         self.admin_api_response = None
         self.admin_apis = {}
+        self.jobs_root_dir = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.test_done = False
@@ -190,6 +162,7 @@ class NVFTestDriver:
 
     def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, super_user_name: str):
         self.super_admin_user_name = super_user_name
+        self.jobs_root_dir = os.path.abspath(upload_root_dir)
         try:
             admin_api = create_admin_api(
                 workspace_root_dir=workspace_root_dir,
@@ -226,13 +199,15 @@ class NVFTestDriver:
             self.admin_apis[user_name] = admin_api
 
     def get_job_result(self, job_id: str):
-        command_name = "download_job"
-        response = self.super_admin_api.do_command(f"{command_name} {job_id}")
-        if response["status"] != APIStatus.SUCCESS:
-            raise NVFTestError(f"{command_name} failed: {response}")
+        download_location = self.super_admin_api.download_job_result(job_id)
+        if download_location is None:
+            raise NVFTestError(f"download_job_result returned no location for job {job_id}")
+        workspace_root = download_location
+        if os.path.basename(workspace_root) != "workspace":
+            workspace_root = os.path.join(workspace_root, "workspace")
         run_data = {
             "job_id": job_id,
-            "workspace_root": os.path.join(self.download_root_dir, job_id, "workspace"),
+            "workspace_root": workspace_root,
         }
 
         return run_data
@@ -245,46 +220,50 @@ class NVFTestDriver:
                 raise NVFTestError(f"Clients could not be started in {timeout} seconds.")
 
             time.sleep(0.5)
-            response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
-            print(f"Check client status response is {response}")
-            if not check_client_status_ready(response):
-                # clients not ready
+            try:
+                connected_clients = self.super_admin_api.get_connected_client_list()
+                client_statuses = self.super_admin_api.get_client_job_status()
+            except Exception as e:
+                print(f"Check client status failed: {e}")
                 continue
 
-            # this coming from private/fed/server/training_cmds.py
-            for row in response["details"]["client_statuses"][1:]:
-                if row[3] != "No Jobs":
+            print(f"Check client status response is {client_statuses}")
+            if len(connected_clients) < num_clients:
+                continue
+            if not check_client_status_ready(client_statuses):
+                continue
+
+            status_map = build_client_status_map(client_statuses)
+            expected_client_names = {client.name for client in connected_clients}
+            if len(expected_client_names) < num_clients or not expected_client_names.issubset(status_map):
+                continue
+            for client_name in expected_client_names:
+                if any(status != MetaStatusValue.NO_JOBS for status in status_map.get(client_name, [])):
                     raise NVFTestError("Clients started with left-over jobs.")
-
-            # wait for all clients to come up
-            if len(response["details"]["client_statuses"]) < num_clients + 1:
-                continue
             clients_up = True
             print("All clients are up.")
 
     def server_status(self):
-        response = self.super_admin_api.check_status(target_type=TargetType.SERVER)
-        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
-            return response["details"]
-        return None
+        try:
+            return self.super_admin_api.get_system_info()
+        except Exception:
+            return None
 
     def client_status(self):
-        response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
-        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
-            return response["details"]
-        return None
+        try:
+            return self.super_admin_api.get_client_job_status()
+        except Exception:
+            return None
 
     def _get_stats(self, target: str, job_id: str):
         return self.super_admin_api.show_stats(job_id, target)
 
     def _get_job_log(self, target: str, job_id: str):
         job_log_file = os.path.join(job_id, "log.txt")
-        logs = self.super_admin_api.cat_target(target, file=job_log_file)["details"]["message"].splitlines()
-        return logs
+        return self.super_admin_api.cat_target(target, file=job_log_file).splitlines()
 
     def _get_site_log(self, target: str):
-        logs = self.super_admin_api.cat_target(target, file="log.txt")["details"]["message"].splitlines()
-        return logs
+        return self.super_admin_api.cat_target(target, file="log.txt").splitlines()
 
     def _print_state(self, state: dict, length: int = 30):
         self.logger.info("\n" + "-" * length)
@@ -294,9 +273,15 @@ class NVFTestDriver:
 
     def _get_run_state(self, run_state):
         if self.job_id and self.super_admin_api:
-            job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+            try:
+                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+            except JobNotFound:
+                return run_state
             job_run_status = job_meta.get("status")
-            stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+            try:
+                stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+            except (JobNotFound, JobNotRunning):
+                stats = None
             # update run_state
             changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
         return run_state
@@ -400,12 +385,38 @@ class NVFTestDriver:
 
             self.action_handlers[command].handle(command_args=args, admin_controller=self, admin_api=admin_api)
 
+    def resolve_job_path(self, job_name: str) -> str:
+        if os.path.isabs(job_name):
+            return job_name
+        if not self.jobs_root_dir:
+            raise NVFTestError("Missing jobs_root_dir for resolving job path.")
+        return os.path.join(self.jobs_root_dir, job_name)
+
+    def remove_client(self, admin_api: Session, client_name: str):
+        response = admin_api.do_command(f"remove_client {client_name}")
+        if response.get("status") != APIStatus.SUCCESS:
+            raise NVFTestError(f"remove_client failed: {response}")
+
     def finalize(self):
         if self.super_admin_api:
             if self.job_id:
-                self.super_admin_api.abort_job(self.job_id)
-            for k in self.admin_apis:
-                self.admin_apis[k].close()
-            self.super_admin_api.shutdown(target_type=TargetType.ALL)
-            self.super_admin_api.close()
+                try:
+                    self.super_admin_api.abort_job(self.job_id)
+                except Exception:
+                    pass
+            for admin_api in self.admin_apis.values():
+                try:
+                    admin_api.close()
+                except Exception:
+                    pass
+            try:
+                self.super_admin_api.shutdown(target_type=TargetType.ALL)
+            except SessionClosed:
+                pass
+            except Exception:
+                if not self.super_admin_api.api.closed:
+                    try:
+                        self.super_admin_api.close()
+                    except Exception:
+                        pass
         time.sleep(1)

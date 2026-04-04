@@ -696,7 +696,7 @@ Admin client timeouts control session management and command execution:
      - Timeout for authentication messages
    * - Command timeout
      - 5.0
-     - fl_admin_api.py
+     - FLARE API session
      - Default timeout for admin commands
 
 Session-Specific Timeouts

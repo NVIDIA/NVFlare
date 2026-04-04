@@ -12,15 +12,16 @@ Migrating to FLARE API from FLAdminAPI
 Like the FLAdminAPI, the FLARE API is a wrapper for admin commands that can be issued to the FL server, and you can use a provisioned admin
 client's certs and keys to initialize a :class:`Session<nvflare.fuel.flare_api.flare_api.Session>` to use the commands of the API.
 
-This page goes through all the differences to help you migrate from using the FLAdminAPI to the new FLARE API. Note that only a subset of the
-frequently used commands have been implemented in the FLARE API so far, but you can still execute any legacy command if you want.
+The legacy FLAdminAPI modules discussed here have been removed from NVFlare. This page is kept as historical mapping
+guidance for migrating old code to the FLARE API.
 
 .. _migrating_to_flare_api_initialization:
 
 Migrating API Initialization
 ----------------------------
 Initialization of the FLAdminAPI was cumbersome due to all the necessary arguments including paths to certs, so an
-:class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` was used for initializing the FLAdminAPI
+``FLAdminAPIRunner``
+was used for initializing the FLAdminAPI
 with the username of the admin user and the path to the admin startup kit directory.
 
 Initializing the FLAdminAPI:
@@ -45,7 +46,7 @@ Initializing the FLAdminAPIRunner, which initializes FLAdminAPI with the values 
         admin_dir="/workspace/example_project/prod_00/super@nvidia.com"
     )
 
-:ref:`flare_api_initialization` is similar to :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>`
+:ref:`flare_api_initialization` is similar to ``FLAdminAPIRunner``
 with :func:`new_secure_session<nvflare.fuel.flare_api.flare_api.new_secure_session>` taking two required arguments of
 the username and the path to the root admin directory containing the startup folder with the admin client's
 certs and keys:
@@ -61,7 +62,7 @@ certs and keys:
 
 
 Logging in is automatically handled, and commands can be executed with the session object returned (``sess`` in the preceding code block).
-This is in contrast to :ref:`fladmin_api` where the command was issued through the API object itself, or in the case of :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>`,
+This is in contrast to :ref:`fladmin_api` where the command was issued through the API object itself, or in the case of ``FLAdminAPIRunner``,
 ``self.api`` (in the code blocks below, ``runner.api`` is used for the FLAdminAPI).
 
 

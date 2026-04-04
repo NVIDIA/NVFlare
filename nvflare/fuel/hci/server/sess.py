@@ -52,7 +52,7 @@ class Session(object):
             "r": self.user_role,
             "o": self.user_org,
             "s": self.sess_id,
-            "t": self.active_study,
+            "study": self.active_study,
         }
         ds = json.dumps(user)
         bds = str_to_b64str(ds)
@@ -86,7 +86,7 @@ class Session(object):
             org=user.get("o"),
             sess_id=user.get("s"),
             origin_fqcn="",
-            active_study=user.get("t", DEFAULT_STUDY),
+            active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
         )
 
 
