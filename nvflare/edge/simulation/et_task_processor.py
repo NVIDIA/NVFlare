@@ -25,6 +25,7 @@ from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.validation_utils import check_positive_int
 
 _load_for_executorch_for_training_from_buffer, _ = optional_import(
     "executorch.extension.training",
@@ -112,6 +113,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         # Update with user-provided config
         if training_config:
             self.training_config.update(training_config)
+
+        check_positive_int("epoch", self.training_config["epoch"])
 
     @abstractmethod
     def create_dataset(self, data_path: str) -> Dataset:
