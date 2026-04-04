@@ -79,5 +79,6 @@ FLARE 2.10.0 — Target: Q4 2026
 
 **Confidential Federated AI Support**
 
-- Expanded confidential computing support beyond the current CC/TEE capabilities
-- Broader hardware and attestation platform coverage for privacy-preserving federated AI workloads
+- TDX CPU support for CPU-based confidential computing workloads
+- CoCo (Confidential Containers) support for container-level confidential execution
+- Expanded Cloud Service Provider (CSP) integration for confidential computing across major cloud platforms
