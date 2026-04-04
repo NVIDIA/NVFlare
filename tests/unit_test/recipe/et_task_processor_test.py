@@ -145,6 +145,14 @@ class TestRunTrainingEpochs:
         # 2 batches * 3 epochs = 6 forward_backward calls
         assert et_model.forward_backward.call_count == 6
 
+    @pytest.mark.parametrize("bad_value", [0, -1])
+    def test_run_training_rejects_non_positive_epochs(self, simple_dataset, bad_value):
+        """run_training validates total_epochs directly, guarding against misuse."""
+        proc = _make_processor(simple_dataset, training_config={"batch_size": 2, "epoch": 1})
+        et_model = self._make_mock_et_model()
+        with pytest.raises(ValueError, match="total_epochs must > 0"):
+            proc.run_training(et_model, total_epochs=bad_value)
+
     def test_process_task_passes_epoch_from_config(self, simple_dataset):
         """process_task should read epoch from training_config and pass it to run_training."""
         proc = _make_processor(simple_dataset, training_config={"batch_size": 2, "epoch": 2})

@@ -164,6 +164,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         Returns:
             dict: Training results with parameter differences
         """
+        check_positive_int("total_epochs", total_epochs)
         log.info(f"Starting training for {total_epochs} epochs")
         initial_params = None
         # Dataset and DataLoader setup
