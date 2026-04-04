@@ -79,6 +79,8 @@ FLARE 2.10.0 — Target: Q4 2026
 
 **Confidential Federated AI Support**
 
-- TDX CPU support for CPU-based confidential computing workloads
+Building on existing support for AMD SEV-SNP CPU CVMs with NVIDIA GPUs and Azure Confidential Computing:
+
+- Intel TDX CPU support for CPU-based confidential computing workloads
 - CoCo (Confidential Containers) support for container-level confidential execution
-- Expanded Cloud Service Provider (CSP) integration for confidential computing across major cloud platforms
+- Expanded Cloud Service Provider (CSP) integration beyond Azure to additional major cloud platforms
