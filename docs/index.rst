@@ -10,6 +10,7 @@ NVIDIA FLARE
    :caption: Overview
 
    welcome
+   roadmap
    release_notes/flare_272
    industry_use_cases
 
