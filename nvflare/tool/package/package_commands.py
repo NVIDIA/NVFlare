@@ -175,7 +175,7 @@ def _load_project_from_file(path: str, fmt) -> tuple:
 
     Validates:
     - File exists and is valid yaml
-    - api_version == 3
+    - api_version == 3 or 4
     - No relay participants (hierarchical FL not supported)
     """
     if not os.path.isfile(path):
@@ -203,7 +203,7 @@ def _load_project_from_file(path: str, fmt) -> tuple:
         output_error(
             "INVALID_PROJECT_FILE",
             f"Invalid project file: {ex}",
-            "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3).",
+            "Ensure the file is schema-compatible with 'nvflare provision' project.yaml (api_version: 3 or 4).",
             fmt,
             exit_code=1,
         )
