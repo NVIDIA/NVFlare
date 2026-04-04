@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for _require_signed_jobs config helper."""
+"""Tests for require_signed_jobs config helper."""
 
 import json
 import os
 from unittest.mock import MagicMock
 
-from nvflare.private.fed.server.job_runner import _require_signed_jobs
+from nvflare.private.fed.utils.fed_utils import require_signed_jobs as _require_signed_jobs
 
 
 def _make_workspace(startup_dir: str):

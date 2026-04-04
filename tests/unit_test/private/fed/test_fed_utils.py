@@ -36,6 +36,7 @@ def _make_workspace(startup_dir):
     ws.get_startup_kit_dir.return_value = startup_dir
     ws.get_audit_file_path.return_value = startup_dir + "/audit.log"
     ws.get_authorization_file_path.return_value = None
+    ws.get_file_path_in_site_config.return_value = startup_dir + "/study_registry.json"
     return ws
 
 
