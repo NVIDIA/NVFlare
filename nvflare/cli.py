@@ -20,6 +20,7 @@ import traceback
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -34,7 +35,6 @@ from nvflare.utils.cli_utils import (
     create_poc_workspace_config,
     create_startup_kit_config,
     get_hidden_config,
-    print_hidden_config,
     save_config,
 )
 
@@ -48,6 +48,7 @@ CMD_JOB = "job"
 CMD_CONFIG = "config"
 CMD_CERT = "cert"
 CMD_PACKAGE = "package"
+CMD_PRE_INSTALL = "pre-install"
 
 
 def def_provision_parser(sub_cmd):
@@ -79,6 +80,7 @@ def def_simulator_parser(sub_cmd):
 
 
 def handle_simulator_cmd(simulator_args):
+    print("WARNING: 'nvflare simulator' is deprecated. Use 'python job.py' with SimEnv instead.", file=sys.stderr)
     status = run_simulator(simulator_args)
     # make sure the script terminate after run
     if status:
@@ -93,12 +95,18 @@ def def_authz_preview_parser(sub_cmd):
 
 
 def handle_authz_preview(args):
+    print("WARNING: 'nvflare authz_preview' is deprecated and will be removed in a future release.", file=sys.stderr)
     run_command(args)
 
 
+_config_parser = None
+
+
 def def_config_parser(sub_cmd):
+    global _config_parser
     cmd = "config"
     config_parser = sub_cmd.add_parser(cmd)
+    _config_parser = config_parser
     config_parser.add_argument(
         "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
     )
@@ -109,15 +117,42 @@ def def_config_parser(sub_cmd):
         "-jt", "--job_templates_dir", type=str, nargs="?", default=None, help="job templates location"
     )
     config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    config_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    config_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     return {cmd: config_parser}
 
 
 def handle_config_cmd(args):
+    from nvflare.tool.cli_output import output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    fmt = getattr(args, "output", "json")
+    handle_schema_flag(
+        _config_parser,
+        "nvflare config",
+        [
+            "nvflare config -d /path/to/startup",
+            "nvflare config -pw /path/to/poc --output json",
+        ],
+        sys.argv[1:],
+    )
+
     config_file_path, nvflare_config = get_hidden_config()
 
     if args.startup_kit_dir is None and args.poc_workspace_dir is None and args.job_templates_dir is None:
-        print(f"not specifying any directory. print existing config at {config_file_path}")
-        print_hidden_config(config_file_path, nvflare_config)
+        # Read-only: print existing config
+        startup_kit_dir = nvflare_config.get("startup_kit.path", None) if nvflare_config else None
+        poc_workspace_dir = nvflare_config.get("poc_workspace.path", None) if nvflare_config else None
+        job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else None
+        output_ok(
+            {
+                "config_file": config_file_path,
+                "startup_kit_dir": startup_kit_dir,
+                "poc_workspace_dir": poc_workspace_dir,
+                "job_templates_dir": job_templates_dir,
+            },
+            fmt,
+        )
         return
 
     nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
@@ -125,8 +160,32 @@ def handle_config_cmd(args):
     nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
 
     save_config(nvflare_config, config_file_path)
-    print(f"new config at {config_file_path}")
-    print_hidden_config(config_file_path, nvflare_config)
+
+    startup_kit_dir = nvflare_config.get("startup_kit.path", None) if nvflare_config else args.startup_kit_dir
+    poc_workspace_dir = nvflare_config.get("poc_workspace.path", None) if nvflare_config else args.poc_workspace_dir
+    job_templates_dir = nvflare_config.get("job_template.path", None) if nvflare_config else args.job_templates_dir
+
+    output_ok(
+        {
+            "config_file": config_file_path,
+            "startup_kit_dir": startup_kit_dir,
+            "poc_workspace_dir": poc_workspace_dir,
+            "job_templates_dir": job_templates_dir,
+        },
+        fmt,
+    )
+
+
+def def_pre_install_parser(sub_cmd):
+    cmd = CMD_PRE_INSTALL
+    try:
+        # using try catch to avoid hard dependency on nvflare.tool.code_pre_installer
+        from nvflare.tool.code_pre_installer.pre_install_cmd import def_pre_install_parser
+
+        return def_pre_install_parser(cmd, sub_cmd)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
 
 
 def parse_args(prog_name: str):
@@ -144,6 +203,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_cert_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -157,6 +217,12 @@ def parse_args(prog_name: str):
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
 
+def handle_pre_install_cmd(args):
+    from nvflare.tool.code_pre_installer.pre_install_cmd import handle_pre_install_cmd as handle_cmd
+
+    handle_cmd(args)
+
+
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
@@ -168,6 +234,7 @@ handlers = {
     CMD_CONFIG: handle_config_cmd,
     CMD_CERT: handle_cert_cmd,
     CMD_PACKAGE: handle_package_cmd,
+    CMD_PRE_INSTALL: handle_pre_install_cmd,
 }
 
 
@@ -176,7 +243,6 @@ def run(prog_name):
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
     sub_cmd = None
-    fmt = getattr(prog_args, "output", "json")
     try:
         sub_cmd = prog_args.sub_command
         if sub_cmd:
@@ -192,21 +258,26 @@ def run(prog_name):
     except CLIException as e:
         print(e)
         sys.exit(1)
+    except NoConnection:
+        from nvflare.tool.cli_output import output_error
+
+        output_error("CONNECTION_FAILED", getattr(prog_args, "output", "json"), exit_code=2)
+    except AuthenticationError:
+        from nvflare.tool.cli_output import output_error
+
+        output_error("AUTH_FAILED", getattr(prog_args, "output", "json"), exit_code=2)
+    except TimeoutError:
+        from nvflare.tool.cli_output import output_error
+
+        output_error("TIMEOUT", getattr(prog_args, "output", "json"), exit_code=3)
     except SystemExit:
         raise
     except Exception as e:
-        from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
-
         from nvflare.tool.cli_output import output_error
 
-        if isinstance(e, NoConnection):
-            output_error("CONNECTION_FAILED", fmt, exit_code=2)
-        elif isinstance(e, AuthenticationError):
-            output_error("AUTH_FAILED", fmt, exit_code=2)
-        elif isinstance(e, TimeoutError):
-            output_error("TIMEOUT", fmt, exit_code=3)
-        else:
-            output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        if hasattr(prog_args, "debug") and prog_args.debug:
+            print(traceback.format_exc())
+        output_error("INTERNAL_ERROR", getattr(prog_args, "output", "json"), exit_code=5, detail=str(e))
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):

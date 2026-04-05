@@ -14,6 +14,7 @@
 
 import os
 import shutil
+import sys
 import traceback
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
@@ -66,6 +67,13 @@ CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
+CMD_JOB_NEW = "new"
+CMD_JOB_LIST = "list"
+CMD_JOB_META = "meta"
+CMD_JOB_ABORT = "abort"
+CMD_JOB_CLONE = "clone"
+CMD_JOB_DOWNLOAD = "download"
+CMD_JOB_DELETE = "delete"
 
 
 def find_filename_basename(f: str):
@@ -123,6 +131,11 @@ def get_app_dirs_from_job_folder(job_folder):
 
 
 def create_job(cmd_args):
+    print(
+        "WARNING: 'nvflare job create' is deprecated. Use 'nvflare job new -r <recipe> --script <train.py>' instead."
+        " Run 'nvflare recipe list' to see available recipes.",
+        file=sys.stderr,
+    )
     try:
         template_src = get_src_template(cmd_args)
         if not template_src:
@@ -209,6 +222,7 @@ def remove_extra_files(config_dir):
 
 
 def show_variables(cmd_args):
+    print("WARNING: 'nvflare job show_variables' is deprecated. Use the Job Recipe API instead.", file=sys.stderr)
     try:
         if not os.path.isdir(cmd_args.job_folder):
             raise ValueError("required job folder is not specified.")
@@ -285,6 +299,7 @@ def display_template_variables(job_folder, app_variable_values):
 
 
 def list_templates(cmd_args):
+    print("WARNING: 'nvflare job list_templates' is deprecated. Use 'nvflare recipe list' instead.", file=sys.stderr)
     try:
         job_templates_dir = find_job_templates_location(cmd_args.job_templates_dir)
         job_templates_dir = os.path.abspath(job_templates_dir)
@@ -345,6 +360,20 @@ def fix_length_format(name: str, name_fix_length: int):
 
 
 def submit_job(cmd_args):
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_SUBMIT_JOB],
+        "nvflare job submit",
+        [
+            "nvflare job submit -j ./my_job",
+            "nvflare job submit -j ./my_job --wait --timeout 3600",
+            "nvflare job submit -j ./my_job --study my_study",
+            "nvflare job submit -j ./my_job --output txt",
+        ],
+        sys.argv[1:],
+    )
+
     temp_job_dir = None
     try:
         if not os.path.isdir(cmd_args.job_folder):
@@ -359,7 +388,7 @@ def submit_job(cmd_args):
 
         prepare_job_config(cmd_args, app_names, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
-        internal_submit_job(admin_user_dir, admin_username, temp_job_dir)
+        internal_submit_job(admin_user_dir, admin_username, temp_job_dir, cmd_args)
 
     except ValueError as e:
         print(f"\nUnable to handle command: {CMD_SUBMIT_JOB} due to: {e} \n")
@@ -390,14 +419,32 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
     return admin_username, admin_user_dir
 
 
-def internal_submit_job(admin_user_dir, username, temp_job_dir):
+def internal_submit_job(admin_user_dir, username, temp_job_dir, cmd_args=None):
+    from nvflare.tool.cli_output import output_error, output_ok
+
+    fmt = getattr(cmd_args, "output", "json") if cmd_args else "json"
+
     print("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     try:
         job_id = sess.submit_job(temp_job_dir)
-        print(f"job: '{job_id} was submitted")
-    finally:
-        sess.close()
+    except Exception as e:
+        output_error("JOB_INVALID", fmt, detail=str(e))
+
+    wait = getattr(cmd_args, "wait", False) if cmd_args else False
+    timeout = getattr(cmd_args, "timeout", 0) if cmd_args else 0
+
+    if wait:
+        try:
+            meta = sess.monitor_job(job_id, timeout=timeout if timeout else 0)
+            output_ok(meta if isinstance(meta, dict) else {"job_id": job_id, "status": str(meta)}, fmt)
+        except TimeoutError:
+            output_error("TIMEOUT", fmt, exit_code=3)
+    else:
+        if fmt == "txt":
+            print(job_id)
+        else:
+            output_ok({"job_id": job_id}, fmt)
 
 
 job_sub_cmd_handlers = {
@@ -405,6 +452,13 @@ job_sub_cmd_handlers = {
     CMD_SUBMIT_JOB: submit_job,
     CMD_LIST_TEMPLATES: list_templates,
     CMD_SHOW_VARIABLES: show_variables,
+    CMD_JOB_NEW: None,  # set after function definition
+    CMD_JOB_LIST: None,
+    CMD_JOB_META: None,
+    CMD_JOB_ABORT: None,
+    CMD_JOB_CLONE: None,
+    CMD_JOB_DOWNLOAD: None,
+    CMD_JOB_DELETE: None,
 }
 
 job_sub_cmd_parser = {
@@ -412,6 +466,13 @@ job_sub_cmd_parser = {
     CMD_SUBMIT_JOB: None,
     CMD_LIST_TEMPLATES: None,
     CMD_SHOW_VARIABLES: None,
+    CMD_JOB_NEW: None,
+    CMD_JOB_LIST: None,
+    CMD_JOB_META: None,
+    CMD_JOB_ABORT: None,
+    CMD_JOB_CLONE: None,
+    CMD_JOB_DOWNLOAD: None,
+    CMD_JOB_DELETE: None,
 }
 
 
@@ -419,6 +480,8 @@ def handle_job_cli_cmd(cmd_args):
     job_cmd_handler = job_sub_cmd_handlers.get(cmd_args.job_sub_cmd, None)
     if job_cmd_handler:
         job_cmd_handler(cmd_args)
+    elif cmd_args.job_sub_cmd is None:
+        raise CLIUnknownCmdException("\n no job subcommand provided. \n")
     else:
         raise CLIUnknownCmdException("\n invalid command. \n")
 
@@ -431,6 +494,13 @@ def def_job_cli_parser(sub_cmd):
     define_create_job_parser(job_subparser)
     define_submit_job_parser(job_subparser)
     define_variables_parser(job_subparser)
+    define_job_new_parser(job_subparser)
+    define_list_jobs_parser(job_subparser)
+    define_job_meta_parser(job_subparser)
+    define_abort_job_parser(job_subparser)
+    define_clone_job_parser(job_subparser)
+    define_download_job_parser(job_subparser)
+    define_delete_job_parser(job_subparser)
 
     return {cmd: parser}
 
@@ -457,6 +527,13 @@ def define_submit_job_parser(job_subparser):
     )
 
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    submit_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    submit_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    submit_parser.add_argument(
+        "--wait", action="store_true", default=False, help="block until job reaches terminal state"
+    )
+    submit_parser.add_argument("--timeout", type=int, default=0, help="timeout in seconds for --wait (0 = no timeout)")
+    submit_parser.add_argument("--study", type=str, default="default", help="study to submit the job to")
     job_sub_cmd_parser[CMD_SUBMIT_JOB] = submit_parser
 
 
@@ -730,3 +807,389 @@ def create_app_dir(job_folder, app_name: str = "app"):
     for d in dirs:
         os.makedirs(d, exist_ok=True)
     return app_custom_dir
+
+
+# ---------------------------------------------------------------------------
+# Section 3: New Job Lifecycle Commands
+# ---------------------------------------------------------------------------
+
+
+def _coerce(value: str):
+    """Auto-coerce a string to int, float, bool, or str."""
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    return value
+
+
+def _get_session(admin_user_dir=None, username=None, study="default"):
+    """Create a secure session using the startup kit."""
+    if admin_user_dir is None or username is None:
+        u, d = find_admin_user_and_dir()
+        if username is None:
+            username = u
+        if admin_user_dir is None:
+            admin_user_dir = d
+    return new_secure_session(username=username, startup_kit_location=admin_user_dir)
+
+
+def cmd_job_new(cmd_args):
+    import importlib
+
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_NEW],
+        "nvflare job new",
+        [
+            "nvflare job new -r fedavg --script train.py",
+            "nvflare job new -r fedavg --script train.py --min-clients 3 --param rounds=20",
+        ],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+
+    try:
+        from nvflare.tool.recipe.recipe_cli import _load_catalog
+    except ImportError:
+        output_error(
+            "INVALID_ARGS",
+            fmt,
+            exit_code=4,
+            detail="recipe catalog not available",
+        )
+        return  # unreachable; output_error exits
+
+    catalog = _load_catalog()
+    entry = next((r for r in catalog if r["name"] == cmd_args.recipe), None)
+    if entry is None:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=f"unknown recipe '{cmd_args.recipe}'")
+        return  # unreachable; output_error exits
+
+    params = {}
+    for p in getattr(cmd_args, "param", []):
+        k, _, v = p.partition("=")
+        params[k.strip()] = _coerce(v.strip())
+
+    job_folder = os.path.abspath(cmd_args.job_folder)
+
+    try:
+        module = importlib.import_module(entry["module"])
+        RecipeClass = getattr(module, entry["class"])
+        recipe = RecipeClass(script=cmd_args.script, **params)
+
+        from nvflare.job_config.api import FedJob
+
+        job = FedJob(name=os.path.basename(job_folder), min_clients=cmd_args.min_clients)
+        job.to(recipe)
+        job.export_job(os.path.dirname(job_folder) or ".")
+    except ImportError as e:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    if fmt == "txt":
+        print(job_folder)
+    else:
+        output_ok(
+            {
+                "job_folder": job_folder,
+                "recipe": cmd_args.recipe,
+                "min_clients": cmd_args.min_clients,
+                "script": cmd_args.script,
+                "params": params,
+            },
+            fmt,
+        )
+
+
+def cmd_job_list(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_LIST],
+        "nvflare job list",
+        [
+            "nvflare job list",
+            "nvflare job list -n cifar -m 10",
+            "nvflare job list --study all",
+        ],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    try:
+        sess = _get_session()
+        jobs = sess.list_jobs(
+            name_prefix=getattr(cmd_args, "name", None),
+            id_prefix=getattr(cmd_args, "id", None),
+            reverse=getattr(cmd_args, "reverse", False),
+            limit=getattr(cmd_args, "max", None),
+        )
+    except Exception as e:
+        output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    for j in jobs:
+        if "study" not in j:
+            j["study"] = getattr(cmd_args, "study", "default")
+
+    if fmt == "txt":
+        for job in jobs:
+            if isinstance(job, dict):
+                print(job.get("job_id", job.get("id", str(job))))
+            else:
+                print(str(job))
+    else:
+        output_ok(jobs, fmt)
+
+
+def cmd_job_meta(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_META],
+        "nvflare job meta",
+        ["nvflare job meta <job_id>"],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    try:
+        sess = _get_session()
+        meta = sess.get_job_meta(cmd_args.job_id)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    if meta is None:
+        output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+    else:
+        output_ok(meta, fmt)
+
+
+def cmd_job_abort(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_ABORT],
+        "nvflare job abort",
+        ["nvflare job abort <job_id>", "nvflare job abort <job_id> --force"],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    if not cmd_args.force:
+        if not sys.stdin.isatty():
+            output_error("INVALID_ARGS", fmt, exit_code=4, detail="use --force in non-interactive mode")
+            return
+        answer = input(f"Abort job '{cmd_args.job_id}'? [y/N] ")
+        if answer.strip().upper() != "Y":
+            print("Aborted.")
+            return
+
+    try:
+        sess = _get_session()
+        sess.abort_job(cmd_args.job_id)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        elif "not running" in err or "not active" in err:
+            output_error("JOB_NOT_RUNNING", fmt, job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "status": "ABORTED"}, fmt)
+
+
+def cmd_job_clone(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_CLONE],
+        "nvflare job clone",
+        ["nvflare job clone <job_id>"],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    try:
+        sess = _get_session()
+        new_job_id = sess.clone_job(cmd_args.job_id)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    output_ok({"source_job_id": cmd_args.job_id, "new_job_id": new_job_id}, fmt)
+
+
+def cmd_job_download(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_DOWNLOAD],
+        "nvflare job download",
+        ["nvflare job download <job_id>", "nvflare job download <job_id> -o /path/to/results"],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    destination = os.path.abspath(getattr(cmd_args, "output_dir", "./"))
+    try:
+        sess = _get_session()
+        path = sess.download_job_result(cmd_args.job_id, destination)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id, "path": path or destination}, fmt)
+
+
+def cmd_job_delete(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        job_sub_cmd_parser[CMD_JOB_DELETE],
+        "nvflare job delete",
+        ["nvflare job delete <job_id>", "nvflare job delete <job_id> --force"],
+        sys.argv[1:],
+    )
+
+    fmt = cmd_args.output
+    if not cmd_args.force:
+        if not sys.stdin.isatty():
+            output_error("INVALID_ARGS", fmt, exit_code=4, detail="use --force in non-interactive mode")
+            return
+        answer = input(f"Delete job '{cmd_args.job_id}'? [y/N] ")
+        if answer.strip().upper() != "Y":
+            print("Cancelled.")
+            return
+
+    try:
+        sess = _get_session()
+        sess.delete_job(cmd_args.job_id)
+    except Exception as e:
+        err = str(e).lower()
+        if "not found" in err or "does not exist" in err:
+            output_error("JOB_NOT_FOUND", fmt, job_id=cmd_args.job_id)
+        else:
+            output_error("CONNECTION_FAILED", fmt, exit_code=2, detail=str(e))
+        return
+
+    output_ok({"job_id": cmd_args.job_id}, fmt)
+
+
+# ---------------------------------------------------------------------------
+# Parser definitions for new commands
+# ---------------------------------------------------------------------------
+
+
+def define_job_new_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_NEW, help="scaffold a new job from a recipe")
+    p.add_argument("-r", "--recipe", type=str, required=True, help="recipe name from 'nvflare recipe list'")
+    p.add_argument("--script", type=str, required=True, help="path to the training script")
+    p.add_argument("-j", "--job-folder", dest="job_folder", type=str, default="./current_job", help="output job folder")
+    p.add_argument("--script-dir", dest="script_dir", type=str, default=None, help="additional files directory")
+    p.add_argument("--min-clients", dest="min_clients", type=int, default=2, help="minimum number of FL clients")
+    p.add_argument("--study", type=str, default="default", help="study this job belongs to")
+    p.add_argument(
+        "--param", type=str, action="append", default=[], metavar="key=value", help="recipe parameter (repeatable)"
+    )
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_NEW] = p
+    job_sub_cmd_handlers[CMD_JOB_NEW] = cmd_job_new
+
+
+def define_list_jobs_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_LIST, help="list jobs on the server")
+    p.add_argument("-n", "--name", type=str, default=None, help="filter by name prefix")
+    p.add_argument("-i", "--id", type=str, default=None, help="filter by job ID prefix")
+    p.add_argument("-r", "--reverse", action="store_true", default=False, help="reverse sort order")
+    p.add_argument("-m", "--max", type=int, default=None, help="max results to return")
+    p.add_argument("--study", type=str, default="default", help="study to list jobs from; use 'all' for all studies")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_LIST] = p
+    job_sub_cmd_handlers[CMD_JOB_LIST] = cmd_job_list
+
+
+def define_job_meta_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_META, help="get metadata for a job")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_META] = p
+    job_sub_cmd_handlers[CMD_JOB_META] = cmd_job_meta
+
+
+def define_abort_job_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_ABORT, help="abort a running job")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_ABORT] = p
+    job_sub_cmd_handlers[CMD_JOB_ABORT] = cmd_job_abort
+
+
+def define_clone_job_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_CLONE, help="clone an existing job")
+    p.add_argument("job_id", type=str, help="job ID to clone")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_CLONE] = p
+    job_sub_cmd_handlers[CMD_JOB_CLONE] = cmd_job_clone
+
+
+def define_download_job_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_DOWNLOAD, help="download job result")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("-o", "--output-dir", dest="output_dir", type=str, default="./", help="destination directory")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p
+    job_sub_cmd_handlers[CMD_JOB_DOWNLOAD] = cmd_job_download
+
+
+def define_delete_job_parser(job_subparser):
+    p = job_subparser.add_parser(CMD_JOB_DELETE, help="delete a job")
+    p.add_argument("job_id", type=str, help="job ID")
+    p.add_argument("--force", action="store_true", help="skip confirmation prompt")
+    p.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+    job_sub_cmd_parser[CMD_JOB_DELETE] = p
+    job_sub_cmd_handlers[CMD_JOB_DELETE] = cmd_job_delete

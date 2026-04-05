@@ -146,11 +146,37 @@ def is_dir_empty(path: str):
 
 
 def prepare_jobs_dir(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.install_skills import install_skills
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_PREPARE_JOBS_DIR),
+        "nvflare poc prepare-jobs-dir",
+        ["nvflare poc prepare-jobs-dir -j /path/to/jobs"],
+        sys.argv[1:],
+    )
+    fmt = getattr(cmd_args, "output", "json")
+    force = getattr(cmd_args, "force", False)
     poc_workspace = get_poc_workspace()
-    _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace)
+
+    try:
+        _prepare_jobs_dir(cmd_args.jobs_dir, poc_workspace, force=force)
+    except CLIException as e:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    output_ok({"workspace": poc_workspace, "jobs_dir": cmd_args.jobs_dir}, fmt)
+    try:
+        install_skills()
+    except Exception:
+        pass
 
 
-def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
+def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[Tuple] = None, force: bool = False):
     project_config, service_config = config_packages if config_packages else setup_service_config(workspace)
     project_name = project_config.get("name")
     if jobs_dir is None or jobs_dir == "":
@@ -168,16 +194,21 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
     transfer = get_upload_dir(startup_dir)
     dst = os.path.join(console_dir, transfer)
     if not is_dir_empty(dst):
-        print(" ")
-        answer = input(f"job directory at {dst} is already exists, replace with new one ? (y/N) ")
-        if answer.strip().upper() == "Y":
-            if os.path.islink(dst):
-                os.unlink(dst)
-            if os.path.isdir(dst):
-                shutil.rmtree(dst, ignore_errors=True)
-
-            print(f"link job directory from {src} to {dst}")
-            os.symlink(src, dst)
+        if not force:
+            if not sys.stdin.isatty():
+                raise CLIException(
+                    f"jobs directory {dst} already exists; use --force to overwrite in non-interactive mode"
+                )
+            print(" ")
+            answer = input(f"job directory at {dst} is already exists, replace with new one ? (y/N) ")
+            if answer.strip().upper() != "Y":
+                return
+        if os.path.islink(dst):
+            os.unlink(dst)
+        if os.path.isdir(dst):
+            shutil.rmtree(dst, ignore_errors=True)
+        print(f"link job directory from {src} to {dst}")
+        os.symlink(src, dst)
     else:
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
@@ -202,7 +233,7 @@ def verify_host(host_name: str) -> bool:
     try:
         host_name = socket.gethostbyname(host_name)
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -415,19 +446,72 @@ def save_startup_kit_dir_config(workspace, project_name):
 
 
 def prepare_poc(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.install_skills import install_skills
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_PREPARE_POC),
+        "nvflare poc prepare",
+        ["nvflare poc prepare -n 2", "nvflare poc prepare -n 3 --force --output json"],
+        sys.argv[1:],
+    )
+    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
     project_conf_path = ""
     if cmd_args.project_input:
         project_conf_path = cmd_args.project_input
 
-    _prepare_poc(
-        cmd_args.clients,
-        cmd_args.number_of_clients,
-        poc_workspace,
-        cmd_args.docker_image,
-        cmd_args.he,
-        project_conf_path,
-    )
+    force = getattr(cmd_args, "force", False)
+
+    if os.path.exists(poc_workspace) and not force:
+        if not sys.stdin.isatty():
+            output_error(
+                "INVALID_ARGS",
+                fmt,
+                exit_code=4,
+                detail="workspace exists; use --force to overwrite in non-interactive mode",
+            )
+            return
+        # Interactive: let _prepare_poc handle the prompt
+    elif os.path.exists(poc_workspace) and force:
+        # --force: bypass prompt by removing workspace before calling _prepare_poc
+        shutil.rmtree(poc_workspace, ignore_errors=True)
+
+    try:
+        result = _prepare_poc(
+            cmd_args.clients,
+            cmd_args.number_of_clients,
+            poc_workspace,
+            cmd_args.docker_image,
+            cmd_args.he,
+            project_conf_path,
+            force=force,
+        )
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    if result is False:
+        return  # user said no at prompt
+
+    # Gather client names
+    project_file = os.path.join(poc_workspace, "project.yml")
+    clients = []
+    try:
+        from nvflare.lighter.utils import load_yaml as _load_yaml
+
+        pc = _load_yaml(project_file)
+        if pc:
+            clients = [p["name"] for p in pc.get("participants", []) if p.get("type") == "client"]
+    except Exception:
+        pass
+
+    output_ok({"workspace": poc_workspace, "clients": clients}, fmt)
+    try:
+        install_skills()
+    except Exception:
+        pass
 
 
 def _prepare_poc(
@@ -438,6 +522,7 @@ def _prepare_poc(
     use_he: bool = False,
     project_conf_path: str = "",
     examples_dir: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -448,23 +533,25 @@ def _prepare_poc(
 
     project_config = None
     if os.path.exists(workspace):
-        answer = input(
-            f"This will delete poc workspace directory: '{workspace}' and create a new one. Is it OK to proceed? (y/N) "
-        )
-        if answer.strip().upper() == "Y":
+        if not force:
+            prompt = (
+                f"This will delete poc workspace directory: '{workspace}' and create a new one. "
+                "Is it OK to proceed? (y/N) "
+            )
+            answer = input(prompt)
+            if answer.strip().upper() != "Y":
+                return False
 
-            workspace_path = Path(workspace)
-            project_file = Path(project_conf_path)
-            if workspace_path in project_file.parents:
-                raise CLIException(
-                    f"\nProject file: '{project_conf_path}' is under workspace directory:"
-                    f"'{workspace}', which is to be deleted. "
-                    f"Please copy {project_conf_path} to different location before running this command."
-                )
+        workspace_path = Path(workspace)
+        project_file = Path(project_conf_path)
+        if project_conf_path and workspace_path in project_file.parents:
+            raise CLIException(
+                f"\nProject file: '{project_conf_path}' is under workspace directory:"
+                f"'{workspace}', which is to be deleted. "
+                f"Please copy {project_conf_path} to different location before running this command."
+            )
 
-            shutil.rmtree(workspace, ignore_errors=True)
-        else:
-            return False
+        shutil.rmtree(workspace, ignore_errors=True)
 
     project_config = prepare_poc_provision(
         clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
@@ -575,7 +662,7 @@ def validate_gpu_ids(gpu_ids: list, host_gpu_ids: list):
 
 
 def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
-    if type(user_input_gpu_ids) == int and user_input_gpu_ids == -1:
+    if isinstance(user_input_gpu_ids, int) and user_input_gpu_ids == -1:
         gpu_ids = host_gpu_ids
     else:
         gpu_ids = user_input_gpu_ids
@@ -584,13 +671,47 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_START_POC),
+        "nvflare poc start",
+        ["nvflare poc start", "nvflare poc start -p server"],
+        sys.argv[1:],
+    )
+    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
 
     services_list = get_service_list(cmd_args)
     excluded = get_excluded(cmd_args)
     gpu_ids = get_gpis(cmd_args)
 
-    _start_poc(poc_workspace, gpu_ids, excluded, services_list)
+    try:
+        _start_poc(poc_workspace, gpu_ids, excluded, services_list)
+    except CLIException as e:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    # Get client names from project config
+    clients = []
+    server_url = "grpc://localhost:8002"
+    try:
+        project_config, service_config = setup_service_config(poc_workspace)
+        if project_config:
+            clients = [p["name"] for p in project_config.get("participants", []) if p.get("type") == "client"]
+    except Exception:
+        pass
+
+    data = {"status": "running", "server_url": server_url, "clients": clients}
+    if fmt == "txt":
+        print(f"READY: {server_url}")
+        output_ok(data, "txt")
+    else:
+        output_ok(data, fmt)
 
 
 def get_gpis(cmd_args):
@@ -664,10 +785,30 @@ def setup_service_config(poc_workspace) -> Tuple:
 
 
 def stop_poc(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_STOP_POC),
+        "nvflare poc stop",
+        ["nvflare poc stop", "nvflare poc stop -p server"],
+        sys.argv[1:],
+    )
+    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
     excluded = get_excluded(cmd_args)
     services_list = get_service_list(cmd_args)
-    _stop_poc(poc_workspace, excluded, services_list)
+
+    try:
+        _stop_poc(poc_workspace, excluded, services_list)
+    except CLIException as e:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    output_ok({"status": "stopped"}, fmt)
 
 
 def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
@@ -782,9 +923,9 @@ def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict
 def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
     my_env = prepare_env(service_name, gpu_ids, service_config)
     if my_env:
-        subprocess.Popen(cmd_path.split(" "), env=my_env, shell=False)
+        subprocess.Popen(cmd_path.split(" "), env=my_env)
     else:
-        subprocess.Popen(cmd_path.split(" "), shell=False)
+        subprocess.Popen(cmd_path.split(" "))
 
 
 def sync_process(service_name, cmd_path):
@@ -821,8 +962,28 @@ def _run_poc(
 
 
 def clean_poc(cmd_args):
+    from nvflare.tool.cli_output import output_error, output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+
+    handle_schema_flag(
+        _poc_sub_cmd_parsers.get(CMD_CLEAN_POC),
+        "nvflare poc clean",
+        ["nvflare poc clean"],
+        sys.argv[1:],
+    )
+    fmt = getattr(cmd_args, "output", "json")
     poc_workspace = get_poc_workspace()
-    _clean_poc(poc_workspace)
+
+    try:
+        _clean_poc(poc_workspace)
+    except CLIException as e:
+        output_error("INVALID_ARGS", fmt, exit_code=4, detail=str(e))
+        return
+    except Exception as e:
+        output_error("INTERNAL_ERROR", fmt, exit_code=5, detail=str(e))
+        return
+
+    output_ok({"status": "cleaned"}, fmt)
 
 
 def is_poc_running(poc_workspace, service_config, project_config):
@@ -858,6 +1019,9 @@ poc_sub_cmd_handlers = {
     CMD_STOP_POC: stop_poc,
     CMD_CLEAN_POC: clean_poc,
 }
+
+# Populated by define_*_parser functions; used by handlers for --schema support
+_poc_sub_cmd_parsers = {}
 
 
 def def_poc_parser(sub_cmd):
@@ -925,6 +1089,7 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     cmd = CMD_PREPARE_POC if cmd is None else cmd
     help_str = "prepare poc environment by provisioning local project" if help_str is None else help_str
     prepare_parser = poc_parser.add_parser(cmd, help=help_str)
+    _poc_sub_cmd_parsers[CMD_PREPARE_POC] = prepare_parser
 
     prepare_parser.add_argument(
         "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
@@ -964,21 +1129,34 @@ def define_prepare_parser(poc_parser, cmd: Optional[str] = None, help_str: Optio
     )
 
     prepare_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    prepare_parser.add_argument("--force", action="store_true", help="overwrite existing workspace without prompting")
+    prepare_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    prepare_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_prepare_jobs_parser(poc_parser):
     prepare_jobs_dir_parser = poc_parser.add_parser(CMD_PREPARE_JOBS_DIR, help="prepare jobs directory")
+    _poc_sub_cmd_parsers[CMD_PREPARE_JOBS_DIR] = prepare_jobs_dir_parser
     prepare_jobs_dir_parser.add_argument("-j", "--jobs_dir", type=str, nargs="?", default=None, help="jobs directory")
     prepare_jobs_dir_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    prepare_jobs_dir_parser.add_argument(
+        "--force", action="store_true", help="overwrite existing jobs directory without prompting"
+    )
+    prepare_jobs_dir_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    prepare_jobs_dir_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_clean_parser(poc_parser):
     clean_parser = poc_parser.add_parser(CMD_CLEAN_POC, help="clean up poc workspace")
+    _poc_sub_cmd_parsers[CMD_CLEAN_POC] = clean_parser
     clean_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    clean_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    clean_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_start_parser(poc_parser):
     start_parser = poc_parser.add_parser(CMD_START_POC, help="start services in poc mode")
+    _poc_sub_cmd_parsers[CMD_START_POC] = start_parser
 
     start_parser.add_argument(
         "-p",
@@ -1006,10 +1184,13 @@ def define_start_parser(poc_parser):
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
     start_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    start_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    start_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def define_stop_parser(poc_parser):
     stop_parser = poc_parser.add_parser(CMD_STOP_POC, help="stop services in poc mode")
+    _poc_sub_cmd_parsers[CMD_STOP_POC] = stop_parser
 
     stop_parser.add_argument(
         "-p",
@@ -1028,6 +1209,8 @@ def define_stop_parser(poc_parser):
         help="exclude service directory during 'stop', default to " ", i.e. nothing to exclude",
     )
     stop_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    stop_parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    stop_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def get_local_host_gpu_ids():

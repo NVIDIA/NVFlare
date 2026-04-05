@@ -21,8 +21,7 @@ import shutil
 import sys
 from typing import Optional
 
-from nvflare.apis.utils.format_check import name_check
-from nvflare.lighter.constants import DEFINED_ROLES, PropKey
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
@@ -51,12 +50,21 @@ role: $ROLE
 """
 
 
+_provision_parser = None
+
+
 def define_provision_parser(parser):
-    # Create mutually exclusive group for the main action
-    action_group = parser.add_mutually_exclusive_group(required=True)
-    action_group.add_argument("-g", "--generate", action="store_true", help="generate a sample project.yml")
-    action_group.add_argument("-e", "--gen_edge", action="store_true", help="generate a sample edge project.yml")
-    action_group.add_argument("-p", "--project_file", type=str, help="file to describe FL project")
+    global _provision_parser
+    _provision_parser = parser
+    # Action flags — mutually exclusive but no longer required; default is -g behavior
+    parser.add_argument("-p", "--project_file", type=str, default=None, help="file to describe FL project")
+    parser.add_argument(
+        "-g",
+        "--generate",
+        action="store_true",
+        help="generate a sample project.yml and exit (default when no flag given)",
+    )
+    parser.add_argument("-e", "--gen_edge", action="store_true", help="generate a sample edge project.yml and exit")
 
     # Optional arguments
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
@@ -64,6 +72,9 @@ def define_provision_parser(parser):
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
     parser.add_argument("-s", "--gen_scripts", action="store_true", help="generate test scripts like start_all.sh")
+    parser.add_argument("--force", action="store_true", help="skip Y/N confirmation prompts")
+    parser.add_argument("--output", choices=["json", "txt"], default="json", help="output format")
+    parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
 
 def copy_project(project: str, dest: str):
@@ -78,17 +89,41 @@ def copy_project(project: str, dest: str):
 
 
 def handle_provision(args):
+    from nvflare.tool.cli_output import output_ok
+    from nvflare.tool.cli_schema import handle_schema_flag
+    from nvflare.tool.install_skills import install_skills
+
+    handle_schema_flag(
+        _provision_parser,
+        "nvflare provision",
+        ["nvflare provision -p project.yml", "nvflare provision -g"],
+        sys.argv[1:],
+    )
+    fmt = getattr(args, "output", "json")
+
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
 
     current_project_yml = os.path.join(current_path, "project.yml")
-    if args.generate:
-        copy_project("dummy_project.yml", current_project_yml)
-        return
 
+    # Default when no project_file and no -g: generate sample project.yml (pre-2.7.0 behavior)
     if args.gen_edge:
         copy_project("edge_project.yml", current_project_yml)
+        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml}, fmt)
+        try:
+            install_skills()
+        except Exception:
+            pass
+        return
+
+    if not args.project_file or args.generate:
+        copy_project("dummy_project.yml", current_project_yml)
+        output_ok({"workspace": current_path, "packages": [], "project_yml": current_project_yml}, fmt)
+        try:
+            install_skills()
+        except Exception:
+            pass
         return
 
     # main project file
@@ -105,6 +140,20 @@ def handle_provision(args):
 
     provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
 
+    # Collect packages from workspace
+    packages = []
+    if os.path.isdir(workspace_full_path):
+        for item in os.listdir(workspace_full_path):
+            item_path = os.path.join(workspace_full_path, item)
+            if os.path.isdir(item_path):
+                packages.append(item)
+
+    output_ok({"workspace": workspace_full_path, "packages": packages}, fmt)
+    try:
+        install_skills()
+    except Exception:
+        pass
+
 
 def gen_default_project_config(src_project_name, dest_project_file):
     file_path = pathlib.Path(__file__).parent.absolute()
@@ -112,7 +161,6 @@ def gen_default_project_config(src_project_name, dest_project_file):
 
 
 def provision_for_edge(params, project_dict):
-    api_version = project_dict.get(PropKey.API_VERSION)
     project_name = project_dict.get(PropKey.NAME)
     project_description = project_dict.get(PropKey.DESCRIPTION, "")
     project = Project(name=project_name, description=project_description, props=project_dict)
@@ -149,8 +197,8 @@ def provision(
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
     api_version = project_dict.get(PropKey.API_VERSION)
-    if api_version not in [3, 4]:
-        raise ValueError(f"API version expected 3 or 4 but found {api_version}")
+    if api_version not in [3]:
+        raise ValueError(f"API version expected 3 but found {api_version}")
     project_name = project_dict.get(PropKey.NAME)
     if len(project_name) > 63:
         print(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
@@ -165,36 +213,6 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
 
     if add_client_file_path:
         add_extra_clients(add_client_file_path, participant_defs)
-
-    studies = project_dict.get("studies")
-    if studies:
-        if api_version != 4:
-            raise ValueError("studies: requires api_version: 4")
-
-        client_names = {p[PropKey.NAME] for p in participant_defs if p.get(PropKey.TYPE) == "client"}
-        admin_names = {p[PropKey.NAME] for p in participant_defs if p.get(PropKey.TYPE) == "admin"}
-
-        for study_name, study_def in studies.items():
-            if study_def is None:
-                studies[study_name] = study_def = {}
-            elif not isinstance(study_def, dict):
-                raise ValueError(f"study '{study_name}' must be a mapping")
-
-            if study_name == "default":
-                raise ValueError("study name 'default' is reserved")
-            invalid, reason = name_check(study_name, "study")
-            if invalid:
-                raise ValueError(f"invalid study name '{study_name}': {reason}")
-
-            for site in study_def.get("sites", []):
-                if site not in client_names:
-                    raise ValueError(f"study '{study_name}' references unknown client '{site}'")
-
-            for admin_name, role in study_def.get("admins", {}).items():
-                if admin_name not in admin_names:
-                    raise ValueError(f"study '{study_name}' references unknown admin '{admin_name}'")
-                if role not in DEFINED_ROLES:
-                    raise ValueError(f"study '{study_name}' assigns unknown role '{role}' to '{admin_name}'")
 
     for p in participant_defs:
         project.add_participant(participant_from_dict(p))

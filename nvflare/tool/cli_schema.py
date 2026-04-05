@@ -43,6 +43,8 @@ def parser_to_schema(
     parser: argparse.ArgumentParser,
     command: str,
     examples: Optional[List[str]] = None,
+    deprecated: bool = False,
+    deprecated_message: str = "",
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     args = []
@@ -77,17 +79,28 @@ def parser_to_schema(
 
         args.append(entry)
 
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "command": command,
         "description": parser.description or "",
         "args": args,
         "examples": examples or [],
     }
+    if deprecated:
+        result["deprecated"] = True
+        result["deprecated_message"] = deprecated_message
+    return result
 
 
-def handle_schema_flag(parser: argparse.ArgumentParser, command: str, examples: List[str], args_list: List[str]) -> None:
+def handle_schema_flag(
+    parser: argparse.ArgumentParser,
+    command: str,
+    examples: List[str],
+    args_list: List[str],
+    deprecated: bool = False,
+    deprecated_message: str = "",
+) -> None:
     """Call before parse_args(). If --schema in args_list, print schema and exit."""
     if "--schema" in args_list:
-        print(json.dumps(parser_to_schema(parser, command, examples), indent=2))
+        print(json.dumps(parser_to_schema(parser, command, examples, deprecated, deprecated_message), indent=2))
         raise SystemExit(0)
