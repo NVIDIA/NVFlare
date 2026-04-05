@@ -156,6 +156,12 @@ Secondly, in the "adhoc" section, you can further specify what scheme to use for
 In this example, we use tcp for ad-hoc connections, and we will listen on port number 8008 or 9008.
 Note that the ad-hoc connection's port number is dynamically determined based on the port information in the config.
 
+Ad-hoc connections have the following limitations:
+
+- They do not work well in environments with firewalls that only allow pre-defined ports. The listener may use a dynamically assigned port, so the connection can be blocked by firewall rules.
+- They are only a communication optimization. They are best-effort only, and the direct connection may not be created if the network environment does not allow it.
+- They are created on demand only after CellNet sees the first message from the target cell. Because establishing the ad-hoc connection takes time, there can be an initial delay before messages start going through the direct path.
+
 Config Properties
 -----------------
 
